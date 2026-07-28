@@ -875,6 +875,7 @@ static void write_function_typed_local_bindings(FILE *file, SZrState *state, SZr
         fwrite(&binding->declarationStartColumn, sizeof(TZrUInt32), 1, file);
         fwrite(&binding->declarationEndLine, sizeof(TZrUInt32), 1, file);
         fwrite(&binding->declarationEndColumn, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->roleFlags, sizeof(TZrUInt32), 1, file);
     }
 }
 

@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-28 16:54 +08:00
+updated_at: 2026-07-28 19:39 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -55,9 +55,10 @@ source_plans:
 | 2026-07-21 12:53 +08:00 | 已完成 | `missing_array_element_separator`保留next-element token primary并在同token起点发布规范零宽`,` machine fix；`array_element_assignment`保持无fix，通用LSP/stdio consumer完成apply-edit-rebind且不按array AST/code/message/source重建；三工具链十八目标矩阵、stdio/CLI与diagnostic-fix smoke真实exit 0、marker归零 | [Array element-separator safe-fix convergence](../02-diagnostics/2026-07-21-array-element-separator-safe-fix-convergence.md) |
 | 2026-07-28 15:18 +08:00 | 已完成 | LSP 04 E1a 首个artifact carrier：compiled typed-local row从canonical SemIR slot/Place保留SymbolId、TypeId、PlaceId与declaration range，经`.zro` v37和runtime projection往返；旧artifact明确unavailable，禁止name/slot/AST/text fallback；GCC/Clang/MSVC定向测试均5/5真实exit 0 | [Canonical local binding artifact](../04-debug-and-repl/2026-07-28-e1a-canonical-local-binding-artifact.md) |
 | 2026-07-28 16:54 +08:00 | 已完成 | LSP 04 E1b1 暂停帧canonical binding：每个运行帧及tail-frame reuse分配非零generation；按精确activation、PC和typed-local canonical identity枚举活动binding；caller inactive binding排除，旧context在frame reuse/retire后fail closed；generic仅发布presence flag，receiver与泛型值快照留待E1b2；GCC/Clang/MSVC introspection 2/2与metadata 5/5真实exit 0 | [Paused frame canonical bindings](../04-debug-and-repl/2026-07-28-e1b1-paused-frame-canonical-bindings.md) |
+| 2026-07-28 19:39 +08:00 | 已完成 | LSP 04 E1b2a receiver canonical carrier：typed-local artifact row以patch 38保留结构化receiver role；paused frame严格按唯一active canonical row投影receiver与frame值；source/binary runtime roundtrip不按local/member name、display type或AST重建；GCC/Clang/fresh MSVC metadata 6/6与introspection 2/2真实exit 0 | [Receiver canonical carrier](../04-debug-and-repl/2026-07-28-e1b2a-receiver-canonical-carrier.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示三十八个子里程碑完成，不表示L1-L8整体完成。
-- 下一步完成LSP 04 E1b2的receiver canonical carrier和structured generic type/value snapshots，再进入E2 formal parser/binder/Place query复用；并继续扩展property/constructor/meta callable target identity、native generic constraint/effectful method contract、public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
+- 总体目标进行中。当前记录只表示三十九个子里程碑完成，不表示L1-L8整体完成。
+- 下一步完成LSP 04 E1b2b structured generic type/value snapshots，再进入E2 formal parser/binder/Place query复用；并继续扩展property/constructor/meta callable target identity、native generic constraint/effectful method contract、public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

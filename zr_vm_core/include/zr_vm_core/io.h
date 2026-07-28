@@ -153,6 +153,7 @@ typedef struct SZrIoFunctionTypedLocalBinding {
     TZrUInt32 declarationStartColumn;
     TZrUInt32 declarationEndLine;
     TZrUInt32 declarationEndColumn;
+    TZrUInt32 roleFlags;
 } SZrIoFunctionTypedLocalBinding;
 
 typedef struct SZrIoFunctionTypedExportSymbol {

@@ -246,17 +246,18 @@ static TZrBool typed_type_ref_from_current_parameter(SZrCompilerState *cs,
     return typed_type_ref_from_ast_type(cs, parameter->typeInfo, outType);
 }
 
-static TZrBool typed_type_ref_from_injected_this(SZrCompilerState *cs,
-                                                 SZrString *name,
-                                                 SZrFunctionTypedTypeRef *outType) {
-    const TZrChar *nameText;
+static TZrBool typed_local_binding_is_implicit_receiver(const SZrCompilerState *cs,
+                                                         const SZrFunctionLocalVariable *localVar) {
+    return (TZrBool)(cs != ZR_NULL && localVar != ZR_NULL && cs->currentFunctionNode != ZR_NULL &&
+                     cs->currentFunctionReceiverEffect != ZR_CANONICAL_RECEIVER_NONE &&
+                     localVar->stackSlot == 0u);
+}
 
-    if (cs == ZR_NULL || name == ZR_NULL || outType == ZR_NULL || cs->currentTypeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nameText = ZrCore_String_GetNativeStringShort(name);
-    if (nameText == ZR_NULL || strcmp(nameText, "this") != 0) {
+static TZrBool typed_type_ref_from_injected_receiver(SZrCompilerState *cs,
+                                                      const SZrFunctionLocalVariable *localVar,
+                                                      SZrFunctionTypedTypeRef *outType) {
+    if (cs == ZR_NULL || localVar == ZR_NULL || outType == ZR_NULL || cs->currentTypeName == ZR_NULL ||
+        !typed_local_binding_is_implicit_receiver(cs, localVar)) {
         return ZR_FALSE;
     }
 
@@ -1314,7 +1315,10 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
                     semanticIdentity.declarationRange.end.column;
         }
 
-        if (typed_type_ref_from_injected_this(cs, localVar->name, &bindings[index].type)) {
+        if (typed_local_binding_is_implicit_receiver(cs, localVar)) {
+            bindings[index].roleFlags |= ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+        }
+        if (typed_type_ref_from_injected_receiver(cs, localVar, &bindings[index].type)) {
             continue;
         }
 

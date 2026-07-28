@@ -23,6 +23,8 @@ typedef struct SZrDebugIntrospectionCapture {
     TZrBool sawCanonicalActiveBinding;
     TZrBool sawInactiveCallerBindingExcluded;
     TZrBool sawReusedFrameGenerationRejected;
+    TZrBool sawFreeFrameWithoutReceiver;
+    TZrBool sawCanonicalReceiver;
     SZrDebugEvaluationContext capturedEvaluationContext;
 } SZrDebugIntrospectionCapture;
 
@@ -69,8 +71,8 @@ static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunc
     return ZR_NULL;
 }
 
-static const SZrFunctionTypedLocalBinding *find_typed_local_binding_by_slot(const SZrFunction *function,
-                                                                              TZrUInt32 stackSlot) {
+static SZrFunctionTypedLocalBinding *find_typed_local_binding_by_slot(SZrFunction *function,
+                                                                       TZrUInt32 stackSlot) {
     TZrUInt32 index;
 
     if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
@@ -78,7 +80,7 @@ static const SZrFunctionTypedLocalBinding *find_typed_local_binding_by_slot(cons
     }
 
     for (index = 0u; index < function->typedLocalBindingLength; index++) {
-        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
         if (binding->stackSlot == stackSlot) {
             return binding;
         }
@@ -153,8 +155,11 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
                               &activation,
                               (EZrDebugInfoType)(ZR_DEBUG_INFO_FUNCTION_NAME | ZR_DEBUG_INFO_LINE_NUMBER),
                               &info) ||
-        info.name == ZR_NULL ||
-        strcmp(info.name, "target") != 0) {
+        info.name == ZR_NULL) {
+        return;
+    }
+
+    if (strcmp(info.name, "target") != 0) {
         return;
     }
 
@@ -191,6 +196,36 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
                         0u,
                         &staleBinding) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME) {
                 g_debugIntrospectionCapture.sawReusedFrameGenerationRejected = ZR_TRUE;
+            }
+        }
+        {
+            SZrDebugFrameBinding receiverBinding;
+            SZrTypeValue receiverValue;
+            const SZrFunctionLocalVariable *receiverInputLocal;
+            SZrFunctionTypedLocalBinding *receiverInputBinding;
+
+            ZrCore_Value_ResetAsNull(&receiverValue);
+            if (ZrCore_Debug_EvaluationContext_GetReceiver(
+                        state, &evaluationContext, &receiverBinding, &receiverValue) ==
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_RECEIVER) {
+                g_debugIntrospectionCapture.sawFreeFrameWithoutReceiver = ZR_TRUE;
+            }
+
+            receiverInputLocal = find_local_variable_by_name(activation.function, "input");
+            receiverInputBinding = receiverInputLocal != ZR_NULL
+                    ? find_typed_local_binding_by_slot(activation.function, receiverInputLocal->stackSlot)
+                    : ZR_NULL;
+            if (receiverInputBinding != ZR_NULL) {
+                receiverInputBinding->roleFlags |= ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+                ZrCore_Value_ResetAsNull(&receiverValue);
+                if (ZrCore_Debug_EvaluationContext_GetReceiver(
+                            state, &evaluationContext, &receiverBinding, &receiverValue) ==
+                            ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK &&
+                    (receiverBinding.roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u &&
+                    receiverBinding.symbolId != 0u && receiverBinding.typeId != 0u &&
+                    receiverBinding.placeId != 0u && value_is_int64(&receiverValue, 4)) {
+                    g_debugIntrospectionCapture.sawCanonicalReceiver = ZR_TRUE;
+                }
             }
         }
     }
@@ -284,6 +319,8 @@ static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawCanonicalActiveBinding);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawInactiveCallerBindingExcluded);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawReusedFrameGenerationRejected);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawFreeFrameWithoutReceiver);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawCanonicalReceiver);
 
     {
         SZrDebugFrameBinding binding;

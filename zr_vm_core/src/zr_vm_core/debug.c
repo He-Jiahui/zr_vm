@@ -435,6 +435,106 @@ EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetBinding(
     outBinding->declarationEndLine = binding->declarationEndLine;
     outBinding->declarationEndColumn = binding->declarationEndColumn;
     outBinding->scopeDepth = local->scopeDepth;
+    outBinding->roleFlags = binding->roleFlags;
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+}
+
+EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetReceiver(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        SZrDebugFrameBinding *outBinding,
+        SZrTypeValue *outValue) {
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+    const SZrFunctionLocalVariable *receiverLocal = ZR_NULL;
+    const SZrFunctionTypedLocalBinding *receiverBinding = ZR_NULL;
+    TZrUInt32 programCounter;
+    TZrUInt32 index;
+    EZrDebugEvaluationContextStatus status;
+
+    if (outBinding != ZR_NULL) {
+        memset(outBinding, 0, sizeof(*outBinding));
+    }
+    if (outValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (outBinding == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = debug_evaluation_context_validate(state, context, &callInfo, &function);
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return status;
+    }
+    if (function->typedLocalBindings == ZR_NULL || function->typedLocalBindingLength == 0u ||
+        function->localVariableList == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+    }
+
+    programCounter = debug_get_current_instruction_offset(callInfo, function);
+    for (index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        TZrUInt32 localIndex;
+
+        if ((binding->roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) == 0u) {
+            continue;
+        }
+        if (!debug_typed_local_binding_has_canonical_identity(binding)) {
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+        }
+        for (localIndex = 0u; localIndex < function->localVariableLength; localIndex++) {
+            const SZrFunctionLocalVariable *local = &function->localVariableList[localIndex];
+            if (local->stackSlot == binding->stackSlot && local->offsetActivate <= programCounter &&
+                programCounter < local->offsetDead) {
+                break;
+            }
+        }
+        if (localIndex == function->localVariableLength) {
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+        }
+        if (receiverBinding != ZR_NULL) {
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+        }
+        receiverBinding = binding;
+        receiverLocal = &function->localVariableList[localIndex];
+    }
+
+    if (receiverBinding == ZR_NULL || receiverLocal == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_RECEIVER;
+    }
+
+    outBinding->stackSlot = receiverBinding->stackSlot;
+    outBinding->symbolId = receiverBinding->symbolId;
+    outBinding->typeId = receiverBinding->typeId;
+    outBinding->placeId = receiverBinding->placeId;
+    outBinding->declarationStartLine = receiverBinding->declarationStartLine;
+    outBinding->declarationStartColumn = receiverBinding->declarationStartColumn;
+    outBinding->declarationEndLine = receiverBinding->declarationEndLine;
+    outBinding->declarationEndColumn = receiverBinding->declarationEndColumn;
+    outBinding->scopeDepth = receiverLocal->scopeDepth;
+    outBinding->roleFlags = receiverBinding->roleFlags;
+
+    if (debug_frame_slot_is_inline_struct(function, receiverBinding->stackSlot)) {
+        if (!ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                    state,
+                    function,
+                    debug_get_frame_base(callInfo),
+                    receiverBinding->stackSlot,
+                    outValue)) {
+            memset(outBinding, 0, sizeof(*outBinding));
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+        }
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+    }
+
+    {
+        SZrTypeValue *slot = debug_get_frame_value_slot(state, function, callInfo, receiverBinding->stackSlot);
+        if (slot == ZR_NULL) {
+            memset(outBinding, 0, sizeof(*outBinding));
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+        }
+        debug_snapshot_value(state, outValue, slot);
+    }
     return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 

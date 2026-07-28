@@ -962,6 +962,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
                     source->typedLocalBindings[index].declarationEndLine;
             function->typedLocalBindings[index].declarationEndColumn =
                     source->typedLocalBindings[index].declarationEndColumn;
+            function->typedLocalBindings[index].roleFlags = source->typedLocalBindings[index].roleFlags;
         }
         function->typedLocalBindingLength = (TZrUInt32)source->typedLocalBindingsLength;
     }

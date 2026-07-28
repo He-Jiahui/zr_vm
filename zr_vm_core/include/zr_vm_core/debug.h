@@ -134,7 +134,8 @@ typedef enum EZrDebugEvaluationContextStatus {
     ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT,
     ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME,
     ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE,
-    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_MORE_BINDINGS
+    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_MORE_BINDINGS,
+    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_RECEIVER
 } EZrDebugEvaluationContextStatus;
 
 typedef struct SZrDebugFrameBinding {
@@ -147,6 +148,7 @@ typedef struct SZrDebugFrameBinding {
     TZrUInt32 declarationEndLine;
     TZrUInt32 declarationEndColumn;
     TZrUInt32 scopeDepth;
+    TZrUInt32 roleFlags;
 } SZrDebugFrameBinding;
 
 typedef struct SZrDebugEvaluationContext {
@@ -214,6 +216,12 @@ ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetBi
         const SZrDebugEvaluationContext *context,
         TZrUInt32 activeBindingIndex,
         SZrDebugFrameBinding *outBinding);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetReceiver(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        SZrDebugFrameBinding *outBinding,
+        struct SZrTypeValue *outValue);
 
 ZR_CORE_API TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
                                          const SZrDebugActivation *activation,

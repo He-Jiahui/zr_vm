@@ -432,6 +432,9 @@ static void io_read_function_typed_local_bindings(SZrIo *io,
             ZR_IO_READ_NATIVE_TYPE(io, binding->declarationEndLine, TZrUInt32);
             ZR_IO_READ_NATIVE_TYPE(io, binding->declarationEndColumn, TZrUInt32);
         }
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_TYPED_LOCAL_ROLE_FLAGS) {
+            ZR_IO_READ_NATIVE_TYPE(io, binding->roleFlags, TZrUInt32);
+        }
     }
 }
 

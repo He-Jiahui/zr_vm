@@ -67,7 +67,7 @@ is not a replacement for canonical `TypeId`.
 
 ## Binary Contract
 
-`.zro` source patch 37 appends seven fixed-width fields to every typed-local row:
+`.zro` source patch 37 appends seven fixed-width identity fields to every typed-local row:
 
 1. `symbolId`
 2. `typeId`
@@ -75,10 +75,15 @@ is not a replacement for canonical `TypeId`.
 4. declaration start line and column
 5. declaration end line and column
 
-The writer emits these fields after the existing typed type reference. The IO
-reader reads them only for patch 37 or newer. Older artifacts receive zeroed
-identity fields, which means frame reconstruction is unavailable rather than
-guessed. Runtime loading copies the row unchanged into the executable function.
+Patch 38 appends `roleFlags` after those fields. Its currently defined bit is
+`ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER`. The compiler sets that bit only for
+the injected instance receiver: an active function declaration with a
+non-`NONE` receiver effect whose first compiler local occupies stack slot zero.
+It does not inspect the local name. The writer emits the role flags after the
+identity fields; the IO reader accepts them only from patch 38 or newer. Older
+artifacts receive zeroed identity and role fields, which means frame
+reconstruction is unavailable rather than guessed. Runtime loading copies the
+row unchanged into the executable function.
 
 ## Consumer Boundary
 
@@ -96,22 +101,41 @@ zero SymbolId, TypeId, or PlaceId is metadata unavailable. A stale generation,
 reused frame, changed PC, or retired call-info fails closed. Neither path may
 recover identity from a name, stack slot alone, AST, display type, or text.
 
-E1b1 reports only whether generic method context is present. Receiver binding
-projection and structured generic type/value snapshots remain E1b2 work.
-Formal parser/binder reuse, effect policy, result transport, and REPL transport
-remain E2 through E5. In particular, `zr_vm_lib_debug/debug_eval.c` must not
-use these fields to justify its independent expression parser.
+`ZrCore_Debug_EvaluationContext_GetReceiver` is the E1b2a receiver projection.
+It revalidates the paused frame, requires exactly one active typed-local row
+with the `RECEIVER` role and a complete canonical identity, and snapshots the
+exact frame slot. A free/static frame with complete typed-local metadata returns
+`NO_RECEIVER`; missing rows, duplicate receiver rows, inactive receiver rows,
+or incomplete identities return `METADATA_UNAVAILABLE`. It never derives a
+receiver from a local name, member name, display type, AST, or text.
+
+E1b1's generic presence flags remain availability-only. Structured generic
+type/value substitutions are E1b2b work. Formal parser/binder reuse, effect
+policy, result transport, and REPL transport remain E2 through E5. In
+particular, `zr_vm_lib_debug/debug_eval.c` must not use these fields to justify
+its independent expression parser.
 
 ## Validation
 
 `test_binary_roundtrip_preserves_canonical_local_binding_identity` compiles a
 function, writes it to `.zro`, reads it, loads runtime metadata, and compares the
-canonical IDs and declaration range at both boundaries. The target passed under
-GCC, Clang, and MSVC on 2026-07-28.
+canonical IDs and declaration range at both boundaries.
 
 `test_getlocal_and_setlocal_walk_active_locals_by_index` captures the target
 frame, verifies its exact typed-local canonical identity, excludes a caller
 local that is inactive at the paused PC, and verifies that a context retained
-across tail-frame reuse is rejected as stale. `zr_vm_debug_introspection_test`
-(2 tests) and `zr_vm_debug_metadata_test` (5 tests) passed with real exit 0
-under GCC, Clang, and MSVC on 2026-07-28.
+across tail-frame reuse is rejected as stale. It first verifies `NO_RECEIVER`
+for the free-function frame, then uses a test-only role bit on that exact active
+canonical row to exercise receiver projection and frame-value snapshotting. The
+test is not a compiler provenance substitute: the artifact roundtrip test owns
+that coverage.
+
+`test_binary_roundtrip_preserves_canonical_receiver_binding_role` finds the
+receiver row through published `SZrCompiledPrototypeInfo` and
+`SZrCompiledMemberInfo.functionConstantIndex` records, once in the source
+function and once in a distinct runtime function loaded only from the written
+`.zro` in the initialized test state. It compares role, canonical identity, and
+declaration range without member names, hidden-accessor names, AST pairing, or
+compiler-private trees. On 2026-07-28, GCC, Clang, and a fresh MSVC shared
+build each passed `zr_vm_debug_metadata_test` (6 tests) and
+`zr_vm_debug_introspection_test` (2 tests) with real exit 0.

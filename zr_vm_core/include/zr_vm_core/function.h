@@ -192,6 +192,11 @@ typedef struct SZrFunctionTypedTypeRef {
     TZrUInt32 staticCTypeId;
 } SZrFunctionTypedTypeRef;
 
+enum {
+    ZR_FUNCTION_TYPED_LOCAL_ROLE_NONE = 0u,
+    ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER = 1u << 0
+};
+
 typedef struct SZrFunctionTypedLocalBinding {
     struct SZrString *name;
     TZrUInt32 stackSlot;
@@ -203,6 +208,7 @@ typedef struct SZrFunctionTypedLocalBinding {
     TZrUInt32 declarationStartColumn;
     TZrUInt32 declarationEndLine;
     TZrUInt32 declarationEndColumn;
+    TZrUInt32 roleFlags;
 } SZrFunctionTypedLocalBinding;
 
 /*
