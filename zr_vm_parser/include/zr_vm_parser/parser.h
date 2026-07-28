@@ -46,6 +46,10 @@ ZR_PARSER_API void ZrParser_State_Free(SZrParserState *ps);
 // 使用已初始化的解析器状态解析源代码
 ZR_PARSER_API SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps);
 
+// Parse one complete expression from an initialized parser state.
+// The caller owns the returned AST node and must release it with ZrParser_Ast_Free.
+ZR_PARSER_API SZrAstNode *ZrParser_ParseExpressionWithState(SZrParserState *ps);
+
 // 解析源代码，返回 AST 根节点
 ZR_PARSER_API SZrAstNode *ZrParser_Parse(SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
 

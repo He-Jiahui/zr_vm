@@ -124,11 +124,14 @@ does not inspect reflection-private fields or recover generic arguments from a
 name, display string, AST, or hidden accessor.
 
 E1b2b1 is deliberately limited to reflection type-object metadata. Source
-`TypeId` substitutions and const-generic values are not retained by this runtime
-carrier, so their canonical frame transport remains E1b2b2 work. Formal
-parser/binder reuse, effect policy, result transport, and REPL transport remain
-E2 through E5. In particular, `zr_vm_lib_debug/debug_eval.c` must not use these
-fields to justify its independent expression parser.
+`TypeId` substitutions and const-generic values are not retained by a stable
+call-frame or artifact fact, so the runtime must not fabricate a carrier for
+them. E1 is complete with the plan's required generic context; E4 may transport
+a TypeId only after a canonical fact publishes it. Formal parser/binder reuse,
+effect policy, result transport, and REPL transport remain E2 through E5. In
+particular, `zr_vm_lib_debug/debug_eval.c` must not use these fields to justify
+its independent expression parser. E2a now provides the formal parser fragment
+entry that E2b must consume.
 
 ## Validation
 

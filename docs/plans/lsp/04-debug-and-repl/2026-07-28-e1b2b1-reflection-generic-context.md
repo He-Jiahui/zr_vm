@@ -45,13 +45,12 @@ doc_type: milestone-record
 
 ## 明确边界
 
-- 本项只发布 reflection metadata 能解析的 generic type-object 实参。source generic `TypeId`、const-generic literal/parameter substitution 尚未通过 call frame 保存，留给 E1b2b2。
+- 本项只发布 reflection metadata 能解析的 generic type-object 实参。source generic `TypeId`、const-generic literal/parameter substitution 当前没有稳定的 call-frame 或 artifact fact；不能为完成 E1 伪造 runtime carrier。E4 仅在 canonical facts 已发布 concrete TypeId 时传输它。
 - 不读取 reflection 私有布局，不从 generic name、display string、AST、hidden accessor 或文本重建参数。
 - 本项没有修改 parser import metadata 或 LSP property consumer；Syntax05 Task4 对 `type_inference_import_metadata.c` 的 compiled property prototype 修复保持独立 ownership。
 
 ## Deferred Plan Items
 
-- E1b2b2 source `TypeId`/const-generic substitution canonical carrier。
 - E2 formal parser/binder/Place query reuse，及 E3-E5 effect policy、result transport 和 REPL generation。
 
 ## Related Documentation
