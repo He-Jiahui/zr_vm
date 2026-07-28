@@ -1193,9 +1193,11 @@ static void test_cli_compile_emit_aot_c_writes_full_aot_project_c_source(void) {
     assert_text_contains(aotCText, "/* zr_aot_generic_call_typed_full_aot_no_deopt */");
     assert_text_not_contains(aotCText, "/* zr_aot_generic_call_typed_missing_instance_deopt deopt=");
     assert_text_not_contains(aotCText, "\"generic call typed missing AOT instance\"");
-    assert_text_contains(aotCText, "/* zr_aot_value_exec_call_typed_metadata_guard */");
-    assert_text_contains(aotCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame,");
-    assert_text_contains(aotCText, "\"typed inline struct direct call metadata drift\"");
+    assert_text_contains(aotCText, "/* zr_aot_value_exec_call_typed_inline_struct_full_aot_direct */");
+    assert_text_contains(aotCText, "ZrLibrary_AotRuntime_CallInlineStruct(state,");
+    assert_text_not_contains(aotCText, "/* zr_aot_value_exec_call_typed_metadata_guard */");
+    assert_text_not_contains(aotCText, "ZrLibrary_AotRuntime_CanUseTypedDirectCall(state, &frame,");
+    assert_text_not_contains(aotCText, "\"typed inline struct direct call metadata drift\"");
     free(aotCText);
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }

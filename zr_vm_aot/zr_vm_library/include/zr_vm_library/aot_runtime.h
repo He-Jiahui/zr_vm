@@ -826,6 +826,23 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(str
                                                                              TZrUInt32 receiverSlot,
                                                                              TZrUInt32 keySlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayBindItems(struct SZrState *state,
+                                                                ZrAotGeneratedFrame *frame,
+                                                                TZrUInt32 destinationSlot,
+                                                                TZrUInt32 receiverSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayGetIntBoundItems(struct SZrState *state,
+                                                                       ZrAotGeneratedFrame *frame,
+                                                                       TZrUInt32 destinationSlot,
+                                                                       TZrUInt32 itemsSlot,
+                                                                       TZrUInt32 keySlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArraySetIntBoundItems(struct SZrState *state,
+                                                                       ZrAotGeneratedFrame *frame,
+                                                                       TZrUInt32 sourceSlot,
+                                                                       TZrUInt32 itemsSlot,
+                                                                       TZrUInt32 keySlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayGetInt(struct SZrState *state,
                                                              ZrAotGeneratedFrame *frame,
                                                              TZrUInt32 destinationSlot,

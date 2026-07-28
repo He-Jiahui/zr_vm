@@ -90,11 +90,35 @@ TZrBool backend_aot_llvm_lower_index_value_family(const SZrAotLlvmLoweringContex
     }
 
     switch (instruction->opcode) {
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+            backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
+                                                         context->entry->function,
+                                                         instruction->destinationSlot,
+                                                         ZR_AOT_INVALID_FUNCTION_INDEX);
+            {
+                TZrChar argsBuffer[192];
+                snprintf(argsBuffer,
+                         sizeof(argsBuffer),
+                         "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+                         (unsigned)instruction->destinationSlot,
+                         (unsigned)instruction->operandA2);
+                backend_aot_llvm_write_guarded_call_text(context->file,
+                                                         context->tempCounter,
+                                                         "ZrLibrary_AotRuntime_SuperArrayBindItems",
+                                                         argsBuffer,
+                                                         instruction->nextLabel,
+                                                         context->failLabel);
+            }
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             return backend_aot_llvm_lower_triple_slot_index_call(context,
                                                                  instruction,
                                                                  "ZrLibrary_AotRuntime_GetByIndex",
                                                                  ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
+            return backend_aot_llvm_lower_triple_slot_index_call(
+                    context, instruction, "ZrLibrary_AotRuntime_SuperArrayGetIntBoundItems", ZR_TRUE);
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
             return backend_aot_llvm_lower_triple_slot_index_call(context,
@@ -111,6 +135,9 @@ TZrBool backend_aot_llvm_lower_index_value_family(const SZrAotLlvmLoweringContex
                                                                  instruction,
                                                                  "ZrLibrary_AotRuntime_SuperArraySetInt",
                                                                  ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
+            return backend_aot_llvm_lower_triple_slot_index_call(
+                    context, instruction, "ZrLibrary_AotRuntime_SuperArraySetIntBoundItems", ZR_FALSE);
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
             return backend_aot_llvm_lower_triple_slot_index_call(context,
                                                                  instruction,

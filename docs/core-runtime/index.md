@@ -92,6 +92,7 @@ tests:
   - tests/core/test_type_layout_inline_copy.c
   - tests/task/test_task_frame_runtime.c
   - tests/core/test_tail_reuse_callinfo_reset.c
+  - tests/core/test_precall_frame_slot_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/parser/test_property_access_lowering.c
   - tests/core/test_gc_domain_multimutator.c
@@ -140,3 +141,15 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `cross-domain-transfer-contracts.md`: artifact-reproducible cross-domain transfer kinds,
   layout/provider identity, ValueCopy and StructuredClone payloads, ResourceMove
   DropOnFailure, quotas, stale generation, shutdown, and release/acquire race contracts.
+
+Global teardown preserves code lifetime across GC destruction: project-owned AOT functions
+are unpinned before collector teardown, while their dynamic-library handles are closed only
+by the single-owner post-GC cleanup registered on `SZrGlobalState`. A conflicting cleanup
+owner is rejected so an unsafe early unload cannot be introduced by state aliasing.
+
+Functions with a typed frame layout treat every logical stack slot as GC-visible frame state.
+Their VM pre-call reset therefore clears the full logical `stackSize`, including temporary
+slots above the parameter prefix, before execution starts. Untyped legacy frames keep the
+smaller parameter-prefix reset so their established transient-slot reuse remains unchanged.
+This distinction prevents stale bytes in a typed temporary slot from being interpreted as a
+managed reference when the collector walks `frameSlotLayouts`.

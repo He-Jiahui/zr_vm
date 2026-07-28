@@ -698,6 +698,8 @@ static void test_aot_c_source_lowers_string_equality_to_direct_c(void) {
             "backend_aot_c_scalar_locals_record_semir(",
             "backend_aot_c_scalar_locals_kind_for_semir_instruction(function, instruction)",
             "backend_aot_c_scalar_locals_record_slot(slotKinds, slotCount, instruction->destinationSlot, kind)",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):",
+            "case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):",
     };
     static const char *const forbiddenModuleNeedles[] = {
             "ZrLibrary_AotRuntime_LogicalEqualString",

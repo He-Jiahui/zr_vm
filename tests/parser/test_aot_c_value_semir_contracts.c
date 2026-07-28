@@ -421,7 +421,8 @@ static void test_aot_c_constructor_failure_uses_partial_inline_frame_cleanup(voi
             "zr_aot_constructor_unwind_dropped",
     };
     static const char *const setupNeedles[] = {
-            "frameLayout->frameByteSize",
+            "layout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT",
+            "slotEnd = layout->byteOffset + layout->byteSize",
             "registerFrameBytes",
     };
     char *cleanupText = read_repo_text_file_owned(

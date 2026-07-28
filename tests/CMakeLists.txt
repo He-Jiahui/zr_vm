@@ -1201,20 +1201,20 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_bzms_double_neg_count_range_test)
 
     zr_vm_add_unity_test_target(
-            zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test
+            zr_vm_bzms_private_not_mask_range_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference.c
             ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_private_not_mask_or_leaf_cases.c
             ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_private_not_mask_or_deep_leaf_cases.c
             ${CMAKE_SOURCE_DIR}/tests/parser/bitwise_zero_minus_shift_supported_count_range_test_support.c
     )
-    target_include_directories(zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test PRIVATE
+    target_include_directories(zr_vm_bzms_private_not_mask_range_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     set_target_properties(
-            zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test
+            zr_vm_bzms_private_not_mask_range_test
             PROPERTIES OUTPUT_NAME zr_vm_bzms_private_not_mask_range_test)
-    zr_vm_link_parser_core_plus_library(zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_bzms_private_not_mask_range_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference_test
@@ -1361,14 +1361,14 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_neg_zero_incl_add_dataflow_test)
 
     zr_vm_add_unity_test_target(
-            zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test
+            zr_vm_numeric_loop_selfdep_neg_zero_incl_identity_dataflow_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_identity_dataflow.c
     )
-    target_include_directories(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test PRIVATE
+    target_include_directories(zr_vm_numeric_loop_selfdep_neg_zero_incl_identity_dataflow_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
-    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_numeric_loop_selfdep_neg_zero_incl_identity_dataflow_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_dataflow_test
@@ -2631,6 +2631,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
     )
     target_compile_definitions(zr_vm_aot_c_value_type_shared_library_smoke_test PRIVATE
             ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
@@ -2638,6 +2639,11 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
     )
     zr_vm_link_parser_core_plus_library(zr_vm_aot_c_value_type_shared_library_smoke_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_aot_c_value_type_shared_library_smoke_test PRIVATE zr_vm_lib_iteration_shared)
+    else ()
+        target_link_libraries(zr_vm_aot_c_value_type_shared_library_smoke_test PRIVATE zr_vm_lib_iteration_static)
+    endif ()
     if (UNIX AND NOT APPLE)
         target_link_libraries(zr_vm_aot_c_value_type_shared_library_smoke_test PRIVATE dl)
     endif ()
@@ -4398,17 +4404,17 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
     )
     zr_vm_add_support_target(
-            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_identity_semantic_query.c
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
     )
     zr_vm_add_support_target(
-            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_sum_semantic_query.c
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
     )
     zr_vm_add_support_target(
-            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_numeric_loop_self_dependency_conditional_delta_negative_offset_zero_inclusive_unary_semantic_query.c
             ${CMAKE_SOURCE_DIR}/tests/language_server/lsp_numeric_range_query_test_support.c
     )
@@ -4574,6 +4580,9 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_lsp_project_utf16_ranges_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_project_utf16_ranges.c
     )
+    target_sources(zr_vm_language_server_lsp_project_utf16_ranges_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
+    )
     zr_vm_add_support_target(
             zr_vm_language_server_lsp_advanced_editor_features_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_advanced_editor_features.c
@@ -4627,9 +4636,9 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_lsp_selfdep_neg_zero_incl_add_query_test
             zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test
             zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test
-            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test
-            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test
-            zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test
+            zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test
             zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test
             zr_vm_lsp_selfdep_neg_zero_incl_product_query_test
             zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test
@@ -4919,7 +4928,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
-    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test PRIVATE
+    target_include_directories(zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
@@ -4928,7 +4937,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
-    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test PRIVATE
+    target_include_directories(zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
@@ -4937,7 +4946,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
-    target_include_directories(zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test PRIVATE
+    target_include_directories(zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
@@ -5378,6 +5387,7 @@ if (TARGET zr_vm_cli_executable AND
                 zr_vm_lib_math_shared
                 zr_vm_lib_system_shared
                   zr_vm_lib_container_shared
+                  zr_vm_lib_iteration_shared
                   zr_vm_lib_ffi_shared
                   zr_vm_lib_network_shared
         )
@@ -5388,6 +5398,7 @@ if (TARGET zr_vm_cli_executable AND
                   zr_vm_lib_math_shared
                   zr_vm_lib_system_shared
                   zr_vm_lib_container_shared
+                  zr_vm_lib_iteration_shared
                   zr_vm_lib_ffi_shared
                   zr_vm_lib_network_shared
         )
@@ -5398,6 +5409,7 @@ if (TARGET zr_vm_cli_executable AND
                   zr_vm_lib_math_shared
                   zr_vm_lib_system_shared
                   zr_vm_lib_container_shared
+                  zr_vm_lib_iteration_shared
                   zr_vm_lib_ffi_shared
                   zr_vm_lib_network_shared
         )
@@ -5408,6 +5420,7 @@ if (TARGET zr_vm_cli_executable AND
                 zr_vm_lib_math_shared
                 zr_vm_lib_system_shared
                 zr_vm_lib_container_shared
+                zr_vm_lib_iteration_shared
                 zr_vm_lib_ffi_shared
                 zr_vm_lib_network_shared
         )
@@ -5418,6 +5431,7 @@ if (TARGET zr_vm_cli_executable AND
                 zr_vm_lib_math_shared
                 zr_vm_lib_system_shared
                 zr_vm_lib_container_shared
+                zr_vm_lib_iteration_shared
                 zr_vm_lib_ffi_shared
                 zr_vm_lib_network_shared
         )
@@ -5433,6 +5447,7 @@ if (TARGET zr_vm_cli_executable AND
                   zr_vm_lib_math_static
                 zr_vm_lib_system_static
                   zr_vm_lib_container_static
+                  zr_vm_lib_iteration_static
                   zr_vm_lib_ffi_static
                   zr_vm_lib_network_static
         )
@@ -5443,6 +5458,7 @@ if (TARGET zr_vm_cli_executable AND
                   zr_vm_lib_math_static
                   zr_vm_lib_system_static
                   zr_vm_lib_container_static
+                  zr_vm_lib_iteration_static
                   zr_vm_lib_ffi_static
                   zr_vm_lib_network_static
         )
@@ -5453,6 +5469,7 @@ if (TARGET zr_vm_cli_executable AND
                   zr_vm_lib_math_static
                   zr_vm_lib_system_static
                   zr_vm_lib_container_static
+                  zr_vm_lib_iteration_static
                   zr_vm_lib_ffi_static
                   zr_vm_lib_network_static
         )
@@ -5463,6 +5480,7 @@ if (TARGET zr_vm_cli_executable AND
                 zr_vm_lib_math_static
                 zr_vm_lib_system_static
                 zr_vm_lib_container_static
+                zr_vm_lib_iteration_static
                 zr_vm_lib_ffi_static
                 zr_vm_lib_network_static
         )
@@ -5473,6 +5491,7 @@ if (TARGET zr_vm_cli_executable AND
                 zr_vm_lib_math_static
                 zr_vm_lib_system_static
                 zr_vm_lib_container_static
+                zr_vm_lib_iteration_static
                 zr_vm_lib_ffi_static
                 zr_vm_lib_network_static
         )
@@ -5794,7 +5813,7 @@ if (TARGET zr_vm_parser_test AND
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_bzms_double_neg_count_range_test>")
     list(APPEND language_pipeline_executables
-            "$<TARGET_FILE:zr_vm_bitwise_zero_minus_shift_supported_count_private_bitwise_not_mask_operand_range_inference_test>")
+            "$<TARGET_FILE:zr_vm_bzms_private_not_mask_range_test>")
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_bitwise_zero_minus_shift_supported_count_nested_bitwise_not_range_inference_test>")
     list(APPEND language_pipeline_executables
@@ -5824,7 +5843,7 @@ if (TARGET zr_vm_parser_test AND
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_neg_zero_incl_add_dataflow_test>")
     list(APPEND language_pipeline_executables
-            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_dataflow_test>")
+            "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_neg_zero_incl_identity_dataflow_test>")
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_numeric_loop_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_dataflow_test>")
     list(APPEND language_pipeline_executables
@@ -5967,9 +5986,9 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_lsp_selfdep_neg_zero_incl_add_query_test AND
         TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_identity_query_test AND
         TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test AND
-        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test AND
-        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test AND
-        TARGET zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test AND
+        TARGET zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test AND
+        TARGET zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test AND
+        TARGET zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test AND
         TARGET zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test AND
         TARGET zr_vm_lsp_selfdep_neg_zero_incl_product_query_test AND
         TARGET zr_vm_lsp_selfdep_neg_zero_product_unary_same_diff_test AND
@@ -6065,11 +6084,11 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_query_test>")
     string(APPEND language_server_executables
-            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_identity_query_test>")
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_zero_incl_identity_query_test>")
     string(APPEND language_server_executables
-            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_sum_query_test>")
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_zero_incl_sum_query_test>")
     string(APPEND language_server_executables
-            ";$<TARGET_FILE:zr_vm_lsp_selfdep_conditional_delta_negative_offset_zero_inclusive_unary_query_test>")
+            ";$<TARGET_FILE:zr_vm_lsp_selfdep_neg_zero_incl_unary_query_test>")
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_selfdep_cond_delta_neg_zero_incl_subtract_query_test>")
     string(APPEND language_server_executables

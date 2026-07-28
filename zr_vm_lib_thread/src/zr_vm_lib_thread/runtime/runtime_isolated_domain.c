@@ -171,25 +171,26 @@ void zr_vm_thread_isolated_completion_processed(TZrPtr completionContext,
     if (launch == ZR_NULL) {
         return;
     }
+    runtime = launch->providerRuntime;
+    if (runtime != ZR_NULL) {
+        zr_vm_task_sync_mutex_lock(&runtime->mutex);
+        if (launch->workerSlotActive && !launch->workerSlotReleased) {
+            if (runtime->liveWorkerCount > 0u) {
+                runtime->liveWorkerCount--;
+            }
+            launch->workerSlotReleased = ZR_TRUE;
+        }
+        zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+    }
+
+    /* Publishing completion transfers the final launch lifetime back to the
+     * waiting worker.  Do not read launch again after signaling it. */
     zr_vm_task_sync_mutex_lock(&launch->mutex);
     launch->completionSucceeded = completed;
     launch->completionWorkerMustDisposeEnvelope = workerMustDisposeEnvelope;
     launch->completionProcessed = ZR_TRUE;
     zr_vm_task_sync_condition_signal(&launch->condition);
     zr_vm_task_sync_mutex_unlock(&launch->mutex);
-
-    runtime = launch->providerRuntime;
-    if (runtime == ZR_NULL) {
-        return;
-    }
-    zr_vm_task_sync_mutex_lock(&runtime->mutex);
-    if (launch->workerSlotActive && !launch->workerSlotReleased) {
-        if (runtime->liveWorkerCount > 0u) {
-            runtime->liveWorkerCount--;
-        }
-        launch->workerSlotReleased = ZR_TRUE;
-    }
-    zr_vm_task_sync_mutex_unlock(&runtime->mutex);
 }
 
 static void zr_vm_thread_isolated_launch_free(ZrVmIsolatedDomainLaunch *launch) {

@@ -764,11 +764,15 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
             return ZR_NULL;
         }
         previousCapacity = stringTable->stringHashSet.capacity;
+        newString->nextShortString = stringTable->shortStringListHead;
+        stringTable->shortStringListHead = newString;
         string_trace("string create short add raw object start string=%p hash=%llu tableBuckets=%p",
                      (void *)newString,
                      (unsigned long long)hash,
                      (void *)stringTable->stringHashSet.buckets);
         if (ZrCore_HashSet_AddRawObject(state, &stringTable->stringHashSet, &newString->super) == ZR_NULL) {
+            stringTable->shortStringListHead = newString->nextShortString;
+            newString->nextShortString = ZR_NULL;
             string_trace("string create short add raw object failed string=%p threadStatus=%d",
                          (void *)newString,
                          state != ZR_NULL ? (int)state->threadStatus : -1);
@@ -777,8 +781,6 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
         if (previousCapacity != stringTable->stringHashSet.capacity) {
             (void)string_table_rebuild_minor_young_bucket_flags(global, stringTable);
         }
-        newString->nextShortString = stringTable->shortStringListHead;
-        stringTable->shortStringListHead = newString;
         string_table_record_young_short_string(global, newString);
         string_trace("string create short add raw object done string=%p elementCount=%llu",
                      (void *)newString,

@@ -10,6 +10,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
@@ -26,6 +27,10 @@ void test_binary_roundtrip_runtime_returned_callable_capture_preserves_closed_ca
 void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags(void);
 void test_runtime_compiled_child_functions_detach_owner_links(void);
 void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void);
+
+static TZrBool register_ffi_test_modules(SZrGlobalState *global) {
+    return ZrVmLibContainer_Register(global) && ZrVmLibFfi_Register(global);
+}
 
 static void fixture_reader_close_noop(SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
@@ -203,7 +208,7 @@ static void assert_runtime_escape_for_source(const TZrChar *testSource,
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
     ZrParser_ToGlobalState_Register(state);
-    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+    TEST_ASSERT_TRUE(register_ffi_test_modules(state->global));
 
     function = compile_source_fixture(state, testSource, sourceNameText);
     TEST_ASSERT_NOT_NULL(function);
@@ -242,7 +247,7 @@ static void assert_runtime_returned_closure_capture_has_escape_flags(const TZrCh
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
     ZrParser_ToGlobalState_Register(state);
-    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+    TEST_ASSERT_TRUE(register_ffi_test_modules(state->global));
 
     function = compile_source_fixture(state, testSource, sourceNameText);
     TEST_ASSERT_NOT_NULL(function);
@@ -748,7 +753,7 @@ void test_compiler_escape_metadata_summarizes_capture_return_and_exports(void) {
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
     ZrParser_ToGlobalState_Register(state);
-    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+    TEST_ASSERT_TRUE(register_ffi_test_modules(state->global));
 
     function = compile_escape_metadata_fixture(state);
     TEST_ASSERT_NOT_NULL(function);
@@ -783,7 +788,7 @@ void test_binary_roundtrip_preserves_escape_metadata_summaries(void) {
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
     ZrParser_ToGlobalState_Register(state);
-    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+    TEST_ASSERT_TRUE(register_ffi_test_modules(state->global));
 
     sourceFunction = compile_escape_metadata_fixture(state);
     TEST_ASSERT_NOT_NULL(sourceFunction);
@@ -834,7 +839,7 @@ void test_runtime_compiled_child_functions_detach_owner_links(void) {
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
     ZrParser_ToGlobalState_Register(state);
-    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+    TEST_ASSERT_TRUE(register_ffi_test_modules(state->global));
 
     runtimeFunction = compile_escape_metadata_fixture(state);
     TEST_ASSERT_NOT_NULL(runtimeFunction);
@@ -864,7 +869,7 @@ void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void) {
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
     ZrParser_ToGlobalState_Register(state);
-    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+    TEST_ASSERT_TRUE(register_ffi_test_modules(state->global));
 
     sourceFunction = compile_escape_metadata_fixture(state);
     TEST_ASSERT_NOT_NULL(sourceFunction);

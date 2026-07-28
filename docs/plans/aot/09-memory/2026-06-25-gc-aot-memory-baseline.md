@@ -28,3 +28,9 @@ evidence_scope: historical-baseline
 
 这些记录不证明 `Unique/Shared/Weak`、resource class Drop、`Gc<T>` bridge、PoolRef guard、slab NoScan 或 ref-like stack-map 已完成。只有 Canonical TypeLayout 的 GC pointer map 可以授权 NoScan。
 
+## 2026-07-27 重新验收补充
+
+- 已加载 AOT 动态库的 `codeRegistration`、类型布局和函数入口会被仍在 GC 堆中的对象引用，因此项目释放不能立即卸载动态库。
+- `ZrLibrary_AotRuntime_FreeProjectState()` 先解除函数表的 GC pin，并把动态库句柄登记为延迟清理；`ZrCore_GlobalState_Free()` 在 `ZrCore_GarbageCollector_Free()` 完成后才执行该清理并卸载动态库。
+- post-GC 清理槽采用单一所有者。若已有其他回调占用，AOT 句柄登记会拒绝复用该状态；调用方保留句柄，以可控泄漏避免 use-after-`dlclose` / `FreeLibrary`。
+- 回归证据：`tests/parser/test_aot_c_value_type_shared_library_smoke.c` 覆盖加载、执行、项目释放和 GC/全局状态销毁的完整顺序。

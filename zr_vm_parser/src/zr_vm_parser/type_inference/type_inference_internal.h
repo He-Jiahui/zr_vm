@@ -195,6 +195,9 @@ TZrBool ffi_function_call_argument_is_native_boundary_compatible(SZrCompilerStat
                                                                  TZrSize parameterIndex,
                                                                  const SZrInferredType *argType,
                                                                  const SZrInferredType *paramType);
+TZrBool type_inference_reference_argument_type_equal(
+        const SZrInferredType *argumentType,
+        const SZrInferredType *parameterType);
 TZrBool resolve_compile_time_array_size(SZrCompilerState *cs,
                                         const SZrType *astType,
                                         TZrSize *resolvedSize);

@@ -16,6 +16,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_registry.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_lib_ffi/module.h"
@@ -63,6 +64,7 @@ static SZrState *create_test_state(void) {
         ZrParser_ToGlobalState_Register(mainState);
         ZrVmLibMath_Register(global);
         ZrVmLibSystem_Register(global);
+        ZrVmLibContainer_Register(global);
         ZrVmLibFfi_Register(global);
     }
 
@@ -1497,34 +1499,34 @@ static void test_zr_ffi_source_extern_struct_offset_overlay_controls_pointer_rea
 
 int main(void) {
     UNITY_BEGIN();
-    test_zr_ffi_import_exposes_known_types_and_functions();
-    test_zr_ffi_buffer_handle_allocate_is_callable();
-    test_zr_ffi_can_load_fixture_and_call_primitive_symbols();
-    test_zr_ffi_can_roundtrip_struct_symbols();
-    test_zr_ffi_buffer_and_pointer_methods_work();
-    test_zr_ffi_can_fill_buffer_via_symbol();
-    test_zr_ffi_can_lower_buffer_handle_directly_to_pointer_argument();
-    test_zr_ffi_can_create_callback_handle();
-    test_zr_ffi_can_call_callback_symbol();
-    test_zr_ffi_can_roundtrip_structs_buffers_and_callbacks();
-    test_zr_ffi_library_get_version_reads_fixture_symbol();
-    test_zr_ffi_handle_close_methods_are_idempotent();
-    test_zr_ffi_load_library_failure_reports_load_error();
-    test_zr_ffi_get_symbol_failure_reports_symbol_error();
-    test_zr_ffi_varargs_symbol_accepts_explicit_signature();
-    test_zr_ffi_varargs_call_without_matching_signature_reports_marshal_error();
-    test_zr_ffi_stdcall_signature_matches_platform_support();
-    test_zr_ffi_foreign_thread_callback_reports_error();
-    test_zr_ffi_source_extern_can_bind_and_call_symbol();
-    test_zr_ffi_source_extern_delegate_works_with_callback();
-    test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle();
-    test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls();
-    test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper();
-    test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls();
-    test_zr_ffi_handle_id_wrapper_rejects_unsupported_underlying_type();
-    test_zr_ffi_wrapper_view_type_rejects_non_extern_struct();
-    test_zr_ffi_source_extern_system_callconv_uses_platform_default();
-    test_zr_ffi_source_extern_struct_pack_affects_sizeof_and_alignof();
-    test_zr_ffi_source_extern_struct_offset_overlay_controls_pointer_read();
+    RUN_TEST(test_zr_ffi_import_exposes_known_types_and_functions);
+    RUN_TEST(test_zr_ffi_buffer_handle_allocate_is_callable);
+    RUN_TEST(test_zr_ffi_can_load_fixture_and_call_primitive_symbols);
+    RUN_TEST(test_zr_ffi_can_roundtrip_struct_symbols);
+    RUN_TEST(test_zr_ffi_buffer_and_pointer_methods_work);
+    RUN_TEST(test_zr_ffi_can_fill_buffer_via_symbol);
+    RUN_TEST(test_zr_ffi_can_lower_buffer_handle_directly_to_pointer_argument);
+    RUN_TEST(test_zr_ffi_can_create_callback_handle);
+    RUN_TEST(test_zr_ffi_can_call_callback_symbol);
+    RUN_TEST(test_zr_ffi_can_roundtrip_structs_buffers_and_callbacks);
+    RUN_TEST(test_zr_ffi_library_get_version_reads_fixture_symbol);
+    RUN_TEST(test_zr_ffi_handle_close_methods_are_idempotent);
+    RUN_TEST(test_zr_ffi_load_library_failure_reports_load_error);
+    RUN_TEST(test_zr_ffi_get_symbol_failure_reports_symbol_error);
+    RUN_TEST(test_zr_ffi_varargs_symbol_accepts_explicit_signature);
+    RUN_TEST(test_zr_ffi_varargs_call_without_matching_signature_reports_marshal_error);
+    RUN_TEST(test_zr_ffi_stdcall_signature_matches_platform_support);
+    RUN_TEST(test_zr_ffi_foreign_thread_callback_reports_error);
+    RUN_TEST(test_zr_ffi_source_extern_can_bind_and_call_symbol);
+    RUN_TEST(test_zr_ffi_source_extern_delegate_works_with_callback);
+    RUN_TEST(test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle);
+    RUN_TEST(test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls);
+    RUN_TEST(test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper);
+    RUN_TEST(test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls);
+    RUN_TEST(test_zr_ffi_handle_id_wrapper_rejects_unsupported_underlying_type);
+    RUN_TEST(test_zr_ffi_wrapper_view_type_rejects_non_extern_struct);
+    RUN_TEST(test_zr_ffi_source_extern_system_callconv_uses_platform_default);
+    RUN_TEST(test_zr_ffi_source_extern_struct_pack_affects_sizeof_and_alignof);
+    RUN_TEST(test_zr_ffi_source_extern_struct_offset_overlay_controls_pointer_read);
     return UNITY_END();
 }

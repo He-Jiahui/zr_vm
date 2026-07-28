@@ -45,6 +45,22 @@ static SZrFunction *execution_find_entry_function_in_constants(SZrState *state, 
     return ZR_NULL;
 }
 
+static SZrFunction *execution_find_prototype_context_function(SZrFunction *function) {
+    SZrFunction *prototypeContextFunction;
+
+    if (function == ZR_NULL) {
+        return ZR_NULL;
+    }
+    prototypeContextFunction = function->prototypeContextFunction;
+    if (prototypeContextFunction != ZR_NULL &&
+        prototypeContextFunction->prototypeData != ZR_NULL &&
+        prototypeContextFunction->prototypeDataLength > 0u &&
+        prototypeContextFunction->prototypeCount > 0u) {
+        return prototypeContextFunction;
+    }
+    return ZR_NULL;
+}
+
 static SZrFunction *execution_find_entry_function(SZrState *state,
                                                   SZrClosure *currentClosure,
                                                   SZrCallInfo *currentCallInfo) {
@@ -56,6 +72,12 @@ static SZrFunction *execution_find_entry_function(SZrState *state,
     }
 
     if (currentClosure != ZR_NULL && currentClosure->function != ZR_NULL) {
+        SZrFunction *prototypeContextFunction =
+                execution_find_prototype_context_function(currentClosure->function);
+        if (prototypeContextFunction != ZR_NULL) {
+            return prototypeContextFunction;
+        }
+
         SZrFunction *constantContextFunction =
                 execution_find_entry_function_in_constants(state, currentClosure->function);
         if (constantContextFunction != ZR_NULL) {
@@ -72,6 +94,14 @@ static SZrFunction *execution_find_entry_function(SZrState *state,
                 if (stackFunction->prototypeData != ZR_NULL &&
                     stackFunction->prototypeCount > 0) {
                     return stackFunction;
+                }
+
+                {
+                    SZrFunction *prototypeContextFunction =
+                            execution_find_prototype_context_function(stackFunction);
+                    if (prototypeContextFunction != ZR_NULL) {
+                        return prototypeContextFunction;
+                    }
                 }
 
                 {

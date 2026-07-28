@@ -634,9 +634,15 @@ SZrFunction *ZrCore_Closure_GetMetadataFunctionFromValue(struct SZrState *state,
     }
 
     if (value->type == ZR_VALUE_TYPE_FUNCTION) {
-        return value->isNative ? ZR_NULL : closure_refresh_forwarded_function(ZR_CAST_FUNCTION(state, rawObject));
+        if (value->isNative || rawObject->type != ZR_RAW_OBJECT_TYPE_FUNCTION || rawObject->isNative) {
+            return ZR_NULL;
+        }
+        return closure_refresh_forwarded_function(ZR_CAST_FUNCTION(state, rawObject));
     }
 
+    if (rawObject->type != ZR_RAW_OBJECT_TYPE_CLOSURE || rawObject->isNative != value->isNative) {
+        return ZR_NULL;
+    }
     if (value->isNative) {
         SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, rawObject);
         return nativeClosure != ZR_NULL ? closure_refresh_forwarded_function(nativeClosure->aotShimFunction) : ZR_NULL;

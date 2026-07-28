@@ -921,13 +921,6 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrStat
     }
     zr_parser_compile_trace("quicken execbc ok func=%p", (void *)func);
 
-    if (!compiler_build_function_semir_metadata(state, func)) {
-        ZrCore_Function_Free(state, func);
-        ZrParser_CompilerState_Free(&cs);
-        return ZR_NULL;
-    }
-    zr_parser_compile_trace("refresh semir metadata ok func=%p", (void *)func);
-
     if (!ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(&cs, ZR_NULL, func)) {
         zr_parser_compile_trace("finalize current source module failed func=%p", (void *)func);
         ZrCore_Function_Free(state, func);
@@ -1061,12 +1054,6 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
         return ZR_FALSE;
     }
 
-    if (!compiler_build_function_semir_metadata(state, func)) {
-        ZrCore_Function_Free(state, func);
-        ZrParser_CompilerState_Free(&cs);
-        return ZR_FALSE;
-    }
-
     if (!ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(&cs, ZR_NULL, func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
@@ -1080,11 +1067,6 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
             return ZR_FALSE;
         }
         if (!compiler_quicken_execbc_function_shallow(state, result->testFunctions[i])) {
-            ZrCore_Function_Free(state, func);
-            ZrParser_CompilerState_Free(&cs);
-            return ZR_FALSE;
-        }
-        if (!compiler_build_function_semir_metadata_shallow(state, result->testFunctions[i])) {
             ZrCore_Function_Free(state, func);
             ZrParser_CompilerState_Free(&cs);
             return ZR_FALSE;

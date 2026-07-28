@@ -261,6 +261,9 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SetMemberSlot(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_GetByIndex(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SetByIndex(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SuperArrayBindItems(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SuperArrayGetIntBoundItems(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SuperArraySetIntBoundItems(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SuperArrayGetInt(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SuperArraySetInt(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SuperArrayAddInt(ptr, ptr, i32, i32, i32)\n");

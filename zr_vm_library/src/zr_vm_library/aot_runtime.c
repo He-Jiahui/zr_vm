@@ -14,6 +14,7 @@
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/math.h"
@@ -48,6 +49,7 @@ typedef struct SZrLibraryAotLoadedModule {
     const SZrAotCodeRegistration *codeRegistration;
     SZrFunction *moduleFunction;
     SZrFunction **functionTable;
+    SZrGcNativeCallPin *functionPins;
     TZrUInt32 functionCount;
     TZrUInt32 functionCapacity;
     TZrUInt32 *generatedFrameSlotCounts;
@@ -66,6 +68,12 @@ typedef struct SZrLibraryAotRuntimeState {
     TZrSize recordCapacity;
     SZrLibraryAotLoadedModule *activeRecord;
 } SZrLibraryAotRuntimeState;
+
+typedef struct SZrLibraryAotRetiredLibraries {
+    void **handles;
+    TZrSize count;
+    TZrSize capacity;
+} SZrLibraryAotRetiredLibraries;
 
 typedef struct ZrLibraryAotEntryRequest {
     SZrLibraryAotRuntimeState *runtimeState;
@@ -121,6 +129,7 @@ static TZrBool aot_runtime_validate_descriptor(SZrState *state,
 static TZrBool aot_runtime_hash_file(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize);
 static void *aot_runtime_open_library(const TZrChar *path);
 static void aot_runtime_close_library(void *handle);
+static TZrBool aot_runtime_retire_library(SZrGlobalState *global, void *handle);
 static TZrPtr aot_runtime_find_symbol(void *handle, const TZrChar *symbolName);
 static FZrVmGetAotCompiledModule aot_runtime_cast_descriptor_symbol(TZrPtr symbolPointer);
 static SZrLibraryAotLoadedModule *aot_runtime_find_record(SZrLibraryAotRuntimeState *runtimeState,
@@ -140,10 +149,19 @@ static TZrBool aot_runtime_build_function_table(SZrState *state,
                                                 SZrFunction ***outFunctions,
                                                 TZrUInt32 *outCount,
                                                 TZrUInt32 *outCapacity);
+static void aot_runtime_rebind_function_table_constants(SZrState *state,
+                                                        SZrFunction *const *functionTable,
+                                                        TZrUInt32 functionCount);
 static TZrBool aot_runtime_build_generated_slot_count_table(SZrGlobalState *global,
                                                             SZrFunction *const *functionTable,
                                                             TZrUInt32 functionCount,
                                                             TZrUInt32 **outSlotCounts);
+static SZrGcNativeCallPin *aot_runtime_pin_function_table(SZrState *state,
+                                                         SZrFunction *const *functionTable,
+                                                         TZrUInt32 functionCount);
+static void aot_runtime_unpin_function_table(SZrState *state,
+                                             SZrGcNativeCallPin *functionPins,
+                                             TZrUInt32 functionCount);
 static const TZrChar *aot_runtime_metadata_binding_status_name(
         EZrMetadataRuntimeBindingCompatibilityStatus status);
 static TZrBool aot_runtime_validate_metadata_bindings(SZrState *state,
@@ -1130,6 +1148,120 @@ static void aot_runtime_flatten_function_graph(SZrState *state,
     }
 }
 
+static void aot_runtime_close_retired_libraries(SZrGlobalState *global, TZrPtr state) {
+    SZrLibraryAotRetiredLibraries *retired = (SZrLibraryAotRetiredLibraries *)state;
+
+    if (global == ZR_NULL || retired == ZR_NULL) {
+        return;
+    }
+    for (TZrSize index = 0u; index < retired->count; index++) {
+        aot_runtime_close_library(retired->handles[index]);
+    }
+    if (retired->handles != ZR_NULL && retired->capacity > 0u) {
+        aot_runtime_reallocate(global,
+                               retired->handles,
+                               sizeof(*retired->handles) * retired->capacity,
+                               0u);
+    }
+    aot_runtime_reallocate(global, retired, sizeof(*retired), 0u);
+}
+
+static TZrBool aot_runtime_retire_library(SZrGlobalState *global, void *handle) {
+    SZrLibraryAotRetiredLibraries *retired;
+
+    if (global == ZR_NULL || handle == ZR_NULL) {
+        return handle == ZR_NULL ? ZR_TRUE : ZR_FALSE;
+    }
+    if (global->postGcCleanupState != ZR_NULL &&
+        global->postGcCleanup != aot_runtime_close_retired_libraries) {
+        return ZR_FALSE;
+    }
+    retired = (SZrLibraryAotRetiredLibraries *)global->postGcCleanupState;
+    if (retired == ZR_NULL) {
+        retired = (SZrLibraryAotRetiredLibraries *)aot_runtime_reallocate(
+                global, ZR_NULL, 0u, sizeof(*retired));
+        if (retired == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        memset(retired, 0, sizeof(*retired));
+        if (!ZrCore_GlobalState_SetPostGcCleanup(
+                    global, retired, aot_runtime_close_retired_libraries)) {
+            aot_runtime_reallocate(global, retired, sizeof(*retired), 0u);
+            return ZR_FALSE;
+        }
+    }
+    if (retired->count == retired->capacity) {
+        TZrSize newCapacity = retired->capacity == 0u ? 4u : retired->capacity * 2u;
+        void **newHandles;
+
+        if (newCapacity < retired->capacity) {
+            return ZR_FALSE;
+        }
+        newHandles = (void **)aot_runtime_reallocate(
+                global,
+                retired->handles,
+                sizeof(*retired->handles) * retired->capacity,
+                sizeof(*retired->handles) * newCapacity);
+        if (newHandles == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        retired->handles = newHandles;
+        retired->capacity = newCapacity;
+    }
+    retired->handles[retired->count++] = handle;
+    return ZR_TRUE;
+}
+
+static void aot_runtime_rebind_function_table_constants(SZrState *state,
+                                                        SZrFunction *const *functionTable,
+                                                        TZrUInt32 functionCount) {
+    if (state == ZR_NULL || functionTable == ZR_NULL) {
+        return;
+    }
+
+    for (TZrUInt32 functionIndex = 0u; functionIndex < functionCount; functionIndex++) {
+        SZrFunction *function = functionTable[functionIndex];
+
+        if (function == ZR_NULL || function->constantValueList == ZR_NULL) {
+            continue;
+        }
+        for (TZrUInt32 constantIndex = 0u;
+             constantIndex < function->constantValueLength;
+             constantIndex++) {
+            SZrTypeValue *constant = &function->constantValueList[constantIndex];
+            SZrFunction *constantFunction = aot_runtime_function_from_constant_value(state, constant);
+
+            if (constantFunction == ZR_NULL) {
+                continue;
+            }
+            for (TZrUInt32 candidateIndex = 0u; candidateIndex < functionCount; candidateIndex++) {
+                SZrFunction *candidate = functionTable[candidateIndex];
+
+                if (candidate == ZR_NULL ||
+                    (candidate != constantFunction &&
+                     !aot_runtime_functions_equivalent(candidate, constantFunction))) {
+                    continue;
+                }
+                if (constant->type == ZR_VALUE_TYPE_FUNCTION) {
+                    constant->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(candidate);
+                    ZrCore_RawObject_Barrier(state,
+                                             ZR_CAST_RAW_OBJECT_AS_SUPER(function),
+                                             ZR_CAST_RAW_OBJECT_AS_SUPER(candidate));
+                } else if (constant->type == ZR_VALUE_TYPE_CLOSURE && !constant->isNative) {
+                    SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, constant->value.object);
+                    if (closure != ZR_NULL) {
+                        closure->function = candidate;
+                        ZrCore_RawObject_Barrier(state,
+                                                 ZR_CAST_RAW_OBJECT_AS_SUPER(closure),
+                                                 ZR_CAST_RAW_OBJECT_AS_SUPER(candidate));
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
 static TZrBool aot_runtime_build_function_table(SZrState *state,
                                                 SZrFunction *function,
                                                 SZrFunction ***outFunctions,
@@ -1167,6 +1299,7 @@ static TZrBool aot_runtime_build_function_table(SZrState *state,
 
     memset(functions, 0, sizeof(*functions) * capacity);
     aot_runtime_flatten_function_graph(state, function, functions, capacity, &writeIndex);
+    aot_runtime_rebind_function_table_constants(state, functions, writeIndex);
     *outFunctions = functions;
     *outCount = writeIndex;
     *outCapacity = capacity;
@@ -1204,6 +1337,56 @@ static TZrBool aot_runtime_build_generated_slot_count_table(SZrGlobalState *glob
 
     *outSlotCounts = slotCounts;
     return ZR_TRUE;
+}
+
+static SZrGcNativeCallPin *aot_runtime_pin_function_table(SZrState *state,
+                                                         SZrFunction *const *functionTable,
+                                                         TZrUInt32 functionCount) {
+    SZrGcNativeCallPin *functionPins;
+    TZrUInt32 functionIndex;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || functionTable == ZR_NULL || functionCount == 0u) {
+        return ZR_NULL;
+    }
+
+    functionPins = (SZrGcNativeCallPin *)aot_runtime_reallocate(
+            state->global, ZR_NULL, 0, sizeof(*functionPins) * functionCount);
+    if (functionPins == ZR_NULL) {
+        return ZR_NULL;
+    }
+    memset(functionPins, 0, sizeof(*functionPins) * functionCount);
+
+    for (functionIndex = 0u; functionIndex < functionCount; functionIndex++) {
+        if (functionTable[functionIndex] == ZR_NULL ||
+            !ZrCore_Gc_NativeCallPinObject(
+                    state,
+                    ZR_CAST_RAW_OBJECT_AS_SUPER(functionTable[functionIndex]),
+                    &functionPins[functionIndex])) {
+            while (functionIndex > 0u) {
+                functionIndex--;
+                ZrCore_Gc_NativeCallUnpin(state->global, &functionPins[functionIndex]);
+            }
+            aot_runtime_reallocate(
+                    state->global, functionPins, sizeof(*functionPins) * functionCount, 0);
+            return ZR_NULL;
+        }
+    }
+
+    return functionPins;
+}
+
+static void aot_runtime_unpin_function_table(SZrState *state,
+                                             SZrGcNativeCallPin *functionPins,
+                                             TZrUInt32 functionCount) {
+    if (state == ZR_NULL || state->global == ZR_NULL || functionPins == ZR_NULL) {
+        return;
+    }
+
+    for (TZrUInt32 functionIndex = 0u; functionIndex < functionCount; functionIndex++) {
+        ZrCore_Gc_NativeCallUnpin(state->global, &functionPins[functionIndex]);
+    }
+    aot_runtime_reallocate(
+            state->global, functionPins, sizeof(*functionPins) * functionCount, 0);
 }
 
 static const TZrChar *aot_runtime_metadata_binding_status_name(
@@ -2511,6 +2694,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     TZrUInt32 functionCount = 0;
     TZrUInt32 functionCapacity = 0;
     TZrUInt32 *generatedFrameSlotCounts = ZR_NULL;
+    SZrGcNativeCallPin *functionPins = ZR_NULL;
     SZrLibraryAotLoadedModule record;
     SZrString *moduleNameString;
     SZrMetadataRuntime *metadataRuntime;
@@ -2692,6 +2876,19 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         return ZR_FALSE;
     }
 
+    functionPins = aot_runtime_pin_function_table(state, functionTable, functionCount);
+    if (functionPins == ZR_NULL) {
+        aot_runtime_close_library(handle);
+        if (generatedFrameSlotCounts != ZR_NULL) {
+            aot_runtime_reallocate(global, generatedFrameSlotCounts, sizeof(*generatedFrameSlotCounts) * functionCount, 0);
+        }
+        if (functionTable != ZR_NULL) {
+            aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
+        }
+        aot_runtime_fail(state, runtimeState, "failed to pin AOT function table for module '%s'", normalizedModule);
+        return ZR_FALSE;
+    }
+
     memset(&record, 0, sizeof(record));
     record.backendKind = backendKind;
     record.moduleName = aot_runtime_duplicate_string(global, normalizedModule);
@@ -2703,6 +2900,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     aot_runtime_bind_record_code_registration(&record, descriptor);
     record.moduleFunction = moduleFunction;
     record.functionTable = functionTable;
+    record.functionPins = functionPins;
     record.functionCount = functionCount;
     record.functionCapacity = functionCapacity;
     record.generatedFrameSlotCounts = generatedFrameSlotCounts;
@@ -2720,6 +2918,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        aot_runtime_unpin_function_table(state, functionPins, functionCount);
         aot_runtime_fail(state, runtimeState, "failed to allocate AOT runtime record for module '%s'", normalizedModule);
         return ZR_FALSE;
     }
@@ -2742,6 +2941,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        aot_runtime_unpin_function_table(state, functionPins, functionCount);
         aot_runtime_fail(state,
                          runtimeState,
                          "failed to attach AOT metadata runtime for module '%s'",
@@ -2768,6 +2968,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        aot_runtime_unpin_function_table(state, functionPins, functionCount);
         return ZR_FALSE;
     }
     ZrCore_Reflection_AttachModuleRuntimeMetadata(state, record.module, record.moduleFunction);
@@ -2781,6 +2982,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        aot_runtime_unpin_function_table(state, functionPins, functionCount);
         aot_runtime_fail(state, runtimeState, "failed to store AOT runtime record for module '%s'", normalizedModule);
         return ZR_FALSE;
     }
@@ -2836,7 +3038,10 @@ void ZrLibrary_AotRuntime_FreeProjectState(SZrState *state, SZrLibrary_Project *
 
     for (TZrSize index = 0; index < runtimeState->recordCount; index++) {
         SZrLibraryAotLoadedModule *record = &runtimeState->records[index];
-        aot_runtime_close_library(record->libraryHandle);
+        aot_runtime_unpin_function_table(state, record->functionPins, record->functionCount);
+        record->functionPins = ZR_NULL;
+        (void)aot_runtime_retire_library(global, record->libraryHandle);
+        record->libraryHandle = ZR_NULL;
         aot_runtime_free_string(global, record->moduleName);
         aot_runtime_free_string(global, record->sourcePath);
         aot_runtime_free_string(global, record->zroPath);
@@ -6927,6 +7132,95 @@ TZrBool ZrLibrary_AotRuntime_SetByIndexNewOwnerNoWriteBarrier(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_SuperArrayBindItems(SZrState *state,
+                                                 ZrAotGeneratedFrame *frame,
+                                                 TZrUInt32 destinationSlot,
+                                                 TZrUInt32 receiverSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *receiverValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || receiverPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_BIND_ITEMS: invalid slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    receiverValue = ZrCore_Stack_GetValue(receiverPointer);
+    if (destinationValue == ZR_NULL || receiverValue == ZR_NULL ||
+        !ZrCore_Object_SuperArrayBindItems(state, destinationValue, receiverValue)) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_BIND_ITEMS: receiver must be an array-like object");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_SuperArrayGetIntBoundItems(SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 destinationSlot,
+                                                        TZrUInt32 itemsSlot,
+                                                        TZrUInt32 keySlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer itemsPointer = aot_runtime_frame_slot(frame, itemsSlot);
+    TZrStackValuePointer keyPointer = aot_runtime_frame_slot(frame, keySlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *itemsValue;
+    SZrTypeValue *keyValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || itemsPointer == ZR_NULL || keyPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_GET_INT_ITEMS: invalid slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    itemsValue = ZrCore_Stack_GetValue(itemsPointer);
+    keyValue = ZrCore_Stack_GetValue(keyPointer);
+    if (destinationValue == ZR_NULL || itemsValue == ZR_NULL || keyValue == ZR_NULL ||
+        !ZrCore_Object_SuperArrayGetIntBoundItems(state, itemsValue, keyValue, destinationValue)) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_GET_INT_ITEMS: invalid bound items access");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_SuperArraySetIntBoundItems(SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 sourceSlot,
+                                                        TZrUInt32 itemsSlot,
+                                                        TZrUInt32 keySlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer itemsPointer = aot_runtime_frame_slot(frame, itemsSlot);
+    TZrStackValuePointer keyPointer = aot_runtime_frame_slot(frame, keySlot);
+    SZrTypeValue *sourceValue;
+    SZrTypeValue *itemsValue;
+    SZrTypeValue *keyValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || sourcePointer == ZR_NULL || itemsPointer == ZR_NULL || keyPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_SET_INT_ITEMS: invalid slot");
+        return ZR_FALSE;
+    }
+
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    itemsValue = ZrCore_Stack_GetValue(itemsPointer);
+    keyValue = ZrCore_Stack_GetValue(keyPointer);
+    if (sourceValue == ZR_NULL || itemsValue == ZR_NULL || keyValue == ZR_NULL ||
+        !ZrCore_Object_SuperArraySetIntBoundItems(state, itemsValue, keyValue, sourceValue)) {
+        aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_SET_INT_ITEMS: invalid bound items access");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_SuperArrayGetInt(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -7096,7 +7390,7 @@ TZrBool ZrLibrary_AotRuntime_SuperArrayAddInt4(SZrState *state,
     SZrLibraryAotRuntimeState *runtimeState;
     TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
     SZrTypeValue *sourceValue;
-    SZrTypeValue ignoredResult;
+    SZrTypeValue *receiverValues[4];
     TZrUInt32 index;
 
     runtimeState =
@@ -7107,33 +7401,32 @@ TZrBool ZrLibrary_AotRuntime_SuperArrayAddInt4(SZrState *state,
     }
 
     sourceValue = ZrCore_Stack_GetValue(sourcePointer);
-    if (sourceValue == ZR_NULL) {
+    if (sourceValue == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(sourceValue->type)) {
         aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_ADD_INT4: invalid slot value");
         return ZR_FALSE;
     }
 
-    ZrCore_Value_ResetAsNull(&ignoredResult);
     for (index = 0; index < 4; index++) {
         TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverBaseSlot + index);
-        SZrTypeValue *receiverValue;
 
         if (receiverPointer == ZR_NULL) {
             aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_ADD_INT4: invalid receiver slot");
             return ZR_FALSE;
         }
 
-        receiverValue = ZrCore_Stack_GetValue(receiverPointer);
-        if (receiverValue == ZR_NULL) {
+        receiverValues[index] = ZrCore_Stack_GetValue(receiverPointer);
+        if (receiverValues[index] == ZR_NULL) {
             aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_ADD_INT4: invalid receiver value");
             return ZR_FALSE;
         }
+    }
 
-        if (!ZrCore_Object_SuperArrayAddInt(state, receiverValue, sourceValue, &ignoredResult)) {
-            aot_runtime_fail(state,
-                             runtimeState,
-                             "SUPER_ARRAY_ADD_INT4: receiver must be an array-like object with int payload");
-            return ZR_FALSE;
-        }
+    if (!ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(
+                state, receiverValues, sourceValue->value.nativeObject.nativeInt64)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "SUPER_ARRAY_ADD_INT4: receiver must be an array-like object with int payload");
+        return ZR_FALSE;
     }
 
     return ZR_TRUE;
@@ -7146,7 +7439,7 @@ TZrBool ZrLibrary_AotRuntime_SuperArrayAddInt4Const(SZrState *state,
     SZrLibraryAotRuntimeState *runtimeState;
     const SZrFunction *function;
     const SZrTypeValue *sourceValue;
-    SZrTypeValue ignoredResult;
+    SZrTypeValue *receiverValues[4];
     TZrUInt32 index;
 
     runtimeState =
@@ -7163,28 +7456,27 @@ TZrBool ZrLibrary_AotRuntime_SuperArrayAddInt4Const(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_ResetAsNull(&ignoredResult);
     for (index = 0; index < 4; index++) {
         TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverBaseSlot + index);
-        SZrTypeValue *receiverValue;
 
         if (receiverPointer == ZR_NULL) {
             aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_ADD_INT4_CONST: invalid receiver slot");
             return ZR_FALSE;
         }
 
-        receiverValue = ZrCore_Stack_GetValue(receiverPointer);
-        if (receiverValue == ZR_NULL) {
+        receiverValues[index] = ZrCore_Stack_GetValue(receiverPointer);
+        if (receiverValues[index] == ZR_NULL) {
             aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_ADD_INT4_CONST: invalid receiver value");
             return ZR_FALSE;
         }
+    }
 
-        if (!ZrCore_Object_SuperArrayAddInt(state, receiverValue, sourceValue, &ignoredResult)) {
-            aot_runtime_fail(state,
-                             runtimeState,
-                             "SUPER_ARRAY_ADD_INT4_CONST: receiver must be an array-like object with int payload");
-            return ZR_FALSE;
-        }
+    if (!ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(
+                state, receiverValues, sourceValue->value.nativeObject.nativeInt64)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "SUPER_ARRAY_ADD_INT4_CONST: receiver must be an array-like object with int payload");
+        return ZR_FALSE;
     }
 
     return ZR_TRUE;
@@ -7200,14 +7492,14 @@ TZrBool ZrLibrary_AotRuntime_SuperArrayFillInt4Const(SZrState *state,
     TZrStackValuePointer countPointer;
     SZrTypeValue *countValue;
     const SZrTypeValue *sourceValue;
-    TZrStackValuePointer receiverBase;
+    SZrTypeValue *receiverValues[4];
+    TZrUInt32 index;
 
     runtimeState =
             state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
     function = aot_runtime_frame_function(frame);
     countPointer = aot_runtime_frame_slot(frame, countSlot);
-    receiverBase = aot_runtime_frame_slot(frame, receiverBaseSlot);
-    if (state == ZR_NULL || function == ZR_NULL || countPointer == ZR_NULL || receiverBase == ZR_NULL ||
+    if (state == ZR_NULL || function == ZR_NULL || countPointer == ZR_NULL ||
         constantIndex >= function->constantValueLength) {
         aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_FILL_INT4_CONST: invalid operand");
         return ZR_FALSE;
@@ -7225,10 +7517,20 @@ TZrBool ZrLibrary_AotRuntime_SuperArrayFillInt4Const(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state,
-                                                         receiverBase,
-                                                         countValue->value.nativeObject.nativeInt64,
-                                                         sourceValue->value.nativeObject.nativeInt64)) {
+    for (index = 0; index < 4; ++index) {
+        TZrStackValuePointer receiverPointer = aot_runtime_frame_slot(frame, receiverBaseSlot + index);
+
+        if (receiverPointer == ZR_NULL ||
+            (receiverValues[index] = ZrCore_Stack_GetValue(receiverPointer)) == ZR_NULL) {
+            aot_runtime_fail(state, runtimeState, "SUPER_ARRAY_FILL_INT4_CONST: invalid receiver slot");
+            return ZR_FALSE;
+        }
+    }
+
+    if (!ZrCore_Object_SuperArrayFillInt4ValuesAssumeFast(state,
+                                                          receiverValues,
+                                                          countValue->value.nativeObject.nativeInt64,
+                                                          sourceValue->value.nativeObject.nativeInt64)) {
         aot_runtime_fail(state,
                          runtimeState,
                          "SUPER_ARRAY_FILL_INT4_CONST: receiver must be an array-like object with int payload");

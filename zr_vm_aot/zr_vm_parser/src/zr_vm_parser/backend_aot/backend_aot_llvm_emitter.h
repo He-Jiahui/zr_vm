@@ -30,6 +30,9 @@ typedef struct SZrAotLlvmInstructionContext {
     TZrUInt32 operandA1;
     TZrUInt32 operandB1;
     TZrInt32 operandA2;
+    TZrUInt8 operandU8A;
+    TZrUInt8 operandU8B;
+    TZrUInt8 operandU8C;
     const TZrChar *nextLabel;
 } SZrAotLlvmInstructionContext;
 

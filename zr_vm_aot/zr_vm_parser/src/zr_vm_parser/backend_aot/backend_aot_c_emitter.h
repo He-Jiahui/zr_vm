@@ -157,6 +157,7 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 sourceSlot,
+                                           TZrUInt32 execInstructionIndex,
                                            TZrBool skipScalarLocalSync);
 void backend_aot_write_c_null_constant_stack_copy_local_logical_not_skip(FILE *file,
                                                                          TZrUInt32 destinationSlot,
@@ -829,6 +830,17 @@ void backend_aot_write_c_direct_super_array_get_int(FILE *file,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 receiverSlot,
                                                     TZrUInt32 keySlot);
+void backend_aot_write_c_direct_super_array_bind_items(FILE *file,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 receiverSlot);
+void backend_aot_write_c_direct_super_array_get_int_bound_items(FILE *file,
+                                                                TZrUInt32 destinationSlot,
+                                                                TZrUInt32 itemsSlot,
+                                                                TZrUInt32 keySlot);
+void backend_aot_write_c_direct_super_array_set_int_bound_items(FILE *file,
+                                                                TZrUInt32 sourceSlot,
+                                                                TZrUInt32 itemsSlot,
+                                                                TZrUInt32 keySlot);
 void backend_aot_write_c_direct_super_array_set_int(FILE *file,
                                                     TZrUInt32 sourceSlot,
                                                     TZrUInt32 receiverSlot,
@@ -1017,6 +1029,16 @@ void backend_aot_write_c_direct_function_call(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 functionSlot,
+                                              TZrUInt32 argumentCount);
+void backend_aot_write_c_known_native_member_call(FILE *file,
+                                                  const SZrAotExecIrFunction *functionIr,
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 cacheIndex,
+                                                  TZrUInt32 argumentCount);
+void backend_aot_write_c_known_vm_member_call(FILE *file,
+                                              const SZrAotExecIrFunction *functionIr,
+                                              TZrUInt32 destinationSlot,
+                                              TZrUInt32 cacheIndex,
                                               TZrUInt32 argumentCount);
 void backend_aot_write_c_dynamic_function_call(FILE *file,
                                                const SZrAotExecIrFunction *functionIr,

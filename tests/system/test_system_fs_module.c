@@ -17,6 +17,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library.h"
@@ -44,6 +45,7 @@ static SZrState *create_test_state(void) {
     if (state != ZR_NULL) {
         ZrParser_ToGlobalState_Register(state);
         ZrVmLibSystem_Register(state->global);
+        ZrVmLibContainer_Register(state->global);
         ZrVmLibFfi_Register(state->global);
     }
     return state;

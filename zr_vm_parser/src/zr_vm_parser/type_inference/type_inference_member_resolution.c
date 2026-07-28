@@ -307,6 +307,10 @@ static TZrInt32 member_resolution_score_candidate(SZrCompilerState *cs,
             if (argType == ZR_NULL || paramType == ZR_NULL) {
                 return -1;
             }
+            if (memberInfo->contractRole == ZR_MEMBER_CONTRACT_ROLE_BUILTIN_BOX && index == 0u) {
+                score += 1;
+                continue;
+            }
             if (ZrParser_InferredType_Equal(argType, paramType)) {
                 continue;
             }
@@ -337,6 +341,7 @@ static TZrBool member_resolution_member_is_callable(const SZrTypeMemberInfo *mem
 }
 
 static void member_resolution_capture_first_mismatch(SZrCompilerState *cs,
+                                                     const SZrTypeMemberInfo *memberInfo,
                                                      const SZrArray *parameterTypes,
                                                      const SZrArray *orderedArgTypes,
                                                      SZrInferredType *outExpectedType,
@@ -358,6 +363,11 @@ static void member_resolution_capture_first_mismatch(SZrCompilerState *cs,
         SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index);
 
         if (argType == ZR_NULL || paramType == ZR_NULL) {
+            continue;
+        }
+        if (memberInfo != ZR_NULL &&
+            memberInfo->contractRole == ZR_MEMBER_CONTRACT_ROLE_BUILTIN_BOX &&
+            index == 0u) {
             continue;
         }
         if (ZrParser_InferredType_Equal(argType, paramType) ||
@@ -475,6 +485,7 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
             if (score < 0 && resolvedSignature.parameterTypes.length > 0) {
                 *ioSawTypedCandidate = ZR_TRUE;
                 member_resolution_capture_first_mismatch(cs,
+                                                         memberInfo,
                                                          &resolvedSignature.parameterTypes,
                                                          &orderedArgTypes,
                                                          ioFirstExpectedType,

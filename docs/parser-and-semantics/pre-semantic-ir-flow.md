@@ -57,6 +57,14 @@ For the current lowering surface, local initialization, identifier load, local s
 
 Struct value construction follows the same semantic-first rule. The contextual `init TypeRef(...)` syntax produces a dedicated AST node, and `SZrBoundValueConstruct` resolves the canonical constructor plus named/default argument mapping. Lowering emits `VALUE_CONSTRUCT(destinationPlaceId, typeId, constructorId, arguments)` before ExecBC selection. Local, field, fixed-array element, and return construction all pass the final destination Place into this path; ordinary call, GC allocation, and ownership construction remain separate and do not serve as fallback routes.
 
+The private stack-slot bridge is backed by a growable array. Any operation that
+materializes another slot can relocate that storage, so lowering code carries
+slot contents as value snapshots across materialization and re-resolves a slot
+by `stackSlot` immediately before a writeback. This applies to value construction,
+contiguous-view/bounds facts, receiver projections, and property-ref load/store;
+no semantic instruction may retain an interior slot pointer across a possible
+array growth.
+
 The old `SZrSemIrInstruction` table is an execution compatibility projection. `compiler_semir.c` builds it only after final ExecBC assembly. It is not consulted when the compiler chooses local or ownership semantics, and it may legitimately be empty for source programs whose front-end Semantic IR is non-empty.
 
 ## Flow Facts

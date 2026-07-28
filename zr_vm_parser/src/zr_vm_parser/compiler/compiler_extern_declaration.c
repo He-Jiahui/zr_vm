@@ -442,25 +442,25 @@ void compiler_register_extern_block_bindings(SZrCompilerState *cs, SZrExternBloc
             case ZR_AST_EXTERN_DELEGATE_DECLARATION:
                 if (declaration->data.externDelegateDeclaration.name != ZR_NULL) {
                     SZrString *delegateName = declaration->data.externDelegateDeclaration.name->name;
-                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, delegateName, delegateName);
+                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, delegateName, ZR_NULL);
                     compiler_register_named_value_binding_to_env(cs,
                                                                  cs->compileTimeTypeEnv,
                                                                  delegateName,
-                                                                 delegateName);
+                                                                 ZR_NULL);
                 }
                 break;
             case ZR_AST_STRUCT_DECLARATION:
                 if (declaration->data.structDeclaration.name != ZR_NULL) {
                     SZrString *structName = declaration->data.structDeclaration.name->name;
-                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, structName, structName);
-                    compiler_register_named_value_binding_to_env(cs, cs->compileTimeTypeEnv, structName, structName);
+                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, structName, ZR_NULL);
+                    compiler_register_named_value_binding_to_env(cs, cs->compileTimeTypeEnv, structName, ZR_NULL);
                 }
                 break;
             case ZR_AST_ENUM_DECLARATION:
                 if (declaration->data.enumDeclaration.name != ZR_NULL) {
                     SZrString *enumName = declaration->data.enumDeclaration.name->name;
-                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, enumName, enumName);
-                    compiler_register_named_value_binding_to_env(cs, cs->compileTimeTypeEnv, enumName, enumName);
+                    compiler_register_named_value_binding_to_env(cs, cs->typeEnv, enumName, ZR_NULL);
+                    compiler_register_named_value_binding_to_env(cs, cs->compileTimeTypeEnv, enumName, ZR_NULL);
                 }
                 break;
             default:
@@ -535,51 +535,78 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     for (TZrSize index = 0; index < externBlock->declarations->count; index++) {
         SZrAstNode *declaration = externBlock->declarations->nodes[index];
         SZrString *bindingName = ZR_NULL;
-        SZrTypeValue descriptorValue;
 
         if (declaration == ZR_NULL) {
             continue;
         }
 
-        ZrCore_Value_ResetAsNull(&descriptorValue);
         switch (declaration->type) {
-            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
+                ZrExternCompilerTempRoot descriptorRoot = {0};
                 if (declaration->data.externDelegateDeclaration.name != ZR_NULL) {
                     bindingName = declaration->data.externDelegateDeclaration.name->name;
                 }
                 if (bindingName != ZR_NULL &&
-                    extern_compiler_build_delegate_descriptor_value(cs, externBlock, declaration, ZR_TRUE, &descriptorValue)) {
+                    extern_compiler_temp_root_begin(cs, &descriptorRoot) &&
+                    extern_compiler_build_delegate_descriptor_value(
+                            cs,
+                            externBlock,
+                            declaration,
+                            ZR_TRUE,
+                            extern_compiler_temp_root_value(&descriptorRoot))) {
                     TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
-                    emit_constant_to_slot(cs, localSlot, &descriptorValue);
+                    emit_constant_to_slot(cs, localSlot, extern_compiler_temp_root_value(&descriptorRoot));
                     ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
                 }
+                if (descriptorRoot.active) {
+                    extern_compiler_temp_root_end(&descriptorRoot);
+                }
                 break;
-            case ZR_AST_STRUCT_DECLARATION:
+            }
+            case ZR_AST_STRUCT_DECLARATION: {
+                ZrExternCompilerTempRoot descriptorRoot = {0};
                 if (declaration->data.structDeclaration.name != ZR_NULL) {
                     bindingName = declaration->data.structDeclaration.name->name;
                 }
                 if (bindingName != ZR_NULL &&
-                    extern_compiler_build_struct_descriptor_value(cs, externBlock, declaration, &descriptorValue)) {
+                    extern_compiler_temp_root_begin(cs, &descriptorRoot) &&
+                    extern_compiler_build_struct_descriptor_value(
+                            cs,
+                            externBlock,
+                            declaration,
+                            extern_compiler_temp_root_value(&descriptorRoot))) {
                     TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
-                    emit_constant_to_slot(cs, localSlot, &descriptorValue);
+                    emit_constant_to_slot(cs, localSlot, extern_compiler_temp_root_value(&descriptorRoot));
                     ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
                 }
+                if (descriptorRoot.active) {
+                    extern_compiler_temp_root_end(&descriptorRoot);
+                }
                 break;
-            case ZR_AST_ENUM_DECLARATION:
+            }
+            case ZR_AST_ENUM_DECLARATION: {
+                ZrExternCompilerTempRoot descriptorRoot = {0};
                 if (declaration->data.enumDeclaration.name != ZR_NULL) {
                     bindingName = declaration->data.enumDeclaration.name->name;
                 }
                 if (bindingName != ZR_NULL &&
-                    extern_compiler_build_enum_descriptor_value(cs, declaration, &descriptorValue)) {
+                    extern_compiler_temp_root_begin(cs, &descriptorRoot) &&
+                    extern_compiler_build_enum_descriptor_value(
+                            cs, declaration, extern_compiler_temp_root_value(&descriptorRoot))) {
                     TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
-                    emit_constant_to_slot(cs, localSlot, &descriptorValue);
+                    emit_constant_to_slot(cs, localSlot, extern_compiler_temp_root_value(&descriptorRoot));
                     ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
                 }
+                if (descriptorRoot.active) {
+                    extern_compiler_temp_root_end(&descriptorRoot);
+                }
                 break;
+            }
             case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
                 SZrExternFunctionDeclaration *functionDecl = &declaration->data.externFunctionDeclaration;
                 SZrString *entryName = functionDecl->name != ZR_NULL ? functionDecl->name->name : ZR_NULL;
                 SZrString *entryOverride = extern_compiler_decorators_get_string_arg(functionDecl->decorators, "entry");
+                ZrExternCompilerTempRoot signatureRoot = {0};
                 TZrUInt32 localSlot;
                 SZrTypeValue symbolArguments[2];
 
@@ -591,15 +618,20 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     entryName = entryOverride;
                 }
 
-                if (!extern_compiler_build_signature_descriptor_value(cs,
-                                                                     externBlock,
-                                                                     functionDecl->params,
-                                                                     functionDecl->args,
-                                                                     functionDecl->returnType,
-                                                                     functionDecl->decorators,
-                                                                     ZR_FALSE,
-                                                                     declaration->location,
-                                                                     &symbolArguments[1])) {
+                if (!extern_compiler_temp_root_begin(cs, &signatureRoot) ||
+                    !extern_compiler_build_signature_descriptor_value(
+                            cs,
+                            externBlock,
+                            functionDecl->params,
+                            functionDecl->args,
+                            functionDecl->returnType,
+                            functionDecl->decorators,
+                            ZR_FALSE,
+                            declaration->location,
+                            extern_compiler_temp_root_value(&signatureRoot))) {
+                    if (signatureRoot.active) {
+                        extern_compiler_temp_root_end(&signatureRoot);
+                    }
                     return;
                 }
                 ZrCore_Value_InitAsRawObject(cs->state, &symbolArguments[0], ZR_CAST_RAW_OBJECT_AS_SUPER(entryName));
@@ -610,12 +642,14 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrString *hiddenLibraryName = create_hidden_extern_local_name(cs, "library");
                     SZrTypeValue loadArguments[1];
                     if (hiddenFfiName == ZR_NULL || hiddenLibraryName == ZR_NULL) {
+                        extern_compiler_temp_root_end(&signatureRoot);
                         ZrParser_Compiler_Error(cs, "failed to allocate hidden extern locals", declaration->location);
                         return;
                     }
 
                     ffiModuleSlot = allocate_local_var(cs, hiddenFfiName);
                     if (!extern_compiler_emit_import_module_to_local(cs, ffiModuleName, ffiModuleSlot, declaration->location)) {
+                        extern_compiler_temp_root_end(&signatureRoot);
                         return;
                     }
 
@@ -629,10 +663,12 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                                            1,
                                                                            librarySlot,
                                                                            declaration->location)) {
+                        extern_compiler_temp_root_end(&signatureRoot);
                         return;
                     }
                 }
 
+                symbolArguments[1] = *extern_compiler_temp_root_value(&signatureRoot);
                 localSlot = allocate_local_var(cs, functionDecl->name->name);
                 if (!extern_compiler_emit_method_call_to_local(cs,
                                                                librarySlot,
@@ -641,8 +677,10 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                                2,
                                                                localSlot,
                                                                declaration->location)) {
+                    extern_compiler_temp_root_end(&signatureRoot);
                     return;
                 }
+                extern_compiler_temp_root_end(&signatureRoot);
                 break;
             }
             default:

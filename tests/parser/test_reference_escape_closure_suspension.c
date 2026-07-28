@@ -410,7 +410,7 @@ static void test_await_checks_last_use_and_binding_epoch(void) {
     assert_escape_validation(
             "async fn invalid(value: ref int): Task<int> {\n"
             "  var task = pause().start();\n"
-            "  %await task;\n"
+            "  await task;\n"
             "  return value;\n"
             "}\n",
             ZR_FALSE,
@@ -421,7 +421,7 @@ static void test_await_checks_last_use_and_binding_epoch(void) {
             "async fn valid(value: scoped ref int): Task<int> {\n"
             "  var observed = value;\n"
             "  var task = pause().start();\n"
-            "  %await task;\n"
+            "  await task;\n"
             "  return observed == 0 ? 0 : 1;\n"
             "}\n",
             ZR_TRUE,

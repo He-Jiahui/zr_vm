@@ -379,11 +379,11 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f19 = 0.0;");
     assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f20 = 0.0;");
     assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f22 = 0.0;");
-    assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f40 = 0.0;");
+    assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f36 = 0.0;");
     assert_text_contains(generatedCText, "TZrInt64 zr_aot_s31 = (TZrInt64)0;");
-    assert_text_contains(generatedCText, "TZrUInt64 zr_aot_u31 = (TZrUInt64)0u;");
-    assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f31 = 0.0;");
-    assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f32 = 0.0;");
+    assert_text_contains(generatedCText, "TZrUInt64 zr_aot_u28 = (TZrUInt64)0u;");
+    assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f28 = 0.0;");
+    assert_text_contains(generatedCText, "TZrFloat64 zr_aot_f29 = 0.0;");
     assert_text_contains(generatedCText, "TZrBool zr_aot_b5 = ZR_FALSE;");
     assert_text_contains(generatedCText, "TZrBool zr_aot_b23 = ZR_FALSE;");
     assert_text_contains(generatedCText, "zr_aot_scalar_locals_end");
@@ -496,18 +496,18 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
             generatedCText,
             "zr_aot_s2 = frame.slotBase[2].value.value.nativeObject.nativeInt64;\n"
             "        zr_aot_s4 = frame.slotBase[4].value.value.nativeObject.nativeInt64;\n"
-            "        zr_aot_b27 = (TZrBool)(zr_aot_s2 > zr_aot_s4);");
-    assert_text_contains(generatedCText, "zr_aot_b27 = (TZrBool)(zr_aot_s2 > zr_aot_s4);");
+            "        zr_aot_b25 = (TZrBool)(zr_aot_s2 > zr_aot_s4);");
+    assert_text_contains(generatedCText, "zr_aot_b25 = (TZrBool)(zr_aot_s2 > zr_aot_s4);");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_i64_compare semirOpcode=36 dstSlot=27 leftSlot=2 rightSlot=4 */\n"
+            "/* zr_aot_scalar_exec_i64_compare semirOpcode=36 dstSlot=25 leftSlot=2 rightSlot=4 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[27].value;\n"
-                                 "        zr_aot_b27 = (TZrBool)(zr_aot_s2 > zr_aot_s4);");
+                                 "zr_aot_destination = &frame.slotBase[25].value;\n"
+                                 "        zr_aot_b25 = (TZrBool)(zr_aot_s2 > zr_aot_s4);");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_b27 = (TZrBool)(zr_aot_s2 > zr_aot_s4);\n"
-                                 "        zr_aot_s_result = zr_aot_b27;");
+                                 "zr_aot_b25 = (TZrBool)(zr_aot_s2 > zr_aot_s4);\n"
+                                 "        zr_aot_s_result = zr_aot_b25;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s2 = zr_aot_left->value.nativeObject.nativeInt64;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s4 = zr_aot_right->value.nativeObject.nativeInt64;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s2 = zr_aot_left_scalar;");
@@ -550,19 +550,19 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_b_value = zr_aot_source->value.nativeObject.nativeBool;");
     assert_text_contains(generatedCText, "zr_aot_u9 = zr_aot_u12;");
-    assert_text_contains(generatedCText, "zr_aot_u21 = zr_aot_u33;");
+    assert_text_contains(generatedCText, "zr_aot_u21 = zr_aot_u30;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_source = &frame.slotBase[12].value;\n"
                                  "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type))");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_source = &frame.slotBase[33].value;\n"
+                                 "zr_aot_source = &frame.slotBase[30].value;\n"
                                  "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type))");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination = &frame.slotBase[9].value;\n"
                                  "        zr_aot_source = &frame.slotBase[12].value;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination = &frame.slotBase[21].value;\n"
-                                 "        zr_aot_source = &frame.slotBase[33].value;");
+                                 "        zr_aot_source = &frame.slotBase[30].value;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination->type = ZR_VALUE_TYPE_UINT64;\n"
                                  "        zr_aot_destination->value.nativeObject.nativeUInt64 = zr_aot_u_value;\n"
@@ -636,24 +636,24 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_s19 = ~zr_aot_s1;\n"
                                  "        zr_aot_s_result = zr_aot_s19;");
-    assert_text_contains(generatedCText, "zr_aot_f40 = zr_aot_f19;");
-    assert_text_contains(generatedCText, "zr_aot_f22 = zr_aot_f40;");
+    assert_text_contains(generatedCText, "zr_aot_f36 = zr_aot_f19;");
+    assert_text_contains(generatedCText, "zr_aot_f22 = zr_aot_f36;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_source = &frame.slotBase[19].value;\n"
                                  "        if (!ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type))");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_source = &frame.slotBase[40].value;\n"
+                                 "zr_aot_source = &frame.slotBase[36].value;\n"
                                  "        if (!ZR_VALUE_IS_TYPE_FLOAT(zr_aot_source->type))");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[40].value;\n"
+                                 "zr_aot_destination = &frame.slotBase[36].value;\n"
                                  "        zr_aot_source = &frame.slotBase[19].value;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination = &frame.slotBase[22].value;\n"
-                                 "        zr_aot_source = &frame.slotBase[40].value;");
+                                 "        zr_aot_source = &frame.slotBase[36].value;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination->type = ZR_VALUE_TYPE_DOUBLE;\n"
                                  "        zr_aot_destination->value.nativeObject.nativeDouble = zr_aot_f_value;\n"
-                                 "        zr_aot_f40 = zr_aot_f_value;");
+                                 "        zr_aot_f36 = zr_aot_f_value;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination->type = ZR_VALUE_TYPE_DOUBLE;\n"
                                  "        zr_aot_destination->value.nativeObject.nativeDouble = zr_aot_f_value;\n"
@@ -705,7 +705,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_does_not_contain(generatedCText, "if (zr_aot_left_scalar != zr_aot_right_literal) {");
     assert_text_contains(generatedCText, "if (zr_aot_s2 != zr_aot_right_literal) {");
     assert_text_contains(generatedCText, "zr_aot_u6 = (TZrUInt64)zr_aot_s6;");
-    assert_text_contains(generatedCText, "zr_aot_u7 = (TZrUInt64)4;");
+    assert_text_contains(generatedCText, "zr_aot_u7 = (TZrUInt64)zr_aot_s7;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_source = &frame.slotBase[6].value;\n"
                                  "        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type))");
@@ -818,19 +818,19 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
             generatedCText,
             "zr_aot_f19 = frame.slotBase[19].value.value.nativeObject.nativeDouble;\n"
             "        zr_aot_f20 = frame.slotBase[20].value.value.nativeObject.nativeDouble;\n"
-            "        zr_aot_f32 = zr_aot_f19 * zr_aot_f20;");
+            "        zr_aot_f29 = zr_aot_f19 * zr_aot_f20;");
     assert_text_does_not_contain(generatedCText, "zr_aot_f19 = zr_aot_f_left;");
-    assert_text_contains(generatedCText, "zr_aot_f32 = zr_aot_f19 * zr_aot_f20;");
+    assert_text_contains(generatedCText, "zr_aot_f29 = zr_aot_f19 * zr_aot_f20;");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_f64_binary semirOpcode=29 dstSlot=32 leftSlot=19 rightSlot=20 */\n"
+            "/* zr_aot_scalar_exec_f64_binary semirOpcode=29 dstSlot=29 leftSlot=19 rightSlot=20 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[32].value;\n"
-                                 "        zr_aot_f32 = zr_aot_f19 * zr_aot_f20;");
+                                 "zr_aot_destination = &frame.slotBase[29].value;\n"
+                                 "        zr_aot_f29 = zr_aot_f19 * zr_aot_f20;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_f32 = zr_aot_f19 * zr_aot_f20;\n"
-                                 "        zr_aot_f_result = zr_aot_f32;");
+                                 "zr_aot_f29 = zr_aot_f19 * zr_aot_f20;\n"
+                                 "        zr_aot_f_result = zr_aot_f29;");
     assert_text_does_not_contain(generatedCText,
                                  "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[12].value.type) ||\n"
                                  "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[0].value.type)");
@@ -863,121 +863,121 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_contains(generatedCText, "zr_aot_s20 = zr_aot_s16 >> zr_aot_s1;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s1 = zr_aot_s_source;");
     assert_text_contains(generatedCText, "zr_aot_s19 = ~zr_aot_s1;");
-    assert_text_contains(generatedCText, "zr_aot_u33 = ~zr_aot_u7;");
+    assert_text_contains(generatedCText, "zr_aot_u30 = ~zr_aot_u7;");
     assert_text_does_not_contain(generatedCText,
-                                 "/* zr_aot_scalar_exec_u64_bit_not semirOpcode=41 dstSlot=33 sourceSlot=7 */\n"
+                                 "/* zr_aot_scalar_exec_u64_bit_not semirOpcode=41 dstSlot=30 sourceSlot=7 */\n"
                                  "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[33].value;\n"
-                                 "        zr_aot_u33 = ~zr_aot_u7;");
+                                 "zr_aot_destination = &frame.slotBase[30].value;\n"
+                                 "        zr_aot_u30 = ~zr_aot_u7;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_u33 = ~zr_aot_u7;\n"
-                                 "        zr_aot_u_result = zr_aot_u33;");
+                                 "zr_aot_u30 = ~zr_aot_u7;\n"
+                                 "        zr_aot_u_result = zr_aot_u30;");
     assert_text_does_not_contain(generatedCText,
                                  "if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[7].value.type)) {\n"
                                  "            ZR_AOT_C_FAIL();\n"
                                  "        }\n"
                                  "        zr_aot_u7 = frame.slotBase[7].value.value.nativeObject.nativeUInt64;\n"
-                                 "        zr_aot_u33 = ~zr_aot_u7;");
+                                 "        zr_aot_u30 = ~zr_aot_u7;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_source = &frame.slotBase[2].value;\n"
                                  "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_source->type))");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_s2 = zr_aot_source->value.nativeObject.nativeInt64;\n"
-                                 "        zr_aot_f31 = (TZrFloat64)zr_aot_s2;");
+                                 "        zr_aot_f28 = (TZrFloat64)zr_aot_s2;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_s2 = zr_aot_source->value.nativeObject.nativeInt64;\n"
-                                 "        zr_aot_u31 = (TZrUInt64)zr_aot_s2;");
-    assert_text_contains(generatedCText, "zr_aot_f31 = (TZrFloat64)zr_aot_s2;");
+                                 "        zr_aot_u28 = (TZrUInt64)zr_aot_s2;");
+    assert_text_contains(generatedCText, "zr_aot_f28 = (TZrFloat64)zr_aot_s2;");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_to_f64 opcode=30 dstSlot=31 srcSlot=2 */\n"
+            "/* zr_aot_scalar_exec_to_f64 opcode=30 dstSlot=28 srcSlot=2 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[31].value;\n"
-                                 "        zr_aot_f31 = (TZrFloat64)zr_aot_s2;");
+                                 "zr_aot_destination = &frame.slotBase[28].value;\n"
+                                 "        zr_aot_f28 = (TZrFloat64)zr_aot_s2;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_f31 = (TZrFloat64)zr_aot_s2;\n"
-                                 "        zr_aot_f_result = zr_aot_f31;");
+                                 "zr_aot_f28 = (TZrFloat64)zr_aot_s2;\n"
+                                 "        zr_aot_f_result = zr_aot_f28;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_f19 = zr_aot_source->value.nativeObject.nativeDouble;\n"
-                                 "        zr_aot_s31 = (TZrInt64)zr_aot_f19;");
-    assert_text_contains(generatedCText, "zr_aot_s31 = (TZrInt64)zr_aot_f19;");
+                                 "        zr_aot_s28 = (TZrInt64)zr_aot_f19;");
+    assert_text_contains(generatedCText, "zr_aot_s28 = (TZrInt64)zr_aot_f19;");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_to_i64 opcode=32 dstSlot=31 srcSlot=19 */\n"
+            "/* zr_aot_scalar_exec_to_i64 opcode=32 dstSlot=28 srcSlot=19 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[31].value;\n"
-                                 "        zr_aot_s31 = (TZrInt64)zr_aot_f19;");
+                                 "zr_aot_destination = &frame.slotBase[28].value;\n"
+                                 "        zr_aot_s28 = (TZrInt64)zr_aot_f19;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s31 = (TZrInt64)zr_aot_f19;\n"
-                                 "        zr_aot_s_result = zr_aot_s31;");
+                                 "zr_aot_s28 = (TZrInt64)zr_aot_f19;\n"
+                                 "        zr_aot_s_result = zr_aot_s28;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_source = &frame.slotBase[8].value;\n"
                                  "        if (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_source->type))");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_u8 = zr_aot_source->value.nativeObject.nativeUInt64;\n"
-                                 "        zr_aot_f31 = (TZrFloat64)zr_aot_u8;");
+                                 "        zr_aot_f28 = (TZrFloat64)zr_aot_u8;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_u8 = zr_aot_source->value.nativeObject.nativeUInt64;\n"
                                  "        {\n"
                                  "            TZrUInt64 zr_aot_limit = (TZrUInt64)ZR_TYPE_RANGE_INT64_MAX + (TZrUInt64)1u;");
-    assert_text_contains(generatedCText, "zr_aot_f31 = (TZrFloat64)zr_aot_u8;");
+    assert_text_contains(generatedCText, "zr_aot_f28 = (TZrFloat64)zr_aot_u8;");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_to_f64 opcode=31 dstSlot=31 srcSlot=8 */\n"
+            "/* zr_aot_scalar_exec_to_f64 opcode=31 dstSlot=28 srcSlot=8 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[31].value;\n"
-                                 "        zr_aot_f31 = (TZrFloat64)zr_aot_u8;");
+                                 "zr_aot_destination = &frame.slotBase[28].value;\n"
+                                 "        zr_aot_f28 = (TZrFloat64)zr_aot_u8;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_f31 = (TZrFloat64)zr_aot_u8;\n"
-                                 "        zr_aot_f_result = zr_aot_f31;");
-    assert_text_contains(generatedCText, "zr_aot_s31 = ZR_TYPE_RANGE_INT64_MIN + (TZrInt64)(zr_aot_u8 - zr_aot_limit);");
-    assert_text_contains(generatedCText, "zr_aot_s31 = (TZrInt64)zr_aot_u8;");
+                                 "zr_aot_f28 = (TZrFloat64)zr_aot_u8;\n"
+                                 "        zr_aot_f_result = zr_aot_f28;");
+    assert_text_contains(generatedCText, "zr_aot_s28 = ZR_TYPE_RANGE_INT64_MIN + (TZrInt64)(zr_aot_u8 - zr_aot_limit);");
+    assert_text_contains(generatedCText, "zr_aot_s28 = (TZrInt64)zr_aot_u8;");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_to_i64 opcode=33 dstSlot=31 srcSlot=8 */\n"
+            "/* zr_aot_scalar_exec_to_i64 opcode=33 dstSlot=28 srcSlot=8 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s31 = ZR_TYPE_RANGE_INT64_MIN + (TZrInt64)(zr_aot_u8 - zr_aot_limit);\n"
-                                 "                zr_aot_s_result = zr_aot_s31;");
+                                 "zr_aot_s28 = ZR_TYPE_RANGE_INT64_MIN + (TZrInt64)(zr_aot_u8 - zr_aot_limit);\n"
+                                 "                zr_aot_s_result = zr_aot_s28;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s31 = (TZrInt64)zr_aot_u8;\n"
-                                 "                zr_aot_s_result = zr_aot_s31;");
-    assert_text_contains(generatedCText, "zr_aot_u31 = (TZrUInt64)zr_aot_s2;");
+                                 "zr_aot_s28 = (TZrInt64)zr_aot_u8;\n"
+                                 "                zr_aot_s_result = zr_aot_s28;");
+    assert_text_contains(generatedCText, "zr_aot_u28 = (TZrUInt64)zr_aot_s2;");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_to_u64 opcode=35 dstSlot=31 srcSlot=2 */\n"
+            "/* zr_aot_scalar_exec_to_u64 opcode=35 dstSlot=28 srcSlot=2 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[31].value;\n"
-                                 "        zr_aot_u31 = (TZrUInt64)zr_aot_s2;");
+                                 "zr_aot_destination = &frame.slotBase[28].value;\n"
+                                 "        zr_aot_u28 = (TZrUInt64)zr_aot_s2;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_u31 = (TZrUInt64)zr_aot_s2;\n"
-                                 "        zr_aot_u_result = zr_aot_u31;");
+                                 "zr_aot_u28 = (TZrUInt64)zr_aot_s2;\n"
+                                 "        zr_aot_u_result = zr_aot_u28;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_f19 = zr_aot_source->value.nativeObject.nativeDouble;\n"
-                                 "        zr_aot_u31 = (TZrUInt64)zr_aot_f19;");
-    assert_text_contains(generatedCText, "zr_aot_u31 = (TZrUInt64)zr_aot_f19;");
+                                 "        zr_aot_u28 = (TZrUInt64)zr_aot_f19;");
+    assert_text_contains(generatedCText, "zr_aot_u28 = (TZrUInt64)zr_aot_f19;");
     assert_text_does_not_contain(
             generatedCText,
-            "/* zr_aot_scalar_exec_to_u64 opcode=34 dstSlot=31 srcSlot=19 */\n"
+            "/* zr_aot_scalar_exec_to_u64 opcode=34 dstSlot=28 srcSlot=19 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[31].value;\n"
-                                 "        zr_aot_u31 = (TZrUInt64)zr_aot_f19;");
+                                 "zr_aot_destination = &frame.slotBase[28].value;\n"
+                                 "        zr_aot_u28 = (TZrUInt64)zr_aot_f19;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_u31 = (TZrUInt64)zr_aot_f19;\n"
-                                 "        zr_aot_u_result = zr_aot_u31;");
+                                 "zr_aot_u28 = (TZrUInt64)zr_aot_f19;\n"
+                                 "        zr_aot_u_result = zr_aot_u28;");
     assert_text_contains(generatedCText, "/* zr_aot_direct_return_i64_local */");
     assert_text_contains(generatedCText,
                          "/* zr_aot_direct_return_i64_local */\n"
                          "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s23));");
     assert_text_contains(generatedCText,
                          "/* zr_aot_direct_return_i64_local */\n"
-                         "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s48));");
+                         "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s24));");
     assert_text_does_not_contain(generatedCText,
                                  "/* zr_aot_direct_return_i64_local */\n"
                                  "        SZrCallInfo *zr_aot_call_info = frame.callInfo;");
@@ -1012,13 +1012,13 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_result_slot = frame.slotBase + 23;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_destination = &frame.slotBase[48].value;\n"
-                                 "        zr_aot_s48 = zr_aot_s45 + zr_aot_s47;");
+                                 "zr_aot_destination = &frame.slotBase[24].value;\n"
+                                 "        zr_aot_s24 = zr_aot_s25 + zr_aot_s23;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s48 = zr_aot_s45 + zr_aot_s47;\n"
-                                 "        zr_aot_s_result = zr_aot_s48;");
+                                 "zr_aot_s24 = zr_aot_s25 + zr_aot_s23;\n"
+                                 "        zr_aot_s_result = zr_aot_s24;");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_result_slot = frame.slotBase + 48;");
+                                 "zr_aot_result_slot = frame.slotBase + 24;");
     assert_text_contains(generatedCText, "/* zr_aot_reset_stack_null_scalar_local_skip slot=21 */");
     assert_text_does_not_contain(generatedCText,
                                  "/* zr_aot_value_exec_reset_stack_null */\n"

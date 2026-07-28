@@ -84,6 +84,9 @@ void backend_aot_write_llvm_function_body(FILE *file,
         instructionContext.operandA1 = instruction->instruction.operand.operand1[0];
         instructionContext.operandB1 = instruction->instruction.operand.operand1[1];
         instructionContext.operandA2 = instruction->instruction.operand.operand2[0];
+        instructionContext.operandU8A = instruction->instruction.operand.operand0[0];
+        instructionContext.operandU8B = instruction->instruction.operand.operand0[1];
+        instructionContext.operandU8C = instruction->instruction.operand.operand0[2];
 
         backend_aot_llvm_make_instruction_label(instructionLabel,
                                                 sizeof(instructionLabel),

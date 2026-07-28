@@ -579,6 +579,9 @@ void type_inference_record_member_call_reference_fact(
             &memberInfo->parameterNames,
             &memberInfo->genericParameters,
             callTypeId);
+    if (memberInfo->parameterNames.isValid && fact.signatureDisplay == ZR_NULL) {
+        return;
+    }
     fact.isResolved = symbolId != ZR_SEMANTIC_ID_INVALID ||
                       memberInfo->contractRole != ZR_MEMBER_CONTRACT_ROLE_NONE;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);

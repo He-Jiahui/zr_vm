@@ -119,8 +119,9 @@ static void test_aot_c_source_lowers_super_array_int_ops_to_boundary_helpers(voi
             "ZrCore_Object_SuperArrayAddInt(state,",
             "ZrLibrary_AotRuntime_SuperArrayAddInt4(",
             "ZrLibrary_AotRuntime_SuperArrayAddInt4Const(",
+            "ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(",
             "ZrLibrary_AotRuntime_SuperArrayFillInt4Const(",
-            "ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state,",
+            "ZrCore_Object_SuperArrayFillInt4ValuesAssumeFast(state,",
     };
     static const char *const emitterHeaderNeedles[] = {
             "backend_aot_write_c_direct_super_array_get_int(FILE *file,",

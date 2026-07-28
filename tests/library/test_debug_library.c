@@ -4,6 +4,7 @@
 
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
@@ -114,6 +115,20 @@ static const TZrChar *current_exception_message(SZrState *state) {
 }
 
 static void destroy_compiled_state(SZrState *state, SZrFunction *function) {
+    TZrBool ignoredFunction = ZR_FALSE;
+
+    if (state != ZR_NULL && function != ZR_NULL) {
+        ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    }
+    if (state != ZR_NULL) {
+        ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE);
+        ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    }
+    if (ignoredFunction) {
+        ZrCore_GarbageCollector_UnignoreObject(
+                state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    }
     if (function != ZR_NULL) {
         ZrCore_Function_Free(state, function);
     }

@@ -792,6 +792,8 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
                                                              generalAotFunction,
                                                              generalAotGeneratedCPath,
                                                              &aotOptions));
+    ZrCore_Function_Free(generalAotState, generalAotFunction);
+    generalAotFunction = ZR_NULL;
     generatedCText = read_text_file_owned_or_fail(generalAotGeneratedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "static TZrInt64 zr_aot_fn_0(struct SZrState *state) {"));
@@ -910,7 +912,6 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
     ZrLibrary_Project_Free(generalAotState, project);
     TEST_ASSERT_EQUAL_INT(0, dlclose(library));
     free(generalAotEmbeddedBlob);
-    ZrCore_Function_Free(generalAotState, generalAotFunction);
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(generalAotState);
     ZrTests_Runtime_State_Destroy(state);

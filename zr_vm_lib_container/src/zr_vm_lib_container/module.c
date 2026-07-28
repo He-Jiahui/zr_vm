@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_lib_container/module.h"
+#include "zr_vm_lib_iteration/module.h"
 #include "contiguous_view.h"
 #include "pooling.h"
 
@@ -4376,6 +4377,7 @@ static TZrBool zr_container_install_basic_array_method(SZrState *state,
     }
 
     closure->nativeFunction = nativeFunction;
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     ZrCore_Value_InitAsRawObject(state, &closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closureValue.isNative = ZR_TRUE;
     ZrLib_Object_SetFieldCString(state, prototypeObject, methodName, &closureValue);
@@ -4396,7 +4398,8 @@ TZrBool ZrVmLibContainer_Register(SZrGlobalState *global) {
     if (global == ZR_NULL) {
         return ZR_FALSE;
     }
-    return ZrLibrary_NativeRegistry_RegisterModule(global, &g_container_module_descriptor) &&
+    return ZrVmLibIteration_Register(global) &&
+           ZrLibrary_NativeRegistry_RegisterModule(global, &g_container_module_descriptor) &&
            ZrLibrary_NativeRegistry_RegisterModule(
                    global, ZrVmLibContainer_Pooling_GetModuleDescriptor()) &&
            zr_container_install_basic_array_adapter(global);

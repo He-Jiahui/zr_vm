@@ -198,7 +198,10 @@ static TZrBool backend_aot_c_scalar_stack_copy_instruction_is_call_result_write(
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
         case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):

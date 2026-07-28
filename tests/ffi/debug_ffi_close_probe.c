@@ -10,6 +10,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
@@ -22,6 +23,7 @@ static SZrState *create_probe_state(void) {
         ZrParser_ToGlobalState_Register(state);
         ZrVmLibMath_Register(state->global);
         ZrVmLibSystem_Register(state->global);
+        ZrVmLibContainer_Register(state->global);
         ZrVmLibFfi_Register(state->global);
     }
 

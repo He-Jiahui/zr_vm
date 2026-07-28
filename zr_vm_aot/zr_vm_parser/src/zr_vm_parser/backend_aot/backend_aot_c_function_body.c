@@ -59,7 +59,18 @@ static TZrBool backend_aot_exec_ir_instruction_is_dynamic_call(
     }
 
     return (TZrBool)(instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_CALL ||
-                     instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_TAIL_CALL);
+                      instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_TAIL_CALL);
+}
+
+static TZrBool backend_aot_exec_ir_instruction_has_stable_call_arguments(
+        const SZrAotExecIrInstruction *instruction) {
+    if (instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(backend_aot_exec_ir_instruction_is_dynamic_call(instruction) ||
+                     instruction->semIrOpcode == ZR_SEMIR_OPCODE_META_CALL ||
+                     instruction->semIrOpcode == ZR_SEMIR_OPCODE_META_TAIL_CALL);
 }
 
 static TZrBool backend_aot_target_is_back_edge(TZrUInt32 instructionIndex, TZrUInt32 targetInstructionIndex) {
@@ -173,16 +184,29 @@ static TZrBool backend_aot_instruction_is_call_with_stack_arguments(const TZrIns
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
+        case ZR_INSTRUCTION_ENUM(META_CALL):
+        case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS):
             return ZR_TRUE;
@@ -200,7 +224,25 @@ static TZrBool backend_aot_instruction_may_write_stack_slot(const TZrInstruction
     return (TZrBool)(instruction->instruction.operandExtra == stackSlot);
 }
 
+static TZrUInt32 backend_aot_call_argument_count(const SZrAotExecIrModule *module,
+                                                 const SZrAotExecIrFunction *functionIr,
+                                                 TZrUInt32 instructionIndex,
+                                                 const TZrInstruction *instruction) {
+    const SZrAotExecIrInstruction *execIrInstruction;
+
+    if (instruction == ZR_NULL) {
+        return 0u;
+    }
+    execIrInstruction = backend_aot_find_exec_ir_instruction(module, functionIr, instructionIndex);
+    if (backend_aot_exec_ir_instruction_has_stable_call_arguments(execIrInstruction)) {
+        return execIrInstruction->operand1;
+    }
+    return instruction->instruction.operand.operand1[1];
+}
+
 static TZrBool backend_aot_stack_copy_find_upcoming_call(
+        const SZrAotExecIrModule *module,
+        const SZrAotExecIrFunction *functionIr,
         const SZrFunction *function,
         TZrUInt32 instructionIndex,
         TZrUInt32 destinationSlot,
@@ -222,7 +264,8 @@ static TZrBool backend_aot_stack_copy_find_upcoming_call(
                 *outCallBaseSlot = nextInstruction->instruction.operand.operand1[0];
             }
             if (outArgumentCount != ZR_NULL) {
-                *outArgumentCount = nextInstruction->instruction.operand.operand1[1];
+                *outArgumentCount = backend_aot_call_argument_count(
+                        module, functionIr, scanIndex, nextInstruction);
             }
             return ZR_TRUE;
         }
@@ -236,13 +279,17 @@ static TZrBool backend_aot_stack_copy_find_upcoming_call(
 }
 
 static TZrBool backend_aot_stack_copy_destination_is_next_call_argument(
+        const SZrAotExecIrModule *module,
+        const SZrAotExecIrFunction *functionIr,
         const SZrFunction *function,
         TZrUInt32 instructionIndex,
         TZrUInt32 destinationSlot) {
     TZrUInt32 callBaseSlot;
     TZrUInt32 argumentCount;
 
-    if (!backend_aot_stack_copy_find_upcoming_call(function,
+    if (!backend_aot_stack_copy_find_upcoming_call(module,
+                                                   functionIr,
+                                                   function,
                                                    instructionIndex,
                                                    destinationSlot,
                                                    &callBaseSlot,
@@ -256,12 +303,16 @@ static TZrBool backend_aot_stack_copy_destination_is_next_call_argument(
 }
 
 static TZrBool backend_aot_stack_copy_destination_is_next_call_callable(
+        const SZrAotExecIrModule *module,
+        const SZrAotExecIrFunction *functionIr,
         const SZrFunction *function,
         TZrUInt32 instructionIndex,
         TZrUInt32 destinationSlot) {
     TZrUInt32 callBaseSlot;
 
-    if (!backend_aot_stack_copy_find_upcoming_call(function,
+    if (!backend_aot_stack_copy_find_upcoming_call(module,
+                                                   functionIr,
+                                                   function,
                                                    instructionIndex,
                                                    destinationSlot,
                                                    &callBaseSlot,
@@ -514,7 +565,6 @@ void backend_aot_write_c_function_body(FILE *file,
                 (unsigned)operandA1,
                 (unsigned)operandB1,
                 (int)operandA2);
-
         if (backend_aot_try_write_c_scalar_semir_for_exec_instruction(file,
                                                                       module,
                                                                       functionIr,
@@ -776,6 +826,8 @@ void backend_aot_write_c_function_body(FILE *file,
                 }
                 sourceSlot = (TZrUInt32)operandA2;
                 destinationIsNextCallCallable = backend_aot_stack_copy_destination_is_next_call_callable(
+                        module,
+                        functionIr,
                         entry->function,
                         instructionIndex,
                         destinationSlot);
@@ -846,6 +898,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                               sourceSlot,
                                                               instructionIndex,
                                                               (TZrBool)(backend_aot_stack_copy_destination_is_next_call_argument(
+                                                                                module,
+                                                                                functionIr,
                                                                                 entry->function,
                                                                                 instructionIndex,
                                                                                 destinationSlot) ||
@@ -864,6 +918,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                       functionIr,
                                                       destinationSlot,
                                                       sourceSlot,
+                                                      instructionIndex,
                                                       destinationIsNextCallCallable);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -2149,6 +2204,22 @@ void backend_aot_write_c_function_body(FILE *file,
                 }
                 break;
             }
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+                backend_aot_write_c_direct_super_array_bind_items(file, destinationSlot, (TZrUInt32)operandA2);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
+                backend_aot_write_c_direct_super_array_get_int_bound_items(
+                        file, destinationSlot, operandA1, operandB1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
                 if (backend_aot_c_slot_has_unescaped_new_owner(entry->function, operandA1, instructionIndex)) {
                     backend_aot_write_c_direct_super_array_set_int_new_owner_no_write_barrier(
@@ -2156,6 +2227,10 @@ void backend_aot_write_c_function_body(FILE *file,
                 } else {
                     backend_aot_write_c_direct_super_array_set_int(file, destinationSlot, operandA1, operandB1);
                 }
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
+                backend_aot_write_c_direct_super_array_set_int_bound_items(
+                        file, destinationSlot, operandA1, operandB1);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
                 backend_aot_write_c_direct_super_array_add_int(file, destinationSlot, operandA1, operandB1);
@@ -2451,6 +2526,61 @@ void backend_aot_write_c_function_body(FILE *file,
                     instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)) {
                     backend_aot_write_c_tail_return(file, destinationSlot, publishExports);
                 }
+                break;
+            }
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+                backend_aot_write_c_known_native_member_call(file,
+                                                             functionIr,
+                                                             destinationSlot,
+                                                             operandA1,
+                                                             operandB1);
+                backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_known_native_member_call");
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+            {
+                TZrUInt32 argumentCount = backend_aot_get_callsite_cache_argument_count(
+                        entry->function,
+                        operandA1,
+                        ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+                backend_aot_write_c_known_vm_member_call(file,
+                                                          functionIr,
+                                                          destinationSlot,
+                                                          operandA1,
+                                                          argumentCount);
+                backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_known_vm_member_call");
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            }
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
+            {
+                TZrUInt32 cacheIndex = instruction->instruction.operand.operand0[0];
+                TZrUInt32 receiverSourceSlot = instruction->instruction.operand.operand0[1];
+                TZrUInt32 argumentSourceSlot = instruction->instruction.operand.operand0[2];
+                TZrUInt32 argumentCount = backend_aot_get_callsite_cache_argument_count(
+                        entry->function,
+                        cacheIndex,
+                        ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+                backend_aot_write_c_direct_stack_copy(
+                        file, functionIr, destinationSlot + 1u, receiverSourceSlot, instructionIndex, ZR_FALSE);
+                backend_aot_write_c_direct_stack_copy(
+                        file, functionIr, destinationSlot + 2u, argumentSourceSlot, instructionIndex, ZR_FALSE);
+                backend_aot_write_c_known_vm_member_call(file,
+                                                          functionIr,
+                                                          destinationSlot,
+                                                          cacheIndex,
+                                                          argumentCount);
+                backend_aot_write_c_gc_safepoint(file, "    ", "zr_aot_gc_safepoint_known_vm_member_call_load1_u8");
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             }
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):

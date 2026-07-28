@@ -182,8 +182,8 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
             "func addFour(value: int): int {\n"
             "    return value + 4;\n"
             "}\n"
-            "func apply(fn: %func(int)->int, value: int): int {\n"
-            "    return fn(value);\n"
+            "func apply(callback: %func(int)->int, value: int): int {\n"
+            "    return callback(value);\n"
             "}\n"
             "return apply(addFour, 3);";
     const char *projectJson =
@@ -266,7 +266,10 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_dynamic_function_call"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_dynamic_deopt_bridge deopt="));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=1"));
@@ -274,6 +277,8 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
                                 "zr_aot_s_value = zr_aot_source->value.nativeObject.nativeInt64;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s4 = zr_aot_s_value;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_destination->value.nativeObject.nativeInt64 = zr_aot_s_value;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=4"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_destination = &frame.slotBase[3].value;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_boundary */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PublishModuleExports(state, &frame)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo)"));

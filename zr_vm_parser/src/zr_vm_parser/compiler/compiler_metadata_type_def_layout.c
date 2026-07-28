@@ -3,8 +3,9 @@
 
 #include "zr_vm_core/type_layout.h"
 
-#define ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE ((TZrUInt32)sizeof(SZrTypeValue))
-#define ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN ((TZrUInt32)ZR_ALIGN_SIZE)
+/* Stable metadata ABI v2 value-slot shape; it must not follow host struct tail padding. */
+#define ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE ((TZrUInt32)40u)
+#define ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN ((TZrUInt32)8u)
 
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
 
@@ -234,6 +235,55 @@ static TZrBool metadata_type_def_union_variant_count(const SZrAstNode *unionDecl
     return ZR_TRUE;
 }
 
+static TZrBool metadata_type_def_validate_canonical_union_layout(
+        const SZrTypeLayout *layout,
+        TZrUInt32 variantCount) {
+    TZrUInt32 gcFieldCount = 0u;
+    TZrUInt32 ownershipFieldCount = 0u;
+
+    if (layout == ZR_NULL ||
+        layout->layoutVersion != ZR_TYPE_LAYOUT_SCHEMA_VERSION ||
+        layout->layoutHash == 0u ||
+        layout->layoutHash != ZrCore_TypeLayout_ComputeHash(layout) ||
+        layout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION ||
+        layout->byteSize == 0u ||
+        layout->byteAlign == 0u ||
+        (layout->byteAlign & (layout->byteAlign - 1u)) != 0u ||
+        layout->tagOffset != 0u ||
+        layout->tagSize != metadata_type_def_select_union_tag_size(variantCount) ||
+        (layout->fieldCount > 0u && layout->fields == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < layout->fieldCount; index++) {
+        const SZrTypeLayoutField *field = &layout->fields[index];
+        const TZrUInt32 allowedFlags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                                       ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE |
+                                       ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+
+        if (field->byteSize != ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE ||
+            field->byteOffset > layout->byteSize ||
+            field->byteSize > layout->byteSize - field->byteOffset ||
+            field->typeLayoutIndex != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+            field->activeTag >= variantCount ||
+            (field->flags & ~allowedFlags) != 0u ||
+            (field->flags & (ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                             ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE)) !=
+                    (ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                     ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE)) {
+            return ZR_FALSE;
+        }
+        gcFieldCount++;
+        if ((field->flags & ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE) != 0u) {
+            ownershipFieldCount++;
+        }
+    }
+
+    return (TZrBool)(layout->gcFieldCount == gcFieldCount &&
+                     layout->ownershipFieldCount == ownershipFieldCount &&
+                     layout->refFieldCount == 0u);
+}
+
 TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerState *cs,
                                                                  const SZrAstNode *unionDeclaration,
                                                                  TZrUInt32 *outLayoutVersion,
@@ -332,10 +382,10 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
                     }
 
                     currentOffset = align_offset(currentOffset, fieldAlign);
-                    if (fieldSize >= sizeof(SZrTypeValue)) {
+                    if (fieldSize >= ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE) {
                         SZrTypeLayoutField *layoutField = &layoutFields[layoutFieldCount++];
                         layoutField->byteOffset = currentOffset;
-                        layoutField->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+                        layoutField->byteSize = ZR_METADATA_TYPE_DEF_LAYOUT_REFERENCE_SIZE;
                         layoutField->typeLayoutIndex = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
                         layoutField->flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
                                              ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
@@ -386,7 +436,7 @@ TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerStat
                                 dropKind,
                                 layoutFields,
                                 layoutFieldCount);
-    if (!ZrCore_TypeLayout_Validate(&layout)) {
+    if (!metadata_type_def_validate_canonical_union_layout(&layout, variantCount)) {
         if (layoutFields != ZR_NULL) {
             ZrCore_Memory_RawFreeWithType(cs->state->global,
                                          layoutFields,

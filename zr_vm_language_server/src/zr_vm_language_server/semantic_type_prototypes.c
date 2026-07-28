@@ -732,6 +732,7 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
 
         ZrParser_InferredType_Free(state, outType);
         ZrParser_InferredType_InitFull(state, outType, ZR_VALUE_TYPE_ARRAY, ZR_FALSE, renderedTypeName);
+        outType->protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ITERABLE);
         ZrCore_Array_Init(state, &outType->elementTypes, sizeof(SZrInferredType), 1);
         ZrCore_Array_Push(state, &outType->elementTypes, &elementType);
         outType->ownershipQualifier = typeNode->ownershipQualifier;

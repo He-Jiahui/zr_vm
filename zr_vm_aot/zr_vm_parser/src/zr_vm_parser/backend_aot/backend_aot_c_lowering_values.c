@@ -1073,7 +1073,8 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 destinationSlot,
-        TZrUInt32 sourceSlot) {
+        TZrUInt32 sourceSlot,
+        TZrUInt32 execInstructionIndex) {
     TZrBool syncBool;
     TZrBool syncI64;
     TZrBool syncU64;
@@ -1084,13 +1085,21 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
     }
 
     syncBool = (TZrBool)(backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot) &&
-                         backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot));
+                         backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&
+                         backend_aot_c_scalar_locals_bool_written_before(
+                                 functionIr, sourceSlot, execInstructionIndex));
     syncI64 = (TZrBool)(backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot) &&
-                        backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot));
+                        backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot) &&
+                        backend_aot_c_scalar_locals_i64_written_before(
+                                functionIr, sourceSlot, execInstructionIndex));
     syncU64 = (TZrBool)(backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot) &&
-                        backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot));
+                        backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot) &&
+                        backend_aot_c_scalar_locals_u64_written_before(
+                                functionIr, sourceSlot, execInstructionIndex));
     syncF64 = (TZrBool)(backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot) &&
-                        backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot));
+                        backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot) &&
+                        backend_aot_c_scalar_locals_f64_written_before(
+                                functionIr, sourceSlot, execInstructionIndex));
     if (!syncBool && !syncI64 && !syncU64 && !syncF64) {
         return;
     }
@@ -1129,6 +1138,7 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 sourceSlot,
+                                           TZrUInt32 execInstructionIndex,
                                            TZrBool skipScalarLocalSync) {
     if (file == ZR_NULL) {
         return;
@@ -1141,7 +1151,8 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
     if (!skipScalarLocalSync) {
-        backend_aot_write_c_direct_stack_copy_scalar_local_sync(file, functionIr, destinationSlot, sourceSlot);
+        backend_aot_write_c_direct_stack_copy_scalar_local_sync(
+                file, functionIr, destinationSlot, sourceSlot, execInstructionIndex);
     }
     fprintf(file, "    } while (0);\n");
 }

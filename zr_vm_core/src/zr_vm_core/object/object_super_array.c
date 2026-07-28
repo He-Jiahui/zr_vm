@@ -5,6 +5,7 @@
 #include "object/object_super_array_internal.h"
 
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
@@ -962,9 +963,9 @@ static TZrBool object_try_resolve_super_array_storage(SZrState *state,
 }
 
 ZR_SUPER_ARRAY_NOINLINE TZrBool ZrCore_Object_SuperArrayResolveItemsAssumeFastSlow(SZrState *state,
-                                                                                    SZrTypeValue *receiver,
-                                                                                    SZrObject **outReceiverObject,
-                                                                                    SZrObject **outItemsObject) {
+                                                                                     SZrTypeValue *receiver,
+                                                                                     SZrObject **outReceiverObject,
+                                                                                     SZrObject **outItemsObject) {
     TZrBool applicable = ZR_FALSE;
 
     if (!object_try_resolve_super_array_items(state,
@@ -976,6 +977,69 @@ ZR_SUPER_ARRAY_NOINLINE TZrBool ZrCore_Object_SuperArrayResolveItemsAssumeFastSl
     }
 
     return applicable;
+}
+
+TZrBool ZrCore_Object_SuperArrayBindItems(SZrState *state,
+                                          SZrTypeValue *destination,
+                                          SZrTypeValue *receiver) {
+    SZrObject *itemsObject = ZR_NULL;
+
+    if (state == ZR_NULL || destination == ZR_NULL || receiver == ZR_NULL ||
+        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY)) {
+        return ZR_FALSE;
+    }
+    if (!zr_super_array_try_resolve_items_cached_only_assume_fast(state, receiver, ZR_NULL, &itemsObject) &&
+        !ZrCore_Object_SuperArrayResolveItemsAssumeFastSlow(state, receiver, ZR_NULL, &itemsObject)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+    ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(itemsObject));
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_SuperArrayGetIntBoundItems(SZrState *state,
+                                                 SZrTypeValue *items,
+                                                 const SZrTypeValue *key,
+                                                 SZrTypeValue *result) {
+    SZrObject *itemsObject;
+
+    if (state == ZR_NULL || items == ZR_NULL || key == ZR_NULL || result == ZR_NULL ||
+        (items->type != ZR_VALUE_TYPE_OBJECT && items->type != ZR_VALUE_TYPE_ARRAY) ||
+        !ZR_VALUE_IS_TYPE_SIGNED_INT(key->type)) {
+        return ZR_FALSE;
+    }
+    itemsObject = ZR_CAST_OBJECT(state, items->value.object);
+    if (itemsObject == ZR_NULL || itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_FALSE;
+    }
+
+    zr_super_array_get_from_items_object_assume_fast(
+            state, itemsObject, key->value.nativeObject.nativeInt64, result);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_SuperArraySetIntBoundItems(SZrState *state,
+                                                 SZrTypeValue *items,
+                                                 const SZrTypeValue *key,
+                                                 const SZrTypeValue *value) {
+    SZrObject *itemsObject;
+
+    if (state == ZR_NULL || items == ZR_NULL || key == ZR_NULL || value == ZR_NULL ||
+        (items->type != ZR_VALUE_TYPE_OBJECT && items->type != ZR_VALUE_TYPE_ARRAY) ||
+        !ZR_VALUE_IS_TYPE_SIGNED_INT(key->type) || !ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        return ZR_FALSE;
+    }
+    itemsObject = ZR_CAST_OBJECT(state, items->value.object);
+    if (itemsObject == ZR_NULL || itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_FALSE;
+    }
+
+    zr_super_array_set_int_in_bound_items_object_assume_fast(state,
+                                                             itemsObject,
+                                                             key->value.nativeObject.nativeInt64,
+                                                             value->value.nativeObject.nativeInt64);
+    return ZR_TRUE;
 }
 
 typedef struct ZrSuperArrayAppendPlan {
@@ -1610,6 +1674,42 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plans4_from_sta
     return ZR_TRUE;
 }
 
+static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plans4_from_values_assume_fast(
+        SZrState *state,
+        SZrTypeValue *receivers[4],
+        TZrSize appendCount,
+        ZrSuperArrayAppendPlan *plans) {
+    SZrFunctionStackAnchor receiverAnchors[4];
+    TZrUInt32 index;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receivers != ZR_NULL);
+    ZR_ASSERT(plans != ZR_NULL);
+
+    for (index = 0; index < 4; ++index) {
+        if (receivers[index] == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Function_StackAnchorInit(
+                state, ZR_CAST(TZrStackValuePointer, receivers[index]), &receiverAnchors[index]);
+    }
+
+    for (index = 0; index < 4; ++index) {
+        TZrStackValuePointer receiverPointer =
+                ZrCore_Function_StackAnchorRestore(state, &receiverAnchors[index]);
+        SZrTypeValue *receiver =
+                receiverPointer != ZR_NULL ? ZrCore_Stack_GetValue(receiverPointer) : ZR_NULL;
+
+        if (receiver == ZR_NULL ||
+            !object_super_array_prepare_append_plan_assume_fast(
+                    state, receiver, appendCount, &plans[index])) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plans4_assume_fast(
         SZrState *state,
         const ZrSuperArrayAppendPlan *plans,
@@ -1925,6 +2025,21 @@ TZrBool ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(SZrState *state,
     return object_super_array_commit_append_plans4_assume_fast(state, plans, intValue);
 }
 
+TZrBool ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(SZrState *state,
+                                                        SZrTypeValue *receivers[4],
+                                                        TZrInt64 intValue) {
+    ZrSuperArrayAppendPlan plans[4];
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receivers != ZR_NULL);
+
+    if (!object_super_array_prepare_append_plans4_from_values_assume_fast(state, receivers, 1, plans)) {
+        return ZR_FALSE;
+    }
+
+    return object_super_array_commit_append_plans4_assume_fast(state, plans, intValue);
+}
+
 ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(SZrState *state,
                                                                     TZrStackValuePointer receiverBase,
                                                                     TZrInt64 repeatCount,
@@ -1945,6 +2060,33 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(SZrState *st
     appendCount = (TZrSize)repeatCount;
 
     if (!object_super_array_prepare_append_plans4_from_stack_assume_fast(state, receiverBase, appendCount, plans)) {
+        return ZR_FALSE;
+    }
+
+    return object_super_array_commit_append_plans4_assume_fast(state, plans, value);
+}
+
+TZrBool ZrCore_Object_SuperArrayFillInt4ValuesAssumeFast(SZrState *state,
+                                                         SZrTypeValue *receivers[4],
+                                                         TZrInt64 repeatCount,
+                                                         TZrInt64 value) {
+    ZrSuperArrayAppendPlan plans[4];
+    TZrSize appendCount;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receivers != ZR_NULL);
+
+    if (repeatCount <= 0) {
+        return ZR_TRUE;
+    }
+
+    if ((TZrUInt64)repeatCount > (TZrUInt64)((TZrSize)-1)) {
+        return ZR_FALSE;
+    }
+    appendCount = (TZrSize)repeatCount;
+
+    if (!object_super_array_prepare_append_plans4_from_values_assume_fast(
+                state, receivers, appendCount, plans)) {
         return ZR_FALSE;
     }
 

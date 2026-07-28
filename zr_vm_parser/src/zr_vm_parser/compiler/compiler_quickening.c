@@ -5211,6 +5211,78 @@ static void compiler_quickening_remap_metadata_after_instruction_insertion(SZrFu
     compiler_quickening_remap_local_variable_instruction_offsets(function, oldToNew, oldLength, newLength);
 }
 
+static TZrBool compiler_quickening_extend_frame_layout_for_appended_value_slots(
+        SZrGlobalState *global,
+        SZrFunction *function,
+        TZrUInt32 appendedSlotCount) {
+    SZrFunctionFrameSlotLayout *oldLayouts;
+    SZrFunctionFrameSlotLayout *newLayouts;
+    TZrUInt32 oldSlotCount;
+    TZrUInt32 newSlotCount;
+    TZrUInt32 byteOffsetDelta;
+    TZrSize oldLayoutBytes;
+    TZrSize newLayoutBytes;
+
+    if (global == ZR_NULL || function == ZR_NULL || appendedSlotCount == 0u) {
+        return appendedSlotCount == 0u;
+    }
+    if (function->frameSlotLayouts == ZR_NULL || function->frameSlotLayoutLength == 0u) {
+        return ZR_TRUE;
+    }
+
+    oldSlotCount = function->stackSize;
+    if (function->frameSlotLayoutLength != oldSlotCount ||
+        oldSlotCount > UINT32_MAX - appendedSlotCount ||
+        appendedSlotCount > UINT32_MAX / (TZrUInt32)sizeof(SZrTypeValueOnStack)) {
+        return ZR_FALSE;
+    }
+    newSlotCount = oldSlotCount + appendedSlotCount;
+    byteOffsetDelta = appendedSlotCount * (TZrUInt32)sizeof(SZrTypeValueOnStack);
+    if (function->frameByteSize > UINT32_MAX - byteOffsetDelta) {
+        return ZR_FALSE;
+    }
+
+    oldLayouts = function->frameSlotLayouts;
+    oldLayoutBytes = sizeof(*oldLayouts) * (TZrSize)oldSlotCount;
+    newLayoutBytes = sizeof(*newLayouts) * (TZrSize)newSlotCount;
+    newLayouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            global,
+            newLayoutBytes,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (newLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 slot = 0u; slot < oldSlotCount; slot++) {
+        newLayouts[slot] = oldLayouts[slot];
+        if (newLayouts[slot].byteOffset > UINT32_MAX - byteOffsetDelta) {
+            ZrCore_Memory_RawFreeWithType(
+                    global, newLayouts, newLayoutBytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            return ZR_FALSE;
+        }
+        newLayouts[slot].byteOffset += byteOffsetDelta;
+    }
+
+    for (TZrUInt32 slot = oldSlotCount; slot < newSlotCount; slot++) {
+        SZrFunctionFrameSlotLayout *layout = &newLayouts[slot];
+
+        ZrCore_Memory_RawSet(layout, 0, sizeof(*layout));
+        layout->stackSlot = slot;
+        layout->byteOffset = slot * (TZrUInt32)sizeof(SZrTypeValueOnStack);
+        layout->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        layout->byteAlign = (TZrUInt32)_Alignof(SZrTypeValueOnStack);
+        layout->typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        layout->slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    }
+
+    ZrCore_Memory_RawFreeWithType(
+            global, oldLayouts, oldLayoutBytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    function->frameSlotLayouts = newLayouts;
+    function->frameSlotLayoutLength = newSlotCount;
+    function->frameByteSize += byteOffsetDelta;
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_quickening_insert_super_array_items_cache_bindings(SZrState *state, SZrFunction *function) {
     TZrBool *blockStarts = ZR_NULL;
     TZrUInt32 *firstInsertionBefore = ZR_NULL;
@@ -5372,6 +5444,11 @@ static TZrBool compiler_quickening_insert_super_array_items_cache_bindings(SZrSt
                                                                                skipPreheaderForBackedgeSource,
                                                                                oldLength,
                                                                                newLength)) {
+        goto cleanup;
+    }
+
+    if (!compiler_quickening_extend_frame_layout_for_appended_value_slots(
+                global, function, itemsSlotCount)) {
         goto cleanup;
     }
 
@@ -9724,16 +9801,15 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
         switch (opcode) {
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
             case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
+                break;
             case ZR_INSTRUCTION_ENUM(DYN_CALL):
             case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
-                break;
             case ZR_INSTRUCTION_ENUM(META_CALL):
             case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
                 /*
-                 * A meta-call's callee slot is the receiver object. Even when
-                 * the receiver type has a VM @call target, the callable is not
-                 * materialized in that slot, so known-call opcodes would call
-                 * the receiver object itself.
+                 * Dynamic and meta calls may keep a callable receiver object in
+                 * the callee slot. Its resolved @call target is provenance for
+                 * dispatch, not proof that a function value was materialized.
                  */
                 continue;
             default:
@@ -9748,16 +9824,12 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
                 instruction->instruction.operand.operand1[0],
                 0);
         if (provenance == ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM) {
-            instruction->instruction.operationCode = (TZrUInt16)((opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
-                                                                  opcode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL) ||
-                                                                  opcode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL))
+            instruction->instruction.operationCode = (TZrUInt16)((opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL))
                                                                          ? ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)
                                                                          : ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL));
         } else if (provenance == ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_NATIVE) {
             instruction->instruction.operationCode =
-                    (TZrUInt16)((opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
-                                 opcode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL) ||
-                                 opcode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL))
+                    (TZrUInt16)((opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL))
                                         ? ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL)
                                         : ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL));
         }
@@ -10559,6 +10631,66 @@ TZrBool ZrParser_Quickening_CollectLoadTypedArithmeticProbeStats(
     return compiler_quickening_collect_load_typed_arithmetic_probe_stats_recursive(function, outStats);
 }
 
+static TZrBool compiler_quickening_sync_value_semir_operands(SZrFunction *function) {
+    TZrUInt32 semirIndex;
+
+    if (function == ZR_NULL || function->semIrInstructions == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (semirIndex = 0; semirIndex < function->semIrInstructionLength; semirIndex++) {
+        SZrSemIrInstruction *semir = &function->semIrInstructions[semirIndex];
+        const TZrInstruction *execInstruction;
+        EZrInstructionCode execOpcode;
+        EZrSemIrOpcode semirOpcode;
+        TZrUInt32 receiverSlot;
+
+        if (semir->execInstructionIndex >= function->instructionsLength) {
+            return ZR_FALSE;
+        }
+
+        execInstruction = &function->instructionsList[semir->execInstructionIndex];
+        execOpcode = (EZrInstructionCode)execInstruction->instruction.operationCode;
+        semirOpcode = (EZrSemIrOpcode)semir->opcode;
+
+        switch (execOpcode) {
+            case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+                receiverSlot = execInstruction->instruction.operand.operand1[0];
+                if (semirOpcode == ZR_SEMIR_OPCODE_FIELD_ADDR) {
+                    semir->destinationSlot = receiverSlot;
+                    semir->operand0 = receiverSlot;
+                } else if (semirOpcode == ZR_SEMIR_OPCODE_LOAD_VALUE) {
+                    semir->destinationSlot = execInstruction->instruction.operandExtra;
+                    semir->operand0 = receiverSlot;
+                }
+                break;
+
+            case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
+                receiverSlot = execInstruction->instruction.operand.operand1[0];
+                if (semirOpcode == ZR_SEMIR_OPCODE_FIELD_ADDR) {
+                    semir->destinationSlot = receiverSlot;
+                    semir->operand0 = receiverSlot;
+                } else if (semirOpcode == ZR_SEMIR_OPCODE_STORE_VALUE) {
+                    semir->destinationSlot = receiverSlot;
+                    semir->operand0 = execInstruction->instruction.operandExtra;
+                }
+                break;
+
+            case ZR_INSTRUCTION_ENUM(SET_STACK):
+                if (semirOpcode == ZR_SEMIR_OPCODE_COPY_VALUE) {
+                    semir->destinationSlot = execInstruction->instruction.operandExtra;
+                    semir->operand0 = execInstruction->instruction.operand.operand1[0];
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_quicken_child_functions(SZrState *state,
                                                 SZrFunction *function,
                                                 TZrBool recurseChildren) {
@@ -10706,6 +10838,8 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
                            compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("promote_plain_destination_after_items_cache_forward",
                            compiler_quickening_promote_plain_destination_opcodes_with_fresh_blocks(function));
+    ZR_QUICKENING_RUN_PASS("sync_value_semir_operands",
+                           compiler_quickening_sync_value_semir_operands(function));
 
     if (recurseChildren && !function->childFunctionGraphIsBorrowed) {
         for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {

@@ -44,6 +44,24 @@ static EZrCallArgumentMarker call_argument_marker_at(
     return syntax != ZR_NULL ? syntax->marker : ZR_CALL_ARGUMENT_MARKER_NONE;
 }
 
+TZrBool type_inference_reference_argument_type_equal(
+        const SZrInferredType *argumentType,
+        const SZrInferredType *parameterType) {
+    SZrInferredType argumentValueType;
+    SZrInferredType parameterValueType;
+
+    if (argumentType == ZR_NULL || parameterType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    argumentValueType = *argumentType;
+    parameterValueType = *parameterType;
+    argumentValueType.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+    parameterValueType.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+    return ZrParser_InferredType_Equal(
+            &argumentValueType, &parameterValueType);
+}
+
 static SZrAstNodeArray *function_parameter_list(
         const SZrFunctionTypeInfo *functionType) {
     SZrAstNode *declaration =
@@ -190,7 +208,18 @@ TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
 
         if ((passingMode == ZR_PARAMETER_PASSING_MODE_OUT ||
              passingMode == ZR_PARAMETER_PASSING_MODE_REF) &&
-            !ZrParser_InferredType_Equal(argType, paramType)) {
+            argType->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) {
+            snprintf(errorBuffer,
+                     sizeof(errorBuffer),
+                     "%s argument must be a writable Place",
+                     parameter_passing_mode_label(passingMode));
+            ZrParser_Compiler_Error(cs, errorBuffer, argNode->location);
+            return ZR_FALSE;
+        }
+
+        if ((passingMode == ZR_PARAMETER_PASSING_MODE_OUT ||
+             passingMode == ZR_PARAMETER_PASSING_MODE_REF) &&
+            !type_inference_reference_argument_type_equal(argType, paramType)) {
             snprintf(errorBuffer,
                      sizeof(errorBuffer),
                      "%s argument type mismatch",

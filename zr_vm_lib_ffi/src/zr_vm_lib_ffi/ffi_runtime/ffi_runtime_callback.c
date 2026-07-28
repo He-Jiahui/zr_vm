@@ -347,7 +347,10 @@ TZrBool zr_ffi_struct_to_object(SZrState *state, ZrFfiTypeLayout *type, const un
     if (!ZrLib_TempValueRoot_Begin(state, &objectRoot)) {
         return ZR_FALSE;
     }
-    object = ZrLib_Object_New(state);
+    object = type->name != ZR_NULL ? ZrLib_Type_NewInstance(state, type->name) : ZR_NULL;
+    if (object == ZR_NULL) {
+        object = ZrLib_Object_New(state);
+    }
     if (object == ZR_NULL) {
         ZrLib_TempValueRoot_End(&objectRoot);
         return ZR_FALSE;

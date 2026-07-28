@@ -409,7 +409,7 @@ static void type_inference_record_member_reference_fact(SZrCompilerState *cs,
                 ZrParser_SemanticFacts_FindReferenceAtPosition(
                         cs->semanticContext,
                         fact.range);
-        if (existing != ZR_NULL && existing->isResolved &&
+        if (existing != ZR_NULL && existing->kind == kind &&
             existing->range.start.offset == fact.range.start.offset &&
             existing->range.end.offset == fact.range.end.offset &&
             existing->range.start.line == fact.range.start.line &&

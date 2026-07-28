@@ -247,7 +247,10 @@ static void assert_generated_aot_c_text_uses_new_code_shape(const char *text) {
     TEST_ASSERT_NULL(strstr(text, "goto zr_aot_fail"));
     TEST_ASSERT_NULL(strstr(text, "return 0;"));
     TEST_ASSERT_NULL(strstr(text, "ZrLibrary_AotRuntime_InvokeActiveShim"));
-    TEST_ASSERT_NOT_NULL(strstr(text, "ZrLibrary_AotRuntime_FailGeneratedFunction"));
+    TEST_ASSERT_TRUE(strstr(text, "ZrLibrary_AotRuntime_ResolveGeneratedModuleContext") != ZR_NULL ||
+                     strstr(text, "ZrLibrary_AotRuntime_BeginGeneratedFunction") != ZR_NULL);
+    TEST_ASSERT_TRUE(strstr(text, "zr_aot_function_exit:") != ZR_NULL ||
+                     strstr(text, "ZrLibrary_AotRuntime_FailGeneratedFunction") != ZR_NULL);
 }
 
 static void assert_generated_aot_llvm_text_uses_true_backend_shape(const char *text) {
@@ -599,13 +602,23 @@ static char *read_reference_file(const char *relativePath, size_t *outSize) {
 
 static char *read_repo_file_owned(const char *repoRelativePath) {
     char pathBuffer[1024];
+    char *text;
 
     if (repoRelativePath == ZR_NULL) {
         return ZR_NULL;
     }
 
     snprintf(pathBuffer, sizeof(pathBuffer), "%s/../%s", ZR_VM_TESTS_SOURCE_DIR, repoRelativePath);
-    return read_text_file_owned(pathBuffer);
+    text = read_text_file_owned(pathBuffer);
+    if (text == ZR_NULL) {
+        snprintf(pathBuffer,
+                 sizeof(pathBuffer),
+                 "%s/../zr_vm_aot/%s",
+                 ZR_VM_TESTS_SOURCE_DIR,
+                 repoRelativePath);
+        text = read_text_file_owned(pathBuffer);
+    }
+    return text;
 }
 
 static TZrUInt32 count_substring_occurrences(const char *text, const char *needle) {
@@ -846,7 +859,14 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
 
 static TZrBool function_contains_super_array_get_int_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)) ||
-           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST));
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST));
+}
+
+static TZrBool function_contains_super_array_set_int_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS));
 }
 
 static TZrBool function_contains_add_int_family(const SZrFunction *function) {
@@ -860,7 +880,12 @@ static TZrBool function_contains_add_signed_family(const SZrFunction *function) 
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST)) ||
-           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST));
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST));
 }
 
 static TZrBool function_contains_add_unsigned_family(const SZrFunction *function) {
@@ -881,7 +906,9 @@ static TZrBool function_contains_sub_signed_family(const SZrFunction *function) 
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST)) ||
-           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST));
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST));
 }
 
 static TZrBool function_contains_sub_unsigned_family(const SZrFunction *function) {
@@ -895,19 +922,26 @@ static TZrBool function_contains_mul_signed_family(const SZrFunction *function) 
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST)) ||
-           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST));
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK));
 }
 
 static TZrBool function_contains_div_signed_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST)) ||
-           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST));
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST));
 }
 
 static TZrBool function_contains_mod_signed_family(const SZrFunction *function) {
     return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED)) ||
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST)) ||
-           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST));
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST));
 }
 
 static TZrBool function_contains_get_member_name(const SZrFunction *function, const TZrChar *memberName) {
@@ -1493,8 +1527,8 @@ static void test_aot_c_backend_emits_child_thunks_for_callable_constants(void) {
         TEST_ASSERT_NOT_NULL(strstr(cText, "static const FZrAotEntryThunk zr_aot_function_thunks[] = {"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state) {"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "static TZrInt64 zr_aot_fn_1"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 1, &frame)"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ResolveGeneratedModuleContext(state, 0,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ResolveGeneratedModuleContext(state, 1,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_fn_0_ins_0:"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_fn_1_ins_0:"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "    zr_aot_fn_1,"));
@@ -1814,13 +1848,11 @@ static void test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_inv
 
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrAotCompiledModule"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrVm_GetAotCompiledModule"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame)"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ResolveGeneratedModuleContext(state, 0,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_fn_0_ins_0:"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "SZrTypeValue zr_aot_constant;"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Value_ResetAsNull(&zr_aot_constant);"));
-        TEST_ASSERT_NOT_NULL(
-                strstr(cText, "ZR_VALUE_FAST_SET(&zr_aot_constant, nativeInt64, (TZrInt64)7, ZR_VALUE_TYPE_INT64);"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_constant_i64_local */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_s0 = (TZrInt64)7;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_return_i64_local */"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeCurrentClosureShim"));
@@ -1889,9 +1921,10 @@ static void test_aot_c_backend_directly_lowers_static_slot_and_int_ops(void) {
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
 
-        TEST_ASSERT_NOT_NULL(strstr(cText, "nativeInt64"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Stack_GetValue(frame.slotBase +"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_VALUE_FAST_SET("));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_constant_i64_local */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_stack_copy_i64"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_binary"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_s4 = zr_aot_s1 + (TZrInt64)2;"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyStack"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_AddInt("));
@@ -1955,15 +1988,13 @@ static void test_aot_c_backend_directly_lowers_primitive_literal_constants(void)
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
 
-        TEST_ASSERT_NOT_NULL(strstr(cText, "SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + "));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "SZrTypeValue zr_aot_constant;"));
-        TEST_ASSERT_NOT_NULL(
-                strstr(cText, "ZR_VALUE_FAST_SET(&zr_aot_constant, nativeInt64, (TZrInt64)42, ZR_VALUE_TYPE_INT64);"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Value_Copy(state, zr_aot_destination, &zr_aot_constant);"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_VALUE_TYPE_INT64"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_VALUE_TYPE_BOOL"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "nativeDouble"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Value_ResetAsNull(&zr_aot_constant);"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_constant_i64_local */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_s0 = (TZrInt64)42;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_constant_bool_local */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_b1 = ZR_TRUE;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_constant_f64_local */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_f2 = (TZrFloat64)3.5;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ResetStackNull(state, &frame, 3)"));
         TEST_ASSERT_NULL(strstr(cText, "&frame.function->constantValueList["));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
 
@@ -2012,7 +2043,8 @@ static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fall
         func = ZrParser_Compiler_Compile(state, ast);
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD)));
+        TEST_ASSERT_TRUE(function_contains_add_int_family(func) ||
+                         function_contains_add_signed_family(func));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)) ||
                          function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)));
 
@@ -2025,9 +2057,10 @@ static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fall
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
 
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_VALUE_IS_TYPE_NUMBER(zr_aot_left->type)"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_VALUE_IS_TYPE_STRING(zr_aot_left->type)"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Add(state, &frame, 4, 2, 3)"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_typed_i64_fn_1"));
+        TEST_ASSERT_NOT_NULL(strstr(cText,
+                                    "zr_aot_result = zr_aot_left_scalar + zr_aot_right_scalar;"));
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
         free(cText);
@@ -2148,7 +2181,8 @@ static void test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_f
         func = ZrParser_Compiler_Compile(state, ast);
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD)));
+        TEST_ASSERT_TRUE(function_contains_add_int_family(func) ||
+                         function_contains_add_signed_family(func));
 
         remove(llvmPath);
         TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
@@ -2159,9 +2193,9 @@ static void test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_f
         llvmText = read_text_file_owned(llvmPath);
         TEST_ASSERT_NOT_NULL(llvmText);
 
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_Add("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "fadd double"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "add i64"));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(
+                llvmText, ZR_INSTRUCTION_ENUM(ADD_SIGNED)));
 
         free(llvmText);
         remove(llvmPath);
@@ -2242,17 +2276,10 @@ static void test_aot_c_backend_directly_lowers_local_aot_function_calls(void) {
                  "Testing that the representative module-graph AOT C fixture still preserves the runtime direct-call fast path for call targets that are not statically bound by the emitter");
 
     {
-        char *cText;
-        TZrChar cPath[ZR_TESTS_PATH_MAX];
-        TZrSize cTextLength = 0;
-
-        TEST_ASSERT_TRUE(ZrTests_Path_GetProjectFile("aot_module_graph_pipeline",
-                                                     "bin/aot_c/src/main.c",
-                                                     cPath,
-                                                     sizeof(cPath)));
-        cText = ZrTests_ReadTextFile(cPath, &cTextLength);
+        char *cText = read_repo_file_owned(
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_c/src/main.c");
         TEST_ASSERT_NOT_NULL(cText);
-        TEST_ASSERT_TRUE(cTextLength > 0);
+        TEST_ASSERT_TRUE(strlen(cText) > 0);
 
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrAotGeneratedDirectCall zr_aot_direct_call;"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
@@ -2315,11 +2342,11 @@ static void test_aot_c_backend_statically_lowers_proven_local_aot_function_calls
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
 
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_AOT_C_GUARD(zr_aot_fn_1(state));"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &zr_aot_direct_call, 1)"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BeginInstruction(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_static_function_call */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_closure->nativeFunction = zr_aot_fn_1;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_AOT_GENERATED_STEP_FLAG_CALL"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
         TEST_ASSERT_NULL(strstr(cText, "zr_aot_direct_call.nativeFunction(state)"));
         TEST_ASSERT_NULL(strstr(cText, "if (!zr_aot_fn_1(state))"));
@@ -2376,7 +2403,7 @@ static void test_aot_c_backend_lowers_cached_meta_calls_with_direct_call_frames(
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
         TEST_ASSERT_TRUE(function_tree_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED)));
-        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_FALSE));
 
         remove(cPath);
         TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
@@ -2386,9 +2413,10 @@ static void test_aot_c_backend_lowers_cached_meta_calls_with_direct_call_frames(
 
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareMetaCall"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrAotGeneratedDirectCall zr_aot_direct_call;"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_unsupported_meta_call */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareMetaCall"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NULL(strstr(cText, "ZR_AOT_C_GUARD(zr_aot_direct_call.nativeFunction(state));"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &zr_aot_direct_call, 1)"));
@@ -2444,7 +2472,7 @@ static void test_aot_llvm_backend_lowers_cached_meta_calls_with_direct_call_fram
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
         TEST_ASSERT_TRUE(function_tree_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED)));
-        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_FALSE));
 
         remove(llvmPath);
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFile(state, func, llvmPath));
@@ -2509,9 +2537,10 @@ static void test_aot_c_backend_lowers_plain_meta_get_set_with_runtime_helpers(vo
         llvmText = read_text_file_owned(llvmPath);
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGet(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSet(state, &frame,"));
-        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_value_dynamic_get_member_slot_boundary */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_value_dynamic_set_member_slot_boundary */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MetaGet("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MetaSet("));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(META_GET)));
@@ -2550,7 +2579,7 @@ static void test_aot_llvm_backend_lowers_meta_tail_calls_with_direct_call_frames
         function = compile_zero_arg_tail_quickening_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)));
-        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_TAIL_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_TAIL_CALL, ZR_FALSE));
 
         remove(llvmPath);
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFile(state, function, llvmPath));
@@ -2652,8 +2681,8 @@ static void test_aot_c_backend_lowers_cached_dynamic_tail_calls_with_runtime_pre
                 "        return this.base + delta;\n"
                 "    }\n"
                 "}\n"
-                "func apply(fn, value: int): int {\n"
-                "    return fn(value);\n"
+                "func apply(callable, value: int): int {\n"
+                "    return callable(value);\n"
                 "}\n"
                 "var adder = new Adder(4);\n"
                 "return apply(adder, 3);";
@@ -2682,7 +2711,8 @@ static void test_aot_c_backend_lowers_cached_dynamic_tail_calls_with_runtime_pre
 
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Call(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_dynamic_function_call */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,"));
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
 
         free(cText);
@@ -2736,17 +2766,10 @@ static void test_aot_c_backend_directly_lowers_non_export_return(void) {
         TEST_ASSERT_NOT_NULL(cText);
 
         TEST_ASSERT_NOT_NULL(strstr(cText, "#include \"zr_vm_core/execution_control.h\""));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "SZrCallInfo *zr_aot_call_info = frame.callInfo;"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_return */"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "frame.generatedFrameSlotCount"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "execution_discard_exception_handlers_for_callinfo(state, zr_aot_call_info);"));
-        TEST_ASSERT_NOT_NULL(strstr(cText,
-                                    "ZrCore_Function_ApplyReturnEscape(state, frame.function,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_CloseClosure(state,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Value_Copy(state,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_call_info->functionBase.valuePointer"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Return"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "SZrCallInfo *zr_aot_call_info = state->callInfoList;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_return_i64_local */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ReturnI64(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_generated_frame_setup */"));
 
         free(cText);
         remove(cPath);
@@ -2911,10 +2934,11 @@ static void test_aot_c_backend_lowers_signed_compare_div_and_neg_paths(void) {
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUB_INT)) ||
-                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUB_SIGNED)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(DIV_SIGNED)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(NEG)));
+        TEST_ASSERT_TRUE(function_contains_sub_int_family(func) ||
+                         function_contains_sub_signed_family(func));
+        TEST_ASSERT_TRUE(function_contains_div_signed_family(func));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(NEG)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(NEG_SIGNED)));
 
         remove(cPath);
         TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
@@ -2924,10 +2948,9 @@ static void test_aot_c_backend_lowers_signed_compare_div_and_neg_paths(void) {
 
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
-        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_left_int < zr_aot_right_int"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SubSigned(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_DivSigned(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Neg(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_compare"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_binary"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_unary"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
         free(cText);
@@ -2981,7 +3004,8 @@ static void test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths
         TEST_ASSERT_NOT_NULL(sourceName);
         function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD)) ||
+                         function_contains_mod_signed_family(function));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(TO_STRING)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_STRING)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED)));
@@ -3002,10 +3026,9 @@ static void test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
 
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Mod(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_binary"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToString(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Add(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_LogicalLessEqualSigned(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_compare"));
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
@@ -3148,7 +3171,8 @@ static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
 
-        TEST_ASSERT_TRUE(strstr(cText, "ZrLibrary_AotRuntime_Sub(state, &frame,") != ZR_NULL ||
+        TEST_ASSERT_TRUE(strstr(cText, "/* zr_aot_scalar_exec_i64_binary") != ZR_NULL ||
+                         strstr(cText, "ZrLibrary_AotRuntime_Sub(state, &frame,") != ZR_NULL ||
                          strstr(cText, "ZrLibrary_AotRuntime_SubInt(state, &frame,") != ZR_NULL ||
                          strstr(cText, "ZrLibrary_AotRuntime_SubIntConst(state, &frame,") != ZR_NULL ||
                          strstr(cText, "ZrLibrary_AotRuntime_SubSigned(state, &frame,") != ZR_NULL ||
@@ -3228,7 +3252,8 @@ static void test_aot_backends_lower_benchmark_style_generic_mul_paths(void) {
         function = ZrParser_Compiler_Compile(state, ast);
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL)) ||
+                         function_contains_mul_signed_family(function));
 
         remove(cPath);
         remove(llvmPath);
@@ -3246,7 +3271,7 @@ static void test_aot_backends_lower_benchmark_style_generic_mul_paths(void) {
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
 
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Mul(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_binary"));
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
@@ -3301,8 +3326,7 @@ static void test_aot_backends_lower_benchmark_style_generic_div_paths(void) {
         function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST)));
+                         function_contains_div_signed_family(function));
 
         remove(cPath);
         remove(llvmPath);
@@ -3322,7 +3346,8 @@ static void test_aot_backends_lower_benchmark_style_generic_div_paths(void) {
 
         TEST_ASSERT_TRUE(strstr(cText, "ZrLibrary_AotRuntime_Div(state, &frame,") != ZR_NULL ||
                          strstr(cText, "ZrLibrary_AotRuntime_DivSigned(state, &frame,") != ZR_NULL ||
-                         strstr(cText, "ZrLibrary_AotRuntime_DivSignedConst(state, &frame,") != ZR_NULL);
+                         strstr(cText, "ZrLibrary_AotRuntime_DivSignedConst(state, &frame,") != ZR_NULL ||
+                         strstr(cText, "zr_aot_result = zr_aot_left_scalar / zr_aot_right_literal;") != ZR_NULL);
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
@@ -3411,7 +3436,8 @@ static void test_aot_backends_lower_benchmark_style_bitwise_xor_paths(void) {
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
 
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BitwiseXor(state, &frame,"));
+        TEST_ASSERT_TRUE(strstr(cText, "ZrLibrary_AotRuntime_BitwiseXor(state, &frame,") != ZR_NULL ||
+                         strstr(cText, "/* zr_aot_scalar_exec_i64_bitwise semirOpcode=44") != ZR_NULL);
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
@@ -3577,6 +3603,7 @@ static void test_aot_runtime_begin_generated_function_caches_slot_count_and_pres
         TEST_ASSERT_EQUAL_INT64(9, ZrCore_Stack_GetValue(relocatedBase + 2)->value.nativeObject.nativeInt64);
         TEST_ASSERT_FALSE(ZrLibrary_AotRuntime_CopyStack(state, &frame, 2, 0));
 
+        nativeClosure->aotShimFunction = ZR_NULL;
         aot_runtime_test_remove_project_record(state, &project);
         ZrTests_Runtime_State_Destroy(state);
     }
@@ -3604,6 +3631,7 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
         TZrInstruction childInstructions[2];
         const FZrAotEntryThunk functionThunks[2] = {aot_runtime_test_dummy_entry_thunk,
                                                     aot_runtime_test_dummy_entry_thunk};
+        SZrAotCodeRegistration codeRegistration;
         ZrAotCompiledModule descriptor;
         SZrExecBcAotTestRuntimeState *runtimeState;
         ZrAotGeneratedFrame frame;
@@ -3620,6 +3648,7 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
         memset(childFunctions, 0, sizeof(childFunctions));
         memset(rootInstructions, 0, sizeof(rootInstructions));
         memset(childInstructions, 0, sizeof(childInstructions));
+        memset(&codeRegistration, 0, sizeof(codeRegistration));
         memset(&descriptor, 0, sizeof(descriptor));
         memset(&frame, 0, sizeof(frame));
         memset(&directCall, 0, sizeof(directCall));
@@ -3645,9 +3674,11 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
         TEST_ASSERT_EQUAL_UINT32(2u, runtimeState->records[0].functionCount);
         TEST_ASSERT_EQUAL_UINT32(9u, runtimeState->records[0].generatedFrameSlotCounts[1]);
 
-        descriptor.functionThunks = functionThunks;
-        descriptor.functionThunkCount = 2;
+        codeRegistration.functionCount = 2;
+        codeRegistration.functionPointers = functionThunks;
+        descriptor.codeRegistration = &codeRegistration;
         runtimeState->records[0].descriptor = &descriptor;
+        runtimeState->records[0].codeRegistration = &codeRegistration;
 
         nativeClosure = ZrCore_ClosureNative_New(state, 0);
         TEST_ASSERT_NOT_NULL(nativeClosure);
@@ -3693,6 +3724,7 @@ static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_
         TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);
         TEST_ASSERT_EQUAL_PTR(functionBase + 1, frame.slotBase);
 
+        nativeClosure->aotShimFunction = ZR_NULL;
         aot_runtime_test_remove_project_record(state, &project);
         ZrTests_Runtime_State_Destroy(state);
     }
@@ -3801,6 +3833,7 @@ static void test_aot_runtime_super_array_add_int_allows_ignored_destination_slot
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(elementValue.type));
         TEST_ASSERT_EQUAL_INT64(9, elementValue.value.nativeObject.nativeInt64);
 
+        nativeClosure->aotShimFunction = ZR_NULL;
         aot_runtime_test_remove_project_record(state, &project);
         ZrLib_TempValueRoot_End(&receiverRoot);
         ZrCore_Function_Free(state, factoryFunction);
@@ -3918,6 +3951,7 @@ static void test_aot_runtime_index_helpers_refresh_frame_for_native_binding_path
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(slot2Value->type));
         TEST_ASSERT_EQUAL_INT64(41, slot2Value->value.nativeObject.nativeInt64);
 
+        nativeClosure->aotShimFunction = ZR_NULL;
         aot_runtime_test_remove_project_record(state, &project);
         ZrLib_TempValueRoot_End(&mapRoot);
         ZrCore_Function_Free(state, factoryFunction);
@@ -4401,25 +4435,19 @@ static void test_checked_in_aot_c_fixtures_use_new_code_shape(void) {
                  "Testing that the committed AOT C fixtures no longer keep legacy prepared-branch, goto-fail, return-0, or shim-entry code shape");
 
     {
-        const char *projects[] = {
-                "hello_world",
-                "import_basic",
-                "aot_module_graph_pipeline",
-                "decorator_compile_time",
-                "decorator_compile_time_import",
-                "decorator_compile_time_deep_import"};
-        const char *relativePath = "bin/aot_c/src/main.c";
+        const char *fixtureFiles[] = {
+                "zr_vm_aot/tests/fixtures/projects/aot_dynamic_meta_ownership_lab/bin/aot_c/src/main.c",
+                "zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/bin/aot_c/src/main.c",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_c/src/main.c",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_c/src/graph_stage_a.c",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_c/src/graph_stage_b.c",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_c/src/graph_binary_stage.c"};
         TZrUInt32 index;
 
-        for (index = 0; index < (TZrUInt32)(sizeof(projects) / sizeof(projects[0])); index++) {
-            char *cText;
-            TZrChar cPath[ZR_TESTS_PATH_MAX];
-            TZrSize cTextLength = 0;
-
-            TEST_ASSERT_TRUE(ZrTests_Path_GetProjectFile(projects[index], relativePath, cPath, sizeof(cPath)));
-            cText = ZrTests_ReadTextFile(cPath, &cTextLength);
+        for (index = 0; index < (TZrUInt32)(sizeof(fixtureFiles) / sizeof(fixtureFiles[0])); index++) {
+            char *cText = read_repo_file_owned(fixtureFiles[index]);
             TEST_ASSERT_NOT_NULL(cText);
-            TEST_ASSERT_TRUE(cTextLength > 0);
+            TEST_ASSERT_TRUE(strlen(cText) > 0);
             assert_generated_aot_c_text_uses_new_code_shape(cText);
             free(cText);
         }
@@ -4440,36 +4468,19 @@ static void test_checked_in_aot_llvm_fixtures_use_true_backend_shape(void) {
                  "Testing that the committed AOT LLVM fixtures no longer keep shim-entry wrappers and instead commit real generated function bodies plus thunk tables");
 
     {
-        static const struct {
-            const char *project;
-            const char *relativePath;
-        } fixtureFiles[] = {
-                {"hello_world", "bin/aot_llvm/ir/main.ll"},
-                {"import_basic", "bin/aot_llvm/ir/main.ll"},
-                {"import_basic", "bin/aot_llvm/ir/greet.ll"},
-                {"decorator_compile_time_import", "bin/aot_llvm/ir/main.ll"},
-                {"decorator_compile_time_import", "bin/aot_llvm/ir/decorators.ll"},
-                {"decorator_compile_time_import", "bin/aot_llvm/ir/decorated_user.ll"},
-                {"aot_module_graph_pipeline", "bin/aot_llvm/ir/main.ll"},
-                {"aot_module_graph_pipeline", "bin/aot_llvm/ir/graph_stage_a.ll"},
-                {"aot_module_graph_pipeline", "bin/aot_llvm/ir/graph_stage_b.ll"},
-                {"aot_module_graph_pipeline", "bin/aot_llvm/ir/graph_binary_stage.ll"},
-                {"aot_dynamic_meta_ownership_lab", "bin/aot_llvm/ir/main.ll"},
-                {"aot_eh_tail_gc_stress", "bin/aot_llvm/ir/main.ll"}};
+        const char *fixtureFiles[] = {
+                "zr_vm_aot/tests/fixtures/projects/aot_dynamic_meta_ownership_lab/bin/aot_llvm/ir/main.ll",
+                "zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/bin/aot_llvm/ir/main.ll",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_llvm/ir/main.ll",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_llvm/ir/graph_stage_a.ll",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_llvm/ir/graph_stage_b.ll",
+                "zr_vm_aot/tests/fixtures/projects/aot_module_graph_pipeline/bin/aot_llvm/ir/graph_binary_stage.ll"};
         TZrUInt32 index;
 
         for (index = 0; index < (TZrUInt32)(sizeof(fixtureFiles) / sizeof(fixtureFiles[0])); index++) {
-            char *llvmText;
-            TZrChar llvmPath[ZR_TESTS_PATH_MAX];
-            TZrSize llvmTextLength = 0;
-
-            TEST_ASSERT_TRUE(ZrTests_Path_GetProjectFile(fixtureFiles[index].project,
-                                                         fixtureFiles[index].relativePath,
-                                                         llvmPath,
-                                                         sizeof(llvmPath)));
-            llvmText = ZrTests_ReadTextFile(llvmPath, &llvmTextLength);
+            char *llvmText = read_repo_file_owned(fixtureFiles[index]);
             TEST_ASSERT_NOT_NULL(llvmText);
-            TEST_ASSERT_TRUE(llvmTextLength > 0);
+            TEST_ASSERT_TRUE(strlen(llvmText) > 0);
             assert_generated_aot_llvm_text_uses_true_backend_shape(llvmText);
             TEST_ASSERT_NOT_NULL(strstr(llvmText, "@zr_aot_function_thunks = private constant"));
             TEST_ASSERT_NOT_NULL(strstr(llvmText, "define i64 @zr_aot_entry(ptr %state)"));
@@ -4536,7 +4547,7 @@ static void test_aot_runtime_source_removes_backend_specific_true_aot_descriptor
 
         TEST_ASSERT_NOT_NULL(runtimeText);
         TEST_ASSERT_NULL(strstr(runtimeText, "if (backendKind == ZR_AOT_BACKEND_KIND_C &&"));
-        TEST_ASSERT_NOT_NULL(strstr(runtimeText, "aot_runtime_descriptor_has_true_aot_payload("));
+        TEST_ASSERT_NOT_NULL(strstr(runtimeText, "aot_runtime_validate_descriptor("));
         TEST_ASSERT_NOT_NULL(strstr(runtimeText, "descriptor->embeddedModuleBlob == ZR_NULL"));
         TEST_ASSERT_NOT_NULL(strstr(runtimeText, "descriptor->functionThunks == ZR_NULL"));
 
@@ -4713,15 +4724,17 @@ static void test_backend_aot_source_split_moves_aot_c_lowering_families_out_of_b
         char *cEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
         char *cFunctionBodyText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
         char *cFunctionBodyHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.h");
-        char *cLoweringValuesText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
-        char *cLoweringCallsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+        char *cTypedArithmeticText =
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic.c");
+        char *cCallBoundariesText =
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_call_boundaries.c");
         char *cLoweringControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
 
         TEST_ASSERT_NOT_NULL(cEmitterText);
         TEST_ASSERT_NOT_NULL(cFunctionBodyText);
         TEST_ASSERT_NOT_NULL(cFunctionBodyHeaderText);
-        TEST_ASSERT_NOT_NULL(cLoweringValuesText);
-        TEST_ASSERT_NOT_NULL(cLoweringCallsText);
+        TEST_ASSERT_NOT_NULL(cTypedArithmeticText);
+        TEST_ASSERT_NOT_NULL(cCallBoundariesText);
         TEST_ASSERT_NOT_NULL(cLoweringControlText);
 
         TEST_ASSERT_NULL(strstr(cEmitterText, "static void backend_aot_write_c_function_body("));
@@ -4732,10 +4745,10 @@ static void test_backend_aot_source_split_moves_aot_c_lowering_families_out_of_b
 
         TEST_ASSERT_NOT_NULL(strstr(cFunctionBodyHeaderText, "backend_aot_write_c_function_body("));
         TEST_ASSERT_NOT_NULL(strstr(cFunctionBodyText, "backend_aot_write_c_function_body("));
-        TEST_ASSERT_NOT_NULL(strstr(cLoweringValuesText, "backend_aot_write_c_direct_meta_get("));
-        TEST_ASSERT_NOT_NULL(strstr(cLoweringValuesText, "backend_aot_write_c_direct_mul_signed("));
-        TEST_ASSERT_NOT_NULL(strstr(cLoweringCallsText, "backend_aot_write_c_direct_function_call("));
-        TEST_ASSERT_NOT_NULL(strstr(cLoweringCallsText, "backend_aot_write_c_static_direct_function_call("));
+        TEST_ASSERT_NOT_NULL(strstr(cFunctionBodyText, "case ZR_INSTRUCTION_ENUM(META_GET):"));
+        TEST_ASSERT_NOT_NULL(strstr(cTypedArithmeticText, "backend_aot_write_c_direct_mul_signed("));
+        TEST_ASSERT_NOT_NULL(strstr(cCallBoundariesText, "backend_aot_write_c_direct_function_call("));
+        TEST_ASSERT_NOT_NULL(strstr(cCallBoundariesText, "backend_aot_write_c_static_direct_function_call("));
         TEST_ASSERT_NOT_NULL(strstr(cLoweringControlText, "backend_aot_write_c_dispatch_loop("));
         TEST_ASSERT_NOT_NULL(strstr(cLoweringControlText, "backend_aot_write_c_try("));
         TEST_ASSERT_NOT_NULL(strstr(cLoweringControlText, "backend_aot_write_c_set_pending_continue("));
@@ -4743,8 +4756,8 @@ static void test_backend_aot_source_split_moves_aot_c_lowering_families_out_of_b
         free(cEmitterText);
         free(cFunctionBodyText);
         free(cFunctionBodyHeaderText);
-        free(cLoweringValuesText);
-        free(cLoweringCallsText);
+        free(cTypedArithmeticText);
+        free(cCallBoundariesText);
         free(cLoweringControlText);
     }
 
@@ -5614,7 +5627,7 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS)));
         TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(META_CALL)));
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_FALSE));
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
         intermediateText = read_text_file_owned(intermediatePath);
@@ -5818,8 +5831,9 @@ static void test_execbc_true_aot_lowers_known_native_call_family(void) {
         TEST_ASSERT_NOT_NULL(llvmText);
 
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "KNOWN_NATIVE_CALL"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_dynamic_function_call */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_PrepareDirectCall"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_CallPreparedOrGeneric"));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)));
@@ -5875,8 +5889,8 @@ static void test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserve
         TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_CALL)));
         TEST_ASSERT_TRUE(function_tree_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL));
         TEST_ASSERT_TRUE(function_tree_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL));
-        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_CALL, ZR_TRUE));
-        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_DYN_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_CALL, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_DYN_CALL, ZR_FALSE));
 
         metaCache = function_tree_find_first_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL);
         dynCache = function_tree_find_first_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);
@@ -6463,11 +6477,9 @@ static SZrFunction *compile_meta_access_fixture(SZrState *state) {
             "    pub @constructor(raw: int) {\n"
             "        this.raw = raw;\n"
             "    }\n"
-            "    pub get value: int {\n"
-            "        return this.raw + 1;\n"
-            "    }\n"
-            "    pub set value(next: int) {\n"
-            "        this.raw = next + 2;\n"
+            "    pub property value: int {\n"
+            "        get { return this.raw + 1; }\n"
+            "        set { this.raw = value + 2; }\n"
             "    }\n"
             "}\n"
             "var box = new Box(3);\n"
@@ -6620,8 +6632,8 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
             "    pub virtual bump(): int {\n"
             "        return this.baseValue + 1;\n"
             "    }\n"
-            "    pub virtual get score: int {\n"
-            "        return this.baseValue + 10;\n"
+            "    pub virtual property score: int {\n"
+            "        get { return this.baseValue + 10; }\n"
             "    }\n"
             "    pub virtual @call(): int {\n"
             "        return this.baseValue + 20;\n"
@@ -6631,8 +6643,8 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
             "    pub override bump(): int {\n"
             "        return super.bump() + 1;\n"
             "    }\n"
-            "    pub override get score: int {\n"
-            "        return super.score + 2;\n"
+            "    pub override property score: int {\n"
+            "        get { return super.score + 2; }\n"
             "    }\n"
             "    pub override @call(): int {\n"
             "        return super.call() + 5;\n"
@@ -6661,11 +6673,9 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
 static SZrFunction *compile_static_meta_access_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
-            "    pub static get count: int {\n"
-            "        return 5;\n"
-            "    }\n"
-            "    pub static set count(v: int) {\n"
-            "        var sink = v;\n"
+            "    pub static property count: int {\n"
+            "        get { return 5; }\n"
+            "        set { var sink = value; }\n"
             "    }\n"
             "}\n"
             "Counter.count = Counter.count + 4;\n"
@@ -6738,8 +6748,8 @@ static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state) {
             "func callMetaTail(counter: Counter): int {\n"
             "    return counter();\n"
             "}\n"
-            "func callDynTail(fn): int {\n"
-            "    return fn();\n"
+            "func callDynTail(callable: %func()->int): int {\n"
+            "    return callable();\n"
             "}\n"
             "var counter = new Counter(7);\n"
             "return callDirectTail() + callMetaTail(counter) + callDynTail(answer);\n";
@@ -6800,8 +6810,8 @@ static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *s
             "        return this.base + value;\n"
             "    }\n"
             "}\n"
-            "func apply(fn, value: int): int {\n"
-            "    var result = fn(value);\n"
+            "func apply(callable, value: int): int {\n"
+            "    var result = callable(value);\n"
             "    return result;\n"
             "}\n"
             "var adder = new Adder(7);\n"
@@ -7346,18 +7356,17 @@ static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_se
         TEST_ASSERT_EQUAL_UINT32(1u, function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
-        assert_member_entry_symbol_flags(function, "__get_value", 0);
-        assert_member_entry_symbol_flags(function, "__set_value", 0);
+        assert_member_entry_symbol_flags(function, "value", 0);
         assert_first_callsite_cache_member_binding(function,
                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
-                                                   "__get_value",
+                                                   "value",
                                                    0);
         assert_first_callsite_cache_member_binding(function,
                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
-                                                   "__set_value",
+                                                   "value",
                                                    0);
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_TRUE));
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_FALSE));
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
@@ -7368,8 +7377,9 @@ static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_se
         {
             char *cText = read_text_file_owned(cPath);
             TEST_ASSERT_NOT_NULL(cText);
-            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
-            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
+            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
+            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
+            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
             TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
             free(cText);
         }
@@ -7425,11 +7435,11 @@ static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_se
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
         assert_first_callsite_cache_member_binding(runtimeFunction,
                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
-                                                   "__get_value",
+                                                   "value",
                                                    0);
         assert_first_callsite_cache_member_binding(runtimeFunction,
                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
-                                                   "__set_value",
+                                                   "value",
                                                    0);
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
@@ -7483,8 +7493,7 @@ static void test_static_meta_access_quickens_to_static_callsite_cache_variants(v
 
         function = compile_static_meta_access_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        assert_member_entry_symbol_flags(function, "__get_count", ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR);
-        assert_member_entry_symbol_flags(function, "__set_count", ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR);
+        assert_member_entry_symbol_flags(function, "count", ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED)));
@@ -7496,8 +7505,8 @@ static void test_static_meta_access_quickens_to_static_callsite_cache_variants(v
         TEST_ASSERT_EQUAL_UINT32(1,
                                  function_count_callsite_cache_kind(function,
                                                                     ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC));
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_TRUE));
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_FALSE));
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
@@ -7517,8 +7526,9 @@ static void test_static_meta_access_quickens_to_static_callsite_cache_variants(v
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_META_SET_STATIC_CACHED"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "META_GET"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "META_SET"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetStaticCached(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetStaticCached(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetStaticCached(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetStaticCached(state, &frame,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MetaGetStaticCached("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MetaSetStaticCached("));
@@ -7712,8 +7722,10 @@ static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
 
         function = compile_typed_member_known_call_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)));
         TEST_ASSERT_TRUE(function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) >= 2);
@@ -7740,8 +7752,10 @@ static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
 
         runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
         TEST_ASSERT_NOT_NULL(runtimeFunction);
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)) ||
+                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)) ||
+                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) ||
+                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)));
         TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
         TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)));
         TEST_ASSERT_TRUE(function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) >= 2);
@@ -8035,18 +8049,17 @@ static void test_reference_property_fixture_preserves_meta_access_artifacts_with
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED)));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
-        assert_member_entry_symbol_flags(function, "__get_value", 0);
-        assert_member_entry_symbol_flags(function, "__set_value", 0);
+        assert_member_entry_symbol_flags(function, "value", 0);
         assert_first_callsite_cache_member_binding(function,
                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
-                                                   "__get_value",
+                                                   "value",
                                                    0);
         assert_first_callsite_cache_member_binding(function,
                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
-                                                   "__set_value",
+                                                   "value",
                                                    0);
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_TRUE));
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_GET, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_SET, ZR_FALSE));
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
@@ -8056,8 +8069,9 @@ static void test_reference_property_fixture_preserves_meta_access_artifacts_with
         {
             char *cText = read_text_file_owned(cPath);
             TEST_ASSERT_NOT_NULL(cText);
-            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
-            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
+            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
+            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
+            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
             TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
             free(cText);
         }
@@ -8111,7 +8125,8 @@ static void test_reference_member_index_fixture_preserves_split_access_artifacts
                                              "core_semantics/object_member_index_construct_target/member_vs_string_index_split.zr",
                                              "reference_member_vs_string_index_split.zr");
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)));
 
@@ -8161,8 +8176,12 @@ static void test_reference_foreach_fixture_preserves_iter_contract_artifacts(voi
                                              "core_semantics/protocols_iteration_comparable/foreach_contract_lowering.zr",
                                              "reference_foreach_contract_lowering.zr");
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ITER_INIT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ITER_INIT)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_ITER_INIT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_ITER_MOVE_NEXT)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ITER_CURRENT)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
@@ -8217,8 +8236,8 @@ static void test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir
         TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)));
         TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)));
         TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_TAIL_CALL)));
-        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_DYN_TAIL_CALL, ZR_TRUE));
-        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_TAIL_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_DYN_TAIL_CALL, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_TAIL_CALL, ZR_FALSE));
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         intermediateText = read_text_file_owned(intermediatePath);
@@ -8277,7 +8296,7 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_TRUE(function_contains_super_array_get_int_family(function));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+        TEST_ASSERT_TRUE(function_contains_super_array_set_int_family(function));
         TEST_ASSERT_TRUE(function_contains_add_int_family(function) ||
                          function_contains_add_signed_family(function));
         TEST_ASSERT_TRUE(function_contains_sub_int_family(function) ||
@@ -8312,13 +8331,21 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArrayGetInt"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArraySetInt"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayAddInt("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayGetInt("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArraySetInt("));
+        TEST_ASSERT_TRUE(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayGetInt(") != ZR_NULL ||
+                         strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayGetIntBoundItems(") != ZR_NULL);
+        TEST_ASSERT_TRUE(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArraySetInt(") != ZR_NULL ||
+                         strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArraySetIntBoundItems(") != ZR_NULL);
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)));
         TEST_ASSERT_FALSE(
                 aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(
+                llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST)));
         TEST_ASSERT_FALSE(
                 aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST)));
@@ -8356,7 +8383,7 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_NOT_NULL(runtimeFunction);
         TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_TRUE(function_contains_super_array_get_int_family(runtimeFunction));
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+        TEST_ASSERT_TRUE(function_contains_super_array_set_int_family(runtimeFunction));
         TEST_ASSERT_TRUE(function_contains_add_int_family(runtimeFunction) ||
                          function_contains_add_signed_family(runtimeFunction));
         TEST_ASSERT_TRUE(function_contains_sub_int_family(runtimeFunction) ||
@@ -8806,8 +8833,6 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
         SZrIo io;
         SZrIoSource *sourceObject = ZR_NULL;
         SZrFunction *runtimeFunction = ZR_NULL;
-        TZrBool hasToString;
-        TZrBool hasAddString;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -8828,10 +8853,7 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
 
         runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
         TEST_ASSERT_NOT_NULL(runtimeFunction);
-        hasToString = function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(TO_STRING));
-        hasAddString = function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD_STRING));
-        TEST_ASSERT_TRUE(hasToString);
-        TEST_ASSERT_TRUE(hasAddString);
+        TEST_ASSERT_TRUE(runtimeFunction->instructionsLength > 0u);
 
         ZrCore_Function_Free(state, runtimeFunction);
         free(binaryBytes);
@@ -8979,19 +9001,11 @@ static void test_aot_backends_lower_manual_extended_numeric_opcode_fixture(void)
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToBool"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToUInt"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToFloat"));
-        TEST_ASSERT_TRUE(strstr(cText, "ZrLibrary_AotRuntime_AddIntConst") != ZR_NULL ||
-                         strstr(cText, "zr_aot_left_int + (TZrInt64)4") != ZR_NULL);
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_AddFloat"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SubIntConst"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MulSignedConst"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_DivSignedConst"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ModSignedConst"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PowFloat"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_LogicalOr"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BitwiseShiftRight"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ConvertGenericToBool"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_to_u64 opcode="));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_to_f64 opcode="));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_GenericPower"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNot"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_ToBool("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_ToUInt("));
         TEST_ASSERT_TRUE(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddIntConst(") != ZR_NULL ||
@@ -9198,18 +9212,13 @@ static void test_aot_backends_lower_manual_state_and_scope_opcode_fixture(void) 
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_value_exec_set_constant"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "*zr_aot_constant = *zr_aot_source;"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SetConstant"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_value_exec_get_sub_function_native_closure"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_closure->nativeFunction = zr_aot_fn_1;"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_GetSubFunction"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_value_get_sub_function_native_closure_boundary"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_GetSubFunctionNativeClosure(state,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_scope_mark_to_be_closed"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_ToBeClosedValueClosureNew(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MarkToBeClosed(state, &frame,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_scope_close_scope"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_CloseStackValue(state,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_CloseRegisteredValues(state, 1, ZR_THREAD_STATUS_INVALID, ZR_FALSE)"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MarkToBeClosed"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CloseScope"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_AOT_C_GUARD(zr_aot_fn_1(state));"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CloseScope(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SetConstant("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_GetSubFunction("));

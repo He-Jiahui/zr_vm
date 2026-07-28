@@ -299,6 +299,19 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
         self.assertTrue(
             any(entry.reason == "historicalPlan" for entry in first.exclusions)
         )
+        exclusion_reasons = {entry.file: entry.reason for entry in first.exclusions}
+        self.assertEqual(
+            "legacyOrMigrationFixture",
+            exclusion_reasons[
+                "tests/fixtures/syntax_migration_frontend/input/review_and_blocked_forms.zr"
+            ],
+        )
+        self.assertEqual(
+            "expectedDiagnosticFixture",
+            exclusion_reasons[
+                "tests/fixtures/projects/syntax_reference_v1/negative/function_delimiters.zr"
+            ],
+        )
         self.assertFalse(
             any(entry.file.endswith((".zro", ".zri", ".zrs")) for entry in first.scanned_files)
         )

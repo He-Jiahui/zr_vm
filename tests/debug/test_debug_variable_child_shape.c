@@ -537,7 +537,6 @@ static void test_debug_protocol_expands_union_variant_payloads(void) {
     TEST_ASSERT_NOT_NULL(state);
     function = compile_debug_source(state, sourcePath, source);
     TEST_ASSERT_NOT_NULL(function);
-
     memset(&config, 0, sizeof(config));
     config.address = "127.0.0.1:0";
     config.suspend_on_start = ZR_TRUE;

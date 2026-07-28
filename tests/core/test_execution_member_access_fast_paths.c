@@ -4134,6 +4134,7 @@ static void test_member_cached_known_vm_call_fast_path_rejects_closure_function_
     TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
     TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
 
+    fixture.callableFunction->closureValueLength = 0u;
     ZrTests_Runtime_State_Destroy(state);
 }
 

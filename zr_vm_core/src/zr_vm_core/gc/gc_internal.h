@@ -594,6 +594,10 @@ static ZR_FORCE_INLINE TZrBool garbage_collector_try_mark_permanent_object_fast(
         object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
         return ZR_FALSE;
     }
+    if (object->type == ZR_RAW_OBJECT_TYPE_INVALID ||
+        object->type >= ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX) {
+        return ZR_TRUE;
+    }
     if (object->garbageCollectMark.generation == collector->gcGeneration) {
         return ZR_TRUE;
     }

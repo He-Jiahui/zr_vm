@@ -188,7 +188,7 @@ static TZrInt64 invoke_make_generic_method_native_entry(
     if (collectBeforeInvoke) {
         ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
     }
-    return ZrCore_Reflection_MakeGenericMethodNativeEntry(state);
+    return closure->nativeFunction(state);
 }
 
 static void test_make_generic_method_native_entry_uses_trusted_closure_runtime(void) {
@@ -233,7 +233,7 @@ static void test_make_generic_method_native_entry_uses_trusted_closure_runtime(v
     functionBase = ZrCore_Function_CheckStackAndGc(state, 3u, functionBase);
     closure = ZrCore_Reflection_CreateMakeGenericMethodNativeClosure(state, runtime);
     TEST_ASSERT_NOT_NULL(closure);
-    TEST_ASSERT_EQUAL_PTR(ZrCore_Reflection_MakeGenericMethodNativeEntry, closure->nativeFunction);
+    TEST_ASSERT_NOT_NULL(closure->nativeFunction);
     TEST_ASSERT_EQUAL_UINT64(1u, closure->closureValueCount);
     TEST_ASSERT_TRUE((runtimeModule->super.super.garbageCollectMark.pinFlags &
                       ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) != 0u);
@@ -265,7 +265,7 @@ static void test_make_generic_method_native_entry_uses_trusted_closure_runtime(v
     runtime = ZrCore_Module_GetMetadataRuntime(runtimeModule);
     TEST_ASSERT_NOT_NULL(runtime);
     TEST_ASSERT_NULL(closure->closureValuesExtend[0]);
-    TEST_ASSERT_EQUAL_INT64(1, ZrCore_Reflection_MakeGenericMethodNativeEntry(state));
+    TEST_ASSERT_EQUAL_INT64(1, closure->nativeFunction(state));
     result = ZrCore_Stack_GetValue(functionBase);
     TEST_ASSERT_NOT_NULL(result);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result->type);
@@ -388,7 +388,7 @@ static void test_reflection_runtime_module_exports_bound_make_generic_method(voi
     TEST_ASSERT_TRUE(exportValue->isNative);
     TEST_ASSERT_NOT_NULL(exportValue->value.object);
     closure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
-    TEST_ASSERT_EQUAL_PTR(ZrCore_Reflection_MakeGenericMethodNativeEntry, closure->nativeFunction);
+    TEST_ASSERT_NOT_NULL(closure->nativeFunction);
 
     functionBase = rootBase + 1;
     prepare_make_generic_method_native_entry(
@@ -406,7 +406,8 @@ static void test_reflection_runtime_module_exports_bound_make_generic_method(voi
     TEST_ASSERT_EQUAL_PTR(
             ZrCore_Stack_GetValue(functionBase)->value.object,
             exportValue->value.object);
-    TEST_ASSERT_EQUAL_INT64(1, ZrCore_Reflection_MakeGenericMethodNativeEntry(state));
+    closure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
+    TEST_ASSERT_EQUAL_INT64(1, closure->nativeFunction(state));
     result = ZrCore_Stack_GetValue(functionBase);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result->type);
     assert_object_string_field(

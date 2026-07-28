@@ -826,7 +826,7 @@ mod tests {
         assert!(artifacts.zro.exists());
         assert!(artifacts.zri.exists());
         let manifest = workspace.load_manifest()?;
-        assert_eq!(manifest.version, 2);
+        assert_eq!(manifest.version, 3);
         assert_eq!(manifest.entries.len(), 1);
         assert_eq!(manifest.entries[0].module_name, "main");
         assert_eq!(manifest.entries[0].zro_path, artifacts.zro);
@@ -946,8 +946,8 @@ mod tests {
                 "    }\n",
                 "\n",
                 "    #markProperty#\n",
-                "    pub get value: int {\n",
-                "        return this._value;\n",
+                "    pub property value: int {\n",
+                "        get { return this._value; }\n",
                 "    }\n",
                 "}\n",
                 "\n",
@@ -1036,7 +1036,7 @@ mod tests {
         assert!(decorators_artifacts.zri.exists());
 
         let manifest = workspace.load_manifest()?;
-        assert_eq!(manifest.version, 2);
+        assert_eq!(manifest.version, 3);
         assert_eq!(manifest.entries.len(), 3);
         let main_entry = manifest
             .entries
@@ -1080,7 +1080,7 @@ mod tests {
         assert!(!decorators_artifacts.zri.exists());
 
         let manifest = workspace.load_manifest()?;
-        assert_eq!(manifest.version, 2);
+        assert_eq!(manifest.version, 3);
         assert_eq!(manifest.entries.len(), 3);
         let main_entry = manifest
             .entries

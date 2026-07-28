@@ -309,6 +309,8 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_result_opcode
         case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):
             return ZR_AOT_SCALAR_LOCAL_KIND_BOOL;
 
         default:
@@ -330,7 +332,10 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_call_with_stack_argume
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
@@ -360,8 +365,22 @@ static TZrBool backend_aot_c_scalar_locals_instruction_reads_call_argument_slot(
         return ZR_FALSE;
     }
 
-    functionSlot = instruction->instruction.operand.operand1[0];
-    argumentCount = instruction->instruction.operand.operand1[1];
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) {
+        return slot > instruction->instruction.operandExtra;
+    }
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)) {
+        return slot == instruction->instruction.operand.operand0[1] ||
+               slot == instruction->instruction.operand.operand0[2] ||
+               slot == instruction->instruction.operandExtra + 1u ||
+               slot == instruction->instruction.operandExtra + 2u;
+    }
+    if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL)) {
+        functionSlot = instruction->instruction.operandExtra;
+        argumentCount = instruction->instruction.operand.operand1[1];
+    } else {
+        functionSlot = instruction->instruction.operand.operand1[0];
+        argumentCount = instruction->instruction.operand.operand1[1];
+    }
     return (TZrBool)(argumentCount > 0u &&
                      slot > functionSlot &&
                      slot - functionSlot <= argumentCount);
@@ -371,7 +390,10 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_call_result_write(EZrI
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
@@ -416,6 +438,10 @@ static TZrBool backend_aot_c_scalar_locals_instruction_replaces_call_result_slot
     }
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    if (opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL) ||
+        opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)) {
+        return ZR_FALSE;
+    }
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
             return (TZrBool)(instruction->instruction.operandExtra == slot);
@@ -778,11 +804,59 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_one_arg_calla
     return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
 }
 
+static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_two_arg_callable_return(
+        const SZrFunction *calleeFunction) {
+    if (calleeFunction == ZR_NULL) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+    }
+
+    if (backend_aot_c_can_emit_typed_bool_two_arg_thunk(calleeFunction) ||
+        backend_aot_c_can_emit_typed_bool_i64_two_arg_thunk(calleeFunction) ||
+        backend_aot_c_can_emit_typed_bool_u64_two_arg_thunk(calleeFunction) ||
+        backend_aot_c_can_emit_typed_bool_f64_two_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_BOOL;
+    }
+    if (backend_aot_c_can_emit_typed_i64_two_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_I64;
+    }
+    if (backend_aot_c_can_emit_typed_u64_two_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_U64;
+    }
+    if (backend_aot_c_can_emit_typed_f64_two_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_F64;
+    }
+
+    return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+}
+
+static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_three_arg_callable_return(
+        const SZrFunction *calleeFunction) {
+    if (calleeFunction == ZR_NULL) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+    }
+
+    if (backend_aot_c_can_emit_typed_bool_three_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_BOOL;
+    }
+    if (backend_aot_c_can_emit_typed_i64_three_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_I64;
+    }
+    if (backend_aot_c_can_emit_typed_u64_three_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_U64;
+    }
+    if (backend_aot_c_can_emit_typed_f64_three_arg_thunk(calleeFunction)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_F64;
+    }
+
+    return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+}
+
 static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_call_result_callee(
         const SZrFunction *function,
         TZrUInt32 callInstructionIndex) {
     const TZrInstruction *instruction;
     const SZrFunction *calleeFunction;
+    TZrUInt32 argumentCount;
 
     if (function == ZR_NULL ||
         function->instructionsList == ZR_NULL ||
@@ -791,10 +865,15 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_call_result_c
     }
 
     instruction = &function->instructionsList[callInstructionIndex];
-    if (!backend_aot_c_scalar_locals_call_result_has_no_arguments(instruction) &&
-        (!backend_aot_c_scalar_locals_instruction_is_call_result_write(
-                 (EZrInstructionCode)instruction->instruction.operationCode) ||
-         instruction->instruction.operand.operand1[1] != 1u)) {
+    if (!backend_aot_c_scalar_locals_instruction_is_call_result_write(
+                (EZrInstructionCode)instruction->instruction.operationCode)) {
+        return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+    }
+
+    argumentCount = backend_aot_c_scalar_locals_call_result_has_no_arguments(instruction)
+                            ? 0u
+                            : instruction->instruction.operand.operand1[1];
+    if (argumentCount > 3u) {
         return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
     }
 
@@ -803,10 +882,19 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_call_result_c
             callInstructionIndex,
             instruction->instruction.operand.operand1[0],
             0u);
-    if (backend_aot_c_scalar_locals_call_result_has_no_arguments(instruction)) {
-        return backend_aot_c_scalar_locals_kind_from_no_arg_callable_return(calleeFunction);
+    switch (argumentCount) {
+        case 0u:
+            return backend_aot_c_scalar_locals_kind_from_no_arg_callable_return(calleeFunction);
+        case 1u:
+            return backend_aot_c_scalar_locals_kind_from_one_arg_callable_return(calleeFunction);
+        case 2u:
+            return backend_aot_c_scalar_locals_kind_from_two_arg_callable_return(calleeFunction);
+        case 3u:
+            return backend_aot_c_scalar_locals_kind_from_three_arg_callable_return(calleeFunction);
+        default:
+            break;
     }
-    return backend_aot_c_scalar_locals_kind_from_one_arg_callable_return(calleeFunction);
+    return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
 }
 
 static EZrAotScalarLocalKind backend_aot_c_scalar_locals_constant_slot_kind_before_instruction(
@@ -2730,7 +2818,6 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_write(EZrAotScal
         return;
     }
 
-    (void)functionIr;
     backend_aot_c_scalar_locals_record_semir_writes_for_exec_instruction(
             slotKinds, slotCount, function, execInstructionIndex);
 
@@ -2881,7 +2968,9 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_write(EZrAotScal
             sourceKind = declaredSlotKinds[sourceSlot];
         }
         if (sourceKind == ZR_AOT_SCALAR_LOCAL_KIND_NONE &&
-            declaredSlotKinds != ZR_NULL) {
+            declaredSlotKinds != ZR_NULL &&
+            ((functionIr != ZR_NULL && sourceSlot < functionIr->frameLayout.parameterCount) ||
+             sourceSlot < function->parameterCount)) {
             sourceKind = declaredSlotKinds[destinationSlot];
         }
         backend_aot_c_scalar_locals_set_slot(

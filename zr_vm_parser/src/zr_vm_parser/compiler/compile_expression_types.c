@@ -1141,7 +1141,7 @@ TZrBool resolve_expression_root_type(SZrCompilerState *cs, SZrAstNode *node, SZr
             }
             if (aliasPrototype != ZR_NULL) {
                 *outTypeName = aliasType.typeName;
-                *outIsTypeReference = aliasPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
+                *outIsTypeReference = ZR_FALSE;
                 ZrParser_InferredType_Free(cs->state, &aliasType);
                 return ZR_TRUE;
             }
@@ -2284,6 +2284,10 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
         EZrParameterPassingMode passingMode = member_call_parameter_passing_mode_at(parameterPassingModes, index);
         TZrUInt32 argSlot = firstArgSlot + (TZrUInt32)index;
 
+        if (memberInfo->contractRole == ZR_MEMBER_CONTRACT_ROLE_BUILTIN_BOX && index == 0) {
+            expectedType = ZR_NULL;
+        }
+
         compiler_ensure_stack_slot_available(cs, argSlot);
         if (argNode != ZR_NULL) {
             if (requireTaskHandleArgument && index == 0) {
@@ -3070,11 +3074,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 }
                                 preservesInlineFieldPlace =
                                         (TZrBool)(isInlineStructOrUnionField &&
+                                                  !isStaticMember &&
                                                   !isFinalMember &&
                                                   feedsFunctionCall);
 
                                 if (isInlineStructOrUnionField ||
-                                    currentSlotIsArrayElementAlias) {
+                                    currentSlotIsArrayElementAlias ||
+                                    !isFinalMember) {
                                     resultSlot = (isFinalMember &&
                                                   preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
                                                   preferredDirectMemberCallResultSlot != currentSlot)

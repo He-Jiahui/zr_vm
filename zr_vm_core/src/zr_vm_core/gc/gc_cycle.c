@@ -2815,8 +2815,11 @@ TZrSize garbage_collector_prepare_major_collection(SZrState *state) {
     garbage_collector_clear_forwarding_metadata(collector);
     object = collector->gcObjectList;
     while (object != ZR_NULL) {
-        if (object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED &&
-            object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+        if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+            object->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(collector);
+            object->gcList = ZR_NULL;
+            work++;
+        } else if (object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED) {
             object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
             object->garbageCollectMark.generation = collector->gcGeneration;
             object->gcList = ZR_NULL;

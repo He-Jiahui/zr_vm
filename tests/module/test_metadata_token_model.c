@@ -14,6 +14,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
@@ -920,7 +921,7 @@ static void assert_union_type_def_token_model(const SZrFunction *function) {
     TEST_ASSERT_TRUE(typeDefRecord->signatureBlobOffset + typeDefRecord->signatureBlobLength <=
                      function->signatureBlobHeapLength);
     TEST_ASSERT_TRUE(typeDefRecord->signatureHash != 0u);
-    TEST_ASSERT_EQUAL_UINT32(1u, typeDefRecord->layoutVersion);
+    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_SCHEMA_VERSION, typeDefRecord->layoutVersion);
     TEST_ASSERT_TRUE(typeDefRecord->layoutHash != 0u);
 
     signatureRecord = find_token_record(function->metadataTokenRecords,
@@ -992,7 +993,7 @@ static void assert_union_type_def_layout_identity_preserved(const SZrMetadataTok
                                                      ZR_METADATA_TABLE_TYPE_DEF);
     TEST_ASSERT_NOT_NULL(expectedTypeDef);
     TEST_ASSERT_NOT_NULL(actualTypeDef);
-    TEST_ASSERT_EQUAL_UINT32(1u, expectedTypeDef->layoutVersion);
+    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_SCHEMA_VERSION, expectedTypeDef->layoutVersion);
     TEST_ASSERT_TRUE(expectedTypeDef->layoutHash != 0u);
     TEST_ASSERT_EQUAL_UINT32(expectedTypeDef->layoutVersion, actualTypeDef->layoutVersion);
     TEST_ASSERT_EQUAL_UINT64(expectedTypeDef->layoutHash, actualTypeDef->layoutHash);
@@ -1790,7 +1791,7 @@ static void test_union_type_spec_binding_records_type_def_layout_identity(void) 
     TEST_ASSERT_NOT_NULL(callerTypeSpec);
     TEST_ASSERT_NOT_NULL(callerTypeDef);
     TEST_ASSERT_NOT_NULL(providerTypeDef);
-    TEST_ASSERT_EQUAL_UINT32(1u, callerTypeDef->layoutVersion);
+    TEST_ASSERT_EQUAL_UINT32(ZR_TYPE_LAYOUT_SCHEMA_VERSION, callerTypeDef->layoutVersion);
     TEST_ASSERT_TRUE(callerTypeDef->layoutHash != 0u);
     TEST_ASSERT_EQUAL_UINT32(callerTypeDef->layoutVersion, providerTypeDef->layoutVersion);
     TEST_ASSERT_EQUAL_UINT64(callerTypeDef->layoutHash, providerTypeDef->layoutHash);

@@ -15,7 +15,7 @@
 | 1 | [Canonical TypeRef、Place IR、CFG facts 与 artifact schema](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | 规范类型、Place/Value IR、数据流事实、产物契约 | 无 |
 | 2 | [`fn/ref/in/out/scoped/readonly` 与 borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md) | 新语法、引用契约、借用检查、诊断 | 1 |
 | 3 | [struct/ref struct、receiver effect、Span 与 layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md) | `init TypeRef(...)` 值构造、值布局、ref-like 限制、receiver effect、连续视图 | 1、2 |
-| 4 | [resource class、Unique/Shared/Weak、Drop 与 GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | 确定性生命周期、GcDomain、domain-local STW、跨世界/跨domain桥 | 1、2、3 的布局契约 |
+| 4 | [resource class、Unique/Shared/Weak、Drop 与 GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | 确定性生命周期、GcDomain、domain-local STW、TransferEnvelope owner handoff、跨世界/跨domain桥 | 1、2、3 的布局契约 |
 | 5 | [property 统一 AST、显式字段与 ref-return property](./2026-07-18-05-property-unified-ast-design.md) | 统一属性模型、访问器、显式 `let/var` field、ref 返回 | 1、2、3 的 receiver/layout 契约 |
 | 6 | [`%xxx` 迁移、LSP、文档与全项目 fixture](./2026-07-18-06-percent-migration-lsp-fixtures-design.md) | 06A：迁移盘点、frontend 与 dry-run；06B：最终仓库切换与清理 | 06A：1-5；06B：06A、8、10-14 |
 | 7 | [目标语法全覆盖参考工程](./2026-07-19-07-comprehensive-syntax-reference-fixture-design.md) | 07A：fixture/manifest 骨架；07B：VM/AOT/artifact/LSP 的 current reference 晋级 | 07A：1-5、06A；07B：07A、06B、8-14 |
@@ -23,7 +23,7 @@
 | 9 | [generational PoolHandle/PoolRef 与连续池化内存](./2026-07-19-09-generational-pool-handle-ref-struct-design.md) | 弱handle、guarded direct ref、延迟复用、slab/GC scan contract | 语义：1-5；native/反射集成：8、10R |
 | 10 | [Native extern、`zr.*`核心库、模块与包解析](./2026-07-19-10-native-ffi-module-package-design.md) | 10R：resolver/package；10F：FFI ABI；10C：native provider 汇聚 | 10R：1、06A；10F：1-4、10R；10C：8、9、11-14 的 provider contract |
 | 11 | [编译期执行、条件编译、静态元数据与类型化声明生成](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | BuildPredicate、comptime sandbox、AttributeData、DeclarationPatch、conditional call | 1-5、06A、8、10R |
-| 12 | [`async/await`、Task/Job/Scheduler 与线程协程模型](./2026-07-20-12-async-task-job-scheduler-design.md) | Async effect、hot Task/cold Job、scheduler domain policy、Send/Sync/transport contract | 1-5、9、10R、11；AttachedDomain依赖04 M5，IsolatedDomain依赖04 M6 |
+| 12 | [`async/await`、Task/Job/Scheduler 与线程协程模型](./2026-07-20-12-async-task-job-scheduler-design.md) | Async effect、hot Task/cold Job、scheduler domain policy、Send/Sync、DropOnFailure transport contract | 1-5、9、10R、11；AttachedDomain依赖04 M5，IsolatedDomain依赖04 M6 |
 | 13 | [普通 `fn`、Enumerator、`yield` 与异步迭代](./2026-07-20-13-iterator-enumerator-yield-design.md) | 显式 Iterator TypeRef、yield state machine、for lowering、AsyncIterator | 1-5、12 |
 | 14 | [普通函数、测试元数据、断言与 TestManifest](./2026-07-20-14-test-function-harness-design.md) | TestEntry/TestManifest、`zr.testing`、同步/异步/参数化 runner | 1、06A、10R、11、12 |
 
@@ -150,6 +150,7 @@ flowchart TD
 30. 含`yield`的普通函数显式返回`zr.iteration.Iterator<T>`；异步迭代显式返回`zr.iteration.AsyncIterator<T>`。二者的public TypeId由`zr.iteration` native descriptor唯一拥有，function-private frame只进入artifact；`for`只消费同模块的Enumerator/Iterable capability。
 31. 测试是带`#zr.testing.test#`metadata的普通`fn(...): void`或显式返回`zr.task.Task<void>`的`async fn`；`zr.testing`是N3 Test native host模块，compiler不增加`test`关键字或宏生成main，production graph不链接testing executable。
 32. GC collection/pause scope是host配置的`GcDomain`，不与进程、OS thread或游戏实例强绑定。一个domain可含多个state/mutator，STW只等待该domain；same-domain跨mutatormove/share分别受Send/Sync约束，跨domain禁止普通GC edge并只走Canonical `DomainTransferKind` transport。host可选择全局、每实例或分组domain，语言不替部署决定成本策略。
+33. 跨mutator owner handoff统一使用runtime-internal TransferEnvelope：source参数绑定后永久Moved，producer release发布、consumer acquire claim，envelope在commit前是唯一owner，失败恰好Drop一次。第一版`schedule(Job): Task`采用DropOnFailure，不隐式恢复源变量、不在claim后自动retry，也不把owner exactly-once误述为消息必达或Job副作用exactly-once。
 
 ## 5. 建议重点复核的细化决定
 
@@ -159,6 +160,7 @@ flowchart TD
 - readonly struct 内普通 `fn` 自动获得 readonly receiver；普通 class/struct 仍以 `const fn` 显式只读。
 - `Shared<T>` 第一版非原子且不能跨线程，`AtomicShared<T>` 后续独立提供。
 - `GcDomain`采用混合模型：host选择共享或隔离heap，每个domain内部以local-STW为正确性基线并可演进concurrent major；不存在隐式process-wide full GC。
+- same-domain Unique handoff保持O(1) handle move，不退化为AtomicShared/refcount；cross-domain ResourceMove必须通过prepare/commit/abort token。调度失败只fault Task并Drop capture，recoverable submission若以后加入必须是独立public API。
 - `Unique<T>.intoGc()` 生成 `GcBox<T>` 并明确放弃确定性释放；Shared 不支持该转换。
 - resource class 持有 GC 对象必须通过 `Gc<T>` root handle。
 - concrete property 必须显式代理预先声明的 field；ref-return property 必须显式 getter，且不允许 set/init/auto backing。
@@ -190,7 +192,7 @@ flowchart TD
 - `zr_vm_language_server` 已经消费 semantic facts；迁移目标是扩充统一查询，而不是在 LSP 内重做类型和借用判断。
 - `zr_vm_parser/compiler/compile_time_executor.c` 目前混合typed value、runtime object projection和decorator patch；目标拆为BuildPredicate、typed evaluator、declaration expansion和late check。
 - `zr_vm_core/include/zr_vm_core/global.h`目前由每个`SZrGlobalState`直接拥有collector，`zr_vm_core/src/zr_vm_core/gc/gc.c`只有单state safepoint/step入口；目标拆出可挂接多个state的GcDomain与domain-local safepoint handshake。
-- `zr_vm_lib_task`与`zr_vm_lib_thread`目前各自持有dynamic scheduler/object-field状态，thread worker目前新建独立`SZrGlobalState`；目标共用Task/Await/Scheduler ABI，并让host在AttachedDomain与IsolatedDomain provider policy间选择。
+- `zr_vm_lib_task`与`zr_vm_lib_thread`目前各自持有dynamic scheduler/object-field状态，thread worker目前新建独立`SZrGlobalState`；`runtime_transport.c`还通过dynamic `Transfer.taken`/object field先消费源再尝试目标decode。目标共用Task/Await/Scheduler ABI，让host在AttachedDomain与IsolatedDomain provider policy间选择，并以Canonical TransferEnvelope替换该失败窗口。
 - AST仍有`ZR_AST_GENERATOR_EXPRESSION`和`SZrTestDeclaration`特殊block形态；目标分别替换为Iterator effect/yield CFG与普通function上的TestEntry contract。
 
 ## 7. 晋级规则

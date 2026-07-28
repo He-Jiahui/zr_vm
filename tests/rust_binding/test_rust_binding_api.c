@@ -211,7 +211,7 @@ static void test_rust_binding_scaffold_compile_and_run_round_trip(void) {
     TEST_ASSERT_NOT_NULL(manifestSnapshot);
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
                           ZrRustBinding_ManifestSnapshot_GetVersion(manifestSnapshot, &manifestVersion));
-    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)manifestVersion);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifestVersion);
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
                           ZrRustBinding_ManifestSnapshot_GetEntryCount(manifestSnapshot, &manifestEntryCount));
     TEST_ASSERT_GREATER_THAN_UINT32(0u, (unsigned int)manifestEntryCount);

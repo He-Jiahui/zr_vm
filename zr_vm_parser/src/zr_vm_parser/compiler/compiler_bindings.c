@@ -740,6 +740,32 @@ void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
     ZrParser_InferredType_Free(cs->state, &inferredType);
 }
 
+static TZrBool compiler_convert_extern_type_to_inferred(SZrCompilerState *cs,
+                                                        SZrType *typeInfo,
+                                                        SZrInferredType *result) {
+    TZrBool originalImplicitBuiltinType;
+    TZrBool isPointerDescriptor = ZR_FALSE;
+    TZrBool converted;
+
+    if (cs == ZR_NULL || typeInfo == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeInfo->name != ZR_NULL && typeInfo->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = &typeInfo->name->data.genericType;
+        isPointerDescriptor = genericType->name != ZR_NULL &&
+                              extern_compiler_string_equals(genericType->name->name, "pointer");
+    }
+
+    originalImplicitBuiltinType = typeInfo->isImplicitBuiltinType;
+    if (isPointerDescriptor) {
+        typeInfo->isImplicitBuiltinType = ZR_TRUE;
+    }
+    converted = ZrParser_AstTypeToInferredType_Convert(cs, typeInfo, result);
+    typeInfo->isImplicitBuiltinType = originalImplicitBuiltinType;
+    return converted;
+}
+
 void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
                                                            SZrAstNode *declarationNode,
                                                            SZrTypeEnvironment *env,
@@ -757,7 +783,7 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
     compiler_collect_parameter_passing_modes(cs->state, &parameterPassingModes, functionDecl->params);
 
     if (functionDecl->returnType != ZR_NULL) {
-        if (!ZrParser_AstTypeToInferredType_Convert(cs, functionDecl->returnType, &returnType)) {
+        if (!compiler_convert_extern_type_to_inferred(cs, functionDecl->returnType, &returnType)) {
             return;
         }
     } else {
@@ -777,7 +803,8 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
             }
 
             if (paramNode->data.parameter.typeInfo != ZR_NULL) {
-                if (!ZrParser_AstTypeToInferredType_Convert(cs, paramNode->data.parameter.typeInfo, &paramType)) {
+                if (!compiler_convert_extern_type_to_inferred(
+                            cs, paramNode->data.parameter.typeInfo, &paramType)) {
                     continue;
                 }
             } else {

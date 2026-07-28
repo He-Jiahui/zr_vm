@@ -1572,6 +1572,21 @@ static void optimizer_remap_compiler_metadata_slots(SZrCompilerState *cs,
         }
     }
 
+    for (index = cs->stackSlotTypeHintScopeStart; index < cs->stackSlotTypeHints.length; index++) {
+        SZrCompilerStackSlotTypeHint *hint =
+                (SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get(&cs->stackSlotTypeHints, index);
+        if (hint == ZR_NULL) {
+            continue;
+        }
+        if (hint->stackSlot < slotCount) {
+            hint->stackSlot = slotMap[hint->stackSlot];
+        }
+        if ((hint->isFieldAlias || hint->isArrayElementAlias || hint->isInlineReceiverArgument) &&
+            hint->aliasParentStackSlot < slotCount) {
+            hint->aliasParentStackSlot = slotMap[hint->aliasParentStackSlot];
+        }
+    }
+
     for (index = 0; index < cs->pubVariables.length; index++) {
         SZrExportedVariable *exported = (SZrExportedVariable *)ZrCore_Array_Get(&cs->pubVariables, index);
         if (exported != ZR_NULL && exported->stackSlot < slotCount) {
@@ -1614,6 +1629,7 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
                                           TZrSize instructionCount,
                                           TZrSize slotCount) {
     TZrUInt8 *isLocalSlot = ZR_NULL;
+    TZrUInt8 *isMappedSlot = ZR_NULL;
     TZrUInt16 *slotMap = ZR_NULL;
     TZrSize nextSlot = 0;
     TZrSize slot;
@@ -1621,14 +1637,17 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
     TZrBool changed = ZR_FALSE;
 
     if (cs == ZR_NULL || instructions == ZR_NULL || slotCount == 0 ||
+        slotCount > (TZrSize)UINT16_MAX + 1u ||
         !optimizer_can_dense_compact_slots(cs->currentFunction, instructions, instructionCount)) {
         return;
     }
 
     isLocalSlot = (TZrUInt8 *)calloc(slotCount, sizeof(TZrUInt8));
+    isMappedSlot = (TZrUInt8 *)calloc(slotCount, sizeof(TZrUInt8));
     slotMap = (TZrUInt16 *)malloc(sizeof(TZrUInt16) * slotCount);
-    if (isLocalSlot == ZR_NULL || slotMap == ZR_NULL) {
+    if (isLocalSlot == ZR_NULL || isMappedSlot == ZR_NULL || slotMap == ZR_NULL) {
         free(isLocalSlot);
+        free(isMappedSlot);
         free(slotMap);
         return;
     }
@@ -1642,24 +1661,35 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
     for (slot = 0; slot < cs->localVars.length; slot++) {
         SZrFunctionLocalVariable *localVar =
                 (SZrFunctionLocalVariable *)ZrCore_Array_Get(&cs->localVars, slot);
-        if (localVar == ZR_NULL || localVar->stackSlot >= slotCount) {
+        if (localVar == ZR_NULL || localVar->stackSlot >= slotCount ||
+            isMappedSlot[localVar->stackSlot]) {
             continue;
         }
         slotMap[localVar->stackSlot] = (TZrUInt16)nextSlot++;
+        isMappedSlot[localVar->stackSlot] = 1u;
     }
 
     for (slot = 0; slot < slotCount; slot++) {
-        if (isLocalSlot[slot]) {
-            continue;
-        }
-        while (nextSlot < slotCount && isLocalSlot[nextSlot]) {
-            nextSlot++;
-        }
-        if (nextSlot >= slotCount) {
-            slotMap[slot] = (TZrUInt16)slot;
+        if (!isLocalSlot[slot] || isMappedSlot[slot]) {
             continue;
         }
         slotMap[slot] = (TZrUInt16)nextSlot++;
+        isMappedSlot[slot] = 1u;
+    }
+
+    for (slot = 0; slot < slotCount; slot++) {
+        if (isMappedSlot[slot]) {
+            continue;
+        }
+        slotMap[slot] = (TZrUInt16)nextSlot++;
+        isMappedSlot[slot] = 1u;
+    }
+
+    if (nextSlot != slotCount) {
+        free(isLocalSlot);
+        free(isMappedSlot);
+        free(slotMap);
+        return;
     }
 
     for (slot = 0; slot < slotCount; slot++) {
@@ -1671,6 +1701,7 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
 
     if (!changed) {
         free(isLocalSlot);
+        free(isMappedSlot);
         free(slotMap);
         return;
     }
@@ -1683,6 +1714,7 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
     }
 
     free(isLocalSlot);
+    free(isMappedSlot);
     free(slotMap);
 }
 
@@ -1836,6 +1868,12 @@ static void optimizer_build_block_intervals(const SZrFunction *function,
     for (slot = 0; slot < intervalCount; slot++) {
         TZrSize activeIndex;
         memset(physicalInUse, 0, slotCount);
+
+        for (activeIndex = 0; activeIndex < intervalCount; activeIndex++) {
+            if (intervals[activeIndex].fixed && intervals[activeIndex].originalSlot < slotCount) {
+                physicalInUse[intervals[activeIndex].originalSlot] = 1;
+            }
+        }
 
         for (activeIndex = 0; activeIndex < slot; activeIndex++) {
             if (intervals[activeIndex].valid &&

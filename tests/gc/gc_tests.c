@@ -2916,6 +2916,71 @@ static void test_module_export_marks_exported_object_as_module_root(void) {
     TEST_DIVIDER();
 }
 
+static void test_permanent_module_export_preserves_existing_object_graph(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Permanent Module Export Preserves Existing Object Graph";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Prebuilt module export graph",
+              "Testing that a child linked before its parent is exported remains reachable through a permanent module across full GC");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrObjectModule *module = ZrCore_Module_Create(state);
+        SZrObject *parent = ZrCore_Object_New(state, ZR_NULL);
+        SZrObject *child = ZrCore_Object_New(state, ZR_NULL);
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "child");
+        SZrString *exportName = ZrCore_String_CreateFromNative(state, "value");
+        SZrTypeValue memberKey;
+        SZrTypeValue childValue;
+        SZrTypeValue parentValue;
+        const SZrTypeValue *storedChild;
+
+        TEST_ASSERT_NOT_NULL(module);
+        TEST_ASSERT_NOT_NULL(parent);
+        TEST_ASSERT_NOT_NULL(child);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(exportName);
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        memberKey.type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Value_InitAsRawObject(state, &childValue, ZR_CAST_RAW_OBJECT_AS_SUPER(child));
+        ZrCore_Object_SetValue(state, parent, &memberKey, &childValue);
+
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
+        ZrCore_Value_InitAsRawObject(state, &parentValue, ZR_CAST_RAW_OBJECT_AS_SUPER(parent));
+        ZrCore_Module_AddPubExport(state, module, exportName, &parentValue);
+
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+        ZrCore_GarbageCollector_GcStep(state);
+
+        TEST_ASSERT_FALSE(ZrCore_RawObject_IsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER(parent)));
+        TEST_ASSERT_FALSE(ZrCore_RawObject_IsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER(child)));
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+        ZrCore_GarbageCollector_GcStep(state);
+        ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
+
+        TEST_ASSERT_FALSE(ZrCore_RawObject_IsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER(parent)));
+        TEST_ASSERT_FALSE(ZrCore_RawObject_IsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER(child)));
+        storedChild = ZrCore_Object_GetValue(state, parent, &memberKey);
+        TEST_ASSERT_NOT_NULL(storedChild);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(child), storedChild->value.object);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_gc_object_base_size_tracks_custom_object_layouts(void) {
     SZrTestTimer timer;
     const char *testSummary = "GC Object Base Size Tracks Custom Object Layouts";
@@ -4684,6 +4749,7 @@ int main(void) {
     RUN_TEST(test_gc_propagate_all_drains_large_gray_queue);
     RUN_TEST(test_function_return_escape_promotes_returned_object_during_minor_gc);
     RUN_TEST(test_module_export_marks_exported_object_as_module_root);
+    RUN_TEST(test_permanent_module_export_preserves_existing_object_graph);
     RUN_TEST(test_gc_object_base_size_tracks_custom_object_layouts);
     RUN_TEST(test_gc_escaped_closure_propagates_capture_escape_on_close);
     RUN_TEST(test_gc_minor_collection_evacuates_stack_root_young_object);

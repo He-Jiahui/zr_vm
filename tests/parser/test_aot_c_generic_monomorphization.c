@@ -140,10 +140,8 @@ static void test_aot_c_value_generic_instance_emits_monomorphized_layout_and_fun
             "}";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    SZrLibrary_Project *project;
     SZrBinaryWriterOptions binaryOptions;
     SZrAotWriterOptions options;
-    SZrTypeValue result;
     TZrBytePtr embeddedBlob = ZR_NULL;
     TZrSize embeddedBlobLength = 0u;
     TZrChar zroHash[ZR_STABLE_HASH_HEX_BUFFER_LENGTH];
@@ -154,6 +152,8 @@ static void test_aot_c_value_generic_instance_emits_monomorphized_layout_and_fun
     TZrChar sharedLibraryPath[ZR_TESTS_PATH_MAX];
     char *generatedCText;
 #if defined(ZR_PLATFORM_UNIX)
+    SZrLibrary_Project *project;
+    SZrTypeValue result;
     char command[4096];
 #endif
 
@@ -242,7 +242,6 @@ static void test_aot_c_value_generic_instance_emits_monomorphized_layout_and_fun
              ZR_VM_TESTS_BUILD_LIB_DIR,
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
-#endif
 
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
@@ -261,6 +260,7 @@ static void test_aot_c_value_generic_instance_emits_monomorphized_layout_and_fun
 
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
+#endif
     free(embeddedBlob);
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);

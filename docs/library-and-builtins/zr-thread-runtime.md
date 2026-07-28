@@ -49,3 +49,10 @@ transport behavior: completion is delivered exactly once, quota and shutdown
 faults settle the caller task, and non-Send/non-Sync payloads are rejected by
 the resolved generic contract. No provider recreates a `TaskRunner` or uses a
 member-name fallback to choose a scheduler route.
+
+An isolated-domain launch remains worker-owned until the caller publishes its
+completion acknowledgement. Provider worker-slot accounting is released before
+that publication; signaling `completionProcessed` is the final caller-side use
+of the launch object. The waiting worker may free the launch immediately after
+it wakes, so completion processing must not read the launch, its runtime pointer,
+or its synchronization fields after the signal/unlock boundary.

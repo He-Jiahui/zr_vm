@@ -4446,6 +4446,7 @@ static TZrBool module_init_module_reaches_internal(SZrCompilerState *cs,
                                                    SZrParserSummaryPathBuffer *path,
                                                    TZrUInt32 depth) {
     const SZrParserModuleInitSummary *summary;
+    TZrSize importCount;
     TZrSize index;
 
     if (cs == ZR_NULL || fromModule == ZR_NULL || targetModule == ZR_NULL || path == ZR_NULL ||
@@ -4477,11 +4478,20 @@ static TZrBool module_init_module_reaches_internal(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    for (index = 0; index < summary->staticImports.length; ++index) {
-        SZrString **importNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&summary->staticImports, index);
-        if (importNamePtr != ZR_NULL &&
-            *importNamePtr != ZR_NULL &&
-            module_init_module_reaches_internal(cs, *importNamePtr, targetModule, path, depth + 1)) {
+    importCount = summary->staticImports.length;
+    for (index = 0; index < importCount; ++index) {
+        SZrString **importNamePtr;
+        SZrString *importName;
+
+        /* Recursion may grow the summary cache and relocate every summary entry. */
+        summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, fromModule);
+        if (summary == ZR_NULL || index >= summary->staticImports.length) {
+            return ZR_FALSE;
+        }
+        importNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&summary->staticImports, index);
+        importName = importNamePtr != ZR_NULL ? *importNamePtr : ZR_NULL;
+        if (importName != ZR_NULL &&
+            module_init_module_reaches_internal(cs, importName, targetModule, path, depth + 1)) {
             return ZR_TRUE;
         }
     }

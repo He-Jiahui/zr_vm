@@ -21,6 +21,7 @@
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/task_runtime.h"
 #include "zr_vm_core/value.h"
 #include "module_fixture_support.h"
 #include "runtime_support.h"
@@ -38,6 +39,12 @@
 #include "test_support.h"
 
 TZrBool ZrVmLibFfi_Register(SZrGlobalState *global);
+TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
+                                               SZrFunction *function,
+                                               SZrTypeValue *receiver,
+                                               const SZrTypeValue *arguments,
+                                               TZrSize argumentCount,
+                                               SZrTypeValue *result);
 
 // Unity 测试宏扩展 - 添加缺失的 UINT64 不等断言
 #ifndef TEST_ASSERT_NOT_EQUAL_UINT64
@@ -4173,12 +4180,8 @@ static void test_native_binding_helpers_root_fresh_values_across_gc_retry(void) 
 
         targetObject = ZrLib_Object_New(state);
         sourceObject = ZrLib_Object_New(state);
-        targetArray = ZrLib_Array_New(state);
-        arraySourceObject = ZrLib_Object_New(state);
         TEST_ASSERT_NOT_NULL(targetObject);
         TEST_ASSERT_NOT_NULL(sourceObject);
-        TEST_ASSERT_NOT_NULL(targetArray);
-        TEST_ASSERT_NOT_NULL(arraySourceObject);
 
         ZrLib_Value_SetObject(state, &sourceValue, sourceObject, ZR_VALUE_TYPE_OBJECT);
         failureConfig.failType = ZR_MEMORY_NATIVE_TYPE_HASH_PAIR;
@@ -4191,6 +4194,11 @@ static void test_native_binding_helpers_root_fresh_values_across_gc_retry(void) 
         TEST_ASSERT_NOT_NULL(capturedField);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedField->type);
         TEST_ASSERT_EQUAL_PTR(sourceObject, ZR_CAST_OBJECT(state, capturedField->value.object));
+
+        targetArray = ZrLib_Array_New(state);
+        arraySourceObject = ZrLib_Object_New(state);
+        TEST_ASSERT_NOT_NULL(targetArray);
+        TEST_ASSERT_NOT_NULL(arraySourceObject);
 
         ZrLib_Value_SetObject(state, &arrayValue, arraySourceObject, ZR_VALUE_TYPE_OBJECT);
         failureConfig.armed = ZR_TRUE;
@@ -4478,7 +4486,7 @@ static void test_container_module_exports_generic_interfaces_and_constraints(voi
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typesValue->type);
         typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
         TEST_ASSERT_NOT_NULL(typesArray);
-        TEST_ASSERT_EQUAL_UINT64(6, get_array_length(typesArray));
+        TEST_ASSERT_EQUAL_UINT64(8, get_array_length(typesArray));
 
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Array"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Map"));
@@ -4486,6 +4494,8 @@ static void test_container_module_exports_generic_interfaces_and_constraints(voi
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Pair"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "LinkedList"));
         TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "LinkedNode"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "Span"));
+        TEST_ASSERT_NOT_NULL(find_named_entry_in_array(state, typesArray, "name", "ReadOnlySpan"));
 
         arrayLikeEntry = find_named_entry_in_array(state, typesArray, "name", "Array");
         TEST_ASSERT_NOT_NULL(arrayLikeEntry);
@@ -5874,7 +5884,7 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
 
     {
         SZrState *state = create_test_state();
-        const TZrChar *source = "return %type(%func(%ref value:int)->%async int);\n";
+        const TZrChar *source = "return %type(%func(%ref value:int)->zr.task.Task<int>);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5900,6 +5910,7 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         SZrString *resultString;
 
         TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrCore_TaskRuntime_RegisterBuiltins(state->global));
 
         sourceName = ZrCore_String_Create(state, "callable_type_literal_reflection_test.zr", 39);
         entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
@@ -5934,7 +5945,7 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         TEST_ASSERT_NOT_NULL(strstr(ZrCore_String_GetNativeString(ZR_CAST_STRING(state, nameValue->value.object)),
                                     "%func("));
         TEST_ASSERT_TRUE(
-                string_equals_cstring(ZR_CAST_STRING(state, returnTypeNameValue->value.object), "%async int"));
+                string_equals_cstring(ZR_CAST_STRING(state, returnTypeNameValue->value.object), "zr.task.Task<int>"));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, returnTypeValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, parametersValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, parameterModesValue->type);
@@ -5948,7 +5959,7 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         TEST_ASSERT_NOT_NULL(returnTypeNameFieldValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, returnTypeNameFieldValue->type);
         TEST_ASSERT_TRUE(
-                string_equals_cstring(ZR_CAST_STRING(state, returnTypeNameFieldValue->value.object), "%async int"));
+                string_equals_cstring(ZR_CAST_STRING(state, returnTypeNameFieldValue->value.object), "zr.task.Task<int>"));
 
         parametersArray = ZR_CAST_OBJECT(state, parametersValue->value.object);
         parameterModesArray = ZR_CAST_OBJECT(state, parameterModesValue->value.object);
@@ -6723,16 +6734,20 @@ static void test_decorator_import_member_get_callsite_caches_survive_source_impo
         SZrObjectModule *importedModule = ZR_NULL;
         SZrObjectModule *cachedModule = ZR_NULL;
         SZrFunction *entryFunction = ZR_NULL;
+        TZrSize savedStackDepth;
 
         TEST_ASSERT_NOT_NULL(state);
 
         g_module_fixture_sources = kFixtures;
         g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
         state->global->sourceLoader = module_fixture_source_loader;
+        savedStackDepth = (TZrSize)(state->stackTop.valuePointer - state->stackBase.valuePointer);
 
         modulePath = ZrCore_String_Create(state, "decorated_user", strlen("decorated_user"));
         TEST_ASSERT_NOT_NULL(modulePath);
         importedModule = ZrCore_Module_ImportByPath(state, modulePath);
+        TEST_ASSERT_EQUAL_UINT64(savedStackDepth,
+                                 (TZrSize)(state->stackTop.valuePointer - state->stackBase.valuePointer));
         cachedModule = ZrCore_Module_GetFromCache(state, modulePath);
         TEST_ASSERT_NOT_NULL(cachedModule);
         TEST_ASSERT_TRUE(importedModule == ZR_NULL || importedModule == cachedModule);
@@ -6975,7 +6990,7 @@ static void test_source_module_struct_constructor_runtime_invocation_preserves_f
     TEST_DIVIDER();
 }
 
-static void test_source_module_struct_constructor_manual_vm_call_preserves_fields(void) {
+static void test_source_module_struct_constructor_direct_function_call_preserves_fields(void) {
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "source_struct_runtime_ctor_manual",
@@ -6991,7 +7006,7 @@ static void test_source_module_struct_constructor_manual_vm_call_preserves_field
                     "}\n"),
     };
     SZrTestTimer timer;
-    const char *testSummary = "Source module struct constructor manual vm call preserves fields";
+    const char *testSummary = "Source module struct constructor direct function call preserves fields";
     const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
     TZrSize previousFixtureCount = g_module_fixture_source_count;
 
@@ -7007,8 +7022,7 @@ static void test_source_module_struct_constructor_manual_vm_call_preserves_field
         SZrFunction *constructorFunction;
         SZrTypeValue receiver;
         SZrTypeValue args[2];
-        TZrStackValuePointer callBase;
-        SZrCallInfo *callInfo;
+        SZrTypeValue result;
         SZrTypeValue *stackReceiverValue;
         SZrObject *stackReceiverObject;
         const SZrTypeValue *stackLeftValue;
@@ -7047,25 +7061,12 @@ static void test_source_module_struct_constructor_manual_vm_call_preserves_field
         ZrCore_Value_InitAsInt(state, &args[0], 1);
         ZrCore_Value_InitAsInt(state, &args[1], 2);
 
-        callBase = state->stackTop.valuePointer;
-        callBase = ZrCore_Function_ReserveScratchSlots(state, 4, callBase);
-        TEST_ASSERT_NOT_NULL(callBase);
-
-        ZrCore_Stack_CopyValue(state, callBase, constructorValue);
-        ZrCore_Stack_CopyValue(state, callBase + 1, &receiver);
-        ZrCore_Stack_CopyValue(state, callBase + 2, &args[0]);
-        ZrCore_Stack_CopyValue(state, callBase + 3, &args[1]);
-        state->stackTop.valuePointer = callBase + 4;
-
-        callInfo = ZrCore_Function_PreCall(state, callBase, 1, ZR_NULL);
-        TEST_ASSERT_NOT_NULL(callInfo);
-        callInfo->callStatus = ZR_CALL_STATUS_CREATE_FRAME;
-        ZrCore_Execute(state, callInfo);
-        callBase = callInfo->functionBase.valuePointer;
-        TEST_ASSERT_NOT_NULL(callBase);
+        ZrCore_Value_ResetAsNull(&result);
+        TEST_ASSERT_TRUE(ZrCore_Object_CallFunctionWithReceiver(
+                state, constructorFunction, &receiver, args, 2, &result));
         TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, state->threadStatus);
 
-        stackReceiverValue = ZrCore_Stack_GetValue(callBase + 1);
+        stackReceiverValue = &receiver;
         TEST_ASSERT_NOT_NULL(stackReceiverValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, stackReceiverValue->type);
         stackReceiverObject = ZR_CAST_OBJECT(state, stackReceiverValue->value.object);
@@ -8505,6 +8506,35 @@ static void test_native_registry_tracks_module_owner_refcount(void) {
     TEST_DIVIDER();
 }
 
+static void test_container_basic_array_adapter_callable_is_permanent(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Container Basic Array Adapter Callable Is Permanent";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectPrototype *arrayPrototype;
+        const SZrTypeValue *adapterValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(state->global);
+        arrayPrototype = state->global->basicTypeObjectPrototype[ZR_VALUE_TYPE_ARRAY];
+        TEST_ASSERT_NOT_NULL(arrayPrototype);
+        adapterValue = ZrLib_Object_GetFieldCString(state, &arrayPrototype->super, "getIterator");
+        TEST_ASSERT_NOT_NULL(adapterValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, adapterValue->type);
+        TEST_ASSERT_TRUE(ZrCore_RawObject_IsPermanent(state, adapterValue->value.object));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_reference_protocols_native_iterable_fixture_uses_registered_contracts(void) {
     SZrTestTimer timer;
     const char *testSummary = "Reference Protocols Native Iterable Fixture Uses Registered Contracts";
@@ -9109,6 +9139,9 @@ int main(void) {
     // 12.1 native registry 追踪 owner 引用计数
     RUN_TEST(test_native_registry_tracks_module_owner_refcount);
 
+    // 12.2 the process-wide array adapter must share the permanent lifetime of its prototype
+    RUN_TEST(test_container_basic_array_adapter_callable_is_permanent);
+
     // 13. 复杂 source module 导出函数图不应出现 null call target
     RUN_TEST(test_source_module_exports_complex_function_graph_without_null_call_targets);
 
@@ -9257,7 +9290,7 @@ int main(void) {
     RUN_TEST(test_source_module_runtime_registers_enum_members_and_imported_access);
 
     // 41. source module struct constructor 手工 VM 调用保持字段写入
-    RUN_TEST(test_source_module_struct_constructor_manual_vm_call_preserves_fields);
+    RUN_TEST(test_source_module_struct_constructor_direct_function_call_preserves_fields);
 
     // 42. source module struct constructor runtime 调用保持字段写入
     RUN_TEST(test_source_module_struct_constructor_runtime_invocation_preserves_fields);

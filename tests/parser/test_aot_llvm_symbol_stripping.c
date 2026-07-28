@@ -10,6 +10,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/stack.h"
@@ -30,6 +31,7 @@ typedef struct SZrAotLlvmReceiverAliasTestLoadedModule {
     const SZrAotCodeRegistration *codeRegistration;
     SZrFunction *moduleFunction;
     SZrFunction **functionTable;
+    SZrGcNativeCallPin *functionPins;
     TZrUInt32 functionCount;
     TZrUInt32 functionCapacity;
     TZrUInt32 *generatedFrameSlotCounts;
@@ -416,6 +418,9 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
             state,
             ZrCore_Stack_GetValue(callerFunctionBase),
             ZR_CAST_RAW_OBJECT_AS_SUPER(callerClosure));
+    ZrCore_Stack_GetValue(callerFunctionBase)->type = ZR_VALUE_TYPE_CLOSURE;
+    ZrCore_Stack_GetValue(callerFunctionBase)->isNative = ZR_TRUE;
+    ZrCore_Stack_GetValue(callerFunctionBase)->isGarbageCollectable = ZR_TRUE;
     callerFrameBase = callerFunctionBase + 1u;
     ZrCore_Function_InitializeFrameLayoutStorage(
             state, callerFunctionBase, callerFunction, 0u);

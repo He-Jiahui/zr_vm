@@ -115,7 +115,7 @@ static void test_zr_task_descriptor_publishes_job_scheduler_contract(void) {
     TEST_ASSERT_NOT_NULL(state);
     taskModule = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.task");
     TEST_ASSERT_NOT_NULL(taskModule);
-    TEST_ASSERT_EQUAL_STRING("2.1.0", taskModule->moduleVersion);
+    TEST_ASSERT_EQUAL_STRING("3.0.0", taskModule->moduleVersion);
 
     jobType = find_type_descriptor(taskModule, "Job");
     TEST_ASSERT_NOT_NULL(jobType);

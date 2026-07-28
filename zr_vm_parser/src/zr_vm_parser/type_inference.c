@@ -2542,7 +2542,16 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                                                                    &basePrototype,
                                                                    &basePrototypeTypeName);
                         ZR_UNUSED_PARAMETER(basePrototype);
-                        ZR_UNUSED_PARAMETER(basePrototypeTypeName);
+                        if (baseIsPrototypeReference &&
+                            basePrototypeTypeName != ZR_NULL &&
+                            baseType.typeName == ZR_NULL) {
+                            ZrParser_InferredType_Free(cs->state, &baseType);
+                            ZrParser_InferredType_InitFull(cs->state,
+                                                          &baseType,
+                                                          ZR_VALUE_TYPE_OBJECT,
+                                                          ZR_FALSE,
+                                                          basePrototypeTypeName);
+                        }
                         if (infer_primary_member_chain_type(cs,
                                                             &baseType,
                                                             primary->members,
@@ -2581,7 +2590,16 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
             baseIsPrototypeReference =
                     resolve_prototype_target_inference(cs, primary->property, &basePrototype, &basePrototypeTypeName);
             ZR_UNUSED_PARAMETER(basePrototype);
-            ZR_UNUSED_PARAMETER(basePrototypeTypeName);
+            if (baseIsPrototypeReference &&
+                basePrototypeTypeName != ZR_NULL &&
+                baseType.typeName == ZR_NULL) {
+                ZrParser_InferredType_Free(cs->state, &baseType);
+                ZrParser_InferredType_InitFull(cs->state,
+                                              &baseType,
+                                              ZR_VALUE_TYPE_OBJECT,
+                                              ZR_FALSE,
+                                              basePrototypeTypeName);
+            }
             // 如果有members，需要根据members推断最终类型
             if (primary->members != ZR_NULL && primary->members->count > 0) {
                 TZrBool success = infer_primary_member_chain_type(cs,

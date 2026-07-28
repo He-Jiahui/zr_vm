@@ -378,6 +378,20 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayGetInt(struct SZrState *state,
                                                    const SZrTypeValue *key,
                                                    SZrTypeValue *result);
 
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayBindItems(struct SZrState *state,
+                                                       SZrTypeValue *destination,
+                                                       SZrTypeValue *receiver);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayGetIntBoundItems(struct SZrState *state,
+                                                              SZrTypeValue *items,
+                                                              const SZrTypeValue *key,
+                                                              SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArraySetIntBoundItems(struct SZrState *state,
+                                                              SZrTypeValue *items,
+                                                              const SZrTypeValue *key,
+                                                              const SZrTypeValue *value);
+
 ZR_CORE_API TZrBool ZrCore_Object_SuperArraySetInt(struct SZrState *state,
                                                    SZrTypeValue *receiver,
                                                    const SZrTypeValue *key,
@@ -418,10 +432,19 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(struct SZrSta
                                                                    TZrStackValuePointer receiverBase,
                                                                    TZrInt64 intValue);
 
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(struct SZrState *state,
+                                                                    SZrTypeValue *receivers[4],
+                                                                    TZrInt64 intValue);
+
 ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(struct SZrState *state,
                                                                     TZrStackValuePointer receiverBase,
                                                                     TZrInt64 repeatCount,
                                                                     TZrInt64 value);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ValuesAssumeFast(struct SZrState *state,
+                                                                     SZrTypeValue *receivers[4],
+                                                                     TZrInt64 repeatCount,
+                                                                     TZrInt64 value);
 
 ZR_CORE_API TZrBool ZrCore_Object_SuperArrayEnsureRawIntCapacity(struct SZrState *state,
                                                                  SZrObject *itemsObject,

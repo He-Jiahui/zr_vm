@@ -117,6 +117,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     SZrArray importCompileInfoStack;
     TZrPtr parserModuleInitState;
     FZrGlobalOpaqueStateCleanup parserModuleInitStateCleanup;
+    TZrPtr postGcCleanupState;
+    FZrGlobalOpaqueStateCleanup postGcCleanup;
 
 
     // exceptions
@@ -157,6 +159,9 @@ ZR_CORE_API void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global
 ZR_CORE_API void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
                                                        FZrAotModuleLoader loader,
                                                        TZrPtr userData);
+ZR_CORE_API TZrBool ZrCore_GlobalState_SetPostGcCleanup(SZrGlobalState *global,
+                                                       TZrPtr state,
+                                                       FZrGlobalOpaqueStateCleanup cleanup);
 
 ZR_CORE_API void ZrCore_GlobalState_SetOwnershipStrongRefObserver(SZrGlobalState *global,
                                                                   FZrOwnershipStrongRefObserver observer,

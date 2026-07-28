@@ -184,6 +184,66 @@ void backend_aot_write_c_direct_function_call(FILE *file,
                                            "function call");
 }
 
+static void backend_aot_write_c_known_member_call(FILE *file,
+                                                  const SZrAotExecIrFunction *functionIr,
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 cacheIndex,
+                                                  TZrUInt32 argumentCount,
+                                                  const char *marker,
+                                                  const char *errorLabel) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_known_member_call_resolve */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u));\n"
+            "    }\n",
+            (unsigned)destinationSlot,
+            (unsigned)(destinationSlot + 1u),
+            (unsigned)cacheIndex);
+    backend_aot_write_c_core_function_call(file,
+                                           functionIr,
+                                           destinationSlot,
+                                           destinationSlot,
+                                           argumentCount,
+                                           marker,
+                                           "zr_aot_known_member_call_sync_i64_local_boundary",
+                                           "zr_aot_known_member_call_sync_bool_local_boundary",
+                                           "zr_aot_known_member_call_sync_u64_local_boundary",
+                                           "zr_aot_known_member_call_sync_f64_local_boundary",
+                                           errorLabel);
+}
+
+void backend_aot_write_c_known_native_member_call(FILE *file,
+                                                  const SZrAotExecIrFunction *functionIr,
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 cacheIndex,
+                                                  TZrUInt32 argumentCount) {
+    backend_aot_write_c_known_member_call(file,
+                                          functionIr,
+                                          destinationSlot,
+                                          cacheIndex,
+                                          argumentCount,
+                                          "zr_aot_known_native_member_call",
+                                          "known native member call");
+}
+
+void backend_aot_write_c_known_vm_member_call(FILE *file,
+                                              const SZrAotExecIrFunction *functionIr,
+                                              TZrUInt32 destinationSlot,
+                                              TZrUInt32 cacheIndex,
+                                              TZrUInt32 argumentCount) {
+    backend_aot_write_c_known_member_call(file,
+                                          functionIr,
+                                          destinationSlot,
+                                          cacheIndex,
+                                          argumentCount,
+                                          "zr_aot_known_vm_member_call",
+                                          "known VM member call");
+}
+
 void backend_aot_write_c_dynamic_function_call(FILE *file,
                                                const SZrAotExecIrFunction *functionIr,
                                                TZrUInt32 destinationSlot,

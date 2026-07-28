@@ -23,7 +23,6 @@ static TZrBool native_metadata_pin_raw_object(SZrState *state,
         pin->object = ZR_NULL;
         return ZR_FALSE;
     }
-
     return ZR_TRUE;
 }
 

@@ -58,6 +58,7 @@ zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_system")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_network")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_container")
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_ffi")
+zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_iteration")
 
 if (TARGET zr_vm_lib_thread_shared OR TARGET zr_vm_lib_thread_static)
     zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_thread")

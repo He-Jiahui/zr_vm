@@ -5372,6 +5372,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                         state, receiverValue__, ZR_NULL, &itemsObject__))) {                                            \
             ZrCore_Debug_RunError(state, "SUPER_ARRAY_BIND_ITEMS: receiver must be an array-like object");             \
         } else {                                                                                                       \
+            UPDATE_BASE(callInfo);                                                                                    \
+            itemsDestination__ = FRAME_VALUE_SLOT(E(instruction));                                                     \
             execution_prepare_destination_for_direct_store_no_profile(state, itemsDestination__);                       \
             ZrCore_Value_InitAsRawObject(state, itemsDestination__, ZR_CAST_RAW_OBJECT_AS_SUPER(itemsObject__));        \
         }                                                                                                              \
@@ -5511,41 +5513,62 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SUPER_ARRAY_ADD_INT4_BODY()                                                                            \
     do {                                                                                                               \
+        SZrTypeValue *receiverValues__[4] = {                                                                          \
+            FRAME_VALUE_SLOT(A1(instruction)),                                                                         \
+            FRAME_VALUE_SLOT(A1(instruction) + 1),                                                                     \
+            FRAME_VALUE_SLOT(A1(instruction) + 2),                                                                     \
+            FRAME_VALUE_SLOT(A1(instruction) + 3)                                                                      \
+        };                                                                                                             \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                           \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                                                             \
-        if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(                                               \
-                    state, BASE(A1(instruction)), opB->value.nativeObject.nativeInt64))) {                            \
+        if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(                                              \
+                    state, receiverValues__, opB->value.nativeObject.nativeInt64))) {                                  \
             ZrCore_Debug_RunError(state,                                                                               \
                                   "SUPER_ARRAY_ADD_INT4: receiver must be an array-like object with int payload");    \
         }                                                                                                              \
+        UPDATE_BASE(callInfo);                                                                                         \
     } while (0)
 #define EXECUTE_SUPER_ARRAY_ADD_INT4_CONST_BODY()                                                                      \
     do {                                                                                                               \
+        SZrTypeValue *receiverValues__[4] = {                                                                          \
+            FRAME_VALUE_SLOT(A1(instruction)),                                                                         \
+            FRAME_VALUE_SLOT(A1(instruction) + 1),                                                                     \
+            FRAME_VALUE_SLOT(A1(instruction) + 2),                                                                     \
+            FRAME_VALUE_SLOT(A1(instruction) + 3)                                                                      \
+        };                                                                                                             \
         const SZrTypeValue *constantValue = CONST(B1(instruction));                                                    \
         ZR_ASSERT(constantValue != ZR_NULL);                                                                           \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type));                                                   \
-        if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(                                               \
-                    state, BASE(A1(instruction)), constantValue->value.nativeObject.nativeInt64))) {                  \
+        if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(                                              \
+                    state, receiverValues__, constantValue->value.nativeObject.nativeInt64))) {                        \
             ZrCore_Debug_RunError(state,                                                                               \
                                   "SUPER_ARRAY_ADD_INT4_CONST: receiver must be an array-like object with int payload"); \
         }                                                                                                              \
+        UPDATE_BASE(callInfo);                                                                                         \
     } while (0)
 #define EXECUTE_SUPER_ARRAY_FILL_INT4_CONST_BODY()                                                                     \
     do {                                                                                                               \
+        SZrTypeValue *receiverValues__[4] = {                                                                          \
+            FRAME_VALUE_SLOT(A1(instruction)),                                                                         \
+            FRAME_VALUE_SLOT(A1(instruction) + 1),                                                                     \
+            FRAME_VALUE_SLOT(A1(instruction) + 2),                                                                     \
+            FRAME_VALUE_SLOT(A1(instruction) + 3)                                                                      \
+        };                                                                                                             \
         const SZrTypeValue *countValue = FRAME_VALUE_SLOT(B1(instruction));                                                \
         const SZrTypeValue *constantValue = CONST(E(instruction));                                                     \
         ZR_ASSERT(countValue != ZR_NULL);                                                                              \
         ZR_ASSERT(constantValue != ZR_NULL);                                                                           \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(countValue->type));                                                      \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type));                                                   \
-        if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(                                              \
+        if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayFillInt4ValuesAssumeFast(                                             \
                     state,                                                                                              \
-                    BASE(A1(instruction)),                                                                              \
+                    receiverValues__,                                                                                   \
                     countValue->value.nativeObject.nativeInt64,                                                         \
                     constantValue->value.nativeObject.nativeInt64))) {                                                  \
             ZrCore_Debug_RunError(state,                                                                               \
                                   "SUPER_ARRAY_FILL_INT4_CONST: receiver must be an array-like object with int repeat count and int payload"); \
         }                                                                                                              \
+        UPDATE_BASE(callInfo);                                                                                         \
     } while (0)
 
 #define UPDATE_TRAP(CALL_INFO)                                                                                         \

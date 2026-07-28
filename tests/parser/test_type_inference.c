@@ -3619,7 +3619,7 @@ static void test_type_inference_type_query_function_type_returns_callable_reflec
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var reflection = %type(%func(%ref value:int)->%async int);";
+        const char *source = "var reflection = %type(%func(%ref value:int)->int);";
         SZrString *sourceName = ZrCore_String_Create(state, "callable_type_query_test.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr;
@@ -8164,6 +8164,7 @@ static void test_type_system_primitive_named_and_direct_types_compare_equally(vo
 
     {
         SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
         SZrInferredType namedString;
         SZrInferredType directString;
         SZrInferredType namedInt;
@@ -8171,8 +8172,10 @@ static void test_type_system_primitive_named_and_direct_types_compare_equally(vo
         SZrInferredType int64Alias;
         SZrInferredType namedObject;
         SZrInferredType plainObject;
+        SZrInferredType objectAlias;
 
         TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
 
         ZrParser_InferredType_InitFull(state,
                                        &namedString,
@@ -8197,6 +8200,8 @@ static void test_type_system_primitive_named_and_direct_types_compare_equally(vo
                                        ZR_FALSE,
                                        create_test_string(state, "Widget"));
         ZrParser_InferredType_Init(state, &plainObject, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(inferred_type_from_type_name(
+                cs, create_test_string(state, "object"), &objectAlias));
 
         TEST_ASSERT_TRUE(ZrParser_InferredType_Equal(&namedString, &directString));
         TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&directString, &namedString));
@@ -8209,7 +8214,11 @@ static void test_type_system_primitive_named_and_direct_types_compare_equally(vo
 
         TEST_ASSERT_FALSE(ZrParser_InferredType_Equal(&namedObject, &plainObject));
         TEST_ASSERT_FALSE(ZrParser_InferredType_IsCompatible(&plainObject, &namedObject));
+        TEST_ASSERT_NULL(objectAlias.typeName);
+        TEST_ASSERT_TRUE(ZrParser_InferredType_IsCompatible(&namedObject, &objectAlias));
+        TEST_ASSERT_FALSE(ZrParser_InferredType_IsCompatible(&objectAlias, &namedObject));
 
+        ZrParser_InferredType_Free(state, &objectAlias);
         ZrParser_InferredType_Free(state, &plainObject);
         ZrParser_InferredType_Free(state, &namedObject);
         ZrParser_InferredType_Free(state, &int64Alias);
@@ -8217,6 +8226,7 @@ static void test_type_system_primitive_named_and_direct_types_compare_equally(vo
         ZrParser_InferredType_Free(state, &namedInt);
         ZrParser_InferredType_Free(state, &directString);
         ZrParser_InferredType_Free(state, &namedString);
+        destroy_test_compiler_state(cs);
         destroy_test_state(state);
     }
 

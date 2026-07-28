@@ -351,7 +351,7 @@ static void test_ref_struct_rejects_await_and_yield_suspension(void) {
             "ref struct View { var value: int; }\n"
             "async fn invalid(view: View): Task<int> {\n"
             "  var task = pause().start();\n"
-            "  %await task;\n"
+            "  await task;\n"
             "  return view.value;\n"
             "}\n",
             ZR_FALSE,

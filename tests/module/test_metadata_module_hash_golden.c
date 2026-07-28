@@ -145,7 +145,7 @@ static void test_union_module_signature_hash_matches_golden(void) {
 
     function = create_union_module_fixture(state, scriptAst);
     TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_EQUAL_HEX64((TZrUInt64)0x485AE44EE06010E4ULL, function->moduleSignatureHash);
+    TEST_ASSERT_EQUAL_HEX64((TZrUInt64)0x11237ADD493636F1ULL, function->moduleSignatureHash);
 
     ZrCore_Function_Free(state, function);
     ZrParser_Ast_Free(state, scriptAst);

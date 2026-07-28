@@ -1,5 +1,57 @@
 #include "backend_aot_c_emitter.h"
 
+void backend_aot_write_c_direct_super_array_bind_items(FILE *file,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 receiverSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_exec_super_array_bind_items */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayBindItems(state, &frame, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)destinationSlot,
+            (unsigned)receiverSlot);
+}
+
+void backend_aot_write_c_direct_super_array_get_int_bound_items(FILE *file,
+                                                                TZrUInt32 destinationSlot,
+                                                                TZrUInt32 itemsSlot,
+                                                                TZrUInt32 keySlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_exec_super_array_get_int_bound_items */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayGetIntBoundItems(state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)destinationSlot,
+            (unsigned)itemsSlot,
+            (unsigned)keySlot);
+}
+
+void backend_aot_write_c_direct_super_array_set_int_bound_items(FILE *file,
+                                                                TZrUInt32 sourceSlot,
+                                                                TZrUInt32 itemsSlot,
+                                                                TZrUInt32 keySlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_value_exec_super_array_set_int_bound_items */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArraySetIntBoundItems(state, &frame, %u, %u, %u));\n"
+            "    } while (0);\n",
+            (unsigned)sourceSlot,
+            (unsigned)itemsSlot,
+            (unsigned)keySlot);
+}
+
 void backend_aot_write_c_direct_super_array_get_int(FILE *file,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 receiverSlot,

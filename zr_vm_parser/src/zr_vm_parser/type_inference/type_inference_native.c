@@ -76,6 +76,20 @@ static TZrBool inferred_type_is_task_handle(SZrCompilerState *cs, const SZrInfer
                                                   ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE));
 }
 
+static void inferred_type_apply_registered_protocol_mask(
+        SZrCompilerState *cs,
+        SZrInferredType *type) {
+    SZrTypePrototypeInfo *prototype;
+
+    if (cs == ZR_NULL || type == ZR_NULL || type->typeName == ZR_NULL) {
+        return;
+    }
+    prototype = find_compiler_type_prototype_inference(cs, type->typeName);
+    if (prototype != ZR_NULL) {
+        type->protocolMask |= prototype->protocolMask;
+    }
+}
+
 static void inferred_type_apply_task_job_ownership(
         SZrCompilerState *cs,
         SZrInferredType *type) {
@@ -1125,7 +1139,7 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
 static SZrString *native_module_info_local_type_name(SZrCompilerState *cs,
                                                       SZrString *moduleName,
                                                       SZrString *typeName) {
-    const TZrChar *moduleNameText;
+    TZrNativeString moduleNameText;
     const TZrChar *typeNameText;
     TZrSize moduleNameLength;
     TZrSize typeNameLength;
@@ -1572,6 +1586,7 @@ not_array_type_name:
             ZrCore_Array_Push(cs->state, &result->elementTypes, &argumentType);
         }
         ensure_generic_instance_type_prototype(cs, typeName);
+        inferred_type_apply_registered_protocol_mask(cs, result);
         inferred_type_apply_task_job_ownership(cs, result);
         ZrCore_Array_Free(cs->state, &genericArgumentTypeNames);
         return ZR_TRUE;
@@ -1581,6 +1596,10 @@ not_array_type_name:
         EZrValueType primitiveBaseType = ZR_VALUE_TYPE_UNKNOWN;
         if (nativeTypeName != ZR_NULL &&
             inferred_type_try_map_primitive_name(nativeTypeName, nativeTypeNameLength, &primitiveBaseType)) {
+            if (primitiveBaseType == ZR_VALUE_TYPE_OBJECT) {
+                ZrParser_InferredType_Init(cs->state, result, primitiveBaseType);
+                return ZR_TRUE;
+            }
             /* Preserve the imported primitive spelling so closed generic names
              * like Ptr<u8> stay stable; compatibility is normalized later in
              * the shared type-system compare helpers. */
@@ -1625,6 +1644,7 @@ not_array_type_name:
     }
 
     ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
+    inferred_type_apply_registered_protocol_mask(cs, result);
     inferred_type_apply_task_job_ownership(cs, result);
     return ZR_TRUE;
 }
@@ -2326,7 +2346,19 @@ static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
                 goto cleanup_error_with_types;
             }
 
-            if (!ZrParser_InferredType_Equal(argType, paramType)) {
+            if (argType->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) {
+                snprintf(errorBuffer,
+                         sizeof(errorBuffer),
+                         "%s argument must be a writable Place",
+                         member_call_parameter_passing_mode_label(passingMode));
+                ZrParser_Compiler_Error(
+                        cs,
+                        errorBuffer,
+                        argNode != ZR_NULL ? argNode->location : location);
+                goto cleanup_error_with_types;
+            }
+
+            if (!type_inference_reference_argument_type_equal(argType, paramType)) {
                 snprintf(errorBuffer,
                          sizeof(errorBuffer),
                          "%s argument type mismatch",
@@ -2346,6 +2378,10 @@ static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
                                     "await expects a zr.task.Task<T>",
                                     argNode != ZR_NULL ? argNode->location : location);
             goto cleanup_error_with_types;
+        }
+
+        if (memberInfo->contractRole == ZR_MEMBER_CONTRACT_ROLE_BUILTIN_BOX && index == 0) {
+            continue;
         }
 
         if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
@@ -3077,7 +3113,18 @@ cleanup:
 }
 
 static void type_inference_ensure_imported_module_runtime_metadata(SZrCompilerState *cs, SZrString *moduleName) {
+    const TZrChar *moduleNameText;
+    EZrValueType primitiveType;
+
     if (cs == ZR_NULL || moduleName == ZR_NULL) {
+        return;
+    }
+
+    moduleNameText = ZrCore_String_GetNativeString(moduleName);
+    if (moduleNameText != ZR_NULL &&
+        inferred_type_try_map_primitive_name((TZrNativeString)moduleNameText,
+                                             strlen(moduleNameText),
+                                             &primitiveType)) {
         return;
     }
 

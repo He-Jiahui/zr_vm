@@ -578,6 +578,16 @@ static void test_ref_argument_preserves_property_reference_identity(void) {
             "var box = new Box();\n"
             "consume(ref box.value);\n"
             "return 0;\n";
+    static const char readonlySource[] =
+            "fn consume(value: ref int): int { return 0; }\n"
+            "class Box {\n"
+            "  pri var stored: int;\n"
+            "  pub property value: ref readonly int {\n"
+            "    get { return ref this.stored; }\n"
+            "  }\n"
+            "}\n"
+            "var box = new Box();\n"
+            "consume(ref box.value);\n";
     SZrFunction *function = compile_source(source);
 
     TEST_ASSERT_NOT_NULL(function);
@@ -586,6 +596,7 @@ static void test_ref_argument_preserves_property_reference_identity(void) {
             count_instruction_opcode(
                     function, ZR_INSTRUCTION_ENUM(PROPERTY_REF_LOAD)));
     ZrCore_Function_Free(g_state, function);
+    TEST_ASSERT_NULL(compile_source(readonlySource));
 }
 
 static void test_static_ref_property_mutates_static_place(void) {

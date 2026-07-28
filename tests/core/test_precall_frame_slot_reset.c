@@ -351,6 +351,68 @@ static void test_resolved_vm_precall_keeps_transient_temp_slots_intact_when_no_e
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_resolved_vm_precall_clears_logical_temps_when_typed_frame_layout_is_present(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunctionFrameSlotLayout *layouts;
+    TZrStackValuePointer callBase;
+    SZrCallInfo *callInfo;
+    TZrSize frameStorageSlotCount;
+    TZrUInt32 layoutOffset;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 4u;
+    function->parameterCount = 1u;
+    function->vmEntryClearStackSizePlusOne = 2u;
+    function->frameSlotLayoutLength = function->stackSize;
+    layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(*layouts) * function->frameSlotLayoutLength,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layouts);
+    ZrCore_Memory_RawSet(layouts, 0, sizeof(*layouts) * function->frameSlotLayoutLength);
+    function->frameSlotLayouts = layouts;
+    layoutOffset = (TZrUInt32)(sizeof(SZrTypeValueOnStack) * function->stackSize);
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        layouts[index].stackSlot = index;
+        layouts[index].byteOffset = layoutOffset;
+        layouts[index].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        layouts[index].byteAlign = ZR_ALIGN_SIZE;
+        layouts[index].typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        layouts[index].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+        layoutOffset += (TZrUInt32)sizeof(SZrTypeValue);
+    }
+    function->frameByteSize = layoutOffset;
+    function->frameByteAlign = ZR_ALIGN_SIZE;
+
+    frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(function);
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1u + frameStorageSlotCount, callBase);
+    init_function_callable_value(state, callBase, function);
+    for (TZrUInt32 index = 0u; index < function->stackSize; index++) {
+        ZrCore_Value_InitAsInt(state, &callBase[1u + index].value, (TZrInt64)(70u + index));
+        callBase[1u + index].toBeClosedValueOffset = 10u + index;
+    }
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 2u;
+    callInfo = ZrCore_Function_PreCallResolvedVmFunction(state, callBase, function, 1u, 1u, ZR_NULL);
+
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_UINT32(function->stackSize + 1u, function->vmEntryClearStackSizePlusOne);
+    TEST_ASSERT_EQUAL_INT64(70, ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer + 1u)
+                                          ->value.nativeObject.nativeInt64);
+    for (TZrUInt32 index = 1u; index < function->stackSize; index++) {
+        SZrTypeValueOnStack *slot = callInfo->functionBase.valuePointer + 1u + index;
+        TEST_ASSERT_EQUAL_UINT32(0u, slot->toBeClosedValueOffset);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(slot->value.type));
+    }
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1017,6 +1079,7 @@ int main(void) {
     RUN_TEST(test_precall_clears_reused_frame_slot_metadata);
     RUN_TEST(test_resolved_vm_precall_clears_reused_frame_slot_metadata_with_explicit_argument_count);
     RUN_TEST(test_resolved_vm_precall_keeps_transient_temp_slots_intact_when_no_entry_locals_need_null_reset);
+    RUN_TEST(test_resolved_vm_precall_clears_logical_temps_when_typed_frame_layout_is_present);
     RUN_TEST(test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info);
     RUN_TEST(test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info);
     RUN_TEST(test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_on_cached_path);

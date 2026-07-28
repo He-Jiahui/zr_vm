@@ -1564,7 +1564,9 @@ static void test_aot_c_generated_shared_library_executes_numeric_arithmetic_dire
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " % "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_static_i64_no_arg_direct_call"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_i64_local_boundary"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=7 srcSlot=8"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s7 = zr_aot_s8;"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_direct_stack_copy_sync_i64_local_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Add(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Sub(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Mul(state, &frame"));

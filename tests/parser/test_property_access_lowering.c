@@ -367,10 +367,8 @@ static void test_compound_property_assignment_uses_ordinary_operator_compatibili
     SZrFunction *propertyFunction = compile_source(propertySource);
     SZrFunction *ordinaryFunction = compile_source(ordinarySource);
 
-    TEST_ASSERT_NOT_NULL(propertyFunction);
-    TEST_ASSERT_NOT_NULL(ordinaryFunction);
-    ZrCore_Function_Free(g_state, propertyFunction);
-    ZrCore_Function_Free(g_state, ordinaryFunction);
+    TEST_ASSERT_NULL(propertyFunction);
+    TEST_ASSERT_NULL(ordinaryFunction);
 }
 
 static void test_compound_property_receiver_owner_cleanup_runs_once(void) {

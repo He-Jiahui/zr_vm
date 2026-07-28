@@ -44,6 +44,126 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
         return ZR_FALSE;
     }
 
+    if (instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL) ||
+        instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL) ||
+        instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)) {
+        TZrChar memberOkLabel[96];
+        TZrUInt32 cacheIndex = instruction->operandA1;
+
+        if (instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) {
+            argumentCount = backend_aot_get_callsite_cache_argument_count(
+                    context->entry->function,
+                    cacheIndex,
+                    ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+        } else if (instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)) {
+            TZrChar receiverCopyOkLabel[96];
+            TZrChar argumentCopyOkLabel[96];
+
+            cacheIndex = instruction->operandU8A;
+            argumentCount = backend_aot_get_callsite_cache_argument_count(
+                    context->entry->function,
+                    cacheIndex,
+                    ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+            backend_aot_llvm_make_instruction_label(receiverCopyOkLabel,
+                                                    sizeof(receiverCopyOkLabel),
+                                                    context->entry->flatIndex,
+                                                    instruction->instructionIndex,
+                                                    "receiver_copy_ok");
+            backend_aot_llvm_make_instruction_label(argumentCopyOkLabel,
+                                                    sizeof(argumentCopyOkLabel),
+                                                    context->entry->flatIndex,
+                                                    instruction->instructionIndex,
+                                                    "argument_copy_ok");
+            snprintf(argsBuffer,
+                     sizeof(argsBuffer),
+                     "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+                     (unsigned)(instruction->destinationSlot + 1u),
+                     (unsigned)instruction->operandU8B);
+            backend_aot_llvm_write_guarded_call_text(context->file,
+                                                     context->tempCounter,
+                                                     "ZrLibrary_AotRuntime_CopyStack",
+                                                     argsBuffer,
+                                                     receiverCopyOkLabel,
+                                                     context->failLabel);
+            fprintf(context->file, "%s:\n", receiverCopyOkLabel);
+            snprintf(argsBuffer,
+                     sizeof(argsBuffer),
+                     "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+                     (unsigned)(instruction->destinationSlot + 2u),
+                     (unsigned)instruction->operandU8C);
+            backend_aot_llvm_write_guarded_call_text(context->file,
+                                                     context->tempCounter,
+                                                     "ZrLibrary_AotRuntime_CopyStack",
+                                                     argsBuffer,
+                                                     argumentCopyOkLabel,
+                                                     context->failLabel);
+            fprintf(context->file, "%s:\n", argumentCopyOkLabel);
+        } else {
+            argumentCount = instruction->operandB1;
+        }
+
+        backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
+                                                     context->entry->function,
+                                                     instruction->destinationSlot,
+                                                     ZR_AOT_INVALID_FUNCTION_INDEX);
+        backend_aot_llvm_make_instruction_label(memberOkLabel,
+                                                sizeof(memberOkLabel),
+                                                context->entry->flatIndex,
+                                                instruction->instructionIndex,
+                                                "member_ok");
+        backend_aot_llvm_make_instruction_label(prepareOkLabel,
+                                                sizeof(prepareOkLabel),
+                                                context->entry->flatIndex,
+                                                instruction->instructionIndex,
+                                                "prepare_ok");
+        backend_aot_llvm_make_instruction_label(finishOkLabel,
+                                                sizeof(finishOkLabel),
+                                                context->entry->flatIndex,
+                                                instruction->instructionIndex,
+                                                "finish_ok");
+        snprintf(argsBuffer,
+                 sizeof(argsBuffer),
+                 "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u",
+                 (unsigned)instruction->destinationSlot,
+                 (unsigned)(instruction->destinationSlot + 1u),
+                 (unsigned)cacheIndex);
+        backend_aot_llvm_write_guarded_call_text(context->file,
+                                                 context->tempCounter,
+                                                 "ZrLibrary_AotRuntime_GetMemberSlot",
+                                                 argsBuffer,
+                                                 memberOkLabel,
+                                                 context->failLabel);
+        fprintf(context->file, "%s:\n", memberOkLabel);
+        snprintf(argsBuffer,
+                 sizeof(argsBuffer),
+                 "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u, ptr %%direct_call",
+                 (unsigned)instruction->destinationSlot,
+                 (unsigned)instruction->destinationSlot,
+                 (unsigned)instruction->operandB1);
+        backend_aot_llvm_write_guarded_call_text(context->file,
+                                                 context->tempCounter,
+                                                 "ZrLibrary_AotRuntime_PrepareDirectCall",
+                                                 argsBuffer,
+                                                 prepareOkLabel,
+                                                 context->failLabel);
+        fprintf(context->file, "%s:\n", prepareOkLabel);
+        snprintf(argsBuffer,
+                 sizeof(argsBuffer),
+                 "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1",
+                 (unsigned)instruction->destinationSlot,
+                 (unsigned)instruction->destinationSlot,
+                 (unsigned)instruction->operandB1);
+        backend_aot_llvm_write_guarded_call_text(context->file,
+                                                 context->tempCounter,
+                                                 "ZrLibrary_AotRuntime_CallPreparedOrGeneric",
+                                                 argsBuffer,
+                                                 finishOkLabel,
+                                                 context->failLabel);
+        fprintf(context->file, "%s:\n", finishOkLabel);
+        fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
+        return ZR_TRUE;
+    }
+
     argumentCount = backend_aot_llvm_function_call_argument_count(context->entry->function, instruction);
     functionSlot = instruction->operandA1;
     isTailCall = instruction->opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||

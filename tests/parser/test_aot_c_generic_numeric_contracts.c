@@ -281,9 +281,11 @@ static void test_aot_c_source_lowers_generic_numeric_float_binary_local_before_b
             "functionIr, instruction, slot, ZR_AOT_SCALAR_LOCAL_KIND_U64",
             ("case ZR_INSTRUCTION_ENUM(DIV):\n"
              "        case ZR_INSTRUCTION_ENUM(MOD):\n"
+             "        case ZR_INSTRUCTION_OP_ADD_UNSIGNED:"),
+            ("case ZR_INSTRUCTION_OP_MOD_UNSIGNED:\n"
              "            return (TZrBool)(backend_aot_c_scalar_locals_generic_numeric_u64_binary_reads_slot("),
-            ("functionIr, instruction, slot, ZR_AOT_SCALAR_LOCAL_KIND_U64));\n"
-             "        case ZR_INSTRUCTION_ENUM(NEG):"),
+            "backend_aot_c_scalar_locals_generic_numeric_mixed_i64_u64_binary_reads_slot(",
+            "backend_aot_c_scalar_locals_generic_numeric_mixed_f64_binary_reads_slot(",
             "return backend_aot_c_scalar_locals_generic_numeric_i64_unary_reads_slot(functionIr, instruction, slot);",
             "backend_aot_c_scalar_locals_generic_numeric_f64_binary_reads_slot(",
             "functionIr, instruction, slot, ZR_AOT_SCALAR_LOCAL_KIND_F64",

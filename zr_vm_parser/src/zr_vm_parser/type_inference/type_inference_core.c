@@ -251,6 +251,10 @@ TZrBool inferred_type_try_map_primitive_name(const TZrNativeString nameStr,
         *outBaseType = ZR_VALUE_TYPE_STRING;
         return ZR_TRUE;
     }
+    if (nameLen == 6 && memcmp(nameStr, "object", 6) == 0) {
+        *outBaseType = ZR_VALUE_TYPE_OBJECT;
+        return ZR_TRUE;
+    }
     if (nameLen == 4 && memcmp(nameStr, "null", 4) == 0) {
         *outBaseType = ZR_VALUE_TYPE_NULL;
         return ZR_TRUE;
@@ -1325,7 +1329,9 @@ static TZrBool try_parse_protocol_type_name(SZrCompilerState *cs,
         }
         ensure_generic_instance_type_prototype(cs, baseName != ZR_NULL ? baseName : typeName);
         prototype = find_compiler_type_prototype_inference_exact(cs, baseName != ZR_NULL ? baseName : typeName);
-        if (prototype == ZR_NULL || !protocol_id_from_mask(prototype->protocolMask, outProtocolId)) {
+        if (prototype == ZR_NULL ||
+            prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE ||
+            !protocol_id_from_mask(prototype->protocolMask, outProtocolId)) {
             ZrCore_Array_Free(cs->state, outArgumentTypeNames);
             return ZR_FALSE;
         }
@@ -1339,7 +1345,9 @@ static TZrBool try_parse_protocol_type_name(SZrCompilerState *cs,
         ensure_generic_instance_type_prototype(cs, typeName);
         prototype = find_compiler_type_prototype_inference_exact(cs, typeName);
     }
-    return prototype != ZR_NULL && protocol_id_from_mask(prototype->protocolMask, outProtocolId);
+    return prototype != ZR_NULL &&
+           prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
+           protocol_id_from_mask(prototype->protocolMask, outProtocolId);
 }
 
 ZR_PARSER_API TZrBool inferred_type_implements_protocol_mask(SZrCompilerState *cs,
@@ -2160,6 +2168,21 @@ TZrBool ZrParser_TypeInference_BindProtocolElementType(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    if (sourceType->typeName != ZR_NULL) {
+        ensure_generic_instance_type_prototype(cs, sourceType->typeName);
+        prototype = find_compiler_type_prototype_inference(cs, sourceType->typeName);
+        if (prototype != ZR_NULL) {
+            if (bind_protocol_argument_from_type_name(
+                        cs, sourceType->typeName, protocolId, 0, outType) ||
+                prototype_bind_protocol_argument_recursive(
+                        cs, prototype, protocolId, 0, outType, 0)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    /* elementTypes stores generic arguments for named types, so it is only a
+     * direct protocol projection when no named prototype supplied a contract. */
     if ((sourceType->protocolMask & ZR_PROTOCOL_BIT(protocolId)) != 0 &&
         sourceType->elementTypes.length > 0) {
         SZrInferredType *elementType =
@@ -2170,21 +2193,7 @@ TZrBool ZrParser_TypeInference_BindProtocolElementType(SZrCompilerState *cs,
         }
     }
 
-    if (sourceType->typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ensure_generic_instance_type_prototype(cs, sourceType->typeName);
-    prototype = find_compiler_type_prototype_inference(cs, sourceType->typeName);
-    if (prototype == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (bind_protocol_argument_from_type_name(cs, sourceType->typeName, protocolId, 0, outType)) {
-        return ZR_TRUE;
-    }
-
-    return prototype_bind_protocol_argument_recursive(cs, prototype, protocolId, 0, outType, 0);
+    return ZR_FALSE;
 }
 
 ZR_PARSER_API TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
@@ -2848,6 +2857,10 @@ static TZrBool ensure_generic_instance_type_prototype_internal(
             free_inferred_type_array(cs->state, &argumentTypes);
             ZrCore_Array_Free(cs->state, &argumentTypeNames);
             return ZR_FALSE;
+        }
+        if (argumentType.genericArgumentKind == ZR_INFERRED_GENERIC_ARGUMENT_TYPE &&
+            argumentType.typeName == ZR_NULL) {
+            argumentType.typeName = *argumentNamePtr;
         }
         ZrCore_Array_Push(cs->state, &argumentTypes, &argumentType);
     }

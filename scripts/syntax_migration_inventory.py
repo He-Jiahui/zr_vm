@@ -872,7 +872,7 @@ def _tracked_files(root: Path) -> tuple[Path, ...]:
     return tuple(
         Path(raw_path)
         for raw_path in result.stdout.split("\0")
-        if raw_path and (root / raw_path).is_file()
+        if raw_path
     )
 
 
@@ -914,8 +914,10 @@ def _repository_exclusion_reason(relative_path: Path) -> str | None:
         return "inventorySelfFixture"
     if normalized.startswith("tests/fixtures/reference/"):
         return "expectedDiagnosticFixture"
-    if "legacy" in relative_path.name.lower() or "migration" in relative_path.name.lower():
+    if any("legacy" in part.lower() or "migration" in part.lower() for part in parts):
         return "legacyOrMigrationFixture"
+    if "negative" in parts:
+        return "expectedDiagnosticFixture"
     if "bin" in parts or "build" in parts or "obj" in parts or "tests_generated" in parts:
         return "generatedOutput"
     return None
@@ -941,17 +943,22 @@ def build_repository_inventory(root: Path) -> InventoryReport:
             exclusions.append(InventoryExclusion(file=relative_file, reason=reason))
             continue
         source_kind = _repository_source_kind(relative_path)
-        scanned_files.append(
-            ScannedFile(file=relative_file, source_kind=source_kind)
-        )
-        findings.extend(
-            _scan_path(
+        try:
+            path_findings = _scan_path(
                 root / relative_path,
                 file=relative_file,
                 source_kind=source_kind,
                 require_embedded_source_context=True,
             )
+        except FileNotFoundError:
+            exclusions.append(
+                InventoryExclusion(file=relative_file, reason="missingTrackedFile")
+            )
+            continue
+        scanned_files.append(
+            ScannedFile(file=relative_file, source_kind=source_kind)
         )
+        findings.extend(path_findings)
 
     scanned_files.sort(key=lambda entry: (entry.file, entry.source_kind.value))
     exclusions.sort(key=lambda entry: (entry.file, entry.reason))

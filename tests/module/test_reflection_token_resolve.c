@@ -2098,19 +2098,45 @@ static void test_reflection_writes_field_info_object_nested_path_value_slot_from
 }
 
 static void configure_nested_primitive_path_field_sizes(SZrTypeLayoutField *ownerField,
+                                                        SZrTypeLayout *ownerLayout,
                                                         SZrTypeLayout *fieldLayout,
                                                         SZrTypeLayoutField *fieldTypeField,
                                                         SZrTypeLayout *innerLayout,
                                                         SZrTypeLayoutField *innerField,
                                                         TZrUInt32 byteSize,
                                                         TZrUInt32 byteAlign) {
+    TZrUInt32 ownerTypeId = ownerLayout->cTypeId;
+    TZrUInt32 fieldTypeId = fieldLayout->cTypeId;
+    TZrUInt32 innerTypeId = innerLayout->cTypeId;
+
     ownerField->byteSize = byteSize;
     fieldTypeField->byteSize = byteSize;
-    fieldLayout->byteSize = byteSize;
-    fieldLayout->byteAlign = byteAlign;
     innerField->byteSize = byteSize;
-    innerLayout->byteSize = byteSize;
-    innerLayout->byteAlign = byteAlign;
+
+    ZrCore_TypeLayout_InitStruct(ownerLayout,
+                                 ownerLayout->byteSize,
+                                 ownerLayout->byteAlign,
+                                 (EZrTypeLayoutCopyKind)ownerLayout->copyKind,
+                                 (EZrTypeLayoutDropKind)ownerLayout->dropKind,
+                                 ownerLayout->fields,
+                                 ownerLayout->fieldCount);
+    ZrCore_TypeLayout_InitStruct(fieldLayout,
+                                 byteSize,
+                                 byteAlign,
+                                 (EZrTypeLayoutCopyKind)fieldLayout->copyKind,
+                                 (EZrTypeLayoutDropKind)fieldLayout->dropKind,
+                                 fieldLayout->fields,
+                                 fieldLayout->fieldCount);
+    ZrCore_TypeLayout_InitStruct(innerLayout,
+                                 byteSize,
+                                 byteAlign,
+                                 (EZrTypeLayoutCopyKind)innerLayout->copyKind,
+                                 (EZrTypeLayoutDropKind)innerLayout->dropKind,
+                                 innerLayout->fields,
+                                 innerLayout->fieldCount);
+    ownerLayout->cTypeId = ownerTypeId;
+    fieldLayout->cTypeId = fieldTypeId;
+    innerLayout->cTypeId = innerTypeId;
 }
 
 static void test_reflection_reads_and_writes_field_info_object_nested_path_primitive_pod_from_inline_struct(void) {
@@ -2386,6 +2412,7 @@ static void test_reflection_reads_and_writes_field_info_object_nested_path_primi
     TEST_ASSERT_EQUAL_INT64(2048, readValue.value.nativeObject.nativeInt64);
 
     configure_nested_primitive_path_field_sizes(&ownerFields[0],
+                                                &ownerLayout,
                                                 &fieldLayout,
                                                 &fieldTypeFields[0],
                                                 &innerLayout,
@@ -2422,6 +2449,7 @@ static void test_reflection_reads_and_writes_field_info_object_nested_path_primi
     }
 
     configure_nested_primitive_path_field_sizes(&ownerFields[0],
+                                                &ownerLayout,
                                                 &fieldLayout,
                                                 &fieldTypeFields[0],
                                                 &innerLayout,
@@ -2458,6 +2486,7 @@ static void test_reflection_reads_and_writes_field_info_object_nested_path_primi
     }
 
     configure_nested_primitive_path_field_sizes(&ownerFields[0],
+                                                &ownerLayout,
                                                 &fieldLayout,
                                                 &fieldTypeFields[0],
                                                 &innerLayout,
@@ -2498,6 +2527,7 @@ static void test_reflection_reads_and_writes_field_info_object_nested_path_primi
         cType storedRaw = (cType)(initialValue);                                                                      \
         cType writtenRaw = (cType)0;                                                                                  \
         configure_nested_primitive_path_field_sizes(&ownerFields[0],                                                  \
+                                                    &ownerLayout,                                                     \
                                                     &fieldLayout,                                                     \
                                                     &fieldTypeFields[0],                                              \
                                                     &innerLayout,                                                     \
@@ -2535,6 +2565,7 @@ static void test_reflection_reads_and_writes_field_info_object_nested_path_primi
         cType storedRaw = (cType)(initialValue);                                                                      \
         cType writtenRaw = (cType)0;                                                                                  \
         configure_nested_primitive_path_field_sizes(&ownerFields[0],                                                  \
+                                                    &ownerLayout,                                                     \
                                                     &fieldLayout,                                                     \
                                                     &fieldTypeFields[0],                                              \
                                                     &innerLayout,                                                     \
@@ -2581,6 +2612,7 @@ static void test_reflection_reads_and_writes_field_info_object_nested_path_primi
 #undef ASSERT_NESTED_UNSIGNED_PRIMITIVE_PATH_WIDTH
 
     configure_nested_primitive_path_field_sizes(&ownerFields[0],
+                                                &ownerLayout,
                                                 &fieldLayout,
                                                 &fieldTypeFields[0],
                                                 &innerLayout,

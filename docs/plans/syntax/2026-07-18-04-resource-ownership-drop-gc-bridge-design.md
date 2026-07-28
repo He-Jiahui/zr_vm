@@ -384,14 +384,60 @@ native/FFI descriptor必须声明 safepoint mode：可轮询的`GcAware`、发�
 | `ValueCopy` | `GcFree`/无owner裸指针的closed value按布局复制 |
 | `StructuredClone` | 显式可克隆GC graph按字段schema复制，保留payload内部alias/cycle，拒绝指向payload外部domain object的edge |
 | `ImmutableHandle` | 指向domain外只读arena、mmap/blob或host asset；handle可复制，payload不可写且不进入moving heap |
-| `ResourceMove` | 消耗`Unique<T>`并由注册的transfer/drop contract在目标domain重建owner；失败必须回滚或保持唯一owner |
+| `ResourceMove` | 消耗`Unique<T>`并由注册的prepare/commit/abort contract在目标domain重建owner；源Place不自动恢复，失败由transfer envelope恰好Drop一次 |
 | `Forbidden` | 默认；不生成transport，绑定或schedule时报定向diagnostic |
 
 `DomainTransferKind` 是 artifact/runtime capability metadata，不新增一个用户可随意实现的marker。`StructuredClone`必须有稳定schema、对象/字节/depth quota和失败原子性；它不是隐式参数传值。跨域发送完成后两个heap之间仍不存在GC pointer，transport table也不能成为隐藏全局root registry。
 
 大型共享只读资源优先放在moving GC之外，通过`ImmutableHandle`或线程安全resource handle访问。这样可避免每实例复制，又不把所有实例绑到同一次GC暂停。可变共享资源必须由显式并发native/resource contract保护，不能借`GcDomain`绕过`MutatorShareSafe`。
 
-### 11.4 Barrier、handle 与失败语义
+### 11.4 `TransferEnvelope` 唯一 owner 协议
+
+所有跨 mutator 的 owner handoff 共用 runtime-internal `TransferEnvelope`。它不是 public TypeDef，不增加 source API，也不能按`Transfer`短名或object field猜测。same-domain只在envelope中保存原owner handle；cross-domain保存由`DomainTransferKind`选择的value bytes、clone graph、immutable handle或resource token。
+
+```text
+TransferEnvelope
+  transferId + generation
+  sourceDomainId + targetDomainId
+  state: Prepared | Queued | Claimed | Committed | Aborted
+  claimantWorkerId + claimEpoch
+  payload kind/schema/token
+  drop/abort contract
+  completion record
+```
+
+规范状态转换：
+
+```text
+SourceOwned --OwnerMove--> Prepared
+Prepared --release publish--> Queued
+Queued --acquire claim--> Claimed
+Claimed --commit target owner--> Committed
+Prepared | Queued | Claimed --abort/drop--> Aborted
+```
+
+- `OwnerMove`一旦执行，源Place在semantic facts中永久为Moved；envelope成为唯一runtime owner。异步失败不能重新初始化已经离开作用域或已继续执行的源变量。
+- producer必须完整写入payload/schema/drop contract后以release语义发布；consumer以acquire语义观察queue entry。claim/state CAS使用acq_rel，completion/result发布同样形成release/acquire happens-before。禁止用relaxed load/store发布owner或其可变内容。
+- `Claimed`只表示一个worker独占envelope，resource仍由envelope拥有；只有target owner完整构造并登记到目标cleanup/GC root map后才能原子转为`Committed`并清空envelope payload。
+- worker failure monitor只能在确认claimant已退出且`claimEpoch`仍匹配时CAS `Claimed -> Aborted`；普通执行超时不能偷取或复制一个仍可能运行的envelope。stale monitor、旧worker id和重复close都必须因state/epoch不匹配而无副作用。
+- prepare失败、queue关闭、policy不匹配、目标分配/解码失败、worker在commit前退出或domain shutdown都转为`Aborted`，由envelope调用no-throw abort/drop contract恰好一次。
+- commit后Job body throw、Task fault或worker正常退出由目标frame/Place cleanup Drop owner；envelope不得再次Drop。process crash不在单进程runtime可恢复保证内。
+- queue迁移、work stealing和claim前requeue只能移动同一个envelope identity，不能复制payload或创建第二次attempt。claim/commit之后第一版不自动重放Job，因为owner安全不等于业务副作用幂等。
+- queued/claimed envelope是精确root/cleanup entry。其payload若仍含source-domain `Gc<T>`、borrow/ref或未pin native pointer，`ResourceMove`为`Forbidden`，不能靠envelope延长非法跨domain edge。
+
+`schedule(Job): Task`的第一版失败处置固定为`DropOnFailure`：调用已消费Job及captures，返回的faulted Task只报告失败，不返还owner。需要恢复值的future API必须显式返回`Result<..., Job>`或等价owner carrier，并另立public API ledger；不能把Rust `SendError<T>`式返还暗藏进现有Task fault。
+
+native resource transfer descriptor至少提供：
+
+```text
+prepare(sourceOwner, targetDomain) -> transferToken | structured error
+commit(transferToken, targetDomain) -> targetOwner | structured error
+abort(transferToken): no-throw
+```
+
+prepare成功后token本身承担唯一owner/drop责任；commit必须原子地“成功转移”或“失败且token仍可abort”，不得返回所有权去向不明的ambiguous outcome。abort由envelope state guard保证最多实际执行一次且本身no-throw。thread-affine GPU/context/UI handle、挂接特定event loop的pending I/O等若无法满足该协议必须标记`Forbidden`，不能把地址可复制误报为resource可转移。
+
+### 11.5 Barrier、handle 与失败语义
 
 - allocation根据当前mutator的attached domain选择region；无attached domain时禁止分配GC object。
 - GC field write barrier先验证source/target domain一致，再执行generational/concurrent barrier；跨域写入在debug和host boundary都必须失败，release构建不能静默接受。
@@ -399,9 +445,16 @@ native/FFI descriptor必须声明 safepoint mode：可轮询的`GcAware`、发�
 - domain shutdown先停止接收mutator和transport，drain/fault pending Task，再做本domain终结与回收；不能等待另一个domain中的GC object finalizer释放本domain资源。
 - collector内部可并行使用worker thread，但collector worker不因此成为语言mutator，也不改变domain pause scope。
 
-### 11.5 成本与可观测性
+### 11.6 成本与可观测性
 
-宿主选择domain拓扑时必须能读取每domain的heap bytes、allocation rate、minor/major/remark/compact pause、safepoint wait、active mutator、cross-domain bytes/object count和transport failure。验收必须覆盖三种部署：单共享domain、多隔离domain、每domain多mutator；不能只用单线程microbenchmark证明并发方案成立。
+宿主选择domain拓扑时必须能读取每domain的heap bytes、allocation rate、minor/major/remark/compact pause、safepoint wait、active mutator、cross-domain bytes/object count和transport failure。owner transport另记录prepare/queue/claim/commit/abort计数与延迟、payload bytes、structured-clone objects和provider时间。
+
+- same-domain `Unique<T>` handoff目标是O(1) handle move；成本是一条queue publication/claim、必要的release/acquire和后续cache/NUMA迁移，不执行refcount或deep copy。envelope应可与Job request共分配或池化，不能强制每次额外heap allocation。
+- cross-domain `ValueCopy`为O(bytes)，`StructuredClone`为O(objects + bytes)且传输窗口可能保留近似双份payload，`ImmutableHandle`通常为O(1) handle/refcount，`ResourceMove`为O(1) envelope加provider-specific prepare/commit成本。
+- `AtomicShared<T>`若以后加入，每次clone/drop/upgrade另有atomic RMW和争用cache-line成本；它不是Unique move的默认实现。
+- remote free、allocator arena迁移、GPU upload、socket/event-loop rebinding等成本必须归因到provider metric，不能只报告queue enqueue时间。
+
+验收必须覆盖三种部署：单共享domain、多隔离domain、每domain多mutator；不能只用单线程microbenchmark证明并发方案成立。
 
 ## 12. Runtime 操作
 
@@ -416,6 +469,11 @@ WeakUpgrade
 OwnerDrop
 GcHandleCreate/Copy/Drop
 OwnerIntoGcBox
+TransferPrepare
+TransferPublish
+TransferClaim
+TransferCommit
+TransferAbort
 ```
 
 不再需要运行时：
@@ -440,7 +498,7 @@ VM/AOT 可以对 Unique move/drop、known final Shared drop 做优化，但必�
 - field ownership/GC-bridge map。
 - `GcDomainId`/generation handle ABI、safepoint ABI 与 collector capability version。
 - `MutatorMoveSafe`、`MutatorShareSafe`和`DomainTransferKind`的规范capability id；它们由closed TypeLayout/descriptor计算，不按类型名字符串识别。第12章的Send/Sync只绑定前两项，不反向拥有本章schema。
-- structured clone schema、resource transfer token和immutable handle provider identity。
+- TransferEnvelope ABI/state version、`DropOnFailure` disposition、structured clone schema、resource prepare/commit/abort token和immutable handle provider identity。
 - callable move/borrow/escape contract。
 - GcBox/Gc handle bridge kind。
 
@@ -450,6 +508,7 @@ native ABI：
 
 - Unique transfer、borrowed ref、Shared clone、Weak handle 必须分别声明。
 - native callable必须声明`GcAware`、`BlockingDetached`或`NoSafepointCritical`，并给出pin/root/transfer contract。
+- resource transfer provider的prepare/commit可以返回structured error；abort/drop必须no-throw、可在partial construction和domain shutdown路径执行，并保证token最多消费一次。
 - native 未声明 ownership 时默认不接管 owner，也不得保存 ref。
 - native 返回 owner 时必须提供对应 destroy/drop callback/token。
 
@@ -479,17 +538,17 @@ native ABI：
 
 晋级门：GC压力和Drop期间collection下无漏标、悬空、double-drop；domain generation可检测stale handle；任何普通GC edge都不能跨domain；无隐藏ignore registry。
 
-### M5 domain-local STW 与多 mutator
+### M5 domain-local STW、多 mutator 与同域 owner handoff
 
-覆盖mutator registry、precise root publish、safepoint epoch/handshake、native safepoint mode、minor/remark/compact pause和同domain多mutator barrier。
+覆盖mutator registry、precise root publish、safepoint epoch/handshake、native safepoint mode、minor/remark/compact pause、同domain多mutator barrier，以及TransferEnvelope的prepare/release-publish/acquire-claim/commit/abort基础状态机。
 
-晋级门：collector只等待当前domain mutator；其他domain持续推进；超时报告阻塞mutator/native frame；VM/AOT在相同root/barrier stress下结果一致。第12章的same-domain ThreadScheduler不得早于本gate晋级。
+晋级门：collector只等待当前domain mutator；其他domain持续推进；超时报告阻塞mutator/native frame；VM/AOT在相同root/barrier stress下结果一致。same-domain Unique handoff不复制payload、不使用refcount，所有queue close/worker exit/throw race下Drop count恰好为1且源Place保持Moved。第12章的same-domain ThreadScheduler不得早于本gate晋级。
 
 ### M6 跨 domain transport
 
-覆盖`ValueCopy`、`StructuredClone`、`ImmutableHandle`、`ResourceMove`和`Forbidden`，包含alias/cycle保持、quota、失败回滚及domain shutdown。
+覆盖`ValueCopy`、`StructuredClone`、`ImmutableHandle`、`ResourceMove`和`Forbidden`，包含artifact schema、provider prepare/commit/abort、alias/cycle保持、quota、`DropOnFailure`、domain shutdown和stale transfer generation。
 
-晋级门：所有跨domain payload都可由artifact schema复现；传输前后heap间无GC edge；resource move恰好一个owner；第12章的isolated-domain ThreadScheduler不得早于本gate晋级。
+晋级门：所有跨domain payload都可由artifact schema复现；传输前后heap间无GC edge；prepare/queue/claim/commit/abort每个线性化点都有直接并发测试；resource move在成功、目标分配失败、decode失败、provider失败、shutdown和取消路径都恰好一个owner且恰好一次Drop。第12章的isolated-domain ThreadScheduler不得早于本gate晋级。
 
 ### M7 concurrent major + artifact/AOT/LSP
 
@@ -537,8 +596,19 @@ native ABI：
 - safepoint命中allocation/call/backedge/await/native entry/exit，阻塞native可定位且不会静默跳过root。
 - same-domain GC reference零拷贝但仍执行MutatorMoveSafe/MutatorShareSafe检查；跨domain普通pointer/ref/Gc handle全部拒绝；第12章另测Send/Sync public projection。
 - StructuredClone保留payload内alias/cycle，拒绝外部edge并遵守object/byte/depth quota。
-- ImmutableHandle并发读取、ResourceMove成功/失败回滚、domain shutdown与stale generation。
+- ImmutableHandle并发读取、ResourceMove成功/DropOnFailure、domain shutdown与stale generation。
 - concurrent mark期间mutator写屏障、weak/finalizer/GcBox/Drop组合压力。
+
+### Ownership transfer
+
+- same-domain Unique/owner field/nested owner按值schedule后源Place立即Moved，worker只取得一次target owner。
+- producer写payload后release publish、consumer acquire claim；在可用平台运行TSAN/等价race detector，并用高频litmus验证worker不会观察partial initialization。
+- prepare前失败、prepare后enqueue失败、queue close、重复claim、target allocation/decode/commit失败、Job body throw和caller domain shutdown分别断言Drop count为1。
+- cancellation/domain shutdown分别命中Prepared、Queued、Claimed、Committed；前三者由envelope abort，Committed由target cleanup，二者不能同时Drop。
+- queue migration/work stealing只移动同一transfer id；claimant exit使用worker id + claim epoch收口，普通timeout不得抢占；stale generation、duplicate completion、ABA和commit后retry全部拒绝。
+- resource中含source-domain Gc/ref/Span/PoolRef/native pointer时`Forbidden`；合法provider token在GC和native callback重入压力下不泄漏。
+- `schedule` fault不恢复源Place；没有recoverable public API时不得伪造返回owner。Job副作用不做exactly-once声明，claim后不自动retry。
+- 以当前`zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_transport.c`的“source taken后target decode失败”路径建立回归测试，旧dynamic Transfer/SharedCell/Channel不能作为M5/M6证据。
 
 ### Performance
 
@@ -549,17 +619,21 @@ native ABI：
 - GcFree pool slab/owner图不进入普通 tracing 的收益，以及GcMapped/GcBarriered scan bytes和barrier成本。
 - 单全局domain、每实例domain和分组domain在相同游戏负载下的p50/p95/p99 pause、throughput与内存冗余。
 - domain内1/N mutator的safepoint wait、barrier/TLAB成本；跨domain clone bytes/objects和immutable handle收益。
+- same-domain owner handoff的enqueue/dequeue latency、envelope allocation count、cache/NUMA迁移和remote free；不得退化为AtomicShared/refcount路径。
+- ResourceMove分离queue时间与provider prepare/commit/abort时间；StructuredClone报告payload bytes、object count、峰值双份内存和quota拒绝成本。
 
 ## 16. 参考依据
 
-- Rust Box/Rc/Weak/Arc：`lua/rust/library/alloc/src/boxed.rs`、`lua/rust/library/alloc/src/rc.rs`、`lua/rust/library/alloc/src/sync.rs`。
+- Rust Box/Rc/Weak/Arc与Send/Sync：`lua/rust/library/alloc/src/boxed.rs`、`lua/rust/library/alloc/src/rc.rs`、`lua/rust/library/alloc/src/sync.rs`、`lua/rust/library/core/src/marker.rs`。
+- Rust channel失败返还value的对照：`lua/rust/library/std/src/sync/mpsc.rs`中的`SendError<T>`；ZR第一版Scheduler刻意选择DropOnFailure，不暗中返还已move capture。
 - Rust move/drop/borrow tests：`lua/rust/tests/ui/moves`、`lua/rust/tests/ui/drop`、`lua/rust/tests/ui/borrowck`。
 - QuickJS refcount、Weak 和 remove-cycles：`lua/QuickJS-master/quickjs.c`。
 - QuickJS runtime级heap/GC边界：`lua/QuickJS-master/quickjs.c`中的`JSRuntime`、`gc_obj_list`、`JS_RunGC`。
 - Lua state/global state与incremental/generational barrier：`lua/src/lstate.h`、`lua/src/lgc.c`。
 - .NET共享heap、后台GC与STW协调：`lua/runtime/src/coreclr/gc/gc.cpp`、`lua/runtime/src/coreclr/gc/gcpriv.h`。
 - JDK G1 concurrent mark、safepoint与region collection：`lua/jdk/src/hotspot/share/gc/g1/g1CollectedHeap.cpp`、`lua/jdk/src/hotspot/share/gc/g1/g1ConcurrentMark.cpp`。
+- JDK queue publication与executor关闭/拒绝：`lua/jdk/src/java.base/share/classes/java/util/concurrent/BlockingQueue.java`、`lua/jdk/src/java.base/share/classes/java/util/concurrent/ThreadPoolExecutor.java`；tests为`lua/jdk/test/jdk/java/util/concurrent/tck/LinkedBlockingQueueTest.java`、`lua/jdk/test/jdk/java/util/concurrent/tck/ThreadPoolExecutorTest.java`。
 - CPython weakref/GC 对比：`lua/cpython/Objects/weakrefobject.c`、`lua/cpython/Modules/gcmodule.c`。
 - ZR 当前 runtime：`zr_vm_core/include/zr_vm_core/global.h`、`zr_vm_core/include/zr_vm_core/ownership.h`、`zr_vm_core/src/zr_vm_core/ownership.c`、`zr_vm_core/include/zr_vm_core/type_layout.h`、`zr_vm_core/src/zr_vm_core/gc/gc.c`。
 
-ZR 的刻意差异是：普通业务对象继续使用GC；resource class才进入Rust-like ownership。Shared第一版为单mutator非原子计数，不引入QuickJS式ownership cycle collector；跨世界通过Gc/GcBox明示成本。`GcDomain`把heap隔离范围和pause算法拆开：宿主可选共享或隔离domain，每个domain内部仍可使用local-STW与concurrent major的混合收集。
+ZR 的刻意差异是：普通业务对象继续使用GC；resource class才进入Rust-like ownership。Shared第一版为单mutator非原子计数，不引入QuickJS式ownership cycle collector；跨世界通过Gc/GcBox明示成本。`GcDomain`把heap隔离范围和pause算法拆开：宿主可选共享或隔离domain，每个domain内部仍可使用local-STW与concurrent major的混合收集。跨mutator owner move以TransferEnvelope保证“任一时刻恰好一个owner”，但`schedule(Job): Task`采用DropOnFailure，不承诺消息必达、失败返还源变量或Job副作用exactly-once。

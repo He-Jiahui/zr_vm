@@ -1,14 +1,22 @@
 {
   "classificationCounts": {
     "blocked": 0,
-    "machineApplicable": 259,
+    "machineApplicable": 262,
     "maybeIncorrect": 0,
-    "requiresReview": 321,
-    "targetNotPromoted": 190
+    "requiresReview": 324,
+    "targetNotPromoted": 183
   },
   "exclusions": [
     {
       "file": "docs/cli-and-tooling/lsp-module-identity-edge-migration.md",
+      "reason": "legacyOrMigrationFixture"
+    },
+    {
+      "file": "docs/cli-and-tooling/syntax-migration-command.md",
+      "reason": "legacyOrMigrationFixture"
+    },
+    {
+      "file": "docs/parser-and-semantics/legacy-syntax-migration-frontend.md",
       "reason": "legacyOrMigrationFixture"
     },
     {
@@ -564,6 +572,38 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/plans/syntax/06-percent-migration-lsp-fixtures/m1-migration-inventory-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/06-percent-migration-lsp-fixtures/m1-migration-inventory.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/06-percent-migration-lsp-fixtures/m2-migration-frontend-lsp-fixes-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/06-percent-migration-lsp-fixtures/m2-migration-frontend-lsp-fixes.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/07-comprehensive-syntax-reference-fixture/m1-reference-fixture-manifest-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/07-comprehensive-syntax-reference-fixture/m1-reference-fixture-manifest.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/10-native-ffi-module-package/m1-specifier-foundation-implementation-plan.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/10-native-ffi-module-package/m1-specifier-foundation.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md",
       "reason": "historicalPlan"
     },
@@ -806,6 +846,14 @@
     {
       "file": "tests/benchmarks/cases/string_build/zr/bin/main.zro",
       "reason": "binaryArtifact"
+    },
+    {
+      "file": "tests/cli/syntax_migration_smoke.js",
+      "reason": "legacyOrMigrationFixture"
+    },
+    {
+      "file": "tests/cli/test_cli_syntax_migration.c",
+      "reason": "legacyOrMigrationFixture"
     },
     {
       "file": "tests/cmake/member_slot_quickening_test.zro",
@@ -1056,6 +1104,14 @@
       "reason": "binaryArtifact"
     },
     {
+      "file": "tests/fixtures/projects/syntax_reference_v1/negative/function_delimiters.zr",
+      "reason": "expectedDiagnosticFixture"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/negative/legacy_percent_surface.zr",
+      "reason": "legacyOrMigrationFixture"
+    },
+    {
       "file": "tests/fixtures/reference/core_semantics/calls/named_arguments_defaults_pass.zr",
       "reason": "expectedDiagnosticFixture"
     },
@@ -1224,6 +1280,14 @@
       "reason": "expectedDiagnosticFixture"
     },
     {
+      "file": "tests/fixtures/syntax_migration_frontend/input/machine_forms.zr",
+      "reason": "legacyOrMigrationFixture"
+    },
+    {
+      "file": "tests/fixtures/syntax_migration_frontend/input/review_and_blocked_forms.zr",
+      "reason": "legacyOrMigrationFixture"
+    },
+    {
       "file": "tests/fixtures/syntax_migration_inventory/embedded/embedded_legacy_fixture.c",
       "reason": "inventorySelfFixture"
     },
@@ -1302,6 +1366,10 @@
     {
       "file": "tests/golden/intermediate/decorator_artifact_baseline.zri",
       "reason": "binaryArtifact"
+    },
+    {
+      "file": "tests/parser/test_legacy_migration.c",
+      "reason": "legacyOrMigrationFixture"
     },
     {
       "file": "zr_vm_aot/tests/fixtures/projects/aot_dynamic_meta_ownership_lab/bin/main.zri",
@@ -1498,40 +1566,40 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "requiresReview",
       "file": "docs/library-and-builtins/zr-task-runtime.md",
-      "legacyForm": "percentAsync",
-      "range": {
-        "end": {
-          "column": 7,
-          "line": 62
-        },
-        "start": {
-          "column": 1,
-          "line": 62
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "12"
-    },
-    {
-      "classification": "targetNotPromoted",
-      "file": "docs/library-and-builtins/zr-task-runtime.md",
-      "legacyForm": "percentAsync",
+      "legacyForm": "percentImport",
       "range": {
         "end": {
           "column": 19,
-          "line": 62
+          "line": 34
         },
         "start": {
-          "column": 13,
-          "line": 62
+          "column": 12,
+          "line": 34
         }
       },
-      "reason": "target_plan_not_promoted",
+      "reason": "import_binding_context_required",
       "sourceKind": "currentDocumentation",
-      "targetPlan": "12"
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "file": "docs/library-and-builtins/zr-task-runtime.md",
+      "legacyForm": "legacyFunctionTypeArrow",
+      "range": {
+        "end": {
+          "column": 35,
+          "line": 35
+        },
+        "start": {
+          "column": 33,
+          "line": 35
+        }
+      },
+      "reason": "function_type_arrow_has_current_syntax",
+      "sourceKind": "currentDocumentation",
+      "targetPlan": "06A"
     },
     {
       "classification": "requiresReview",
@@ -2056,78 +2124,6 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
-      "file": "docs/zr_language_specification.md",
-      "legacyForm": "percentAsync",
-      "range": {
-        "end": {
-          "column": 7,
-          "line": 250
-        },
-        "start": {
-          "column": 1,
-          "line": 250
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "12"
-    },
-    {
-      "classification": "targetNotPromoted",
-      "file": "docs/zr_language_specification.md",
-      "legacyForm": "percentAsync",
-      "range": {
-        "end": {
-          "column": 34,
-          "line": 250
-        },
-        "start": {
-          "column": 28,
-          "line": 250
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "12"
-    },
-    {
-      "classification": "targetNotPromoted",
-      "file": "docs/zr_language_specification.md",
-      "legacyForm": "percentAsync",
-      "range": {
-        "end": {
-          "column": 7,
-          "line": 254
-        },
-        "start": {
-          "column": 1,
-          "line": 254
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "12"
-    },
-    {
-      "classification": "targetNotPromoted",
-      "file": "docs/zr_language_specification.md",
-      "legacyForm": "percentAwait",
-      "range": {
-        "end": {
-          "column": 18,
-          "line": 255
-        },
-        "start": {
-          "column": 12,
-          "line": 255
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "12"
-    },
-    {
       "classification": "requiresReview",
       "file": "docs/zr_language_specification.md",
       "legacyForm": "legacyBareTypeCall",
@@ -2378,24 +2374,6 @@
       "reason": "call_vs_constructor_binding_required",
       "sourceKind": "currentDocumentation",
       "targetPlan": "06A"
-    },
-    {
-      "classification": "targetNotPromoted",
-      "file": "docs/zr_language_specification.md",
-      "legacyForm": "percentAsync",
-      "range": {
-        "end": {
-          "column": 19,
-          "line": 848
-        },
-        "start": {
-          "column": 13,
-          "line": 848
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "12"
     },
     {
       "classification": "machineApplicable",
@@ -2728,11 +2706,11 @@
       "range": {
         "end": {
           "column": 21,
-          "line": 897
+          "line": 898
         },
         "start": {
           "column": 14,
-          "line": 897
+          "line": 898
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2746,11 +2724,11 @@
       "range": {
         "end": {
           "column": 13,
-          "line": 945
+          "line": 946
         },
         "start": {
           "column": 9,
-          "line": 945
+          "line": 946
         }
       },
       "reason": "property_pairing_required",
@@ -2764,11 +2742,11 @@
       "range": {
         "end": {
           "column": 16,
-          "line": 1033
+          "line": 1034
         },
         "start": {
           "column": 9,
-          "line": 1033
+          "line": 1034
         }
       },
       "reason": "import_binding_context_required",
@@ -2782,11 +2760,11 @@
       "range": {
         "end": {
           "column": 16,
-          "line": 1037
+          "line": 1038
         },
         "start": {
           "column": 9,
-          "line": 1037
+          "line": 1038
         }
       },
       "reason": "import_binding_context_required",
@@ -2800,11 +2778,11 @@
       "range": {
         "end": {
           "column": 44,
-          "line": 1072
+          "line": 1073
         },
         "start": {
           "column": 39,
-          "line": 1072
+          "line": 1073
         }
       },
       "reason": "function_type_has_current_syntax",
@@ -2818,11 +2796,11 @@
       "range": {
         "end": {
           "column": 44,
-          "line": 1072
+          "line": 1073
         },
         "start": {
           "column": 40,
-          "line": 1072
+          "line": 1073
         }
       },
       "reason": "function_keyword_has_current_syntax",
@@ -2836,11 +2814,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 1072
+          "line": 1073
         },
         "start": {
           "column": 49,
-          "line": 1072
+          "line": 1073
         }
       },
       "reason": "function_definition_return_delimiter_has_current_syntax",
@@ -2854,11 +2832,11 @@
       "range": {
         "end": {
           "column": 5,
-          "line": 1106
+          "line": 1107
         },
         "start": {
           "column": 1,
-          "line": 1106
+          "line": 1107
         }
       },
       "reason": "function_keyword_has_current_syntax",
@@ -2872,11 +2850,11 @@
       "range": {
         "end": {
           "column": 5,
-          "line": 1112
+          "line": 1113
         },
         "start": {
           "column": 1,
-          "line": 1112
+          "line": 1113
         }
       },
       "reason": "function_keyword_has_current_syntax",
@@ -2890,11 +2868,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 1173
+          "line": 1174
         },
         "start": {
           "column": 21,
-          "line": 1173
+          "line": 1174
         }
       },
       "reason": "import_binding_context_required",
@@ -2908,11 +2886,11 @@
       "range": {
         "end": {
           "column": 5,
-          "line": 1195
+          "line": 1196
         },
         "start": {
           "column": 1,
-          "line": 1195
+          "line": 1196
         }
       },
       "reason": "function_keyword_has_current_syntax",
@@ -2926,11 +2904,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 1195
+          "line": 1196
         },
         "start": {
           "column": 29,
-          "line": 1195
+          "line": 1196
         }
       },
       "reason": "parameter_contract_has_current_syntax",
@@ -2944,11 +2922,11 @@
       "range": {
         "end": {
           "column": 5,
-          "line": 1200
+          "line": 1201
         },
         "start": {
           "column": 1,
-          "line": 1200
+          "line": 1201
         }
       },
       "reason": "function_keyword_has_current_syntax",
@@ -2962,11 +2940,11 @@
       "range": {
         "end": {
           "column": 18,
-          "line": 1200
+          "line": 1201
         },
         "start": {
           "column": 14,
-          "line": 1200
+          "line": 1201
         }
       },
       "reason": "parameter_contract_has_current_syntax",
@@ -2980,11 +2958,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 1200
+          "line": 1201
         },
         "start": {
           "column": 28,
-          "line": 1200
+          "line": 1201
         }
       },
       "reason": "parameter_contract_has_current_syntax",
@@ -2998,11 +2976,11 @@
       "range": {
         "end": {
           "column": 11,
-          "line": 1216
+          "line": 1217
         },
         "start": {
           "column": 4,
-          "line": 1216
+          "line": 1217
         }
       },
       "reason": "module_directive_has_current_syntax",
@@ -11344,6 +11322,78 @@
       "targetPlan": "06A"
     },
     {
+      "classification": "machineApplicable",
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/anonymous_expression_arrow.zr",
+      "legacyForm": "legacyFunctionTypeArrow",
+      "range": {
+        "end": {
+          "column": 54,
+          "line": 2
+        },
+        "start": {
+          "column": 52,
+          "line": 2
+        }
+      },
+      "reason": "function_type_arrow_has_current_syntax",
+      "sourceKind": "zrSource",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "machineApplicable",
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/callables.zr",
+      "legacyForm": "legacyDefinitionArrow",
+      "range": {
+        "end": {
+          "column": 48,
+          "line": 1
+        },
+        "start": {
+          "column": 46,
+          "line": 1
+        }
+      },
+      "reason": "function_definition_return_delimiter_has_current_syntax",
+      "sourceKind": "zrSource",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/model.zr",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 64,
+          "line": 20
+        },
+        "start": {
+          "column": 44,
+          "line": 20
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "zrSource",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/ownership.zr",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 75,
+          "line": 15
+        },
+        "start": {
+          "column": 55,
+          "line": 15
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "zrSource",
+      "targetPlan": "06A"
+    },
+    {
       "classification": "requiresReview",
       "file": "tests/fixtures/projects/using_edge_matrix/src/main.zr",
       "legacyForm": "legacyBareTypeCall",
@@ -15348,6 +15398,10 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/module-system/module-specifier-identity.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/module-system/typed-module-metadata.md",
       "sourceKind": "currentDocumentation"
     },
@@ -15497,6 +15551,10 @@
     },
     {
       "file": "docs/testing-and-validation/index.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/testing-and-validation/syntax-reference-v1-fixture.md",
       "sourceKind": "currentDocumentation"
     },
     {
@@ -16672,6 +16730,106 @@
       "sourceKind": "zrSource"
     },
     {
+      "file": "tests/fixtures/projects/syntax_reference_v1/generated/file_locator_import.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/native/syntax_reference_native.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/packages/fixturedep/src/index.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/packages/fixturedep/src/tool.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/algorithms.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/anonymous_expression_arrow.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/async_jobs.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/callables.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/compile_time_and_attributes.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/effects.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/engine/render.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/host.min.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/host.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/iterators.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/main.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/model.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/modules.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/native_ffi.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/object_model.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/ownership.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/pooling.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/reflection.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/semicolon_explicit.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/surface/lexical_and_literals.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/syntax_reference_v1/tests/syntax_tests.zr",
+      "sourceKind": "zrSource"
+    },
+    {
       "file": "tests/fixtures/projects/using_edge_matrix/src/main.zr",
       "sourceKind": "zrSource"
     },
@@ -17349,6 +17507,10 @@
     },
     {
       "file": "tests/library/test_project_manifest_normalization.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/library/test_project_module_specifier.c",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -18368,6 +18530,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_syntax_reference_v1.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_type_inference.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -18475,11 +18641,10 @@
     "03": 35,
     "04": 23,
     "05": 3,
-    "06A": 506,
+    "06A": 512,
     "08": 79,
     "10": 4,
     "11": 64,
-    "12": 7,
     "14": 36
   },
   "unknownCount": 0

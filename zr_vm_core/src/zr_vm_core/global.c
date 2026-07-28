@@ -447,6 +447,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->emitCompileTimeRuntimeSupport = ZR_FALSE;
     global->parserModuleInitState = ZR_NULL;
     global->parserModuleInitStateCleanup = ZR_NULL;
+    global->postGcCleanupState = ZR_NULL;
+    global->postGcCleanup = ZR_NULL;
 
     // reset basic type object prototype
     for (TZrUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
@@ -609,6 +611,20 @@ void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
     global->aotModuleLoaderUserData = userData;
 }
 
+TZrBool ZrCore_GlobalState_SetPostGcCleanup(SZrGlobalState *global,
+                                            TZrPtr state,
+                                            FZrGlobalOpaqueStateCleanup cleanup) {
+    if (global == ZR_NULL || state == ZR_NULL || cleanup == ZR_NULL ||
+        (global->postGcCleanupState != ZR_NULL &&
+         (global->postGcCleanupState != state || global->postGcCleanup != cleanup))) {
+        return ZR_FALSE;
+    }
+
+    global->postGcCleanupState = state;
+    global->postGcCleanup = cleanup;
+    return ZR_TRUE;
+}
+
 void ZrCore_GlobalState_SetOwnershipStrongRefObserver(SZrGlobalState *global,
                                                       FZrOwnershipStrongRefObserver observer,
                                                       TZrPtr userData) {
@@ -675,6 +691,12 @@ void ZrCore_GlobalState_Free(SZrGlobalState *global) {
 
     ZrCore_GarbageCollector_Free(global, global->garbageCollector);
     global->garbageCollector = ZR_NULL;
+
+    if (global->postGcCleanup != ZR_NULL && global->postGcCleanupState != ZR_NULL) {
+        global->postGcCleanup(global, global->postGcCleanupState);
+        global->postGcCleanupState = ZR_NULL;
+        global->postGcCleanup = ZR_NULL;
+    }
 
     ZrCore_GcDomain_DetachState(global->gcDomain, global->mainThreadState);
     ZrCore_GcDomain_Free(global->gcDomain);
