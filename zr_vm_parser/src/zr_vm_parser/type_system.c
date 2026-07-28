@@ -1406,6 +1406,57 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariable(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId,
+        SZrFileRange declarationRange) {
+    SZrTypeBinding binding;
+    TZrBool hasDeclarationRange;
+
+    hasDeclarationRange = declarationRange.source != ZR_NULL ||
+                          declarationRange.start.line != 0 ||
+                          declarationRange.start.column != 0 ||
+                          declarationRange.start.offset != 0 ||
+                          declarationRange.end.line != 0 ||
+                          declarationRange.end.column != 0 ||
+                          declarationRange.end.offset != 0;
+    if (state == ZR_NULL || env == ZR_NULL || name == ZR_NULL || type == ZR_NULL ||
+        symbolId == ZR_SEMANTIC_ID_INVALID || typeId == ZR_SEMANTIC_ID_INVALID ||
+        !hasDeclarationRange) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < env->variableTypes.length; i++) {
+        SZrTypeBinding *existing = (SZrTypeBinding *)ZrCore_Array_Get(&env->variableTypes, i);
+
+        if (existing == ZR_NULL || existing->name == ZR_NULL ||
+            !ZrCore_String_Equal(existing->name, name)) {
+            continue;
+        }
+
+        ZrParser_InferredType_Free(state, &existing->type);
+        ZrParser_InferredType_Copy(state, &existing->type, type);
+        existing->declarationRange = declarationRange;
+        existing->hasDeclarationRange = ZR_TRUE;
+        existing->symbolId = symbolId;
+        existing->typeId = typeId;
+        return ZR_TRUE;
+    }
+
+    binding.name = name;
+    binding.declarationRange = declarationRange;
+    binding.hasDeclarationRange = ZR_TRUE;
+    binding.typeId = typeId;
+    binding.symbolId = symbolId;
+    ZrParser_InferredType_Copy(state, &binding.type, type);
+    ZrCore_Array_Push(state, &env->variableTypes, &binding);
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_TypeEnvironment_RegisterVariable(SZrState *state,
                                                   SZrTypeEnvironment *env,
                                                   SZrString *name,

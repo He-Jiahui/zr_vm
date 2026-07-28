@@ -5,7 +5,11 @@
 
 #include "harness/runtime_support.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic_facts.h"
+#include "zr_vm_parser/type_inference.h"
+#include "zr_vm_parser/type_system.h"
 
 static SZrState *g_state;
 
@@ -131,10 +135,62 @@ static void test_expression_fragment_rejects_trailing_tokens(void) {
     ZrParser_State_Free(&parserState);
 }
 
+static void test_expression_fragment_preserves_external_canonical_binding_identity(void) {
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrCompilerState compilerState;
+    SZrInferredType inferredType;
+    SZrFileRange declarationRange;
+    const SZrSemanticReferenceFact *reference;
+    SZrAstNode *expression = parse_fragment("paused", &capture, &parserState);
+
+    TEST_ASSERT_NOT_NULL(expression);
+    memset(&compilerState, 0, sizeof(compilerState));
+    ZrParser_CompilerState_Init(&compilerState, g_state);
+    ZrParser_InferredType_Init(g_state, &inferredType, ZR_VALUE_TYPE_INT64);
+
+    declarationRange = expression->location;
+    declarationRange.start.offset = 400u;
+    declarationRange.end.offset = 406u;
+    declarationRange.start.line = 21u;
+    declarationRange.end.line = 21u;
+    declarationRange.start.column = 5u;
+    declarationRange.end.column = 11u;
+
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterCanonicalVariable(
+            g_state,
+            compilerState.typeEnv,
+            expression->data.identifier.name,
+            &inferredType,
+            7001u,
+            7002u,
+            declarationRange));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+            &compilerState,
+            expression,
+            &inferredType));
+
+    reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            compilerState.semanticContext,
+            expression,
+            ZR_SEMANTIC_REFERENCE_READ);
+    TEST_ASSERT_NOT_NULL(reference);
+    TEST_ASSERT_EQUAL_UINT32(7001u, reference->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(7002u, reference->typeId);
+    TEST_ASSERT_EQUAL_UINT32(400u, (TZrUInt32)reference->declarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(406u, (TZrUInt32)reference->declarationRange.end.offset);
+
+    ZrParser_InferredType_Free(g_state, &inferredType);
+    ZrParser_CompilerState_Free(&compilerState);
+    ZrParser_Ast_Free(g_state, expression);
+    ZrParser_State_Free(&parserState);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_expression_fragment_parses_the_full_formal_expression);
     RUN_TEST(test_expression_fragment_reports_structured_parser_errors);
     RUN_TEST(test_expression_fragment_rejects_trailing_tokens);
+    RUN_TEST(test_expression_fragment_preserves_external_canonical_binding_identity);
     return UNITY_END();
 }

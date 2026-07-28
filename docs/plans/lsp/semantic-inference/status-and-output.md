@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-07-28 21:30 +08:00
+updated_at: 2026-07-28 22:56 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -58,9 +58,11 @@ source_plans:
 | 2026-07-28 19:39 +08:00 | 已完成 | LSP 04 E1b2a receiver canonical carrier：typed-local artifact row以patch 38保留结构化receiver role；paused frame严格按唯一active canonical row投影receiver与frame值；source/binary runtime roundtrip不按local/member name、display type或AST重建；GCC/Clang/fresh MSVC metadata 6/6与introspection 2/2真实exit 0 | [Receiver canonical carrier](../04-debug-and-repl/2026-07-28-e1b2a-receiver-canonical-carrier.md) |
 | 2026-07-28 20:35 +08:00 | 已完成 | LSP 04 E1b2b1 reflection generic metadata snapshot：paused frame严格复验activation/generation/PC后，以context kind、owner token与parameter index调用公开reflection resolver；type/method context、wrong owner与retired frame均fail closed，禁止private-field/name/display/AST fallback；GCC/Clang/fresh MSVC generic 35/35与introspection 2/2真实exit 0 | [Reflection generic context](../04-debug-and-repl/2026-07-28-e1b2b1-reflection-generic-context.md) |
 | 2026-07-28 21:30 +08:00 | 已完成 | LSP 04 E2a 正式expression fragment parser：公开入口复用既有precedence parser并要求EOS；structured缺右操作数诊断与尾随token拒绝均保留现有parser合同，不建立debug局部语法fork；GCC/Clang/MSVC独立target均3/3真实exit 0 | [Formal expression fragment parser](../04-debug-and-repl/2026-07-28-e2a-formal-expression-fragment-parser.md) |
+| 2026-07-28 22:56 +08:00 | 已完成 | LSP 04 E2b0 external canonical binding injection：temporary TypeEnvironment保留已验证SymbolId、TypeId与declaration range，identifier inference直接发布同一reference fact identity，不注册替代symbol/type；GCC/Clang/MSVC独立target均4/4真实exit 0 | [Canonical binding injection](../04-debug-and-repl/2026-07-28-e2b0-canonical-binding-injection.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示四十一个子里程碑完成，不表示L1-L8整体完成。
+- 总体目标进行中。当前记录只表示四十二个子里程碑完成，不表示L1-L8整体完成。
 - LSP 04 E1 已完成计划要求的 module、scope、receiver、generic context和visible SymbolId reconstruction；没有稳定canonical fact时不伪造source `TypeId`或const-generic runtime carrier。下一步是E2b，以E2a正式fragment parser绑定只读debug context并复用Canonical TypeRef/Place query；随后继续E3-E5，以及property/constructor/meta callable target identity、native generic constraint/effectful method contract、public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
+- LSP 04 E2a formal fragment parser 与 E2b0 external canonical binding injection 均已完成。E2b 仍须以 generation-validated readonly debug context 注入这些 identity，并消费独立 Place carrier；stale、trimmed 或 unavailable binding 必须 fail closed。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

@@ -217,6 +217,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - canonical PropertyQuery, exact binary prototype-row joins, structured legacy migration, and
     declaration-contract incremental invalidation without member-name reconstruction
 
+- `canonical-binding-injection.md`
+  - temporary type-environment bindings retain externally verified SymbolId, TypeId, and declaration range
+  - ordinary identifier inference publishes the supplied canonical reference identity without allocating a replacement
+  - Debug/REPL keeps frame PlaceId in its validated runtime context and fails closed for unavailable bindings
+
 - `canonical-type-graph.md`
   - immutable structural type nodes and canonical `TypeId` identity
   - hash-indexed interning and binary `TypeId` lookup

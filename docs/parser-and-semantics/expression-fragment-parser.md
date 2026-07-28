@@ -53,6 +53,8 @@ recursive-descent grammar.
 ## Validation
 
 `test_expression_fragment_parser.c` covers a full conditional expression,
-structured diagnostics for a missing right operand, and rejection of trailing
-tokens. On 2026-07-28 GCC, Clang, and MSVC each ran the target with `3 Tests`,
-`0 Failures`, and a real exit code of zero.
+structured diagnostics for a missing right operand, rejection of trailing
+tokens, and the separate canonical external-binding identity projection. The
+last case is documented in [Canonical external binding
+injection](canonical-binding-injection.md). On 2026-07-28 GCC, Clang, and MSVC
+each ran the target with `4 Tests`, `0 Failures`, and a real exit code of zero.

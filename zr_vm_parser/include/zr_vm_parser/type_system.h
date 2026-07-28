@@ -230,6 +230,20 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *stat
                                                                   SZrAstNode *declarationNode,
                                                                   SZrFileRange declarationRange);
 
+/*
+ * Registers a binding whose identity belongs to an already compiled canonical
+ * semantic context. The local type environment keeps those IDs opaque and
+ * must not allocate replacement symbols or types for them.
+ */
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariable(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId,
+        SZrFileRange declarationRange);
+
 // 查找变量类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupVariable(SZrState *state, SZrTypeEnvironment *env, SZrString *name, SZrInferredType *result);
 ZR_PARSER_API const SZrTypeBinding *ZrParser_TypeEnvironment_FindVariableBinding(SZrTypeEnvironment *env,
