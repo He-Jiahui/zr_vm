@@ -180,6 +180,7 @@ static ZR_FORCE_INLINE void function_post_call_single_result_no_debug_fast(
         TZrSize resultCount);
 
 static ZR_FORCE_INLINE void function_init_stack_local_native_call_info(
+        SZrState *state,
         SZrCallInfo *callInfo,
         SZrCallInfo *previous,
         TZrStackValuePointer basePointer,
@@ -1860,17 +1861,31 @@ static ZR_FORCE_INLINE SZrCallInfo *function_acquire_call_info(struct SZrState *
     return ZrCore_CallInfo_Extend(state);
 }
 
+static ZR_FORCE_INLINE void function_assign_debug_frame_generation(SZrState *state,
+                                                                    SZrCallInfo *callInfo) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(callInfo != ZR_NULL);
+
+    state->debugFrameGenerationNext++;
+    if (state->debugFrameGenerationNext == 0u) {
+        state->debugFrameGenerationNext++;
+    }
+    callInfo->debugFrameGeneration = state->debugFrameGenerationNext;
+}
+
 static ZR_FORCE_INLINE TZrDebugSignal function_debug_trap_from_hook_signal(TZrUInt32 debugHookSignal) {
     return (TZrDebugSignal)(((debugHookSignal & (ZR_DEBUG_HOOK_MASK_LINE | ZR_DEBUG_HOOK_MASK_COUNT)) != 0)
                                     ? debugHookSignal
                                     : ZR_DEBUG_SIGNAL_NONE);
 }
 
-static ZR_FORCE_INLINE void function_init_call_info_common(SZrCallInfo *callInfo,
+static ZR_FORCE_INLINE void function_init_call_info_common(SZrState *state,
+                                                           SZrCallInfo *callInfo,
                                                            SZrCallInfo *previous,
                                                            TZrStackValuePointer basePointer,
                                                            TZrStackValuePointer topPointer,
                                                            TZrSize resultCount) {
+    ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(callInfo != ZR_NULL);
 
     callInfo->functionBase.valuePointer = basePointer;
@@ -1878,6 +1893,7 @@ static ZR_FORCE_INLINE void function_init_call_info_common(SZrCallInfo *callInfo
     callInfo->previous = previous;
     callInfo->expectedReturnCount = resultCount;
     callInfo->metadataFunction = ZR_NULL;
+    function_assign_debug_frame_generation(state, callInfo);
 }
 
 static ZR_FORCE_INLINE void function_reinitialize_native_call_info_runtime_state(SZrCallInfo *callInfo,
@@ -1923,13 +1939,15 @@ static ZR_FORCE_INLINE void function_reinitialize_vm_call_info_runtime_state(SZr
     callInfo->hasArgumentSourceFrame = ZR_FALSE;
 }
 
-static ZR_FORCE_INLINE void function_init_native_call_info(SZrCallInfo *callInfo,
+static ZR_FORCE_INLINE void function_init_native_call_info(SZrState *state,
+                                                           SZrCallInfo *callInfo,
                                                            SZrCallInfo *previous,
                                                            TZrStackValuePointer basePointer,
                                                            TZrStackValuePointer topPointer,
                                                            TZrSize resultCount,
                                                            TZrStackValuePointer returnDestination) {
-    function_init_call_info_common(callInfo,
+    function_init_call_info_common(state,
+                                   callInfo,
                                    previous,
                                    basePointer,
                                    topPointer,
@@ -1937,7 +1955,8 @@ static ZR_FORCE_INLINE void function_init_native_call_info(SZrCallInfo *callInfo
     function_reinitialize_native_call_info_runtime_state(callInfo, returnDestination);
 }
 
-static ZR_FORCE_INLINE void function_init_vm_call_info(SZrCallInfo *callInfo,
+static ZR_FORCE_INLINE void function_init_vm_call_info(SZrState *state,
+                                                       SZrCallInfo *callInfo,
                                                        SZrCallInfo *previous,
                                                        TZrStackValuePointer basePointer,
                                                        TZrStackValuePointer topPointer,
@@ -1945,7 +1964,8 @@ static ZR_FORCE_INLINE void function_init_vm_call_info(SZrCallInfo *callInfo,
                                                        TZrStackValuePointer returnDestination,
                                                        const TZrInstruction *programCounter,
                                                        TZrDebugSignal trap) {
-    function_init_call_info_common(callInfo,
+    function_init_call_info_common(state,
+                                   callInfo,
                                    previous,
                                    basePointer,
                                    topPointer,
@@ -3238,7 +3258,8 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(stru
     if (ZR_UNLIKELY(callInfo == ZR_NULL)) {
         return 0;
     }
-    function_init_native_call_info(callInfo,
+    function_init_native_call_info(state,
+                                   callInfo,
                                    state->callInfoList,
                                    stackPointer,
                                    preparedFunctionTop,
@@ -3296,6 +3317,7 @@ static ZR_FORCE_INLINE TZrBool function_can_use_resolved_native_single_result_fa
 }
 
 static ZR_FORCE_INLINE void function_init_stack_local_native_call_info(
+        SZrState *state,
         SZrCallInfo *callInfo,
         SZrCallInfo *previous,
         TZrStackValuePointer basePointer,
@@ -3304,7 +3326,8 @@ static ZR_FORCE_INLINE void function_init_stack_local_native_call_info(
     ZR_ASSERT(basePointer != ZR_NULL);
     ZR_ASSERT(topPointer != ZR_NULL);
 
-    function_init_call_info_common(callInfo,
+    function_init_call_info_common(state,
+                                   callInfo,
                                    previous,
                                    basePointer,
                                    topPointer,
@@ -3360,7 +3383,8 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame_sing
     ZR_ASSERT(state->callInfoList != ZR_NULL);
 
     previousCallInfo = state->callInfoList;
-    function_init_stack_local_native_call_info(callInfo,
+    function_init_stack_local_native_call_info(state,
+                                               callInfo,
                                                previousCallInfo,
                                                stackPointer,
                                                preparedFunctionTop);
@@ -3580,6 +3604,7 @@ TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
 
     callInfo->functionBase.valuePointer = stackPointer;
     callInfo->functionTop.valuePointer = stackPointer + 1 + frameStorageSlotCount;
+    function_assign_debug_frame_generation(state, callInfo);
     function_reinitialize_vm_call_info_runtime_state(callInfo,
                                                      preservedCallStatus,
                                                      effectiveReturnDestination,
@@ -4084,7 +4109,8 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
         return ZR_NULL;
     }
 
-    function_init_vm_call_info(callInfo,
+    function_init_vm_call_info(state,
+                               callInfo,
                                previousCallInfo,
                                stackPointer,
                                stackPointer + 1 + frameStorageSlotCount,
@@ -4481,7 +4507,8 @@ TZrBool ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFastRestor
     ZR_ASSERT(state->callInfoList != ZR_NULL);
 
     previousCallInfo = state->callInfoList;
-    function_init_stack_local_native_call_info(callInfo,
+    function_init_stack_local_native_call_info(state,
+                                               callInfo,
                                                previousCallInfo,
                                                stackPointer,
                                                preparedFunctionTop);

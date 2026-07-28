@@ -116,6 +116,7 @@ struct ZR_STRUCT_ALIGN SZrState {
     TZrBool enableRuntimeBoundsCheck;   // 启用运行时边界检查
     TZrBool enableRuntimeTypeCheck;      // 启用运行时类型检查
     TZrBool enableRuntimeRangeCheck;     // 启用运行时范围检查
+    TZrUInt64 debugFrameGenerationNext;
 };
 
 typedef struct SZrState SZrState;

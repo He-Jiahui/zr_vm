@@ -129,6 +129,36 @@ struct ZR_STRUCT_ALIGN SZrDebugActivation {
 
 typedef struct SZrDebugActivation SZrDebugActivation;
 
+typedef enum EZrDebugEvaluationContextStatus {
+    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK = 0,
+    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT,
+    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME,
+    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE,
+    ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_MORE_BINDINGS
+} EZrDebugEvaluationContextStatus;
+
+typedef struct SZrDebugFrameBinding {
+    TZrUInt32 stackSlot;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 placeId;
+    TZrUInt32 declarationStartLine;
+    TZrUInt32 declarationStartColumn;
+    TZrUInt32 declarationEndLine;
+    TZrUInt32 declarationEndColumn;
+    TZrUInt32 scopeDepth;
+} SZrDebugFrameBinding;
+
+typedef struct SZrDebugEvaluationContext {
+    SZrDebugActivation activation;
+    TZrUInt64 frameGeneration;
+    TZrUInt32 instructionOffset;
+    TZrUInt32 activeBindingCount;
+    TZrBool hasGenericContext;
+    TZrBool hasGenericMethodContext;
+    TZrUInt16 reserved0;
+} SZrDebugEvaluationContext;
+
 struct ZR_STRUCT_ALIGN SZrDebugInfo {
     EZrDebugHookEvent event;
 
@@ -173,6 +203,17 @@ ZR_CORE_API TZrBool ZrCore_DebugInfo_Get(struct SZrState *state, EZrDebugInfoTyp
 ZR_CORE_API TZrBool ZrCore_Debug_GetStack(struct SZrState *state,
                                           TZrUInt32 level,
                                           SZrDebugActivation *outActivation);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_GetEvaluationContext(
+        struct SZrState *state,
+        TZrUInt32 level,
+        SZrDebugEvaluationContext *outContext);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetBinding(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        TZrUInt32 activeBindingIndex,
+        SZrDebugFrameBinding *outBinding);
 
 ZR_CORE_API TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
                                          const SZrDebugActivation *activation,

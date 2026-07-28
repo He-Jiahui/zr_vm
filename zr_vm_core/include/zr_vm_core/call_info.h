@@ -90,6 +90,7 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
     TZrMemoryOffset argumentSourceFrameBaseReusableOffset;
     TZrUInt32 argumentSourceStartSlot;
     TZrBool hasArgumentSourceFrame;
+    TZrUInt64 debugFrameGeneration;
 };
 
 typedef struct SZrCallInfo SZrCallInfo;

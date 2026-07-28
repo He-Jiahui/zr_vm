@@ -87,6 +87,154 @@ static const SZrFunctionLocalVariable *debug_find_active_local(const SZrFunction
     return ZR_NULL;
 }
 
+static const SZrFunctionTypedLocalBinding *debug_find_typed_local_binding(
+        const SZrFunction *function,
+        TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        if (binding->stackSlot == stackSlot) {
+            return binding;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool debug_typed_local_binding_has_canonical_identity(const SZrFunctionTypedLocalBinding *binding) {
+    return (TZrBool)(binding != ZR_NULL &&
+                     binding->symbolId != 0u &&
+                     binding->typeId != 0u &&
+                     binding->placeId != 0u);
+}
+
+static EZrDebugEvaluationContextStatus debug_evaluation_context_find_active_binding(
+        const SZrFunction *function,
+        TZrUInt32 programCounter,
+        TZrUInt32 requestedIndex,
+        const SZrFunctionLocalVariable **outLocal,
+        const SZrFunctionTypedLocalBinding **outBinding) {
+    TZrUInt32 activeIndex = 0u;
+    TZrUInt32 index;
+
+    if (outLocal != ZR_NULL) {
+        *outLocal = ZR_NULL;
+    }
+    if (outBinding != ZR_NULL) {
+        *outBinding = ZR_NULL;
+    }
+    if (function == ZR_NULL || function->localVariableList == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_MORE_BINDINGS;
+    }
+
+    for (index = 0u;
+         index < function->localVariableLength && function->localVariableList[index].offsetActivate <= programCounter;
+         index++) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[index];
+        const SZrFunctionTypedLocalBinding *binding;
+
+        if (local->name == ZR_NULL || programCounter >= local->offsetDead) {
+            continue;
+        }
+        binding = debug_find_typed_local_binding(function, local->stackSlot);
+        if (!debug_typed_local_binding_has_canonical_identity(binding)) {
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+        }
+        if (activeIndex == requestedIndex) {
+            if (outLocal != ZR_NULL) {
+                *outLocal = local;
+            }
+            if (outBinding != ZR_NULL) {
+                *outBinding = binding;
+            }
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+        }
+        activeIndex++;
+    }
+
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_MORE_BINDINGS;
+}
+
+static EZrDebugEvaluationContextStatus debug_evaluation_context_count_active_bindings(
+        const SZrFunction *function,
+        TZrUInt32 programCounter,
+        TZrUInt32 *outCount) {
+    TZrUInt32 count = 0u;
+
+    if (outCount == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
+    }
+
+    for (;;) {
+        EZrDebugEvaluationContextStatus status = debug_evaluation_context_find_active_binding(
+                function,
+                programCounter,
+                count,
+                ZR_NULL,
+                ZR_NULL);
+        if (status == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_NO_MORE_BINDINGS) {
+            *outCount = count;
+            return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+        }
+        if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+            return status;
+        }
+        count++;
+    }
+}
+
+static EZrDebugEvaluationContextStatus debug_evaluation_context_validate(
+        SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        SZrCallInfo **outCallInfo,
+        SZrFunction **outFunction) {
+    SZrCallInfo *activeCallInfo;
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+
+    if (outCallInfo != ZR_NULL) {
+        *outCallInfo = ZR_NULL;
+    }
+    if (outFunction != ZR_NULL) {
+        *outFunction = ZR_NULL;
+    }
+    if (state == ZR_NULL || context == ZR_NULL || context->activation.callInfo == ZR_NULL ||
+        context->activation.function == ZR_NULL || context->frameGeneration == 0u) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
+    }
+
+    callInfo = context->activation.callInfo;
+    for (activeCallInfo = state->callInfoList;
+         activeCallInfo != ZR_NULL && activeCallInfo != callInfo;
+         activeCallInfo = activeCallInfo->previous) {
+    }
+    if (activeCallInfo == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME;
+    }
+    if (!ZR_CALL_INFO_IS_VM(callInfo) || callInfo->debugFrameGeneration != context->frameGeneration) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME;
+    }
+
+    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    if (function == ZR_NULL || function != context->activation.function ||
+        debug_get_current_instruction_offset(callInfo, function) != context->instructionOffset) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME;
+    }
+
+    if (outCallInfo != ZR_NULL) {
+        *outCallInfo = callInfo;
+    }
+    if (outFunction != ZR_NULL) {
+        *outFunction = function;
+    }
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+}
+
 static TZrStackValuePointer debug_get_frame_base(SZrCallInfo *callInfo) {
     if (callInfo == ZR_NULL || !ZR_CALL_INFO_IS_VM(callInfo) || callInfo->functionBase.valuePointer == ZR_NULL) {
         return ZR_NULL;
@@ -201,6 +349,93 @@ TZrBool ZrCore_Debug_GetStack(struct SZrState *state, TZrUInt32 level, SZrDebugA
     }
 
     return ZR_FALSE;
+}
+
+EZrDebugEvaluationContextStatus ZrCore_Debug_GetEvaluationContext(
+        struct SZrState *state,
+        TZrUInt32 level,
+        SZrDebugEvaluationContext *outContext) {
+    SZrDebugActivation activation;
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+    TZrUInt32 instructionOffset;
+    TZrUInt32 activeBindingCount;
+    EZrDebugEvaluationContextStatus status;
+
+    if (outContext != ZR_NULL) {
+        memset(outContext, 0, sizeof(*outContext));
+    }
+    if (state == ZR_NULL || outContext == ZR_NULL || !ZrCore_Debug_GetStack(state, level, &activation)) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
+    }
+
+    callInfo = activation.callInfo;
+    function = activation.function;
+    if (callInfo == ZR_NULL || function == ZR_NULL || !ZR_CALL_INFO_IS_VM(callInfo) ||
+        callInfo->debugFrameGeneration == 0u) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+    }
+
+    instructionOffset = debug_get_current_instruction_offset(callInfo, function);
+    status = debug_evaluation_context_count_active_bindings(function, instructionOffset, &activeBindingCount);
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return status;
+    }
+
+    outContext->activation = activation;
+    outContext->frameGeneration = callInfo->debugFrameGeneration;
+    outContext->instructionOffset = instructionOffset;
+    outContext->activeBindingCount = activeBindingCount;
+    outContext->hasGenericContext = (TZrBool)(!ZR_VALUE_IS_TYPE_NULL(callInfo->interpreterGenericContext.type) &&
+                                              callInfo->interpreterGenericContext.value.object != ZR_NULL);
+    outContext->hasGenericMethodContext =
+            (TZrBool)(!ZR_VALUE_IS_TYPE_NULL(callInfo->interpreterGenericMethodContext.type) &&
+                       callInfo->interpreterGenericMethodContext.value.object != ZR_NULL);
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+}
+
+EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetBinding(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        TZrUInt32 activeBindingIndex,
+        SZrDebugFrameBinding *outBinding) {
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+    const SZrFunctionLocalVariable *local;
+    const SZrFunctionTypedLocalBinding *binding;
+    EZrDebugEvaluationContextStatus status;
+
+    if (outBinding != ZR_NULL) {
+        memset(outBinding, 0, sizeof(*outBinding));
+    }
+    if (outBinding == ZR_NULL) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = debug_evaluation_context_validate(state, context, &callInfo, &function);
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return status;
+    }
+
+    status = debug_evaluation_context_find_active_binding(function,
+                                                           debug_get_current_instruction_offset(callInfo, function),
+                                                           activeBindingIndex,
+                                                           &local,
+                                                           &binding);
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return status;
+    }
+
+    outBinding->stackSlot = binding->stackSlot;
+    outBinding->symbolId = binding->symbolId;
+    outBinding->typeId = binding->typeId;
+    outBinding->placeId = binding->placeId;
+    outBinding->declarationStartLine = binding->declarationStartLine;
+    outBinding->declarationStartColumn = binding->declarationStartColumn;
+    outBinding->declarationEndLine = binding->declarationEndLine;
+    outBinding->declarationEndColumn = binding->declarationEndColumn;
+    outBinding->scopeDepth = local->scopeDepth;
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 
 TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,

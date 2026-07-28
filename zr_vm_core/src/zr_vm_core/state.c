@@ -108,6 +108,7 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     state->pendingControl.hasValue = ZR_FALSE;
     // debug
     state->baseDebugHookCount = 0;
+    state->debugFrameGenerationNext = 0u;
     state->debugHook = ZR_NULL;
     state->debugHookSignal = 0;
     state->debugTraceObserver = ZR_NULL;

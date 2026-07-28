@@ -19,6 +19,11 @@ typedef struct SZrDebugIntrospectionCapture {
     TZrBool changedMutableLocal;
     TZrBool sawLocalOutOfScope;
     TZrBool sawNameWhat;
+    TZrBool sawEvaluationContext;
+    TZrBool sawCanonicalActiveBinding;
+    TZrBool sawInactiveCallerBindingExcluded;
+    TZrBool sawReusedFrameGenerationRejected;
+    SZrDebugEvaluationContext capturedEvaluationContext;
 } SZrDebugIntrospectionCapture;
 
 static SZrDebugIntrospectionCapture g_debugIntrospectionCapture;
@@ -43,6 +48,66 @@ static TZrBool value_is_int64(const SZrTypeValue *value, TZrInt64 expected) {
     return (TZrBool)(value != ZR_NULL &&
                      ZR_VALUE_IS_TYPE_INT(value->type) &&
                      value->value.nativeObject.nativeInt64 == expected);
+}
+
+static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunction *function,
+                                                                     const char *name) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->localVariableList == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0u; index < function->localVariableLength; index++) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[index];
+        TZrNativeString localName = local->name != ZR_NULL ? ZrCore_String_GetNativeString(local->name) : ZR_NULL;
+        if (localName != ZR_NULL && strcmp(localName, name) == 0) {
+            return local;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrFunctionTypedLocalBinding *find_typed_local_binding_by_slot(const SZrFunction *function,
+                                                                              TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+        if (binding->stackSlot == stackSlot) {
+            return binding;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool evaluation_context_contains_stack_slot(SZrState *state,
+                                                       const SZrDebugEvaluationContext *context,
+                                                       TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (state == ZR_NULL || context == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0u; index < context->activeBindingCount; index++) {
+        SZrDebugFrameBinding binding;
+        if (ZrCore_Debug_EvaluationContext_GetBinding(state, context, index, &binding) !=
+            ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+            return ZR_FALSE;
+        }
+        if (binding.stackSlot == stackSlot) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
 }
 
 static void inspect_caller_frame(SZrState *state) {
@@ -74,6 +139,7 @@ static void inspect_caller_frame(SZrState *state) {
 static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
     SZrDebugActivation activation;
     SZrDebugInfo info;
+    SZrDebugEvaluationContext evaluationContext;
     TZrInt32 localIndex;
 
     if (state == ZR_NULL || debugInfo == ZR_NULL || debugInfo->event != ZR_DEBUG_HOOK_EVENT_LINE) {
@@ -95,6 +161,57 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
     g_debugIntrospectionCapture.sawTargetFrame = ZR_TRUE;
     g_debugIntrospectionCapture.sawNameWhat =
             (TZrBool)(info.nameWhat == ZR_DEBUG_NAMEWHAT_UNKNOWN);
+
+    memset(&evaluationContext, 0, sizeof(evaluationContext));
+    if (ZrCore_Debug_GetEvaluationContext(state, 0u, &evaluationContext) ==
+        ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        const SZrFunctionLocalVariable *inputLocal = find_local_variable_by_name(activation.function, "input");
+        const SZrFunctionTypedLocalBinding *inputBinding =
+                inputLocal != ZR_NULL ? find_typed_local_binding_by_slot(activation.function, inputLocal->stackSlot)
+                                      : ZR_NULL;
+
+        if (inputBinding != ZR_NULL &&
+            inputBinding->symbolId != 0u &&
+            inputBinding->typeId != 0u &&
+            inputBinding->placeId != 0u &&
+            evaluationContext.frameGeneration != 0u &&
+            evaluation_context_contains_stack_slot(state, &evaluationContext, inputBinding->stackSlot)) {
+            g_debugIntrospectionCapture.sawCanonicalActiveBinding = ZR_TRUE;
+        }
+        if (!g_debugIntrospectionCapture.sawEvaluationContext) {
+            g_debugIntrospectionCapture.capturedEvaluationContext = evaluationContext;
+            g_debugIntrospectionCapture.sawEvaluationContext = ZR_TRUE;
+        } else if (evaluationContext.frameGeneration !=
+                   g_debugIntrospectionCapture.capturedEvaluationContext.frameGeneration) {
+            SZrDebugFrameBinding staleBinding;
+
+            if (ZrCore_Debug_EvaluationContext_GetBinding(
+                        state,
+                        &g_debugIntrospectionCapture.capturedEvaluationContext,
+                        0u,
+                        &staleBinding) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME) {
+                g_debugIntrospectionCapture.sawReusedFrameGenerationRejected = ZR_TRUE;
+            }
+        }
+    }
+
+    {
+        SZrDebugEvaluationContext callerContext;
+        SZrDebugActivation callerActivation;
+        const SZrFunctionLocalVariable *afterLocal;
+
+        memset(&callerContext, 0, sizeof(callerContext));
+        memset(&callerActivation, 0, sizeof(callerActivation));
+        if (ZrCore_Debug_GetEvaluationContext(state, 1u, &callerContext) ==
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK &&
+            ZrCore_Debug_GetStack(state, 1u, &callerActivation)) {
+            afterLocal = find_local_variable_by_name(callerActivation.function, "after");
+            if (afterLocal != ZR_NULL &&
+                !evaluation_context_contains_stack_slot(state, &callerContext, afterLocal->stackSlot)) {
+                g_debugIntrospectionCapture.sawInactiveCallerBindingExcluded = ZR_TRUE;
+            }
+        }
+    }
 
     TEST_ASSERT_NULL(ZrCore_Debug_GetLocal(state, &activation, 0, ZR_NULL));
     inspect_caller_frame(state);
@@ -138,7 +255,8 @@ static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
             "}\n"
             "func outer(seed: int): int {\n"
             "    var base = seed;\n"
-            "    var after = target(base);\n"
+            "    var first = target(base);\n"
+            "    var after = target(first);\n"
             "    return after;\n"
             "}\n"
             "return outer(4);";
@@ -154,7 +272,7 @@ static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
     ZrCore_Debug_SetHook(state, debug_introspection_hook, ZR_DEBUG_HOOK_MASK_LINE, 0u);
 
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(41, result);
+    TEST_ASSERT_EQUAL_INT64(43, result);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawTargetFrame);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawCallerFrame);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawInputLocal);
@@ -162,6 +280,20 @@ static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.changedMutableLocal);
     TEST_ASSERT_FALSE(g_debugIntrospectionCapture.sawLocalOutOfScope);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawNameWhat);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawEvaluationContext);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawCanonicalActiveBinding);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawInactiveCallerBindingExcluded);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawReusedFrameGenerationRejected);
+
+    {
+        SZrDebugFrameBinding binding;
+        TEST_ASSERT_EQUAL_INT(
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME,
+                ZrCore_Debug_EvaluationContext_GetBinding(state,
+                                                           &g_debugIntrospectionCapture.capturedEvaluationContext,
+                                                           0u,
+                                                           &binding));
+    }
 
     ZrCore_Debug_SetHook(state, ZR_NULL, 0u, 0u);
     ZrCore_Function_Free(state, function);
