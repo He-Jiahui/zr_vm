@@ -288,6 +288,9 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - C#-style `struct` value-place SemIR contract
   - inline struct field address/load/store and by-value copy metadata
   - AOT ExecIR runtime-contract boundary for typed value operations
+- `aot-function-reachability-manifest.md`
+  - AOT function reachability root/edge reason schema and fail-closed graph validation
+  - deterministic retained-function manifest and predecessor-chain invariants
 - `compiler-final-function-assembly.md`
   - `compiler.c` 只保留 orchestration，最终 `SZrFunction` 装配沉到 `compiler_function_assembly.c`
   - script wrapper / top-level function declaration 共用同一套 final assembly 逻辑

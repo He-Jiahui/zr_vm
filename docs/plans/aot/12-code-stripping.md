@@ -30,6 +30,9 @@
 
 [2026-07-03 metadata stripping baseline](./12-stripping/2026-07-03-metadata-stripping-baseline.md) 记录已有metadata stripping能力；新ModuleIdentity/reflection roots/native callback边需纳入统一graph。
 
+[2026-07-30 function reachability manifest](./12-stripping/2026-07-30-function-reachability-manifest.md) 完成
+function-node reason schema、root predecessor chain 与 deterministic manifest 子切片；S1/S2/S6 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

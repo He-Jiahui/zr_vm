@@ -253,6 +253,72 @@ static void test_reachability_preserves_root_reason_and_rejects_invalid_graphs(v
                                                        &markedCount));
 }
 
+static void test_reachability_rejects_invalid_reason_schema(void) {
+    static const TZrUInt32 roots[] = {0u};
+    static const EZrAotReachabilityReason validRootReasons[] = {
+            ZR_AOT_REACHABILITY_REASON_ROOT_ENTRY,
+    };
+    static const EZrAotReachabilityReason edgeRootReasons[] = {
+            ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
+    };
+    static const EZrAotReachabilityReason unknownRootReasons[] = {
+            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR + 1),
+    };
+    static const SZrAotReachabilityEdge rootReasonEdges[] = {
+            {0u, 1u, ZR_AOT_REACHABILITY_REASON_ROOT_EXPORT},
+    };
+    static const SZrAotReachabilityEdge unknownReasonEdges[] = {
+            {0u,
+             1u,
+             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR + 1)},
+    };
+    SZrAotReachabilityMark marks[2];
+    TZrUInt32 queue[2];
+    TZrUInt32 markedCount = 99u;
+
+    TEST_ASSERT_FALSE(backend_aot_reachability_compute(marks,
+                                                       2u,
+                                                       roots,
+                                                       edgeRootReasons,
+                                                       1u,
+                                                       ZR_NULL,
+                                                       0u,
+                                                       queue,
+                                                       2u,
+                                                       &markedCount));
+    TEST_ASSERT_EQUAL_UINT32(0u, markedCount);
+    TEST_ASSERT_FALSE(backend_aot_reachability_compute(marks,
+                                                       2u,
+                                                       roots,
+                                                       unknownRootReasons,
+                                                       1u,
+                                                       ZR_NULL,
+                                                       0u,
+                                                       queue,
+                                                       2u,
+                                                       &markedCount));
+    TEST_ASSERT_FALSE(backend_aot_reachability_compute(marks,
+                                                       2u,
+                                                       roots,
+                                                       validRootReasons,
+                                                       1u,
+                                                       rootReasonEdges,
+                                                       1u,
+                                                       queue,
+                                                       2u,
+                                                       &markedCount));
+    TEST_ASSERT_FALSE(backend_aot_reachability_compute(marks,
+                                                       2u,
+                                                       roots,
+                                                       validRootReasons,
+                                                       1u,
+                                                       unknownReasonEdges,
+                                                       1u,
+                                                       queue,
+                                                       2u,
+                                                       &markedCount));
+}
+
 static char *test_read_stream(FILE *file) {
     long length;
     char *text;
@@ -985,6 +1051,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reachability_marks_roots_and_direct_dependencies);
     RUN_TEST(test_reachability_preserves_root_reason_and_rejects_invalid_graphs);
+    RUN_TEST(test_reachability_rejects_invalid_reason_schema);
     RUN_TEST(test_reachability_function_manifest_is_stable_and_preserves_reason_chain);
     RUN_TEST(test_reachability_function_manifest_rejects_malformed_reason_chains);
     RUN_TEST(test_function_table_filter_keeps_reachable_entries_without_renumbering);

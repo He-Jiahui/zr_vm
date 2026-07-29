@@ -123,6 +123,7 @@ static void backend_aot_reachability_init_marks(SZrAotReachabilityMark *marks, T
 
 static TZrBool backend_aot_reachability_validate_inputs(TZrUInt32 markCount,
                                                         const TZrUInt32 *roots,
+                                                        const EZrAotReachabilityReason *rootReasons,
                                                         TZrUInt32 rootCount,
                                                         const SZrAotReachabilityEdge *edges,
                                                         TZrUInt32 edgeCount,
@@ -130,19 +131,22 @@ static TZrBool backend_aot_reachability_validate_inputs(TZrUInt32 markCount,
     if (queueCapacity < markCount) {
         return ZR_FALSE;
     }
-    if (rootCount > 0u && roots == ZR_NULL) {
+    if (rootCount > 0u && (roots == ZR_NULL || rootReasons == ZR_NULL)) {
         return ZR_FALSE;
     }
     if (edgeCount > 0u && edges == ZR_NULL) {
         return ZR_FALSE;
     }
     for (TZrUInt32 rootIndex = 0u; rootIndex < rootCount; rootIndex++) {
-        if (roots[rootIndex] >= markCount) {
+        if (roots[rootIndex] >= markCount ||
+            !backend_aot_reachability_reason_is_root(rootReasons[rootIndex])) {
             return ZR_FALSE;
         }
     }
     for (TZrUInt32 edgeIndex = 0u; edgeIndex < edgeCount; edgeIndex++) {
-        if (edges[edgeIndex].source >= markCount || edges[edgeIndex].target >= markCount) {
+        if (edges[edgeIndex].source >= markCount ||
+            edges[edgeIndex].target >= markCount ||
+            !backend_aot_reachability_reason_is_edge(edges[edgeIndex].reason)) {
             return ZR_FALSE;
         }
     }
@@ -187,8 +191,13 @@ TZrBool backend_aot_reachability_compute(SZrAotReachabilityMark *marks,
         *outMarkedCount = 0u;
     }
     if (marks == ZR_NULL || queue == ZR_NULL ||
-        (rootCount > 0u && rootReasons == ZR_NULL) ||
-        !backend_aot_reachability_validate_inputs(markCount, roots, rootCount, edges, edgeCount, queueCapacity)) {
+        !backend_aot_reachability_validate_inputs(markCount,
+                                                  roots,
+                                                  rootReasons,
+                                                  rootCount,
+                                                  edges,
+                                                  edgeCount,
+                                                  queueCapacity)) {
         return ZR_FALSE;
     }
 
