@@ -12,6 +12,7 @@
 #include "backend_aot_c_reference_locals.h"
 #include "backend_aot_c_reflection_invokers.h"
 #include "backend_aot_c_runtime_fallback.h"
+#include "backend_aot_c_type_layout_reachability.h"
 #include "backend_aot_c_type_layouts.h"
 #include "backend_aot_c_zrp_metadata_prune.h"
 #include "backend_aot_c_zrp_metadata_member_token.h"
@@ -915,6 +916,23 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                                                                  &functionTable,
                                                                  annotationTypeLayoutRoots,
                                                                  annotationTypeLayoutRootCount);
+    if (enableCodeStripping &&
+        !backend_aot_c_type_layout_reachability_write_manifest(file,
+                                                                state,
+                                                                &functionTable,
+                                                                annotationTypeLayoutRoots,
+                                                                annotationTypeLayoutRootCount,
+                                                                typeLayoutCountAfterStripping)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     methodMetadataGeneratedBytesAfterStripping =
             backend_aot_c_method_metadata_generated_bytes_referenced(state,
                                                                      &functionTable,

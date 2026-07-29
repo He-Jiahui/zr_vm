@@ -33,6 +33,10 @@
 [2026-07-30 function reachability manifest](./12-stripping/2026-07-30-function-reachability-manifest.md) 完成
 function-node reason schema、root predecessor chain 与 deterministic manifest 子切片；S1/S2/S6 仍为部分完成。
 
+[2026-07-30 type-layout reachability manifest](./12-stripping/2026-07-30-type-layout-reachability-manifest.md) 完成
+type/layout-node frame edge、reflection annotation root、unresolved-layout fail-closed gate 与 deterministic manifest 子切片；
+S1/S2/S6 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

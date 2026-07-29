@@ -29,7 +29,8 @@ every retained function. It separates language-level retention from linker dead 
 nodes are reachable, records why each node survived, publishes the result, and only then filters the generated function
 table.
 
-This slice owns function nodes. Type/layout, generic dictionary, native callback, module initializer, reflection
+This slice owns function nodes. The first type/layout reason-manifest slice is documented separately in
+`aot-type-layout-reachability-manifest.md`; generic dictionary, native callback, module initializer, reflection
 metadata, debug sidecar, and resource Drop nodes still need to converge on the broader graph required by AOT plan 12.
 The function graph never scans source or generated strings to guess reflection or native reachability.
 
