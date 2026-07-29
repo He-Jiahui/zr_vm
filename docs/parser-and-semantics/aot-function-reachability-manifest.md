@@ -20,6 +20,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-12-property-accessor-required-root.md
   - tests/acceptance/2026-07-30-aot-12-resource-drop-required-root.md
   - tests/acceptance/2026-07-30-aot-12-generic-methodspec-required-root.md
+  - tests/acceptance/2026-07-30-aot-12-reflection-constructor-required-root.md
 doc_type: module-detail
 ---
 
@@ -34,7 +35,8 @@ table.
 
 This slice owns function nodes. The first type/layout reason-manifest slice is documented separately in
 `aot-type-layout-reachability-manifest.md`; generic dictionary, native callback, module initializer, reflection
-metadata, debug sidecar, and constructor nodes still need to converge on the broader graph required by AOT plan 12.
+metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on the broader graph
+required by AOT plan 12.
 The function graph never scans source or generated strings to guess reflection or native reachability.
 
 ## Graph Contract
@@ -49,6 +51,7 @@ and the predecessor index that supplied that edge. Root reasons are:
 - `PROPERTY_ACCESSOR`
 - `RESOURCE_DROP`
 - `GENERIC_METHODSPEC`
+- `REFLECTION_CONSTRUCTOR`
 
 Dependency-edge reasons are:
 
@@ -74,6 +77,14 @@ is required when its serialized owner prototype has the `RESOURCE` modifier, `is
 construction fails closed. Non-resource destructors, non-meta members, other meta methods, and abstract destructor
 contracts are ignored. This slice conservatively roots every executable resource destructor present in serialized
 prototype metadata; narrowing those roots by reachable type/layout is a later graph-convergence stage.
+
+`REFLECTION_CONSTRUCTOR` roots protect runtime `ZrCore_Reflection_CreateInstance()` binding. The conservative safe
+policy retains every public, non-abstract `ZR_META_CONSTRUCTOR` serialized on a non-abstract, non-resource class or
+struct prototype. A qualifying constructor must resolve its `functionConstantIndex` to a stable function-table entry;
+otherwise graph construction and public writer output fail closed. Interface constructors, resource or abstract
+prototype contracts, non-public or abstract members, non-meta members, and other meta methods remain ignored. This
+first slice deliberately does not prove that the owner type itself is reflection-reachable; coupling constructor roots
+to retained reflection type nodes is later convergence work.
 
 `GENERIC_METHODSPEC` roots connect writer preserve metadata to executable code stripping. For every
 `SZrAotManifestGenericRoot` with `hasMethodSpecBinding`, the collector resolves `methodSpecMethodToken` as a
@@ -125,6 +136,10 @@ filtering, `root.resource_drop` publication, and partial-file cleanup.
 The suites also cover a non-exported MethodSpec-bound callable retained as `root.generic_methodspec`, null/missing,
 non-`MemberDef`, and ambiguous bindings rejected fail closed, TypeSpec-only roots ignored by the function collector,
 the generated-C reason row, and public-writer partial-file cleanup.
+
+Reflection constructor coverage includes class and struct roots, unresolved required callables, and a negative filter
+matrix for abstract/resource/interface/non-public/abstract-member/non-meta/non-constructor cases. The writer suite
+proves `root.reflection_constructor` publication, unrelated-function trimming, and failed-output cleanup.
 
 The acceptance record runs the focused reachability and stripping targets on WSL GCC, WSL Clang, and Windows MSVC.
 Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

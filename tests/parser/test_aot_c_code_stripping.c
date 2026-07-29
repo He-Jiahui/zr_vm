@@ -907,6 +907,7 @@ static SZrFunction *create_static_callable_trim_fixture(SZrState *state) {
 
 static SZrFunction *create_single_compiled_member_trim_fixture(
         SZrState *state,
+        TZrUInt32 prototypeType,
         TZrUInt32 prototypeModifierFlags,
         const SZrCompiledMemberInfo *member) {
     const TZrUInt32 prototypeCount = 1u;
@@ -964,6 +965,7 @@ static SZrFunction *create_single_compiled_member_trim_fixture(
     root->prototypeCount = prototypeCount;
 
     memset(&prototype, 0, sizeof(prototype));
+    prototype.type = prototypeType;
     prototype.membersCount = 1u;
     prototype.modifierFlags = prototypeModifierFlags;
 
@@ -984,7 +986,10 @@ static SZrFunction *create_property_accessor_trim_fixture(SZrState *state,
     member.functionConstantIndex = functionConstantIndex;
     member.propertyIdentity = 0u;
     member.accessorRole = accessorRole;
-    return create_single_compiled_member_trim_fixture(state, 0u, &member);
+    return create_single_compiled_member_trim_fixture(state,
+                                                      ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                                                      0u,
+                                                      &member);
 }
 
 static SZrFunction *create_resource_drop_trim_fixture(SZrState *state,
@@ -998,7 +1003,25 @@ static SZrFunction *create_resource_drop_trim_fixture(SZrState *state,
     member.functionConstantIndex = functionConstantIndex;
     member.propertyIdentity = UINT32_MAX;
     return create_single_compiled_member_trim_fixture(state,
+                                                      ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
                                                       ZR_DECLARATION_MODIFIER_RESOURCE,
+                                                      &member);
+}
+
+static SZrFunction *create_reflection_constructor_trim_fixture(SZrState *state,
+                                                               TZrUInt32 functionConstantIndex) {
+    SZrCompiledMemberInfo member;
+
+    memset(&member, 0, sizeof(member));
+    member.memberType = ZR_AST_CLASS_META_FUNCTION;
+    member.accessModifier = ZR_ACCESS_CONSTANT_PUBLIC;
+    member.isMetaMethod = ZR_TRUE;
+    member.metaType = (TZrUInt32)ZR_META_CONSTRUCTOR;
+    member.functionConstantIndex = functionConstantIndex;
+    member.propertyIdentity = UINT32_MAX;
+    return create_single_compiled_member_trim_fixture(state,
+                                                      ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                                                      0u,
                                                       &member);
 }
 
@@ -1321,6 +1344,86 @@ static void test_aot_c_code_stripping_rejects_unresolved_resource_drop_root(void
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
                                                        "generated",
                                                        "unresolved_resource_drop_root",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_reflection_constructor_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_reflection_constructor_trim_fixture(state, 0u);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_reflection_constructor_root";
+    options.sourceHash = "aot-c-code-stripping-reflection-constructor-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-reflection-constructor-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "reflection_constructor_root",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 2 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.functionManifest.node[1] = reason=root.reflection_constructor predecessor=none */");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_unresolved_reflection_constructor_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_reflection_constructor_trim_fixture(state, 1u);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_unresolved_reflection_constructor_root";
+    options.sourceHash = "aot-c-code-stripping-unresolved-reflection-constructor-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-unresolved-reflection-constructor-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "unresolved_reflection_constructor_root",
                                                        ".c",
                                                        generatedCPath,
                                                        sizeof(generatedCPath)));
@@ -2300,6 +2403,8 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_property_accessor_root);
     RUN_TEST(test_aot_c_code_stripping_preserves_resource_drop_root);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_resource_drop_root);
+    RUN_TEST(test_aot_c_code_stripping_preserves_reflection_constructor_root);
+    RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_reflection_constructor_root);
     RUN_TEST(test_aot_c_code_stripping_reports_zero_type_layout_frame_edge);
     RUN_TEST(test_aot_c_code_stripping_reports_zero_type_layout_annotation_root);
     RUN_TEST(test_aot_c_code_stripping_reports_stable_flat_frame_predecessor);

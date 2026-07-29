@@ -632,6 +632,15 @@ static EZrAotReachabilityReason backend_aot_static_reachability_required_member_
         member->metaType == (TZrUInt32)ZR_META_DESTRUCTOR) {
         return ZR_AOT_REACHABILITY_REASON_RESOURCE_DROP;
     }
+    if ((prototype->type == (TZrUInt32)ZR_OBJECT_PROTOTYPE_TYPE_CLASS ||
+         prototype->type == (TZrUInt32)ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) &&
+        (prototype->modifierFlags &
+         (ZR_DECLARATION_MODIFIER_ABSTRACT | ZR_DECLARATION_MODIFIER_RESOURCE)) == 0u &&
+        member->accessModifier == ZR_ACCESS_CONSTANT_PUBLIC &&
+        member->isMetaMethod == ZR_TRUE &&
+        member->metaType == (TZrUInt32)ZR_META_CONSTRUCTOR) {
+        return ZR_AOT_REACHABILITY_REASON_REFLECTION_CONSTRUCTOR;
+    }
     return ZR_AOT_REACHABILITY_REASON_NONE;
 }
 

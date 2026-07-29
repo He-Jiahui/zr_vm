@@ -167,6 +167,7 @@ static void install_single_compiled_member_metadata(
         SZrState *state,
         SZrFunction *owner,
         SZrFunction *target,
+        TZrUInt32 prototypeType,
         TZrUInt32 prototypeModifierFlags,
         const SZrCompiledMemberInfo *member) {
     const TZrUInt32 prototypeCount = 1u;
@@ -201,6 +202,7 @@ static void install_single_compiled_member_metadata(
     owner->prototypeCount = prototypeCount;
 
     memset(&prototype, 0, sizeof(prototype));
+    prototype.type = prototypeType;
     prototype.membersCount = 1u;
     prototype.modifierFlags = prototypeModifierFlags;
 
@@ -225,7 +227,12 @@ static void install_property_accessor_metadata(SZrState *state,
     member.modifierFlags = modifierFlags;
     member.propertyIdentity = propertyIdentity;
     member.accessorRole = accessorRole;
-    install_single_compiled_member_metadata(state, owner, target, 0u, &member);
+    install_single_compiled_member_metadata(state,
+                                            owner,
+                                            target,
+                                            ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                                            0u,
+                                            &member);
 }
 
 static void install_meta_method_metadata(SZrState *state,
@@ -248,6 +255,35 @@ static void install_meta_method_metadata(SZrState *state,
     install_single_compiled_member_metadata(state,
                                             owner,
                                             target,
+                                            ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                                            prototypeModifierFlags,
+                                            &member);
+}
+
+static void install_reflection_constructor_metadata(SZrState *state,
+                                                    SZrFunction *owner,
+                                                    SZrFunction *target,
+                                                    TZrUInt32 prototypeType,
+                                                    TZrUInt32 prototypeModifierFlags,
+                                                    TZrUInt32 accessModifier,
+                                                    TZrBool isMetaMethod,
+                                                    EZrMetaType metaType,
+                                                    TZrUInt32 memberModifierFlags,
+                                                    TZrUInt32 functionConstantIndex) {
+    SZrCompiledMemberInfo member;
+
+    memset(&member, 0, sizeof(member));
+    member.memberType = ZR_AST_CLASS_META_FUNCTION;
+    member.accessModifier = accessModifier;
+    member.isMetaMethod = isMetaMethod ? ZR_TRUE : ZR_FALSE;
+    member.metaType = (TZrUInt32)metaType;
+    member.functionConstantIndex = functionConstantIndex;
+    member.modifierFlags = memberModifierFlags;
+    member.propertyIdentity = UINT32_MAX;
+    install_single_compiled_member_metadata(state,
+                                            owner,
+                                            target,
+                                            prototypeType,
                                             prototypeModifierFlags,
                                             &member);
 }
@@ -355,7 +391,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
     };
     static const EZrAotReachabilityReason unknownRootReasons[] = {
-            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_GENERIC_METHODSPEC + 1),
+            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_REFLECTION_CONSTRUCTOR + 1),
     };
     static const SZrAotReachabilityEdge rootReasonEdges[] = {
             {0u, 1u, ZR_AOT_REACHABILITY_REASON_ROOT_EXPORT},
@@ -363,7 +399,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
     static const SZrAotReachabilityEdge unknownReasonEdges[] = {
             {0u,
              1u,
-             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_GENERIC_METHODSPEC + 1)},
+             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_REFLECTION_CONSTRUCTOR + 1)},
     };
     SZrAotReachabilityMark marks[2];
     TZrUInt32 queue[2];
@@ -1628,6 +1664,234 @@ static void test_static_callable_reachability_ignores_non_resource_destructor_me
     }
 }
 
+static void test_static_callable_reachability_keeps_reflection_constructor_roots(void) {
+    static const TZrUInt32 prototypeTypes[] = {
+            ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+            ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+    };
+
+    for (TZrUInt32 caseIndex = 0u;
+         caseIndex < (TZrUInt32)(sizeof(prototypeTypes) / sizeof(prototypeTypes[0]));
+         caseIndex++) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction *root;
+        SZrFunction *target;
+        SZrAotFunctionEntry entries[2];
+        SZrAotFunctionTable table;
+        SZrAotReachabilityMark marks[2];
+        SZrAotReachabilityEdge edges[1];
+        TZrUInt32 roots[2];
+        EZrAotReachabilityReason rootReasons[2];
+        TZrUInt32 queue[2];
+        TZrUInt32 markedCount = 0u;
+        TZrUInt32 edgeCount = 0u;
+
+        TEST_ASSERT_NOT_NULL(state);
+        root = ZrCore_Function_New(state);
+        target = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(root);
+        TEST_ASSERT_NOT_NULL(target);
+        root->lineInSourceStart = 1u;
+        root->lineInSourceEnd = 1u;
+        target->lineInSourceStart = 10u;
+        target->lineInSourceEnd = 10u;
+        install_reflection_constructor_metadata(state,
+                                                root,
+                                                target,
+                                                prototypeTypes[caseIndex],
+                                                0u,
+                                                ZR_ACCESS_CONSTANT_PUBLIC,
+                                                ZR_TRUE,
+                                                ZR_META_CONSTRUCTOR,
+                                                0u,
+                                                0u);
+
+        entries[0].function = root;
+        entries[0].flatIndex = 0u;
+        entries[1].function = target;
+        entries[1].flatIndex = 1u;
+        table.entries = entries;
+        table.count = 2u;
+        table.capacity = 2u;
+        table.indexSpace = 2u;
+
+        TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability(state,
+                                                                          &table,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          roots,
+                                                                          rootReasons,
+                                                                          2u,
+                                                                          marks,
+                                                                          2u,
+                                                                          edges,
+                                                                          1u,
+                                                                          queue,
+                                                                          2u,
+                                                                          &markedCount,
+                                                                          &edgeCount));
+        TEST_ASSERT_EQUAL_UINT32(2u, markedCount);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_PROCESSED, marks[1].state);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_REFLECTION_CONSTRUCTOR, marks[1].reason);
+        TEST_ASSERT_EQUAL_UINT32(ZR_AOT_REACHABILITY_NO_NODE, marks[1].predecessor);
+
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
+static void test_static_callable_reachability_enforces_reflection_constructor_policy(void) {
+    static const struct {
+        TZrUInt32 prototypeType;
+        TZrUInt32 prototypeModifierFlags;
+        TZrUInt32 accessModifier;
+        TZrBool isMetaMethod;
+        EZrMetaType metaType;
+        TZrUInt32 memberModifierFlags;
+    } ignoredCases[] = {
+            {ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+             ZR_DECLARATION_MODIFIER_ABSTRACT,
+             ZR_ACCESS_CONSTANT_PUBLIC,
+             ZR_TRUE,
+             ZR_META_CONSTRUCTOR,
+             0u},
+            {ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+             ZR_DECLARATION_MODIFIER_RESOURCE,
+             ZR_ACCESS_CONSTANT_PUBLIC,
+             ZR_TRUE,
+             ZR_META_CONSTRUCTOR,
+             0u},
+            {ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE,
+             0u,
+             ZR_ACCESS_CONSTANT_PUBLIC,
+             ZR_TRUE,
+             ZR_META_CONSTRUCTOR,
+             0u},
+            {ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+             0u,
+             ZR_ACCESS_CONSTANT_PRIVATE,
+             ZR_TRUE,
+             ZR_META_CONSTRUCTOR,
+             0u},
+            {ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+             0u,
+             ZR_ACCESS_CONSTANT_PUBLIC,
+             ZR_TRUE,
+             ZR_META_CONSTRUCTOR,
+             ZR_DECLARATION_MODIFIER_ABSTRACT},
+            {ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+             0u,
+             ZR_ACCESS_CONSTANT_PUBLIC,
+             ZR_FALSE,
+             ZR_META_CONSTRUCTOR,
+             0u},
+            {ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+             0u,
+             ZR_ACCESS_CONSTANT_PUBLIC,
+             ZR_TRUE,
+             ZR_META_DESTRUCTOR,
+             0u},
+    };
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *root;
+    SZrFunction *target;
+    SZrAotFunctionEntry entries[2];
+    SZrAotFunctionTable table;
+    SZrAotReachabilityMark marks[2];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 roots[2];
+    EZrAotReachabilityReason rootReasons[2];
+    TZrUInt32 queue[2];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    root = ZrCore_Function_New(state);
+    target = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_NOT_NULL(target);
+    install_reflection_constructor_metadata(state,
+                                            root,
+                                            target,
+                                            ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                                            0u,
+                                            ZR_ACCESS_CONSTANT_PUBLIC,
+                                            ZR_TRUE,
+                                            ZR_META_CONSTRUCTOR,
+                                            0u,
+                                            1u);
+    entries[0].function = root;
+    entries[0].flatIndex = 0u;
+    entries[1].function = target;
+    entries[1].flatIndex = 1u;
+    table.entries = entries;
+    table.count = 2u;
+    table.capacity = 2u;
+    table.indexSpace = 2u;
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability(state,
+                                                                       &table,
+                                                                       ZR_NULL,
+                                                                       0u,
+                                                                       ZR_NULL,
+                                                                       0u,
+                                                                       roots,
+                                                                       rootReasons,
+                                                                       2u,
+                                                                       marks,
+                                                                       2u,
+                                                                       edges,
+                                                                       1u,
+                                                                       queue,
+                                                                       2u,
+                                                                       &markedCount,
+                                                                       &edgeCount));
+    ZrTests_Runtime_State_Destroy(state);
+
+    for (TZrUInt32 caseIndex = 0u;
+         caseIndex < (TZrUInt32)(sizeof(ignoredCases) / sizeof(ignoredCases[0]));
+         caseIndex++) {
+        state = ZrTests_Runtime_State_Create(ZR_NULL);
+        TEST_ASSERT_NOT_NULL(state);
+        root = ZrCore_Function_New(state);
+        target = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(root);
+        TEST_ASSERT_NOT_NULL(target);
+        install_reflection_constructor_metadata(state,
+                                                root,
+                                                target,
+                                                ignoredCases[caseIndex].prototypeType,
+                                                ignoredCases[caseIndex].prototypeModifierFlags,
+                                                ignoredCases[caseIndex].accessModifier,
+                                                ignoredCases[caseIndex].isMetaMethod,
+                                                ignoredCases[caseIndex].metaType,
+                                                ignoredCases[caseIndex].memberModifierFlags,
+                                                1u);
+        entries[0].function = root;
+        entries[1].function = target;
+        TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability(state,
+                                                                          &table,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          roots,
+                                                                          rootReasons,
+                                                                          2u,
+                                                                          marks,
+                                                                          2u,
+                                                                          edges,
+                                                                          1u,
+                                                                          queue,
+                                                                          2u,
+                                                                          &markedCount,
+                                                                          &edgeCount));
+        TEST_ASSERT_EQUAL_UINT32(1u, markedCount);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[1].state);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
 static void test_static_callable_reachability_keeps_generic_methodspec_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
@@ -1803,6 +2067,8 @@ int main(void) {
     RUN_TEST(test_static_callable_reachability_keeps_resource_destructor_root);
     RUN_TEST(test_static_callable_reachability_rejects_unresolved_resource_destructor);
     RUN_TEST(test_static_callable_reachability_ignores_non_resource_destructor_metadata);
+    RUN_TEST(test_static_callable_reachability_keeps_reflection_constructor_roots);
+    RUN_TEST(test_static_callable_reachability_enforces_reflection_constructor_policy);
     RUN_TEST(test_static_callable_reachability_keeps_generic_methodspec_root);
     RUN_TEST(test_static_callable_reachability_rejects_invalid_generic_methodspec_roots);
     return UNITY_END();
