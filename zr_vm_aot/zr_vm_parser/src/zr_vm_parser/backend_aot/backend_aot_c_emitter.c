@@ -592,9 +592,11 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
     TZrUInt32 *roots = ZR_NULL;
     EZrAotReachabilityReason *rootReasons = ZR_NULL;
     const TZrUInt32 *manifestRoots = ZR_NULL;
+    const SZrAotManifestGenericRoot *genericRoots = ZR_NULL;
     TZrUInt32 indexSpace;
     TZrUInt32 edgeCapacity = 0u;
     TZrUInt32 manifestRootCount = 0u;
+    TZrUInt32 genericRootCount = 0u;
     TZrUInt32 markedCount = 0u;
     TZrUInt32 edgeCount = 0u;
     TZrBool success = ZR_FALSE;
@@ -610,6 +612,8 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
     if (options != ZR_NULL) {
         manifestRoots = options->manifestPreserveFunctionFlatIndices;
         manifestRootCount = options->manifestPreserveFunctionFlatIndexCount;
+        genericRoots = options->manifestPreserveGenericRoots;
+        genericRootCount = options->manifestPreserveGenericRootCount;
     }
 
     for (TZrUInt32 entryIndex = 0u; entryIndex < functionTable->count; entryIndex++) {
@@ -645,23 +649,26 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 
     if (marks != ZR_NULL && queue != ZR_NULL && roots != ZR_NULL && rootReasons != ZR_NULL && edges != ZR_NULL &&
-        backend_aot_compute_static_callable_reachability(state,
-                                                         functionTable,
-                                                         annotationRoots,
-                                                         annotationRootCount,
-                                                         manifestRoots,
-                                                         manifestRootCount,
-                                                         roots,
-                                                         rootReasons,
-                                                         indexSpace,
-                                                         marks,
-                                                         indexSpace,
-                                                         edges,
-                                                         edgeCapacity,
-                                                         queue,
-                                                         indexSpace,
-                                                         &markedCount,
-                                                         &edgeCount) &&
+        backend_aot_compute_static_callable_reachability_with_generic_roots(
+                state,
+                functionTable,
+                annotationRoots,
+                annotationRootCount,
+                manifestRoots,
+                manifestRootCount,
+                genericRoots,
+                genericRootCount,
+                roots,
+                rootReasons,
+                indexSpace,
+                marks,
+                indexSpace,
+                edges,
+                edgeCapacity,
+                queue,
+                indexSpace,
+                &markedCount,
+                &edgeCount) &&
         markedCount > 0u &&
         backend_aot_reachability_write_function_manifest(file, marks, indexSpace)) {
         success = backend_aot_filter_function_table_by_reachability(functionTable, marks, indexSpace);

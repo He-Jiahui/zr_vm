@@ -355,6 +355,47 @@ static TZrBool backend_aot_resolve_dynamic_dependency_method_token(const SZrAotF
     return ZR_TRUE;
 }
 
+static TZrBool backend_aot_static_reachability_collect_generic_methodspec_roots(
+        const SZrAotFunctionTable *table,
+        const SZrAotManifestGenericRoot *genericRoots,
+        TZrUInt32 genericRootCount,
+        TZrUInt32 *roots,
+        EZrAotReachabilityReason *rootReasons,
+        TZrUInt32 rootCapacity,
+        TZrUInt32 *rootCount,
+        TZrUInt32 markCount) {
+    if (genericRootCount == 0u) {
+        return ZR_TRUE;
+    }
+    if (genericRoots == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 genericRootIndex = 0u; genericRootIndex < genericRootCount; genericRootIndex++) {
+        const SZrAotManifestGenericRoot *genericRoot = &genericRoots[genericRootIndex];
+        TZrUInt32 targetIndex;
+
+        if (!genericRoot->hasMethodSpecBinding) {
+            continue;
+        }
+        if (!backend_aot_resolve_dynamic_dependency_method_token(table,
+                                                                 genericRoot->methodSpecMethodToken,
+                                                                 &targetIndex) ||
+            !backend_aot_static_reachability_append_root(
+                    roots,
+                    rootReasons,
+                    rootCapacity,
+                    rootCount,
+                    targetIndex,
+                    ZR_AOT_REACHABILITY_REASON_GENERIC_METHODSPEC,
+                    markCount)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_typed_export_symbol_matches_name(const SZrFunctionTypedExportSymbol *symbol,
                                                             const SZrString *methodName,
                                                             TZrBool hasMethodSignatureHash,
@@ -838,23 +879,26 @@ static TZrBool backend_aot_static_reachability_collect_edges(SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
-                                                         const SZrAotFunctionTable *table,
-                                                         const TZrUInt32 *annotationRoots,
-                                                         TZrUInt32 annotationRootCount,
-                                                         const TZrUInt32 *manifestRoots,
-                                                         TZrUInt32 manifestRootCount,
-                                                         TZrUInt32 *roots,
-                                                         EZrAotReachabilityReason *rootReasons,
-                                                         TZrUInt32 rootCapacity,
-                                                         SZrAotReachabilityMark *marks,
-                                                         TZrUInt32 markCount,
-                                                         SZrAotReachabilityEdge *edges,
-                                                         TZrUInt32 edgeCapacity,
-                                                         TZrUInt32 *queue,
-                                                         TZrUInt32 queueCapacity,
-                                                         TZrUInt32 *outMarkedCount,
-                                                         TZrUInt32 *outEdgeCount) {
+TZrBool backend_aot_compute_static_callable_reachability_with_generic_roots(
+        SZrState *state,
+        const SZrAotFunctionTable *table,
+        const TZrUInt32 *annotationRoots,
+        TZrUInt32 annotationRootCount,
+        const TZrUInt32 *manifestRoots,
+        TZrUInt32 manifestRootCount,
+        const SZrAotManifestGenericRoot *genericRoots,
+        TZrUInt32 genericRootCount,
+        TZrUInt32 *roots,
+        EZrAotReachabilityReason *rootReasons,
+        TZrUInt32 rootCapacity,
+        SZrAotReachabilityMark *marks,
+        TZrUInt32 markCount,
+        SZrAotReachabilityEdge *edges,
+        TZrUInt32 edgeCapacity,
+        TZrUInt32 *queue,
+        TZrUInt32 queueCapacity,
+        TZrUInt32 *outMarkedCount,
+        TZrUInt32 *outEdgeCount) {
     TZrUInt32 rootCount = 0u;
     TZrUInt32 edgeCount = 0u;
     TZrUInt32 indexSpace;
@@ -924,6 +968,17 @@ TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
                                                                 markCount)) {
         return ZR_FALSE;
     }
+    if (!backend_aot_static_reachability_collect_generic_methodspec_roots(
+                table,
+                genericRoots,
+                genericRootCount,
+                roots,
+                rootReasons,
+                rootCapacity,
+                &rootCount,
+                markCount)) {
+        return ZR_FALSE;
+    }
 
     if (!backend_aot_static_reachability_collect_edges(state,
                                                        table,
@@ -946,5 +1001,44 @@ TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
                                             edgeCount,
                                             queue,
                                             queueCapacity,
-                                            outMarkedCount);
+                                             outMarkedCount);
+}
+
+TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
+                                                         const SZrAotFunctionTable *table,
+                                                         const TZrUInt32 *annotationRoots,
+                                                         TZrUInt32 annotationRootCount,
+                                                         const TZrUInt32 *manifestRoots,
+                                                         TZrUInt32 manifestRootCount,
+                                                         TZrUInt32 *roots,
+                                                         EZrAotReachabilityReason *rootReasons,
+                                                         TZrUInt32 rootCapacity,
+                                                         SZrAotReachabilityMark *marks,
+                                                         TZrUInt32 markCount,
+                                                         SZrAotReachabilityEdge *edges,
+                                                         TZrUInt32 edgeCapacity,
+                                                         TZrUInt32 *queue,
+                                                         TZrUInt32 queueCapacity,
+                                                         TZrUInt32 *outMarkedCount,
+                                                         TZrUInt32 *outEdgeCount) {
+    return backend_aot_compute_static_callable_reachability_with_generic_roots(
+            state,
+            table,
+            annotationRoots,
+            annotationRootCount,
+            manifestRoots,
+            manifestRootCount,
+            ZR_NULL,
+            0u,
+            roots,
+            rootReasons,
+            rootCapacity,
+            marks,
+            markCount,
+            edges,
+            edgeCapacity,
+            queue,
+            queueCapacity,
+            outMarkedCount,
+            outEdgeCount);
 }

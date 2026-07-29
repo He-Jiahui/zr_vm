@@ -45,6 +45,10 @@ S1/S2/S3/S6 仍为部分完成。
 resource prototype 的非 abstract destructor 必需函数根、`root.resource_drop` 报告与 unresolved Drop fail-closed 子切片；
 S1/S2/S3/S6 仍为部分完成。
 
+[2026-07-30 generic MethodSpec required root](./12-stripping/2026-07-30-generic-methodspec-required-root.md) 完成
+current-module `MemberDef` MethodSpec preserve binding 的必需函数根、`root.generic_methodspec` 报告与
+missing/ambiguous binding fail-closed 子切片；S1/S2/S3/S6 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

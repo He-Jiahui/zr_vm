@@ -1021,8 +1021,8 @@ static void add_exported_second_child_callable_binding(SZrState *state, SZrFunct
 }
 
 static void add_typed_exported_first_child_method_token(SZrState *state,
-                                                        SZrFunction *root,
-                                                        TZrMetadataToken metadataToken) {
+                                                         SZrFunction *root,
+                                                         TZrMetadataToken metadataToken) {
     SZrFunctionTypedExportSymbol *symbol;
 
     TEST_ASSERT_NOT_NULL(state);
@@ -1037,6 +1037,28 @@ static void add_typed_exported_first_child_method_token(SZrState *state,
     symbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
     symbol->exportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
     symbol->callableChildIndex = 0u;
+    symbol->metadataToken = metadataToken;
+    root->typedExportedSymbols = symbol;
+    root->typedExportedSymbolLength = 1u;
+}
+
+static void add_typed_second_child_method_token(SZrState *state,
+                                                 SZrFunction *root,
+                                                 TZrMetadataToken metadataToken) {
+    SZrFunctionTypedExportSymbol *symbol;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(root);
+
+    symbol = (SZrFunctionTypedExportSymbol *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedExportSymbol),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(symbol);
+    memset(symbol, 0, sizeof(*symbol));
+    symbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+    symbol->exportKind = ZR_MODULE_EXPORT_KIND_VALUE;
+    symbol->callableChildIndex = 1u;
     symbol->metadataToken = metadataToken;
     root->typedExportedSymbols = symbol;
     root->typedExportedSymbolLength = 1u;
@@ -1902,6 +1924,108 @@ static void test_aot_c_code_stripping_option_preserves_manifest_function_root(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_preserves_generic_methodspec_root(void) {
+    const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotManifestGenericRoot genericRoot;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    add_typed_second_child_method_token(state, function, methodToken);
+
+    memset(&genericRoot, 0, sizeof(genericRoot));
+    genericRoot.target = "Factory.make";
+    genericRoot.hasMethodSpecBinding = ZR_TRUE;
+    genericRoot.methodSpecToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 2u);
+    genericRoot.methodSpecMethodToken = methodToken;
+    genericRoot.methodSpecSignatureHash = (TZrUInt64)0x2233445566778899ULL;
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_generic_methodspec_root";
+    options.sourceHash = "aot-c-code-stripping-generic-methodspec-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-generic-methodspec-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    options.manifestPreserveGenericRoots = &genericRoot;
+    options.manifestPreserveGenericRootCount = 1u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "generic_methodspec_root",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_code_stripping_stats(generatedCText, 3u, 3u, 0u);
+    assert_text_contains(generatedCText, "/* manifest.genericRoots = 1 */");
+    assert_text_contains(generatedCText,
+                         "/* manifest.genericRoot[0].methodSpec.methodToken = 0x03000007 */");
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 3 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.functionManifest.node[2] = reason=root.generic_methodspec predecessor=none */");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_unresolved_generic_methodspec_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotManifestGenericRoot genericRoot;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&genericRoot, 0, sizeof(genericRoot));
+    genericRoot.target = "Factory.missing";
+    genericRoot.hasMethodSpecBinding = ZR_TRUE;
+    genericRoot.methodSpecToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 3u);
+    genericRoot.methodSpecMethodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 99u);
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_unresolved_generic_methodspec_root";
+    options.sourceHash = "aot-c-code-stripping-unresolved-generic-methodspec-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-unresolved-generic-methodspec-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    options.manifestPreserveGenericRoots = &genericRoot;
+    options.manifestPreserveGenericRootCount = 1u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "unresolved_generic_methodspec_root",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -2186,6 +2310,8 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_preserves_dynamic_dependency_field_token_layout_metadata);
     RUN_TEST(test_aot_c_code_stripping_option_preserves_exported_callable_root);
     RUN_TEST(test_aot_c_code_stripping_option_preserves_manifest_function_root);
+    RUN_TEST(test_aot_c_code_stripping_preserves_generic_methodspec_root);
+    RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_generic_methodspec_root);
     RUN_TEST(test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats);
     RUN_TEST(test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functions);
     return UNITY_END();

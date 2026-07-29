@@ -3,6 +3,28 @@
 
 #include "backend_aot_function_table.h"
 #include "backend_aot_reachability.h"
+#include "zr_vm_parser/writer.h"
+
+TZrBool backend_aot_compute_static_callable_reachability_with_generic_roots(
+        SZrState *state,
+        const SZrAotFunctionTable *table,
+        const TZrUInt32 *annotationRoots,
+        TZrUInt32 annotationRootCount,
+        const TZrUInt32 *manifestRoots,
+        TZrUInt32 manifestRootCount,
+        const SZrAotManifestGenericRoot *genericRoots,
+        TZrUInt32 genericRootCount,
+        TZrUInt32 *roots,
+        EZrAotReachabilityReason *rootReasons,
+        TZrUInt32 rootCapacity,
+        SZrAotReachabilityMark *marks,
+        TZrUInt32 markCount,
+        SZrAotReachabilityEdge *edges,
+        TZrUInt32 edgeCapacity,
+        TZrUInt32 *queue,
+        TZrUInt32 queueCapacity,
+        TZrUInt32 *outMarkedCount,
+        TZrUInt32 *outEdgeCount);
 
 TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
                                                          const SZrAotFunctionTable *table,

@@ -14,6 +14,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/writer.h"
 #include "harness/runtime_support.h"
 
 void setUp(void) {}
@@ -354,7 +355,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
     };
     static const EZrAotReachabilityReason unknownRootReasons[] = {
-            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_RESOURCE_DROP + 1),
+            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_GENERIC_METHODSPEC + 1),
     };
     static const SZrAotReachabilityEdge rootReasonEdges[] = {
             {0u, 1u, ZR_AOT_REACHABILITY_REASON_ROOT_EXPORT},
@@ -362,7 +363,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
     static const SZrAotReachabilityEdge unknownReasonEdges[] = {
             {0u,
              1u,
-             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_RESOURCE_DROP + 1)},
+             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_GENERIC_METHODSPEC + 1)},
     };
     SZrAotReachabilityMark marks[2];
     TZrUInt32 queue[2];
@@ -1627,6 +1628,155 @@ static void test_static_callable_reachability_ignores_non_resource_destructor_me
     }
 }
 
+static void test_static_callable_reachability_keeps_generic_methodspec_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
+    SZrFunction functions[3];
+    SZrFunctionTypedExportSymbol methodSymbol;
+    SZrAotFunctionEntry entries[3] = {
+            {&functions[0], 0u},
+            {&functions[1], 1u},
+            {&functions[2], 2u},
+    };
+    SZrAotFunctionTable table = {
+            entries,
+            3u,
+            3u,
+            3u,
+    };
+    SZrAotManifestGenericRoot genericRoot;
+    TZrUInt32 roots[3];
+    EZrAotReachabilityReason rootReasons[3];
+    SZrAotReachabilityMark marks[3];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 queue[3];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(functions, 0, sizeof(functions));
+    memset(&genericRoot, 0, sizeof(genericRoot));
+    functions[0].childFunctionList = &functions[1];
+    functions[0].childFunctionLength = 2u;
+    functions[0].lineInSourceStart = 1u;
+    functions[0].lineInSourceEnd = 1u;
+    functions[2].lineInSourceStart = 20u;
+    functions[2].lineInSourceEnd = 20u;
+    attach_typed_method_token(&functions[0],
+                              &methodSymbol,
+                              1u,
+                              methodToken,
+                              ZR_MODULE_EXPORT_KIND_VALUE);
+    genericRoot.hasMethodSpecBinding = ZR_TRUE;
+    genericRoot.methodSpecToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 2u);
+    genericRoot.methodSpecMethodToken = methodToken;
+    genericRoot.methodSpecSignatureHash = (TZrUInt64)0x2233445566778899ULL;
+
+    TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability_with_generic_roots(
+            state,
+            &table,
+            ZR_NULL,
+            0u,
+            ZR_NULL,
+            0u,
+            &genericRoot,
+            1u,
+            roots,
+            rootReasons,
+            3u,
+            marks,
+            3u,
+            edges,
+            1u,
+            queue,
+            3u,
+            &markedCount,
+            &edgeCount));
+    TEST_ASSERT_EQUAL_UINT32(2u, markedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, edgeCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[1].state);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_PROCESSED, marks[2].state);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_GENERIC_METHODSPEC, marks[2].reason);
+    TEST_ASSERT_EQUAL_UINT32(ZR_AOT_REACHABILITY_NO_NODE, marks[2].predecessor);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_static_callable_reachability_rejects_invalid_generic_methodspec_roots(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 8u);
+    SZrFunction functions[3];
+    SZrFunctionTypedExportSymbol methodSymbols[2];
+    SZrAotFunctionEntry entries[3] = {
+            {&functions[0], 0u},
+            {&functions[1], 1u},
+            {&functions[2], 2u},
+    };
+    SZrAotFunctionTable table = {
+            entries,
+            3u,
+            3u,
+            3u,
+    };
+    SZrAotManifestGenericRoot genericRoot;
+    TZrUInt32 roots[3];
+    EZrAotReachabilityReason rootReasons[3];
+    SZrAotReachabilityMark marks[3];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 queue[3];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(functions, 0, sizeof(functions));
+    memset(methodSymbols, 0, sizeof(methodSymbols));
+    memset(&genericRoot, 0, sizeof(genericRoot));
+    functions[0].childFunctionList = &functions[1];
+    functions[0].childFunctionLength = 2u;
+    functions[0].lineInSourceStart = 1u;
+    functions[0].lineInSourceEnd = 1u;
+    genericRoot.hasMethodSpecBinding = ZR_TRUE;
+    genericRoot.methodSpecToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 3u);
+    genericRoot.methodSpecMethodToken = methodToken;
+
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_generic_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_generic_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, &genericRoot, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    genericRoot.methodSpecMethodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_REF, 8u);
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_generic_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, &genericRoot, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    genericRoot.methodSpecMethodToken = methodToken;
+    methodSymbols[0].symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+    methodSymbols[0].callableChildIndex = 0u;
+    methodSymbols[0].metadataToken = methodToken;
+    methodSymbols[1] = methodSymbols[0];
+    methodSymbols[1].callableChildIndex = 1u;
+    functions[0].typedExportedSymbols = methodSymbols;
+    functions[0].typedExportedSymbolLength = 2u;
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_generic_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, &genericRoot, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    memset(&genericRoot, 0, sizeof(genericRoot));
+    functions[0].typedExportedSymbolLength = 0u;
+    genericRoot.hasTypeSpecBinding = ZR_TRUE;
+    genericRoot.typeSpecToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 1u);
+    TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability_with_generic_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, &genericRoot, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+    TEST_ASSERT_EQUAL_UINT32(1u, markedCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[1].state);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[2].state);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reachability_marks_roots_and_direct_dependencies);
@@ -1653,5 +1803,7 @@ int main(void) {
     RUN_TEST(test_static_callable_reachability_keeps_resource_destructor_root);
     RUN_TEST(test_static_callable_reachability_rejects_unresolved_resource_destructor);
     RUN_TEST(test_static_callable_reachability_ignores_non_resource_destructor_metadata);
+    RUN_TEST(test_static_callable_reachability_keeps_generic_methodspec_root);
+    RUN_TEST(test_static_callable_reachability_rejects_invalid_generic_methodspec_roots);
     return UNITY_END();
 }

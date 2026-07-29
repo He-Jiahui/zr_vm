@@ -19,6 +19,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-12-s1b-s2f-s6a-function-reachability-manifest.md
   - tests/acceptance/2026-07-30-aot-12-property-accessor-required-root.md
   - tests/acceptance/2026-07-30-aot-12-resource-drop-required-root.md
+  - tests/acceptance/2026-07-30-aot-12-generic-methodspec-required-root.md
 doc_type: module-detail
 ---
 
@@ -47,6 +48,7 @@ and the predecessor index that supplied that edge. Root reasons are:
 - `REFLECTION_ANNOTATION`
 - `PROPERTY_ACCESSOR`
 - `RESOURCE_DROP`
+- `GENERIC_METHODSPEC`
 
 Dependency-edge reasons are:
 
@@ -72,6 +74,14 @@ is required when its serialized owner prototype has the `RESOURCE` modifier, `is
 construction fails closed. Non-resource destructors, non-meta members, other meta methods, and abstract destructor
 contracts are ignored. This slice conservatively roots every executable resource destructor present in serialized
 prototype metadata; narrowing those roots by reachable type/layout is a later graph-convergence stage.
+
+`GENERIC_METHODSPEC` roots connect writer preserve metadata to executable code stripping. For every
+`SZrAotManifestGenericRoot` with `hasMethodSpecBinding`, the collector resolves `methodSpecMethodToken` as a
+current-module `MemberDef` through the root function's typed symbols. Exactly one symbol must map to a callable child
+and stable function-table entry. A missing, non-`MemberDef`, ambiguous, or unmappable target fails graph construction
+and removes partial writer output. Generic roots that carry only TypeSpec/type-instantiation identity do not retain a
+function in this collector. Cross-module `MemberRef`, generic dictionaries, and constraint witnesses remain separate
+graph work.
 
 ## Marking And Reason Chains
 
@@ -111,6 +121,10 @@ roles, abstract contract-only accessors, and non-accessor filtering. `test_aot_c
 publishes direct-call, export-root, manifest-root, and property-accessor-root chains while omitting trimmed function
 nodes. The same suites cover resource destructor retention, unresolved required destructors, non-resource/meta/abstract
 filtering, `root.resource_drop` publication, and partial-file cleanup.
+
+The suites also cover a non-exported MethodSpec-bound callable retained as `root.generic_methodspec`, null/missing,
+non-`MemberDef`, and ambiguous bindings rejected fail closed, TypeSpec-only roots ignored by the function collector,
+the generated-C reason row, and public-writer partial-file cleanup.
 
 The acceptance record runs the focused reachability and stripping targets on WSL GCC, WSL Clang, and Windows MSVC.
 Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.
