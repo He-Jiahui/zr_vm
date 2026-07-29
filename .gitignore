@@ -52,6 +52,18 @@ Mkfile.old
 dkms.conf
 
 # cache files
+## CMake generated build metadata (at any depth)
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+cmake_install.cmake
+install_manifest*.txt
+Makefile
+build.ninja
+.ninja_deps
+.ninja_log
+compile_commands.json
+
 /.zig-cache
 /.idea
 /.vscode
