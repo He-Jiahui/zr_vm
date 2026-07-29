@@ -58,6 +58,25 @@
     fflush(stdout); \
 } while(0)
 
+typedef struct STestCompileResult {
+    SZrFunction *mainFunction;
+    SZrFunction **testFunctions;
+    TZrSize testFunctionCount;
+} STestCompileResult;
+
+static void test_compile_result_free(SZrState *state, STestCompileResult *result) {
+    if (state != ZR_NULL && result != ZR_NULL &&
+        result->testFunctions != ZR_NULL && result->testFunctionCount > 0) {
+        ZrCore_Memory_RawFreeWithType(
+                state->global,
+                result->testFunctions,
+                result->testFunctionCount * sizeof(SZrFunction *),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        result->testFunctions = ZR_NULL;
+        result->testFunctionCount = 0;
+    }
+}
+
 static SZrState* create_test_state(void) {
     return ZrTests_State_Create(ZR_NULL);
 }
@@ -315,7 +334,7 @@ static SZrFunction* find_fixture_function(SZrFunction* mainFunction) {
     return ZR_NULL;
 }
 
-static TZrBool compile_fixture_with_entry(SZrState* state, SZrAstNode* ast, SZrCompileResult* result) {
+static TZrBool compile_fixture_with_entry(SZrState* state, SZrAstNode* ast, STestCompileResult* result) {
     SZrFunction* fixtureFunction;
 
     if (state == ZR_NULL || ast == ZR_NULL || result == ZR_NULL) {
@@ -356,7 +375,7 @@ static void test_reference_named_arguments_fixture_executes(void) {
     SZrState* state = ZR_NULL;
     SZrString* sourceName = ZR_NULL;
     SZrAstNode* ast = ZR_NULL;
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     TZrSize sourceLength = 0;
     char* source = ZR_NULL;
 
@@ -378,7 +397,7 @@ static void test_reference_named_arguments_fixture_executes(void) {
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 128, testSummary));
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     free(source);
 
@@ -632,7 +651,7 @@ static void test_named_arguments_basic(void) {
     fflush(stdout);
     
     // 执行测试函数
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     // 初始化编译结果
     compileResult.mainFunction = ZR_NULL;
     compileResult.testFunctions = ZR_NULL;
@@ -661,7 +680,7 @@ static void test_named_arguments_basic(void) {
         }   
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -703,7 +722,7 @@ static void test_named_arguments_mixed(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -720,7 +739,7 @@ static void test_named_arguments_mixed(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -764,7 +783,7 @@ static void test_named_arguments_with_defaults(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -781,7 +800,7 @@ static void test_named_arguments_with_defaults(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -823,7 +842,7 @@ static void test_named_arguments_order_independent(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -840,7 +859,7 @@ static void test_named_arguments_order_independent(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -882,7 +901,7 @@ static void test_named_arguments_complex(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -899,7 +918,7 @@ static void test_named_arguments_complex(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();

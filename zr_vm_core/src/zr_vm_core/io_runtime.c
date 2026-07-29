@@ -1173,35 +1173,6 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (source->testInfosLength > 0) {
-        TZrSize infoBytes = sizeof(SZrFunctionTestInfo) * source->testInfosLength;
-        function->testInfos = (SZrFunctionTestInfo *)ZrCore_Memory_RawMallocWithType(global,
-                                                                                     infoBytes,
-                                                                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (function->testInfos == ZR_NULL) {
-            return ZR_FALSE;
-        }
-
-        ZrCore_Memory_RawSet(function->testInfos, 0, infoBytes);
-        for (TZrSize index = 0; index < source->testInfosLength; index++) {
-            SZrFunctionTestInfo *destinationInfo = &function->testInfos[index];
-            const SZrIoFunctionTestInfo *sourceInfo = &source->testInfos[index];
-
-            destinationInfo->name = sourceInfo->name;
-            destinationInfo->hasVariableArguments = sourceInfo->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
-            destinationInfo->lineInSourceStart = sourceInfo->lineInSourceStart;
-            destinationInfo->lineInSourceEnd = sourceInfo->lineInSourceEnd;
-            if (!io_runtime_copy_metadata_parameters(state,
-                                                     &destinationInfo->parameters,
-                                                     &destinationInfo->parameterCount,
-                                                     sourceInfo->parameters,
-                                                     sourceInfo->parameterCount)) {
-                return ZR_FALSE;
-            }
-        }
-        function->testInfoLength = (TZrUInt32)source->testInfosLength;
-    }
-
     if (source->hasDecoratorMetadata) {
         if (!io_runtime_convert_constant(state, &source->decoratorMetadataValue, &function->decoratorMetadataValue)) {
             return ZR_FALSE;

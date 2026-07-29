@@ -264,15 +264,6 @@ typedef struct SZrIoFunctionEscapeBinding {
     TZrUInt16 reserved1;
 } SZrIoFunctionEscapeBinding;
 
-typedef struct SZrIoFunctionTestInfo {
-    struct SZrString *name;
-    TZrSize parameterCount;
-    SZrIoFunctionMetadataParameter *parameters;
-    TZrBool hasVariableArguments;
-    TZrUInt32 lineInSourceStart;
-    TZrUInt32 lineInSourceEnd;
-} SZrIoFunctionTestInfo;
-
 typedef struct SZrIoFunctionMemberEntry {
     struct SZrString *symbol;
     TZrUInt8 entryKind;
@@ -449,8 +440,6 @@ struct SZrIoFunction {
     SZrIoFunctionEscapeBinding *escapeBindings;
     TZrSize returnEscapeSlotCount;
     TZrUInt32 *returnEscapeSlots;
-    TZrSize testInfosLength;
-    SZrIoFunctionTestInfo *testInfos;
     TZrUInt8 hasDecoratorMetadata;
     SZrIoFunctionConstantVariable decoratorMetadataValue;
     TZrSize decoratorNamesLength;

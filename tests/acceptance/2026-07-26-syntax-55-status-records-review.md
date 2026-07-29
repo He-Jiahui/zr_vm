@@ -97,20 +97,58 @@ Gate 11 从 49/61 恢复为 61/61。干净 `HEAD` 本身仍缺少 pool 工作线
 stable-slot protocol 枚举，导致 `pooling.c` 无法独立编译；验收快照只覆盖这两个未提交
 基础头继续验证，本提交不混入该旁支工作。
 
+## 2026-07-30 原子切换复验
+
+本次按用户要求执行生产 parser 的一次性破坏性切换。生产目录静态扫描对
+`%module/%import/%extern/%compileTime/%test/%owned/%borrow/%loan/%unique/%shared/`
+`%weak/%func/%in/%out/%ref/%using` 为零命中；这些拼写不再拥有生产解析路径，只能
+出现在 migration 输入、负向测试或历史设计文档中。普通 `%` 取模运算保持有效，未知
+`%identifier` 按普通语法错误处理，不会自动成为 migration rule。
+
+同时删除了旧 `%test` 的专用 AST、compiler result/test-function 旁路、runtime
+reflection test metadata 与中间文本 `TESTS` section。二进制函数格式保留一个恒为零的
+旧字段 tombstone 以维持后续字段对齐；读取到非零旧 test metadata 时明确拒绝，避免把
+旧制品静默解释成新语义。未来 Gate 14 测试发现必须使用普通 `fn` 加 typed
+`TestManifest`，不得恢复 parser 特例。
+
+本轮重新机器清点仍严格得到 55 份状态记录，目录分布仍为 01=5、02=6、03=5、
+04=7、05=6、06=2、07=1、10=5、12=15、13=3，完成标记缺失为 0。因此 55/55 的
+结论仍只适用于各记录声明的叶子范围。根 Syntax 计划不能据此宣告完成：Gate 14 的
+typed `TestManifest`/test host/runner 尚未实施，06B/07B 等 promotion 依赖也未全部
+关闭；当前 compiler integration 与 module system 上层套件仍暴露尚未迁移的旧 fixture。
+
+切换后的新鲜定向证据：Windows MSVC Debug 构建成功，parser 74/74、percent cutover
+4/4、legacy migration 10/10、compile-time current surface 29/29、named arguments
+10/10；WSL GCC Debug 构建成功，parser 74/74、percent cutover 4/4、legacy migration
+10/10。两边合计执行 215 项定向断言，0 失败。MSVC 对 `io.c` 仍报告两个既有的
+`ZR_NO_RETURN` 后不可达代码 warning，本次新增拒绝分支不再产生额外 warning。
+从只包含本次 25 个暂存文件的独立 Git index 导出短路径干净树后，MSVC 冷构建同一组
+五个目标成功，提交态再次执行 127/127 通过，证明结果不依赖工作区其余未暂存改动。
+
+上层复跑不是全绿：compiler integration 为 127 项、44 失败，module system 为 91 项、
+43 失败。失败集中在旧 fixture、旧 function/type/decorator surface、尚未晋级的 compile-time
+metadata 迁移及依赖它们的 project/module roundtrip；这两组结果是根计划未完成的验收
+阻断证据，不应被定向 parser 全绿覆盖。
+
+本次 review 还修正了二进制 tombstone 的宿主宽度风险：writer 与 reader 均固定读写
+`uint64`，避免 32 位宿主按 `size_t` 读取导致后续字段错位；并确保 migration-only split
+property parser 在 collection append 失败时释放 AST，不能回落到生产 AST。
+
 ## `%` 语法的当前状态
 
-当前源码、fixture 和测试中仍可见大量 `%` 开头形式，这是预期的迁移期兼容面，
-不是最终语法已经完成切换。55/55 只证明这些状态记录各自声明的叶子范围；它不等于
-06B 原子切换已经发生。
+原报告中“06B 前兼容输入仍由生产 parser 接受”的描述已被本次原子切换取代。当前
+准确边界是：
 
-- 当前新语法验收使用 `native extern`、`comptime if`、`comptime fn` 等目标形式。
-- `%extern`、`%compileTime`、`%type` 及同类拼写在 06B 前仍可作为兼容输入、迁移
-  inventory、负向测试或历史示例存在。
-- 最终 06B 要在依赖 Gate 全部关闭后一次性删除生产路径中的旧拼写；届时旧形式只能
-  留在 migration input、negative test 和明确标注的历史文档中。
+- 生产 parser 不再接受已列入迁移表的 `%` 关键字，也不再接受与其绑定的旧语义旁路；
+- 显式 legacy migration frontend 仍可识别旧输入并生成诊断/编辑方案，但不会把旧 AST
+  交给生产 compiler；
+- negative tests、migration fixtures 和历史文档保留旧拼写是必要的验证材料，不表示
+  双轨兼容；
+- `comptime var` 也不是 `%compileTime var` 的新拼写。设计要求按语义迁为 `const` 或
+  comptime block local，不能做机械 token 替换。
 
-因此，“现在仍有很多 `%`”本身正常；若把它解释为整个 Syntax redesign 已完成则不
-正常。本报告的准确结论仍是：55 份叶子记录已确认，根级原子 cutover 未完成。
+所以生产 parser 继续接受上述 `%` 关键字并不正常；本次切换后，该兼容面已经关闭。
+55 份叶子记录保持确认，但整个 Syntax redesign 仍未完成。
 
 ## 55 份记录逐项结果
 

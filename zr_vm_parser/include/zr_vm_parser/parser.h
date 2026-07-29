@@ -33,6 +33,7 @@ typedef struct SZrParserState {
     TZrParserStructuredErrorCallback structuredErrorCallback; // 结构化错误回调（可选）
     TZrPtr errorUserData;             // 错误回调用户数据
     TZrBool suppressErrorOutput;      // 是否抑制 stderr 输出
+    TZrBool enableLegacyMigrationParsing; // 仅供显式 migration frontend 捕获旧语法修复
 } SZrParserState;
 
 // 初始化解析器状态

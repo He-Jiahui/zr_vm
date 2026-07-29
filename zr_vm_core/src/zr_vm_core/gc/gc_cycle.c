@@ -754,16 +754,6 @@ static TZrBool garbage_collector_function_references_live_young(SZrState *state,
             return ZR_TRUE;
         }
     }
-    if (function->testInfos != ZR_NULL) {
-        for (TZrUInt32 index = 0; index < function->testInfoLength; index++) {
-            if (garbage_collector_string_references_live_young(function->testInfos[index].name) ||
-                garbage_collector_metadata_parameters_reference_live_young(
-                        function->testInfos[index].parameters, function->testInfos[index].parameterCount)) {
-                return ZR_TRUE;
-            }
-        }
-    }
-
     return ZR_FALSE;
 }
 
@@ -1776,14 +1766,6 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
     if (function->escapeBindings != ZR_NULL) {
         for (TZrUInt32 index = 0; index < function->escapeBindingLength; index++) {
             work += garbage_collector_rewrite_string_slot(&function->escapeBindings[index].name);
-        }
-    }
-    if (function->testInfos != ZR_NULL) {
-        for (TZrUInt32 index = 0; index < function->testInfoLength; index++) {
-            SZrFunctionTestInfo *info = &function->testInfos[index];
-
-            work += garbage_collector_rewrite_string_slot(&info->name);
-            work += garbage_collector_rewrite_metadata_parameters(info->parameters, info->parameterCount);
         }
     }
     if (function->hasDecoratorMetadata &&

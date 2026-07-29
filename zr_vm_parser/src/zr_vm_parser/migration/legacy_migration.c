@@ -400,6 +400,7 @@ static void legacy_migration_capture_property_facts(
     parserState.structuredErrorCallback = legacy_migration_capture_property_diagnostic;
     parserState.errorUserData = &capture;
     parserState.suppressErrorOutput = ZR_TRUE;
+    parserState.enableLegacyMigrationParsing = ZR_TRUE;
     ast = ZrParser_ParseWithState(&parserState);
     if (ast != ZR_NULL) {
         ZrParser_Ast_Free(state, ast);

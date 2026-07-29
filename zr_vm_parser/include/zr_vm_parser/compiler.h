@@ -124,10 +124,6 @@ typedef struct SZrCompilerState {
     TZrBool hasCompileTimeError;            // 是否发生过编译期错误（不能在后续语句中被吞掉）
     TZrBool suppressErrorOutput;            // 是否抑制 stderr 错误输出（LSP/分析器路径）
     
-    // 测试模式
-    TZrBool isTestMode;                    // 是否处于测试模式
-    SZrArray testFunctions;              // 测试函数数组（SZrFunction*）
-    
     // 尾调用优化上下文
     TZrBool isInTailCallContext;           // 是否处于尾调用上下文（return语句中的表达式）
     
@@ -444,13 +440,6 @@ typedef struct SZrPropertyRequirementQuery {
     TZrSymbolId interfaceInitializerSymbolId;
 } SZrPropertyRequirementQuery;
 
-// 编译结果结构体
-typedef struct SZrCompileResult {
-    SZrFunction *mainFunction;          // 主函数（脚本主体）
-    SZrFunction **testFunctions;        // 测试函数数组（SZrFunction*）
-    TZrSize testFunctionCount;          // 测试函数数量
-} SZrCompileResult;
-
 // 常量引用路径结构
 // 使用状态机编码模式，例如：5(长度), -1, -5, 0, -4, 1 表示 parent->childFunction[0]->prototypes[1]
 #ifndef ZR_CONSTANT_REFERENCE_PATH_DECLARED
@@ -529,16 +518,9 @@ ZR_PARSER_API void ZrParser_Compiler_CompileUnionDeclaration(SZrCompilerState *c
 ZR_PARSER_API void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
 ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
 
-// 编译 AST 为函数和测试函数列表（新接口）
-// 返回编译结果结构体，调用者需要调用 ZrParser_CompileResult_Free 来释放资源
-ZR_PARSER_API TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZrCompileResult *result);
-
 ZR_PARSER_API TZrBool ZrParser_Quickening_CollectLoadTypedArithmeticProbeStats(
         const SZrFunction *function,
         SZrQuickeningLoadTypedArithmeticProbeStats *outStats);
-
-// 释放编译结果（释放测试函数数组，但不释放函数对象本身，函数对象由GC管理）
-ZR_PARSER_API void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult *result);
 
 // 报告编译错误
 ZR_PARSER_API void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location);

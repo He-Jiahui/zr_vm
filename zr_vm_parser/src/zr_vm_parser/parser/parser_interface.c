@@ -441,10 +441,23 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
                 member = parse_interface_field_declaration(ps);
             } else if (nextToken == ZR_TK_GET || nextToken == ZR_TK_SET) {
                 restore_parser_cursor(ps, &savedCursor);
-                report_removed_legacy_syntax(
-                        ps,
-                        "split get/set interface property",
-                        "Use one `property name: Type { get; set; }` declaration.");
+                if (ps->enableLegacyMigrationParsing) {
+                    member = parse_interface_property_signature(ps);
+                    if (member != ZR_NULL) {
+                        if (parser_property_migration_collection_append(
+                                    ps->state, &legacyProperties, member)) {
+                            rejectedLegacyProperty = ZR_TRUE;
+                        } else {
+                            ZrParser_Ast_Free(ps->state, member);
+                            member = ZR_NULL;
+                        }
+                    }
+                } else {
+                    report_removed_legacy_syntax(
+                            ps,
+                            "split get/set interface property",
+                            "Use one `property name: Type { get; set; }` declaration.");
+                }
             } else if (nextToken == ZR_TK_AT) {
                 // 元函数签名
                 restore_parser_cursor(ps, &savedCursor);
@@ -458,10 +471,23 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             // 元函数签名
             member = parse_interface_meta_signature(ps);
         } else if (token == ZR_TK_GET || token == ZR_TK_SET) {
-            report_removed_legacy_syntax(
-                    ps,
-                    "split get/set interface property",
-                    "Use one `property name: Type { get; set; }` declaration.");
+            if (ps->enableLegacyMigrationParsing) {
+                member = parse_interface_property_signature(ps);
+                if (member != ZR_NULL) {
+                    if (parser_property_migration_collection_append(
+                                ps->state, &legacyProperties, member)) {
+                        rejectedLegacyProperty = ZR_TRUE;
+                    } else {
+                        ZrParser_Ast_Free(ps->state, member);
+                        member = ZR_NULL;
+                    }
+                }
+            } else {
+                report_removed_legacy_syntax(
+                        ps,
+                        "split get/set interface property",
+                        "Use one `property name: Type { get; set; }` declaration.");
+            }
         } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_FN) {
             // 方法签名
             member = parse_interface_method_signature(ps);

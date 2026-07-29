@@ -13,6 +13,7 @@ void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *sou
     ps->structuredErrorCallback = ZR_NULL;
     ps->errorUserData = ZR_NULL;
     ps->suppressErrorOutput = ZR_FALSE;
+    ps->enableLegacyMigrationParsing = ZR_FALSE;
 
     // 初始化词法分析器
     ps->lexer = ZrCore_Memory_RawMallocWithType(state->global, sizeof(SZrLexState), ZR_MEMORY_NATIVE_TYPE_STRING);

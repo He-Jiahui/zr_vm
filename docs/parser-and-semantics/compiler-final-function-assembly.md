@@ -52,7 +52,7 @@ doc_type: module-detail
 - 调 `compiler_assemble_final_function(...)`
 - 继续做 `optimize_instructions(...)`
 - 继续做 `SemIR` 构建与 `ExecBC` quickening
-- 在 `CompileWithTests` 场景下复制 test function 指针表
+- 不再维护特殊 test function 指针表
 
 ### `compiler_function_assembly.c`
 
@@ -82,7 +82,7 @@ doc_type: module-detail
    - 仍然会补 child graph、export table、源码范围和最终不变量校验
    - 保留 declaration path 已经写好的参数签名
 
-这让 `ZrParser_Compiler_Compile(...)` 和 `ZrParser_Compiler_CompileWithTests(...)` 可以共享同一套 final assembly 逻辑。
+原特殊测试编译入口已随 `%test` 破坏性切换删除。普通脚本和顶层函数声明仍共享同一套 final assembly 逻辑；后续测试发现只能由普通函数 metadata 和 typed `TestManifest` 接入。
 
 ## 不变量
 
@@ -98,15 +98,9 @@ doc_type: module-detail
 
 因此 AOT / runtime 不再允许依赖“constant graph 还能把漏掉的 child function 找回来”这种结构偶然性。
 
-## `%test` 场景
+## 测试函数边界
 
-`CompileWithTests` 仍然允许 test function 作为 detached function 存在，但在 final assembly 之后要补一层 prototype context：
-
-- 如果 entry function 带 `prototypeData`
-- 且 test function 的 constant pool 里还没有 entry function 引用
-- 就把 entry function 追加到 test function 常量池
-
-这样 test body 在运行时仍然能看到脚本入口已经建立好的类型 prototype 上下文。
+`%test`、detached test function、`CompileWithTests` 和 runtime test metadata 已删除。测试必须是带 `#zr.testing.test#` 静态 metadata 的普通 `fn`；在 Gate14 实现前，compiler 不生成测试清单，也不得用旧指针表或 runtime reflection 代替 typed `TestManifest`。
 
 ## 当前验证
 

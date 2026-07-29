@@ -110,10 +110,6 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->hasStructuredError = ZR_FALSE;
     ZrParser_StructuredDiagnostic_Init(&cs->structuredError);
 
-    // 初始化测试模式
-    cs->isTestMode = ZR_FALSE;
-    ZrCore_Array_Init(state, &cs->testFunctions, sizeof(SZrFunction *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
-    
     // 初始化尾调用上下文
     cs->isInTailCallContext = ZR_FALSE;
     
@@ -304,12 +300,6 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     if (cs->childFunctions.isValid && cs->childFunctions.head != ZR_NULL && cs->childFunctions.capacity > 0 &&
         cs->childFunctions.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->childFunctions);
-    }
-    
-    // 释放测试函数数组（函数本身由 GC 管理）
-    if (cs->testFunctions.isValid && cs->testFunctions.head != ZR_NULL && cs->testFunctions.capacity > 0 &&
-        cs->testFunctions.elementSize > 0) {
-        ZrCore_Array_Free(state, &cs->testFunctions);
     }
     
     // 释放外部变量引用数组（字符串本身由 GC 管理）

@@ -936,10 +936,6 @@ TZrBool compiler_ref_struct_type_is_boxing_target(
 
 SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) ;
 
-TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZrCompileResult *result) ;
-
-void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult *result) ;
-
 void ZrParser_ToGlobalState_Register(struct SZrState *state) ;
 
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,

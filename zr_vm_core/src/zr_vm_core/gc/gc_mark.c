@@ -1205,12 +1205,6 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                 garbage_collector_mark_typed_type_ref(state, &info->returnType);
                 garbage_collector_mark_metadata_parameters(state, info->parameters, info->parameterCount, &work);
             }
-            for (TZrUInt32 i = 0; i < function->testInfoLength; i++) {
-                SZrFunctionTestInfo *info = &function->testInfos[i];
-
-                garbage_collector_mark_string_if_present(state, info->name);
-                garbage_collector_mark_metadata_parameters(state, info->parameters, info->parameterCount, &work);
-            }
             if (function->escapeBindings != ZR_NULL) {
                 for (TZrUInt32 i = 0; i < function->escapeBindingLength; i++) {
                     garbage_collector_mark_string_if_present(state, function->escapeBindings[i].name);

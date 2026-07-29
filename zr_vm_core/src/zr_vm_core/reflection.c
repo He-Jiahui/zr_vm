@@ -2077,61 +2077,6 @@ static void reflection_populate_module_compile_time_metadata(SZrState *state,
     }
 }
 
-static void reflection_populate_module_tests_metadata(SZrState *state,
-                                                      SZrObject *moduleReflection,
-                                                      SZrFunction *entryFunction) {
-    SZrObject *testsArray;
-    const TZrChar *moduleQualifiedName;
-
-    if (state == ZR_NULL || moduleReflection == ZR_NULL || entryFunction == ZR_NULL) {
-        return;
-    }
-
-    testsArray = reflection_get_field_object(state, moduleReflection, "tests", ZR_VALUE_TYPE_ARRAY);
-    if (testsArray == ZR_NULL || reflection_array_length(testsArray) > 0) {
-        return;
-    }
-
-    moduleQualifiedName = reflection_get_field_string_native(state, moduleReflection, "qualifiedName", "");
-    for (TZrUInt32 index = 0; index < entryFunction->testInfoLength; index++) {
-        SZrFunctionTestInfo *info = &entryFunction->testInfos[index];
-        TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
-        const TZrChar *name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "test";
-        SZrObject *testObject;
-
-        snprintf(qualifiedName,
-                 sizeof(qualifiedName),
-                 "%s.test.%s",
-                 moduleQualifiedName != ZR_NULL ? moduleQualifiedName : "",
-                 name != ZR_NULL ? name : "test");
-        testObject = reflection_build_callable_reflection(state,
-                                                          name != ZR_NULL ? name : "test",
-                                                          qualifiedName,
-                                                          "void",
-                                                          info->parameterCount,
-                                                          ZR_FALSE,
-                                                          moduleReflection,
-                                                          moduleReflection,
-                                                          XXH3_64bits(qualifiedName, strlen(qualifiedName)));
-        if (testObject == ZR_NULL) {
-            continue;
-        }
-
-        reflection_set_field_string(state, testObject, "kind", "test");
-        reflection_set_field_bool(state, testObject, "hasVariableArguments", info->hasVariableArguments);
-        reflection_populate_parameters_from_metadata(state, testObject, info->parameters, info->parameterCount);
-        reflection_set_field_int(state,
-                                 reflection_get_field_object(state, testObject, "source", ZR_VALUE_TYPE_OBJECT),
-                                 "startLine",
-                                 info->lineInSourceStart);
-        reflection_set_field_int(state,
-                                 reflection_get_field_object(state, testObject, "source", ZR_VALUE_TYPE_OBJECT),
-                                 "endLine",
-                                 info->lineInSourceEnd);
-        reflection_array_push_object(state, testsArray, testObject, ZR_VALUE_TYPE_OBJECT);
-    }
-}
-
 static TZrBool reflection_get_compiled_prototype_info_by_index(SZrFunction *entryFunction,
                                                                TZrUInt32 targetIndex,
                                                                const SZrCompiledPrototypeInfo **outInfo) {
@@ -4347,8 +4292,6 @@ static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectM
 
         if (entryFunction != ZR_NULL) {
             reflection_populate_module_compile_time_metadata(state, moduleReflection, entryFunction);
-            reflection_populate_module_tests_metadata(state, moduleReflection, entryFunction);
-
             TZrChar entryQualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
             snprintf(entryQualifiedName,
                      sizeof(entryQualifiedName),

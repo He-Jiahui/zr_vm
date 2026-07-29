@@ -953,21 +953,6 @@ static void io_read_function_escape_bindings(SZrIo *io,
     }
 }
 
-static void io_read_function_test_infos(SZrIo *io,
-                                        SZrIoFunctionTestInfo *infos,
-                                        TZrSize count) {
-    for (TZrSize index = 0; index < count; index++) {
-        TZrUInt8 hasVariableArguments = ZR_FALSE;
-
-        infos[index].name = io_read_string_with_length(io);
-        io_read_function_metadata_parameters(io, &infos[index].parameters, &infos[index].parameterCount);
-        ZR_IO_READ_NATIVE_TYPE(io, hasVariableArguments, TZrUInt8);
-        infos[index].hasVariableArguments = hasVariableArguments ? ZR_TRUE : ZR_FALSE;
-        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceStart, TZrUInt32);
-        ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceEnd, TZrUInt32);
-    }
-}
-
 static void io_read_function_decorator_metadata(SZrIo *io, SZrIoFunction *function) {
     SZrGlobalState *global;
 
@@ -1636,8 +1621,6 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->escapeBindings = ZR_NULL;
         function->returnEscapeSlotCount = 0;
         function->returnEscapeSlots = ZR_NULL;
-        function->testInfosLength = 0;
-        function->testInfos = ZR_NULL;
         function->hasDecoratorMetadata = ZR_FALSE;
         function->decoratorMetadataValue.type = ZR_VALUE_TYPE_NULL;
         ZrCore_Memory_RawSet(&function->decoratorMetadataValue.value, 0, sizeof(function->decoratorMetadataValue.value));
@@ -1723,12 +1706,16 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                     }
                 }
             }
-            ZR_IO_READ_NATIVE_TYPE(io, function->testInfosLength, TZrSize);
-            if (function->testInfosLength > 0) {
-                function->testInfos =
-                        ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionTestInfo) * function->testInfosLength);
-                if (function->testInfos != ZR_NULL) {
-                    io_read_function_test_infos(io, function->testInfos, function->testInfosLength);
+            {
+                TZrUInt64 removedLegacyTestInfoCount = 0;
+
+                ZR_IO_READ_NATIVE_TYPE(io, removedLegacyTestInfoCount, TZrUInt64);
+                if (removedLegacyTestInfoCount > 0) {
+                    io->hasReadError = ZR_TRUE;
+                    ZrCore_Debug_RunError(
+                            io->state,
+                            "legacy test metadata is not supported: entryCount=%llu",
+                            (unsigned long long)removedLegacyTestInfoCount);
                 }
             }
         }

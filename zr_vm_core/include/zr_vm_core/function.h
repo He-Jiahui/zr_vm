@@ -369,15 +369,6 @@ typedef struct SZrFunctionEscapeBinding {
     TZrUInt16 reserved1;
 } SZrFunctionEscapeBinding;
 
-typedef struct SZrFunctionTestInfo {
-    struct SZrString *name;
-    TZrUInt32 parameterCount;
-    SZrFunctionMetadataParameter *parameters;
-    TZrBool hasVariableArguments;
-    TZrUInt32 lineInSourceStart;
-    TZrUInt32 lineInSourceEnd;
-} SZrFunctionTestInfo;
-
 typedef enum EZrSemIrOpcode {
     ZR_SEMIR_OPCODE_NOP = 0,
     ZR_SEMIR_OPCODE_OWN_UNIQUE = 1,
@@ -625,8 +616,6 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 escapeBindingLength;
     TZrUInt32 *returnEscapeSlots;
     TZrUInt32 returnEscapeSlotCount;
-    SZrFunctionTestInfo *testInfos;
-    TZrUInt32 testInfoLength;
     TZrBool hasDecoratorMetadata;
     SZrTypeValue decoratorMetadataValue;
     struct SZrString **decoratorNames;

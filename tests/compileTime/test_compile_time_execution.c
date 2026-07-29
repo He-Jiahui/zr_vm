@@ -44,6 +44,25 @@
 #define TEST_DIVIDER() ZR_TEST_DIVIDER()
 #define TEST_MODULE_DIVIDER() ZR_TEST_MODULE_DIVIDER()
 
+typedef struct STestCompileResult {
+    SZrFunction *mainFunction;
+    SZrFunction **testFunctions;
+    TZrSize testFunctionCount;
+} STestCompileResult;
+
+static void test_compile_result_free(SZrState *state, STestCompileResult *result) {
+    if (state != ZR_NULL && result != ZR_NULL &&
+        result->testFunctions != ZR_NULL && result->testFunctionCount > 0) {
+        ZrCore_Memory_RawFreeWithType(
+                state->global,
+                result->testFunctions,
+                result->testFunctionCount * sizeof(SZrFunction *),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        result->testFunctions = ZR_NULL;
+        result->testFunctionCount = 0;
+    }
+}
+
 static SZrState* create_test_state(void) {
     return ZrTests_State_Create(ZR_NULL);
 }
@@ -154,7 +173,7 @@ static SZrFunction* find_fixture_function(SZrFunction* mainFunction) {
     return ZR_NULL;
 }
 
-static TZrBool compile_fixture_with_entry(SZrState* state, SZrAstNode* ast, SZrCompileResult* result) {
+static TZrBool compile_fixture_with_entry(SZrState* state, SZrAstNode* ast, STestCompileResult* result) {
     SZrFunction* fixtureFunction;
 
     if (state == ZR_NULL || ast == ZR_NULL || result == ZR_NULL) {
@@ -217,7 +236,7 @@ void tearDown(void) {
 static void assert_compile_time_compile_failure(SZrState* state, const TZrChar* source, const TZrChar* sourceNameText) {
     SZrString* sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
 
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_FALSE(compile_fixture_with_entry(state, ast, &compileResult));
@@ -260,7 +279,7 @@ static void test_compile_time_variables(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -279,7 +298,7 @@ static void test_compile_time_variables(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -322,7 +341,7 @@ static void test_compile_time_functions(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -341,7 +360,7 @@ static void test_compile_time_functions(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -387,7 +406,7 @@ static void test_compile_time_expressions(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -406,7 +425,7 @@ static void test_compile_time_expressions(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -452,7 +471,7 @@ static void test_compile_time_recursion(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -471,7 +490,7 @@ static void test_compile_time_recursion(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -517,7 +536,7 @@ static void test_compile_time_statements(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -536,7 +555,7 @@ static void test_compile_time_statements(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -579,7 +598,7 @@ static void test_compile_time_array_validation(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
     
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -598,7 +617,7 @@ static void test_compile_time_array_validation(void) {
         }
     }
     
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -640,7 +659,7 @@ static void test_compile_time_function_projection_to_runtime(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
 
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -659,7 +678,7 @@ static void test_compile_time_function_projection_to_runtime(void) {
         }
     }
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
 
     timer.endTime = clock();
@@ -704,7 +723,7 @@ static void test_compile_time_block_persistent_registration(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
 
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -723,7 +742,7 @@ static void test_compile_time_block_persistent_registration(void) {
         }
     }
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
 
     timer.endTime = clock();
@@ -767,7 +786,7 @@ static void test_compile_time_named_and_default_argument_projection(void) {
         TEST_FAIL_MESSAGE("Parse failed");
     }
 
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
@@ -786,7 +805,7 @@ static void test_compile_time_named_and_default_argument_projection(void) {
         }
     }
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
 
     timer.endTime = clock();
@@ -864,14 +883,14 @@ static void test_compile_time_duplicate_declaration_override(void) {
 
     TEST_ASSERT_NOT_NULL(ast);
 
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
 
     timer.endTime = clock();
@@ -910,14 +929,14 @@ static void test_compile_time_member_call_projection(void) {
 
     TEST_ASSERT_NOT_NULL(ast);
 
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
 
     timer.endTime = clock();
@@ -972,14 +991,14 @@ static void test_compile_time_import_member_call_projection(void) {
 
     TEST_ASSERT_NOT_NULL(ast);
 
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
 
     gCompileTimeImportFixtures = previousFixtures;
@@ -1074,7 +1093,7 @@ static void test_compile_time_import_deep_member_call_projection(void) {
 
         SZrString* sourceName = ZrCore_String_Create(state, "test_compile_time_import_deep_member_call_projection.zr", 55);
         SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
@@ -1084,7 +1103,7 @@ static void test_compile_time_import_deep_member_call_projection(void) {
         state->global->sourceLoader = ZR_NULL;
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
     }
 
@@ -1143,14 +1162,14 @@ static void test_compile_time_import_runtime_callable_named_default_projection(v
 
     TEST_ASSERT_NOT_NULL(ast);
 
-    SZrCompileResult compileResult;
+    STestCompileResult compileResult;
     TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
 
-    ZrParser_CompileResult_Free(state, &compileResult);
+    test_compile_result_free(state, &compileResult);
     ZrParser_Ast_Free(state, ast);
 
     gCompileTimeImportFixtures = previousFixtures;
@@ -1196,7 +1215,7 @@ static void test_compile_time_fixed_array_bound_import_named_default_projection(
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -1218,7 +1237,7 @@ static void test_compile_time_fixed_array_bound_import_named_default_projection(
         state->global->sourceLoader = ZR_NULL;
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1011, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1314,7 +1333,7 @@ static void test_compile_time_binary_import_function_alias_projection(void) {
                 "}\n";
         SZrString* sourceName;
         SZrAstNode* ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -1394,7 +1413,7 @@ static void test_compile_time_binary_import_function_alias_projection(void) {
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1442,7 +1461,7 @@ static void test_compile_time_binary_import_named_and_default_argument_projectio
                 "}\n";
         SZrString* sourceName;
         SZrAstNode* ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -1471,7 +1490,7 @@ static void test_compile_time_binary_import_named_and_default_argument_projectio
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1518,7 +1537,7 @@ static void test_compile_time_binary_import_runtime_callable_named_default_proje
                 "}\n";
         SZrString* sourceName;
         SZrAstNode* ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -1547,7 +1566,7 @@ static void test_compile_time_binary_import_runtime_callable_named_default_proje
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1607,7 +1626,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_funct
                 "}\n";
         SZrString* sourceName;
         SZrAstNode* ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -1636,7 +1655,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_funct
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1700,7 +1719,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
                 "}\n";
         SZrString* sourceName;
         SZrAstNode* ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -1734,7 +1753,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1801,7 +1820,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
                 "}\n";
         SZrString* sourceName;
         SZrAstNode* ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -1836,7 +1855,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1898,7 +1917,7 @@ static void test_compile_time_imported_decorator_member_chain(void) {
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -1916,7 +1935,7 @@ static void test_compile_time_imported_decorator_member_chain(void) {
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 28, testSummary));
 
         state->global->sourceLoader = ZR_NULL;
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -1971,7 +1990,7 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -1990,7 +2009,7 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 33, testSummary));
 
         state->global->sourceLoader = ZR_NULL;
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -2042,7 +2061,7 @@ static void test_compile_time_binary_imported_decorator_deep_member_chain(void) 
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
         ZrParser_ToGlobalState_Register(state);
@@ -2072,7 +2091,7 @@ static void test_compile_time_binary_imported_decorator_deep_member_chain(void) 
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 41, testSummary));
 
         state->global->sourceLoader = ZR_NULL;
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -2114,7 +2133,7 @@ static void test_compile_time_object_decorator_member_chain(void) {
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -2125,7 +2144,7 @@ static void test_compile_time_object_decorator_member_chain(void) {
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 17, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -2159,7 +2178,7 @@ static void test_compile_time_object_member_assignment_projects_mutation(void) {
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -2170,7 +2189,7 @@ static void test_compile_time_object_member_assignment_projects_mutation(void) {
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
 
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -2222,7 +2241,7 @@ static void test_compile_time_class_decorator_projects_metadata_to_runtime_refle
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -2242,7 +2261,7 @@ static void test_compile_time_class_decorator_projects_metadata_to_runtime_refle
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
 
         state->global->sourceLoader = ZR_NULL;
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -2296,7 +2315,7 @@ static void test_compile_time_function_decorator_projects_metadata_to_runtime_re
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -2316,7 +2335,7 @@ static void test_compile_time_function_decorator_projects_metadata_to_runtime_re
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 18, testSummary));
 
         state->global->sourceLoader = ZR_NULL;
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
@@ -2370,7 +2389,7 @@ static void test_compile_time_struct_decorator_projects_metadata_to_runtime_refl
                 "}\n";
         SZrString *sourceName;
         SZrAstNode *ast;
-        SZrCompileResult compileResult;
+        STestCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -2390,7 +2409,7 @@ static void test_compile_time_struct_decorator_projects_metadata_to_runtime_refl
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
 
         state->global->sourceLoader = ZR_NULL;
-        ZrParser_CompileResult_Free(state, &compileResult);
+        test_compile_result_free(state, &compileResult);
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }

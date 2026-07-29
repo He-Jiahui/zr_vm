@@ -371,24 +371,6 @@ static void writer_intermediate_write_type_metadata(FILE *file,
         fprintf(file, "): %s\n", returnTypeBuffer);
     }
 
-    writer_intermediate_write_indent(file, indentLevel);
-    fprintf(file, "  TESTS (%u):\n", function->testInfoLength);
-    for (TZrUInt32 index = 0; index < function->testInfoLength; index++) {
-        SZrFunctionTestInfo *info = &function->testInfos[index];
-        TZrNativeString name = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "<unnamed>";
-
-        writer_intermediate_write_indent(file, indentLevel);
-        fprintf(file, "    test %s(", name != ZR_NULL ? name : "<unnamed>");
-        writer_intermediate_write_metadata_parameters(file, state, info->parameters, info->parameterCount);
-        if (info->hasVariableArguments) {
-            if (info->parameterCount > 0) {
-                fprintf(file, ", ");
-            }
-            fprintf(file, "...");
-        }
-        fprintf(file, ")\n");
-    }
-
     fprintf(file, "\n");
 }
 

@@ -55,9 +55,7 @@
 | `ZrClosureValueGetValue` | `ZrCore_ClosureValue_GetValue` |
 | `ZrClosureValueIsClosed` | `ZrCore_ClosureValue_IsClosed` |
 | `ZrCompilerCompile` | `ZrParser_Compiler_Compile` |
-| `ZrCompilerCompileWithTests` | `ZrParser_Compiler_CompileWithTests` |
 | `ZrCompilerError` | `ZrParser_Compiler_Error` |
-| `ZrCompileResultFree` | `ZrParser_CompileResult_Free` |
 | `ZrCompilerEvaluateCompileTimeExpression` | `ZrParser_Compiler_EvaluateCompileTimeExpression` |
 | `ZrCompilerStateFree` | `ZrParser_CompilerState_Free` |
 | `ZrCompilerStateInit` | `ZrParser_CompilerState_Init` |

@@ -209,7 +209,7 @@ Union variant payload 解构也遵循同一条默认借用边界。`switch` case
 
 对当前 direct owner field 来说：
 
-- `isUsingManaged` 不再代表 public surface
+- `reservedRemovedUsingManaged` 只是必须保持为零的 ABI tombstone，不代表 public surface
 - `ownershipQualifier` 成为恢复 managed-field 行为的主入口
 
 module prototype materialization 恢复 managed field 时，当前以 `ownershipQualifier != NONE` 为主判据，因此 direct owner field 可以稳定恢复为 runtime managed-field table。

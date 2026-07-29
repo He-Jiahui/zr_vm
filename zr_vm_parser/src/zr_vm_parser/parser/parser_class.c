@@ -189,10 +189,23 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
                     member = parse_class_field(ps);
                     break;
                 case ZR_AST_CLASS_PROPERTY:
-                    report_removed_legacy_syntax(
-                            ps,
-                            "split get/set property declaration",
-                            "Use one `property name: Type { get ...; set ...; }` declaration.");
+                    if (ps->enableLegacyMigrationParsing) {
+                        member = parse_class_property(ps);
+                        if (member != ZR_NULL) {
+                            if (parser_property_migration_collection_append(
+                                        ps->state, &legacyProperties, member)) {
+                                rejectedLegacyProperty = ZR_TRUE;
+                            } else {
+                                ZrParser_Ast_Free(ps->state, member);
+                                member = ZR_NULL;
+                            }
+                        }
+                    } else {
+                        report_removed_legacy_syntax(
+                                ps,
+                                "split get/set property declaration",
+                                "Use one `property name: Type { get ...; set ...; }` declaration.");
+                    }
                     break;
                 case ZR_AST_CLASS_META_FUNCTION:
                     member = parse_class_meta_function(ps);

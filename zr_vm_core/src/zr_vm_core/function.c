@@ -306,8 +306,6 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->escapeBindingLength = 0;
     function->returnEscapeSlots = ZR_NULL;
     function->returnEscapeSlotCount = 0;
-    function->testInfos = ZR_NULL;
-    function->testInfoLength = 0;
     function->hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&function->decoratorMetadataValue);
     function->decoratorNames = ZR_NULL;
@@ -1066,8 +1064,6 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->escapeBindingLength = 0;
     function->returnEscapeSlots = ZR_NULL;
     function->returnEscapeSlotCount = 0;
-    function->testInfos = ZR_NULL;
-    function->testInfoLength = 0;
     function->decoratorNames = ZR_NULL;
     function->decoratorCount = 0;
     function->memberEntries = ZR_NULL;
@@ -1349,16 +1345,6 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->returnEscapeSlots,
                                       sizeof(TZrUInt32) * function->returnEscapeSlotCount,
-                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-    }
-    if (function->testInfos != ZR_NULL && function->testInfoLength > 0) {
-        for (TZrUInt32 i = 0; i < function->testInfoLength; i++) {
-            SZrFunctionTestInfo *info = &function->testInfos[i];
-            ZR_FUNCTION_FREE_METADATA_PARAMETERS(info->parameters, info->parameterCount);
-        }
-        ZrCore_Memory_RawFreeWithType(global,
-                                      function->testInfos,
-                                      sizeof(SZrFunctionTestInfo) * function->testInfoLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->decoratorNames != ZR_NULL && function->decoratorCount > 0) {

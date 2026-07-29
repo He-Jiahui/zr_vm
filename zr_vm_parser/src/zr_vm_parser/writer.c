@@ -1286,24 +1286,10 @@ static TZrBool write_function_decorator_metadata(FILE *file, SZrState *state, SZ
     return ZR_TRUE;
 }
 
-static TZrBool write_function_test_metadata(FILE *file, SZrState *state, SZrFunction *function) {
-    TZrUInt64 testCount = function != ZR_NULL ? function->testInfoLength : 0;
+static void write_removed_legacy_test_metadata_tombstone(FILE *file) {
+    const TZrUInt64 removedTestCount = 0;
 
-    fwrite(&testCount, sizeof(TZrUInt64), 1, file);
-    for (TZrUInt64 index = 0; index < testCount; index++) {
-        SZrFunctionTestInfo *info = &function->testInfos[index];
-        TZrUInt8 hasVariableArguments = info->hasVariableArguments ? ZR_TRUE : ZR_FALSE;
-
-        write_string_with_length(state, file, info->name);
-        if (!write_function_metadata_parameters(file, state, info->parameters, info->parameterCount)) {
-            return ZR_FALSE;
-        }
-        fwrite(&hasVariableArguments, sizeof(TZrUInt8), 1, file);
-        fwrite(&info->lineInSourceStart, sizeof(TZrUInt32), 1, file);
-        fwrite(&info->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
-    }
-
-    return ZR_TRUE;
+    fwrite(&removedTestCount, sizeof(removedTestCount), 1, file);
 }
 
 static void write_function_member_entries(FILE *file, SZrState *state, SZrFunction *function) {
@@ -1752,9 +1738,7 @@ static TZrBool write_io_function_internal(SZrState *state,
         return ZR_FALSE;
     }
     write_function_escape_metadata(file, state, function);
-    if (!write_function_test_metadata(file, state, function)) {
-        return ZR_FALSE;
-    }
+    write_removed_legacy_test_metadata_tombstone(file);
     if (!write_function_decorator_metadata(file, state, function)) {
         return ZR_FALSE;
     }
