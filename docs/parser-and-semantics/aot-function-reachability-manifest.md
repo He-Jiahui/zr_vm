@@ -18,6 +18,7 @@ tests:
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-12-s1b-s2f-s6a-function-reachability-manifest.md
   - tests/acceptance/2026-07-30-aot-12-property-accessor-required-root.md
+  - tests/acceptance/2026-07-30-aot-12-resource-drop-required-root.md
 doc_type: module-detail
 ---
 
@@ -32,7 +33,7 @@ table.
 
 This slice owns function nodes. The first type/layout reason-manifest slice is documented separately in
 `aot-type-layout-reachability-manifest.md`; generic dictionary, native callback, module initializer, reflection
-metadata, debug sidecar, and resource Drop nodes still need to converge on the broader graph required by AOT plan 12.
+metadata, debug sidecar, and constructor nodes still need to converge on the broader graph required by AOT plan 12.
 The function graph never scans source or generated strings to guess reflection or native reachability.
 
 ## Graph Contract
@@ -45,6 +46,7 @@ and the predecessor index that supplied that edge. Root reasons are:
 - `MANIFEST`
 - `REFLECTION_ANNOTATION`
 - `PROPERTY_ACCESSOR`
+- `RESOURCE_DROP`
 
 Dependency-edge reasons are:
 
@@ -63,6 +65,13 @@ and accessor role `1` (getter), `2` (setter), or `3` (initializer). Their `funct
 stable function table entry. An executable accessor whose callable constant is missing or out of range fails graph
 construction; it is not silently trimmed. Abstract accessors are contract-only and have no executable target, so they
 remain ignored. Members without a property identity or a valid accessor role also remain outside this collector.
+
+`RESOURCE_DROP` roots cover the runtime metadata dispatch in `ZrCore_OwnershipResource_Drop()`. A non-abstract member
+is required when its serialized owner prototype has the `RESOURCE` modifier, `isMetaMethod` is true, and `metaType` is
+`ZR_META_DESTRUCTOR`. Its `functionConstantIndex` must resolve to a stable function table entry; otherwise graph
+construction fails closed. Non-resource destructors, non-meta members, other meta methods, and abstract destructor
+contracts are ignored. This slice conservatively roots every executable resource destructor present in serialized
+prototype metadata; narrowing those roots by reachable type/layout is a later graph-convergence stage.
 
 ## Marking And Reason Chains
 
@@ -100,7 +109,8 @@ bounds, invalid root/edge/unknown reasons, stable manifest order, malformed stat
 cycles. It also covers getter, setter, and initializer property roots, unresolved callable constants for all three
 roles, abstract contract-only accessors, and non-accessor filtering. `test_aot_c_code_stripping.c` proves the emitter
 publishes direct-call, export-root, manifest-root, and property-accessor-root chains while omitting trimmed function
-nodes; its property negative also verifies partial-file cleanup.
+nodes. The same suites cover resource destructor retention, unresolved required destructors, non-resource/meta/abstract
+filtering, `root.resource_drop` publication, and partial-file cleanup.
 
 The acceptance record runs the focused reachability and stripping targets on WSL GCC, WSL Clang, and Windows MSVC.
 Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

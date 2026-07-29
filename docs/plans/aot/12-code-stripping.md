@@ -41,6 +41,10 @@ S1/S2/S6 仍为部分完成。
 非 abstract getter/setter/initializer 必需函数根、`root.property_accessor` 报告与 missing-required-root fail-closed 子切片；
 S1/S2/S3/S6 仍为部分完成。
 
+[2026-07-30 Resource Drop required root](./12-stripping/2026-07-30-resource-drop-required-root.md) 完成
+resource prototype 的非 abstract destructor 必需函数根、`root.resource_drop` 报告与 unresolved Drop fail-closed 子切片；
+S1/S2/S3/S6 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

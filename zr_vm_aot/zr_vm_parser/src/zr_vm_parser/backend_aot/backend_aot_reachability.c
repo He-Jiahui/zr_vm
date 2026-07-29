@@ -7,6 +7,7 @@ static TZrBool backend_aot_reachability_reason_is_root(EZrAotReachabilityReason 
         case ZR_AOT_REACHABILITY_REASON_MANIFEST:
         case ZR_AOT_REACHABILITY_REASON_REFLECTION_ANNOTATION:
         case ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR:
+        case ZR_AOT_REACHABILITY_REASON_RESOURCE_DROP:
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -48,6 +49,8 @@ static const TZrChar *backend_aot_reachability_reason_name(EZrAotReachabilityRea
             return "root.reflection_annotation";
         case ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR:
             return "root.property_accessor";
+        case ZR_AOT_REACHABILITY_REASON_RESOURCE_DROP:
+            return "root.resource_drop";
         default:
             return ZR_NULL;
     }

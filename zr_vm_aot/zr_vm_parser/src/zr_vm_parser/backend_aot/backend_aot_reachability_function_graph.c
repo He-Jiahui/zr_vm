@@ -575,7 +575,26 @@ static TZrBool backend_aot_static_reachability_collect_annotation_roots(const SZ
     return ZR_TRUE;
 }
 
-static TZrBool backend_aot_static_reachability_collect_property_roots_from_function(
+static EZrAotReachabilityReason backend_aot_static_reachability_required_member_root_reason(
+        const SZrCompiledPrototypeInfo *prototype,
+        const SZrCompiledMemberInfo *member) {
+    if (prototype == ZR_NULL || member == ZR_NULL ||
+        (member->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) != 0u) {
+        return ZR_AOT_REACHABILITY_REASON_NONE;
+    }
+    if (member->propertyIdentity != UINT32_MAX &&
+        member->accessorRole >= 1u && member->accessorRole <= 3u) {
+        return ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR;
+    }
+    if ((prototype->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0u &&
+        member->isMetaMethod == ZR_TRUE &&
+        member->metaType == (TZrUInt32)ZR_META_DESTRUCTOR) {
+        return ZR_AOT_REACHABILITY_REASON_RESOURCE_DROP;
+    }
+    return ZR_AOT_REACHABILITY_REASON_NONE;
+}
+
+static TZrBool backend_aot_static_reachability_collect_required_member_roots_from_function(
         SZrState *state,
         const SZrAotFunctionTable *table,
         const SZrFunction *function,
@@ -634,6 +653,7 @@ static TZrBool backend_aot_static_reachability_collect_property_roots_from_funct
              memberIndex < prototype.membersCount;
              memberIndex++) {
             SZrCompiledMemberInfo member;
+            EZrAotReachabilityReason reason;
             TZrUInt32 targetIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
 
             memcpy(
@@ -641,9 +661,8 @@ static TZrBool backend_aot_static_reachability_collect_property_roots_from_funct
                     data + offset +
                             (TZrSize)memberIndex * sizeof(SZrCompiledMemberInfo),
                     sizeof(member));
-            if (member.propertyIdentity == UINT32_MAX ||
-                member.accessorRole < 1u || member.accessorRole > 3u ||
-                (member.modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) != 0u) {
+            reason = backend_aot_static_reachability_required_member_root_reason(&prototype, &member);
+            if (reason == ZR_AOT_REACHABILITY_REASON_NONE) {
                 continue;
             }
             if (!backend_aot_resolve_callable_constant_function_index(
@@ -660,7 +679,7 @@ static TZrBool backend_aot_static_reachability_collect_property_roots_from_funct
                         rootCapacity,
                         rootCount,
                         targetIndex,
-                        ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR,
+                        reason,
                         markCount)) {
                 return ZR_FALSE;
             }
@@ -670,7 +689,7 @@ static TZrBool backend_aot_static_reachability_collect_property_roots_from_funct
     return (TZrBool)(offset == length);
 }
 
-static TZrBool backend_aot_static_reachability_collect_property_roots(
+static TZrBool backend_aot_static_reachability_collect_required_member_roots(
         SZrState *state,
         const SZrAotFunctionTable *table,
         TZrUInt32 *roots,
@@ -682,7 +701,7 @@ static TZrBool backend_aot_static_reachability_collect_property_roots(
         const SZrFunction *function = table->entries[entryIndex].function;
 
         if (function == ZR_NULL ||
-            !backend_aot_static_reachability_collect_property_roots_from_function(
+            !backend_aot_static_reachability_collect_required_member_roots_from_function(
                     state,
                     table,
                     function,
@@ -885,7 +904,7 @@ TZrBool backend_aot_compute_static_callable_reachability(SZrState *state,
                                                                   markCount)) {
         return ZR_FALSE;
     }
-    if (!backend_aot_static_reachability_collect_property_roots(
+    if (!backend_aot_static_reachability_collect_required_member_roots(
                 state,
                 table,
                 roots,
