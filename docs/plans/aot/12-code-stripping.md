@@ -37,6 +37,10 @@ function-node reason schema、root predecessor chain 与 deterministic manifest 
 type/layout-node frame edge、reflection annotation root、unresolved-layout fail-closed gate 与 deterministic manifest 子切片；
 S1/S2/S6 仍为部分完成。
 
+[2026-07-30 executable property accessor required root](./12-stripping/2026-07-30-property-accessor-required-root.md) 完成
+非 abstract getter/setter/initializer 必需函数根、`root.property_accessor` 报告与 missing-required-root fail-closed 子切片；
+S1/S2/S3/S6 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

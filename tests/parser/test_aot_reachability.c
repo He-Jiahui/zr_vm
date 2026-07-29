@@ -7,10 +7,13 @@
 #include "backend_aot_function_table.h"
 #include "backend_aot_reachability.h"
 #include "backend_aot_reachability_function_graph.h"
+#include "zr_vm_core/constant_reference.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_parser/ast.h"
 #include "harness/runtime_support.h"
 
 void setUp(void) {}
@@ -157,6 +160,59 @@ static void attach_typed_exported_method_name(SZrState *state,
     init_typed_exported_method_name(state, symbol, callableChildIndex, methodName, 0u);
     rootFunction->typedExportedSymbols = symbol;
     rootFunction->typedExportedSymbolLength = 1u;
+}
+
+static void install_property_accessor_metadata(SZrState *state,
+                                               SZrFunction *owner,
+                                               SZrFunction *target,
+                                               TZrUInt32 propertyIdentity,
+                                               TZrUInt32 accessorRole,
+                                               TZrUInt32 modifierFlags,
+                                               TZrUInt32 functionConstantIndex) {
+    const TZrUInt32 prototypeCount = 1u;
+    const TZrUInt32 prototypeDataLength = (TZrUInt32)(sizeof(prototypeCount) +
+                                                      sizeof(SZrCompiledPrototypeInfo) +
+                                                      sizeof(SZrCompiledMemberInfo));
+    SZrCompiledPrototypeInfo prototype;
+    SZrCompiledMemberInfo member;
+    TZrSize offset = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(owner);
+    TEST_ASSERT_NOT_NULL(target);
+
+    owner->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(owner->constantValueList);
+    owner->constantValueLength = 1u;
+    ZrCore_Value_InitAsRawObject(state,
+                                 &owner->constantValueList[0],
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(target));
+    owner->constantValueList[0].type = ZR_VALUE_TYPE_FUNCTION;
+
+    owner->prototypeData = (TZrByte *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            prototypeDataLength,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(owner->prototypeData);
+    owner->prototypeDataLength = prototypeDataLength;
+    owner->prototypeCount = prototypeCount;
+
+    memset(&prototype, 0, sizeof(prototype));
+    prototype.membersCount = 1u;
+    memset(&member, 0, sizeof(member));
+    member.functionConstantIndex = functionConstantIndex;
+    member.modifierFlags = modifierFlags;
+    member.propertyIdentity = propertyIdentity;
+    member.accessorRole = accessorRole;
+
+    memcpy(owner->prototypeData + offset, &prototypeCount, sizeof(prototypeCount));
+    offset += sizeof(prototypeCount);
+    memcpy(owner->prototypeData + offset, &prototype, sizeof(prototype));
+    offset += sizeof(prototype);
+    memcpy(owner->prototypeData + offset, &member, sizeof(member));
 }
 
 static void test_reachability_marks_roots_and_direct_dependencies(void) {
@@ -1047,6 +1103,274 @@ static void test_static_callable_reachability_keeps_manifest_function_roots(void
                                                                        &edgeCount));
 }
 
+static void test_static_callable_reachability_keeps_all_property_accessor_roles(void) {
+    for (TZrUInt32 accessorRole = 1u; accessorRole <= 3u; accessorRole++) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction *root;
+        SZrFunction *target;
+        SZrFunction *trimmed;
+        SZrAotFunctionEntry entries[3];
+        SZrAotFunctionTable table;
+        SZrAotReachabilityMark marks[3];
+        SZrAotReachabilityEdge edges[1];
+        TZrUInt32 roots[3];
+        EZrAotReachabilityReason rootReasons[3];
+        TZrUInt32 queue[3];
+        TZrUInt32 markedCount = 0u;
+        TZrUInt32 edgeCount = 0u;
+
+        TEST_ASSERT_NOT_NULL(state);
+        root = ZrCore_Function_New(state);
+        target = ZrCore_Function_New(state);
+        trimmed = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(root);
+        TEST_ASSERT_NOT_NULL(target);
+        TEST_ASSERT_NOT_NULL(trimmed);
+        root->lineInSourceStart = 1u;
+        root->lineInSourceEnd = 1u;
+        target->lineInSourceStart = 10u;
+        target->lineInSourceEnd = 10u;
+        trimmed->lineInSourceStart = 20u;
+        trimmed->lineInSourceEnd = 20u;
+        install_property_accessor_metadata(state, root, target, 0u, accessorRole, 0u, 0u);
+
+        entries[0].function = root;
+        entries[0].flatIndex = 0u;
+        entries[1].function = target;
+        entries[1].flatIndex = 1u;
+        entries[2].function = trimmed;
+        entries[2].flatIndex = 2u;
+        table.entries = entries;
+        table.count = 3u;
+        table.capacity = 3u;
+        table.indexSpace = 3u;
+
+        TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability(state,
+                                                                          &table,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          roots,
+                                                                          rootReasons,
+                                                                          3u,
+                                                                          marks,
+                                                                          3u,
+                                                                          edges,
+                                                                          1u,
+                                                                          queue,
+                                                                          3u,
+                                                                          &markedCount,
+                                                                          &edgeCount));
+        TEST_ASSERT_EQUAL_UINT32(0u, edgeCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, markedCount);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_ROOT_ENTRY, marks[0].reason);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR, marks[1].reason);
+        TEST_ASSERT_EQUAL_UINT32(ZR_AOT_REACHABILITY_NO_NODE, marks[1].predecessor);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[2].state);
+
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
+static void test_static_callable_reachability_rejects_unresolved_property_accessor_roles(void) {
+    for (TZrUInt32 accessorRole = 1u; accessorRole <= 3u; accessorRole++) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction *root;
+        SZrFunction *target;
+        SZrAotFunctionEntry entries[2];
+        SZrAotFunctionTable table;
+        SZrAotReachabilityMark marks[2];
+        SZrAotReachabilityEdge edges[1];
+        TZrUInt32 roots[2];
+        EZrAotReachabilityReason rootReasons[2];
+        TZrUInt32 queue[2];
+        TZrUInt32 markedCount = 0u;
+        TZrUInt32 edgeCount = 0u;
+
+        TEST_ASSERT_NOT_NULL(state);
+        root = ZrCore_Function_New(state);
+        target = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(root);
+        TEST_ASSERT_NOT_NULL(target);
+        root->lineInSourceStart = 1u;
+        root->lineInSourceEnd = 1u;
+        target->lineInSourceStart = 10u;
+        target->lineInSourceEnd = 10u;
+        install_property_accessor_metadata(state, root, target, 0u, accessorRole, 0u, 1u);
+
+        entries[0].function = root;
+        entries[0].flatIndex = 0u;
+        entries[1].function = target;
+        entries[1].flatIndex = 1u;
+        table.entries = entries;
+        table.count = 2u;
+        table.capacity = 2u;
+        table.indexSpace = 2u;
+
+        TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability(state,
+                                                                           &table,
+                                                                           ZR_NULL,
+                                                                           0u,
+                                                                           ZR_NULL,
+                                                                           0u,
+                                                                           roots,
+                                                                           rootReasons,
+                                                                           2u,
+                                                                           marks,
+                                                                           2u,
+                                                                           edges,
+                                                                           1u,
+                                                                           queue,
+                                                                           2u,
+                                                                           &markedCount,
+                                                                           &edgeCount));
+
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
+static void test_static_callable_reachability_ignores_abstract_property_accessor_roles(void) {
+    for (TZrUInt32 accessorRole = 1u; accessorRole <= 3u; accessorRole++) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction *root;
+        SZrFunction *target;
+        SZrAotFunctionEntry entries[2];
+        SZrAotFunctionTable table;
+        SZrAotReachabilityMark marks[2];
+        SZrAotReachabilityEdge edges[1];
+        TZrUInt32 roots[2];
+        EZrAotReachabilityReason rootReasons[2];
+        TZrUInt32 queue[2];
+        TZrUInt32 markedCount = 0u;
+        TZrUInt32 edgeCount = 0u;
+
+        TEST_ASSERT_NOT_NULL(state);
+        root = ZrCore_Function_New(state);
+        target = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(root);
+        TEST_ASSERT_NOT_NULL(target);
+        root->lineInSourceStart = 1u;
+        root->lineInSourceEnd = 1u;
+        target->lineInSourceStart = 10u;
+        target->lineInSourceEnd = 10u;
+        install_property_accessor_metadata(state,
+                                           root,
+                                           target,
+                                           0u,
+                                           accessorRole,
+                                           ZR_DECLARATION_MODIFIER_ABSTRACT,
+                                           1u);
+
+        entries[0].function = root;
+        entries[0].flatIndex = 0u;
+        entries[1].function = target;
+        entries[1].flatIndex = 1u;
+        table.entries = entries;
+        table.count = 2u;
+        table.capacity = 2u;
+        table.indexSpace = 2u;
+
+        TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability(state,
+                                                                          &table,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          roots,
+                                                                          rootReasons,
+                                                                          2u,
+                                                                          marks,
+                                                                          2u,
+                                                                          edges,
+                                                                          1u,
+                                                                          queue,
+                                                                          2u,
+                                                                          &markedCount,
+                                                                          &edgeCount));
+        TEST_ASSERT_EQUAL_UINT32(1u, markedCount);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[1].state);
+
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
+static void test_static_callable_reachability_ignores_non_accessor_members(void) {
+    static const struct {
+        TZrUInt32 propertyIdentity;
+        TZrUInt32 accessorRole;
+    } cases[] = {
+            {UINT32_MAX, 1u},
+            {0u, 0u},
+            {0u, 4u},
+    };
+
+    for (TZrUInt32 caseIndex = 0u;
+         caseIndex < (TZrUInt32)(sizeof(cases) / sizeof(cases[0]));
+         caseIndex++) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction *root;
+        SZrFunction *target;
+        SZrAotFunctionEntry entries[2];
+        SZrAotFunctionTable table;
+        SZrAotReachabilityMark marks[2];
+        SZrAotReachabilityEdge edges[1];
+        TZrUInt32 roots[2];
+        EZrAotReachabilityReason rootReasons[2];
+        TZrUInt32 queue[2];
+        TZrUInt32 markedCount = 0u;
+        TZrUInt32 edgeCount = 0u;
+
+        TEST_ASSERT_NOT_NULL(state);
+        root = ZrCore_Function_New(state);
+        target = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(root);
+        TEST_ASSERT_NOT_NULL(target);
+        root->lineInSourceStart = 1u;
+        root->lineInSourceEnd = 1u;
+        target->lineInSourceStart = 10u;
+        target->lineInSourceEnd = 10u;
+        install_property_accessor_metadata(state,
+                                           root,
+                                           target,
+                                           cases[caseIndex].propertyIdentity,
+                                           cases[caseIndex].accessorRole,
+                                           0u,
+                                           1u);
+
+        entries[0].function = root;
+        entries[0].flatIndex = 0u;
+        entries[1].function = target;
+        entries[1].flatIndex = 1u;
+        table.entries = entries;
+        table.count = 2u;
+        table.capacity = 2u;
+        table.indexSpace = 2u;
+
+        TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability(state,
+                                                                          &table,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          ZR_NULL,
+                                                                          0u,
+                                                                          roots,
+                                                                          rootReasons,
+                                                                          2u,
+                                                                          marks,
+                                                                          2u,
+                                                                          edges,
+                                                                          1u,
+                                                                          queue,
+                                                                          2u,
+                                                                          &markedCount,
+                                                                          &edgeCount));
+        TEST_ASSERT_EQUAL_UINT32(1u, markedCount);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[1].state);
+
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reachability_marks_roots_and_direct_dependencies);
@@ -1066,5 +1390,9 @@ int main(void) {
     RUN_TEST(test_collect_reflection_annotation_roots_rejects_ambiguous_dynamic_dependency_method_name);
     RUN_TEST(test_collect_reflection_annotation_roots_keeps_zero_dynamic_dependency_method_signature_hash);
     RUN_TEST(test_static_callable_reachability_keeps_manifest_function_roots);
+    RUN_TEST(test_static_callable_reachability_keeps_all_property_accessor_roles);
+    RUN_TEST(test_static_callable_reachability_rejects_unresolved_property_accessor_roles);
+    RUN_TEST(test_static_callable_reachability_ignores_abstract_property_accessor_roles);
+    RUN_TEST(test_static_callable_reachability_ignores_non_accessor_members);
     return UNITY_END();
 }

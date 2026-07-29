@@ -17,6 +17,7 @@ tests:
   - tests/parser/test_aot_reachability.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-12-s1b-s2f-s6a-function-reachability-manifest.md
+  - tests/acceptance/2026-07-30-aot-12-property-accessor-required-root.md
 doc_type: module-detail
 ---
 
@@ -57,6 +58,12 @@ The two classes are intentionally disjoint. `backend_aot_reachability_compute()`
 array, a root reason on an edge, `NONE`, and unknown enum values before initializing or publishing marks. It also
 rejects missing buffers, out-of-range roots or endpoints, and a queue smaller than the function index space.
 
+`PROPERTY_ACCESSOR` roots come from non-abstract serialized compiled prototype members with a valid property identity
+and accessor role `1` (getter), `2` (setter), or `3` (initializer). Their `functionConstantIndex` must resolve to a
+stable function table entry. An executable accessor whose callable constant is missing or out of range fails graph
+construction; it is not silently trimmed. Abstract accessors are contract-only and have no executable target, so they
+remain ignored. Members without a property identity or a valid accessor role also remain outside this collector.
+
 ## Marking And Reason Chains
 
 The engine performs breadth-first marking with caller-owned mark and queue buffers. Roots are enqueued in caller order;
@@ -90,8 +97,10 @@ the compiled function table or metadata token remap.
 
 `test_aot_reachability.c` covers transitive marking, disconnected nodes, first-root reason preservation, invalid graph
 bounds, invalid root/edge/unknown reasons, stable manifest order, malformed states, out-of-range predecessors, and
-cycles. `test_aot_c_code_stripping.c` proves the emitter publishes direct-call, export-root, and manifest-root chains
-while omitting trimmed function nodes.
+cycles. It also covers getter, setter, and initializer property roots, unresolved callable constants for all three
+roles, abstract contract-only accessors, and non-accessor filtering. `test_aot_c_code_stripping.c` proves the emitter
+publishes direct-call, export-root, manifest-root, and property-accessor-root chains while omitting trimmed function
+nodes; its property negative also verifies partial-file cleanup.
 
 The acceptance record runs the focused reachability and stripping targets on WSL GCC, WSL Clang, and Windows MSVC.
 Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

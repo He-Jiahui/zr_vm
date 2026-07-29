@@ -7,6 +7,7 @@
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/object.h"
@@ -903,6 +904,78 @@ static SZrFunction *create_static_callable_trim_fixture(SZrState *state) {
     return root;
 }
 
+static SZrFunction *create_property_accessor_trim_fixture(SZrState *state,
+                                                          TZrUInt32 accessorRole,
+                                                          TZrUInt32 functionConstantIndex) {
+    const TZrUInt32 prototypeCount = 1u;
+    const TZrUInt32 prototypeDataLength = (TZrUInt32)(sizeof(prototypeCount) +
+                                                      sizeof(SZrCompiledPrototypeInfo) +
+                                                      sizeof(SZrCompiledMemberInfo));
+    SZrCompiledPrototypeInfo prototype;
+    SZrCompiledMemberInfo member;
+    SZrFunction *root;
+    SZrFunction *target;
+    TZrSize offset = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    root = ZrCore_Function_New(state);
+    target = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_NOT_NULL(target);
+
+    root->stackSize = 1u;
+    root->lineInSourceStart = 1u;
+    root->lineInSourceEnd = 1u;
+    target->stackSize = 1u;
+    target->lineInSourceStart = 10u;
+    target->lineInSourceEnd = 10u;
+
+    root->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->constantValueList);
+    root->constantValueLength = 1u;
+    ZrCore_Value_InitAsRawObject(state,
+                                 &root->constantValueList[0],
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(target));
+    root->constantValueList[0].type = ZR_VALUE_TYPE_FUNCTION;
+
+    root->childFunctionList = (SZrFunction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunction),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->childFunctionList);
+    memset(root->childFunctionList, 0, sizeof(SZrFunction));
+    root->childFunctionLength = 1u;
+    root->childFunctionList[0].ownerFunction = root;
+    root->childFunctionList[0].stackSize = 1u;
+    root->childFunctionList[0].lineInSourceStart = 20u;
+    root->childFunctionList[0].lineInSourceEnd = 20u;
+
+    root->prototypeData = (TZrByte *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            prototypeDataLength,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->prototypeData);
+    root->prototypeDataLength = prototypeDataLength;
+    root->prototypeCount = prototypeCount;
+
+    memset(&prototype, 0, sizeof(prototype));
+    prototype.membersCount = 1u;
+    memset(&member, 0, sizeof(member));
+    member.functionConstantIndex = functionConstantIndex;
+    member.propertyIdentity = 0u;
+    member.accessorRole = accessorRole;
+
+    memcpy(root->prototypeData + offset, &prototypeCount, sizeof(prototypeCount));
+    offset += sizeof(prototypeCount);
+    memcpy(root->prototypeData + offset, &prototype, sizeof(prototype));
+    offset += sizeof(prototype);
+    memcpy(root->prototypeData + offset, &member, sizeof(member));
+    return root;
+}
+
 static void add_exported_second_child_callable_binding(SZrState *state, SZrFunction *root) {
     SZrFunctionTopLevelCallableBinding *binding;
 
@@ -1040,6 +1113,86 @@ static void test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_lay
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
                                                        "generated",
                                                        "unresolved_retained_frame_type_layout",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_property_accessor_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_property_accessor_trim_fixture(state, 1u, 0u);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_property_accessor_root";
+    options.sourceHash = "aot-c-code-stripping-property-accessor-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-property-accessor-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "property_accessor_root",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 2 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.functionManifest.node[1] = reason=root.property_accessor predecessor=none */");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_unresolved_property_accessor_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_property_accessor_trim_fixture(state, 3u, 1u);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_unresolved_property_accessor_root";
+    options.sourceHash = "aot-c-code-stripping-unresolved-property-accessor-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-unresolved-property-accessor-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "unresolved_property_accessor_root",
                                                        ".c",
                                                        generatedCPath,
                                                        sizeof(generatedCPath)));
@@ -1913,6 +2066,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_code_stripping_option_filters_unreachable_static_callable);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_layout);
+    RUN_TEST(test_aot_c_code_stripping_preserves_property_accessor_root);
+    RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_property_accessor_root);
     RUN_TEST(test_aot_c_code_stripping_reports_zero_type_layout_frame_edge);
     RUN_TEST(test_aot_c_code_stripping_reports_zero_type_layout_annotation_root);
     RUN_TEST(test_aot_c_code_stripping_reports_stable_flat_frame_predecessor);

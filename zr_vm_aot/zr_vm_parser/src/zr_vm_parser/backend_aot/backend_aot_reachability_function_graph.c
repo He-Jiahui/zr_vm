@@ -8,6 +8,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_parser/ast.h"
 
 static TZrBool backend_aot_static_reachability_has_entry(const SZrAotFunctionTable *table, TZrUInt32 flatIndex) {
     for (TZrUInt32 index = 0u; index < table->count; index++) {
@@ -641,7 +642,8 @@ static TZrBool backend_aot_static_reachability_collect_property_roots_from_funct
                             (TZrSize)memberIndex * sizeof(SZrCompiledMemberInfo),
                     sizeof(member));
             if (member.propertyIdentity == UINT32_MAX ||
-                member.accessorRole < 1u || member.accessorRole > 3u) {
+                member.accessorRole < 1u || member.accessorRole > 3u ||
+                (member.modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) != 0u) {
                 continue;
             }
             if (!backend_aot_resolve_callable_constant_function_index(
@@ -650,7 +652,7 @@ static TZrBool backend_aot_static_reachability_collect_property_roots_from_funct
                         function,
                         (TZrInt32)member.functionConstantIndex,
                         &targetIndex)) {
-                continue;
+                return ZR_FALSE;
             }
             if (!backend_aot_static_reachability_append_root(
                         roots,
