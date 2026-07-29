@@ -54,6 +54,7 @@ typedef struct SZrLibraryAotLoadedModule {
     TZrUInt32 functionCapacity;
     TZrUInt32 *generatedFrameSlotCounts;
     SZrObjectModule *module;
+    SZrGcNativeCallPin modulePin;
     TZrBool moduleExecuted;
 } SZrLibraryAotLoadedModule;
 
@@ -662,7 +663,15 @@ static TZrBool aot_runtime_validate_descriptor(SZrState *state,
         descriptor->codeRegistration->typeLayoutTokens != descriptor->typeLayoutTokens ||
         descriptor->codeRegistration->typeLayoutTokenCount != descriptor->typeLayoutTokenCount ||
         descriptor->codeRegistration->gcDescriptors != descriptor->gcDescriptors ||
-        descriptor->codeRegistration->gcDescriptorCount != descriptor->gcDescriptorCount) {
+        descriptor->codeRegistration->gcDescriptorCount != descriptor->gcDescriptorCount ||
+        descriptor->codeRegistration->nativeImportContracts !=
+                descriptor->nativeImportContracts ||
+        descriptor->codeRegistration->nativeImportContractCount !=
+                descriptor->nativeImportContractCount ||
+        descriptor->codeRegistration->nativeImportRanges !=
+                descriptor->nativeImportRanges ||
+        descriptor->codeRegistration->nativeImportRangeCount !=
+                descriptor->nativeImportRangeCount) {
         aot_runtime_fail(state,
                          runtimeState,
                          "AOT descriptor validation failed for module '%s': codeRegistration table mismatch",
@@ -696,6 +705,73 @@ static TZrBool aot_runtime_validate_descriptor(SZrState *state,
                          "AOT descriptor validation failed for module '%s': manifest export table mismatch",
                          normalizedModule);
         return ZR_FALSE;
+    }
+
+    if ((descriptor->nativeImportContractCount > 0u &&
+         descriptor->nativeImportContracts == ZR_NULL) ||
+        (descriptor->nativeImportContractCount == 0u &&
+         descriptor->nativeImportContracts != ZR_NULL)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': "
+                         "native import contract table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 index = 0u;
+         index < descriptor->nativeImportContractCount;
+         index++) {
+        if (!ZrCommon_NativeImportContract_Validate(
+                    &descriptor->nativeImportContracts[index])) {
+            aot_runtime_fail(state,
+                             runtimeState,
+                             "AOT descriptor validation failed for module '%s': "
+                             "native import contract invalid index=%u",
+                             normalizedModule,
+                             (unsigned)index);
+            return ZR_FALSE;
+        }
+    }
+    if (descriptor->nativeImportRangeCount != descriptor->functionThunkCount ||
+        descriptor->nativeImportRanges == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': "
+                         "native import range table mismatch",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+    {
+        TZrUInt64 expectedContractStart = 0u;
+
+        for (TZrUInt32 index = 0u;
+             index < descriptor->nativeImportRangeCount;
+             index++) {
+            const SZrAotNativeImportRange *range =
+                    &descriptor->nativeImportRanges[index];
+            TZrUInt64 contractEnd =
+                    (TZrUInt64)range->contractStart + range->contractCount;
+
+            if (range->contractStart != expectedContractStart ||
+                contractEnd > descriptor->nativeImportContractCount) {
+                aot_runtime_fail(state,
+                                 runtimeState,
+                                 "AOT descriptor validation failed for module '%s': "
+                                 "native import range invalid functionIndex=%u",
+                                 normalizedModule,
+                                 (unsigned)index);
+                return ZR_FALSE;
+            }
+            expectedContractStart = contractEnd;
+        }
+        if (expectedContractStart != descriptor->nativeImportContractCount) {
+            aot_runtime_fail(state,
+                             runtimeState,
+                             "AOT descriptor validation failed for module '%s': "
+                             "native import ranges do not cover contract table",
+                             normalizedModule);
+            return ZR_FALSE;
+        }
     }
 
     for (TZrUInt32 index = 0u; index < descriptor->manifestExportCount; index++) {
@@ -1176,6 +1252,7 @@ static TZrBool aot_runtime_retire_library(SZrGlobalState *global, void *handle) 
         global->postGcCleanup != aot_runtime_close_retired_libraries) {
         return ZR_FALSE;
     }
+
     retired = (SZrLibraryAotRetiredLibraries *)global->postGcCleanupState;
     if (retired == ZR_NULL) {
         retired = (SZrLibraryAotRetiredLibraries *)aot_runtime_reallocate(
@@ -1506,6 +1583,56 @@ static SZrLibraryAotLoadedModule *aot_runtime_find_record_for_function(SZrLibrar
         }
     }
     return ZR_NULL;
+}
+
+const SZrNativeImportContract *
+ZrLibrary_AotRuntime_ResolveNativeImportContract(
+        const SZrAotCodeRegistration *codeRegistration,
+        TZrUInt32 functionIndex,
+        TZrUInt32 localContractIndex) {
+    const SZrAotNativeImportRange *range;
+    TZrUInt64 contractIndex;
+
+    if (codeRegistration == ZR_NULL ||
+        codeRegistration->nativeImportRanges == ZR_NULL ||
+        functionIndex >= codeRegistration->nativeImportRangeCount) {
+        return ZR_NULL;
+    }
+    range = &codeRegistration->nativeImportRanges[functionIndex];
+    if (localContractIndex >= range->contractCount) {
+        return ZR_NULL;
+    }
+    contractIndex = (TZrUInt64)range->contractStart + localContractIndex;
+    if (codeRegistration->nativeImportContracts == ZR_NULL ||
+        contractIndex >= codeRegistration->nativeImportContractCount) {
+        return ZR_NULL;
+    }
+    return &codeRegistration->nativeImportContracts[contractIndex];
+}
+
+const SZrNativeImportContract *
+ZrLibrary_AotRuntime_FindNativeImportContract(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 localContractIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    SZrLibraryAotLoadedModule *record;
+    TZrUInt32 functionIndex;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || function == ZR_NULL) {
+        return ZR_NULL;
+    }
+    runtimeState = aot_runtime_get_state_from_global(state->global);
+    record = aot_runtime_find_record_for_function(runtimeState, function);
+    if (record == ZR_NULL) {
+        return ZR_NULL;
+    }
+    functionIndex = aot_runtime_find_function_index_in_record(record, function);
+    if (functionIndex == UINT32_MAX) {
+        return ZR_NULL;
+    }
+    return ZrLibrary_AotRuntime_ResolveNativeImportContract(
+            record->codeRegistration, functionIndex, localContractIndex);
 }
 
 static TZrBool aot_runtime_record_try_get_generated_slot_count(const SZrLibraryAotLoadedModule *record,
@@ -2906,7 +3033,11 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     record.generatedFrameSlotCounts = generatedFrameSlotCounts;
     record.module = ZrCore_Module_Create(state);
     if (record.moduleName == ZR_NULL || record.libraryPath == ZR_NULL || record.module == ZR_NULL ||
-        (zroExists && record.zroPath == ZR_NULL)) {
+        (zroExists && record.zroPath == ZR_NULL) ||
+        !ZrCore_Gc_NativeCallPinObject(
+                state,
+                ZR_CAST_RAW_OBJECT_AS_SUPER(record.module),
+                &record.modulePin)) {
         aot_runtime_close_library(handle);
         aot_runtime_free_string(global, record.moduleName);
         aot_runtime_free_string(global, record.sourcePath);
@@ -2918,6 +3049,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        ZrCore_Gc_NativeCallUnpin(global, &record.modulePin);
         aot_runtime_unpin_function_table(state, functionPins, functionCount);
         aot_runtime_fail(state, runtimeState, "failed to allocate AOT runtime record for module '%s'", normalizedModule);
         return ZR_FALSE;
@@ -2941,6 +3073,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        ZrCore_Gc_NativeCallUnpin(global, &record.modulePin);
         aot_runtime_unpin_function_table(state, functionPins, functionCount);
         aot_runtime_fail(state,
                          runtimeState,
@@ -2968,6 +3101,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        ZrCore_Gc_NativeCallUnpin(global, &record.modulePin);
         aot_runtime_unpin_function_table(state, functionPins, functionCount);
         return ZR_FALSE;
     }
@@ -2976,12 +3110,17 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
 
     if (!aot_runtime_append_record(global, runtimeState, &record, outRecord)) {
         aot_runtime_close_library(handle);
+        aot_runtime_free_string(global, record.moduleName);
+        aot_runtime_free_string(global, record.sourcePath);
+        aot_runtime_free_string(global, record.zroPath);
+        aot_runtime_free_string(global, record.libraryPath);
         if (generatedFrameSlotCounts != ZR_NULL) {
             aot_runtime_reallocate(global, generatedFrameSlotCounts, sizeof(*generatedFrameSlotCounts) * functionCount, 0);
         }
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
         }
+        ZrCore_Gc_NativeCallUnpin(global, &record.modulePin);
         aot_runtime_unpin_function_table(state, functionPins, functionCount);
         aot_runtime_fail(state, runtimeState, "failed to store AOT runtime record for module '%s'", normalizedModule);
         return ZR_FALSE;
@@ -3038,6 +3177,7 @@ void ZrLibrary_AotRuntime_FreeProjectState(SZrState *state, SZrLibrary_Project *
 
     for (TZrSize index = 0; index < runtimeState->recordCount; index++) {
         SZrLibraryAotLoadedModule *record = &runtimeState->records[index];
+        ZrCore_Gc_NativeCallUnpin(global, &record->modulePin);
         aot_runtime_unpin_function_table(state, record->functionPins, record->functionCount);
         record->functionPins = ZR_NULL;
         (void)aot_runtime_retire_library(global, record->libraryHandle);
@@ -3064,6 +3204,10 @@ void ZrLibrary_AotRuntime_FreeProjectState(SZrState *state, SZrLibrary_Project *
                                runtimeState->records,
                                runtimeState->recordCapacity * sizeof(*runtimeState->records),
                                0);
+    }
+    if (global != ZR_NULL &&
+        global->aotModuleLoaderUserData == runtimeState) {
+        ZrCore_GlobalState_SetAotModuleLoader(global, ZR_NULL, ZR_NULL);
     }
     aot_runtime_reallocate(global, runtimeState, sizeof(*runtimeState), 0);
     project->aotRuntime = ZR_NULL;
@@ -6666,6 +6810,41 @@ TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateIndex(
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateLocal(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 sourceSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer =
+            aot_runtime_frame_slot(frame, destinationSlot);
+    SZrFunction *function = (SZrFunction *)aot_runtime_frame_function(frame);
+    SZrTypeValue *destinationValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL
+                    ? aot_runtime_get_state_from_global(state->global)
+                    : ZR_NULL;
+    destinationValue = destinationPointer != ZR_NULL
+            ? ZrCore_Stack_GetValue(destinationPointer)
+            : ZR_NULL;
+    if (state == ZR_NULL || frame == ZR_NULL || function == ZR_NULL ||
+        destinationValue == ZR_NULL ||
+        !ZrCore_PropertyReference_CreateFrameSlot(
+                state,
+                function,
+                frame->slotBase,
+                sourceSlot,
+                destinationValue)) {
+        aot_runtime_fail(
+                state,
+                runtimeState,
+                "PROPERTY_REF_CREATE_LOCAL: invalid local Place");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_PropertyReferenceLoad(
         SZrState *state,
         ZrAotGeneratedFrame *frame,
@@ -7812,6 +7991,11 @@ TZrBool ZrLibrary_AotRuntime_PrepareMetaCall(SZrState *state,
     if (!aot_runtime_prepare_meta_target(state, callBase, argumentCount, &metadataFunction)) {
         aot_runtime_fail(state, runtimeState, "generated AOT meta call target does not define @call");
         return ZR_FALSE;
+    }
+
+    /* Native meta methods are callable raw objects, not bytecode functions. */
+    if (metadataFunction->super.isNative) {
+        return ZR_TRUE;
     }
 
     record = aot_runtime_find_record_for_function(runtimeState, metadataFunction);

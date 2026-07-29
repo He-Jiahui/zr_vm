@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -27,6 +28,15 @@ typedef enum ZrFfiFixtureMode {
 } ZrFfiFixtureMode;
 
 typedef double (*ZrFfiFixtureUnaryCallback)(double value);
+typedef union ZrFfiFixtureMixedUnion {
+    double scalar;
+    int32_t integer;
+} ZrFfiFixtureMixedUnion;
+typedef union ZrFfiFixtureHeterogeneousFloatUnion {
+    float narrow;
+    double wide;
+} ZrFfiFixtureHeterogeneousFloatUnion;
+static ZrFfiFixtureUnaryCallback g_zr_ffi_stored_callback = NULL;
 
 static const char *kZrFfiFixtureVersion = "1.2.3-fixture";
 
@@ -42,10 +52,19 @@ ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_sum_varargs_i32(int32_t count, ...);
 ZR_FFI_FIXTURE_EXPORT int32_t ZR_FFI_FIXTURE_STDCALL zr_ffi_stdcall_add_i32(int32_t lhs, int32_t rhs);
 ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_fill_bytes(uint8_t *buffer, size_t length, uint8_t seed);
 ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback(double value, ZrFfiFixtureUnaryCallback callback);
+ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback_twice(double value, ZrFfiFixtureUnaryCallback callback);
 ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback_foreign_thread(double value,
-                                                                  ZrFfiFixtureUnaryCallback callback);
+                                                                   ZrFfiFixtureUnaryCallback callback);
+ZR_FFI_FIXTURE_EXPORT void zr_ffi_store_callback(ZrFfiFixtureUnaryCallback callback);
+ZR_FFI_FIXTURE_EXPORT double zr_ffi_invoke_stored_callback(double value);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_read_mixed_union(ZrFfiFixtureMixedUnion value);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_read_mixed_union_scalar(ZrFfiFixtureMixedUnion value);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_read_heterogeneous_float_union(
+        ZrFfiFixtureHeterogeneousFloatUnion value);
 ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_flip_mode(int32_t modeValue);
 ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_tell_fd(int32_t fd);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_set_errno_i32(int32_t code);
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_return_status_i32(int32_t code);
 
 ZR_FFI_FIXTURE_EXPORT const char *zr_ffi_version_string(void) {
     return kZrFfiFixtureVersion;
@@ -129,6 +148,41 @@ ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback(double value, ZrFfiFixtureUna
     return callback(value) + 0.5;
 }
 
+ZR_FFI_FIXTURE_EXPORT double zr_ffi_apply_callback_twice(double value, ZrFfiFixtureUnaryCallback callback) {
+    double first;
+    double second;
+
+    if (callback == NULL) {
+        return -1.0;
+    }
+    first = callback(value);
+    second = callback(value + 1.0);
+    return first + second;
+}
+
+ZR_FFI_FIXTURE_EXPORT void zr_ffi_store_callback(ZrFfiFixtureUnaryCallback callback) {
+    g_zr_ffi_stored_callback = callback;
+}
+
+ZR_FFI_FIXTURE_EXPORT double zr_ffi_invoke_stored_callback(double value) {
+    return g_zr_ffi_stored_callback != NULL
+            ? g_zr_ffi_stored_callback(value)
+            : -1.0;
+}
+
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_read_mixed_union(ZrFfiFixtureMixedUnion value) {
+    return value.integer;
+}
+
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_read_mixed_union_scalar(ZrFfiFixtureMixedUnion value) {
+    return value.scalar == 42.5 ? 42 : -1;
+}
+
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_read_heterogeneous_float_union(
+        ZrFfiFixtureHeterogeneousFloatUnion value) {
+    return value.wide == 42.5 ? 42 : -1;
+}
+
 #if defined(_WIN32)
 typedef struct ZrFfiFixtureThreadData {
     ZrFfiFixtureUnaryCallback callback;
@@ -200,4 +254,13 @@ ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_tell_fd(int32_t fd) {
 #else
     return (int32_t)lseek((int)fd, 0, SEEK_CUR);
 #endif
+}
+
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_set_errno_i32(int32_t code) {
+    errno = code;
+    return -1;
+}
+
+ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_return_status_i32(int32_t code) {
+    return code;
 }

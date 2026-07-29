@@ -320,6 +320,14 @@ static SZrAstNode *parse_extern_member_declaration_impl(
         TZrBool requireFnKeyword) {
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     SZrAstNode *node = ZR_NULL;
+    EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
+
+    if (requireFnKeyword &&
+        (ps->lexer->t.token == ZR_TK_PUB ||
+         ps->lexer->t.token == ZR_TK_PRI ||
+         ps->lexer->t.token == ZR_TK_PRO)) {
+        accessModifier = parse_access_modifier(ps);
+    }
 
     if (ps->lexer->t.token == ZR_TK_FN) {
         ZrParser_Lexer_Next(ps->lexer);
@@ -351,6 +359,24 @@ static SZrAstNode *parse_extern_member_declaration_impl(
 
     if (decorators != ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
+    }
+    if (node != ZR_NULL) {
+        switch (node->type) {
+            case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+                node->data.externFunctionDeclaration.accessModifier = accessModifier;
+                break;
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+                node->data.externDelegateDeclaration.accessModifier = accessModifier;
+                break;
+            case ZR_AST_STRUCT_DECLARATION:
+                node->data.structDeclaration.accessModifier = accessModifier;
+                break;
+            case ZR_AST_ENUM_DECLARATION:
+                node->data.enumDeclaration.accessModifier = accessModifier;
+                break;
+            default:
+                break;
+        }
     }
     return node;
 }
@@ -447,6 +473,7 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
 
     node->data.externBlock.libraryName = libraryName;
     node->data.externBlock.declarations = declarations;
+    node->data.externBlock.isNativeSyntax = nativeSyntax;
     return node;
 }
 
@@ -619,12 +646,13 @@ restore:
     return isFunctionDeclaration;
 }
 
-// 语法：%compileTime function/variable/class/struct/statement/expression
+// Legacy: %compileTime ...; current surface: comptime fn / comptime block / comptime if.
 
 SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
+    TZrBool isCurrentSyntax = ZR_FALSE;
+    TZrBool isConditionalPruning = ZR_FALSE;
 
-    // 解析 %compileTime
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         startLoc = get_current_location(ps);
         ZrParser_Lexer_Next(ps->lexer);
@@ -650,8 +678,12 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
             return ZR_NULL;
         }
         ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
+        startLoc = get_current_location(ps);
+        isCurrentSyntax = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
     } else {
-        report_error(ps, "Expected '%compileTime'");
+        report_error(ps, "Expected 'comptime'");
         return ZR_NULL;
     }
 
@@ -659,17 +691,27 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     EZrCompileTimeDeclarationType declType;
     SZrAstNode *declaration = ZR_NULL;
 
-    if (ps->lexer->t.token == ZR_TK_VAR) {
+    if (isCurrentSyntax && ps->lexer->t.token == ZR_TK_FN) {
+        declType = ZR_COMPILE_TIME_FUNCTION;
+        declaration = parse_function_declaration(ps);
+    } else if (isCurrentSyntax && ps->lexer->t.token == ZR_TK_IF) {
+        declType = ZR_COMPILE_TIME_STATEMENT;
+        declaration = parse_if_expression(ps);
+        isConditionalPruning = ZR_TRUE;
+        if (declaration != ZR_NULL) {
+            declaration->data.ifExpression.isStatement = ZR_TRUE;
+        }
+    } else if (ps->lexer->t.token == ZR_TK_VAR && !isCurrentSyntax) {
         // 编译期变量声明：%compileTime var name = value;
         declType = ZR_COMPILE_TIME_VARIABLE;
         declaration = parse_variable_declaration(ps);
-    } else if (ps->lexer->t.token == ZR_TK_CLASS) {
+    } else if (ps->lexer->t.token == ZR_TK_CLASS && !isCurrentSyntax) {
         declType = ZR_COMPILE_TIME_CLASS;
         declaration = parse_class_declaration(ps);
-    } else if (ps->lexer->t.token == ZR_TK_STRUCT) {
+    } else if (ps->lexer->t.token == ZR_TK_STRUCT && !isCurrentSyntax) {
         declType = ZR_COMPILE_TIME_STRUCT;
         declaration = parse_struct_declaration(ps);
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && !isCurrentSyntax) {
         if (is_compile_time_function_declaration(ps)) {
             // 函数声明：%compileTime functionName(...) { ... }
             declType = ZR_COMPILE_TIME_FUNCTION;
@@ -703,6 +745,10 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
 
     node->data.compileTimeDeclaration.declarationType = declType;
     node->data.compileTimeDeclaration.declaration = declaration;
+    node->data.compileTimeDeclaration.selectedBranch = ZR_NULL;
+    node->data.compileTimeDeclaration.isCurrentSyntax = isCurrentSyntax;
+    node->data.compileTimeDeclaration.isConditionalPruning = isConditionalPruning;
+    node->data.compileTimeDeclaration.buildFactsEvaluated = ZR_FALSE;
     return node;
 }
 

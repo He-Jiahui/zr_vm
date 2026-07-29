@@ -59,12 +59,17 @@ static TZrBool backend_aot_exec_ir_instruction_is_dynamic_call(
     }
 
     return (TZrBool)(instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_CALL ||
+                      instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_CALL_SPREAD ||
                       instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_TAIL_CALL);
 }
 
 static TZrBool backend_aot_exec_ir_instruction_has_stable_call_arguments(
         const SZrAotExecIrInstruction *instruction) {
     if (instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_CALL_SPREAD) {
         return ZR_FALSE;
     }
 
@@ -183,6 +188,7 @@ static TZrBool backend_aot_instruction_is_call_with_stack_arguments(const TZrIns
 
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
@@ -236,6 +242,10 @@ static TZrUInt32 backend_aot_call_argument_count(const SZrAotExecIrModule *modul
     execIrInstruction = backend_aot_find_exec_ir_instruction(module, functionIr, instructionIndex);
     if (backend_aot_exec_ir_instruction_has_stable_call_arguments(execIrInstruction)) {
         return execIrInstruction->operand1;
+    }
+    if (instruction->instruction.operationCode ==
+        ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)) {
+        return (TZrUInt32)instruction->instruction.operand.operand1[1] + 1u;
     }
     return instruction->instruction.operand.operand1[1];
 }
@@ -1970,6 +1980,16 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            case ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_LOCAL):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PropertyReferenceCreateLocal(state, &frame, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA2);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
             case ZR_INSTRUCTION_ENUM(PROPERTY_REF_LOAD):
                 fprintf(file,
                         "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PropertyReferenceLoad(state, &frame, %u, %u));\n",
@@ -2443,6 +2463,21 @@ void backend_aot_write_c_function_body(FILE *file,
                             targetInstructionIndex,
                             backend_aot_target_is_back_edge(instructionIndex, targetInstructionIndex));
                 }
+                break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
+                backend_aot_write_c_spread_function_call(
+                        file,
+                        functionIr,
+                        destinationSlot,
+                        operandA1,
+                        operandB1);
+                backend_aot_write_c_gc_safepoint(
+                        file, "    ", "zr_aot_gc_safepoint_spread_call");
+                backend_aot_set_callable_slot_function_index(
+                        callableSlotFunctionIndices,
+                        entry->function,
+                        destinationSlot,
+                        ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):

@@ -258,6 +258,8 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->moduleMetadataBindings = ZR_NULL;
     function->moduleMetadataBindingLength = 0;
     function->moduleMetadataBindingCapacity = 0;
+    function->nativeImportContracts = ZR_NULL;
+    function->nativeImportContractLength = 0;
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
     function->lineInSourceStart = 0;
@@ -689,6 +691,13 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_call_span(operandA1, operandB1, &slotCount);
                 break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                if (operandB1 < UINT32_MAX) {
+                    function_note_generated_call_span(
+                            operandA1, operandB1 + 1u, &slotCount);
+                }
+                break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 if (function->callSiteCaches != ZR_NULL && operandA1 < function->callSiteCacheLength) {
@@ -1110,6 +1119,8 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->moduleMetadataBindings = ZR_NULL;
     function->moduleMetadataBindingLength = 0;
     function->moduleMetadataBindingCapacity = 0;
+    function->nativeImportContracts = ZR_NULL;
+    function->nativeImportContractLength = 0;
     function->lineInSourceStart = 0;
     function->lineInSourceEnd = 0;
     function->cachedStatelessClosure = ZR_NULL;
@@ -1261,6 +1272,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->moduleMetadataBindings,
                                       sizeof(SZrMetadataTokenBinding) * function->moduleMetadataBindingCapacity,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->nativeImportContracts != ZR_NULL && function->nativeImportContractLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->nativeImportContracts,
+                                      sizeof(SZrNativeImportContract) * function->nativeImportContractLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->staticImports != ZR_NULL && function->staticImportLength > 0) {
@@ -2707,7 +2724,8 @@ TZrBool ZrCore_Function_BindAndCopyInlineFrameParametersFromCaller(
         if (callerArgumentStart < callerFrameBase ||
             (previousCallInfo->functionTop.valuePointer != ZR_NULL &&
              callerArgumentStart > previousCallInfo->functionTop.valuePointer)) {
-            return ZR_FALSE;
+            return function_copy_inline_frame_parameters_from_untyped_call_window(
+                    state, calleeFunction, calleeFrameBase, callStackPointer);
         }
 
         callerArgumentStartSlot = callerArgumentStart - callerFrameBase;

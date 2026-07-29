@@ -4,6 +4,8 @@
 
 #include "compiler_internal.h"
 
+#include "zr_vm_parser/ffi_contract.h"
+
 static const TZrChar *kCompilerEnumRuntimeValueTypeFieldName = "__zr_enumValueTypeName";
 static const TZrChar *kCompilerEnumRuntimeMembersFieldName = "__zr_enumMembers";
 
@@ -488,6 +490,104 @@ void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNode
     cs->externBindingsPredeclared = ZR_TRUE;
 }
 
+static TZrUInt64 compiler_native_import_module_id(
+        const SZrCompilerState *cs,
+        const SZrNativeImportContract *contract) {
+    const TZrChar *identity = ZR_NULL;
+    TZrUInt64 hash = ZR_FFI_CONTRACT_FNV_OFFSET;
+
+    if (cs != ZR_NULL && cs->currentModuleKey != ZR_NULL) {
+        identity = ZrCore_String_GetNativeString(cs->currentModuleKey);
+    } else if (cs != ZR_NULL && cs->scriptAst != ZR_NULL &&
+               cs->scriptAst->type == ZR_AST_SCRIPT &&
+               cs->scriptAst->data.script.moduleName != ZR_NULL) {
+        const SZrAstNode *module = cs->scriptAst->data.script.moduleName;
+
+        if (module->type == ZR_AST_MODULE_DECLARATION &&
+            module->data.moduleDeclaration.name != ZR_NULL &&
+            module->data.moduleDeclaration.name->type == ZR_AST_STRING_LITERAL &&
+            module->data.moduleDeclaration.name->data.stringLiteral.value !=
+                    ZR_NULL) {
+            identity = ZrCore_String_GetNativeString(
+                    module->data.moduleDeclaration.name->data.stringLiteral.value);
+        }
+    }
+    if (identity == ZR_NULL && contract != ZR_NULL) {
+        identity = contract->sourceMapping.document;
+    }
+    if (identity == ZR_NULL) {
+        identity = "<unknown>";
+    }
+    for (TZrSize index = 0u;; index++) {
+        hash = ZrCommon_FfiContract_HashByte(
+                hash, (TZrUInt8)identity[index]);
+        if (identity[index] == '\0') {
+            break;
+        }
+    }
+    return hash;
+}
+
+static TZrBool compiler_append_native_import_contract(
+        SZrCompilerState *cs,
+        const SZrExternBlock *externBlock,
+        const SZrAstNode *declaration,
+        TZrUInt32 *outContractIndex) {
+    SZrNativeImportContract contract;
+    SZrFfiContractDiagnostic diagnostic;
+    SZrNativeImportContract *contracts;
+    TZrUInt32 oldCount;
+    EZrFfiContractStatus status;
+
+    if (outContractIndex != ZR_NULL) {
+        *outContractIndex = ZR_PARSER_SLOT_NONE;
+    }
+    if (cs == ZR_NULL || cs->currentFunction == ZR_NULL ||
+        outContractIndex == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Memory_RawSet(&diagnostic, 0, sizeof(diagnostic));
+    status = ZrParser_FfiContract_Build(
+            externBlock, declaration, &contract, &diagnostic);
+    if (status != ZR_FFI_CONTRACT_STATUS_OK) {
+        ZrParser_Compiler_Error(
+                cs,
+                "native extern declaration cannot form a canonical FFI contract",
+                diagnostic.sourceRange.source != ZR_NULL
+                        ? diagnostic.sourceRange
+                        : declaration->location);
+        return ZR_FALSE;
+    }
+    contract.declaringModuleId = compiler_native_import_module_id(cs, &contract);
+
+    oldCount = cs->currentFunction->nativeImportContractLength;
+    contracts = (SZrNativeImportContract *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            sizeof(SZrNativeImportContract) * (oldCount + 1u),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (contracts == ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs, "failed to allocate native import contract table", declaration->location);
+        return ZR_FALSE;
+    }
+    if (oldCount > 0u && cs->currentFunction->nativeImportContracts != ZR_NULL) {
+        ZrCore_Memory_RawCopy(
+                contracts,
+                cs->currentFunction->nativeImportContracts,
+                sizeof(SZrNativeImportContract) * oldCount);
+        ZrCore_Memory_RawFreeWithType(
+                cs->state->global,
+                cs->currentFunction->nativeImportContracts,
+                sizeof(SZrNativeImportContract) * oldCount,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    contracts[oldCount] = contract;
+    cs->currentFunction->nativeImportContracts = contracts;
+    cs->currentFunction->nativeImportContractLength = oldCount + 1u;
+    *outContractIndex = oldCount;
+    return ZR_TRUE;
+}
+
 void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrExternBlock *externBlock;
     SZrString *libraryName;
@@ -515,7 +615,9 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     libraryName = externBlock->libraryName->data.stringLiteral.value;
     ffiModuleName = ZrCore_String_CreateFromNative(cs->state, "zr.ffi");
     loadLibraryName = ZrCore_String_CreateFromNative(cs->state, "loadLibrary");
-    getSymbolName = ZrCore_String_CreateFromNative(cs->state, "getSymbol");
+    getSymbolName = ZrCore_String_CreateFromNative(
+            cs->state,
+            externBlock->isNativeSyntax ? "getContractSymbol" : "getSymbol");
     if (libraryName == ZR_NULL || ffiModuleName == ZR_NULL || loadLibraryName == ZR_NULL || getSymbolName == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "failed to allocate extern ffi helper strings", node->location);
         return;
@@ -609,47 +711,74 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrExternCompilerTempRoot signatureRoot = {0};
                 TZrUInt32 localSlot;
                 SZrTypeValue symbolArguments[2];
+                TZrUInt32 symbolArgumentCount = 0u;
+                TZrUInt32 nativeContractIndex = ZR_PARSER_SLOT_NONE;
 
                 if (functionDecl->name == ZR_NULL || functionDecl->name->name == ZR_NULL) {
                     ZrParser_Compiler_Error(cs, "extern function declaration is missing a name", declaration->location);
                     return;
                 }
-                if (entryOverride != ZR_NULL) {
-                    entryName = entryOverride;
-                }
-
-                if (!extern_compiler_temp_root_begin(cs, &signatureRoot) ||
-                    !extern_compiler_build_signature_descriptor_value(
+                if (externBlock->isNativeSyntax &&
+                    !compiler_append_native_import_contract(
                             cs,
                             externBlock,
-                            functionDecl->params,
-                            functionDecl->args,
-                            functionDecl->returnType,
-                            functionDecl->decorators,
-                            ZR_FALSE,
-                            declaration->location,
-                            extern_compiler_temp_root_value(&signatureRoot))) {
-                    if (signatureRoot.active) {
-                        extern_compiler_temp_root_end(&signatureRoot);
-                    }
+                            declaration,
+                            &nativeContractIndex)) {
                     return;
                 }
-                ZrCore_Value_InitAsRawObject(cs->state, &symbolArguments[0], ZR_CAST_RAW_OBJECT_AS_SUPER(entryName));
-                symbolArguments[0].type = ZR_VALUE_TYPE_STRING;
+                if (externBlock->isNativeSyntax) {
+                    ZrCore_Value_InitAsInt(
+                            cs->state,
+                            &symbolArguments[0],
+                            (TZrInt64)nativeContractIndex);
+                    symbolArgumentCount = 1u;
+                } else {
+                    if (entryOverride != ZR_NULL) {
+                        entryName = entryOverride;
+                    }
+                    if (!extern_compiler_temp_root_begin(cs, &signatureRoot) ||
+                        !extern_compiler_build_signature_descriptor_value(
+                                cs,
+                                externBlock,
+                                functionDecl->params,
+                                functionDecl->args,
+                                functionDecl->returnType,
+                                functionDecl->decorators,
+                                ZR_FALSE,
+                                declaration->location,
+                                extern_compiler_temp_root_value(&signatureRoot))) {
+                        if (signatureRoot.active) {
+                            extern_compiler_temp_root_end(&signatureRoot);
+                        }
+                        return;
+                    }
+                    ZrCore_Value_InitAsRawObject(
+                            cs->state,
+                            &symbolArguments[0],
+                            ZR_CAST_RAW_OBJECT_AS_SUPER(entryName));
+                    symbolArguments[0].type = ZR_VALUE_TYPE_STRING;
+                    symbolArguments[1] = *extern_compiler_temp_root_value(
+                            &signatureRoot);
+                    symbolArgumentCount = 2u;
+                }
 
                 if (ffiModuleSlot == ZR_PARSER_SLOT_NONE) {
                     SZrString *hiddenFfiName = create_hidden_extern_local_name(cs, "ffi");
                     SZrString *hiddenLibraryName = create_hidden_extern_local_name(cs, "library");
                     SZrTypeValue loadArguments[1];
                     if (hiddenFfiName == ZR_NULL || hiddenLibraryName == ZR_NULL) {
-                        extern_compiler_temp_root_end(&signatureRoot);
+                        if (signatureRoot.active) {
+                            extern_compiler_temp_root_end(&signatureRoot);
+                        }
                         ZrParser_Compiler_Error(cs, "failed to allocate hidden extern locals", declaration->location);
                         return;
                     }
 
                     ffiModuleSlot = allocate_local_var(cs, hiddenFfiName);
                     if (!extern_compiler_emit_import_module_to_local(cs, ffiModuleName, ffiModuleSlot, declaration->location)) {
-                        extern_compiler_temp_root_end(&signatureRoot);
+                        if (signatureRoot.active) {
+                            extern_compiler_temp_root_end(&signatureRoot);
+                        }
                         return;
                     }
 
@@ -663,24 +792,29 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                                            1,
                                                                            librarySlot,
                                                                            declaration->location)) {
-                        extern_compiler_temp_root_end(&signatureRoot);
+                        if (signatureRoot.active) {
+                            extern_compiler_temp_root_end(&signatureRoot);
+                        }
                         return;
                     }
                 }
 
-                symbolArguments[1] = *extern_compiler_temp_root_value(&signatureRoot);
                 localSlot = allocate_local_var(cs, functionDecl->name->name);
                 if (!extern_compiler_emit_method_call_to_local(cs,
                                                                librarySlot,
                                                                getSymbolName,
                                                                symbolArguments,
-                                                               2,
+                                                               symbolArgumentCount,
                                                                localSlot,
                                                                declaration->location)) {
-                    extern_compiler_temp_root_end(&signatureRoot);
+                    if (signatureRoot.active) {
+                        extern_compiler_temp_root_end(&signatureRoot);
+                    }
                     return;
                 }
-                extern_compiler_temp_root_end(&signatureRoot);
+                if (signatureRoot.active) {
+                    extern_compiler_temp_root_end(&signatureRoot);
+                }
                 break;
             }
             default:

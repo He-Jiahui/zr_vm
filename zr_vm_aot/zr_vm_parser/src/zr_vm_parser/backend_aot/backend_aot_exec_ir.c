@@ -80,6 +80,8 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "TYPEOF";
         case ZR_SEMIR_OPCODE_DYN_CALL:
             return "DYN_CALL";
+        case ZR_SEMIR_OPCODE_DYN_CALL_SPREAD:
+            return "DYN_CALL_SPREAD";
         case ZR_SEMIR_OPCODE_DYN_TAIL_CALL:
             return "DYN_TAIL_CALL";
         case ZR_SEMIR_OPCODE_META_CALL:
@@ -139,6 +141,7 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
         case ZR_SEMIR_OPCODE_TYPEOF:
             return ZR_AOT_RUNTIME_CONTRACT_REFLECTION_TYPEOF;
         case ZR_SEMIR_OPCODE_DYN_CALL:
+        case ZR_SEMIR_OPCODE_DYN_CALL_SPREAD:
         case ZR_SEMIR_OPCODE_DYN_TAIL_CALL:
         case ZR_SEMIR_OPCODE_META_CALL:
         case ZR_SEMIR_OPCODE_META_TAIL_CALL:
@@ -314,6 +317,8 @@ static TZrUInt32 backend_aot_exec_ir_callsite_kind_for_instruction(const SZrFunc
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
             return ZR_AOT_EXEC_IR_CALLSITE_KIND_STATIC_DIRECT;
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
+            return ZR_AOT_EXEC_IR_CALLSITE_KIND_DIRECT_PROBE;
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):

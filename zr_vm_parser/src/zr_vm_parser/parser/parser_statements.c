@@ -1481,6 +1481,43 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
     if (parser_async_function_declaration_starts_here(ps)) {
         return parse_reserved_async_function_declaration(ps);
     }
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
+        return parse_compile_time_declaration(ps);
+    }
+
+    if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
+        EZrToken nextToken = peek_token(ps);
+        if (nextToken == ZR_TK_IDENTIFIER) {
+            SZrParserCursor cursor;
+            save_parser_cursor(ps, &cursor);
+            (void)parse_access_modifier(ps);
+            if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
+                return parse_compile_time_declaration(ps);
+            }
+            restore_parser_cursor(ps, &cursor);
+        }
+        if (parser_function_declaration_starts_here(ps)) {
+            return parse_function_declaration(ps);
+        }
+        switch (nextToken) {
+            case ZR_TK_VAR:
+            case ZR_TK_LET:
+                return parse_variable_declaration(ps);
+            case ZR_TK_STRUCT:
+                return parse_struct_declaration(ps);
+            case ZR_TK_CLASS:
+                return parse_class_declaration(ps);
+            case ZR_TK_INTERFACE:
+                return parse_interface_declaration(ps);
+            case ZR_TK_ENUM:
+                return parse_enum_declaration(ps);
+            case ZR_TK_UNION:
+                return parse_union_declaration(ps);
+            default:
+                report_error(ps, "Expected declaration after access modifier");
+                return ZR_NULL;
+        }
+    }
 
     switch (token) {
         case ZR_TK_LBRACE:
@@ -1726,6 +1763,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     if (parser_async_function_declaration_starts_here(ps)) {
         return parse_reserved_async_function_declaration(ps);
     }
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
+        return parse_compile_time_declaration(ps);
+    }
 
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "resource") &&
         peek_token(ps) == ZR_TK_CLASS) {
@@ -1743,6 +1783,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
 
             save_parser_cursor(ps, &cursor);
             accessModifier = parse_access_modifier(ps);
+            if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
+                return parse_compile_time_declaration(ps);
+            }
             if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                 current_identifier_equals(ps, "resource") &&
                 peek_token(ps) == ZR_TK_CLASS) {

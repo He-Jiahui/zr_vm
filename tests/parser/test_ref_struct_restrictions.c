@@ -109,7 +109,9 @@ static void assert_ref_struct_rules(
     memset(&compiler, 0, sizeof(compiler));
     ZrParser_CompilerState_Init(&compiler, g_state);
     compiler.suppressErrorOutput = ZR_TRUE;
-    success = compiler_validate_ref_struct_rules(&compiler, script);
+    success = ZrParser_CompileTime_PrepareBuildFactsInCompilerState(
+                      &compiler, script) &&
+              compiler_validate_ref_struct_rules(&compiler, script);
 
     TEST_ASSERT_EQUAL_INT(expectedSuccess, success);
     TEST_ASSERT_EQUAL_INT(!expectedSuccess, compiler.hasError);
@@ -136,7 +138,9 @@ static void assert_ref_struct_escape(
     memset(&compiler, 0, sizeof(compiler));
     ZrParser_CompilerState_Init(&compiler, g_state);
     compiler.suppressErrorOutput = ZR_TRUE;
-    success = compiler_validate_ref_struct_rules(&compiler, script) &&
+    success = ZrParser_CompileTime_PrepareBuildFactsInCompilerState(
+                      &compiler, script) &&
+              compiler_validate_ref_struct_rules(&compiler, script) &&
               compiler_validate_reference_escapes(&compiler, script);
 
     TEST_ASSERT_EQUAL_INT(expectedSuccess, success);
@@ -290,6 +294,20 @@ static void test_ref_struct_rejects_array_global_and_generic_storage(void) {
             "cannot be stored in an array");
 }
 
+static void test_ref_struct_rules_follow_active_comptime_branch(void) {
+    assert_ref_struct_rules(
+            "ref struct View { var value: int; }\n"
+            "comptime if (true) { var globalView: View; }\n",
+            ZR_FALSE,
+            "cannot be stored in module/global storage");
+    assert_ref_struct_rules(
+            "ref struct View { var value: int; }\n"
+            "comptime if (false) { var globalView: View; }\n"
+            "var result: int = 0;\n",
+            ZR_TRUE,
+            ZR_NULL);
+}
+
 static void test_ref_struct_rejects_boxing_and_native_opaque_storage(void) {
     assert_ref_struct_escape(
             "ref struct View { var value: int; }\n"
@@ -435,6 +453,7 @@ int main(void) {
     RUN_TEST(test_ref_struct_accepts_legal_storage_and_safe_return_surfaces);
     RUN_TEST(test_ref_struct_rejects_heap_fields_and_plain_struct_ref_fields);
     RUN_TEST(test_ref_struct_rejects_array_global_and_generic_storage);
+    RUN_TEST(test_ref_struct_rules_follow_active_comptime_branch);
     RUN_TEST(test_ref_struct_rejects_boxing_and_native_opaque_storage);
     RUN_TEST(test_ref_struct_return_tracks_internal_reference_origin);
     RUN_TEST(test_ref_struct_rejects_closure_capture);

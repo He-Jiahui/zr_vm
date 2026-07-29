@@ -8,6 +8,7 @@
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/diagnostic_builder.h"
+#include "zr_vm_parser/compile_tool.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_system.h"
@@ -37,6 +38,17 @@ typedef enum EZrCompilerInitializationPhase {
     ZR_COMPILER_INITIALIZATION_CONSTRUCTOR,
     ZR_COMPILER_INITIALIZATION_PROPERTY_INIT
 } EZrCompilerInitializationPhase;
+
+typedef enum EZrCompileToolBindingKind {
+    ZR_COMPILE_TOOL_BINDING_SHADOW = 0,
+    ZR_COMPILE_TOOL_BINDING_PROVIDER = 1
+} EZrCompileToolBindingKind;
+
+typedef struct SZrCompileToolBinding {
+    SZrString *name;
+    const SZrParserCompileToolModuleDescriptor *provider;
+    EZrCompileToolBindingKind kind;
+} SZrCompileToolBinding;
 
 typedef struct SZrCompilerState {
     SZrState *state;                    // VM 状态
@@ -149,6 +161,8 @@ typedef struct SZrCompilerState {
     SZrArray importedCompileTimeModules;      // 跨文件导入模块的 compile-time 元数据（SZrImportedCompileTimeModule*）
     SZrArray importedCompileTimeModuleAliases; // 模块别名表（SZrImportedCompileTimeModuleAlias）
     SZrArray typeValueAliases;                // 类型值别名表（SZrTypeBinding）
+    SZrArray compileToolBindings;             // phase-tagged lexical CompileTool bindings
+    EZrParserCompilePhase compilePhase;
     TZrBool isInCompileTimeContext;             // 是否在编译期上下文中
     TZrBool isCompilingCompileTimeRuntimeSupport; // 是否正在为 binary import 生成 compile-time runtime support
     
@@ -578,6 +592,12 @@ ZR_PARSER_API void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrA
 
 // 执行编译期声明
 ZR_PARSER_API TZrBool ZrParser_CompileTimeDeclaration_Execute(SZrCompilerState *cs, SZrAstNode *node);
+
+// Evaluate compile-time build facts before the runtime compiler consumes the AST.
+ZR_PARSER_API TZrBool ZrParser_CompileTime_PrepareBuildFacts(SZrState *state, SZrAstNode *ast);
+ZR_PARSER_API TZrBool ZrParser_CompileTime_PrepareBuildFactsInCompilerState(
+        SZrCompilerState *cs,
+        SZrAstNode *ast);
 
 // 查询已注册的编译期变量值；如果尚未求值，会按当前编译期环境求值并缓存
 ZR_PARSER_API TZrBool ZrParser_Compiler_TryGetCompileTimeValue(SZrCompilerState *cs, SZrString *name, SZrTypeValue *result);

@@ -1463,6 +1463,7 @@ static void compiler_quickening_clear_alias(ZrCompilerQuickeningSlotAlias *alias
 static TZrBool compiler_quickening_opcode_uses_call_argument_slots(EZrInstructionCode opcode) {
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
@@ -1506,6 +1507,8 @@ static TZrUInt32 compiler_quickening_call_argument_count(const SZrFunction *func
         case ZR_INSTRUCTION_ENUM(META_CALL):
         case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
             return (TZrUInt32)instruction->instruction.operand.operand1[1];
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
+            return (TZrUInt32)instruction->instruction.operand.operand1[1] + 1u;
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
             cacheIndex = (TZrUInt32)instruction->instruction.operand.operand1[0];
             if (function->callSiteCaches != ZR_NULL && cacheIndex < function->callSiteCacheLength) {
@@ -4739,6 +4742,7 @@ static TZrBool compiler_quickening_super_array_items_cache_instruction_may_escap
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
@@ -5988,6 +5992,14 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
                 return ZR_TRUE;
             }
             return ZR_FALSE;
+        }
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD): {
+            const TZrUInt32 callStart =
+                    (TZrUInt32)instruction->instruction.operand.operand1[0];
+            const TZrUInt32 prefixArgumentCount =
+                    (TZrUInt32)instruction->instruction.operand.operand1[1];
+            return slot >= callStart &&
+                   slot <= callStart + prefixArgumentCount + 1u;
         }
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):

@@ -1,0 +1,18 @@
+#ifndef ZR_VM_PARSER_COMPILE_TOOL_BINDING_H
+#define ZR_VM_PARSER_COMPILE_TOOL_BINDING_H
+
+#include "compiler_internal.h"
+
+void ZrParser_CompileToolBinding_Reset(SZrCompilerState *cs);
+TZrSize ZrParser_CompileToolBinding_Mark(const SZrCompilerState *cs);
+void ZrParser_CompileToolBinding_Restore(SZrCompilerState *cs, TZrSize mark);
+TZrBool ZrParser_CompileToolBinding_DeclareProvider(
+        SZrCompilerState *cs,
+        SZrString *name,
+        const SZrParserCompileToolModuleDescriptor *provider);
+TZrBool ZrParser_CompileToolBinding_DeclareShadow(SZrCompilerState *cs, SZrString *name);
+const SZrCompileToolBinding *ZrParser_CompileToolBinding_Resolve(
+        const SZrCompilerState *cs,
+        SZrString *name);
+
+#endif

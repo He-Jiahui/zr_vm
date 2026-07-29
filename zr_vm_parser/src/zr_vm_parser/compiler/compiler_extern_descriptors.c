@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "zr_vm_parser/ffi_contract.h"
 
 SZrAstNode *extern_compiler_find_named_declaration(SZrExternBlock *externBlock, SZrString *name) {
     if (externBlock == ZR_NULL || name == ZR_NULL || externBlock->declarations == ZR_NULL) {
@@ -248,6 +249,8 @@ TZrBool extern_compiler_build_delegate_descriptor_value(SZrCompilerState *cs,
                                                                TZrBool includeKind,
                                                                SZrTypeValue *outValue) {
     SZrExternDelegateDeclaration *delegateDecl;
+    SZrFfiSignatureContract canonicalSignature;
+    SZrObject *descriptorObject;
 
     if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_EXTERN_DELEGATE_DECLARATION ||
         outValue == ZR_NULL) {
@@ -255,15 +258,31 @@ TZrBool extern_compiler_build_delegate_descriptor_value(SZrCompilerState *cs,
     }
 
     delegateDecl = &declarationNode->data.externDelegateDeclaration;
-    return extern_compiler_build_signature_descriptor_value(cs,
-                                                            externBlock,
-                                                            delegateDecl->params,
-                                                            delegateDecl->args,
-                                                            delegateDecl->returnType,
-                                                            delegateDecl->decorators,
-                                                            includeKind,
-                                                            declarationNode->location,
-                                                            outValue);
+    if (!extern_compiler_build_signature_descriptor_value(cs,
+                                                          externBlock,
+                                                          delegateDecl->params,
+                                                          delegateDecl->args,
+                                                          delegateDecl->returnType,
+                                                          delegateDecl->decorators,
+                                                          includeKind,
+                                                          declarationNode->location,
+                                                          outValue) ||
+        ZrParser_FfiContract_BuildDelegateSignature(
+                externBlock,
+                declarationNode,
+                &canonicalSignature,
+                ZR_NULL) != ZR_FFI_CONTRACT_STATUS_OK ||
+        outValue->type != ZR_VALUE_TYPE_OBJECT ||
+        outValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    descriptorObject = ZR_CAST_OBJECT(cs->state, outValue->value.object);
+    return descriptorObject != ZR_NULL &&
+           extern_compiler_descriptor_set_int_field(
+                   cs,
+                   descriptorObject,
+                   "canonicalSignatureHash",
+                   (TZrInt64)canonicalSignature.signatureHash);
 }
 
 TZrBool extern_compiler_build_type_descriptor_value(SZrCompilerState *cs,
@@ -514,7 +533,12 @@ TZrBool extern_compiler_build_signature_descriptor_value(SZrCompilerState *cs,
         }
     }
 
-    callconvName = extern_compiler_decorators_get_string_arg(decorators, "callconv");
+    callconvName = extern_compiler_decorators_get_string_arg(
+            decorators, "callingConvention");
+    if (callconvName == ZR_NULL) {
+        callconvName = extern_compiler_decorators_get_string_arg(
+                decorators, "callconv");
+    }
     if (callconvName != ZR_NULL &&
         !extern_compiler_descriptor_set_string_object_field(cs, signatureObject, "abi", callconvName)) {
         extern_compiler_temp_root_end(&parametersRoot);
@@ -549,6 +573,8 @@ TZrBool extern_compiler_build_struct_descriptor_value(SZrCompilerState *cs,
     SZrTypeValue fieldsValue;
     TZrInt64 packValue = 0;
     TZrInt64 alignValue = 0;
+    SZrString *kindName;
+    const TZrChar *kindText = "struct";
     ZrExternCompilerTempRoot structRoot = {0};
     ZrExternCompilerTempRoot fieldsRoot = {0};
 
@@ -579,7 +605,12 @@ TZrBool extern_compiler_build_struct_descriptor_value(SZrCompilerState *cs,
     extern_compiler_temp_root_set_object(&structRoot, structObject, ZR_VALUE_TYPE_OBJECT);
     extern_compiler_temp_root_set_object(&fieldsRoot, fieldsArray, ZR_VALUE_TYPE_ARRAY);
 
-    if (!extern_compiler_descriptor_set_string_field(cs, structObject, "kind", "struct") ||
+    kindName = extern_compiler_decorators_get_string_arg(structDecl->decorators, "kind");
+    if (kindName != ZR_NULL && extern_compiler_string_equals(kindName, "union")) {
+        kindText = "union";
+    }
+
+    if (!extern_compiler_descriptor_set_string_field(cs, structObject, "kind", kindText) ||
         !extern_compiler_descriptor_set_string_object_field(cs, structObject, "name", structDecl->name->name)) {
         extern_compiler_temp_root_end(&fieldsRoot);
         extern_compiler_temp_root_end(&structRoot);

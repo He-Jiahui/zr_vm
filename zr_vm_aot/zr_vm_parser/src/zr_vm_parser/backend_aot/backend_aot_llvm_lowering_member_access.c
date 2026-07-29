@@ -77,6 +77,14 @@ TZrBool backend_aot_llvm_lower_member_value_family(const SZrAotLlvmLoweringConte
                     instruction,
                     "ZrLibrary_AotRuntime_PropertyReferenceCreateIndex",
                     ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_LOCAL):
+            return backend_aot_llvm_lower_pair_slot_property_reference_call(
+                    context,
+                    instruction,
+                    "ZrLibrary_AotRuntime_PropertyReferenceCreateLocal",
+                    instruction->destinationSlot,
+                    (TZrUInt32)instruction->operandA2,
+                    ZR_TRUE);
         case ZR_INSTRUCTION_ENUM(PROPERTY_REF_LOAD):
             return backend_aot_llvm_lower_pair_slot_property_reference_call(
                     context,

@@ -3,11 +3,13 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/ffi_contract.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -15,19 +17,26 @@ related_code:
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_common/include/zr_vm_common/zr_ffi_contract.h
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_contract.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/ffi_contract.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -35,10 +44,15 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_common/include/zr_vm_common/zr_ffi_contract.h
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_contract.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
 plan_sources:
   - user: 2026-03-29 实现“zr %extern 源级 FFI 声明计划”
@@ -56,13 +70,19 @@ tests:
 doc_type: module-detail
 ---
 
-# `%extern` Source FFI Declarations
+# `native extern` And Legacy `%extern` FFI Declarations
 
 ## Scope
 
-`%extern` 是 zr 的源级 FFI 声明面。它建立在 `zr.ffi` runtime API 之上，但不再要求用户先手写 `loadLibrary` / `getSymbol` / signature object，再把返回的动态句柄塞进普通变量。
+`native extern` 是 zr 当前的静态源级 FFI 声明面。compiler 会把每个函数声明编译成
+canonical `SZrNativeImportContract`，VM、`.zro`、AOT C 和 libffi 共同消费这一份契约，
+不会在静态调用路径临时构造或重新解析 signature object。
 
-v1 当前支持：
+`%extern` 仍在 parser 中作为 06B 全仓迁移前的兼容语法。它继续走原有
+`loadLibrary` / `getSymbol(name, descriptor)` 动态 lowering，不代表最终语法已经切换完成。
+06B 完成前两种拼写会并存；新代码和 10F 静态契约验收统一使用 `native extern`。
+
+当前静态契约支持：
 
 - extern function
 - extern struct
@@ -71,8 +91,7 @@ v1 当前支持：
 
 当前不支持：
 
-- 普通 `extern` 关键字别名
-- 非顶层 `%extern`
+- 非顶层 `native extern`
 - extern class / interface
 - 显式 `union` 关键字
 
@@ -81,9 +100,9 @@ v1 当前支持：
 块级默认库：
 
 ```zr
-%extern("user32") {
+native extern("user32") {
     #zr.ffi.entry("GetTickCount64")#
-    GetTickCount64(): u64;
+    pub fn GetTickCount64(): u64;
 
     delegate Unary(value: f64): f64;
 
@@ -104,7 +123,7 @@ v1 当前支持：
 单声明形式：
 
 ```zr
-%extern("kernel32") Sleep(ms: u32): void;
+native extern("kernel32") pub fn Sleep(ms: u32): void;
 ```
 
 v1 允许的 decorator 面：
@@ -123,7 +142,8 @@ v1 允许的 decorator 面：
 
 ## Parser And AST
 
-parser 把 `%extern` 解析成独立的 `ZR_AST_EXTERN_BLOCK`，内部成员节点细分为：
+parser 把 `native extern` 与兼容 `%extern` 都解析成独立的 `ZR_AST_EXTERN_BLOCK`，
+并通过 block 的 native 标记选择静态契约或旧动态 lowering。内部成员节点细分为：
 
 - `ZR_AST_EXTERN_FUNCTION_DECLARATION`
 - `ZR_AST_EXTERN_DELEGATE_DECLARATION`
@@ -251,9 +271,32 @@ class ModeHandle {
 
 因此 `%extern` / `zr.ffi` 边界继续是唯一发生 implicit lowering 的地方。
 
-## Lowering To `zr.ffi`
+## Canonical Static Contract
 
-每个 `%extern` block 在 lowering 时都会生成一套模块局部隐藏缓存：
+每个 `native extern` function 产生一项 `SZrNativeImportContract`，核心字段包括：
+
+- schema version、稳定 `symbolId`、`declaringModuleId` 和 callable hash
+- library locator、entry point、platform availability 和 required capabilities
+- target pointer size、endianness、ABI hash、calling convention 和 variadic 标记
+- return/parameter type kind、size、alignment、canonical/layout hash
+- aggregate field pool，以及 `in/ref/out`、marshalling、ownership/nullability
+- charset、error/cleanup policy、callback lifetime/thread/exception policy
+- document、offset、行列范围等 source mapping
+
+common 层对契约和值域执行统一校验并计算稳定 little-endian FNV hash。compiler 把契约
+挂到 `SZrFunction.nativeImportContracts`；`.zro` 按显式字段序列化，不依赖宿主结构体布局。
+AOT C 生成不可变契约表，并通过 ABI 14 的 module/code registration 同时发布表指针和
+数量；loader 拒绝两侧不一致或损坏的表。
+
+静态调用执行到 `LibraryHandle.getContractSymbol(contractIndex)`。runtime 从当前调用链定位
+声明函数持有的 canonical contract，校验 library/availability/capability/target ABI，直接
+把同一份 `FfiSignature` 降到 libffi。`Span`、ref-like、owner/resource/GC reference 等不能
+直接进入 native ABI 的类型会在契约构建阶段拒绝；callback 参数必须显式声明生命周期、
+线程和异常策略。
+
+## Legacy Lowering To `zr.ffi`
+
+每个兼容 `%extern` block 在 lowering 时都会生成一套模块局部隐藏缓存：
 
 1. `%import("zr.ffi")`
 2. `loadLibrary(libraryName)`
@@ -314,7 +357,9 @@ source extern 的指针形参语法仍写成 `pointer<T>`，但 compile-time 兼
 - callback trampoline
 - `FfiError` 分类
 
-`%extern` 只是把源级声明 lower 到同一套安全 helper。它没有新开裸调用帧分支，也不允许跨函数持有裸栈指针。
+`native extern` 静态路径消费 canonical contract；兼容 `%extern` 和显式动态 FFI API
+仍消费 descriptor object。两条路径最终都进入同一套 libffi marshaller、pin/callback
+边界和 `FfiError` 分类，没有裸调用帧分支，也不允许跨函数持有裸栈指针。
 
 当前已覆盖的错误分类包括：
 
@@ -344,9 +389,15 @@ source extern 的指针形参语法仍写成 `pointer<T>`，但 compile-time 兼
   - callconv decorator
   - struct pack / offset overlay
   - runtime error classification
+- `tests/ffi/test_native_extern_contract.c`
+  - scalar、aggregate/union、`in/ref/out`、callback 与拒绝类型契约
+  - availability/capability、target ABI、error/cleanup 与 corrupt contract
+  - 当前语法静态符号实际调用
+  - `.zro` roundtrip 与截断输入拒绝
+  - AOT canonical table 生成、C 编译、共享库加载及 VM/libffi 共用 golden vectors
 
 如果后续继续扩展 extern `class`、extern `interface` 或 source-level version predicates，优先保持同一个原则：
 
 - declaration metadata 先注册
 - 编译期可见性与 compile-time executable 分离
-- runtime 统一走 `zr.ffi` 的 descriptor-driven marshaller
+- 静态声明持久化 canonical contract，动态 API 才使用 descriptor-driven marshaller

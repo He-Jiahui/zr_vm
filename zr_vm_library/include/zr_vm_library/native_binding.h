@@ -418,6 +418,9 @@ typedef struct ZrLibModuleDescriptor {
 ZR_LIBRARY_API TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context);
 ZR_LIBRARY_API SZrTypeValue *ZrLib_CallContext_Self(const ZrLibCallContext *context);
 ZR_LIBRARY_API SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSize index);
+ZR_LIBRARY_API TZrBool ZrLib_CallContext_WriteBackArgument(ZrLibCallContext *context,
+                                                           TZrSize index,
+                                                           const SZrTypeValue *value);
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
                                                             TZrSize index,
                                                             ZrLibInlineSpan *outSpan);

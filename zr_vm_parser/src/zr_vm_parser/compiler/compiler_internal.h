@@ -31,6 +31,17 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+TZrBool compiler_call_has_spread_argument(const SZrFunctionCall *call);
+TZrBool compiler_validate_spread_call_signature(
+        SZrCompilerState *cs,
+        const SZrFunctionCall *call,
+        const SZrArray *parameterTypes,
+        const SZrArray *parameterPassingModes,
+        SZrFileRange location);
+TZrBool compiler_validate_trailing_spread_call(
+        SZrCompilerState *cs,
+        const SZrFunctionCall *call,
+        SZrFileRange location);
 typedef struct SZrCompilerSemanticIrSlotIdentity {
     TZrTypeId typeId;
     TZrSymbolId symbolId;
@@ -506,6 +517,8 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
 TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name) ;
 
 ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
+
+TZrBool compiler_is_compile_tool_import_declaration(const SZrAstNode *node) ;
 
 TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) ;
 TZrBool emit_runtime_decorator_applications(SZrCompilerState *cs,

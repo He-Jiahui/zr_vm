@@ -7,6 +7,35 @@
 #include "type_inference_internal.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/runtime_decorator.h"
+#include "zr_vm_parser/compile_tool.h"
+
+TZrBool compiler_is_compile_tool_import_declaration(const SZrAstNode *node) {
+    const SZrVariableDeclaration *declaration;
+    const SZrAstNode *modulePath;
+    const TZrChar *moduleName;
+
+    if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_FALSE;
+    }
+
+    declaration = &node->data.variableDeclaration;
+    if (declaration->pattern == ZR_NULL ||
+        declaration->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        declaration->value == ZR_NULL ||
+        declaration->value->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    modulePath = declaration->value->data.importExpression.modulePath;
+    if (modulePath == ZR_NULL ||
+        modulePath->type != ZR_AST_STRING_LITERAL ||
+        modulePath->data.stringLiteral.value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    moduleName = ZrCore_String_GetNativeString(modulePath->data.stringLiteral.value);
+    return ZrParser_CompileTool_IsModuleName(moduleName);
+}
 
 static void compiler_free_collected_generic_parameters(SZrState *state, SZrArray *genericParameters) {
     if (state == ZR_NULL || genericParameters == ZR_NULL ||
@@ -955,6 +984,24 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
 
         if (stmt == ZR_NULL) {
             continue;
+        }
+
+        if (compiler_is_compile_tool_import_declaration(stmt)) {
+            continue;
+        }
+
+        if (stmt->type == ZR_AST_COMPILE_TIME_DECLARATION &&
+            stmt->data.compileTimeDeclaration.isConditionalPruning &&
+            stmt->data.compileTimeDeclaration.selectedBranch != ZR_NULL) {
+            SZrAstNode *selectedBranch = stmt->data.compileTimeDeclaration.selectedBranch;
+            if (selectedBranch->type == ZR_AST_BLOCK) {
+                ZrParser_Compiler_PredeclareFunctionBindings(cs, selectedBranch->data.block.body);
+                if (cs->hasError) {
+                    return;
+                }
+                continue;
+            }
+            stmt = selectedBranch;
         }
 
         if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {

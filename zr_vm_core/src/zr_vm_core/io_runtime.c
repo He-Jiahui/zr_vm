@@ -14,12 +14,49 @@
 #include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/string.h"
 
+#include <string.h>
+
 static TZrBool io_runtime_convert_constant(SZrState *state,
                                            const SZrIoFunctionConstantVariable *source,
                                            SZrTypeValue *destination);
 static TZrBool io_runtime_copy_static_imports(SZrState *state,
                                               const SZrIoFunction *source,
                                               SZrFunction *function);
+
+static TZrBool io_runtime_copy_native_import_contracts(
+        SZrState *state,
+        const SZrIoFunction *source,
+        SZrFunction *function) {
+    TZrSize bytes;
+
+    if (source->nativeImportContractLength == 0u) {
+        return ZR_TRUE;
+    }
+    if (source->nativeImportContracts == ZR_NULL ||
+        source->nativeImportContractLength >
+                (TZrSize)ZR_FFI_CONTRACT_MAX_IMPORTS_PER_FUNCTION) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0u; index < source->nativeImportContractLength; index++) {
+        const SZrNativeImportContract *contract = &source->nativeImportContracts[index];
+
+        if (!ZrCommon_NativeImportContract_Validate(contract)) {
+            return ZR_FALSE;
+        }
+    }
+    bytes = sizeof(SZrNativeImportContract) * source->nativeImportContractLength;
+    function->nativeImportContracts =
+            (SZrNativeImportContract *)ZrCore_Memory_RawMallocWithType(
+                    state->global, bytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->nativeImportContracts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Memory_RawCopy(
+            function->nativeImportContracts, source->nativeImportContracts, bytes);
+    function->nativeImportContractLength =
+            (TZrUInt32)source->nativeImportContractLength;
+    return ZR_TRUE;
+}
 static TZrBool io_runtime_copy_module_effects(SZrState *state,
                                               SZrFunctionModuleEffect **outEffects,
                                               TZrUInt32 *outCount,
@@ -1219,6 +1256,9 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         return ZR_FALSE;
     }
     if (!io_runtime_copy_callsite_cache_metadata(state, source, function)) {
+        return ZR_FALSE;
+    }
+    if (!io_runtime_copy_native_import_contracts(state, source, function)) {
         return ZR_FALSE;
     }
 

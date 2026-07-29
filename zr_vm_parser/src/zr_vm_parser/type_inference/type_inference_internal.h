@@ -2,6 +2,7 @@
 #define ZR_VM_PARSER_TYPE_INFERENCE_INTERNAL_H
 
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/reflection.h"
 
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/compiler.h"
@@ -178,6 +179,11 @@ TZrBool infer_import_expression_type(SZrCompilerState *cs,
 TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
                                          SZrAstNode *node,
                                          SZrInferredType *result);
+ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInferred(
+        SZrCompilerState *cs,
+        const SZrInferredType *type);
+ZR_PARSER_API const TZrChar *ZrParser_ReflectionDescriptorTypeName(
+        EZrReflectionTypeCategory category);
 TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                         const SZrInferredType *baseType,
                                         SZrAstNodeArray *members,

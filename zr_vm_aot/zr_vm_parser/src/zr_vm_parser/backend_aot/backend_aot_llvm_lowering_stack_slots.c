@@ -236,6 +236,8 @@ static TZrBool backend_aot_llvm_lower_stack_copy_instruction(const SZrAotLlvmLow
 
 TZrBool backend_aot_llvm_lower_stack_slot_value_subfamily(const SZrAotLlvmLoweringContext *context,
                                                           const SZrAotLlvmInstructionContext *instruction) {
+    TZrChar argsBuffer[160];
+
     if (context == ZR_NULL || instruction == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -244,6 +246,35 @@ TZrBool backend_aot_llvm_lower_stack_slot_value_subfamily(const SZrAotLlvmLoweri
         case ZR_INSTRUCTION_ENUM(GET_STACK):
         case ZR_INSTRUCTION_ENUM(SET_STACK):
             return backend_aot_llvm_lower_stack_copy_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
+            snprintf(
+                    argsBuffer,
+                    sizeof(argsBuffer),
+                    "ptr %%state, ptr %%frame, i32 %u",
+                    (unsigned)instruction->destinationSlot);
+            backend_aot_llvm_write_guarded_call_text(
+                    context->file,
+                    context->tempCounter,
+                    "ZrLibrary_AotRuntime_ResetStackNull",
+                    argsBuffer,
+                    instruction->nextLabel,
+                    context->failLabel);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
+            snprintf(
+                    argsBuffer,
+                    sizeof(argsBuffer),
+                    "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+                    (unsigned)instruction->destinationSlot,
+                    (unsigned)instruction->operandA1);
+            backend_aot_llvm_write_guarded_call_text(
+                    context->file,
+                    context->tempCounter,
+                    "ZrLibrary_AotRuntime_ResetStackNull2",
+                    argsBuffer,
+                    instruction->nextLabel,
+                    context->failLabel);
+            return ZR_TRUE;
         default:
             return ZR_FALSE;
     }

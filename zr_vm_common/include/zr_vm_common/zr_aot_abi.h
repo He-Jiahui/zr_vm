@@ -14,7 +14,7 @@ struct SZrAotMethodInfo;
 struct SZrAotGcRootMap;
 struct SZrTypeLayout;
 
-#define ZR_VM_AOT_ABI_VERSION 13u
+#define ZR_VM_AOT_ABI_VERSION 14u
 
 typedef enum EZrAotBackendKind {
     ZR_AOT_BACKEND_KIND_NONE = 0,
@@ -165,6 +165,11 @@ typedef struct SZrAotManifestExportEntry {
     TZrUInt32 memberToken;
 } SZrAotManifestExportEntry;
 
+typedef struct SZrAotNativeImportRange {
+    TZrUInt32 contractStart;
+    TZrUInt32 contractCount;
+} SZrAotNativeImportRange;
+
 typedef struct SZrAotCodeRegistration {
     TZrUInt32 functionCount;
     const FZrAotEntryThunk *functionPointers;
@@ -184,6 +189,10 @@ typedef struct SZrAotCodeRegistration {
     TZrUInt32 typeLayoutTokenCount;
     const SZrAotGcDescriptor *const *gcDescriptors;
     TZrUInt32 gcDescriptorCount;
+    const struct SZrNativeImportContract *nativeImportContracts;
+    TZrUInt32 nativeImportContractCount;
+    const SZrAotNativeImportRange *nativeImportRanges;
+    TZrUInt32 nativeImportRangeCount;
 } SZrAotCodeRegistration;
 
 typedef struct ZrAotCompiledModule {
@@ -212,6 +221,10 @@ typedef struct ZrAotCompiledModule {
     TZrUInt32 typeLayoutTokenCount;
     const SZrAotGcDescriptor *const *gcDescriptors;
     TZrUInt32 gcDescriptorCount;
+    const struct SZrNativeImportContract *nativeImportContracts;
+    TZrUInt32 nativeImportContractCount;
+    const SZrAotNativeImportRange *nativeImportRanges;
+    TZrUInt32 nativeImportRangeCount;
     const SZrAotCodeRegistration *codeRegistration;
 } ZrAotCompiledModule;
 

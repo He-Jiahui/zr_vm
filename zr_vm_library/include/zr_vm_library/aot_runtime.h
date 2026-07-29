@@ -100,6 +100,18 @@ ZR_LIBRARY_API EZrLibraryExecutedVia ZrLibrary_AotRuntime_GetExecutedVia(struct 
 
 ZR_LIBRARY_API const TZrChar *ZrLibrary_AotRuntime_GetLastError(struct SZrGlobalState *global);
 
+ZR_LIBRARY_API const struct SZrNativeImportContract *
+ZrLibrary_AotRuntime_ResolveNativeImportContract(
+        const SZrAotCodeRegistration *codeRegistration,
+        TZrUInt32 functionIndex,
+        TZrUInt32 localContractIndex);
+
+ZR_LIBRARY_API const struct SZrNativeImportContract *
+ZrLibrary_AotRuntime_FindNativeImportContract(
+        struct SZrState *state,
+        const struct SZrFunction *function,
+        TZrUInt32 localContractIndex);
+
 ZR_LIBRARY_API struct SZrObjectModule *ZrLibrary_AotRuntime_ModuleLoader(struct SZrState *state,
                                                                          struct SZrString *moduleName,
                                                                          TZrPtr userData);
@@ -907,6 +919,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateIndex(
         TZrUInt32 receiverSlot,
         TZrUInt32 keySlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceCreateLocal(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 sourceSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_PropertyReferenceLoad(
         struct SZrState *state,
         ZrAotGeneratedFrame *frame,
@@ -1090,6 +1108,14 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallStackValue(struct SZrState *stat
                                                            TZrUInt32 functionSlot,
                                                            TZrUInt32 argumentCount,
                                                            const TZrChar *errorLabel);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallSpread(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
+        TZrUInt32 prefixArgumentCount,
+        const TZrChar *errorLabel);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CanUseTypedDirectCall(struct SZrState *state,
                                                                   ZrAotGeneratedFrame *frame,

@@ -23,6 +23,17 @@ ZR_CORE_API TZrBool ZrCore_PropertyReference_CreateIndex(
         const SZrTypeValue *key,
         SZrTypeValue *result);
 
+ZR_CORE_API TZrBool ZrCore_PropertyReference_CreateFrameSlot(
+        struct SZrState *state,
+        struct SZrFunction *function,
+        struct SZrTypeValueOnStack *frameBase,
+        TZrUInt32 sourceSlot,
+        SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_PropertyReference_IsValid(
+        struct SZrState *state,
+        SZrTypeValue *reference);
+
 ZR_CORE_API TZrBool ZrCore_PropertyReference_Load(
         struct SZrState *state,
         SZrTypeValue *reference,

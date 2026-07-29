@@ -8,6 +8,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_common/zr_ffi_contract.h"
 
 struct SZrState;
 struct SZrGlobalState;
@@ -42,6 +43,7 @@ struct ZR_STRUCT_ALIGN SZrIo {
     TZrPtr customData;
     FZrIoClose close;
     TZrBool isBinary;
+    TZrBool hasReadError;
     TZrUInt32 sourceVersionPatch;
 };
 
@@ -469,6 +471,8 @@ struct SZrIoFunction {
     SZrIoSemIrDeoptEntry *semIrDeoptTable;
     TZrSize callSiteCacheLength;
     SZrIoFunctionCallSiteCacheEntry *callSiteCaches;
+    TZrSize nativeImportContractLength;
+    SZrNativeImportContract *nativeImportContracts;
     TZrSize prototypesLength;                // prototype 数量
     TZrSize classesLength;
     SZrIoClass *classes;                      // class prototype 数组（如果 type 是 CLASS）

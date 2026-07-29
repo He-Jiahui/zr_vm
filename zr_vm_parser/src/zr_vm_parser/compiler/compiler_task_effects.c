@@ -1095,6 +1095,11 @@ void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode *node) 
         case ZR_AST_SCRIPT:
             task_effects_validate_node_array(context, node->data.script.statements);
             break;
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            task_effects_validate_node(
+                    context,
+                    node->data.compileTimeDeclaration.selectedBranch);
+            break;
         case ZR_AST_CLASS_DECLARATION:
         case ZR_AST_STRUCT_DECLARATION:
         case ZR_AST_ENUM_DECLARATION:

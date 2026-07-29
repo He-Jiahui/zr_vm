@@ -28,6 +28,11 @@
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_library/file.h"
+#include "zr_vm_library/native_registry.h"
+#include "zr_vm_library/project.h"
+#include "zr_vm_parser/compile_tool.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.h"
 
 #define TEST_START(summary) ZR_TEST_START(summary)
 #define TEST_INFO(summary, details) ZR_TEST_INFO(summary, details)
@@ -2338,6 +2343,1067 @@ static void test_compile_time_struct_decorator_projects_metadata_to_runtime_refl
     TEST_DIVIDER();
 }
 
+static void test_comptime_fn_and_block_use_current_surface(void) {
+    static const TZrChar *source =
+            "comptime fn sum(a: int, b: int): int {\n"
+            "    return a + b;\n"
+            "}\n"
+            "comptime {\n"
+            "    let checked = sum(20, 22);\n"
+            "}\n"
+            "return 42;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "comptime_current_surface.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(state, function, 42, "current comptime surface"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_pub_comptime_fn_uses_current_surface_without_runtime_projection(void) {
+    static const TZrChar *source =
+            "pub comptime fn answer(): int {\n"
+            "    return 42;\n"
+            "}\n"
+            "comptime {\n"
+            "    let checked = answer();\n"
+            "}\n"
+            "return 42;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "pub_comptime_current_surface.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(state, function, 42, "public current comptime function"));
+
+    ZrCore_Function_Free(state, function);
+
+    state->global->emitCompileTimeRuntimeSupport = ZR_TRUE;
+    sourceName = ZrCore_String_CreateFromNative(state, "pub_comptime_no_runtime_projection.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            state,
+            "pub comptime fn hidden(): int { return 42; }\nreturn hidden();\n",
+            strlen("pub comptime fn hidden(): int { return 42; }\nreturn hidden();\n"),
+            sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+        SZrFunction *child = &function->childFunctionList[index];
+        TEST_ASSERT_TRUE(child->functionName == ZR_NULL ||
+                         strcmp(ZrCore_String_GetNativeString(child->functionName), "hidden") != 0);
+    }
+    TEST_ASSERT_TRUE(execute_test_function(state, function, 42, "no hidden comptime runtime function"));
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_current_comptime_block_runs_after_signature_collection(void) {
+    static const TZrChar *source =
+            "comptime {\n"
+            "    let checked = declaredLater();\n"
+            "}\n"
+            "comptime fn declaredLater(): int { return 42; }\n"
+            "return 42;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "comptime_late_check.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(state, function, 42, "comptime late check"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_compile_tool_descriptor_is_compile_only_and_contract_stable(void) {
+    const SZrParserCompileToolModuleDescriptor *descriptor =
+            ZrParser_CompileTool_FindModule(ZR_PARSER_COMPILE_TOOL_MODULE_BUILD);
+    SZrState *state = create_test_state();
+
+    TEST_ASSERT_NOT_NULL(descriptor);
+    TEST_ASSERT_EQUAL_STRING(ZR_PARSER_COMPILE_TOOL_MODULE_BUILD, descriptor->moduleName);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL, descriptor->providerPhase);
+    TEST_ASSERT_EQUAL_STRING(ZR_PARSER_COMPILE_TOOL_BUILD_PUBLIC_CONTRACT_HASH,
+                             descriptor->publicContractHash);
+    TEST_ASSERT_EQUAL_UINT64(ZrParser_CompileTool_ComputePublicContractHash(descriptor),
+                             descriptor->computedPublicContractHash);
+    TEST_ASSERT_EQUAL_size_t(4u, descriptor->callableCount);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_COMPILE_TOOL_ROLE_BUILD_FEATURE,
+                          descriptor->callables[0].role);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_COMPILE_TOOL_ROLE_ASSERT,
+                          descriptor->callables[1].role);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_COMPILE_TOOL_ROLE_ERROR,
+                          descriptor->callables[2].role);
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_COMPILE_TOOL_ROLE_WARNING,
+                          descriptor->callables[3].role);
+    TEST_ASSERT_TRUE(ZrParser_CompileTool_IsModuleName(
+            ZR_PARSER_COMPILE_TOOL_MODULE_DECLARATION));
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(
+            state->global,
+            ZR_PARSER_COMPILE_TOOL_MODULE_BUILD));
+    destroy_test_state(state);
+}
+
+static void test_comptime_if_reads_declared_project_feature_and_prunes_branch(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"comptime-test\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":true}}";
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "comptime if (compile.build.feature(\"trace\")) {\n"
+            "    fn selected(): int { return 42; }\n"
+            "} else {\n"
+            "    fn selected(): int { return 7; }\n"
+            "}\n"
+            "return selected();\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    TZrPtr previousUserData;
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, "E:/tmp/comptime-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+
+    sourceName = ZrCore_String_CreateFromNative(state, "comptime_feature.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(state, function, 42, "comptime feature branch"));
+
+    ZrCore_Function_Free(state, function);
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_comptime_if_prunes_static_import_summary_before_module_analysis(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"comptime-test\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":true}}";
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "comptime if (compile.build.feature(\"trace\")) {\n"
+            "    let selected = import(\"comptime_enabled\");\n"
+            "} else {\n"
+            "    let selected = import(\"comptime_disabled\");\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    TZrPtr previousUserData;
+    SZrString *sourceName;
+    SZrString *moduleName;
+    SZrAstNode *ast;
+    const SZrParserModuleInitSummary *summary;
+    SZrString *staticImport;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, "E:/tmp/comptime-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+
+    sourceName = ZrCore_String_CreateFromNative(state, "comptime_static_import_summary.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    moduleName = ZrCore_String_CreateFromNative(state, "comptime.summary");
+    TEST_ASSERT_NOT_NULL(moduleName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+    TEST_ASSERT_TRUE(ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, moduleName, ast));
+
+    summary = ZrParser_ModuleInitAnalysis_FindSummaryByAst(state->global, ast);
+    TEST_ASSERT_NOT_NULL(summary);
+    TEST_ASSERT_EQUAL_size_t(1u, summary->staticImports.length);
+    staticImport = *(SZrString **)ZrCore_Array_Get((SZrArray *)&summary->staticImports, 0);
+    TEST_ASSERT_NOT_NULL(staticImport);
+    TEST_ASSERT_EQUAL_STRING("comptime_enabled", ZrCore_String_GetNativeString(staticImport));
+
+    ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
+    ZrParser_Ast_Free(state, ast);
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_nested_comptime_if_prunes_build_facts_before_module_analysis(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"comptime-test\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":true}}";
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "comptime if (true) {\n"
+            "    comptime if (compile.build.feature(\"trace\")) {\n"
+            "        let selected = import(\"nested_enabled\");\n"
+            "    } else {\n"
+            "        let selected = import(\"nested_disabled\");\n"
+            "    }\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    TZrPtr previousUserData;
+    SZrString *sourceName;
+    SZrString *moduleName;
+    SZrAstNode *ast;
+    const SZrParserModuleInitSummary *summary;
+    SZrString *staticImport;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, "E:/tmp/comptime-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+
+    sourceName = ZrCore_String_CreateFromNative(state, "nested_comptime_summary.zr");
+    moduleName = ZrCore_String_CreateFromNative(state, "comptime.nested.summary");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_NOT_NULL(moduleName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+    TEST_ASSERT_TRUE(ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, moduleName, ast));
+
+    summary = ZrParser_ModuleInitAnalysis_FindSummaryByAst(state->global, ast);
+    TEST_ASSERT_NOT_NULL(summary);
+    TEST_ASSERT_EQUAL_size_t(1u, summary->staticImports.length);
+    staticImport = *(SZrString **)ZrCore_Array_Get((SZrArray *)&summary->staticImports, 0);
+    TEST_ASSERT_NOT_NULL(staticImport);
+    TEST_ASSERT_EQUAL_STRING("nested_enabled", ZrCore_String_GetNativeString(staticImport));
+
+    ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
+    ZrParser_Ast_Free(state, ast);
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_statement_comptime_if_is_selected_during_build_facts(void) {
+    static const TZrChar *source =
+            "fn selected(): int {\n"
+            "    comptime if (true) { return 42; } else { return 7; }\n"
+            "}\n"
+            "return selected();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *functionNode;
+    SZrAstNode *comptimeNode;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "statement_comptime_build_facts.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+
+    functionNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(functionNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionNode->type);
+    comptimeNode = functionNode->data.functionDeclaration.body->data.block.body->nodes[0];
+    TEST_ASSERT_NOT_NULL(comptimeNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_COMPILE_TIME_DECLARATION, comptimeNode->type);
+    TEST_ASSERT_NOT_NULL(comptimeNode->data.compileTimeDeclaration.selectedBranch);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_runtime_scope_rejects_compile_tool_import(void) {
+    static const TZrChar *source =
+            "fn invalid(): int {\n"
+            "    let compile = import(\"zr.compile\");\n"
+            "    return 0;\n"
+            "}\n"
+            "return invalid();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "runtime_compile_tool_import.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    TEST_ASSERT_FALSE(ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "compiletool.phase_mismatch"));
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_runtime_scope_rejects_top_level_compile_tool_alias_use(void) {
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "fn invalid(): bool {\n"
+            "    return compile.build.feature(\"trace\");\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "runtime_compile_tool_alias_use.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    TEST_ASSERT_FALSE(ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "compiletool.phase_mismatch"));
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_runtime_top_level_statements_reject_compile_tool_alias_use(void) {
+    static const TZrChar *sources[] = {
+            "let compile = import(\"zr.compile\");\n"
+            "return compile.build.feature(\"trace\");\n",
+            "let compile = import(\"zr.compile\");\n"
+            "if (true) { return compile.build.feature(\"trace\"); }\n"
+            "return false;\n",
+            "let compile = import(\"zr.compile\");\n"
+            "while (false) { return compile.build.feature(\"trace\"); }\n"
+            "return false;\n"};
+    static const TZrChar *sourceNames[] = {
+            "runtime_top_level_return_compile_tool_alias.zr",
+            "runtime_top_level_if_compile_tool_alias.zr",
+            "runtime_top_level_while_compile_tool_alias.zr"};
+
+    for (TZrSize index = 0; index < sizeof(sources) / sizeof(sources[0]); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompilerState cs;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, (TZrNativeString)sourceNames[index]);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        ZrParser_CompilerState_Init(&cs, state);
+        TEST_ASSERT_FALSE(
+                ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+        TEST_ASSERT_NOT_NULL(cs.errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "compiletool.phase_mismatch"));
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+}
+
+static void test_runtime_local_binding_shadows_compile_tool_alias(void) {
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "fn valid(): int {\n"
+            "    let compile = 42;\n"
+            "    return compile;\n"
+            "}\n"
+            "return valid();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "runtime_compile_tool_shadow.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_expression_nested_comptime_if_is_selected_during_build_facts(void) {
+    static const TZrChar *lambdaSource =
+            "fn selected(): int {\n"
+            "    let run = () => {\n"
+            "        comptime if (true) { return 42; } else { return 7; }\n"
+            "    };\n"
+            "    return run();\n"
+            "}\n"
+            "return selected();\n";
+    static const TZrChar *generatorSource =
+            "fn selected(): int {\n"
+            "    let values = {{\n"
+            "        comptime if (true) { out 42; } else { out 7; }\n"
+            "    }};\n"
+            "    return 42;\n"
+            "}\n"
+            "return selected();\n";
+    const TZrChar *sources[] = {lambdaSource, generatorSource};
+    const TZrChar *names[] = {"lambda_comptime_build_facts.zr", "generator_comptime_build_facts.zr"};
+
+    for (TZrSize index = 0; index < 2; index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)names[index]);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+}
+
+static void test_comptime_feature_supports_disabled_no_else_and_typed_string(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"comptime-test\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":false}}";
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "comptime fn configuredFeature(): string { return \"trace\"; }\n"
+            "comptime if (compile.build.feature(configuredFeature())) {\n"
+            "    fn selected(): int { return 7; }\n"
+            "} else {\n"
+            "    fn selected(): int { return 42; }\n"
+            "}\n"
+            "comptime if (false) {\n"
+            "    let missing = import(\"inactive.no.else\");\n"
+            "}\n"
+            "return selected();\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    TZrPtr previousUserData;
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, "E:/tmp/comptime-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+    sourceName = ZrCore_String_CreateFromNative(state, "comptime_disabled_typed_feature.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(state, function, 42, "disabled typed feature"));
+
+    ZrCore_Function_Free(state, function);
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_comptime_feature_rejects_wrong_arity_and_type(void) {
+    static const TZrChar *wrongArity =
+            "let compile = import(\"zr.compile\");\n"
+            "comptime if (compile.build.feature()) { return 1; }\n"
+            "return 0;\n";
+    static const TZrChar *wrongType =
+            "let compile = import(\"zr.compile\");\n"
+            "comptime if (compile.build.feature(42)) { return 1; }\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+
+    TEST_ASSERT_NOT_NULL(state);
+    assert_compile_time_compile_failure(state, wrongArity, "comptime_feature_wrong_arity.zr");
+    assert_compile_time_compile_failure(state, wrongType, "comptime_feature_wrong_type.zr");
+    destroy_test_state(state);
+}
+
+static void test_comptime_if_selected_declaration_enters_module_summary(void) {
+    static const TZrChar *source =
+            "comptime if (true) {\n"
+            "    pub fn selected(): int { return 42; }\n"
+            "} else {\n"
+            "    pub fn inactive(): int { return 7; }\n"
+            "}\n"
+            "return selected();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrString *moduleName;
+    SZrAstNode *ast;
+    const SZrParserModuleInitSummary *summary;
+    const SZrModuleInitExportInfo *exportInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "comptime_selected_export.zr");
+    moduleName = ZrCore_String_CreateFromNative(state, "comptime.selected.export");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_NOT_NULL(moduleName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+    TEST_ASSERT_TRUE(ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, moduleName, ast));
+
+    summary = ZrParser_ModuleInitAnalysis_FindSummaryByAst(state->global, ast);
+    TEST_ASSERT_NOT_NULL(summary);
+    TEST_ASSERT_EQUAL_size_t(1u, summary->exports.length);
+    exportInfo = (const SZrModuleInitExportInfo *)ZrCore_Array_Get(
+            (SZrArray *)&summary->exports,
+            0);
+    TEST_ASSERT_NOT_NULL(exportInfo);
+    TEST_ASSERT_EQUAL_STRING("selected", ZrCore_String_GetNativeString(exportInfo->name));
+
+    ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_comptime_if_inactive_import_is_not_canonicalized(void) {
+    static const TZrChar *source =
+            "comptime if (false) {\n"
+            "    let missing = import(\"inactive.module.must.not.resolve\");\n"
+            "} else {\n"
+            "    fn selected(): int { return 42; }\n"
+            "}\n"
+            "return selected();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "comptime_inactive_import.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(state, function, 42, "inactive import pruning"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_comptime_if_rejects_unknown_project_feature(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"comptime-test\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":true}}";
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "comptime if (compile.build.feature(\"missing\")) {\n"
+            "    fn selected(): int { return 1; }\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    TZrPtr previousUserData;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, "E:/tmp/comptime-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+
+    assert_compile_time_compile_failure(state, source, "comptime_unknown_feature.zr");
+
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_compile_tool_alias_shadowed_by_runtime_binding_forms(void) {
+    static const TZrChar *sources[] = {
+            "let compile = import(\"zr.compile\");\n"
+            "fn valid(): int { let {value: compile} = {value: 42}; return compile; }\n"
+            "return 0;\n",
+            "let compile = import(\"zr.compile\");\n"
+            "fn valid(): int { for (let compile in [42]) { let value = compile; } return 0; }\n"
+            "return valid();\n",
+            "let compile = import(\"zr.compile\");\n"
+            "fn valid(): int { try { throw 1; } catch (compile) { let value = compile; } return 0; }\n"
+            "return valid();\n",
+            "let compile = import(\"zr.compile\");\n"
+            "fn valid(): int { using (var compile = 42) { let value = compile; } return 0; }\n"
+            "return valid();\n",
+            "let compile = import(\"zr.compile\");\n"
+            "fn valid(...compile: int[]): int { return 0; }\n"
+            "return 0;\n"};
+    static const TZrChar *names[] = {
+            "compile_tool_destructuring_shadow.zr",
+            "compile_tool_foreach_shadow.zr",
+            "compile_tool_catch_shadow.zr",
+            "compile_tool_using_shadow.zr",
+            "compile_tool_vararg_shadow.zr"};
+
+    for (TZrSize index = 0; index < sizeof(sources) / sizeof(sources[0]); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, (TZrNativeString)names[index]);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+}
+
+static void test_for_initializer_shadow_does_not_escape_loop(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"comptime-test\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":true}}";
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "for (var compile = 0; compile < 1; compile = compile + 1) {}\n"
+            "comptime if (compile.build.feature(\"trace\")) { fn selected(): int { return 42; } }\n"
+            "return selected();\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(
+            state, (TZrNativeString)projectJson, "E:/tmp/comptime-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    state->global->userData = project;
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "compile_tool_for_scope.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[2]
+                                 ->data.compileTimeDeclaration.selectedBranch);
+
+    ZrParser_Ast_Free(state, ast);
+    state->global->userData = ZR_NULL;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_default_parameter_expression_enters_build_facts(void) {
+    static const TZrChar *source =
+            "fn use(factory = () => {\n"
+            "    comptime if (true) { return 42; } else { return 7; }\n"
+            "}): void {}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *functionNode;
+    SZrAstNode *parameterNode;
+    SZrAstNode *lambdaNode;
+    SZrAstNode *comptimeNode;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "comptime_default_parameter_build_facts.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+    functionNode = ast->data.script.statements->nodes[0];
+    parameterNode = functionNode->data.functionDeclaration.params->nodes[0];
+    lambdaNode = parameterNode->data.parameter.defaultValue;
+    comptimeNode = lambdaNode->data.lambdaExpression.block->data.block.body->nodes[0];
+    TEST_ASSERT_TRUE(comptimeNode->data.compileTimeDeclaration.buildFactsEvaluated);
+    TEST_ASSERT_NOT_NULL(comptimeNode->data.compileTimeDeclaration.selectedBranch);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_selected_branch_late_comptime_block_is_not_skipped(void) {
+    static const TZrChar *source =
+            "comptime if (true) {\n"
+            "    comptime { let value = missingComptimeFunction(); }\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+
+    TEST_ASSERT_NOT_NULL(state);
+    assert_compile_time_compile_failure(
+            state, source, "selected_branch_late_comptime.zr");
+    destroy_test_state(state);
+}
+
+static void test_function_local_comptime_block_is_rejected(void) {
+    static const TZrChar *source =
+            "fn invalid(): int {\n"
+            "    comptime { let value = 42; }\n"
+            "    return 0;\n"
+            "}\n"
+            "return invalid();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "function_local_comptime_block.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    TEST_ASSERT_FALSE(
+            ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "comptime.module_scope_only"));
+
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_runtime_local_function_hoists_over_compile_tool_alias(void) {
+    static const TZrChar *sources[] = {
+            "let compile = import(\"zr.compile\");\n"
+            "fn outer(): int {\n"
+            "    let result = compile();\n"
+            "    fn compile(): int { return 42; }\n"
+            "    return result;\n"
+            "}\n"
+            "return outer();\n",
+            "let compile = import(\"zr.compile\");\n"
+            "fn outer(): int {\n"
+            "    fn compile(): int { return 42; }\n"
+            "    let result = compile();\n"
+            "    return result;\n"
+            "}\n"
+            "return outer();\n"};
+    static const TZrChar *sourceNames[] = {
+            "compile_tool_local_function_hoist_after_use.zr",
+            "compile_tool_local_function_hoist_before_use.zr"};
+
+    for (TZrSize index = 0; index < sizeof(sources) / sizeof(sources[0]); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, (TZrNativeString)sourceNames[index]);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+}
+
+static void test_module_function_hoists_over_compile_tool_alias(void) {
+    static const TZrChar *sources[] = {
+            "let compile = import(\"zr.compile\");\n"
+            "fn compile(): int { return 42; }\n"
+            "fn use(): int { return compile(); }\n"
+            "return use();\n",
+            "let compile = import(\"zr.compile\");\n"
+            "comptime if (true) {\n"
+            "    fn compile(): int { return 42; }\n"
+            "}\n"
+            "fn use(): int { return compile(); }\n"
+            "return use();\n",
+            "let compile = import(\"zr.compile\");\n"
+            "fn use(): int { return compile(); }\n"
+            "comptime if (true) {\n"
+            "    fn compile(): int { return 42; }\n"
+            "}\n"
+            "return use();\n"};
+    static const TZrChar *sourceNames[] = {
+            "compile_tool_module_function_hoist.zr",
+            "compile_tool_selected_module_function_hoist.zr",
+            "compile_tool_selected_module_function_hoist_after_use.zr"};
+
+    for (TZrSize index = 0; index < sizeof(sources) / sizeof(sources[0]); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, (TZrNativeString)sourceNames[index]);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+}
+
+static void test_selected_runtime_function_shadow_does_not_escape_branch(void) {
+    static const TZrChar *source =
+            "let compile = import(\"zr.compile\");\n"
+            "fn selected(): int {\n"
+            "    comptime if (true) {\n"
+            "        fn compile(): int { return 42; }\n"
+            "        let value = compile();\n"
+            "    }\n"
+            "    comptime if (compile.build.feature(\"trace\")) {\n"
+            "        return 42;\n"
+            "    } else {\n"
+            "        return 7;\n"
+            "    }\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    TZrPtr previousUserData;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(
+            state,
+            "{\"name\":\"scope-test\",\"source\":\"src\",\"binary\":\"bin\","
+            "\"entry\":\"main.zr\",\"features\":{\"trace\":true}}",
+            "E:/tmp/compile-tool-scope-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "compile_tool_selected_runtime_shadow_scope.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+
+    ZrParser_Ast_Free(state, ast);
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_runtime_top_level_containers_reject_comptime_block(void) {
+    static const TZrChar *sources[] = {
+            "if (true) { comptime { let value = 42; } }\nreturn 0;\n",
+            "while (false) { comptime { let value = 42; } }\nreturn 0;\n"};
+    static const TZrChar *sourceNames[] = {
+            "top_level_runtime_if_comptime.zr",
+            "top_level_runtime_while_comptime.zr"};
+
+    for (TZrSize index = 0; index < sizeof(sources) / sizeof(sources[0]); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompilerState cs;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, (TZrNativeString)sourceNames[index]);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+        ZrParser_CompilerState_Init(&cs, state);
+        TEST_ASSERT_FALSE(
+                ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+        TEST_ASSERT_NOT_NULL(cs.errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "comptime.module_scope_only"));
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+}
+
+static void test_interface_and_extern_defaults_enter_build_facts(void) {
+    static const TZrChar *source =
+            "interface Service {\n"
+            "    fn run(factory = () => {\n"
+            "        comptime if (true) { return 42; } else { return 7; }\n"
+            "    }): void;\n"
+            "}\n"
+            "native extern(\"fixture\") {\n"
+            "    fn read(factory = () => {\n"
+            "        comptime if (false) { return 7; }\n"
+            "    }): int;\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *interfaceNode;
+    SZrAstNode *interfaceMethod;
+    SZrAstNode *interfaceParameter;
+    SZrAstNode *interfaceLambda;
+    SZrAstNode *activeComptime;
+    SZrAstNode *externBlock;
+    SZrAstNode *externFunction;
+    SZrAstNode *externParameter;
+    SZrAstNode *externLambda;
+    SZrAstNode *inactiveComptime;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "interface_extern_default_build_facts.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+
+    interfaceNode = ast->data.script.statements->nodes[0];
+    interfaceMethod = interfaceNode->data.interfaceDeclaration.members->nodes[0];
+    interfaceParameter = interfaceMethod->data.interfaceMethodSignature.params->nodes[0];
+    interfaceLambda = interfaceParameter->data.parameter.defaultValue;
+    activeComptime = interfaceLambda->data.lambdaExpression.block->data.block.body->nodes[0];
+    TEST_ASSERT_TRUE(activeComptime->data.compileTimeDeclaration.buildFactsEvaluated);
+    TEST_ASSERT_NOT_NULL(activeComptime->data.compileTimeDeclaration.selectedBranch);
+
+    externBlock = ast->data.script.statements->nodes[1];
+    externFunction = externBlock->data.externBlock.declarations->nodes[0];
+    externParameter = externFunction->data.externFunctionDeclaration.params->nodes[0];
+    externLambda = externParameter->data.parameter.defaultValue;
+    inactiveComptime = externLambda->data.lambdaExpression.block->data.block.body->nodes[0];
+    TEST_ASSERT_TRUE(inactiveComptime->data.compileTimeDeclaration.buildFactsEvaluated);
+    TEST_ASSERT_NULL(inactiveComptime->data.compileTimeDeclaration.selectedBranch);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static SZrAstNode *build_fact_comptime_from_decorator(SZrAstNode *decorator) {
+    SZrAstNode *expression;
+    SZrAstNode *call = ZR_NULL;
+    SZrAstNode *lambda;
+
+    TEST_ASSERT_NOT_NULL(decorator);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DECORATOR_EXPRESSION, decorator->type);
+    expression = decorator->data.decoratorExpression.expr;
+    TEST_ASSERT_NOT_NULL(expression);
+    if (expression->type == ZR_AST_FUNCTION_CALL) {
+        call = expression;
+    } else {
+        TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, expression->type);
+        for (TZrSize index = 0;
+             expression->data.primaryExpression.members != ZR_NULL &&
+             index < expression->data.primaryExpression.members->count;
+             index++) {
+            SZrAstNode *member =
+                    expression->data.primaryExpression.members->nodes[index];
+            if (member != ZR_NULL && member->type == ZR_AST_FUNCTION_CALL) {
+                call = member;
+                break;
+            }
+        }
+    }
+    TEST_ASSERT_NOT_NULL(call);
+    TEST_ASSERT_NOT_NULL(call->data.functionCall.args);
+    TEST_ASSERT_TRUE(call->data.functionCall.args->count > 0u);
+    lambda = call->data.functionCall.args->nodes[0];
+    TEST_ASSERT_NOT_NULL(lambda);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, lambda->type);
+    TEST_ASSERT_NOT_NULL(lambda->data.lambdaExpression.block);
+    TEST_ASSERT_NOT_NULL(lambda->data.lambdaExpression.block->data.block.body);
+    TEST_ASSERT_TRUE(lambda->data.lambdaExpression.block->data.block.body->count > 0u);
+    return lambda->data.lambdaExpression.block->data.block.body->nodes[0];
+}
+
+static void test_signature_variants_and_decorators_enter_build_facts(void) {
+    static const TZrChar *source =
+            "interface Service {\n"
+            "    @create(factory = () => {\n"
+            "        comptime if (true) { return 42; } else { return 7; }\n"
+            "    }): void;\n"
+            "    @variadic(...args: int[]): void;\n"
+            "}\n"
+            "native extern(\"fixture\") {\n"
+            "    #decorate(() => { comptime if (true) { return 1; } })#\n"
+            "    delegate Callback(\n"
+            "        #decorate(() => { comptime if (false) { return 2; } })#\n"
+            "        factory = () => { comptime if (true) { return 3; } }\n"
+            "    ): int;\n"
+            "    delegate VariadicCallback(...args: int[]): int;\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *interfaceNode;
+    SZrAstNode *interfaceMeta;
+    SZrAstNode *interfaceVariadicMeta;
+    SZrAstNode *interfaceDefault;
+    SZrAstNode *interfaceComptime;
+    SZrAstNode *externBlock;
+    SZrAstNode *externDelegate;
+    SZrAstNode *externVariadicDelegate;
+    SZrAstNode *declarationComptime;
+    SZrAstNode *parameter;
+    SZrAstNode *parameterComptime;
+    SZrAstNode *delegateDefault;
+    SZrAstNode *delegateDefaultComptime;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "signature_variant_build_facts.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFacts(state, ast));
+
+    interfaceNode = ast->data.script.statements->nodes[0];
+    interfaceMeta = interfaceNode->data.interfaceDeclaration.members->nodes[0];
+    interfaceVariadicMeta =
+            interfaceNode->data.interfaceDeclaration.members->nodes[1];
+    TEST_ASSERT_NOT_NULL(interfaceVariadicMeta->data.interfaceMetaSignature.args);
+    interfaceDefault =
+            interfaceMeta->data.interfaceMetaSignature.params->nodes[0]
+                    ->data.parameter.defaultValue;
+    interfaceComptime =
+            interfaceDefault->data.lambdaExpression.block->data.block.body->nodes[0];
+    TEST_ASSERT_TRUE(interfaceComptime->data.compileTimeDeclaration.buildFactsEvaluated);
+    TEST_ASSERT_NOT_NULL(interfaceComptime->data.compileTimeDeclaration.selectedBranch);
+
+    externBlock = ast->data.script.statements->nodes[1];
+    externDelegate = externBlock->data.externBlock.declarations->nodes[0];
+    externVariadicDelegate = externBlock->data.externBlock.declarations->nodes[1];
+    TEST_ASSERT_NOT_NULL(
+            externVariadicDelegate->data.externDelegateDeclaration.args);
+    TEST_ASSERT_NOT_NULL(externDelegate->data.externDelegateDeclaration.decorators);
+    declarationComptime = build_fact_comptime_from_decorator(
+            externDelegate->data.externDelegateDeclaration.decorators->nodes[0]);
+    TEST_ASSERT_TRUE(declarationComptime->data.compileTimeDeclaration.buildFactsEvaluated);
+    TEST_ASSERT_NOT_NULL(declarationComptime->data.compileTimeDeclaration.selectedBranch);
+
+    parameter = externDelegate->data.externDelegateDeclaration.params->nodes[0];
+    TEST_ASSERT_NOT_NULL(parameter->data.parameter.decorators);
+    parameterComptime = build_fact_comptime_from_decorator(
+            parameter->data.parameter.decorators->nodes[0]);
+    TEST_ASSERT_TRUE(parameterComptime->data.compileTimeDeclaration.buildFactsEvaluated);
+    TEST_ASSERT_NULL(parameterComptime->data.compileTimeDeclaration.selectedBranch);
+    delegateDefault = parameter->data.parameter.defaultValue;
+    delegateDefaultComptime =
+            delegateDefault->data.lambdaExpression.block->data.block.body->nodes[0];
+    TEST_ASSERT_TRUE(delegateDefaultComptime->data.compileTimeDeclaration.buildFactsEvaluated);
+    TEST_ASSERT_NOT_NULL(delegateDefaultComptime->data.compileTimeDeclaration.selectedBranch);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
 // 主函数
 int main(void) {
     UNITY_BEGIN();
@@ -2378,6 +3444,35 @@ int main(void) {
     RUN_TEST(test_compile_time_class_decorator_projects_metadata_to_runtime_reflection);
     RUN_TEST(test_compile_time_function_decorator_projects_metadata_to_runtime_reflection);
     RUN_TEST(test_compile_time_struct_decorator_projects_metadata_to_runtime_reflection);
+    RUN_TEST(test_compile_tool_descriptor_is_compile_only_and_contract_stable);
+    RUN_TEST(test_comptime_fn_and_block_use_current_surface);
+    RUN_TEST(test_pub_comptime_fn_uses_current_surface_without_runtime_projection);
+    RUN_TEST(test_current_comptime_block_runs_after_signature_collection);
+    RUN_TEST(test_comptime_if_reads_declared_project_feature_and_prunes_branch);
+    RUN_TEST(test_comptime_if_prunes_static_import_summary_before_module_analysis);
+    RUN_TEST(test_nested_comptime_if_prunes_build_facts_before_module_analysis);
+    RUN_TEST(test_statement_comptime_if_is_selected_during_build_facts);
+    RUN_TEST(test_runtime_scope_rejects_compile_tool_import);
+    RUN_TEST(test_runtime_scope_rejects_top_level_compile_tool_alias_use);
+    RUN_TEST(test_runtime_top_level_statements_reject_compile_tool_alias_use);
+    RUN_TEST(test_runtime_local_binding_shadows_compile_tool_alias);
+    RUN_TEST(test_expression_nested_comptime_if_is_selected_during_build_facts);
+    RUN_TEST(test_comptime_feature_supports_disabled_no_else_and_typed_string);
+    RUN_TEST(test_comptime_feature_rejects_wrong_arity_and_type);
+    RUN_TEST(test_comptime_if_selected_declaration_enters_module_summary);
+    RUN_TEST(test_comptime_if_inactive_import_is_not_canonicalized);
+    RUN_TEST(test_comptime_if_rejects_unknown_project_feature);
+    RUN_TEST(test_compile_tool_alias_shadowed_by_runtime_binding_forms);
+    RUN_TEST(test_for_initializer_shadow_does_not_escape_loop);
+    RUN_TEST(test_default_parameter_expression_enters_build_facts);
+    RUN_TEST(test_selected_branch_late_comptime_block_is_not_skipped);
+    RUN_TEST(test_function_local_comptime_block_is_rejected);
+    RUN_TEST(test_runtime_local_function_hoists_over_compile_tool_alias);
+    RUN_TEST(test_module_function_hoists_over_compile_tool_alias);
+    RUN_TEST(test_selected_runtime_function_shadow_does_not_escape_branch);
+    RUN_TEST(test_runtime_top_level_containers_reject_comptime_block);
+    RUN_TEST(test_interface_and_extern_defaults_enter_build_facts);
+    RUN_TEST(test_signature_variants_and_decorators_enter_build_facts);
     
     return UNITY_END();
 }

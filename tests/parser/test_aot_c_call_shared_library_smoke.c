@@ -316,6 +316,9 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
+
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -334,7 +337,6 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -497,6 +499,9 @@ static void test_aot_c_generated_shared_library_executes_static_numeric_call_loc
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
+
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -515,7 +520,6 @@ static void test_aot_c_generated_shared_library_executes_static_numeric_call_loc
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -643,6 +647,9 @@ static void test_aot_c_generated_shared_library_executes_stack_value_call_local_
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
+
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -661,7 +668,6 @@ static void test_aot_c_generated_shared_library_executes_stack_value_call_local_
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -821,6 +827,9 @@ static void test_aot_c_generated_shared_library_compiles_value_typed_call_direct
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
+
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -839,7 +848,6 @@ static void test_aot_c_generated_shared_library_compiles_value_typed_call_direct
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }

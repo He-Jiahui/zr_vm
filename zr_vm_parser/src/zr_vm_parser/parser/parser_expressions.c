@@ -64,10 +64,74 @@ static TZrBool parser_token_can_start_expression(EZrToken token) {
         case ZR_TK_PERCENT:
         case ZR_TK_SUPER:
         case ZR_TK_LESS_THAN:
+        case ZR_TK_TYPEID:
+        case ZR_TK_TYPEOF:
             return ZR_TRUE;
         default:
             return ZR_FALSE;
     }
+}
+
+static SZrAstNode *parse_reflection_type_query_expression(SZrParserState *ps) {
+    SZrFileRange startLoc;
+    EZrTypeQueryKind kind;
+    SZrAstNode *operand = ZR_NULL;
+    SZrType *typeOperand = ZR_NULL;
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL ||
+        (ps->lexer->t.token != ZR_TK_TYPEID && ps->lexer->t.token != ZR_TK_TYPEOF)) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_token_location(ps);
+    kind = ps->lexer->t.token == ZR_TK_TYPEID
+                   ? ZR_TYPE_QUERY_CANONICAL_IDENTITY
+                   : ZR_TYPE_QUERY_RUNTIME_DESCRIPTOR;
+    ZrParser_Lexer_Next(ps->lexer);
+    expect_token(ps, ZR_TK_LPAREN);
+    if (!consume_token(ps, ZR_TK_LPAREN)) {
+        return ZR_NULL;
+    }
+
+    if (kind == ZR_TYPE_QUERY_CANONICAL_IDENTITY) {
+        typeOperand = parse_type(ps);
+        if (typeOperand == ZR_NULL) {
+            report_error(ps, "Expected a type reference in typeid(...)");
+            return ZR_NULL;
+        }
+    } else {
+        operand = parse_expression(ps);
+        if (operand == ZR_NULL) {
+            report_error(ps, "Expected an expression in typeof(...)");
+            return ZR_NULL;
+        }
+    }
+
+    expect_token(ps, ZR_TK_RPAREN);
+    if (!consume_token(ps, ZR_TK_RPAREN)) {
+        free_owned_type(ps->state, typeOperand);
+        if (operand != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, operand);
+        }
+        return ZR_NULL;
+    }
+
+    node = create_ast_node(ps,
+                           ZR_AST_TYPE_QUERY_EXPRESSION,
+                           ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        free_owned_type(ps->state, typeOperand);
+        if (operand != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, operand);
+        }
+        return ZR_NULL;
+    }
+
+    node->data.typeQueryExpression.kind = kind;
+    node->data.typeQueryExpression.operand = operand;
+    node->data.typeQueryExpression.typeOperand = typeOperand;
+    return node;
 }
 
 static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
@@ -88,6 +152,11 @@ static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
 
 SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
+
+    if (token == ZR_TK_TYPEID || token == ZR_TK_TYPEOF) {
+        SZrAstNode *query = parse_reflection_type_query_expression(ps);
+        return query != ZR_NULL ? parse_member_access(ps, query) : ZR_NULL;
+    }
 
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "await")) {
         return parse_await_expression(ps);

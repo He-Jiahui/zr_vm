@@ -161,6 +161,9 @@ enum EZrAstNodeType {
 
     // await 表达式（追加节点，避免已有 AST 编号漂移）
     ZR_AST_AWAIT_EXPRESSION,
+
+    // 普通调用参数展开（追加节点，避免已有 AST 编号漂移）
+    ZR_AST_SPREAD_ARGUMENT,
 };
 
 typedef enum EZrAstNodeType EZrAstNodeType;
@@ -501,6 +504,10 @@ typedef struct SZrFunctionCall {
     SZrArray *argumentMarkers;          // SZrCallArgumentSyntax，与 args 对齐
 } SZrFunctionCall;
 
+typedef struct SZrSpreadArgument {
+    SZrAstNode *expression;
+} SZrSpreadArgument;
+
 typedef struct SZrMemberExpression {
     SZrAstNode *property;
     TZrBool computed; // true 表示使用 []，false 表示使用 .
@@ -652,11 +659,16 @@ typedef enum EZrCompileTimeDeclarationType EZrCompileTimeDeclarationType;
 typedef struct SZrCompileTimeDeclaration {
     EZrCompileTimeDeclarationType declarationType;  // FUNCTION, VARIABLE, STATEMENT, EXPRESSION
     SZrAstNode *declaration;                       // 对应的声明节点（函数、变量等）
+    SZrAstNode *selectedBranch;                    // active branch for current-syntax comptime if
+    TZrBool isCurrentSyntax;
+    TZrBool isConditionalPruning;
+    TZrBool buildFactsEvaluated;
 } SZrCompileTimeDeclaration;
 
 typedef struct SZrExternBlock {
     SZrAstNode *libraryName; // StringLiteral
     SZrAstNodeArray *declarations; // ExternFunctionDeclaration / ExternDelegateDeclaration / Struct / Enum
+    TZrBool isNativeSyntax; // true for native extern(...), false for legacy %extern(...)
 } SZrExternBlock;
 
 typedef struct SZrExternFunctionDeclaration {
@@ -665,6 +677,7 @@ typedef struct SZrExternFunctionDeclaration {
     SZrParameter *args; // 可变参数（可选）
     SZrType *returnType; // 可选
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrExternFunctionDeclaration;
 
 typedef struct SZrExternDelegateDeclaration {
@@ -673,6 +686,7 @@ typedef struct SZrExternDelegateDeclaration {
     SZrParameter *args; // 可变参数（可选）
     SZrType *returnType; // 可选
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
 } SZrExternDelegateDeclaration;
 
 typedef struct SZrStructDeclaration {
@@ -1108,6 +1122,7 @@ typedef struct SZrAstNode {
         SZrIfExpression ifExpression;
         SZrSwitchExpression switchExpression;
         SZrFunctionCall functionCall;
+        SZrSpreadArgument spreadArgument;
         SZrMemberExpression memberExpression;
         SZrPrimaryExpression primaryExpression;
         SZrImportExpression importExpression;

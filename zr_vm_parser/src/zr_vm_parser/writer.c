@@ -1392,6 +1392,159 @@ static void write_function_callsite_cache_metadata(FILE *file, SZrFunction *func
     }
 }
 
+static void write_ffi_type_contract(
+        FILE *file,
+        const SZrFfiTypeContract *type) {
+    TZrUInt32 typeKind = (TZrUInt32)type->typeKind;
+
+    fwrite(&typeKind, sizeof(typeKind), 1, file);
+    fwrite(&type->size, sizeof(type->size), 1, file);
+    fwrite(&type->alignment, sizeof(type->alignment), 1, file);
+    fwrite(&type->canonicalTypeHash, sizeof(type->canonicalTypeHash), 1, file);
+    fwrite(&type->layoutHash, sizeof(type->layoutHash), 1, file);
+    fwrite(&type->flags, sizeof(type->flags), 1, file);
+    fwrite(&type->aggregateFieldStart,
+           sizeof(type->aggregateFieldStart),
+           1,
+           file);
+    fwrite(&type->aggregateFieldCount,
+           sizeof(type->aggregateFieldCount),
+           1,
+           file);
+}
+
+static void write_function_native_import_contracts(
+        FILE *file,
+        const SZrFunction *function) {
+    TZrUInt64 contractCount =
+            function != ZR_NULL ? function->nativeImportContractLength : 0u;
+
+    fwrite(&contractCount, sizeof(contractCount), 1, file);
+    for (TZrUInt64 contractIndex = 0u;
+         contractIndex < contractCount;
+         contractIndex++) {
+        const SZrNativeImportContract *contract =
+                &function->nativeImportContracts[contractIndex];
+        TZrUInt32 abi = (TZrUInt32)contract->signature.abi;
+        TZrUInt32 targetEndianness =
+                (TZrUInt32)contract->signature.targetEndianness;
+        TZrUInt32 charset = (TZrUInt32)contract->signature.charset;
+        TZrUInt32 errorPolicy = (TZrUInt32)contract->signature.errorPolicy;
+        TZrUInt32 cleanupPolicy = (TZrUInt32)contract->signature.cleanupPolicy;
+        TZrUInt32 callbackLifetime =
+                (TZrUInt32)contract->signature.callbackLifetime;
+        TZrUInt32 callbackThreadPolicy =
+                (TZrUInt32)contract->signature.callbackThreadPolicy;
+        TZrUInt32 callbackExceptionPolicy =
+                (TZrUInt32)contract->signature.callbackExceptionPolicy;
+        TZrUInt8 isVariadic = contract->signature.isVariadic ? 1u : 0u;
+
+        fwrite(&contract->schemaVersion, sizeof(contract->schemaVersion), 1, file);
+        fwrite(contract->libraryLocator, 1u, sizeof(contract->libraryLocator), file);
+        fwrite(contract->entryPoint, 1u, sizeof(contract->entryPoint), file);
+        fwrite(&contract->symbolId, sizeof(contract->symbolId), 1, file);
+        fwrite(&contract->declaringModuleId, sizeof(contract->declaringModuleId), 1, file);
+        fwrite(&contract->callableContractHash, sizeof(contract->callableContractHash), 1, file);
+        fwrite(&contract->availability, sizeof(contract->availability), 1, file);
+        fwrite(&contract->requiredCapabilities,
+               sizeof(contract->requiredCapabilities),
+               1,
+               file);
+        fwrite(contract->sourceMapping.document,
+               1u,
+               sizeof(contract->sourceMapping.document),
+               file);
+        fwrite(&contract->sourceMapping.startOffset,
+               sizeof(contract->sourceMapping.startOffset),
+               1,
+               file);
+        fwrite(&contract->sourceMapping.endOffset,
+               sizeof(contract->sourceMapping.endOffset),
+               1,
+               file);
+        fwrite(&contract->sourceMapping.startLine,
+               sizeof(contract->sourceMapping.startLine),
+               1,
+               file);
+        fwrite(&contract->sourceMapping.startColumn,
+               sizeof(contract->sourceMapping.startColumn),
+               1,
+               file);
+        fwrite(&contract->sourceMapping.endLine,
+               sizeof(contract->sourceMapping.endLine),
+               1,
+               file);
+        fwrite(&contract->sourceMapping.endColumn,
+               sizeof(contract->sourceMapping.endColumn),
+               1,
+               file);
+        fwrite(&abi, sizeof(abi), 1, file);
+        fwrite(&contract->signature.targetPointerSize,
+               sizeof(contract->signature.targetPointerSize),
+               1,
+               file);
+        fwrite(&targetEndianness, sizeof(targetEndianness), 1, file);
+        fwrite(contract->signature.targetTriple,
+               1u,
+               sizeof(contract->signature.targetTriple),
+               file);
+        fwrite(&contract->signature.targetAbiHash,
+               sizeof(contract->signature.targetAbiHash),
+               1,
+               file);
+        fwrite(&charset, sizeof(charset), 1, file);
+        fwrite(&errorPolicy, sizeof(errorPolicy), 1, file);
+        fwrite(&cleanupPolicy, sizeof(cleanupPolicy), 1, file);
+        fwrite(&callbackLifetime, sizeof(callbackLifetime), 1, file);
+        fwrite(&callbackThreadPolicy, sizeof(callbackThreadPolicy), 1, file);
+        fwrite(&callbackExceptionPolicy, sizeof(callbackExceptionPolicy), 1, file);
+        fwrite(&isVariadic, sizeof(isVariadic), 1, file);
+        fwrite(&contract->signature.parameterCount,
+               sizeof(contract->signature.parameterCount),
+               1,
+               file);
+        write_ffi_type_contract(file, &contract->signature.returnType);
+        for (TZrUInt32 parameterIndex = 0u;
+             parameterIndex < contract->signature.parameterCount;
+             parameterIndex++) {
+            const SZrFfiParameterContract *parameter =
+                    &contract->signature.parameters[parameterIndex];
+            TZrUInt32 direction = (TZrUInt32)parameter->direction;
+            TZrUInt32 marshalling = (TZrUInt32)parameter->marshalling;
+            TZrUInt32 ownership = (TZrUInt32)parameter->ownership;
+            TZrUInt8 isNullable = parameter->isNullable ? 1u : 0u;
+
+            write_ffi_type_contract(file, &parameter->type);
+            fwrite(&direction, sizeof(direction), 1, file);
+            fwrite(&marshalling, sizeof(marshalling), 1, file);
+            fwrite(&ownership, sizeof(ownership), 1, file);
+            fwrite(&isNullable, sizeof(isNullable), 1, file);
+            fwrite(&parameter->flags, sizeof(parameter->flags), 1, file);
+        }
+        fwrite(&contract->signature.aggregateFieldCount,
+               sizeof(contract->signature.aggregateFieldCount),
+               1,
+               file);
+        for (TZrUInt32 fieldIndex = 0u;
+             fieldIndex < contract->signature.aggregateFieldCount;
+             fieldIndex++) {
+            const SZrFfiAggregateFieldContract *field =
+                    &contract->signature.aggregateFields[fieldIndex];
+            TZrUInt32 fieldTypeKind = (TZrUInt32)field->typeKind;
+
+            fwrite(field->name, 1u, sizeof(field->name), file);
+            fwrite(&fieldTypeKind, sizeof(fieldTypeKind), 1, file);
+            fwrite(&field->size, sizeof(field->size), 1, file);
+            fwrite(&field->alignment, sizeof(field->alignment), 1, file);
+            fwrite(&field->offset, sizeof(field->offset), 1, file);
+        }
+        fwrite(&contract->signature.signatureHash,
+               sizeof(contract->signature.signatureHash),
+               1,
+               file);
+    }
+}
+
 static void write_function_prototypes(SZrState *state, FILE *file, SZrFunction *function) {
     TZrUInt64 prototypesLength = 0;
     TZrUInt64 classCount = 0;
@@ -1608,6 +1761,7 @@ static TZrBool write_io_function_internal(SZrState *state,
     write_function_member_entries(file, state, function);
     write_function_semir_metadata(file, state, function);
     write_function_callsite_cache_metadata(file, function);
+    write_function_native_import_contracts(file, function);
 
     write_function_prototypes(state, file, function);
 

@@ -3512,6 +3512,115 @@ static TZrBool infer_call_argument_type_node(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool infer_spread_call_argument_types_for_candidate(
+        SZrCompilerState *cs,
+        const SZrFunctionCall *call,
+        const SZrFunctionTypeInfo *funcType,
+        SZrArray *argTypes,
+        TZrBool *mismatch,
+        TZrBool *handled) {
+    SZrAstNode *spreadNode;
+    SZrAstNode *spreadExpression;
+    SZrInferredType spreadType;
+    const SZrInferredType *elementType;
+    TZrSize prefixCount;
+    TZrSize spreadCount;
+    TZrSize parameterCount;
+
+    if (handled != ZR_NULL) {
+        *handled = ZR_FALSE;
+    }
+    if (cs == ZR_NULL || funcType == ZR_NULL || argTypes == ZR_NULL ||
+        call == ZR_NULL || !compiler_call_has_spread_argument(call)) {
+        return ZR_TRUE;
+    }
+    if (handled == ZR_NULL || mismatch == ZR_NULL || call->args == ZR_NULL ||
+        call->args->count == 0U) {
+        return ZR_FALSE;
+    }
+
+    *handled = ZR_TRUE;
+    prefixCount = call->args->count - 1U;
+    parameterCount = funcType->paramTypes.length;
+    spreadNode = call->args->nodes[prefixCount];
+    if (spreadNode == ZR_NULL || spreadNode->type != ZR_AST_SPREAD_ARGUMENT ||
+        spreadNode->data.spreadArgument.expression == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    spreadExpression = spreadNode->data.spreadArgument.expression;
+
+    ZrCore_Array_Construct(argTypes);
+    if (prefixCount > parameterCount) {
+        *mismatch = ZR_TRUE;
+        return ZR_TRUE;
+    }
+    ZrCore_Array_Init(
+            cs->state, argTypes, sizeof(SZrInferredType), parameterCount);
+    for (TZrSize index = 0U; index < prefixCount; index++) {
+        if (!infer_call_argument_type_node(
+                    cs, call->args->nodes[index], argTypes)) {
+            free_inferred_type_array(cs->state, argTypes);
+            ZrCore_Array_Construct(argTypes);
+            return ZR_FALSE;
+        }
+    }
+
+    ZrParser_InferredType_Init(
+            cs->state, &spreadType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_ExpressionType_Infer(cs, spreadExpression, &spreadType)) {
+        ZrParser_InferredType_Free(cs->state, &spreadType);
+        free_inferred_type_array(cs->state, argTypes);
+        ZrCore_Array_Construct(argTypes);
+        return ZR_FALSE;
+    }
+    if (spreadType.baseType != ZR_VALUE_TYPE_ARRAY) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Spread argument must have an array type",
+                spreadExpression->location);
+        ZrParser_InferredType_Free(cs->state, &spreadType);
+        free_inferred_type_array(cs->state, argTypes);
+        ZrCore_Array_Construct(argTypes);
+        return ZR_FALSE;
+    }
+
+    spreadCount = parameterCount - prefixCount;
+    if (spreadType.hasArraySizeConstraint &&
+        spreadType.arrayFixedSize != spreadCount) {
+        *mismatch = ZR_TRUE;
+        ZrParser_InferredType_Free(cs->state, &spreadType);
+        free_inferred_type_array(cs->state, argTypes);
+        ZrCore_Array_Construct(argTypes);
+        return ZR_TRUE;
+    }
+
+    elementType = spreadType.elementTypes.length == 1U
+                          ? (const SZrInferredType *)ZrCore_Array_Get(
+                                    &spreadType.elementTypes, 0U)
+                          : ZR_NULL;
+    for (TZrSize index = prefixCount; index < parameterCount; index++) {
+        const SZrInferredType *sourceType = elementType;
+        SZrInferredType copiedType;
+
+        if (sourceType == ZR_NULL) {
+            sourceType = (const SZrInferredType *)ZrCore_Array_Get(
+                    (SZrArray *)&funcType->paramTypes, index);
+        }
+        if (sourceType == ZR_NULL) {
+            ZrParser_InferredType_Free(cs->state, &spreadType);
+            free_inferred_type_array(cs->state, argTypes);
+            ZrCore_Array_Construct(argTypes);
+            return ZR_FALSE;
+        }
+        ZrParser_InferredType_Init(
+                cs->state, &copiedType, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Copy(cs->state, &copiedType, sourceType);
+        ZrCore_Array_Push(cs->state, argTypes, &copiedType);
+    }
+    ZrParser_InferredType_Free(cs->state, &spreadType);
+    return ZR_TRUE;
+}
+
 TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
                                                          SZrTypeEnvironment *env,
                                                          SZrString *funcName,
@@ -3525,6 +3634,7 @@ TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
     TZrSize paramCount;
     TZrSize positionalCount = 0;
     TZrBool *provided = ZR_NULL;
+    TZrBool handledSpread = ZR_FALSE;
 
     if (mismatch != ZR_NULL) {
         *mismatch = ZR_FALSE;
@@ -3532,6 +3642,19 @@ TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
 
     if (cs == ZR_NULL || funcType == ZR_NULL || argTypes == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (!infer_spread_call_argument_types_for_candidate(
+                cs,
+                call,
+                funcType,
+                argTypes,
+                mismatch,
+                &handledSpread)) {
+        return ZR_FALSE;
+    }
+    if (handledSpread) {
+        return ZR_TRUE;
     }
 
     declNode = funcType->declarationNode;

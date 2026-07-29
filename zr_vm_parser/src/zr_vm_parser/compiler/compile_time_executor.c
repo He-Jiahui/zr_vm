@@ -6,7 +6,9 @@
 #include "compile_expression_internal.h"
 #include "compile_time_binding_metadata.h"
 #include "compile_time_executor_internal.h"
+#include "compile_tool_binding.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/compile_tool.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include "zr_vm_core/array.h"
@@ -18,9 +20,779 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_library/project.h"
 
 #include <stdio.h>
 #include <string.h>
+
+static TZrBool ct_prepare_build_fact_node(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrBool runtimeContext);
+
+static TZrBool ct_prepare_build_fact_node_with_context(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrBool runtimeContext,
+        TZrBool moduleDeclarationList);
+
+static TZrBool ct_prepare_build_fact_scoped_array(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *nodes,
+        TZrBool runtimeContext);
+
+static TZrBool ct_prepare_build_fact_predeclare_function_shadow(
+        SZrCompilerState *cs,
+        SZrAstNode *node);
+
+static TZrBool ct_prepare_build_fact_module_bindings(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *nodes);
+
+static const SZrParserCompileToolModuleDescriptor *ct_compile_tool_import_descriptor(
+        const SZrAstNode *node);
+
+static TZrBool ct_prepare_build_fact_array(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *nodes,
+        TZrBool runtimeContext) {
+    for (TZrSize index = 0; nodes != ZR_NULL && index < nodes->count; index++) {
+        if (!ct_prepare_build_fact_node(cs, nodes->nodes[index], runtimeContext)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool ct_prepare_build_fact_module_array(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *nodes) {
+    if (!ct_prepare_build_fact_module_bindings(cs, nodes)) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; nodes != ZR_NULL && index < nodes->count; index++) {
+        if (!ct_prepare_build_fact_node_with_context(
+                    cs, nodes->nodes[index], ZR_TRUE, ZR_TRUE)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool ct_prepare_build_fact_predeclare_function_shadow(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (node->type == ZR_AST_FUNCTION_DECLARATION) {
+        SZrIdentifier *name = node->data.functionDeclaration.name;
+        const SZrCompileToolBinding *existing;
+
+        if (name == ZR_NULL || name->name == ZR_NULL) {
+            return ZR_TRUE;
+        }
+        existing = ZrParser_CompileToolBinding_Resolve(cs, name->name);
+        return (existing != ZR_NULL &&
+                existing->kind == ZR_COMPILE_TOOL_BINDING_SHADOW) ||
+               ZrParser_CompileToolBinding_DeclareShadow(cs, name->name);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool ct_prepare_build_fact_scoped_array(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *nodes,
+        TZrBool runtimeContext) {
+    TZrSize mark = ZrParser_CompileToolBinding_Mark(cs);
+    TZrBool succeeded = ZR_TRUE;
+
+    for (TZrSize index = 0; nodes != ZR_NULL && index < nodes->count; index++) {
+        if (!ct_prepare_build_fact_predeclare_function_shadow(
+                    cs, nodes->nodes[index])) {
+            succeeded = ZR_FALSE;
+            break;
+        }
+    }
+    if (succeeded) {
+        succeeded = ct_prepare_build_fact_array(cs, nodes, runtimeContext);
+    }
+    ZrParser_CompileToolBinding_Restore(cs, mark);
+    return succeeded;
+}
+
+static TZrBool ct_prepare_build_fact_pattern_shadows(
+        SZrCompilerState *cs,
+        SZrAstNode *pattern) {
+    SZrAstNodeArray *keys = ZR_NULL;
+
+    if (pattern == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return ZrParser_CompileToolBinding_DeclareShadow(
+                cs, pattern->data.identifier.name);
+    }
+    if (pattern->type == ZR_AST_KEY_VALUE_PAIR) {
+        return ct_prepare_build_fact_pattern_shadows(
+                cs, pattern->data.keyValuePair.value);
+    }
+    if (pattern->type == ZR_AST_UNPACK_LITERAL) {
+        return ct_prepare_build_fact_pattern_shadows(
+                cs, pattern->data.unpackLiteral.element);
+    }
+    if (pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
+        keys = pattern->data.destructuringObject.keys;
+    } else if (pattern->type == ZR_AST_DESTRUCTURING_ARRAY) {
+        keys = pattern->data.destructuringArray.keys;
+    } else {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; keys != ZR_NULL && index < keys->count; index++) {
+        if (!ct_prepare_build_fact_pattern_shadows(cs, keys->nodes[index])) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool ct_prepare_build_fact_decorators(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *decorators) {
+    return ct_prepare_build_fact_array(cs, decorators, ZR_FALSE);
+}
+
+static TZrBool ct_prepare_build_fact_parameter(
+        SZrCompilerState *cs,
+        SZrParameter *parameter,
+        TZrBool declareShadow) {
+    if (parameter == ZR_NULL ||
+        !ct_prepare_build_fact_decorators(cs, parameter->decorators) ||
+        !ct_prepare_build_fact_node(cs, parameter->defaultValue, ZR_TRUE)) {
+        return parameter == ZR_NULL ? ZR_TRUE : ZR_FALSE;
+    }
+    return !declareShadow || parameter->name == ZR_NULL ||
+           parameter->name->name == ZR_NULL ||
+           ZrParser_CompileToolBinding_DeclareShadow(
+                   cs, parameter->name->name);
+}
+
+static TZrBool ct_prepare_build_fact_parameters(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *params,
+        SZrParameter *args) {
+    for (TZrSize index = 0; params != ZR_NULL && index < params->count; index++) {
+        SZrAstNode *parameterNode = params->nodes[index];
+        if (parameterNode != ZR_NULL &&
+            parameterNode->type == ZR_AST_PARAMETER &&
+            !ct_prepare_build_fact_parameter(
+                    cs, &parameterNode->data.parameter, ZR_TRUE)) {
+            return ZR_FALSE;
+        }
+    }
+    return ct_prepare_build_fact_parameter(cs, args, ZR_TRUE);
+}
+
+static const SZrParserCompileToolModuleDescriptor *ct_compile_tool_import_descriptor(
+        const SZrAstNode *node) {
+    const SZrAstNode *modulePath;
+
+    if (!compiler_is_compile_tool_import_declaration(node)) {
+        return ZR_NULL;
+    }
+
+    modulePath = node->data.variableDeclaration.value->data.importExpression.modulePath;
+    return ZrParser_CompileTool_FindModule(
+            ZrCore_String_GetNativeString(modulePath->data.stringLiteral.value));
+}
+
+static TZrBool ct_prepare_build_fact_module_bindings(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *nodes) {
+    for (TZrSize index = 0; nodes != ZR_NULL && index < nodes->count; index++) {
+        if (!ct_prepare_build_fact_predeclare_function_shadow(
+                    cs, nodes->nodes[index])) {
+            return ZR_FALSE;
+        }
+    }
+
+    for (TZrSize index = 0; nodes != ZR_NULL && index < nodes->count; index++) {
+        SZrAstNode *node = nodes->nodes[index];
+
+        if (node == ZR_NULL) {
+            continue;
+        }
+        if (compiler_is_compile_tool_import_declaration(node)) {
+            const SZrParserCompileToolModuleDescriptor *provider =
+                    ct_compile_tool_import_descriptor(node);
+            SZrString *aliasName =
+                    node->data.variableDeclaration.pattern->data.identifier.name;
+            const SZrCompileToolBinding *existing =
+                    ZrParser_CompileToolBinding_Resolve(cs, aliasName);
+
+            if (existing != ZR_NULL &&
+                (existing->kind == ZR_COMPILE_TOOL_BINDING_SHADOW ||
+                 (existing->kind == ZR_COMPILE_TOOL_BINDING_PROVIDER &&
+                  existing->provider == provider))) {
+                continue;
+            }
+            if (!ZrParser_CompileToolBinding_DeclareProvider(
+                        cs, aliasName, provider)) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+        if (node->type == ZR_AST_COMPILE_TIME_DECLARATION) {
+            SZrCompileTimeDeclaration *declaration =
+                    &node->data.compileTimeDeclaration;
+
+            if (!declaration->isCurrentSyntax) {
+                continue;
+            }
+            if (declaration->declarationType == ZR_COMPILE_TIME_FUNCTION) {
+                if (!ZrParser_CompileTimeDeclaration_Execute(cs, node) ||
+                    cs->hasCompileTimeError || cs->hasError ||
+                    cs->hasFatalError) {
+                    return ZR_FALSE;
+                }
+                continue;
+            }
+            if (!declaration->isConditionalPruning) {
+                continue;
+            }
+            if (!declaration->buildFactsEvaluated) {
+                if (!ZrParser_CompileTimeDeclaration_Execute(cs, node) ||
+                    cs->hasCompileTimeError || cs->hasError ||
+                    cs->hasFatalError) {
+                    return ZR_FALSE;
+                }
+                declaration->buildFactsEvaluated = ZR_TRUE;
+            }
+            if (declaration->selectedBranch == ZR_NULL) {
+                continue;
+            }
+            if (declaration->selectedBranch->type == ZR_AST_BLOCK) {
+                if (!ct_prepare_build_fact_module_bindings(
+                            cs,
+                            declaration->selectedBranch->data.block.body)) {
+                    return ZR_FALSE;
+                }
+            } else if (!ct_prepare_build_fact_predeclare_function_shadow(
+                               cs, declaration->selectedBranch)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool ct_prepare_runtime_identifier(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrString *name,
+        TZrBool runtimeContext) {
+    const SZrCompileToolBinding *binding;
+
+    if (!runtimeContext || name == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    binding = ZrParser_CompileToolBinding_Resolve(cs, name);
+    if (binding == ZR_NULL || binding->kind != ZR_COMPILE_TOOL_BINDING_PROVIDER) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_CompileTime_Error(cs,
+                               ZR_COMPILE_TIME_ERROR_ERROR,
+                               "compiletool.phase_mismatch: CompileTool binding cannot be used in runtime code",
+                               node->location);
+    return ZR_FALSE;
+}
+
+static TZrBool ct_prepare_function_body(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *params,
+        SZrParameter *args,
+        SZrAstNodeArray *decorators,
+        SZrAstNode *body) {
+    TZrSize mark = ZrParser_CompileToolBinding_Mark(cs);
+    TZrBool succeeded = ct_prepare_build_fact_decorators(cs, decorators) &&
+                         ct_prepare_build_fact_parameters(cs, params, args) &&
+                         ct_prepare_build_fact_node(cs, body, ZR_TRUE);
+    ZrParser_CompileToolBinding_Restore(cs, mark);
+    return succeeded;
+}
+
+static TZrBool ct_prepare_signature_parameters(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *params,
+        SZrParameter *args,
+        SZrAstNodeArray *decorators) {
+    TZrSize mark = ZrParser_CompileToolBinding_Mark(cs);
+    TZrBool succeeded = ct_prepare_build_fact_decorators(cs, decorators) &&
+                         ct_prepare_build_fact_parameters(cs, params, args);
+    ZrParser_CompileToolBinding_Restore(cs, mark);
+    return succeeded;
+}
+
+static TZrBool ct_prepare_build_fact_node(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrBool runtimeContext) {
+    return ct_prepare_build_fact_node_with_context(
+            cs, node, runtimeContext, ZR_FALSE);
+}
+
+static TZrBool ct_prepare_build_fact_node_with_context(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        TZrBool runtimeContext,
+        TZrBool moduleDeclarationList) {
+    if (cs == ZR_NULL || node == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (node->type == ZR_AST_COMPILE_TIME_DECLARATION) {
+        SZrCompileTimeDeclaration *declaration = &node->data.compileTimeDeclaration;
+        if (!declaration->isCurrentSyntax) {
+            return ZR_TRUE;
+        }
+
+        if (!declaration->isConditionalPruning &&
+            declaration->declarationType == ZR_COMPILE_TIME_STATEMENT) {
+            if (!moduleDeclarationList) {
+                ZrParser_CompileTime_Error(
+                        cs,
+                        ZR_COMPILE_TIME_ERROR_ERROR,
+                        "comptime.module_scope_only: comptime blocks are only allowed at module scope",
+                        node->location);
+                return ZR_FALSE;
+            }
+            return ZR_TRUE;
+        }
+
+        if (declaration->declarationType == ZR_COMPILE_TIME_FUNCTION) {
+            if (!ZrParser_CompileTimeDeclaration_Execute(cs, node) ||
+                cs->hasCompileTimeError || cs->hasError || cs->hasFatalError) {
+                return ZR_FALSE;
+            }
+            return ZR_TRUE;
+        }
+
+        if (!declaration->isConditionalPruning) {
+            return ZR_TRUE;
+        }
+
+        if (!declaration->buildFactsEvaluated) {
+            if (!ZrParser_CompileTimeDeclaration_Execute(cs, node) ||
+                cs->hasCompileTimeError || cs->hasError || cs->hasFatalError) {
+                return ZR_FALSE;
+            }
+            declaration->buildFactsEvaluated = ZR_TRUE;
+        }
+
+        if (declaration->selectedBranch == ZR_NULL) {
+            return ZR_TRUE;
+        }
+        if (moduleDeclarationList &&
+            declaration->selectedBranch->type == ZR_AST_BLOCK) {
+            return ct_prepare_build_fact_module_array(
+                    cs, declaration->selectedBranch->data.block.body);
+        }
+        return ct_prepare_build_fact_node_with_context(
+                cs,
+                declaration->selectedBranch,
+                runtimeContext,
+                moduleDeclarationList);
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            return ct_prepare_build_fact_module_array(
+                    cs, node->data.script.statements);
+        case ZR_AST_BLOCK:
+            return ct_prepare_build_fact_scoped_array(
+                    cs,
+                    node->data.block.body,
+                    (TZrBool)(runtimeContext || moduleDeclarationList));
+        case ZR_AST_FUNCTION_DECLARATION:
+            return ct_prepare_function_body(
+                    cs,
+                    node->data.functionDeclaration.params,
+                    node->data.functionDeclaration.args,
+                    node->data.functionDeclaration.decorators,
+                    node->data.functionDeclaration.body);
+        case ZR_AST_TEST_DECLARATION:
+            return ct_prepare_function_body(
+                    cs,
+                    node->data.testDeclaration.params,
+                    node->data.testDeclaration.args,
+                    ZR_NULL,
+                    node->data.testDeclaration.body);
+        case ZR_AST_CLASS_DECLARATION:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.classDeclaration.decorators) &&
+                             ct_prepare_build_fact_array(
+                                     cs, node->data.classDeclaration.members, ZR_FALSE));
+        case ZR_AST_INTERFACE_DECLARATION:
+            return ct_prepare_build_fact_array(
+                    cs, node->data.interfaceDeclaration.members, ZR_FALSE);
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return ct_prepare_signature_parameters(
+                    cs,
+                    node->data.interfaceMethodSignature.params,
+                    node->data.interfaceMethodSignature.args,
+                    ZR_NULL);
+        case ZR_AST_INTERFACE_META_SIGNATURE:
+            return ct_prepare_signature_parameters(
+                    cs,
+                    node->data.interfaceMetaSignature.params,
+                    node->data.interfaceMetaSignature.args,
+                    ZR_NULL);
+        case ZR_AST_EXTERN_BLOCK:
+            return ct_prepare_build_fact_array(
+                    cs, node->data.externBlock.declarations, ZR_FALSE);
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return ct_prepare_signature_parameters(
+                    cs,
+                    node->data.externFunctionDeclaration.params,
+                    node->data.externFunctionDeclaration.args,
+                    node->data.externFunctionDeclaration.decorators);
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return ct_prepare_signature_parameters(
+                    cs,
+                    node->data.externDelegateDeclaration.params,
+                    node->data.externDelegateDeclaration.args,
+                    node->data.externDelegateDeclaration.decorators);
+        case ZR_AST_STRUCT_DECLARATION:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.structDeclaration.decorators) &&
+                             ct_prepare_build_fact_array(
+                                     cs, node->data.structDeclaration.members, ZR_FALSE));
+        case ZR_AST_ENUM_DECLARATION:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.enumDeclaration.decorators) &&
+                             ct_prepare_build_fact_array(
+                                     cs, node->data.enumDeclaration.members, ZR_FALSE));
+        case ZR_AST_ENUM_MEMBER:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.enumMember.decorators) &&
+                             ct_prepare_build_fact_node(
+                                     cs, node->data.enumMember.value, ZR_TRUE));
+        case ZR_AST_UNION_DECLARATION:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.unionDeclaration.decorators) &&
+                             ct_prepare_build_fact_array(
+                                     cs, node->data.unionDeclaration.variants, ZR_FALSE));
+        case ZR_AST_UNION_VARIANT: {
+            TZrSize mark = ZrParser_CompileToolBinding_Mark(cs);
+            TZrBool succeeded = ct_prepare_build_fact_decorators(
+                                        cs, node->data.unionVariant.decorators) &&
+                                ct_prepare_build_fact_parameters(
+                                        cs, node->data.unionVariant.fields, ZR_NULL);
+            ZrParser_CompileToolBinding_Restore(cs, mark);
+            return succeeded;
+        }
+        case ZR_AST_CLASS_METHOD:
+            return ct_prepare_function_body(
+                    cs,
+                    node->data.classMethod.params,
+                    node->data.classMethod.args,
+                    node->data.classMethod.decorators,
+                    node->data.classMethod.body);
+        case ZR_AST_CLASS_META_FUNCTION:
+            return ct_prepare_function_body(
+                    cs,
+                    node->data.classMetaFunction.params,
+                    node->data.classMetaFunction.args,
+                    ZR_NULL,
+                    node->data.classMetaFunction.body);
+        case ZR_AST_STRUCT_METHOD:
+            return ct_prepare_function_body(
+                    cs,
+                    node->data.structMethod.params,
+                    node->data.structMethod.args,
+                    node->data.structMethod.decorators,
+                    node->data.structMethod.body);
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return ct_prepare_function_body(
+                    cs,
+                    node->data.structMetaFunction.params,
+                    node->data.structMetaFunction.args,
+                    ZR_NULL,
+                    node->data.structMetaFunction.body);
+        case ZR_AST_CLASS_FIELD:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.classField.decorators) &&
+                             ct_prepare_build_fact_node(
+                                     cs, node->data.classField.init, ZR_TRUE));
+        case ZR_AST_STRUCT_FIELD:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.structField.decorators) &&
+                             ct_prepare_build_fact_node(
+                                     cs, node->data.structField.init, ZR_TRUE));
+        case ZR_AST_CLASS_PROPERTY:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.classProperty.decorators) &&
+                             ct_prepare_build_fact_node(
+                                     cs, node->data.classProperty.modifier, ZR_FALSE));
+        case ZR_AST_PROPERTY_GET:
+            return ct_prepare_build_fact_node(
+                    cs, node->data.propertyGet.body, ZR_TRUE);
+        case ZR_AST_PROPERTY_SET: {
+            TZrSize mark = ZrParser_CompileToolBinding_Mark(cs);
+            SZrIdentifier *parameter = node->data.propertySet.param;
+            TZrBool succeeded =
+                    (parameter == ZR_NULL || parameter->name == ZR_NULL ||
+                     ZrParser_CompileToolBinding_DeclareShadow(
+                             cs, parameter->name)) &&
+                    ct_prepare_build_fact_node(
+                            cs, node->data.propertySet.body, ZR_TRUE);
+            ZrParser_CompileToolBinding_Restore(cs, mark);
+            return succeeded;
+        }
+        case ZR_AST_PROPERTY_DECLARATION:
+            return (TZrBool)(ct_prepare_build_fact_decorators(
+                                     cs, node->data.propertyDeclaration.decorators) &&
+                             ct_prepare_build_fact_array(
+                                     cs,
+                                     node->data.propertyDeclaration.accessors,
+                                     ZR_FALSE));
+        case ZR_AST_PROPERTY_ACCESSOR:
+            return ct_prepare_build_fact_node(cs, node->data.propertyAccessor.body, ZR_TRUE);
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return ct_prepare_function_body(
+                    cs,
+                    node->data.lambdaExpression.params,
+                    node->data.lambdaExpression.args,
+                    ZR_NULL,
+                    node->data.lambdaExpression.block);
+        case ZR_AST_VARIABLE_DECLARATION:
+            if (compiler_is_compile_tool_import_declaration(node)) {
+                const SZrParserCompileToolModuleDescriptor *provider =
+                        ct_compile_tool_import_descriptor(node);
+                SZrString *aliasName = node->data.variableDeclaration.pattern->data.identifier.name;
+                if (moduleDeclarationList && provider != ZR_NULL) {
+                    const SZrCompileToolBinding *existing =
+                            ZrParser_CompileToolBinding_Resolve(cs, aliasName);
+                    if (existing != ZR_NULL &&
+                        existing->kind == ZR_COMPILE_TOOL_BINDING_SHADOW) {
+                        return ZR_TRUE;
+                    }
+                    return ZrParser_CompileToolBinding_DeclareProvider(cs, aliasName, provider);
+                }
+                ZrParser_CompileTime_Error(cs,
+                                           ZR_COMPILE_TIME_ERROR_ERROR,
+                                           "compiletool.phase_mismatch: CompileTool imports cannot be bound in runtime code",
+                                           node->location);
+                return ZR_FALSE;
+            }
+            if (!ct_prepare_build_fact_node(cs, node->data.variableDeclaration.value, runtimeContext)) {
+                return ZR_FALSE;
+            }
+            return ct_prepare_build_fact_pattern_shadows(
+                    cs, node->data.variableDeclaration.pattern);
+        case ZR_AST_EXPRESSION_STATEMENT:
+            return ct_prepare_build_fact_node(cs, node->data.expressionStatement.expr, runtimeContext);
+        case ZR_AST_RETURN_STATEMENT:
+            return ct_prepare_build_fact_node(cs, node->data.returnStatement.expr, runtimeContext);
+        case ZR_AST_THROW_STATEMENT:
+            return ct_prepare_build_fact_node(cs, node->data.throwStatement.expr, runtimeContext);
+        case ZR_AST_OUT_STATEMENT:
+            return ct_prepare_build_fact_node(cs, node->data.outStatement.expr, runtimeContext);
+        case ZR_AST_YIELD_STATEMENT:
+            return ct_prepare_build_fact_node(cs, node->data.yieldStatement.expr, runtimeContext);
+        case ZR_AST_BREAK_CONTINUE_STATEMENT:
+            return ct_prepare_build_fact_node(cs, node->data.breakContinueStatement.expr, runtimeContext);
+        case ZR_AST_IDENTIFIER_LITERAL:
+            return ct_prepare_runtime_identifier(cs, node, node->data.identifier.name, runtimeContext);
+        case ZR_AST_ASSIGNMENT_EXPRESSION:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.assignmentExpression.left, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.assignmentExpression.right, runtimeContext));
+        case ZR_AST_BINARY_EXPRESSION:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.binaryExpression.left, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.binaryExpression.right, runtimeContext));
+        case ZR_AST_LOGICAL_EXPRESSION:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.logicalExpression.left, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.logicalExpression.right, runtimeContext));
+        case ZR_AST_CONDITIONAL_EXPRESSION:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.conditionalExpression.test, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.conditionalExpression.consequent, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.conditionalExpression.alternate, runtimeContext));
+        case ZR_AST_UNARY_EXPRESSION:
+            return ct_prepare_build_fact_node(cs, node->data.unaryExpression.argument, runtimeContext);
+        case ZR_AST_AWAIT_EXPRESSION:
+            return ct_prepare_build_fact_node(cs, node->data.awaitExpression.operand, runtimeContext);
+        case ZR_AST_TYPE_CAST_EXPRESSION:
+            return ct_prepare_build_fact_node(cs, node->data.typeCastExpression.expression, runtimeContext);
+        case ZR_AST_FUNCTION_CALL:
+            return (TZrBool)(ct_prepare_build_fact_array(
+                                     cs,
+                                     node->data.functionCall.genericArguments,
+                                     runtimeContext) &&
+                             ct_prepare_build_fact_array(
+                                     cs, node->data.functionCall.args, runtimeContext));
+        case ZR_AST_SPREAD_ARGUMENT:
+            return ct_prepare_build_fact_node(cs, node->data.spreadArgument.expression, runtimeContext);
+        case ZR_AST_MEMBER_EXPRESSION:
+            return node->data.memberExpression.computed
+                       ? ct_prepare_build_fact_node(cs, node->data.memberExpression.property, runtimeContext)
+                       : ZR_TRUE;
+        case ZR_AST_PRIMARY_EXPRESSION:
+            if (node->data.primaryExpression.property != ZR_NULL &&
+                node->data.primaryExpression.property->type == ZR_AST_IDENTIFIER_LITERAL &&
+                !ct_prepare_runtime_identifier(
+                        cs,
+                        node,
+                        node->data.primaryExpression.property->data.identifier.name,
+                        runtimeContext)) {
+                return ZR_FALSE;
+            }
+            return ct_prepare_build_fact_array(cs, node->data.primaryExpression.members, runtimeContext);
+        case ZR_AST_TYPE_QUERY_EXPRESSION:
+            return ct_prepare_build_fact_node(cs, node->data.typeQueryExpression.operand, runtimeContext);
+        case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION:
+            return ct_prepare_build_fact_node(cs, node->data.prototypeReferenceExpression.target, runtimeContext);
+        case ZR_AST_CONSTRUCT_EXPRESSION:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.constructExpression.target, runtimeContext) &&
+                             ct_prepare_build_fact_array(cs, node->data.constructExpression.args, runtimeContext));
+        case ZR_AST_STRUCT_INIT_EXPRESSION:
+            return ct_prepare_build_fact_array(cs, node->data.structInitExpression.args, runtimeContext);
+        case ZR_AST_TEMPLATE_STRING_LITERAL:
+            return ct_prepare_build_fact_array(cs, node->data.templateStringLiteral.segments, runtimeContext);
+        case ZR_AST_INTERPOLATED_SEGMENT:
+            return ct_prepare_build_fact_node(cs, node->data.interpolatedSegment.expression, runtimeContext);
+        case ZR_AST_ARRAY_LITERAL:
+            return ct_prepare_build_fact_array(cs, node->data.arrayLiteral.elements, runtimeContext);
+        case ZR_AST_OBJECT_LITERAL:
+            return ct_prepare_build_fact_array(cs, node->data.objectLiteral.properties, runtimeContext);
+        case ZR_AST_KEY_VALUE_PAIR:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.keyValuePair.key, runtimeContext) &&
+                              ct_prepare_build_fact_node(cs, node->data.keyValuePair.value, runtimeContext));
+        case ZR_AST_DECORATOR_EXPRESSION:
+            return ct_prepare_build_fact_node(
+                    cs, node->data.decoratorExpression.expr, ZR_FALSE);
+        case ZR_AST_PARAMETER:
+            return ct_prepare_build_fact_parameter(
+                    cs, &node->data.parameter, ZR_FALSE);
+        case ZR_AST_UNPACK_LITERAL:
+            return ct_prepare_build_fact_node(cs, node->data.unpackLiteral.element, runtimeContext);
+        case ZR_AST_GENERATOR_EXPRESSION:
+            return ct_prepare_build_fact_node(cs, node->data.generatorExpression.block, ZR_TRUE);
+        case ZR_AST_IF_EXPRESSION:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.ifExpression.condition, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.ifExpression.thenExpr, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.ifExpression.elseExpr, runtimeContext));
+        case ZR_AST_SWITCH_EXPRESSION:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.switchExpression.expr, runtimeContext) &&
+                             ct_prepare_build_fact_array(cs, node->data.switchExpression.cases, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.switchExpression.defaultCase, runtimeContext));
+        case ZR_AST_SWITCH_CASE:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.switchCase.value, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.switchCase.block, runtimeContext));
+        case ZR_AST_SWITCH_DEFAULT:
+            return ct_prepare_build_fact_node(cs, node->data.switchDefault.block, runtimeContext);
+        case ZR_AST_WHILE_LOOP:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.whileLoop.cond, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.whileLoop.block, runtimeContext));
+        case ZR_AST_FOR_LOOP: {
+            TZrSize mark = ZrParser_CompileToolBinding_Mark(cs);
+            TZrBool succeeded =
+                    ct_prepare_build_fact_node(
+                            cs, node->data.forLoop.init, runtimeContext) &&
+                    ct_prepare_build_fact_node(
+                            cs, node->data.forLoop.cond, runtimeContext) &&
+                    ct_prepare_build_fact_node(
+                            cs, node->data.forLoop.step, runtimeContext) &&
+                    ct_prepare_build_fact_node(
+                            cs, node->data.forLoop.block, runtimeContext);
+            ZrParser_CompileToolBinding_Restore(cs, mark);
+            return succeeded;
+        }
+        case ZR_AST_FOREACH_LOOP: {
+            TZrSize mark;
+            TZrBool succeeded;
+            if (!ct_prepare_build_fact_node(
+                        cs, node->data.foreachLoop.expr, runtimeContext)) {
+                return ZR_FALSE;
+            }
+            mark = ZrParser_CompileToolBinding_Mark(cs);
+            succeeded = ct_prepare_build_fact_pattern_shadows(
+                                cs, node->data.foreachLoop.pattern) &&
+                        ct_prepare_build_fact_node(
+                                cs, node->data.foreachLoop.block, runtimeContext);
+            ZrParser_CompileToolBinding_Restore(cs, mark);
+            return succeeded;
+        }
+        case ZR_AST_USING_STATEMENT: {
+            TZrSize mark;
+            TZrBool succeeded;
+            if (!ct_prepare_build_fact_node(
+                        cs, node->data.usingStatement.resource, runtimeContext)) {
+                return ZR_FALSE;
+            }
+            mark = ZrParser_CompileToolBinding_Mark(cs);
+            succeeded = ct_prepare_build_fact_pattern_shadows(
+                                cs, node->data.usingStatement.pattern) &&
+                        ct_prepare_build_fact_node(
+                                cs, node->data.usingStatement.body, runtimeContext);
+            ZrParser_CompileToolBinding_Restore(cs, mark);
+            return succeeded &&
+                   ct_prepare_build_fact_node(
+                           cs, node->data.usingStatement.elseBody, runtimeContext);
+        }
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
+            return (TZrBool)(ct_prepare_build_fact_node(cs, node->data.tryCatchFinallyStatement.block, runtimeContext) &&
+                             ct_prepare_build_fact_array(cs, node->data.tryCatchFinallyStatement.catchClauses, runtimeContext) &&
+                             ct_prepare_build_fact_node(cs, node->data.tryCatchFinallyStatement.finallyBlock, runtimeContext));
+        case ZR_AST_CATCH_CLAUSE: {
+            TZrSize mark = ZrParser_CompileToolBinding_Mark(cs);
+            TZrBool succeeded = ct_prepare_build_fact_parameters(
+                                        cs,
+                                        node->data.catchClause.pattern,
+                                        ZR_NULL) &&
+                                ct_prepare_build_fact_node(
+                                        cs,
+                                        node->data.catchClause.block,
+                                        runtimeContext);
+            ZrParser_CompileToolBinding_Restore(cs, mark);
+            return succeeded;
+        }
+        default:
+            break;
+    }
+
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_CompileTime_PrepareBuildFacts(SZrState *state, SZrAstNode *ast) {
+    SZrCompilerState cs;
+    TZrBool succeeded;
+
+    if (state == ZR_NULL || ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_CompilerState_Init(&cs, state);
+    succeeded = ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast);
+
+    ZrParser_CompilerState_Free(&cs);
+    return succeeded;
+}
+
+TZrBool ZrParser_CompileTime_PrepareBuildFactsInCompilerState(SZrCompilerState *cs, SZrAstNode *ast) {
+    if (cs == ZR_NULL || ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
+        return ZR_FALSE;
+    }
+
+    cs->currentAst = ast;
+    cs->scriptAst = ast;
+    ZrParser_CompileToolBinding_Reset(cs);
+    return ct_prepare_build_fact_module_array(cs, ast->data.script.statements);
+}
 
 static TZrBool ct_eval_object_literal(SZrCompilerState *cs,
                                     SZrAstNode *node,
@@ -67,6 +839,117 @@ static TZrBool ct_eval_call_arg(SZrCompilerState *cs,
                               TZrSize paramIndex,
                               SZrCompileTimeFrame *frame,
                               SZrTypeValue *result);
+
+static TZrBool ct_identifier_node_equals(const SZrAstNode *node, const TZrChar *literal) {
+    return node != ZR_NULL &&
+           node->type == ZR_AST_IDENTIFIER_LITERAL &&
+           node->data.identifier.name != ZR_NULL &&
+           ct_string_equals(node->data.identifier.name, literal);
+}
+
+static const SZrParserCompileToolModuleDescriptor *ct_compile_tool_alias_descriptor(
+        SZrCompilerState *cs,
+        SZrString *aliasName) {
+    const SZrCompileToolBinding *binding;
+
+    if (cs == ZR_NULL || aliasName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    binding = ZrParser_CompileToolBinding_Resolve(cs, aliasName);
+    return binding != ZR_NULL && binding->kind == ZR_COMPILE_TOOL_BINDING_PROVIDER
+               ? binding->provider
+               : ZR_NULL;
+}
+
+static TZrBool ct_try_eval_build_feature(SZrCompilerState *cs,
+                                         SZrAstNode *node,
+                                         SZrCompileTimeFrame *frame,
+                                         SZrTypeValue *result,
+                                         TZrBool *handled) {
+    SZrPrimaryExpression *primary;
+    SZrAstNode *buildMember;
+    SZrAstNode *featureMember;
+    SZrAstNode *callNode;
+    SZrAstNode *featureNameNode;
+    const SZrLibrary_Project *project;
+    const SZrParserCompileToolModuleDescriptor *compileTool;
+    SZrString *featureName;
+    SZrTypeValue featureNameValue;
+
+    *handled = ZR_FALSE;
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
+        node->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primary = &node->data.primaryExpression;
+    if (primary->property == ZR_NULL ||
+        primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        primary->property->data.identifier.name == ZR_NULL ||
+        primary->members == ZR_NULL || primary->members->count != 3) {
+        return ZR_TRUE;
+    }
+
+    compileTool = ct_compile_tool_alias_descriptor(cs, primary->property->data.identifier.name);
+    if (compileTool == ZR_NULL ||
+        ZrParser_CompileTool_FindCallable(
+                compileTool,
+                ZR_PARSER_COMPILE_TOOL_ROLE_BUILD_FEATURE) == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    buildMember = primary->members->nodes[0];
+    featureMember = primary->members->nodes[1];
+    callNode = primary->members->nodes[2];
+    if (buildMember == ZR_NULL || buildMember->type != ZR_AST_MEMBER_EXPRESSION ||
+        buildMember->data.memberExpression.computed ||
+        !ct_identifier_node_equals(buildMember->data.memberExpression.property, "build") ||
+        featureMember == ZR_NULL || featureMember->type != ZR_AST_MEMBER_EXPRESSION ||
+        featureMember->data.memberExpression.computed ||
+        !ct_identifier_node_equals(featureMember->data.memberExpression.property, "feature") ||
+        callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
+        return ZR_TRUE;
+    }
+
+    *handled = ZR_TRUE;
+    if (callNode->data.functionCall.args == ZR_NULL ||
+        callNode->data.functionCall.args->count != 1 ||
+        callNode->data.functionCall.args->nodes[0] == ZR_NULL) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "compile.build.feature requires one string argument",
+                                   callNode->location);
+        return ZR_FALSE;
+    }
+
+    featureNameNode = callNode->data.functionCall.args->nodes[0];
+    if (!evaluate_compile_time_expression_internal(cs, featureNameNode, frame, &featureNameValue) ||
+        featureNameValue.type != ZR_VALUE_TYPE_STRING ||
+        featureNameValue.value.object == ZR_NULL) {
+        ZrParser_CompileTime_Error(cs,
+                                   ZR_COMPILE_TIME_ERROR_ERROR,
+                                   "compile.build.feature requires one string argument",
+                                   featureNameNode->location);
+        return ZR_FALSE;
+    }
+    featureName = ZR_CAST_STRING(cs->state, featureNameValue.value.object);
+    project = ZrLibrary_Project_GetFromGlobal(cs->state->global);
+    for (TZrSize index = 0; project != ZR_NULL && index < project->featureSwitchCount; index++) {
+        const SZrLibrary_ProjectFeatureSwitch *feature = &project->featureSwitches[index];
+        if (feature->name != ZR_NULL && ZrCore_String_Equal(feature->name, featureName)) {
+            ZrCore_Value_InitAsUInt(cs->state, result, feature->value ? 1u : 0u);
+            result->type = ZR_VALUE_TYPE_BOOL;
+            return ZR_TRUE;
+        }
+    }
+
+    ZrParser_CompileTime_Error(cs,
+                               ZR_COMPILE_TIME_ERROR_ERROR,
+                               "Unknown project feature in compile.build.feature",
+                               featureNameNode->location);
+    return ZR_FALSE;
+}
 
 static TZrBool ct_make_string_value(SZrState *state, const TZrChar *text, SZrTypeValue *result) {
     SZrString *stringValue;
@@ -3563,6 +4446,14 @@ static TZrBool ct_eval_primary(SZrCompilerState *cs, SZrAstNode *node, SZrCompil
     SZrPrimaryExpression *primary = &node->data.primaryExpression;
     SZrTypeValue currentValue;
     TZrSize startIndex = 0;
+    TZrBool handledCompileToolCall = ZR_FALSE;
+
+    if (!ct_try_eval_build_feature(cs, node, frame, result, &handledCompileToolCall)) {
+        return ZR_FALSE;
+    }
+    if (handledCompileToolCall) {
+        return ZR_TRUE;
+    }
 
     if (primary->members == ZR_NULL || primary->members->count == 0) {
         return primary->property != ZR_NULL
@@ -4098,6 +4989,29 @@ ZR_PARSER_API TZrBool ZrParser_CompileTimeDeclaration_Execute(SZrCompilerState *
 
     oldContext = cs->isInCompileTimeContext;
     cs->isInCompileTimeContext = ZR_TRUE;
+
+    if (decl->isCurrentSyntax && decl->isConditionalPruning) {
+        SZrIfExpression *ifExpression;
+        SZrTypeValue conditionValue;
+
+        if (body->type != ZR_AST_IF_EXPRESSION) {
+            ZrParser_CompileTime_Error(cs,
+                                       ZR_COMPILE_TIME_ERROR_ERROR,
+                                       "comptime if requires an if expression",
+                                       node->location);
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_FALSE;
+        }
+
+        ifExpression = &body->data.ifExpression;
+        if (!evaluate_compile_time_expression_internal(cs, ifExpression->condition, ZR_NULL, &conditionValue)) {
+            cs->isInCompileTimeContext = oldContext;
+            return ZR_FALSE;
+        }
+        decl->selectedBranch = ct_truthy(&conditionValue) ? ifExpression->thenExpr : ifExpression->elseExpr;
+        cs->isInCompileTimeContext = oldContext;
+        return ZR_TRUE;
+    }
 
     switch (decl->declarationType) {
         case ZR_COMPILE_TIME_VARIABLE: {

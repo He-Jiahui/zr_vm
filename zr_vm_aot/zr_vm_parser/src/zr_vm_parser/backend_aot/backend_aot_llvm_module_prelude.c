@@ -145,6 +145,8 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_GetClosureValue(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SetClosureValue(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CopyStack(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ResetStackNull(ptr, ptr, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ResetStackNull2(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_GetGlobal(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CreateObject(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CreateArray(ptr, ptr, i32)\n");
@@ -164,6 +166,7 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MetaSetStaticCached(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceCreateMember(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceCreateIndex(ptr, ptr, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceCreateLocal(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceLoad(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PropertyReferenceStore(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnUnique(ptr, ptr, i32, i32)\n");
@@ -278,6 +281,7 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PrepareStaticDirectCall(ptr, ptr, i32, i32, i32, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CallPreparedOrGeneric(ptr, ptr, ptr, i32, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_FinishDirectCall(ptr, ptr, ptr, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CallSpread(ptr, ptr, i32, i32, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Try(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_EndTry(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Throw(ptr, ptr, i32, ptr)\n");
@@ -321,9 +325,17 @@ void backend_aot_llvm_write_module_prelude(FILE *file,
     fprintf(file, "%%SZrTypeValueOnStack = type { [%llu x i8] }\n",
             (unsigned long long)sizeof(SZrTypeValueOnStack));
     fprintf(file,
-            "%%ZrAotGeneratedFrame = type { ptr, ptr, ptr, ptr, i32, i32, i32, i32, i32, i32, i8, ptr, ptr, ptr, i32, ptr, i32 }\n");
+            "%%ZrAotGeneratedFrame = type { ptr, ptr, ptr, ptr, i32, i32, i32, i32, i32, i32, i8, ptr, ptr, ptr, i32, ptr, ptr, i32 }\n");
     fprintf(file, "%%ZrAotGeneratedDirectCall = type { ptr, ptr, ptr, i32, i32, i32, i32, i32, i1, i1 }\n");
     fprintf(file,
-            "%%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr }\n");
+            "%%SZrFfiAggregateFieldContract = type { [32 x i8], i32, i32, i32, i32 }\n"
+            "%%SZrFfiTypeContract = type { i32, i32, i32, i64, i64, i32, i32, i32 }\n"
+            "%%SZrFfiParameterContract = type { %%SZrFfiTypeContract, i32, i32, i32, i8, i32 }\n"
+            "%%SZrFfiSignatureContract = type { i32, i32, i32, [64 x i8], i64, i32, i32, i32, i32, i32, i32, i8, i32, %%SZrFfiTypeContract, [32 x %%SZrFfiParameterContract], i32, [64 x %%SZrFfiAggregateFieldContract], i64 }\n"
+            "%%SZrFfiSourceMapping = type { [512 x i8], i64, i64, i32, i32, i32, i32 }\n"
+            "%%SZrNativeImportContract = type { i32, [512 x i8], [128 x i8], i64, i64, i64, i32, i64, %%SZrFfiSourceMapping, %%SZrFfiSignatureContract }\n"
+            "%%SZrAotNativeImportRange = type { i32, i32 }\n"
+            "%%SZrAotCodeRegistration = type { i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32 }\n"
+            "%%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr }\n");
     fprintf(file, "\n");
 }

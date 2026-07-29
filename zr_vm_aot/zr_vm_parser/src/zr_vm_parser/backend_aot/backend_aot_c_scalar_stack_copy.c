@@ -197,6 +197,7 @@ static TZrBool backend_aot_c_scalar_stack_copy_destination_local_is_available(
 static TZrBool backend_aot_c_scalar_stack_copy_instruction_is_call_result_write(EZrInstructionCode opcode) {
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):

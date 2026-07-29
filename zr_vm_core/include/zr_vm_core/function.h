@@ -10,6 +10,7 @@
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_common/zr_ffi_contract.h"
 struct SZrState;
 struct SZrCallInfo;
 struct SZrTypeValueOnStack;
@@ -431,7 +432,8 @@ typedef enum EZrSemIrOpcode {
     ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC = 50,
     ZR_SEMIR_OPCODE_PROPERTY_REF_GET = 51,
     ZR_SEMIR_OPCODE_DEREFERENCE = 52,
-    ZR_SEMIR_OPCODE_PROPERTY_REF_STORE = 53
+    ZR_SEMIR_OPCODE_PROPERTY_REF_STORE = 53,
+    ZR_SEMIR_OPCODE_DYN_CALL_SPREAD = 54
 } EZrSemIrOpcode;
 
 typedef enum EZrSemIrEffectKind {
@@ -675,6 +677,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     SZrMetadataTokenBinding *moduleMetadataBindings;
     TZrUInt32 moduleMetadataBindingLength;
     TZrUInt32 moduleMetadataBindingCapacity;
+    SZrNativeImportContract *nativeImportContracts;
+    TZrUInt32 nativeImportContractLength;
 };
 
 typedef struct SZrFunction SZrFunction;

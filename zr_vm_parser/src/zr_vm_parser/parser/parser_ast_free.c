@@ -307,6 +307,13 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_SPREAD_ARGUMENT: {
+            SZrSpreadArgument *spread = &node->data.spreadArgument;
+            if (spread->expression != ZR_NULL) {
+                ZrParser_Ast_Free(state, spread->expression);
+            }
+            break;
+        }
         case ZR_AST_FUNCTION_CALL: {
             SZrFunctionCall *call = &node->data.functionCall;
             // 注意：SZrFunctionCall没有callee成员，函数调用在primary expression中处理

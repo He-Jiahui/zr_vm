@@ -184,6 +184,71 @@ void backend_aot_write_c_direct_function_call(FILE *file,
                                            "function call");
 }
 
+void backend_aot_write_c_spread_function_call(
+        FILE *file,
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
+        TZrUInt32 prefixArgumentCount) {
+    TZrBool syncI64Local;
+    TZrBool syncBoolLocal;
+    TZrBool syncU64Local;
+    TZrBool syncF64Local;
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    syncI64Local = backend_aot_c_scalar_locals_has_i64_slot(
+            functionIr, destinationSlot);
+    syncBoolLocal = backend_aot_c_scalar_locals_has_bool_slot(
+            functionIr, destinationSlot);
+    syncU64Local = backend_aot_c_scalar_locals_has_u64_slot(
+            functionIr, destinationSlot);
+    syncF64Local = backend_aot_c_scalar_locals_has_f64_slot(
+            functionIr, destinationSlot);
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_spread_function_call */\n"
+            "%s"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallSpread(state, &frame, %u, %u, %u, \"spread function call\")",
+            syncI64Local || syncBoolLocal || syncU64Local || syncF64Local
+                    ? "        /* zr_aot_call_result_sync_compact */\n"
+                    : "",
+            (unsigned)destinationSlot,
+            (unsigned)functionSlot,
+            (unsigned)prefixArgumentCount);
+    if (syncI64Local) {
+        fprintf(file,
+                " &&\n"
+                "                        ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncBoolLocal) {
+        fprintf(file,
+                " &&\n"
+                "                        ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncU64Local) {
+        fprintf(file,
+                " &&\n"
+                "                        ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    if (syncF64Local) {
+        fprintf(file,
+                " &&\n"
+                "                        ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
+                (unsigned)destinationSlot,
+                (unsigned)destinationSlot);
+    }
+    fprintf(file, ");\n    }\n");
+}
+
 static void backend_aot_write_c_known_member_call(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   TZrUInt32 destinationSlot,

@@ -3,6 +3,7 @@
 //
 
 #include "execution/execution_internal.h"
+#include "function_call_spread_internal.h"
 #include "function_precall_internal.h"
 #include "object/object_internal.h"
 #include "object/object_super_array_internal.h"
@@ -1102,6 +1103,104 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
                                                      resultSource,
                                                      profileRuntime,
                                                      recordHelpers);
+    }
+    return nextCallInfo;
+}
+
+static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_spread_single_result(
+        SZrState *state,
+        SZrCallInfo *callInfo,
+        SZrFunction *function,
+        TZrStackValuePointer *ioFrameBase,
+        TZrUInt32 functionSlot,
+        TZrSize prefixArgumentCount,
+        TZrUInt32 resultSlot,
+        TZrStackValuePointer *outCallWindow,
+        SZrProfileRuntime *profileRuntime,
+        TZrBool recordHelpers) {
+    const TZrUInt32 spreadSlot =
+            functionSlot + (TZrUInt32)prefixArgumentCount + 1u;
+    SZrTypeValue *spreadValue;
+    TZrSize spreadArgumentCount;
+    TZrSize extraSlotCount;
+    TZrStackValuePointer callWindow;
+    TZrStackValuePointer effectiveReturnDestination;
+    SZrFunctionStackAnchor callWindowAnchor;
+    SZrFunctionStackAnchor frameBaseAnchor;
+    SZrCallInfo *nextCallInfo;
+    TZrBool invocationStarted = ZR_FALSE;
+
+    if (outCallWindow != ZR_NULL) {
+        *outCallWindow = ZR_NULL;
+    }
+    spreadValue = execution_inline_frame_get_value_slot(
+            state, function, *ioFrameBase, spreadSlot);
+    if (!ZrCore_Function_CallSpread_TryGetArgumentCount(
+                spreadValue, &spreadArgumentCount)) {
+        spreadValue = ZrCore_Stack_GetValueNoProfile(*ioFrameBase + spreadSlot);
+        if (!ZrCore_Function_CallSpread_TryGetArgumentCount(
+                    spreadValue, &spreadArgumentCount)) {
+            ZrCore_Debug_RunError(
+                    state,
+                    "FUNCTION_CALL_SPREAD: spread operand must be an array");
+            return ZR_NULL;
+        }
+    }
+
+    extraSlotCount = spreadArgumentCount > 0u
+                             ? spreadArgumentCount - 1u
+                             : 0u;
+    callWindow = execution_prepare_frame_layout_call_window_with_extra(
+            state,
+            callInfo,
+            function,
+            ioFrameBase,
+            functionSlot,
+            prefixArgumentCount + 1u,
+            extraSlotCount);
+    if (callWindow == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    effectiveReturnDestination =
+            resultSlot != ZR_INSTRUCTION_USE_RET_FLAG
+                    ? *ioFrameBase + resultSlot
+                    : ZR_NULL;
+    ZrCore_Function_StackAnchorInit(state, callWindow, &callWindowAnchor);
+    ZrCore_Function_StackAnchorInit(state, *ioFrameBase, &frameBaseAnchor);
+    nextCallInfo = ZrCore_Function_CallSpread_PreCallPrepared(
+            state,
+            callWindow,
+            prefixArgumentCount,
+            1u,
+            effectiveReturnDestination,
+            &invocationStarted);
+    callWindow = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor);
+    *ioFrameBase = ZrCore_Function_StackAnchorRestore(state, &frameBaseAnchor);
+    execution_release_frame_layout_call_argument_owners(
+            state,
+            function,
+            *ioFrameBase,
+            functionSlot + 1u,
+            prefixArgumentCount + 1u);
+    if (outCallWindow != ZR_NULL) {
+        *outCallWindow = invocationStarted ? callWindow : ZR_NULL;
+    }
+    if (invocationStarted && nextCallInfo == ZR_NULL &&
+        resultSlot != ZR_INSTRUCTION_USE_RET_FLAG) {
+        const SZrTypeValue *resultSource =
+                effectiveReturnDestination != ZR_NULL
+                        ? execution_inline_frame_get_value_slot(
+                                  state, function, *ioFrameBase, resultSlot)
+                        : ZrCore_Stack_GetValueNoProfile(callWindow);
+        execution_store_or_copy_result_to_frame_slot(
+                state,
+                function,
+                *ioFrameBase,
+                resultSlot,
+                resultSource,
+                profileRuntime,
+                recordHelpers);
     }
     return nextCallInfo;
 }
@@ -3516,6 +3615,38 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 recordHelpers);                                                                                        \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             ZrCore_Debug_RunError(state, "FUNCTION_CALL: failed to prepare call frame");                             \
+        }                                                                                                              \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_FUNCTION_CALL_SPREAD_BODY()                                                                            \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize prefixArgumentCount__ = B1(instruction);                                                               \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+        TZrStackValuePointer callWindow__;                                                                             \
+                                                                                                                       \
+        opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                 \
+                  "Function value is NULL in FUNCTION_CALL_SPREAD");                                                 \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = execution_pre_call_frame_layout_spread_single_result(                                         \
+                state,                                                                                                 \
+                callInfo,                                                                                              \
+                currentFunction,                                                                                       \
+                &base,                                                                                                 \
+                (TZrUInt32)functionSlot__,                                                                             \
+                prefixArgumentCount__,                                                                                 \
+                E(instruction),                                                                                        \
+                &callWindow__,                                                                                         \
+                profileRuntime,                                                                                        \
+                recordHelpers);                                                                                        \
+        if (callWindow__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "FUNCTION_CALL_SPREAD: failed to prepare call frame");                     \
         }                                                                                                              \
         if (nextCallInfo__ == ZR_NULL) {                                                                               \
             RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
@@ -7940,6 +8071,16 @@ LZrFastInstruction_FUNCTION_CALL: {
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_FUNCTION_CALL_SPREAD: {
+                EXECUTE_FUNCTION_CALL_SPREAD_BODY();
+            }
+            DONE_FAST(1);
+#endif
+            ZR_INSTRUCTION_LABEL(FUNCTION_CALL_SPREAD) {
+                EXECUTE_FUNCTION_CALL_SPREAD_BODY();
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_KNOWN_VM_CALL: {
                 EXECUTE_KNOWN_VM_CALL_BODY();
             }
@@ -9256,6 +9397,20 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 }
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(PROPERTY_REF_CREATE_LOCAL) {
+                destination = FRAME_VALUE_SLOT(E(instruction));
+                if (!ZrCore_PropertyReference_CreateFrameSlot(
+                            state,
+                            currentFunction,
+                            base,
+                            (TZrUInt32)A2(instruction),
+                            destination)) {
+                    ZrCore_Debug_RunError(
+                            state,
+                            "PROPERTY_REF_CREATE_LOCAL: invalid local Place");
+                }
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(PROPERTY_REF_LOAD) {
                 destination = FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A2(instruction));
@@ -9567,6 +9722,7 @@ LZrExecutionDone:
 #undef EXECUTE_SUPER_KNOWN_VM_CALL_NO_ARGS_BODY
 #undef EXECUTE_SUPER_KNOWN_NATIVE_CALL_NO_ARGS_BODY
 #undef EXECUTE_FUNCTION_CALL_BODY
+#undef EXECUTE_FUNCTION_CALL_SPREAD_BODY
 #undef EXECUTE_SUPER_DYN_CALL_NO_ARGS_BODY
 #undef EXECUTE_SUPER_DYN_CALL_CACHED_BODY
 #undef EXECUTE_DYN_CALL_BODY

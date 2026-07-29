@@ -12,16 +12,21 @@
 #include "zr_vm_lib_ffi/runtime.h"
 
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/call_info.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/property_reference.h"
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_library/aot_runtime.h"
 
 #include <limits.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -125,7 +130,13 @@ typedef struct ZrFfiParameter {
 
 struct ZrFfiSignature {
     ffi_abi abi;
+    TZrUInt64 canonicalSignatureHash;
     TZrBool isVarargs;
+    EZrFfiErrorPolicy errorPolicy;
+    EZrFfiCleanupPolicy cleanupPolicy;
+    EZrFfiCallbackLifetime callbackLifetime;
+    EZrFfiCallbackThreadPolicy callbackThreadPolicy;
+    EZrFfiCallbackExceptionPolicy callbackExceptionPolicy;
     TZrSize parameterCount;
     ZrFfiParameter *parameters;
     ZrFfiTypeLayout *returnType;
@@ -140,6 +151,7 @@ struct ZrFfiTypeLayout {
     ZrFfiTypeKind kind;
     TZrSize size;
     TZrSize align;
+    TZrUInt64 canonicalSignatureHash;
     char *name;
 #if ZR_VM_HAS_LIBFFI
     ffi_type *ffiType;
@@ -199,6 +211,11 @@ typedef struct ZrFfiCallbackData {
 #endif
     ZrFfiSignature *signature;
     TZrBool closed;
+    TZrBool invocationActive;
+    EZrFfiCallbackLifetime activeLifetime;
+    EZrFfiCallbackThreadPolicy activeThreadPolicy;
+    EZrFfiCallbackExceptionPolicy activeExceptionPolicy;
+    TZrBool callbackExceptionObserved;
     ZrFfiErrorCode lastError;
     char lastErrorMessage[ZR_FFI_ERROR_BUFFER_LENGTH];
 #if ZR_VM_HAS_LIBFFI
@@ -226,6 +243,17 @@ typedef struct ZrFfiBufferData {
 typedef struct ZrFfiMarshalledValue {
     void *argumentPointer;
     void *ownedAllocation;
+    void *ownedPointeeAllocation;
+    void *callbackCodePointer;
+    ZrFfiCallbackData *callbackData;
+    TZrBool callbackActivationInstalled;
+    TZrBool savedInvocationActive;
+    EZrFfiCallbackLifetime savedLifetime;
+    EZrFfiCallbackThreadPolicy savedThreadPolicy;
+    EZrFfiCallbackExceptionPolicy savedExceptionPolicy;
+    TZrBool savedCallbackExceptionObserved;
+    ZrFfiErrorCode savedLastError;
+    char savedLastErrorMessage[ZR_FFI_ERROR_BUFFER_LENGTH];
 } ZrFfiMarshalledValue;
 
 typedef struct ZrFfiCallbackInvokeArgs {
@@ -289,6 +317,10 @@ ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValu
                                                      char *errorBuffer, TZrSize errorBufferSize);
 ZrFfiSignature *zr_ffi_parse_signature(SZrState *state, SZrObject *signatureObject, char *errorBuffer,
                                               TZrSize errorBufferSize);
+ZrFfiSignature *zr_ffi_signature_from_contract(
+        const SZrNativeImportContract *contract,
+        char *errorBuffer,
+        TZrSize errorBufferSize);
 TZrBool zr_ffi_extract_numeric_value(const SZrTypeValue *value, double *outDouble);
 TZrBool zr_ffi_build_struct_argument(SZrState *state, const SZrTypeValue *value, ZrFfiTypeLayout *type,
                                             unsigned char *buffer, char *errorBuffer, TZrSize errorBufferSize);
@@ -307,6 +339,7 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
                                           SZrObject *selfObject,
                                           ZrFfiSymbolData *symbolData,
                                           SZrObject *argumentsArray,
+                                          ZrLibCallContext *writebackContext,
                                           SZrTypeValue *result);
 
 #endif // ZR_VM_LIB_FFI_RUNTIME_INTERNAL_H

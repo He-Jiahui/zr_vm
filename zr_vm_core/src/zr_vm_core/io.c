@@ -1181,6 +1181,174 @@ static void io_read_function_callsite_cache_metadata(SZrIo *io, SZrIoFunction *f
     }
 }
 
+static void io_read_ffi_type_contract(
+        SZrIo *io,
+        SZrFfiTypeContract *type) {
+    TZrUInt32 typeKind = 0u;
+
+    ZR_IO_READ_NATIVE_TYPE(io, typeKind, TZrUInt32);
+    type->typeKind = (EZrFfiTypeKind)typeKind;
+    ZR_IO_READ_NATIVE_TYPE(io, type->size, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, type->alignment, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, type->canonicalTypeHash, TZrUInt64);
+    ZR_IO_READ_NATIVE_TYPE(io, type->layoutHash, TZrUInt64);
+    ZR_IO_READ_NATIVE_TYPE(io, type->flags, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, type->aggregateFieldStart, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, type->aggregateFieldCount, TZrUInt32);
+}
+
+static void io_read_function_native_import_contracts(
+        SZrIo *io,
+        SZrIoFunction *function) {
+    SZrGlobalState *global = io->state->global;
+    TZrUInt64 serializedContractCount = 0u;
+
+    ZR_IO_READ_NATIVE_TYPE(io, serializedContractCount, TZrUInt64);
+    if (serializedContractCount > (TZrUInt64)ZR_FFI_CONTRACT_MAX_IMPORTS_PER_FUNCTION ||
+        serializedContractCount > (TZrUInt64)SIZE_MAX) {
+        io->hasReadError = ZR_TRUE;
+        function->nativeImportContractLength = 0u;
+        return;
+    }
+    function->nativeImportContractLength = (TZrSize)serializedContractCount;
+    if (function->nativeImportContractLength == 0u) {
+        return;
+    }
+    function->nativeImportContracts =
+            ZR_IO_MALLOC_NATIVE_DATA(
+                    global,
+                    sizeof(SZrNativeImportContract) * function->nativeImportContractLength);
+    if (function->nativeImportContracts == ZR_NULL) {
+        return;
+    }
+    ZrCore_Memory_RawSet(
+            function->nativeImportContracts,
+            0,
+            sizeof(SZrNativeImportContract) * function->nativeImportContractLength);
+    for (TZrSize contractIndex = 0u;
+         contractIndex < function->nativeImportContractLength;
+         contractIndex++) {
+        SZrNativeImportContract *contract =
+                &function->nativeImportContracts[contractIndex];
+        TZrUInt32 abi = 0u;
+        TZrUInt32 targetEndianness = 0u;
+        TZrUInt32 charset = 0u;
+        TZrUInt32 errorPolicy = 0u;
+        TZrUInt32 cleanupPolicy = 0u;
+        TZrUInt32 callbackLifetime = 0u;
+        TZrUInt32 callbackThreadPolicy = 0u;
+        TZrUInt32 callbackExceptionPolicy = 0u;
+        TZrUInt8 isVariadic = 0u;
+
+        ZR_IO_READ_NATIVE_TYPE(io, contract->schemaVersion, TZrUInt32);
+        ZrCore_Io_Read(io, (TZrBytePtr)contract->libraryLocator, sizeof(contract->libraryLocator));
+        ZrCore_Io_Read(io, (TZrBytePtr)contract->entryPoint, sizeof(contract->entryPoint));
+        ZR_IO_READ_NATIVE_TYPE(io, contract->symbolId, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, contract->declaringModuleId, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, contract->callableContractHash, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, contract->availability, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, contract->requiredCapabilities, TZrUInt64);
+        ZrCore_Io_Read(
+                io,
+                (TZrBytePtr)contract->sourceMapping.document,
+                sizeof(contract->sourceMapping.document));
+        ZR_IO_READ_NATIVE_TYPE(
+                io, contract->sourceMapping.startOffset, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(
+                io, contract->sourceMapping.endOffset, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(
+                io, contract->sourceMapping.startLine, TZrInt32);
+        ZR_IO_READ_NATIVE_TYPE(
+                io, contract->sourceMapping.startColumn, TZrInt32);
+        ZR_IO_READ_NATIVE_TYPE(
+                io, contract->sourceMapping.endLine, TZrInt32);
+        ZR_IO_READ_NATIVE_TYPE(
+                io, contract->sourceMapping.endColumn, TZrInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, abi, TZrUInt32);
+        contract->signature.abi = (EZrFfiAbi)abi;
+        ZR_IO_READ_NATIVE_TYPE(io, contract->signature.targetPointerSize, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, targetEndianness, TZrUInt32);
+        contract->signature.targetEndianness =
+                (EZrFfiTargetEndianness)targetEndianness;
+        ZrCore_Io_Read(
+                io,
+                (TZrBytePtr)contract->signature.targetTriple,
+                sizeof(contract->signature.targetTriple));
+        ZR_IO_READ_NATIVE_TYPE(io, contract->signature.targetAbiHash, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, charset, TZrUInt32);
+        contract->signature.charset = (EZrFfiCharset)charset;
+        ZR_IO_READ_NATIVE_TYPE(io, errorPolicy, TZrUInt32);
+        contract->signature.errorPolicy = (EZrFfiErrorPolicy)errorPolicy;
+        ZR_IO_READ_NATIVE_TYPE(io, cleanupPolicy, TZrUInt32);
+        contract->signature.cleanupPolicy = (EZrFfiCleanupPolicy)cleanupPolicy;
+        ZR_IO_READ_NATIVE_TYPE(io, callbackLifetime, TZrUInt32);
+        contract->signature.callbackLifetime =
+                (EZrFfiCallbackLifetime)callbackLifetime;
+        ZR_IO_READ_NATIVE_TYPE(io, callbackThreadPolicy, TZrUInt32);
+        contract->signature.callbackThreadPolicy =
+                (EZrFfiCallbackThreadPolicy)callbackThreadPolicy;
+        ZR_IO_READ_NATIVE_TYPE(io, callbackExceptionPolicy, TZrUInt32);
+        contract->signature.callbackExceptionPolicy =
+                (EZrFfiCallbackExceptionPolicy)callbackExceptionPolicy;
+        ZR_IO_READ_NATIVE_TYPE(io, isVariadic, TZrUInt8);
+        contract->signature.isVariadic = isVariadic ? ZR_TRUE : ZR_FALSE;
+        ZR_IO_READ_NATIVE_TYPE(io, contract->signature.parameterCount, TZrUInt32);
+        if (contract->signature.parameterCount >
+            ZR_FFI_CONTRACT_MAX_PARAMETERS) {
+            io->hasReadError = ZR_TRUE;
+            return;
+        }
+        io_read_ffi_type_contract(io, &contract->signature.returnType);
+        for (TZrUInt32 parameterIndex = 0u;
+             parameterIndex < contract->signature.parameterCount;
+             parameterIndex++) {
+            SZrFfiParameterContract ignoredParameter = {0};
+            SZrFfiParameterContract *parameter =
+                    parameterIndex < ZR_FFI_CONTRACT_MAX_PARAMETERS
+                            ? &contract->signature.parameters[parameterIndex]
+                            : &ignoredParameter;
+            TZrUInt32 direction = 0u;
+            TZrUInt32 marshalling = 0u;
+            TZrUInt32 ownership = 0u;
+            TZrUInt8 isNullable = 0u;
+
+            io_read_ffi_type_contract(io, &parameter->type);
+            ZR_IO_READ_NATIVE_TYPE(io, direction, TZrUInt32);
+            parameter->direction = (EZrFfiDirection)direction;
+            ZR_IO_READ_NATIVE_TYPE(io, marshalling, TZrUInt32);
+            parameter->marshalling = (EZrFfiMarshallingKind)marshalling;
+            ZR_IO_READ_NATIVE_TYPE(io, ownership, TZrUInt32);
+            parameter->ownership = (EZrFfiParameterOwnership)ownership;
+            ZR_IO_READ_NATIVE_TYPE(io, isNullable, TZrUInt8);
+            parameter->isNullable = isNullable ? ZR_TRUE : ZR_FALSE;
+            ZR_IO_READ_NATIVE_TYPE(io, parameter->flags, TZrUInt32);
+        }
+        ZR_IO_READ_NATIVE_TYPE(
+                io, contract->signature.aggregateFieldCount, TZrUInt32);
+        if (contract->signature.aggregateFieldCount >
+            ZR_FFI_CONTRACT_MAX_AGGREGATE_FIELDS) {
+            io->hasReadError = ZR_TRUE;
+            return;
+        }
+        for (TZrUInt32 fieldIndex = 0u;
+             fieldIndex < contract->signature.aggregateFieldCount;
+             fieldIndex++) {
+            SZrFfiAggregateFieldContract *field =
+                    &contract->signature.aggregateFields[fieldIndex];
+            TZrUInt32 fieldTypeKind = 0u;
+
+            ZrCore_Io_Read(
+                    io, (TZrBytePtr)field->name, sizeof(field->name));
+            ZR_IO_READ_NATIVE_TYPE(io, fieldTypeKind, TZrUInt32);
+            field->typeKind = (EZrFfiTypeKind)fieldTypeKind;
+            ZR_IO_READ_NATIVE_TYPE(io, field->size, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, field->alignment, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, field->offset, TZrUInt32);
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, contract->signature.signatureHash, TZrUInt64);
+    }
+}
+
 static void io_read_classes(SZrIo *io, SZrIoClass *classes, TZrSize count);
 static void io_read_structs(SZrIo *io, SZrIoStruct *structs, TZrSize count);
 
@@ -1495,6 +1663,8 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->semIrDeoptTable = ZR_NULL;
         function->callSiteCacheLength = 0;
         function->callSiteCaches = ZR_NULL;
+        function->nativeImportContractLength = 0;
+        function->nativeImportContracts = ZR_NULL;
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_PARAMETER_METADATA) {
             io_read_function_metadata_parameters(io, &function->parameterMetadata, &function->parameterMetadataLength);
         }
@@ -1581,6 +1751,9 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_CALLSITE_CACHE) {
             io_read_function_callsite_cache_metadata(io, function);
+        }
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_NATIVE_IMPORT_CONTRACTS) {
+            io_read_function_native_import_contracts(io, function);
         }
         // 读取PROTOTYPES_LENGTH和PROTOTYPES（结构化格式）
         ZR_IO_READ_NATIVE_TYPE(io, function->prototypesLength, TZrSize);
@@ -1850,18 +2023,21 @@ void ZrCore_Io_Init(SZrState *state, SZrIo *io, FZrIoRead read, FZrIoClose close
     io->pointer = ZR_NULL;
     io->remained = 0;
     io->isBinary = ZR_FALSE;
+    io->hasReadError = ZR_FALSE;
     io->sourceVersionPatch = 0;
 }
 
 TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
     TZrSize requestedSize = size;
 
+    if (io == ZR_NULL || buffer == ZR_NULL || io->hasReadError) {
+        return 0u;
+    }
     while (size > 0) {
         if (io->remained == 0) {
             if (!io_refill(io)) {
-                if (io->state != ZR_NULL) {
-                    ZrCore_Debug_RunError(io->state, "io read refill failed");
-                }
+                ZrCore_Memory_RawSet(buffer, 0, size);
+                io->hasReadError = ZR_TRUE;
                 return requestedSize - size;
             }
         }
@@ -1879,8 +2055,15 @@ TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
 
 
 SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
+    if (io == ZR_NULL || io->state == ZR_NULL || io->state->global == ZR_NULL) {
+        return ZR_NULL;
+    }
     SZrGlobalState *global = io->state->global;
     SZrIoSource *source = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoSource));
+    if (source == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Memory_RawSet(source, 0, sizeof(*source));
     ZrCore_Io_Read(io, (TZrBytePtr) source->signature, sizeof(source->signature));
     // todo: check signature
     ZR_IO_READ_NATIVE_TYPE(io, source->versionMajor, TZrUInt32);
@@ -1908,6 +2091,9 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     ZR_IO_READ_NATIVE_TYPE(io, source->modulesLength, TZrSize);
     source->modules = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoModule) * source->modulesLength);
     io_read_modules(io, source->modules, source->modulesLength);
+    if (io->hasReadError) {
+        return ZR_NULL;
+    }
     return source;
 }
 

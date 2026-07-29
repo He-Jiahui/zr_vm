@@ -44,6 +44,9 @@ static const ZrLibMethodDescriptor g_library_methods[] = {
                                       "Return whether the library handle has been closed.", ZR_FALSE, ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("getSymbol", 2, 2, ZrFfi_Library_GetSymbol, "SymbolHandle",
                                       "Resolve and compile a typed symbol handle.", ZR_FALSE, ZR_NULL, 0),
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("getContractSymbol", 1, 1, ZrFfi_Library_GetContractSymbol, "SymbolHandle",
+                                      "Resolve a static native import from its retained contract.", ZR_FALSE,
+                                      ZR_NULL, 0),
         ZR_LIB_METHOD_DESCRIPTOR_INIT("getVersion", 0, 1, ZrFfi_Library_GetVersion, "string",
                                       "Read a version string exported by the library.", ZR_FALSE, ZR_NULL, 0),
 };

@@ -997,13 +997,31 @@ TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    if (!validate_call_argument_passing_modes(
-                cs,
-                parameterPassingModes,
-                parameterTypes,
-                call,
-                &argTypes,
-                funcType)) {
+    if (compiler_call_has_spread_argument(call)) {
+        for (TZrSize index = 0U;
+             parameterPassingModes != ZR_NULL &&
+             index < parameterPassingModes->length;
+             index++) {
+            const EZrParameterPassingMode *mode =
+                    (const EZrParameterPassingMode *)ZrCore_Array_Get(
+                            (SZrArray *)parameterPassingModes, index);
+            if (mode != ZR_NULL &&
+                *mode != ZR_PARAMETER_PASSING_MODE_VALUE) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Spread arguments can only bind value parameters",
+                        location);
+                free_inferred_type_array(cs->state, &argTypes);
+                return ZR_FALSE;
+            }
+        }
+    } else if (!validate_call_argument_passing_modes(
+                       cs,
+                       parameterPassingModes,
+                       parameterTypes,
+                       call,
+                       &argTypes,
+                       funcType)) {
         free_inferred_type_array(cs->state, &argTypes);
         return ZR_FALSE;
     }
@@ -2424,6 +2442,14 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                 ZrParser_InferredType_Init(cs->state, &resolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
                 ZrCore_Array_Construct(&resolvedSignature.parameterTypes);
                 ZrCore_Array_Construct(&resolvedSignature.parameterPassingModes);
+
+                if (compiler_call_has_spread_argument(call) &&
+                    !compiler_validate_trailing_spread_call(
+                            cs, call, firstMember->location)) {
+                    ZrParser_InferredType_Free(cs->state, &baseType);
+                    free_resolved_call_signature(cs->state, &resolvedSignature);
+                    return ZR_FALSE;
+                }
 
                 if (find_compiler_type_prototype_inference(cs, funcName) != ZR_NULL) {
                     ZrParser_Compiler_Error(cs,

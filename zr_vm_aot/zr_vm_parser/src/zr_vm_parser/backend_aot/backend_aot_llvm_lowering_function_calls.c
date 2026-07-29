@@ -44,6 +44,35 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
         return ZR_FALSE;
     }
 
+    if (instruction->opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)) {
+        TZrChar spreadOkLabel[96];
+
+        backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
+                                                     context->entry->function,
+                                                     instruction->destinationSlot,
+                                                     ZR_AOT_INVALID_FUNCTION_INDEX);
+        backend_aot_llvm_make_instruction_label(spreadOkLabel,
+                                                sizeof(spreadOkLabel),
+                                                context->entry->flatIndex,
+                                                instruction->instructionIndex,
+                                                "spread_ok");
+        snprintf(argsBuffer,
+                 sizeof(argsBuffer),
+                 "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u, ptr null",
+                 (unsigned)instruction->destinationSlot,
+                 (unsigned)instruction->operandA1,
+                 (unsigned)instruction->operandB1);
+        backend_aot_llvm_write_guarded_call_text(context->file,
+                                                 context->tempCounter,
+                                                 "ZrLibrary_AotRuntime_CallSpread",
+                                                 argsBuffer,
+                                                 spreadOkLabel,
+                                                 context->failLabel);
+        fprintf(context->file, "%s:\n", spreadOkLabel);
+        fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
+        return ZR_TRUE;
+    }
+
     if (instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL) ||
         instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL) ||
         instruction->opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)) {

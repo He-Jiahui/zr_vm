@@ -4,7 +4,7 @@
     "machineApplicable": 341,
     "maybeIncorrect": 0,
     "requiresReview": 324,
-    "targetNotPromoted": 104
+    "targetNotPromoted": 102
   },
   "exclusions": [
     {
@@ -1892,89 +1892,53 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "targetNotPromoted",
-      "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
-      "legacyForm": "percentExtern",
-      "range": {
-        "end": {
-          "column": 8,
-          "line": 84
-        },
-        "start": {
-          "column": 1,
-          "line": 84
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "10"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
-      "legacyForm": "legacyBareTypeCall",
-      "range": {
-        "end": {
-          "column": 19,
-          "line": 86
-        },
-        "start": {
-          "column": 5,
-          "line": 86
-        }
-      },
-      "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
-      "legacyForm": "legacyBareTypeCall",
-      "range": {
-        "end": {
-          "column": 19,
-          "line": 88
-        },
-        "start": {
-          "column": 14,
-          "line": 88
-        }
-      },
-      "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "targetNotPromoted",
-      "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
-      "legacyForm": "percentExtern",
-      "range": {
-        "end": {
-          "column": 8,
-          "line": 107
-        },
-        "start": {
-          "column": 1,
-          "line": 107
-        }
-      },
-      "reason": "target_plan_not_promoted",
-      "sourceKind": "currentDocumentation",
-      "targetPlan": "10"
-    },
-    {
       "classification": "requiresReview",
       "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
       "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
           "column": 26,
+          "line": 105
+        },
+        "start": {
+          "column": 12,
+          "line": 105
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "currentDocumentation",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 19,
           "line": 107
         },
         "start": {
-          "column": 21,
+          "column": 14,
           "line": 107
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "currentDocumentation",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "docs/parser-and-semantics/ffi-extern-declarations.md",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 39,
+          "line": 126
+        },
+        "start": {
+          "column": 34,
+          "line": 126
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -16426,6 +16390,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/ffi/test_native_extern_contract.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/fixtures/parser/test_char_literals.zr",
       "sourceKind": "zrSource"
     },
@@ -18306,6 +18274,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_call_spread.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_canonical_consumers.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -18907,7 +18879,7 @@
     "05": 3,
     "06A": 511,
     "08": 80,
-    "10": 4,
+    "10": 2,
     "11": 64,
     "14": 36
   },

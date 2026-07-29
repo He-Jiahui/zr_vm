@@ -20,6 +20,31 @@ TZrBool zr_ffi_extract_numeric_value(const SZrTypeValue *value, double *outDoubl
     return ZR_FALSE;
 }
 
+static TZrBool zr_ffi_union_field_is_default(
+        SZrState *state,
+        const SZrTypeValue *value,
+        const ZrFfiTypeLayout *type) {
+    double numericValue = 0.0;
+    TZrBool boolValue = ZR_FALSE;
+
+    if (value == ZR_NULL || value->type == ZR_VALUE_TYPE_NULL) {
+        return ZR_TRUE;
+    }
+    if (type != ZR_NULL && type->kind == ZR_FFI_TYPE_ENUM) {
+        return zr_ffi_union_field_is_default(
+                state, value, type->as.enumType.underlying);
+    }
+    if (type != ZR_NULL && type->kind == ZR_FFI_TYPE_BOOL &&
+        zr_ffi_read_bool_value(value, &boolValue)) {
+        return !boolValue;
+    }
+    if (zr_ffi_extract_numeric_value(value, &numericValue)) {
+        return numericValue == 0.0;
+    }
+    (void)state;
+    return ZR_FALSE;
+}
+
 TZrBool zr_ffi_build_struct_argument(SZrState *state, const SZrTypeValue *value, ZrFfiTypeLayout *type,
                                             unsigned char *buffer, char *errorBuffer, TZrSize errorBufferSize) {
     TZrSize index;
@@ -31,6 +56,52 @@ TZrBool zr_ffi_build_struct_argument(SZrState *state, const SZrTypeValue *value,
     }
 
     memset(buffer, 0, type->size);
+    if (type->kind == ZR_FFI_TYPE_UNION) {
+        const ZrFfiFieldLayout *activeField = ZR_NULL;
+        const SZrTypeValue *activeValue = ZR_NULL;
+
+        for (index = 0; index < type->as.aggregate.fieldCount; index++) {
+            const ZrFfiFieldLayout *field =
+                    &type->as.aggregate.fields[index];
+            const SZrTypeValue *fieldValue =
+                    zr_ffi_find_field_raw(state, object, field->name);
+            if (fieldValue == ZR_NULL) {
+                snprintf(
+                        errorBuffer,
+                        errorBufferSize,
+                        "missing field '%s' in union value",
+                        field->name);
+                return ZR_FALSE;
+            }
+            if (!zr_ffi_union_field_is_default(
+                        state, fieldValue, field->type)) {
+                if (activeField != ZR_NULL) {
+                    snprintf(
+                            errorBuffer,
+                            errorBufferSize,
+                            "union argument must identify exactly one non-default active field");
+                    return ZR_FALSE;
+                }
+                activeField = field;
+                activeValue = fieldValue;
+            }
+        }
+        if (activeField == ZR_NULL) {
+            snprintf(
+                    errorBuffer,
+                    errorBufferSize,
+                    "union argument has no non-default active field");
+            return ZR_FALSE;
+        }
+        return zr_ffi_build_scalar_argument(
+                state,
+                activeValue,
+                activeField->type,
+                buffer + activeField->offset,
+                errorBuffer,
+                errorBufferSize);
+    }
+
     for (index = 0; index < type->as.aggregate.fieldCount; index++) {
         const ZrFfiFieldLayout *field = &type->as.aggregate.fields[index];
         const SZrTypeValue *fieldValue = zr_ffi_find_field_raw(state, object, field->name);
@@ -322,7 +393,10 @@ TZrBool zr_ffi_build_scalar_argument(SZrState *state, const SZrTypeValue *value,
             break;
     }
 
-    snprintf(errorBuffer, errorBufferSize, "unsupported value for ffi argument");
+    snprintf(errorBuffer,
+             errorBufferSize,
+             "unsupported value type %d for ffi argument",
+             value != ZR_NULL ? (int)value->type : -1);
     return ZR_FALSE;
 }
 
@@ -529,7 +603,13 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
     SZrCallInfo *savedCallInfo = ZR_NULL;
     TZrStackValuePointer savedStackTop;
     SZrFunctionStackAnchor savedStackTopAnchor;
-    TZrBool hasSavedStackTopAnchor = ZR_FALSE;
+    SZrFunctionStackAnchor savedCallInfoBaseAnchor;
+    SZrFunctionStackAnchor savedCallInfoTopAnchor;
+    SZrFunctionStackAnchor savedCallInfoReturnAnchor;
+    TZrBool hasSavedCallInfoBase = ZR_FALSE;
+    TZrBool hasSavedCallInfoTop = ZR_FALSE;
+    TZrBool hasSavedCallInfoReturn = ZR_FALSE;
+    TZrUInt32 savedExceptionHandlerStackLength;
     EZrThreadStatus callbackStatus = ZR_THREAD_STATUS_FINE;
     TZrSize index;
 
@@ -546,10 +626,27 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
         return;
     }
 
+    if (callbackData->activeLifetime ==
+                ZR_FFI_CONTRACT_CALLBACK_LIFETIME_CALL &&
+        !callbackData->invocationActive) {
+        callbackData->lastError = ZR_FFI_ERROR_NATIVE_CALL;
+        snprintf(
+                callbackData->lastErrorMessage,
+                sizeof(callbackData->lastErrorMessage),
+                "callback invoked outside its call lifetime");
+        zr_ffi_zero_call_storage(
+                callbackData->signature->returnType, returnValue);
+        return;
+    }
+
 #if defined(ZR_PLATFORM_WIN)
-    if (GetCurrentThreadId() != callbackData->ownerThreadId) {
+    if (callbackData->activeThreadPolicy ==
+            ZR_FFI_CONTRACT_CALLBACK_THREAD_FORBIDDEN ||
+        GetCurrentThreadId() != callbackData->ownerThreadId) {
 #else
-    if (!pthread_equal(pthread_self(), callbackData->ownerThreadId)) {
+    if (callbackData->activeThreadPolicy ==
+            ZR_FFI_CONTRACT_CALLBACK_THREAD_FORBIDDEN ||
+        !pthread_equal(pthread_self(), callbackData->ownerThreadId)) {
 #endif
         callbackData->lastError = ZR_FFI_ERROR_CALLBACK_THREAD;
         snprintf(callbackData->lastErrorMessage, sizeof(callbackData->lastErrorMessage),
@@ -602,9 +699,34 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
 
     savedCallInfo = callbackData->state->callInfoList;
     savedStackTop = callbackData->state->stackTop.valuePointer;
-    if (savedStackTop != ZR_NULL) {
-        ZrCore_Function_StackAnchorInit(callbackData->state, savedStackTop, &savedStackTopAnchor);
-        hasSavedStackTopAnchor = ZR_TRUE;
+    savedExceptionHandlerStackLength =
+            callbackData->state->exceptionHandlerStackLength;
+    ZrCore_Function_StackAnchorInit(
+            callbackData->state, savedStackTop, &savedStackTopAnchor);
+    if (savedCallInfo != ZR_NULL &&
+        savedCallInfo->functionBase.valuePointer != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(
+                callbackData->state,
+                savedCallInfo->functionBase.valuePointer,
+                &savedCallInfoBaseAnchor);
+        hasSavedCallInfoBase = ZR_TRUE;
+    }
+    if (savedCallInfo != ZR_NULL &&
+        savedCallInfo->functionTop.valuePointer != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(
+                callbackData->state,
+                savedCallInfo->functionTop.valuePointer,
+                &savedCallInfoTopAnchor);
+        hasSavedCallInfoTop = ZR_TRUE;
+    }
+    if (savedCallInfo != ZR_NULL &&
+        savedCallInfo->hasReturnDestination &&
+        savedCallInfo->returnDestination != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(
+                callbackData->state,
+                savedCallInfo->returnDestination,
+                &savedCallInfoReturnAnchor);
+        hasSavedCallInfoReturn = ZR_TRUE;
     }
     invokeArgs.callbackValue = callbackValue;
     invokeArgs.argumentValues = argumentValues;
@@ -612,19 +734,58 @@ void zr_ffi_callback_trampoline(ffi_cif *cif, void *returnValue, void **argument
     invokeArgs.result = &callResult;
     invokeArgs.succeeded = ZR_FALSE;
     callbackStatus = ZrCore_Exception_TryRun(callbackData->state, zr_ffi_callback_try_invoke, &invokeArgs);
+    savedStackTop = ZrCore_Function_StackAnchorRestore(
+            callbackData->state, &savedStackTopAnchor);
+    callbackData->state->stackTop.valuePointer = savedStackTop;
+    callbackData->state->callInfoList = savedCallInfo;
+    if (savedCallInfo != ZR_NULL) {
+        if (hasSavedCallInfoBase) {
+            savedCallInfo->functionBase.valuePointer =
+                    ZrCore_Function_StackAnchorRestore(
+                            callbackData->state,
+                            &savedCallInfoBaseAnchor);
+        }
+        if (hasSavedCallInfoTop) {
+            savedCallInfo->functionTop.valuePointer =
+                    ZrCore_Function_StackAnchorRestore(
+                            callbackData->state,
+                            &savedCallInfoTopAnchor);
+        }
+        if (hasSavedCallInfoReturn) {
+            savedCallInfo->returnDestination =
+                    ZrCore_Function_StackAnchorRestore(
+                            callbackData->state,
+                            &savedCallInfoReturnAnchor);
+        }
+    }
+    callbackData->state->exceptionHandlerStackLength =
+            savedExceptionHandlerStackLength;
     if (callbackStatus != ZR_THREAD_STATUS_FINE || !invokeArgs.succeeded) {
+        callbackData->callbackExceptionObserved = ZR_TRUE;
+        if (callbackData->activeExceptionPolicy ==
+            ZR_FFI_CONTRACT_CALLBACK_EXCEPTION_ABORT) {
+            abort();
+        }
         callbackData->lastError = ZR_FFI_ERROR_NATIVE_CALL;
         snprintf(callbackData->lastErrorMessage,
                  sizeof(callbackData->lastErrorMessage),
                  "zr callback execution failed%s",
                  callbackStatus != ZR_THREAD_STATUS_FINE ? " with VM exception" : "");
+        ZrCore_Exception_ClearCurrent(callbackData->state);
+        callbackData->state->threadStatus = ZR_THREAD_STATUS_FINE;
+        callbackData->state->pendingControl.kind =
+                ZR_VM_PENDING_CONTROL_NONE;
+        callbackData->state->pendingControl.callInfo = ZR_NULL;
+        callbackData->state->pendingControl.targetInstructionOffset = 0u;
+        callbackData->state->pendingControl.valueSlot = 0u;
+        ZrCore_Value_ResetAsNull(
+                &callbackData->state->pendingControl.value);
+        callbackData->state->pendingControl.hasValue = ZR_FALSE;
         free(argumentValues);
         zr_ffi_zero_call_storage(callbackData->signature->returnType, returnValue);
         return;
     }
-    if (hasSavedStackTopAnchor) {
-        savedStackTop = ZrCore_Function_StackAnchorRestore(callbackData->state, &savedStackTopAnchor);
-    }
+
     if (callbackData->state->callInfoList != savedCallInfo ||
         callbackData->state->stackTop.valuePointer != savedStackTop) {
         callbackData->lastError = ZR_FFI_ERROR_NATIVE_CALL;

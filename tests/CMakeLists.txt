@@ -472,6 +472,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core(zr_vm_reflection_type_stress_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_call_spread_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_call_spread.c
+    )
+    target_include_directories(zr_vm_call_spread_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_call_spread_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_union_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_union.c
     )
@@ -5319,6 +5329,13 @@ if (TARGET zr_vm_reflection_type_stress_test)
     set_tests_properties(reflection_type_stress PROPERTIES LABELS "stress")
 endif ()
 
+if (TARGET zr_vm_call_spread_test)
+    add_test(
+            NAME call_spread
+            COMMAND $<TARGET_FILE:zr_vm_call_spread_test>
+    )
+endif ()
+
 if (TARGET zr_vm_cli_executable AND
         (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static) AND
@@ -5704,6 +5721,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             zr_vm_ffi_test
             ${CMAKE_SOURCE_DIR}/tests/ffi/test_ffi_module.c
     )
+    zr_vm_add_unity_test_target(
+            zr_vm_native_extern_contract_test
+            ${CMAKE_SOURCE_DIR}/tests/ffi/test_native_extern_contract.c
+    )
     target_include_directories(zr_vm_ffi_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests/ffi
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -5716,6 +5737,30 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     zr_vm_link_parser_core_plus_library(zr_vm_ffi_test)
     add_dependencies(zr_vm_ffi_test zr_vm_ffi_fixture_path_header zr_vm_ffi_fixture)
+
+    target_include_directories(zr_vm_native_extern_contract_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/ffi
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+            "${CMAKE_BINARY_DIR}/tests_generated"
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_native_extern_contract_test)
+    target_compile_definitions(zr_vm_native_extern_contract_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    if (UNIX AND NOT APPLE)
+        target_link_libraries(zr_vm_native_extern_contract_test PRIVATE dl)
+    endif ()
+    add_dependencies(
+            zr_vm_native_extern_contract_test
+            zr_vm_ffi_fixture_path_header
+            zr_vm_ffi_fixture)
 
     zr_vm_add_unity_test_target(
             zr_vm_ffi_native_call_pin_contract_test

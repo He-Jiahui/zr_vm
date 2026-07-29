@@ -823,18 +823,23 @@ SZrAstNode *parse_reserved_import_expression(SZrParserState *ps) {
     SZrAstNode *modulePath;
     SZrAstNode *node;
 
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
+    if (ps == ZR_NULL) {
         return ZR_NULL;
     }
 
     startLoc = get_current_location(ps);
-    ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "import")) {
-        report_error(ps, "Expected 'import' after '%'");
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        ZrParser_Lexer_Next(ps->lexer);
+        if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "import")) {
+            report_error(ps, "Expected 'import' after '%'");
+            return ZR_NULL;
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "import")) {
+        ZrParser_Lexer_Next(ps->lexer);
+    } else {
         return ZR_NULL;
     }
-
-    ZrParser_Lexer_Next(ps->lexer);
     modulePath = parse_normalized_module_path(ps, "import");
     if (modulePath == ZR_NULL) {
         return ZR_NULL;
@@ -1165,7 +1170,6 @@ static SZrAstNode *parse_member_name(SZrParserState *ps) {
     SZrFileRange memberLoc;
     EZrToken token;
     SZrString *name = ZR_NULL;
-    TZrNativeString nativeName = ZR_NULL;
 
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -1180,12 +1184,6 @@ static SZrAstNode *parse_member_name(SZrParserState *ps) {
     memberLoc = get_current_token_location(ps);
     if (token == ZR_TK_IDENTIFIER) {
         name = ps->lexer->t.seminfo.stringValue;
-        nativeName = name != ZR_NULL ? ZrCore_String_GetNativeString(name) : ZR_NULL;
-        if (nativeName != ZR_NULL && strcmp(nativeName, "import") == 0 && peek_token(ps) == ZR_TK_LPAREN) {
-            report_error(ps, "Legacy import() syntax is not supported; use %import");
-            skip_legacy_import_call(ps);
-            return ZR_NULL;
-        }
     } else if (token == ZR_TK_TEST) {
         name = ps->lexer->t.seminfo.stringValue;
         if (name == ZR_NULL) {
@@ -1265,6 +1263,20 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             if (!is_member_name_token(ps->lexer->t.token)) {
                 report_missing_member_name(ps, dotLocation);
                 return ZR_NULL;
+            }
+            TZrNativeString baseName =
+                base->type == ZR_AST_IDENTIFIER_LITERAL && base->data.identifier.name != ZR_NULL
+                    ? ZrCore_String_GetNativeString(base->data.identifier.name)
+                    : ZR_NULL;
+            if (baseName != ZR_NULL && strcmp(baseName, "zr") == 0 &&
+                current_identifier_equals(ps, "import") &&
+                peek_token(ps) == ZR_TK_LPAREN) {
+                report_error(ps, "Internal module helper 'zr.import' is not available; use import(\"module.path\")");
+                ZrParser_Lexer_Next(ps->lexer);
+                if (consume_token(ps, ZR_TK_LPAREN)) {
+                    skip_balanced_after_open_paren(ps);
+                }
+                return base;
             }
 
             SZrAstNode *property = parse_member_name(ps);
@@ -1560,6 +1572,11 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
         base->data.lambdaExpression.isLegacyAsyncSyntax = ZR_FALSE;
         base->location = ZrParser_FileRange_Merge(asyncLocation, base->location);
         return parse_member_access(ps, base);
+    }
+    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "import") &&
+        peek_token(ps) == ZR_TK_LPAREN) {
+        base = parse_reserved_import_expression(ps);
+        return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
     }
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "own") &&
         peek_token(ps) == ZR_TK_IDENTIFIER) {

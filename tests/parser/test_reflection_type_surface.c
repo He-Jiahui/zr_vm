@@ -1048,6 +1048,8 @@ static void test_runtime_descriptor_members_are_callable_from_source(void) {
             "let descriptor = typeof(point);\n"
             "descriptor.getField(\"value\");\n"
             "descriptor.createInstance(41);\n"
+            "let constructionArgs = [42];\n"
+            "descriptor.createInstance(...constructionArgs);\n"
             "return 1;\n";
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "reflection_descriptor_source_call.zr");

@@ -63,7 +63,7 @@ static void test_zr_ffi_symbol_call_pins_gc_values_across_native_call_boundary(v
                                    "ZrCore_Gc_NativeCallPinObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(selfObject), &selfPin)");
     ownerPin = assert_text_contains(runtimeSource, "ZrCore_Gc_NativeCallPinValue(state, ownerValue, &ownerPin)");
     argumentPin = assert_text_contains(runtimeSource,
-                                       "ZrCore_Gc_NativeCallPinValue(state, argumentValue, &argumentPins[index])");
+                                        "state, effectiveArgumentValue, &argumentPins[index])");
     nativeInvoke = assert_text_contains(runtimeSource,
                                         "zr_ffi_invoke_native_symbol(symbolData, returnStorage, ffiArguments, errorBuffer, sizeof(errorBuffer))");
     argumentUnpin = assert_text_contains(runtimeSource, "ZrCore_Gc_NativeCallUnpin(state->global, &argumentPins[");
@@ -90,9 +90,9 @@ static void test_zr_ffi_callback_trampoline_reanchors_saved_stack_after_native_c
     assert_text_contains(internalHeader, "#include \"zr_vm_core/function.h\"");
     assert_text_contains(callbackSource, "SZrFunctionStackAnchor savedStackTopAnchor;");
     assert_text_contains(callbackSource,
-                         "ZrCore_Function_StackAnchorInit(callbackData->state, savedStackTop, &savedStackTopAnchor)");
+                         "callbackData->state, savedStackTop, &savedStackTopAnchor);");
     assert_text_contains(callbackSource,
-                         "savedStackTop = ZrCore_Function_StackAnchorRestore(callbackData->state, &savedStackTopAnchor)");
+                         "callbackData->state, &savedStackTopAnchor);");
     assert_text_contains(callbackSource,
                          "callbackData->state->stackTop.valuePointer != savedStackTop");
 

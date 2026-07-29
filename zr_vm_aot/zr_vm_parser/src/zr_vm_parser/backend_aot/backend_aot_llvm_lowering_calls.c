@@ -8,6 +8,7 @@ TZrBool backend_aot_llvm_lower_call_instruction(const SZrAotLlvmLoweringContext 
 
     switch (instruction->opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):

@@ -10,9 +10,10 @@
 - Review 结果：初审发现的构建图、属性/引用/所有权、AOT/GC、模块初始化、
   typed frame、metadata 跨平台、线程隔离域生命周期以及 debug 测试函数图销毁
   顺序问题均已修复；当前叶子范围内没有遗留 P1/P2 功能或内存安全缺陷。
-- 整体 Syntax 计划：**仍未整体完成**。根 `README.md` 的上层 promotion gate
-  仍包含 06B、07B、08、09、10F/10C、11、14 等未关闭范围。55 份叶子记录
-  的完成不能自动提升整个 14 部分 Syntax redesign。
+- 整体 Syntax 计划：**仍未整体完成**。本轮另行关闭了 08 call spread、10F M3
+  和 11 M1，但根 `README.md` 仍有 06B、07B、10C、11 后续里程碑、14 以及其他
+  promotion 依赖未关闭。55 份叶子记录的完成不能自动提升整个 14 部分 Syntax
+  redesign。
 
 原始状态文本的写法并不完全统一：包括普通/反引号 `completed`、中文“已完成”、
 带 M2/M3/M4 gate 限定的“已完成”，以及
@@ -52,9 +53,9 @@
 3. pool guard 取得后无锁再次遍历可扩容的 slab 表，和并发 deliver 存在数据竞争。
    acquire 现于锁内解析并缓存稳定 value 地址，guard 读路径不再访问可重分配表。
 
-上层 Gate 结论保持保守：08 的 spread 调用/AOT 等完整验收、09 的跨 consumer 集成，
-以及 11、14 的实施状态仍未关闭，因此依赖它们的 10C、06B、07B 也不能宣告完成。
-本轮提交推进并加固 08/09，但不修改这些根 Gate 的状态。
+上层 Gate 结论保持保守。后续 2026-07-29 复验已另行完成 08 call spread、10F M3
+和 11 M1，但 11 根 Gate 与 14 尚未关闭，因此依赖它们的 10C、06B、07B 仍不能
+宣告完成。
 
 ## 2026-07-29 最终提交前复验
 
@@ -76,11 +77,40 @@ completed 状态各 1。缺失状态 0，非完成状态 0。
 18/18、reflection stress 3/3、generational pool 9/9、legacy migration 9/9、module
 system 89/89、thread runtime 25/25、syntax reference v1 7/7。
 
-WSL GCC 定向重建在 `/mnt/e` 文件系统 I/O 上持续超过 84 分钟仍未完成，因此已终止
-本轮启动的 Ninja 进程，且不把它记为新的 GCC 通过证据；上文 GCC/Clang 结果仍是
-先前完整验收记录。曾用于探索 Gate 08 的 spread-call 实验代码、测试目标和构建产物
-均未纳入本次结论或提交，最终源码中无对应实验标记。根 promotion gate 的未完成
-边界保持不变。
+随后使用 WSL 短路径隔离镜像完成新增 Gate 的新鲜复验：08 call spread 聚合 53/53，
+10F native extern 27/27、FFI 29/29、pin 2/2、AOT call 5/5、frame 1/1，11 M1
+compile-time 61/61、ref struct 11/11、reference escape 13/13、task 17/17。Gate 08
+实现与测试已纳入本次提交，不再是未提交实验。根 promotion gate 的其余未完成边界
+保持不变。
+
+最终独立 review 又关闭两个遗漏：AOT record append 的 OOM 分支现在释放四个 owned
+路径字符串；模块顶层 `return/if/while` 现在按 runtime phase 检查 CompileTool 使用，
+新增 Windows 定向回归后 compile-time suite 为 61/61。Windows ASan native extern
+为 27 项、0 失败、2 项明确忽略；其中 errno 项因静态 CRT 的 DLL 私有状态不适用，
+该策略仍由 WSL 与动态 CRT MSVC Debug 覆盖。隔离提交树中的 migration inventory
+协议为 5/5；新版 LSP 零遗留断言依赖另一会话尚未提交的 fixture 迁移，未混入本次提交。
+
+最终隔离索引冷构建还确认了三个提交边界遗漏并完成 RED/GREEN 修复：LLVM AOT 补齐
+`RESET_STACK_NULL{,2}` 与 `PROPERTY_REF_CREATE_LOCAL` lowering 后 native extern 从
+26/27 恢复为 27/27；当前 `import("...")` 解析入口与具体 compile-time 诊断文本纳入后，
+Gate 11 从 49/61 恢复为 61/61。干净 `HEAD` 本身仍缺少 pool 工作线的 contract role 和
+stable-slot protocol 枚举，导致 `pooling.c` 无法独立编译；验收快照只覆盖这两个未提交
+基础头继续验证，本提交不混入该旁支工作。
+
+## `%` 语法的当前状态
+
+当前源码、fixture 和测试中仍可见大量 `%` 开头形式，这是预期的迁移期兼容面，
+不是最终语法已经完成切换。55/55 只证明这些状态记录各自声明的叶子范围；它不等于
+06B 原子切换已经发生。
+
+- 当前新语法验收使用 `native extern`、`comptime if`、`comptime fn` 等目标形式。
+- `%extern`、`%compileTime`、`%type` 及同类拼写在 06B 前仍可作为兼容输入、迁移
+  inventory、负向测试或历史示例存在。
+- 最终 06B 要在依赖 Gate 全部关闭后一次性删除生产路径中的旧拼写；届时旧形式只能
+  留在 migration input、negative test 和明确标注的历史文档中。
+
+因此，“现在仍有很多 `%`”本身正常；若把它解释为整个 Syntax redesign 已完成则不
+正常。本报告的准确结论仍是：55 份叶子记录已确认，根级原子 cutover 未完成。
 
 ## 55 份记录逐项结果
 
@@ -164,7 +194,7 @@ Clang 的“119/119 覆盖”是完整运行 117/119 加两个超时项成功复
 - 提交前复验发现 `debug_library` 的低概率 teardown UAF；修复后常规构建连续
   100/100、MSVC ASan 5/5。并发 LSP 会话新增的 `debug_metadata` 编译 RED 不属于
   本次提交，未被改动、暂存或用于覆盖本轮 55 项结论。
-- Syntax migration inventory 协议测试 5/5；55 份状态记录、55 行验收结果、
+- Syntax migration inventory 协议测试最终复跑 5/5；55 份状态记录、55 行验收结果、
   55 行“确认”机器计数一致。
 - metadata v2 golden：三工具链统一为 canonical 40-byte value slot、8-byte
   maximum scalar alignment，对应哈希 `0x11237ADD493636F1`。
@@ -202,6 +232,18 @@ Clang 的“119/119 覆盖”是完整运行 117/119 加两个超时项成功复
    child function。清理路径现临时 ignore 入口函数，重置 VM 栈并立即完整 GC，随后
    unignore 并释放函数图。原始常规压力与 ASan RED 均稳定复现，修复后分别 100/100
    与 5/5 通过。
+10. **P2，AOT record append OOM 路径泄漏（已修复）。** record array 扩容失败时
+    现在除关闭 library、释放表并解除 GC pin 外，也释放 `moduleName`、`sourcePath`、
+    `zroPath` 和 `libraryPath` 四个 owned 字符串。
+11. **P1，模块顶层 CompileTool phase 旁路（已修复）。** module declaration list 与
+    runtime phase 已拆开传播；顶层 `return`、`if`、`while` 使用 provider 均稳定报
+    `compiletool.phase_mismatch`，Windows compile-time suite 61/61。
+12. **P1，LLVM AOT native extern 注册路径缺少 lowering（已修复）。** 隔离提交树稳定
+    复现 opcode 227 unsupported；补齐 stack reset 与 local property-reference lowering 后，
+    WSL native extern suite 从 26/27 恢复为 27/27。
+13. **P1，Gate 11 当前 import 与诊断传播未进入提交边界（已修复）。** `import("...")`
+    现与 `%import` 兼容入口共同解析，`zr.import` 保持拒绝；compile-time 错误保存具体消息
+    而不是通用摘要，WSL compile-time suite 从 49/61 恢复为 61/61。
 
 ## 验收边界
 

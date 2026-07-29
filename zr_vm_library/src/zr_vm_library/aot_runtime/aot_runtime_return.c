@@ -7,6 +7,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution_control.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/function_call_spread.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/stack.h"
@@ -317,6 +318,82 @@ TZrBool ZrLibrary_AotRuntime_CallStackValue(SZrState *state,
     frame->slotBase = state->callInfoList->functionBase.valuePointer + 1;
     state->stackTop.valuePointer = state->callInfoList->functionTop.valuePointer;
     return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_CallSpread(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
+        TZrUInt32 prefixArgumentCount,
+        const TZrChar *errorLabel) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    const TZrChar *label = errorLabel != ZR_NULL
+                                   ? errorLabel
+                                   : "spread function call";
+    TZrUInt32 spreadSlot;
+    TZrSize spreadArgumentCount;
+    TZrSize argumentCount;
+    TZrStackValuePointer callBase;
+    SZrFunctionStackAnchor frameBaseAnchor;
+    SZrFunctionStackAnchor callBaseAnchor;
+    const SZrTypeValue *spreadValue;
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL
+                           ? aot_runtime_get_state_from_global(state->global)
+                           : ZR_NULL;
+    if (state == ZR_NULL || frame == ZR_NULL || frame->function == ZR_NULL ||
+        frame->slotBase == ZR_NULL ||
+        functionSlot >= frame->generatedFrameSlotCount ||
+        destinationSlot >= frame->generatedFrameSlotCount ||
+        prefixArgumentCount > UINT32_MAX - functionSlot - 1u) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s failed", label);
+        return ZR_FALSE;
+    }
+
+    spreadSlot = functionSlot + prefixArgumentCount + 1u;
+    if (spreadSlot >= frame->generatedFrameSlotCount) {
+        aot_runtime_fail(
+                state, runtimeState, "generated AOT %s has invalid spread slot", label);
+        return ZR_FALSE;
+    }
+    spreadValue = ZrCore_Stack_GetValue(frame->slotBase + spreadSlot);
+    if (!ZrCore_Function_CallSpread_TryGetArgumentCount(
+                spreadValue, &spreadArgumentCount)) {
+        aot_runtime_fail(
+                state, runtimeState, "generated AOT %s requires an array operand", label);
+        return ZR_FALSE;
+    }
+    if (spreadArgumentCount > (TZrSize)UINT32_MAX - prefixArgumentCount) {
+        aot_runtime_fail(
+                state, runtimeState, "generated AOT %s argument count overflow", label);
+        return ZR_FALSE;
+    }
+
+    callBase = frame->slotBase + functionSlot;
+    ZrCore_Function_StackAnchorInit(state, frame->slotBase, &frameBaseAnchor);
+    ZrCore_Function_StackAnchorInit(state, callBase, &callBaseAnchor);
+    callBase = ZrCore_Function_CheckStackAndGc(
+            state,
+            prefixArgumentCount + spreadArgumentCount + 1u,
+            callBase);
+    frame->slotBase = ZrCore_Function_StackAnchorRestore(
+            state, &frameBaseAnchor);
+    callBase = ZrCore_Function_StackAnchorRestore(state, &callBaseAnchor);
+    if (frame->slotBase == ZR_NULL || callBase == ZR_NULL ||
+        !ZrCore_Function_CallSpread_ExpandPrepared(
+                state, callBase, prefixArgumentCount, &argumentCount)) {
+        aot_runtime_fail(state, runtimeState, "generated AOT %s failed", label);
+        return ZR_FALSE;
+    }
+
+    return ZrLibrary_AotRuntime_CallStackValue(
+            state,
+            frame,
+            destinationSlot,
+            functionSlot,
+            (TZrUInt32)argumentCount,
+            label);
 }
 
 TZrBool ZrLibrary_AotRuntime_CallDynamicDeoptBridge(SZrState *state,

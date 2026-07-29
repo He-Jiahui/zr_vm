@@ -19,6 +19,35 @@ static SZrCallArgumentSyntax parse_call_argument_marker(SZrParserState *ps) {
     return syntax;
 }
 
+static SZrAstNode *parse_call_argument_expression(SZrParserState *ps) {
+    SZrFileRange spreadLocation;
+    SZrAstNode *expression;
+    SZrAstNode *spread;
+
+    if (ps->lexer->t.token != ZR_TK_PARAMS) {
+        return parse_expression(ps);
+    }
+
+    spreadLocation = get_current_token_location(ps);
+    ZrParser_Lexer_Next(ps->lexer);
+    expression = parse_expression(ps);
+    if (expression == ZR_NULL) {
+        report_error(ps, "Expected an expression after '...'");
+        return ZR_NULL;
+    }
+
+    spread = create_ast_node(
+            ps,
+            ZR_AST_SPREAD_ARGUMENT,
+            ZrParser_FileRange_Merge(spreadLocation, expression->location));
+    if (spread == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, expression);
+        return ZR_NULL;
+    }
+    spread->data.spreadArgument.expression = expression;
+    return spread;
+}
+
 SZrAstNodeArray *parse_argument_list(
         SZrParserState *ps,
         SZrArray **argNames,
@@ -76,7 +105,7 @@ SZrAstNodeArray *parse_argument_list(
             ZrCore_Array_Push(ps->state, markers, &marker);
         }
         {
-            SZrAstNode *first = parse_expression(ps);
+            SZrAstNode *first = parse_call_argument_expression(ps);
             if (first != ZR_NULL) {
                 ZrParser_AstNodeArray_Add(ps->state, args, first);
             } else {
@@ -134,7 +163,7 @@ SZrAstNodeArray *parse_argument_list(
                 ZrCore_Array_Push(ps->state, markers, &marker);
             }
             {
-                SZrAstNode *arg = parse_expression(ps);
+                SZrAstNode *arg = parse_call_argument_expression(ps);
                 if (arg != ZR_NULL) {
                     ZrParser_AstNodeArray_Add(ps->state, args, arg);
                 } else {

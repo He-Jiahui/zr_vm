@@ -1384,6 +1384,10 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
     if (scriptAst == ZR_NULL) {
         return ZR_NULL;
     }
+    if (!ZrParser_CompileTime_PrepareBuildFacts(cs->state, scriptAst)) {
+        ZrParser_Ast_Free(cs->state, scriptAst);
+        return ZR_NULL;
+    }
     if (!ZrParser_ProjectImports_CanonicalizeAst(cs->state,
                                                  scriptAst,
                                                  moduleName,
@@ -3804,6 +3808,17 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
 
         case ZR_AST_EXTERN_BLOCK:
             ZrParser_Compiler_CompileExternBlock(cs, node);
+            break;
+
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            if (node->data.compileTimeDeclaration.selectedBranch == ZR_NULL &&
+                !ZrParser_CompileTimeDeclaration_Execute(cs, node)) {
+                break;
+            }
+            if (node->data.compileTimeDeclaration.isConditionalPruning &&
+                node->data.compileTimeDeclaration.selectedBranch != ZR_NULL) {
+                ZrParser_Statement_Compile(cs, node->data.compileTimeDeclaration.selectedBranch);
+            }
             break;
         
         default:

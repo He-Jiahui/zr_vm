@@ -32,6 +32,7 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_CONDITIONAL_EXPRESSION: return "CONDITIONAL_EXPRESSION";
         case ZR_AST_LOGICAL_EXPRESSION: return "LOGICAL_EXPRESSION";
         case ZR_AST_FUNCTION_CALL: return "FUNCTION_CALL";
+        case ZR_AST_SPREAD_ARGUMENT: return "SPREAD_ARGUMENT";
         case ZR_AST_MEMBER_EXPRESSION: return "MEMBER_EXPRESSION";
         case ZR_AST_PRIMARY_EXPRESSION: return "PRIMARY_EXPRESSION";
         case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION: return "PROTOTYPE_REFERENCE_EXPRESSION";
@@ -328,6 +329,13 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
                     print_ast_node(state, file, call->args->nodes[i], indent + 2);
                 }
             }
+            break;
+        }
+        case ZR_AST_SPREAD_ARGUMENT: {
+            SZrSpreadArgument *spread = &node->data.spreadArgument;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "expression: ");
+            print_ast_node(state, file, spread->expression, indent + 1);
             break;
         }
         case ZR_AST_MEMBER_EXPRESSION: {

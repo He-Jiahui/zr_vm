@@ -76,6 +76,7 @@ ZrFfiTypeLayout *zr_ffi_clone_type(const ZrFfiTypeLayout *type) {
 
     copy->size = type->size;
     copy->align = type->align;
+    copy->canonicalSignatureHash = type->canonicalSignatureHash;
     copy->name = zr_ffi_strdup(type->name);
 #if ZR_VM_HAS_LIBFFI
     copy->ffiType = type->ffiType;
@@ -560,18 +561,26 @@ ZrFfiTypeLayout *zr_ffi_parse_type_descriptor(SZrState *state, const SZrTypeValu
 }
 
 ZrFfiSignature *zr_ffi_parse_signature(SZrState *state, SZrObject *signatureObject, char *errorBuffer,
-                                              TZrSize errorBufferSize) {
+                                               TZrSize errorBufferSize) {
     ZrFfiSignature *signature;
     const SZrTypeValue *returnTypeValue;
     SZrObject *parametersArray = ZR_NULL;
     TZrSize parameterCount = 0;
     TZrSize index;
     const char *abiText = ZR_NULL;
+    TZrInt64 canonicalSignatureHash = 0;
 
     signature = (ZrFfiSignature *) calloc(1, sizeof(ZrFfiSignature));
     if (signature == ZR_NULL) {
         snprintf(errorBuffer, errorBufferSize, "out of memory while allocating signature");
         return ZR_NULL;
+    }
+    if (zr_ffi_read_object_int_field(
+                state,
+                signatureObject,
+                "canonicalSignatureHash",
+                &canonicalSignatureHash)) {
+        signature->canonicalSignatureHash = (TZrUInt64)canonicalSignatureHash;
     }
 
     returnTypeValue = zr_ffi_find_field_raw(state, signatureObject, "returnType");
@@ -663,4 +672,3 @@ ZrFfiSignature *zr_ffi_parse_signature(SZrState *state, SZrObject *signatureObje
 
     return signature;
 }
-

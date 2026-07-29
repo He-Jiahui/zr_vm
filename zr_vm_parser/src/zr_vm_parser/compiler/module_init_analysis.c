@@ -2167,6 +2167,10 @@ static void module_init_collect_static_imports(SZrState *state,
         return;
     }
 
+    if (compiler_is_compile_tool_import_declaration(node)) {
+        return;
+    }
+
     switch (node->type) {
         case ZR_AST_SCRIPT:
             if (node->data.script.statements != ZR_NULL) {
@@ -2182,6 +2186,14 @@ static void module_init_collect_static_imports(SZrState *state,
                 module_init_add_static_import(state,
                                               summary,
                                               node->data.importExpression.modulePath->data.stringLiteral.value);
+            }
+            return;
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            if (node->data.compileTimeDeclaration.isConditionalPruning &&
+                node->data.compileTimeDeclaration.selectedBranch != ZR_NULL) {
+                module_init_collect_static_imports(state,
+                                                   summary,
+                                                   node->data.compileTimeDeclaration.selectedBranch);
             }
             return;
         default:
@@ -2390,6 +2402,34 @@ static TZrBool module_init_prescan_source_summary(SZrState *state,
     for (index = 0; index < ast->data.script.statements->count; ++index) {
         SZrAstNode *statement = ast->data.script.statements->nodes[index];
         if (statement == ZR_NULL) {
+            continue;
+        }
+
+        if (compiler_is_compile_tool_import_declaration(statement)) {
+            continue;
+        }
+
+        if (statement->type == ZR_AST_COMPILE_TIME_DECLARATION &&
+            statement->data.compileTimeDeclaration.isConditionalPruning &&
+            statement->data.compileTimeDeclaration.selectedBranch != ZR_NULL) {
+            SZrAstNode selectedScript;
+            SZrAstNodeArray selectedStatements;
+            SZrAstNode *selectedBranch = statement->data.compileTimeDeclaration.selectedBranch;
+
+            ZrCore_Memory_RawSet(&selectedScript, 0, sizeof(selectedScript));
+            ZrCore_Memory_RawSet(&selectedStatements, 0, sizeof(selectedStatements));
+            selectedScript.type = ZR_AST_SCRIPT;
+            if (selectedBranch->type == ZR_AST_BLOCK) {
+                selectedScript.data.script.statements = selectedBranch->data.block.body;
+            } else {
+                selectedStatements.nodes = &selectedBranch;
+                selectedStatements.count = 1;
+                selectedStatements.capacity = 1;
+                selectedScript.data.script.statements = &selectedStatements;
+            }
+            if (!module_init_prescan_source_summary(state, summary, &selectedScript)) {
+                return ZR_FALSE;
+            }
             continue;
         }
 
@@ -3360,6 +3400,10 @@ static void module_init_register_import_binding_from_variable(SZrParserInitAnaly
         return;
     }
 
+    if (compiler_is_compile_tool_import_declaration(node)) {
+        return;
+    }
+
     declaration = &node->data.variableDeclaration;
     if (declaration->pattern == ZR_NULL || declaration->value == ZR_NULL) {
         return;
@@ -3804,10 +3848,21 @@ static TZrBool module_init_analyze_statement(SZrParserInitAnalysisContext *conte
             context->bindings.length = scopeBindingsLength;
             return ZR_TRUE;
         case ZR_AST_VARIABLE_DECLARATION:
+            if (compiler_is_compile_tool_import_declaration(node)) {
+                return ZR_TRUE;
+            }
             if (!module_init_analyze_expression(context, node->data.variableDeclaration.value, effects, ZR_NULL)) {
                 return ZR_FALSE;
             }
             module_init_register_import_binding_from_variable(context, node);
+            return ZR_TRUE;
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            if (node->data.compileTimeDeclaration.isConditionalPruning &&
+                node->data.compileTimeDeclaration.selectedBranch != ZR_NULL) {
+                return module_init_analyze_statement(context,
+                                                     node->data.compileTimeDeclaration.selectedBranch,
+                                                     effects);
+            }
             return ZR_TRUE;
         case ZR_AST_EXPRESSION_STATEMENT:
             return module_init_analyze_expression(context, node->data.expressionStatement.expr, effects, ZR_NULL);

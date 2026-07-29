@@ -6,6 +6,7 @@
 #define ZR_VM_LIB_FFI_RUNTIME_H
 
 #include "zr_vm_lib_ffi/conf.h"
+#include "zr_vm_common/zr_ffi_contract.h"
 
 const ZrLibModuleDescriptor *ZrVmLibFfiRuntime_GetModuleDescriptor(void);
 
@@ -18,7 +19,13 @@ TZrBool ZrFfi_NullPointer(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Library_Close(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Library_IsClosed(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Library_GetSymbol(ZrLibCallContext *context, SZrTypeValue *result);
+TZrBool ZrFfi_Library_GetContractSymbol(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Library_GetVersion(ZrLibCallContext *context, SZrTypeValue *result);
+
+ZR_VM_LIB_FFI_API TZrBool ZrVmLibFfi_ValidateNativeImportContract(
+        const SZrNativeImportContract *contract,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
 
 TZrBool ZrFfi_Symbol_Call(ZrLibCallContext *context, SZrTypeValue *result);
 TZrBool ZrFfi_Symbol_MetaCall(ZrLibCallContext *context, SZrTypeValue *result);

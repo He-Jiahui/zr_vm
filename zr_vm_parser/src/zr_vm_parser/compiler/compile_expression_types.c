@@ -1847,11 +1847,25 @@ static TZrUInt32 compile_call_argument_into_slot(
         SZrAstNode *argument,
         TZrUInt32 targetSlot,
         EZrParameterPassingMode passingMode,
-        const SZrInferredType *expectedType) {
+        const SZrInferredType *expectedType,
+        TZrBool createManagedLocalReference) {
     TZrUInt32 sourceSlot = ZR_PARSER_SLOT_NONE;
     TZrBool oldPreservePropertyReferenceResult;
     TZrUInt32 resultSlot;
 
+    if (createManagedLocalReference &&
+        (passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+         passingMode == ZR_PARAMETER_PASSING_MODE_OUT) &&
+        (sourceSlot = call_argument_direct_local_slot(cs, argument)) !=
+                ZR_PARSER_SLOT_NONE) {
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_LOCAL),
+                        (TZrUInt16)targetSlot,
+                        (TZrInt32)sourceSlot));
+        return cs->hasError ? ZR_PARSER_SLOT_NONE : targetSlot;
+    }
     if (!call_argument_is_owner_in_reborrow(
                 cs,
                 argument,
@@ -1861,7 +1875,8 @@ static TZrUInt32 compile_call_argument_into_slot(
         oldPreservePropertyReferenceResult =
                 cs->preservePropertyReferenceResult;
         cs->preservePropertyReferenceResult =
-                passingMode == ZR_PARAMETER_PASSING_MODE_REF;
+                passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+                passingMode == ZR_PARAMETER_PASSING_MODE_OUT;
         resultSlot = compile_expression_into_slot(cs, argument, targetSlot);
         cs->preservePropertyReferenceResult =
                 oldPreservePropertyReferenceResult;
@@ -1958,7 +1973,8 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
                 passingMode != ZR_NULL
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
-                expectedType);
+                expectedType,
+                ZR_FALSE);
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -2323,7 +2339,8 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
                         argNode,
                         argSlot,
                         passingMode,
-                        expectedType) == ZR_PARSER_SLOT_NONE ||
+                        expectedType,
+                        ZR_FALSE) == ZR_PARSER_SLOT_NONE ||
                 cs->hasError) {
                 goto cleanup;
             }
@@ -2519,7 +2536,9 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
                 passingMode != ZR_NULL
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
-                expectedType);
+                expectedType,
+                resolved_function_call_uses_meta_call_opcode(
+                        resolvedFunctionType));
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -3310,6 +3329,9 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             TZrBool hasContractReturnType = ZR_FALSE;
             TZrBool useMetaCallOpcode = ZR_FALSE;
             TZrBool syncStructConstructorReceiverToResult = ZR_FALSE;
+            TZrBool hasSpreadArgument =
+                    compiler_call_has_spread_argument(call);
+            TZrUInt32 spreadPrefixArgumentCount = 0u;
             TZrLoanId activeReceiverLoanId = ZR_SEMANTIC_LOAN_ID_INVALID;
 
             memset(&resolvedFunctionSignature, 0, sizeof(resolvedFunctionSignature));
@@ -3322,6 +3344,17 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             ZrCore_Array_Construct(&resolvedMemberSignature.parameterPassingModes);
             ZrParser_InferredType_Init(cs->state, &contractReturnType, ZR_VALUE_TYPE_OBJECT);
 
+            if (hasSpreadArgument &&
+                !compiler_validate_trailing_spread_call(
+                        cs, call, member->location)) {
+                free_resolved_call_signature(
+                        cs->state, &resolvedFunctionSignature);
+                free_resolved_call_signature(
+                        cs->state, &resolvedMemberSignature);
+                ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                return;
+            }
+
             if (rootIsTypeReference) {
                 ZrParser_Compiler_Error(cs,
                                         "Prototype references are not callable; use $target(...) or new target(...)",
@@ -3332,7 +3365,9 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 return;
             }
 
-            if (i == memberStartIndex && propertyNode != ZR_NULL && propertyNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+            if (i == memberStartIndex &&
+                propertyNode != ZR_NULL &&
+                propertyNode->type == ZR_AST_IDENTIFIER_LITERAL) {
                 SZrString *funcName = propertyNode->data.identifier.name;
                 TZrUInt32 childFuncIndex = find_child_function_index(cs, funcName);
 
@@ -3340,7 +3375,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     ZR_UNUSED_PARAMETER(ZrCore_Array_Get(&cs->childFunctions, childFuncIndex));
                 }
 
-                {
+                if (!hasSpreadArgument) {
                     SZrAstNode *funcDecl = find_function_declaration(cs, funcName);
                     if (funcDecl != ZR_NULL && funcDecl->type == ZR_AST_FUNCTION_DECLARATION) {
                         SZrFunctionDeclaration *funcDeclData = &funcDecl->data.functionDeclaration;
@@ -3380,8 +3415,19 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
 
             if (activeCallMemberInfo != ZR_NULL) {
                 memberParamList = member_call_parameter_list(activeCallMemberInfo);
-                if (memberParamList != ZR_NULL) {
+                if (!hasSpreadArgument && memberParamList != ZR_NULL) {
                     argsToCompile = match_named_arguments(cs, call, memberParamList);
+                }
+                if (hasSpreadArgument &&
+                    activeCallMemberInfo->genericParameters.length > 0u) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Spread calls to generic members require a typed invocation boundary",
+                            member->location);
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    return;
                 }
                 hasResolvedMemberSignature = resolve_generic_member_call_signature(cs,
                                                                                    activeCallMemberInfo,
@@ -3391,6 +3437,37 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
                         ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
                     }
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    return;
+                }
+            }
+            if (hasSpreadArgument) {
+                const SZrArray *spreadParameterTypes =
+                        hasResolvedMemberSignature
+                                ? &resolvedMemberSignature.parameterTypes
+                                : (activeCallMemberInfo != ZR_NULL
+                                           ? &activeCallMemberInfo->parameterTypes
+                                           : (hasResolvedFunctionSignature
+                                                      ? &resolvedFunctionSignature.parameterTypes
+                                                      : ZR_NULL));
+                const SZrArray *spreadParameterPassingModes =
+                        hasResolvedMemberSignature
+                                ? &resolvedMemberSignature.parameterPassingModes
+                                : (activeCallMemberInfo != ZR_NULL
+                                           ? &activeCallMemberInfo->parameterPassingModes
+                                           : (hasResolvedFunctionSignature
+                                                      ? &resolvedFunctionSignature.parameterPassingModes
+                                                      : ZR_NULL));
+
+                if (spreadParameterTypes != ZR_NULL &&
+                    !compiler_validate_spread_call_signature(
+                            cs,
+                            call,
+                            spreadParameterTypes,
+                            spreadParameterPassingModes,
+                            member->location)) {
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
@@ -3440,7 +3517,110 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             }
 
             if (argsToCompile != ZR_NULL) {
-                if (activeCallMemberInfo != ZR_NULL) {
+                if (hasSpreadArgument) {
+                    const SZrArray *spreadParameterTypes =
+                            hasResolvedMemberSignature
+                                    ? &resolvedMemberSignature.parameterTypes
+                                    : (activeCallMemberInfo != ZR_NULL
+                                               ? &activeCallMemberInfo->parameterTypes
+                                               : (hasResolvedFunctionSignature
+                                                          ? &resolvedFunctionSignature.parameterTypes
+                                                          : ZR_NULL));
+                    const SZrArray *spreadParameterPassingModes =
+                            hasResolvedMemberSignature
+                                    ? &resolvedMemberSignature.parameterPassingModes
+                                    : (activeCallMemberInfo != ZR_NULL
+                                               ? &activeCallMemberInfo->parameterPassingModes
+                                               : (hasResolvedFunctionSignature
+                                                          ? &resolvedFunctionSignature.parameterPassingModes
+                                                          : ZR_NULL));
+
+                    for (TZrSize j = 0u; j < argsToCompile->count; j++) {
+                        SZrAstNode *argNode = argsToCompile->nodes[j];
+                        SZrAstNode *expression = argNode;
+                        TZrUInt32 argSlot =
+                                argBaseSlot + (TZrUInt32)j;
+                        TZrBool isSpreadArgument =
+                                argNode != ZR_NULL &&
+                                argNode->type == ZR_AST_SPREAD_ARGUMENT;
+
+                        if (isSpreadArgument) {
+                            expression =
+                                    argNode->data.spreadArgument.expression;
+                        }
+                        if (expression == ZR_NULL) {
+                            ZrParser_Compiler_Error(
+                                    cs,
+                                    "Spread argument requires an expression",
+                                    argNode != ZR_NULL
+                                            ? argNode->location
+                                            : member->location);
+                            break;
+                        }
+                        compiler_ensure_stack_slot_available(cs, argSlot);
+                        if (!isSpreadArgument &&
+                            spreadParameterTypes != ZR_NULL &&
+                            j < spreadParameterTypes->length) {
+                            const SZrInferredType *expectedType =
+                                    (const SZrInferredType *)ZrCore_Array_Get(
+                                            (SZrArray *)spreadParameterTypes, j);
+                            EZrParameterPassingMode passingMode =
+                                    ZR_PARAMETER_PASSING_MODE_VALUE;
+                            if (spreadParameterPassingModes != ZR_NULL &&
+                                j < spreadParameterPassingModes->length) {
+                                const EZrParameterPassingMode *modePtr =
+                                        (const EZrParameterPassingMode *)ZrCore_Array_Get(
+                                                (SZrArray *)spreadParameterPassingModes,
+                                                j);
+                                if (modePtr != ZR_NULL) {
+                                    passingMode = *modePtr;
+                                }
+                            }
+                            if (compile_call_argument_into_slot(
+                                        cs,
+                                        expression,
+                                        argSlot,
+                                        passingMode,
+                                        expectedType,
+                                        ZR_FALSE) == ZR_PARSER_SLOT_NONE ||
+                                cs->hasError) {
+                                break;
+                            }
+                            if (expectedType != ZR_NULL &&
+                                !(resolvedFunctionType != ZR_NULL &&
+                                  resolved_function_call_skips_native_boundary_conversion(
+                                          cs,
+                                          resolvedFunctionType,
+                                          expression,
+                                          j,
+                                          expectedType)) &&
+                                !emit_argument_conversion_if_needed(
+                                        cs, expression, argSlot, expectedType)) {
+                                break;
+                            }
+                            if (!note_argument_stack_slot_type(
+                                        cs, argSlot, expectedType)) {
+                                break;
+                            }
+                        } else if (compile_expression_into_slot(
+                                           cs, expression, argSlot) ==
+                                           ZR_PARSER_SLOT_NONE ||
+                                   cs->hasError) {
+                            break;
+                        }
+                    }
+                    if (cs->hasError) {
+                        free_resolved_call_signature(
+                                cs->state, &resolvedFunctionSignature);
+                        free_resolved_call_signature(
+                                cs->state, &resolvedMemberSignature);
+                        ZrParser_InferredType_Free(
+                                cs->state, &contractReturnType);
+                        return;
+                    }
+                    argCount += (TZrUInt32)argsToCompile->count;
+                    spreadPrefixArgumentCount = argCount - 1u;
+                } else if (activeCallMemberInfo != ZR_NULL) {
                     if (argsToCompile != call->args) {
                         compiledMemberArgCount = (TZrUInt32)argsToCompile->count;
                         if (!(hasResolvedMemberSignature
@@ -3548,6 +3728,19 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 return;
             }
 
+            if (hasSpreadArgument && pendingContiguousViewCall) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Spread arguments are not supported by contiguous view intrinsics",
+                        member->location);
+                free_resolved_call_signature(
+                        cs->state, &resolvedFunctionSignature);
+                free_resolved_call_signature(
+                        cs->state, &resolvedMemberSignature);
+                ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                return;
+            }
+
             if (pendingContiguousViewCall) {
                 const SZrInferredType *loweredResultType =
                         hasResolvedMemberSignature
@@ -3620,7 +3813,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 if (usePreferredCallResultSlot) {
                     callResultSlot = preferredDirectMemberCallResultSlot;
                 }
-                if (pendingDirectMemberCallMemberEntryIndex != ZR_PARSER_MEMBER_ID_NONE &&
+                if (!hasSpreadArgument &&
+                    pendingDirectMemberCallMemberEntryIndex != ZR_PARSER_MEMBER_ID_NONE &&
                     activeCallMemberInfo != ZR_NULL &&
                     !emitMetaCallOpcode &&
                     pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
@@ -3640,7 +3834,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         return;
                     }
                     useKnownVmDirectMemberCallOpcode = ZR_TRUE;
-                } else if (pendingDirectMemberCallMemberEntryIndex != ZR_PARSER_MEMBER_ID_NONE &&
+                } else if (!hasSpreadArgument &&
+                           pendingDirectMemberCallMemberEntryIndex != ZR_PARSER_MEMBER_ID_NONE &&
                            activeCallMemberInfo != ZR_NULL &&
                            !emitMetaCallOpcode &&
                            pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
@@ -3661,7 +3856,9 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     useKnownNativeDirectMemberCallOpcode = ZR_TRUE;
                 }
                 EZrInstructionCode callOpcode =
-                        cs->isInTailCallContext && !pendingInlineCompiledMemberCall
+                        hasSpreadArgument
+                                ? ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)
+                                : cs->isInTailCallContext && !pendingInlineCompiledMemberCall
                                 ? (emitMetaCallOpcode
                                            ? ZR_INSTRUCTION_ENUM(META_TAIL_CALL)
                                            : (useDynamicCallOpcode
@@ -3703,7 +3900,9 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                      create_instruction_2(callOpcode,
                                                           (TZrUInt16)callResultSlot,
                                                           (TZrUInt16)currentSlot,
-                                                          (TZrUInt16)argCount));
+                                                          (TZrUInt16)(hasSpreadArgument
+                                                                          ? spreadPrefixArgumentCount
+                                                                          : argCount)));
                 }
             }
             }

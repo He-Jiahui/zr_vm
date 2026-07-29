@@ -258,7 +258,9 @@
     Z(PROPERTY_REF_LOAD)                                                                                               \
     Z(PROPERTY_REF_STORE)                                                                                              \
     Z(PROPERTY_REF_CREATE_MEMBER)                                                                                      \
-    Z(PROPERTY_REF_CREATE_INDEX)
+    Z(PROPERTY_REF_CREATE_INDEX)                                                                                       \
+    Z(FUNCTION_CALL_SPREAD)                                                                                            \
+    Z(PROPERTY_REF_CREATE_LOCAL)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

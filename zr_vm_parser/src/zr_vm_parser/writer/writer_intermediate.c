@@ -424,6 +424,8 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
             return "TYPEOF";
         case ZR_SEMIR_OPCODE_DYN_CALL:
             return "DYN_CALL";
+        case ZR_SEMIR_OPCODE_DYN_CALL_SPREAD:
+            return "DYN_CALL_SPREAD";
         case ZR_SEMIR_OPCODE_DYN_TAIL_CALL:
             return "DYN_TAIL_CALL";
         case ZR_SEMIR_OPCODE_META_CALL:
@@ -961,6 +963,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(TYPEOF): fprintf(file, "TYPEOF"); break;
             case ZR_INSTRUCTION_ENUM(DYN_CALL): fprintf(file, "DYN_CALL"); break;
             case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL): fprintf(file, "DYN_TAIL_CALL"); break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD): fprintf(file, "FUNCTION_CALL_SPREAD"); break;
             case ZR_INSTRUCTION_ENUM(META_CALL): fprintf(file, "META_CALL"); break;
             case ZR_INSTRUCTION_ENUM(META_TAIL_CALL): fprintf(file, "META_TAIL_CALL"); break;
             case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT): fprintf(file, "GET_MEMBER_SLOT"); break;
@@ -1277,6 +1280,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
             case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
@@ -2024,6 +2028,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
                 fprintf(file, "FUNCTION_CALL");
                 break;
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
+                fprintf(file, "FUNCTION_CALL_SPREAD");
+                break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
                 fprintf(file, "KNOWN_VM_CALL");
                 break;
@@ -2462,6 +2469,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
             case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):

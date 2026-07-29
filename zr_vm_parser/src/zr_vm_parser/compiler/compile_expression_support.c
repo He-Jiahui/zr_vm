@@ -1192,6 +1192,32 @@ static TZrBool primary_expression_contains_function_call_member(SZrAstNode *node
     return primary_expression_contains_function_call_member(primary->property);
 }
 
+static TZrBool primary_expression_contains_spread_argument(SZrAstNode *node) {
+    SZrPrimaryExpression *primary;
+
+    if (node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primary = &node->data.primaryExpression;
+    if (primary->members != ZR_NULL) {
+        for (TZrSize index = 0u;
+             index < primary->members->count;
+             index++) {
+            SZrAstNode *memberNode = primary->members->nodes[index];
+
+            if (memberNode != ZR_NULL &&
+                memberNode->type == ZR_AST_FUNCTION_CALL &&
+                compiler_call_has_spread_argument(
+                        &memberNode->data.functionCall)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return primary_expression_contains_spread_argument(primary->property);
+}
+
 static TZrBool primary_root_is_compile_time_projection_candidate(SZrCompilerState *cs, SZrAstNode *rootNode) {
     rootNode = compile_time_projection_root_node(rootNode);
     if (rootNode == ZR_NULL) {
@@ -1227,6 +1253,10 @@ TZrBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstNode *no
     }
 
     if (!primary_expression_contains_function_call_member(node)) {
+        return ZR_FALSE;
+    }
+
+    if (primary_expression_contains_spread_argument(node)) {
         return ZR_FALSE;
     }
 

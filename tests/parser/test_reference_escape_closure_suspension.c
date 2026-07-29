@@ -69,7 +69,9 @@ static void assert_escape_validation(
     memset(&compiler, 0, sizeof(compiler));
     ZrParser_CompilerState_Init(&compiler, g_state);
     compiler.suppressErrorOutput = ZR_TRUE;
-    success = compiler_validate_reference_escapes(&compiler, script);
+    success = ZrParser_CompileTime_PrepareBuildFactsInCompilerState(
+                      &compiler, script) &&
+              compiler_validate_reference_escapes(&compiler, script);
 
     if (expectedSuccess) {
         TEST_ASSERT_TRUE_MESSAGE(success, compiler.errorMessage);
@@ -445,6 +447,29 @@ static void test_generator_yield_checks_reference_liveness(void) {
             3);
 }
 
+static void test_reference_escape_follows_active_comptime_branch(void) {
+    assert_escape_validation(
+            "comptime if (true) {\n"
+            "  fn leak(value: scoped ref int): ref int {\n"
+            "    return value;\n"
+            "  }\n"
+            "}\n",
+            ZR_FALSE,
+            "cannot escape to caller through return",
+            2,
+            3);
+    assert_escape_validation(
+            "comptime if (false) {\n"
+            "  fn leak(value: scoped ref int): ref int {\n"
+            "    return value;\n"
+            "  }\n"
+            "}\n",
+            ZR_TRUE,
+            ZR_NULL,
+            0,
+            0);
+}
+
 static void test_native_ref_argument_is_call_scoped_by_default(void) {
     assert_escape_validation(
             "native extern(\"sample\") { fn inspect(value: scoped ref int): void; }\n"
@@ -504,6 +529,7 @@ int main(void) {
     RUN_TEST(test_writable_capture_blocks_external_access_only_while_live);
     RUN_TEST(test_await_checks_last_use_and_binding_epoch);
     RUN_TEST(test_generator_yield_checks_reference_liveness);
+    RUN_TEST(test_reference_escape_follows_active_comptime_branch);
     RUN_TEST(test_native_ref_argument_is_call_scoped_by_default);
     RUN_TEST(test_native_extern_requires_fn_without_reserving_native_identifier);
     return UNITY_END();

@@ -331,6 +331,7 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_stack_copy(EZrInstruct
 static TZrBool backend_aot_c_scalar_locals_instruction_is_call_with_stack_arguments(EZrInstructionCode opcode) {
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
@@ -380,6 +381,10 @@ static TZrBool backend_aot_c_scalar_locals_instruction_reads_call_argument_slot(
     } else {
         functionSlot = instruction->instruction.operand.operand1[0];
         argumentCount = instruction->instruction.operand.operand1[1];
+        if (instruction->instruction.operationCode ==
+            ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)) {
+            argumentCount++;
+        }
     }
     return (TZrBool)(argumentCount > 0u &&
                      slot > functionSlot &&
@@ -389,6 +394,7 @@ static TZrBool backend_aot_c_scalar_locals_instruction_reads_call_argument_slot(
 static TZrBool backend_aot_c_scalar_locals_instruction_is_call_result_write(EZrInstructionCode opcode) {
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
@@ -5350,6 +5356,13 @@ static TZrBool backend_aot_c_scalar_locals_instruction_mentions_slot_as_operand(
     }
 
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
+        case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+            if (instruction->instruction.operandExtra == slot) {
+                return ZR_TRUE;
+            }
+            break;
         case ZR_INSTRUCTION_OP_GET_CONSTANT:
         case ZR_INSTRUCTION_OP_RESET_STACK_NULL:
         case ZR_INSTRUCTION_OP_RESET_STACK_NULL2:

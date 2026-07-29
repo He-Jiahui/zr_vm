@@ -21,11 +21,15 @@ list(REMOVE_ITEM _zr_vm_parser_aot_backend_sources
 )
 
 if (TARGET zr_vm_parser_static)
+    # compile_tool.h exposes EZrLibrary_ProviderPhase from zrm.h.
+    target_include_directories(zr_vm_parser_static PUBLIC ${CMAKE_SOURCE_DIR}/zr_vm_library/include)
     target_include_directories(zr_vm_parser_static PRIVATE ${_zr_vm_parser_private_include_dirs})
     target_include_directories(zr_vm_parser_static PRIVATE ${_zr_vm_parser_aot_backend_dir})
     target_sources(zr_vm_parser_static PRIVATE ${_zr_vm_parser_aot_backend_sources})
 endif ()
 if (TARGET zr_vm_parser_shared)
+    # compile_tool.h exposes EZrLibrary_ProviderPhase from zrm.h.
+    target_include_directories(zr_vm_parser_shared PUBLIC ${CMAKE_SOURCE_DIR}/zr_vm_library/include)
     target_include_directories(zr_vm_parser_shared PRIVATE ${_zr_vm_parser_private_include_dirs})
     target_include_directories(zr_vm_parser_shared PRIVATE ${_zr_vm_parser_aot_backend_dir})
     target_sources(zr_vm_parser_shared PRIVATE ${_zr_vm_parser_aot_backend_sources})

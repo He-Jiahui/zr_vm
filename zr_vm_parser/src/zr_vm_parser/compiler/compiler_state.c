@@ -179,6 +179,11 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->typeValueAliases,
                       sizeof(SZrTypeBinding),
                       ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(state,
+                      &cs->compileToolBindings,
+                      sizeof(SZrCompileToolBinding),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
+    cs->compilePhase = ZR_PARSER_COMPILE_PHASE_BUILD_FACTS;
     cs->isInCompileTimeContext = ZR_FALSE;
     cs->isCompilingCompileTimeRuntimeSupport = ZR_FALSE;
     
@@ -576,6 +581,13 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         cs->importedCompileTimeModuleAliases.capacity > 0 &&
         cs->importedCompileTimeModuleAliases.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->importedCompileTimeModuleAliases);
+    }
+
+    if (cs->compileToolBindings.isValid &&
+        cs->compileToolBindings.head != ZR_NULL &&
+        cs->compileToolBindings.capacity > 0 &&
+        cs->compileToolBindings.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->compileToolBindings);
     }
 
     if (cs->importedCompileTimeModules.isValid &&

@@ -575,6 +575,20 @@ static TZrBool ref_struct_validate_node(
         case ZR_AST_SCRIPT:
             return ref_struct_validate_node_array(
                     context, node->data.script.statements, ZR_TRUE);
+        case ZR_AST_COMPILE_TIME_DECLARATION: {
+            SZrAstNode *selectedBranch =
+                    node->data.compileTimeDeclaration.selectedBranch;
+            if (selectedBranch == ZR_NULL) {
+                return ZR_TRUE;
+            }
+            return selectedBranch->type == ZR_AST_BLOCK
+                           ? ref_struct_validate_node_array(
+                                     context,
+                                     selectedBranch->data.block.body,
+                                     isModuleScope)
+                           : ref_struct_validate_node(
+                                     context, selectedBranch, isModuleScope);
+        }
         case ZR_AST_BLOCK:
             return ref_struct_validate_node_array(
                     context, node->data.block.body, ZR_FALSE);

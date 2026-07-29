@@ -142,6 +142,15 @@ static void test_generic_call_exec_opcodes_become_dynamic_deopt_boundaries(void)
     assert_dynamic_call_boundary(ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL), ZR_SEMIR_OPCODE_DYN_TAIL_CALL, 5u, 1u, 2u);
 }
 
+static void test_spread_call_preserves_its_dynamic_boundary_kind(void) {
+    assert_dynamic_call_boundary(
+            ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD),
+            ZR_SEMIR_OPCODE_DYN_CALL_SPREAD,
+            7u,
+            2u,
+            3u);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -149,5 +158,6 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_generic_call_exec_opcodes_become_dynamic_deopt_boundaries);
+    RUN_TEST(test_spread_call_preserves_its_dynamic_boundary_kind);
     return UNITY_END();
 }

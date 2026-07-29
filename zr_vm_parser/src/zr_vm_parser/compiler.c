@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler/compile_time_executor_internal.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -469,6 +470,10 @@ static void compiler_compile_compile_time_runtime_support(SZrCompilerState *cs, 
         return;
     }
 
+    if (statement->data.compileTimeDeclaration.isCurrentSyntax) {
+        return;
+    }
+
     declaration = statement->data.compileTimeDeclaration.declaration;
     if (declaration == ZR_NULL) {
         return;
@@ -493,6 +498,84 @@ static void compiler_compile_compile_time_runtime_support(SZrCompilerState *cs, 
     }
 
     cs->isCompilingCompileTimeRuntimeSupport = oldSupportFlag;
+}
+
+static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNode *statement) {
+    if (cs == ZR_NULL || statement == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (compiler_is_compile_tool_import_declaration(statement)) {
+        return;
+    }
+
+    if (statement->type == ZR_AST_COMPILE_TIME_DECLARATION) {
+        SZrCompileTimeDeclaration *declaration = &statement->data.compileTimeDeclaration;
+        if (declaration->isConditionalPruning && declaration->selectedBranch != ZR_NULL) {
+            SZrAstNode *selectedBranch = declaration->selectedBranch;
+            if (selectedBranch->type == ZR_AST_BLOCK && selectedBranch->data.block.body != ZR_NULL) {
+                for (TZrSize index = 0; index < selectedBranch->data.block.body->count; index++) {
+                    compiler_compile_top_level_statement(cs, selectedBranch->data.block.body->nodes[index]);
+                    if (cs->hasError) {
+                        return;
+                    }
+                }
+            } else {
+                compiler_compile_top_level_statement(cs, selectedBranch);
+            }
+            return;
+        }
+        compiler_compile_compile_time_runtime_support(cs, statement);
+        return;
+    }
+
+    switch (statement->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            compile_function_declaration(cs, statement);
+            break;
+        case ZR_AST_VARIABLE_DECLARATION:
+        case ZR_AST_EXPRESSION_STATEMENT:
+        case ZR_AST_USING_STATEMENT:
+        case ZR_AST_BLOCK:
+        case ZR_AST_RETURN_STATEMENT:
+        case ZR_AST_THROW_STATEMENT:
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
+        case ZR_AST_IF_EXPRESSION:
+        case ZR_AST_SWITCH_EXPRESSION:
+        case ZR_AST_WHILE_LOOP:
+        case ZR_AST_FOR_LOOP:
+        case ZR_AST_FOREACH_LOOP:
+            ZrParser_Statement_Compile(cs, statement);
+            break;
+        case ZR_AST_TEST_DECLARATION:
+            compile_test_declaration(cs, statement);
+            break;
+        case ZR_AST_STRUCT_DECLARATION:
+            compile_struct_declaration(cs, statement);
+            break;
+        case ZR_AST_EXTERN_BLOCK:
+            compile_extern_block_declaration(cs, statement);
+            break;
+        case ZR_AST_CLASS_DECLARATION:
+            compile_class_declaration(cs, statement);
+            break;
+        case ZR_AST_INTERFACE_DECLARATION:
+            compile_interface_declaration(cs, statement);
+            break;
+        case ZR_AST_ENUM_DECLARATION:
+            compile_enum_declaration(cs, statement);
+            break;
+        case ZR_AST_UNION_DECLARATION:
+            compile_union_declaration(cs, statement);
+            break;
+        default:
+            ZrCore_Log_Diagnosticf(cs->state,
+                                   ZR_LOG_LEVEL_WARNING,
+                                   ZR_OUTPUT_CHANNEL_STDERR,
+                                   "    Skipping statement type %d (not implemented yet)\n",
+                                   statement->type);
+            break;
+    }
 }
 
 // 编译脚本
@@ -537,10 +620,14 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     if (script->statements != ZR_NULL) {
         enter_scope(cs);
 
-        // 第一遍：收集并执行编译期声明
+        // 第一遍只保留 legacy 编译期执行。当前 comptime fn 已在 Signature
+        // 前的 BuildFacts 中注册，当前 comptime block 延迟到 LateCheck。
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
             if (stmt != ZR_NULL && stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
+                if (stmt->data.compileTimeDeclaration.isCurrentSyntax) {
+                    continue;
+                }
                 // 执行编译期声明
                 ZrParser_CompileTimeDeclaration_Execute(cs, stmt);
                 
@@ -560,6 +647,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             return;
         }
 
+        cs->compilePhase = ZR_PARSER_COMPILE_PHASE_SIGNATURE;
         ZrParser_Compiler_PredeclareExternBindings(cs, script->statements);
         if (cs->hasError) {
             return;
@@ -573,6 +661,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             return;
         }
 
+        cs->compilePhase = ZR_PARSER_COMPILE_PHASE_EXPANSION;
         // 第二遍：编译运行时代码
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
@@ -580,61 +669,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                 zr_parser_compile_trace("compile_script stmt[%llu] type=%d",
                                         (unsigned long long)i,
                                         (int)stmt->type);
-                if (stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
-                    compiler_compile_compile_time_runtime_support(cs, stmt);
-                    continue;
-                }
-                
-                // 根据语句类型编译
-                switch (stmt->type) {
-                    case ZR_AST_FUNCTION_DECLARATION:
-                        compile_function_declaration(cs, stmt);
-                        break;
-                    case ZR_AST_VARIABLE_DECLARATION:
-                    case ZR_AST_EXPRESSION_STATEMENT:
-                    case ZR_AST_USING_STATEMENT:
-                    case ZR_AST_BLOCK:
-                    case ZR_AST_RETURN_STATEMENT:
-                    case ZR_AST_THROW_STATEMENT:
-                    case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
-                    case ZR_AST_IF_EXPRESSION:
-                    case ZR_AST_SWITCH_EXPRESSION:
-                    case ZR_AST_WHILE_LOOP:
-                    case ZR_AST_FOR_LOOP:
-                    case ZR_AST_FOREACH_LOOP:
-                        ZrParser_Statement_Compile(cs, stmt);
-                        break;
-                    case ZR_AST_TEST_DECLARATION:
-                        compile_test_declaration(cs, stmt);
-                        break;
-                    case ZR_AST_STRUCT_DECLARATION:
-                        compile_struct_declaration(cs, stmt);
-                        break;
-                    case ZR_AST_EXTERN_BLOCK:
-                        compile_extern_block_declaration(cs, stmt);
-                        break;
-                    case ZR_AST_CLASS_DECLARATION:
-                        compile_class_declaration(cs, stmt);
-                        break;
-                    case ZR_AST_INTERFACE_DECLARATION:
-                        compile_interface_declaration(cs, stmt);
-                        break;
-                    case ZR_AST_ENUM_DECLARATION:
-                        compile_enum_declaration(cs, stmt);
-                        break;
-                    case ZR_AST_UNION_DECLARATION:
-                        compile_union_declaration(cs, stmt);
-                        break;
-                    default:
-                        // 其他顶层声明类型（intermediate等）
-                        // TODO: 目前先跳过，后续实现
-                        ZrCore_Log_Diagnosticf(cs->state,
-                                               ZR_LOG_LEVEL_WARNING,
-                                               ZR_OUTPUT_CHANNEL_STDERR,
-                                               "    Skipping statement type %d (not implemented yet)\n",
-                                               stmt->type);
-                        break;
-                }
+                compiler_compile_top_level_statement(cs, stmt);
 
                 if (cs->hasCompileTimeError) {
                     cs->hasError = ZR_TRUE;
@@ -664,8 +699,14 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             cs->hasError = ZR_TRUE;
             return;
         }
+        cs->compilePhase = ZR_PARSER_COMPILE_PHASE_LAYOUT;
         if (!cs->hasError && !compiler_build_script_typed_metadata(cs)) {
             ZrParser_Compiler_Error(cs, "Failed to build typed metadata for compiled script", node->location);
+            return;
+        }
+        cs->compilePhase = ZR_PARSER_COMPILE_PHASE_LATE_CHECK;
+        if (!ZrParser_CompileTime_ExecuteLateChecksInCompilerState(cs, node)) {
+            cs->hasError = ZR_TRUE;
             return;
         }
         if (!cs->hasError) {
@@ -849,6 +890,11 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrStat
     cs.currentModuleKey = currentModuleKey;
     zr_parser_compile_trace("compiler compile core init ast=%p", (void *)ast);
 
+    if (!ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast)) {
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
     if (!compiler_validate_ref_struct_rules(&cs, ast)) {
         zr_parser_compile_trace("compiler validate ref struct rules failed ast=%p", (void *)ast);
         ZrParser_CompilerState_Free(&cs);
@@ -963,6 +1009,12 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
 
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+
+    if (!ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast)) {
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
 
     if (!compiler_validate_ref_struct_rules(&cs, ast)) {
         ZrParser_CompilerState_Free(&cs);
@@ -1135,6 +1187,12 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
     zr_parser_compile_trace("parse ok name='%s' ast=%p",
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (void *)ast);
+
+    if (!ZrParser_CompileTime_PrepareBuildFacts(state, ast)) {
+        ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
+        ZrParser_Ast_Free(state, ast);
+        return ZR_NULL;
+    }
 
     if (!ZrParser_ProjectImports_CanonicalizeAst(state,
                                                  ast,

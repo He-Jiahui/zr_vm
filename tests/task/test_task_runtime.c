@@ -303,6 +303,7 @@ static void expect_task_effect_failure_contains(const char *source,
 
     cs->currentAst = ast;
     cs->scriptAst = ast;
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFactsInCompilerState(cs, ast));
     TEST_ASSERT_FALSE(compiler_validate_task_effects(cs, ast));
     TEST_ASSERT_TRUE(cs->hasError);
     TEST_ASSERT_NOT_NULL(cs->errorMessage);
@@ -332,6 +333,7 @@ static void expect_task_effect_success_after_predeclare(const char *source, cons
 
     cs->currentAst = ast;
     cs->scriptAst = ast;
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_PrepareBuildFactsInCompilerState(cs, ast));
     ZrParser_Compiler_PredeclareExternBindings(cs, ast->data.script.statements);
     TEST_ASSERT_FALSE(cs->hasError);
     ZrParser_Compiler_PredeclareFunctionBindings(cs, ast->data.script.statements);
@@ -588,6 +590,29 @@ static void test_async_function_preserves_explicit_task_return_and_direct_await(
 
     ZrParser_Ast_Free(state, ast);
     ZrTests_State_Destroy(state);
+}
+
+static void test_task_effects_follow_active_comptime_branch(void) {
+    static const char *activeSource =
+            "comptime if (true) {\n"
+            "  fn invalid(task: zr.task.Task<int>): int {\n"
+            "    return await task;\n"
+            "  }\n"
+            "}\n";
+    static const char *inactiveSource =
+            "comptime if (false) {\n"
+            "  fn invalid(task: zr.task.Task<int>): int {\n"
+            "    return await task;\n"
+            "  }\n"
+            "}\n";
+
+    expect_task_effect_failure_contains(
+            activeSource,
+            "task_active_comptime_branch_effects_test.zr",
+            "await is only allowed inside async bodies or scheduler-managed top-level coroutines");
+    expect_task_effect_success_after_predeclare(
+            inactiveSource,
+            "task_inactive_comptime_branch_effects_test.zr");
 }
 
 static void test_async_task_alias_signature_uses_native_task_carrier(void) {
@@ -1577,6 +1602,7 @@ int main(void) {
     RUN_TEST(test_legacy_task_source_surfaces_are_rejected);
     RUN_TEST(test_canonical_job_scheduler_path_executes);
     RUN_TEST(test_async_function_preserves_explicit_task_return_and_direct_await);
+    RUN_TEST(test_task_effects_follow_active_comptime_branch);
     RUN_TEST(test_async_task_alias_signature_uses_native_task_carrier);
     RUN_TEST(test_async_lambda_preserves_explicit_task_signature);
     RUN_TEST(test_async_member_requires_explicit_task_signature);

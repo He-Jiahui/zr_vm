@@ -1030,6 +1030,12 @@ void backend_aot_write_c_direct_function_call(FILE *file,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 functionSlot,
                                               TZrUInt32 argumentCount);
+void backend_aot_write_c_spread_function_call(
+        FILE *file,
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
+        TZrUInt32 prefixArgumentCount);
 void backend_aot_write_c_known_native_member_call(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   TZrUInt32 destinationSlot,

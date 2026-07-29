@@ -8,6 +8,7 @@
 #include "backend_aot_c_generic_monomorphization.h"
 #include "backend_aot_c_generic_sharing.h"
 #include "backend_aot_c_method_metadata.h"
+#include "backend_aot_c_native_imports.h"
 #include "backend_aot_c_reference_locals.h"
 #include "backend_aot_c_reflection_invokers.h"
 #include "backend_aot_c_runtime_fallback.h"
@@ -715,6 +716,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     TZrUInt32 functionIndexSpace;
     TZrUInt32 typeLayoutIndexSpace;
     TZrUInt32 gcDescriptorIndexSpace;
+    TZrUInt32 nativeImportContractCount;
     TZrUInt32 functionCountBeforeStripping;
     TZrUInt32 functionCountAfterStripping;
     TZrUInt32 functionCountRemovedByStripping;
@@ -888,6 +890,18 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
             functionCountBeforeStripping >= functionCountAfterStripping
                     ? functionCountBeforeStripping - functionCountAfterStripping
                     : 0u;
+    if (!backend_aot_c_native_import_count(
+                &functionTable, &nativeImportContractCount)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     typeLayoutCountAfterStripping = backend_aot_c_type_layout_count_referenced(state,
                                                                               &functionTable,
                                                                               annotationTypeLayoutRoots,
@@ -1140,6 +1154,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     backend_aot_write_member_token_remap_markers(file, &embeddedZrpMetadata);
     fprintf(file, "#include \"zr_vm_common/zr_aot_abi.h\"\n");
     fprintf(file, "#include \"zr_vm_common/zr_ast_constants.h\"\n");
+    fprintf(file, "#include \"zr_vm_common/zr_ffi_contract.h\"\n");
     fprintf(file, "#include \"zr_vm_core/call_info.h\"\n");
     fprintf(file, "#include \"zr_vm_core/closure.h\"\n");
     fprintf(file, "#include \"zr_vm_core/debug.h\"\n");
@@ -1233,6 +1248,13 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "\n");
     backend_aot_write_c_function_table(file, &functionTable, functionIndexSpace);
     fprintf(file, "\n");
+    backend_aot_c_write_native_import_table(file, &functionTable);
+    if (nativeImportContractCount > 0u) {
+        fprintf(file, "\n");
+    }
+    backend_aot_c_write_native_import_range_table(
+            file, &functionTable, functionIndexSpace);
+    fprintf(file, "\n");
     backend_aot_write_c_typed_bool_thunks(file, &functionTable);
     backend_aot_write_c_typed_f64_thunks(file, &functionTable);
     backend_aot_write_c_typed_i64_thunks(file, &functionTable);
@@ -1293,6 +1315,18 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "    .typeLayoutTokenCount = %u,\n", (unsigned)typeLayoutIndexSpace);
     fprintf(file, "    .gcDescriptors = %s,\n", gcDescriptorIndexSpace > 0u ? "zr_aot_gc_descriptors" : "ZR_NULL");
     fprintf(file, "    .gcDescriptorCount = %u,\n", (unsigned)gcDescriptorIndexSpace);
+    fprintf(file,
+            "    .nativeImportContracts = %s,\n",
+            nativeImportContractCount > 0u
+                    ? "zr_aot_native_import_contracts"
+                    : "ZR_NULL");
+    fprintf(file,
+            "    .nativeImportContractCount = %uu,\n",
+            (unsigned)nativeImportContractCount);
+    fprintf(file, "    .nativeImportRanges = zr_aot_native_import_ranges,\n");
+    fprintf(file,
+            "    .nativeImportRangeCount = %uu,\n",
+            (unsigned)functionIndexSpace);
     fprintf(file, "};\n");
     fprintf(file, "\n");
     fprintf(file, "static const ZrAotCompiledModule zr_aot_module = {\n");
@@ -1332,6 +1366,18 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "    .typeLayoutTokenCount = %u,\n", (unsigned)typeLayoutIndexSpace);
     fprintf(file, "    .gcDescriptors = %s,\n", gcDescriptorIndexSpace > 0u ? "zr_aot_gc_descriptors" : "ZR_NULL");
     fprintf(file, "    .gcDescriptorCount = %u,\n", (unsigned)gcDescriptorIndexSpace);
+    fprintf(file,
+            "    .nativeImportContracts = %s,\n",
+            nativeImportContractCount > 0u
+                    ? "zr_aot_native_import_contracts"
+                    : "ZR_NULL");
+    fprintf(file,
+            "    .nativeImportContractCount = %uu,\n",
+            (unsigned)nativeImportContractCount);
+    fprintf(file, "    .nativeImportRanges = zr_aot_native_import_ranges,\n");
+    fprintf(file,
+            "    .nativeImportRangeCount = %uu,\n",
+            (unsigned)functionIndexSpace);
     fprintf(file, "    .codeRegistration = &zr_aot_code_registration,\n");
     fprintf(file, "};\n");
     fprintf(file, "\n");

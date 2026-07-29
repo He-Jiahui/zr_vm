@@ -32,6 +32,7 @@ static TZrBool backend_aot_c_semir_instruction_is_dynamic_call(const SZrAotExecI
     }
 
     return (TZrBool)(instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_CALL ||
+                     instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_CALL_SPREAD ||
                      instruction->semIrOpcode == ZR_SEMIR_OPCODE_DYN_TAIL_CALL);
 }
 
@@ -92,6 +93,7 @@ static TZrBool backend_aot_c_instruction_is_call_candidate(const TZrInstruction 
 
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):

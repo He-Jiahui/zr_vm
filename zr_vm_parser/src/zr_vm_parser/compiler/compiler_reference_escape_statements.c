@@ -403,6 +403,11 @@ TZrBool reference_escape_analyze_node(
         case ZR_AST_SCRIPT:
             return reference_escape_analyze_node_array(
                     context, node->data.script.statements);
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            return node->data.compileTimeDeclaration.selectedBranch == ZR_NULL ||
+                   reference_escape_analyze_node(
+                           context,
+                           node->data.compileTimeDeclaration.selectedBranch);
         case ZR_AST_BLOCK:
             reference_escape_enter_scope(context);
             if (!reference_escape_analyze_node_array(

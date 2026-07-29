@@ -249,7 +249,7 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     // 调用栈回到创建时基础调用栈
     SZrCallInfo *callInfo = state->callInfoList = &state->baseCallInfo;
     // 重置栈到基础栈
-    state->stackBase.valuePointer->value.type = ZR_VALUE_TYPE_NULL;
+    ZrCore_Value_ResetAsNull(&state->stackBase.valuePointer->value);
     callInfo->functionBase.valuePointer = state->stackBase.valuePointer;
     callInfo->callStatus = ZR_CALL_STATUS_NATIVE_CALL;
     callInfo->metadataFunction = ZR_NULL;
@@ -272,7 +272,9 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     state->pendingControl.hasValue = ZR_FALSE;
     status = ZrCore_Exception_TryStop(state, 1, status);
     if (status != ZR_THREAD_STATUS_FINE) {
-        ZrCore_Exception_MarkError(state, status, state->stackTop.valuePointer + 1);
+        /* MarkError leaves stackTop one slot before its destination. Collapse the
+         * failed frame to the same base boundary as a clean reset. */
+        ZrCore_Exception_MarkError(state, status, state->stackBase.valuePointer + 2);
     } else {
         state->stackTop.valuePointer = state->stackBase.valuePointer + 1;
     }

@@ -504,6 +504,7 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             info->terminator = ZR_TRUE;
             return;
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
@@ -516,7 +517,11 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             info->operand1Index1IsSlot = ZR_FALSE;
             info->hasRangeRead = ZR_TRUE;
             info->rangeReadStart = instruction->instruction.operand.operand1[0];
-            info->rangeReadCount = (TZrUInt16)(instruction->instruction.operand.operand1[1] + 1);
+            info->rangeReadCount = (TZrUInt16)(
+                    instruction->instruction.operand.operand1[1] +
+                    (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)
+                             ? 2u
+                             : 1u));
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             info->allowSlotReuse = ZR_FALSE;
             return;
@@ -1347,6 +1352,7 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
                     &instruction->instruction.operand.operand1[1], slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):

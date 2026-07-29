@@ -721,6 +721,44 @@ SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSiz
     return ZrCore_Stack_GetValueNoProfile(mutableContext->argumentBase + index);
 }
 
+TZrBool ZrLib_CallContext_WriteBackArgument(ZrLibCallContext *context,
+                                            TZrSize index,
+                                            const SZrTypeValue *value) {
+    SZrTypeValue *callbackArgument;
+    TZrStackValuePointer functionBase;
+    TZrStackValuePointer originalArgumentBase;
+    SZrTypeValue *originalArgument;
+
+    if (context == ZR_NULL || context->state == ZR_NULL || value == ZR_NULL ||
+        index >= context->argumentCount) {
+        return ZR_FALSE;
+    }
+
+    callbackArgument = ZrLib_CallContext_Argument(context, index);
+    if (callbackArgument == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (callbackArgument != value) {
+        ZrCore_Value_Copy(context->state, callbackArgument, value);
+    }
+
+    functionBase = context->stackBasePointer != ZR_NULL
+            ? ZrCore_Function_StackAnchorRestore(context->state, &context->functionBaseAnchor)
+            : context->functionBase;
+    if (functionBase == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    originalArgumentBase = functionBase + (context->stackLayoutUsesReceiver ? 2u : 1u);
+    originalArgument = ZrCore_Stack_GetValueNoProfile(originalArgumentBase + index);
+    if (originalArgument == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (originalArgument != callbackArgument) {
+        ZrCore_Value_Copy(context->state, originalArgument, callbackArgument);
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
                                              TZrSize index,
                                              ZrLibInlineSpan *outSpan) {

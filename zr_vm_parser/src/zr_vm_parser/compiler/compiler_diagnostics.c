@@ -379,10 +379,7 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
     // 如果是致命错误，设置错误信息
     if (level == ZR_COMPILE_TIME_ERROR_ERROR || level == ZR_COMPILE_TIME_ERROR_FATAL) {
         if (cs->errorMessage == ZR_NULL) {
-            compiler_store_error_message(cs,
-                                         (level == ZR_COMPILE_TIME_ERROR_FATAL)
-                                                 ? "Fatal compile-time evaluation failed"
-                                                 : "Compile-time evaluation failed");
+            compiler_store_error_message(cs, message);
             cs->errorLocation = location;
         }
     }

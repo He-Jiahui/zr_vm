@@ -900,6 +900,9 @@ static void test_zr_ffi_get_symbol_failure_reports_symbol_error(void) {
     TEST_ASSERT_NOT_EQUAL_INT(ZR_THREAD_STATUS_FINE,
                               execute_function_capture_status(state, entryFunction, ZR_NULL, errorBuffer, sizeof(errorBuffer)));
     TEST_ASSERT_NOT_NULL(strstr(errorBuffer, "[SymbolError]"));
+    TEST_ASSERT_EQUAL_PTR(state->stackBase.valuePointer + 1, state->stackTop.valuePointer);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, state->stackBase.valuePointer->value.type);
+    TEST_ASSERT_FALSE(state->stackBase.valuePointer->value.isGarbageCollectable);
 
     ZrCore_Function_Free(state, entryFunction);
     destroy_test_state(state);
