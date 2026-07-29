@@ -50,7 +50,7 @@ indexing, and `slice(start, length)`; `Span<T>` additionally permits index write
 and exposes `asReadOnly()`.
 
 ```zr
-var container = %import("zr.container");
+let container = import("zr.container");
 var values = container.Array<int>();
 values.add(3);
 values.add(5);

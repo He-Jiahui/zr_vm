@@ -33,10 +33,26 @@ static void import_action_free_import_lines(SZrLspImportLine *lines, TZrSize cou
     free(lines);
 }
 
-static TZrBool import_action_line_has_prefix(const TZrChar *line, TZrSize length, const TZrChar *prefix) {
-    TZrSize prefixLength = prefix != ZR_NULL ? strlen(prefix) : 0;
-    return line != ZR_NULL && prefix != ZR_NULL && length >= prefixLength &&
-           memcmp(line, prefix, prefixLength) == 0;
+static TZrBool import_action_skip_binding_keyword(const TZrChar *line,
+                                                  TZrSize length,
+                                                  TZrSize *cursor) {
+    if (line == ZR_NULL || cursor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (length >= 4 && memcmp(line, "let ", 4) == 0) {
+        *cursor = 4;
+        return ZR_TRUE;
+    }
+    if (length >= 4 && memcmp(line, "var ", 4) == 0) {
+        *cursor = 4;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool import_action_is_import_call(const TZrChar *line, TZrSize length, TZrSize cursor) {
+    return length - cursor >= strlen("import(") &&
+           memcmp(line + cursor, "import(", strlen("import(")) == 0;
 }
 
 TZrBool lsp_code_action_trimmed_line_is_import_declaration(const TZrChar *line, TZrSize length) {
@@ -45,14 +61,10 @@ TZrBool lsp_code_action_trimmed_line_is_import_declaration(const TZrChar *line, 
     if (line == ZR_NULL || length == 0) {
         return ZR_FALSE;
     }
-    if (import_action_line_has_prefix(line, length, "%import")) {
-        return ZR_TRUE;
-    }
-    if (!import_action_line_has_prefix(line, length, "var ")) {
+    if (!import_action_skip_binding_keyword(line, length, &cursor)) {
         return ZR_FALSE;
     }
 
-    cursor = 4;
     while (cursor < length && (line[cursor] == ' ' || line[cursor] == '\t')) {
         cursor++;
     }
@@ -72,8 +84,7 @@ TZrBool lsp_code_action_trimmed_line_is_import_declaration(const TZrChar *line, 
     while (cursor < length && (line[cursor] == ' ' || line[cursor] == '\t')) {
         cursor++;
     }
-    return length - cursor >= strlen("%import(") &&
-           memcmp(line + cursor, "%import(", strlen("%import(")) == 0;
+    return import_action_is_import_call(line, length, cursor);
 }
 
 static TZrBool import_action_try_get_import_alias(const TZrChar *line,
@@ -84,11 +95,10 @@ static TZrBool import_action_try_get_import_alias(const TZrChar *line,
     TZrSize aliasStart;
 
     if (line == ZR_NULL || alias == ZR_NULL || aliasLength == ZR_NULL ||
-        length < 4 || memcmp(line, "var ", 4) != 0) {
+        !import_action_skip_binding_keyword(line, length, &cursor)) {
         return ZR_FALSE;
     }
 
-    cursor = 4;
     while (cursor < length && (line[cursor] == ' ' || line[cursor] == '\t')) {
         cursor++;
     }

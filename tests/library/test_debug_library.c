@@ -173,12 +173,12 @@ static void test_registered_debug_module_exports_lua_aligned_api_surface(void) {
 
 static void test_traceback_returns_known_script_call_chain(void) {
     const TZrChar *source =
-            "var debug = %import(\"debug\");\n"
-            "func leaf(value: int): string {\n"
+            "let debug = import(\"debug\");\n"
+            "fn leaf(value: int): string {\n"
             "    var next = value + 1;\n"
             "    return debug.traceback(\"phase4-marker\");\n"
             "}\n"
-            "func middle(seed: int): string {\n"
+            "fn middle(seed: int): string {\n"
             "    var text = leaf(seed + 1);\n"
             "    var keep = seed + 2;\n"
             "    if (keep > 0) {\n"
@@ -211,8 +211,8 @@ static void test_traceback_returns_known_script_call_chain(void) {
 
 static void test_getinfo_reports_name_source_line_and_parameter_count(void) {
     const TZrChar *source =
-            "var debug = %import(\"debug\");\n"
-            "func inspect(value: int) {\n"
+            "let debug = import(\"debug\");\n"
+            "fn inspect(value: int) {\n"
             "    var info = debug.getinfo(1, \"nSlu\");\n"
             "    return info;\n"
             "}\n"
@@ -244,8 +244,8 @@ static void test_getinfo_reports_name_source_line_and_parameter_count(void) {
 
 static void test_getlocal_and_setlocal_read_and_change_active_script_locals(void) {
     const TZrChar *source =
-            "var debug = %import(\"debug\");\n"
-            "func mutate(input: int): int {\n"
+            "let debug = import(\"debug\");\n"
+            "fn mutate(input: int): int {\n"
             "    var target = input + 1;\n"
             "    var before = debug.getlocal(1, 2);\n"
             "    if (before.value != 5) {\n"
@@ -273,10 +273,10 @@ static void test_getlocal_and_setlocal_read_and_change_active_script_locals(void
 
 static void test_upvalue_helpers_read_write_and_identify_closure_cells(void) {
     const TZrChar *source =
-            "var debug = %import(\"debug\");\n"
-            "func makeRunner(seed: int) {\n"
+            "let debug = import(\"debug\");\n"
+            "fn makeRunner(seed: int) {\n"
             "    var captured = seed;\n"
-            "    return () => {\n"
+            "    return fn() => {\n"
             "        return captured;\n"
             "    };\n"
             "}\n"
@@ -307,13 +307,13 @@ static void test_upvalue_helpers_read_write_and_identify_closure_cells(void) {
 
 static void test_sethook_invokes_script_hook_and_gethook_reports_state(void) {
     const TZrChar *source =
-            "var debug = %import(\"debug\");\n"
+            "let debug = import(\"debug\");\n"
             "var events = 0;\n"
-            "var hook = (event, line) => {\n"
+            "var hook = fn(event, line) => {\n"
             "    events = events + 1;\n"
             "    return 0;\n"
             "};\n"
-            "func work(): int {\n"
+            "fn work(): int {\n"
             "    var first = 1 + 2;\n"
             "    var second = first + 3;\n"
             "    return second;\n"
@@ -355,8 +355,8 @@ static void test_sethook_invokes_script_hook_and_gethook_reports_state(void) {
 
 static void test_sandboxed_debug_module_rejects_write_apis(void) {
     const TZrChar *source =
-            "var debug = %import(\"debug\");\n"
-            "func mutate(input: int): int {\n"
+            "let debug = import(\"debug\");\n"
+            "fn mutate(input: int): int {\n"
             "    var target = input + 1;\n"
             "    debug.setlocal(1, 2, 40);\n"
             "    return target;\n"

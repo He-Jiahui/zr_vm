@@ -27,9 +27,9 @@ async function main() {
 
     child.stdin.write('var seed = 2;\n');
     child.stdin.write('\n');
-    child.stdin.write(':type () => { return seed + 3; }\n');
-    child.stdin.write(':type () => { return true || false; }\n');
-    child.stdin.write(':type () => { while (true) { return 1 + 2; } }\n');
+    child.stdin.write(':type fn(): int => { return seed + 3; }\n');
+    child.stdin.write(':type fn(): bool => { return true || false; }\n');
+    child.stdin.write(':type fn(): int => { while (true) { return 1 + 2; } }\n');
     child.stdin.write(':quit\n');
     child.stdin.end();
 

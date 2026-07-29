@@ -1,52 +1,58 @@
 #include "parser_internal.h"
 
-static SZrAstNode *try_parse_prefixed_function_declaration(SZrParserState *ps) {
+static TZrBool parser_keywordless_function_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
-    TZrBool savedSuppressErrorOutput;
-    TZrParserErrorCallback savedErrorCallback;
-    TZrParserStructuredErrorCallback savedStructuredErrorCallback;
-    TZrPtr savedErrorUserData;
-    SZrAstNode *funcDecl;
+    TZrInt32 parenDepth = 0;
+    TZrInt32 genericDepth = 0;
+    TZrBool result = ZR_FALSE;
 
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "func")) {
-        return ZR_NULL;
+    if (ps == ZR_NULL ||
+        (ps->lexer->t.token != ZR_TK_IDENTIFIER && ps->lexer->t.token != ZR_TK_TEST)) {
+        return ZR_FALSE;
     }
 
     save_parser_cursor(ps, &cursor);
-    savedSuppressErrorOutput = ps->suppressErrorOutput;
-    savedErrorCallback = ps->errorCallback;
-    savedStructuredErrorCallback = ps->structuredErrorCallback;
-    savedErrorUserData = ps->errorUserData;
-    ps->suppressErrorOutput = ZR_TRUE;
-    ps->errorCallback = ZR_NULL;
-    ps->structuredErrorCallback = ZR_NULL;
-    ps->errorUserData = ZR_NULL;
-    ps->hasError = ZR_FALSE;
-    ps->errorMessage = ZR_NULL;
-
-    funcDecl = parse_function_declaration(ps);
-    ps->suppressErrorOutput = savedSuppressErrorOutput;
-    ps->errorCallback = savedErrorCallback;
-    ps->structuredErrorCallback = savedStructuredErrorCallback;
-    ps->errorUserData = savedErrorUserData;
-    if (funcDecl != ZR_NULL && !ps->hasError) {
-        ps->hasError = cursor.hasError;
-        ps->errorMessage = cursor.errorMessage;
-        return funcDecl;
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        do {
+            if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+                genericDepth++;
+            } else if (ps->lexer->t.token == ZR_TK_GREATER_THAN) {
+                genericDepth--;
+            }
+            ZrParser_Lexer_Next(ps->lexer);
+        } while (genericDepth > 0 && ps->lexer->t.token != ZR_TK_EOS);
+    }
+    if (ps->lexer->t.token != ZR_TK_LPAREN) {
+        restore_parser_cursor(ps, &cursor);
+        return ZR_FALSE;
     }
 
-    if (funcDecl != ZR_NULL) {
-        ZrParser_Ast_Free(ps->state, funcDecl);
+    do {
+        if (ps->lexer->t.token == ZR_TK_LPAREN) {
+            parenDepth++;
+        } else if (ps->lexer->t.token == ZR_TK_RPAREN) {
+            parenDepth--;
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+    } while (parenDepth > 0 && ps->lexer->t.token != ZR_TK_EOS);
+
+    if (parenDepth == 0) {
+        while (ps->lexer->t.token != ZR_TK_LBRACE &&
+               ps->lexer->t.token != ZR_TK_SEMICOLON &&
+               ps->lexer->t.token != ZR_TK_EOS) {
+            ZrParser_Lexer_Next(ps->lexer);
+        }
+        result = ps->lexer->t.token == ZR_TK_LBRACE;
     }
 
     restore_parser_cursor(ps, &cursor);
-    return ZR_NULL;
+    return result;
 }
 
 static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     EZrToken token;
-    EZrToken lookahead;
     TZrBool isFunction = ZR_FALSE;
 
     if (ps == ZR_NULL) {
@@ -65,8 +71,7 @@ static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
     } else if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
         isFunction = ZR_TRUE;
     } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
-        lookahead = peek_token(ps);
-        isFunction = lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN;
+        isFunction = parser_keywordless_function_declaration_starts_here(ps);
     }
 
     restore_parser_cursor(ps, &cursor);
@@ -991,7 +996,7 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
         if (guardKind == ZR_USING_GUARD_DROP && consume_token(ps, ZR_TK_ELSE)) {
             SZrAstNode *invalidElseBody = ZR_NULL;
             report_error(ps,
-                         "using_else_without_guard: using else requires a guard binder; use `using (var name = %import(...))` or a union variant pattern");
+                         "using_else_without_guard: using else requires a guard binder; use `using (let name = import(...))` or a union variant pattern");
             if (ps->lexer->t.token != ZR_TK_LBRACE) {
                 report_missing_statement_body_open(ps, "using else", get_current_token_location(ps));
                 ZrParser_Ast_Free(ps->state, resource);
@@ -1368,47 +1373,6 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
     return node;
 }
 
-static TZrBool is_percent_using_statement(SZrParserState *ps) {
-    SZrParserCursor cursor;
-    TZrInt32 depth = 0;
-    TZrBool result = ZR_FALSE;
-
-    if (ps == ZR_NULL || !current_percent_directive_equals(ps, "using")) {
-        return ZR_FALSE;
-    }
-
-    save_parser_cursor(ps, &cursor);
-    if (!consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        restore_parser_cursor(ps, &cursor);
-        return ZR_FALSE;
-    }
-
-    if (ps->lexer->t.token == ZR_TK_NEW) {
-        restore_parser_cursor(ps, &cursor);
-        return ZR_FALSE;
-    }
-
-    if (ps->lexer->t.token != ZR_TK_LPAREN) {
-        restore_parser_cursor(ps, &cursor);
-        return ZR_TRUE;
-    }
-
-    ZrParser_Lexer_Next(ps->lexer);
-    depth = 1;
-    while (depth > 0 && ps->lexer->t.token != ZR_TK_EOS) {
-        if (ps->lexer->t.token == ZR_TK_LPAREN) {
-            depth++;
-        } else if (ps->lexer->t.token == ZR_TK_RPAREN) {
-            depth--;
-        }
-        ZrParser_Lexer_Next(ps->lexer);
-    }
-
-    result = depth == 0 && ps->lexer->t.token == ZR_TK_LBRACE;
-    restore_parser_cursor(ps, &cursor);
-    return result;
-}
-
 SZrAstNode *parse_using_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
 
@@ -1416,12 +1380,10 @@ SZrAstNode *parse_using_statement(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        return parse_using_statement_body(ps, startLoc);
-    }
-
     expect_token(ps, ZR_TK_USING);
-    ZrParser_Lexer_Next(ps->lexer);
+    if (!consume_token(ps, ZR_TK_USING)) {
+        return ZR_NULL;
+    }
     return parse_using_statement_body(ps, startLoc);
 }
 
@@ -1520,6 +1482,9 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
     }
 
     switch (token) {
+        case ZR_TK_MODULE:
+            return parse_module_declaration(ps);
+
         case ZR_TK_LBRACE:
             return parser_brace_starts_object_literal_statement(ps)
                        ? parse_expression_statement(ps)
@@ -1578,7 +1543,11 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             return parse_break_continue_statement(ps);
 
         case ZR_TK_OUT:
-            return parse_out_statement(ps);
+            report_removed_legacy_syntax(
+                    ps,
+                    "out generator statement",
+                    "Use `yield expression;` inside an iterator function.");
+            return ZR_NULL;
 
         case ZR_TK_YIELD:
             return parse_yield_statement(ps);
@@ -1590,29 +1559,8 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             return parse_try_catch_finally_statement(ps);
 
         case ZR_TK_PERCENT:
-            if (current_percent_directive_equals(ps, "using")) {
-                if (is_percent_using_statement(ps)) {
-                    return parse_using_statement(ps);
-                }
-                return parse_expression_statement(ps);
-            }
-            if (current_percent_directive_equals(ps, "module")) {
-                return parse_module_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "async")) {
-                return parse_reserved_async_function_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "compileTime")) {
-                return parse_compile_time_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "extern")) {
-                return parse_extern_block(ps);
-            }
-            if (current_percent_directive_equals(ps, "test")) {
-                return parse_test_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "owned")) {
-                return parse_owned_class_declaration(ps);
+            if (report_removed_percent_syntax(ps)) {
+                return ZR_NULL;
             }
             return parse_expression_statement(ps);
 
@@ -1624,13 +1572,7 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
                 return parse_function_declaration(ps);
             }
             if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
-                SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
-                if (funcDecl != ZR_NULL) {
-                    return funcDecl;
-                }
-                if (peek_token(ps) == ZR_TK_IDENTIFIER) {
-                    return parse_function_declaration(ps);
-                }
+                return parse_function_declaration(ps);
             }
             // 检查是否是函数声明（identifier(params) { statements} 风格）
             if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
@@ -1746,8 +1688,67 @@ static SZrAstNode *parse_resource_class_declaration(SZrParserState *ps,
     return node;
 }
 
+static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
+        SZrParserState *ps,
+        TZrBool *handled) {
+    SZrParserCursor cursor;
+    SZrAstNodeArray *decorators;
+    SZrAstNode *node;
+
+    if (handled != ZR_NULL) {
+        *handled = ZR_FALSE;
+    }
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_SHARP) {
+        return ZR_NULL;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    decorators = parse_leading_decorators(ps);
+    if (decorators == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "comptime")) {
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        restore_parser_cursor(ps, &cursor);
+        return ZR_NULL;
+    }
+
+    if (handled != ZR_NULL) {
+        *handled = ZR_TRUE;
+    }
+    node = parse_compile_time_declaration(ps);
+    if (node == ZR_NULL) {
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
+    }
+    if (node->type == ZR_AST_COMPILE_TIME_DECLARATION &&
+        node->data.compileTimeDeclaration.declarationType == ZR_COMPILE_TIME_FUNCTION &&
+        node->data.compileTimeDeclaration.declaration != ZR_NULL &&
+        node->data.compileTimeDeclaration.declaration->type == ZR_AST_FUNCTION_DECLARATION) {
+        SZrAstNodeArray *existing =
+                node->data.compileTimeDeclaration.declaration->data.functionDeclaration.decorators;
+        if (existing != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, existing);
+        }
+        node->data.compileTimeDeclaration.declaration->data.functionDeclaration.decorators = decorators;
+        return node;
+    }
+
+    ZrParser_AstNodeArray_Free(ps->state, decorators);
+    return node;
+}
+
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
+
+    if (token == ZR_TK_SHARP) {
+        TZrBool handled = ZR_FALSE;
+        SZrAstNode *decoratedComptime =
+                try_parse_top_level_decorated_comptime_declaration(ps, &handled);
+        if (handled) {
+            return decoratedComptime;
+        }
+    }
 
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "iterator") &&
         peek_token(ps) == ZR_TK_FN) {
@@ -1795,64 +1796,12 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         }
 
         if (nextToken == ZR_TK_PERCENT) {
-            SZrAstNode *ownedClass = ZR_NULL;
-            EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
-            TZrSize savedPos = ps->lexer->currentPos;
-            TZrInt32 savedChar = ps->lexer->currentChar;
-            TZrInt32 savedLine = ps->lexer->lineNumber;
-            TZrInt32 savedLastLine = ps->lexer->lastLine;
-            SZrToken savedToken = ps->lexer->t;
-            SZrToken savedLookahead = ps->lexer->lookahead;
-            TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-            TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-            TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-            TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
             ZrParser_Lexer_Next(ps->lexer);
-            ZrParser_Lexer_Next(ps->lexer);
-            if (current_identifier_equals(ps, "owned")) {
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-
-                accessModifier = parse_access_modifier(ps);
-                ownedClass = parse_owned_class_declaration(ps);
-                if (ownedClass != ZR_NULL && ownedClass->type == ZR_AST_CLASS_DECLARATION) {
-                    ownedClass->data.classDeclaration.accessModifier = accessModifier;
-                }
-                return ownedClass;
+            if (report_removed_percent_syntax(ps)) {
+                return ZR_NULL;
             }
-            if (current_identifier_equals(ps, "async")) {
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-                return parse_reserved_async_function_declaration(ps);
-            }
-
-            ps->lexer->currentPos = savedPos;
-            ps->lexer->currentChar = savedChar;
-            ps->lexer->lineNumber = savedLine;
-            ps->lexer->lastLine = savedLastLine;
-            ps->lexer->t = savedToken;
-            ps->lexer->lookahead = savedLookahead;
-            ps->lexer->lookaheadPos = savedLookaheadPos;
-            ps->lexer->lookaheadChar = savedLookaheadChar;
-            ps->lexer->lookaheadLine = savedLookaheadLine;
-            ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+            report_error(ps, "Expected declaration after access modifier");
+            return ZR_NULL;
         }
 
         if (parser_function_declaration_starts_here(ps)) {
@@ -1887,9 +1836,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
 
     switch (token) {
         case ZR_TK_MODULE:
-            report_error(ps, "Legacy module syntax is not supported; use %module");
-            skip_to_semicolon_or_eos(ps);
-            return ZR_NULL;
+            return parse_module_declaration(ps);
 
         case ZR_TK_VAR:
         case ZR_TK_LET:
@@ -1921,29 +1868,8 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_union_declaration(ps);
 
         case ZR_TK_PERCENT:
-            if (current_percent_directive_equals(ps, "using")) {
-                if (is_percent_using_statement(ps)) {
-                    return parse_using_statement(ps);
-                }
-                return parse_expression_statement(ps);
-            }
-            if (current_percent_directive_equals(ps, "module")) {
-                return parse_module_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "async")) {
-                return parse_reserved_async_function_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "compileTime")) {
-                return parse_compile_time_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "extern")) {
-                return parse_extern_block(ps);
-            }
-            if (current_percent_directive_equals(ps, "test")) {
-                return parse_test_declaration(ps);
-            }
-            if (current_percent_directive_equals(ps, "owned")) {
-                return parse_owned_class_declaration(ps);
+            if (report_removed_percent_syntax(ps)) {
+                return ZR_NULL;
             }
             return parse_expression_statement(ps);
 
@@ -1998,7 +1924,11 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_break_continue_statement(ps);
 
         case ZR_TK_OUT:
-            return parse_out_statement(ps);
+            report_removed_legacy_syntax(
+                    ps,
+                    "out generator statement",
+                    "Use `yield expression;` inside an iterator function.");
+            return ZR_NULL;
 
         case ZR_TK_YIELD:
             return parse_yield_statement(ps);
@@ -2017,30 +1947,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 return parse_function_declaration(ps);
             }
             if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
-                SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
-                if (funcDecl != ZR_NULL) {
-                    return funcDecl;
-                }
-                if (peek_token(ps) == ZR_TK_IDENTIFIER) {
-                    return parse_function_declaration(ps);
-                }
-            }
-            if (token == ZR_TK_PERCENT) {
-                if (current_percent_directive_equals(ps, "async")) {
-                    return parse_reserved_async_function_declaration(ps);
-                }
-                if (current_percent_directive_equals(ps, "compileTime")) {
-                    return parse_compile_time_declaration(ps);
-                }
-                if (current_percent_directive_equals(ps, "extern")) {
-                    return parse_extern_block(ps);
-                }
-                if (current_percent_directive_equals(ps, "test")) {
-                    return parse_test_declaration(ps);
-                }
-                if (current_percent_directive_equals(ps, "owned")) {
-                    return parse_owned_class_declaration(ps);
-                }
+                return parse_function_declaration(ps);
             }
             // 检查是否是装饰器（# ... #），后面应该跟 class/struct/function 等
             if (token == ZR_TK_SHARP) {
@@ -2106,6 +2013,10 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 return stmt;
             }
             // 检查是否是函数声明（标识符后跟括号或泛型）
+            if ((token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) &&
+                parser_keywordless_function_declaration_starts_here(ps)) {
+                return parse_function_declaration(ps);
+            }
             if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
                 // 查看下一个 token 判断是否是函数声明
                 EZrToken lookahead = peek_token(ps);

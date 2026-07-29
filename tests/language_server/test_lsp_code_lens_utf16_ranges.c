@@ -86,15 +86,15 @@ static void describe_first_lens(SZrArray *lenses) {
 
 static TZrBool test_code_lens_reference_count_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     const TZrChar *content =
-        "/* \xCE\xBB */ func helper(value: int): int {\n"
+        "/* \xCE\xBB */ fn helper(value: int): int {\n"
         "    return value;\n"
         "}\n"
         "\n"
-        "func first(value: int): int {\n"
+        "fn first(value: int): int {\n"
         "    return helper(value);\n"
         "}\n"
         "\n"
-        "func second(value: int): int {\n"
+        "fn second(value: int): int {\n"
         "    return helper(value);\n"
         "}\n";
     SZrLspContext *context;

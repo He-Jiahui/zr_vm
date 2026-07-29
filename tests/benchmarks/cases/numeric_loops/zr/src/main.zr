@@ -1,5 +1,5 @@
-var benchConfig = %import("bench_config");
-var system = %import("zr.system");
+let benchConfig = import("bench_config");
+let system = import("zr.system");
 
 var scale = benchConfig.scale();
 var outerLimit = 24 * scale;

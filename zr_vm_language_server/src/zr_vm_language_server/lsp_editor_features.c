@@ -843,6 +843,32 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool lsp_code_lens_test_attribute_has_function_declaration(const TZrChar *content,
+                                                                      TZrSize contentLength,
+                                                                      TZrSize attributeEnd) {
+    TZrSize cursor = attributeEnd;
+
+    if (content == ZR_NULL || attributeEnd > contentLength) {
+        return ZR_FALSE;
+    }
+
+    while (cursor < contentLength && isspace((unsigned char)content[cursor])) {
+        cursor++;
+    }
+    if (cursor + strlen("async ") <= contentLength &&
+        memcmp(content + cursor, "async ", strlen("async ")) == 0) {
+        cursor += strlen("async ");
+        while (cursor < contentLength && isspace((unsigned char)content[cursor])) {
+            cursor++;
+        }
+    }
+
+    return cursor + strlen("fn") <= contentLength &&
+           memcmp(content + cursor, "fn", strlen("fn")) == 0 &&
+           (cursor + strlen("fn") == contentLength ||
+            !lsp_editor_is_word_char(content[cursor + strlen("fn")]));
+}
+
 TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
                                          SZrLspContext *context,
                                          SZrString *uri,
@@ -871,7 +897,8 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
     content = snapshot.content;
     contentLength = snapshot.contentLength;
     while (cursor < contentLength) {
-        const TZrChar *match = strstr(content + cursor, "%test(");
+        static const TZrChar testAttribute[] = "#zr.testing.test#";
+        const TZrChar *match = strstr(content + cursor, testAttribute);
         TZrSize matchOffset;
         TZrSize lineEnd;
 
@@ -879,8 +906,12 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
             break;
         }
         matchOffset = (TZrSize)(match - content);
-        if (!lsp_editor_offset_is_code(content, contentLength, matchOffset)) {
-            cursor = matchOffset + 6;
+        if (!lsp_editor_offset_is_code(content, contentLength, matchOffset) ||
+            !lsp_code_lens_test_attribute_has_function_declaration(
+                content,
+                contentLength,
+                matchOffset + sizeof(testAttribute) - 1)) {
+            cursor = matchOffset + sizeof(testAttribute) - 1;
             continue;
         }
         lineEnd = matchOffset;

@@ -136,7 +136,7 @@ static void test_local_query_returns_exhaustive_branch_reachability_fact(SZrStat
     const TZrChar *summary = "LSP Local Query Returns Exhaustive Branch Reachability Fact";
     const TZrChar *uriText = "file:///local_exhaustive_branch_reachability.zr";
     const TZrChar *content =
-        "func choose(flag: bool): int {\n"
+        "fn choose(flag: bool): int {\n"
         "    if (flag) {\n"
         "        return 1;\n"
         "    } else {\n"
@@ -202,7 +202,7 @@ static void test_local_query_returns_constant_conditional_branch_reachability_fa
     const TZrChar *summary = "LSP Local Query Returns Constant Conditional Branch Reachability Fact";
     const TZrChar *uriText = "file:///local_constant_conditional_reachability.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    return true ? 1 : 2;\n"
         "}\n";
     SZrTestTimer timer;
@@ -271,7 +271,7 @@ static void test_local_query_returns_exhaustive_switch_reachability_fact(SZrStat
     const TZrChar *summary = "LSP Local Query Returns Exhaustive Switch Reachability Fact";
     const TZrChar *uriText = "file:///local_exhaustive_switch_reachability.zr";
     const TZrChar *content =
-        "func choose(value: int): int {\n"
+        "fn choose(value: int): int {\n"
         "    switch (value) {\n"
         "        (0) {\n"
         "            return 0;\n"
@@ -347,7 +347,7 @@ static void test_local_query_marks_exhaustive_union_switch_default_unreachable(S
         "    Empty;\n"
         "    Num(value: int);\n"
         "}\n"
-        "func inspect(value: Choice): int {\n"
+        "fn inspect(value: Choice): int {\n"
         "    switch (value) {\n"
         "        (Empty) { return 0; }\n"
         "        (Num(payload)) { return payload; }\n"
@@ -429,7 +429,7 @@ static void test_local_query_keeps_non_exhaustive_union_switch_default_reachable
         "    Empty;\n"
         "    Num(value: int);\n"
         "}\n"
-        "func inspect(value: Choice): int {\n"
+        "fn inspect(value: Choice): int {\n"
         "    switch (value) {\n"
         "        (Empty) { return 0; }\n"
         "        () {\n"
@@ -487,7 +487,7 @@ static void test_local_query_returns_constant_true_loop_exit_reachability_fact(S
     const TZrChar *summary = "LSP Local Query Returns Constant True Loop Exit Reachability Fact";
     const TZrChar *uriText = "file:///local_constant_true_loop_exit_reachability.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    while (true) {\n"
         "        return 1;\n"
         "    }\n"
@@ -559,7 +559,7 @@ static void test_local_query_returns_infinite_for_loop_exit_reachability_fact(SZ
     const TZrChar *summary = "LSP Local Query Returns Infinite For Loop Exit Reachability Fact";
     const TZrChar *uriText = "file:///local_infinite_for_loop_exit_reachability.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    for (;;) {\n"
         "        return 1;\n"
         "    }\n"
@@ -623,7 +623,7 @@ static void test_local_query_keeps_constant_true_loop_with_break_reachable(SZrSt
     const TZrChar *summary = "LSP Local Query Keeps Constant True Loop With Break Reachable";
     const TZrChar *uriText = "file:///local_constant_true_loop_break_reachable.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    while (true) {\n"
         "        break;\n"
         "        return 1;\n"
@@ -683,7 +683,7 @@ static void test_local_query_keeps_infinite_for_loop_with_break_reachable(SZrSta
     const TZrChar *summary = "LSP Local Query Keeps Infinite For Loop With Break Reachable";
     const TZrChar *uriText = "file:///local_infinite_for_loop_break_reachable.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    for (;;) {\n"
         "        break;\n"
         "        return 1;\n"
@@ -743,7 +743,7 @@ static void test_local_query_returns_nested_loop_exit_reachability_fact(SZrState
     const TZrChar *summary = "LSP Local Query Returns Nested Loop Exit Reachability Fact";
     const TZrChar *uriText = "file:///local_nested_loop_exit_reachability.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    while (true) {\n"
         "        while (true) {\n"
         "            return 1;\n"
@@ -817,7 +817,7 @@ static void test_local_query_keeps_nested_breaking_loop_reachable(SZrState *stat
     const TZrChar *summary = "LSP Local Query Keeps Nested Breaking Loop Reachable";
     const TZrChar *uriText = "file:///local_nested_breaking_loop_reachable.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    while (true) {\n"
         "        while (true) {\n"
         "            break;\n"

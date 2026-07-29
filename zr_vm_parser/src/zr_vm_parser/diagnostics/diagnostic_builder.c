@@ -326,7 +326,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(SZrState *state,
             "using_binder_invalid",
             "using_binder_invalid: invalid using guard binder",
             "A using guard binder must be an import binding name or a union destructuring pattern.",
-            "Use `using (var name = %import(...))` for plugin guards, `using (var [value]: Union.Variant = resource)` for tuple variants, or `using (var {local: field}: Union.Variant = resource)` for struct variants.");
+            "Use `using (let name = import(...))` for plugin guards, `using (let [value]: Union.Variant = resource)` for tuple variants, or `using (let {local: field}: Union.Variant = resource)` for struct variants.");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(SZrState *state,
@@ -1109,8 +1109,8 @@ TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,
             location,
             "weak_value_requires_upgrade",
             "Weak value must be upgraded before it can be borrowed",
-            "A %weak value does not keep its owner alive, so it cannot satisfy a %borrowed use directly.",
-            "Use %upgrade(...) and handle the nullable upgraded owner before borrowing it.");
+            "A Weak<T> value does not keep its owner alive, so it cannot satisfy a ref readonly T use directly.",
+            "Call .upgrade() and handle the nullable upgraded owner before borrowing it.");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(SZrState *state,
@@ -1210,7 +1210,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildBorrowEscape(SZrState *state,
             location,
             "borrow_escape",
             "Borrowed value cannot escape its owner",
-            "The expression uses %borrow(...), which creates a temporary borrow tied to the source owner.",
+            "The expression uses ref, which creates a temporary borrow tied to the source owner.",
             "Return the owner or keep the borrow inside the current scope.");
 }
 
@@ -1224,7 +1224,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildLoanEscape(SZrState *state,
             location,
             "loan_escape",
             "Loaned value cannot escape its owner",
-            "The expression uses %loan(...), which creates a temporary loan tied to the source owner.",
+            "The expression uses ref, which creates a temporary loan tied to the source owner.",
             "Return the owner or keep the loan inside the current scope.");
 }
 
@@ -1238,8 +1238,8 @@ TZrBool ZrParser_DiagnosticBuilder_BuildOwnerToPlainEscape(SZrState *state,
             location,
             "owner_to_plain_escape",
             "Owned value cannot flow into a plain GC value implicitly",
-            "A %unique or %shared value owns deterministic cleanup; assigning it to a plain value would drop ownership semantics.",
-            "Use %detach(...) when intentionally converting an owned value to a plain value.");
+            "A Unique<T> or Shared<T> value owns deterministic cleanup; assigning it to a plain value would drop ownership semantics.",
+            "Keep the ownership wrapper in the target type or revise the ownership transfer explicitly.");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildOwnershipMismatch(SZrState *state,

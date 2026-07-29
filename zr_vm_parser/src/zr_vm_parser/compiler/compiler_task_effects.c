@@ -1118,9 +1118,7 @@ void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode *node) 
                                           ZR_TASK_EFFECT_BINDING_NONE);
             }
             task_effects_validate_decorators(context, node->data.functionDeclaration.decorators);
-            if (node->data.functionDeclaration.isAsync &&
-                !node->data.functionDeclaration.isLegacyAsyncSyntax &&
-                context->cs->externBindingsPredeclared) {
+            if (node->data.functionDeclaration.isAsync && context->cs->externBindingsPredeclared) {
                 task_effects_validate_async_signature(context,
                                                       node->data.functionDeclaration.params,
                                                       node->data.functionDeclaration.args,
@@ -1136,14 +1134,8 @@ void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode *node) 
                                                 node->data.functionDeclaration.args,
                                                 node->data.functionDeclaration.body);
             break;
-        case ZR_AST_TEST_DECLARATION:
-            task_effects_validate_function_like(context, ZR_TRUE, node->data.testDeclaration.params,
-                                                node->data.testDeclaration.args, node->data.testDeclaration.body);
-            break;
         case ZR_AST_LAMBDA_EXPRESSION:
-            if (node->data.lambdaExpression.isAsync &&
-                !node->data.lambdaExpression.isLegacyAsyncSyntax &&
-                context->cs->externBindingsPredeclared) {
+            if (node->data.lambdaExpression.isAsync && context->cs->externBindingsPredeclared) {
                 task_effects_validate_async_signature(context,
                                                       node->data.lambdaExpression.params,
                                                       node->data.lambdaExpression.args,

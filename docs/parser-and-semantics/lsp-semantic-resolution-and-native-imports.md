@@ -145,10 +145,10 @@ doc_type: module-detail
 
 这份文档说明 language server 里最近补齐的四条关键语义链路：
 
-1. `this` / `super` / compile-time / `%test` / lambda 等局部符号，必须按真实作用域命中。
+1. `this` / `super` / `comptime` / `#zr.testing.test#` / lambda 等局部符号，必须按真实作用域命中。
 2. hover / definition / references 不能再被宽范围声明误导，必须优先命中最具体的引用范围。
-3. `%import("module")` 的字符串字面量必须成为一等导航目标，hover / definition 直接落在导入目标模块上。
-4. `%import("zr.math")` 这类导入必须在语义分析阶段就把 native/binary/source module metadata 预热进 parser/type inference，后续 LSP 才能正确解析 `$math.Vector3(...).y` 这类值类型构造链。
+3. `import("module")` 的字符串字面量必须成为一等导航目标，hover / definition 直接落在导入目标模块上。
+4. `import("zr.math")` 这类导入必须在语义分析阶段就把 native/binary/source module metadata 预热进 parser/type inference，后续 LSP 才能正确解析 `init math.Vector3(...).y` 这类值类型构造链。
 
 ## Parser Token Range Invariant
 
@@ -251,16 +251,16 @@ class BossHero: BaseHero {
 
 实现上，`lsp_super_navigation.c` 的 opened-document scan 现在先 acquire `SZrFileVersionContentSnapshot` 再解析 super target、references 和 highlights；signature help 的 code-span guard 也走同一类 owned snapshot，避免请求期间直接持有 `fileVersion->content`。
 
-## `%extern` 函数与类型的统一语义入口
+## `native extern` 函数与类型的统一语义入口
 
-这一轮把 `%extern` 里的 function / delegate / struct / enum 从“只有 symbol table 看得见”继续推进到“navigation、references、signature help 共用同一组结构化事实”。
+这一轮把 `native extern` 里的 function / delegate / struct / enum 从“只有 symbol table 看得见”继续推进到“navigation、references、signature help 共用同一组结构化事实”。
 
 当前行为是：
 
 - `semantic_analyzer_symbols.c` 会给 extern function / delegate / enum member 建立真实 source symbol，并把 definition reference 直接挂到 symbol 上。
 - extern struct 声明现在也会补 definition reference，因此 type annotation 上的 `FindReferences` 不再只返回 usage，声明和 usage 会落到同一引用集合。
 - server 自己维护的 `compilerState->typeEnv` / `compileTimeTypeEnv` 现在会显式注册 extern function callable binding，而不再只依赖 symbol table。
-- 这一步会连同 declaration node 一起写入 type env，所以后续 overload resolution 和 signature help 能直接命中 extern declaration，而不是再回退到“源码里找不到普通 `func` 声明”。
+- 这一步会连同 declaration node 一起写入 type env，所以后续 overload resolution 和 signature help 能直接命中 extern declaration，而不是再回退到“源码里找不到普通 `fn` 声明”。
 - parser/type inference 侧的 candidate lookup 也补进了 extern function declaration，因此基于 declaration node 的参数列表和命名参数匹配不再只支持普通函数。
 
 这条修复让 extern function 的以下能力开始共用同一路径：
@@ -283,7 +283,7 @@ extern function 的 signature help 之前还有两个独立缺口：
 - `lsp_signature_help.c` 为普通函数调用统一构造 `signature_call_context_range(...)`，调用上下文范围会从 call node 起点延伸到最后一个实参或 generic 实参结尾。
 - `signature_call_matches_position(...)` 不再只依赖裸 `callNode->location`，因此光标位于 `(` 后、逗号间隔区或第一个参数前时，也能正确触发 signature help。
 - extern function 的 signature label 构建优先使用 declaration AST 上的参数/返回类型文本，而不是把 resolved inferred type 直接格式化成标准化名字。
-- 结果是 `%extern` 源声明里的 `NativeAdd(lhs: i32, rhs: i32): i32;` 在 hover-independent signature help 里会保持 `i32`，而不是退化成 `int`。
+- 结果是 `native extern` 源声明里的 `NativeAdd(lhs: i32, rhs: i32): i32;` 在 hover-independent signature help 里会保持 `i32`，而不是退化成 `int`。
 
 这条链路和 `super(...)` 一样，已经不再是 hover markdown 或 native 特判的派生结果，而是基于真实 callable declaration、真实调用区间和真实类型来源做结构化拼装。
 
@@ -301,14 +301,14 @@ extern function 的 signature help 之前还有两个独立缺口：
 - 后续 LSP decorator definition / hover 不需要绕过损坏 AST 做位置猜测。
 - `tests/parser/test_parser_extern.c` 新增了顶层 class decorator 回归，确保这条支持层不会再退化。
 
-## `%import("...")` 字面量导航
+## `import("...")` 字面量导航
 
-`lsp_import_target_navigation.c` 现在把 `%import("module")` 里的字符串字面量当成独立语义入口处理，而不是只把导入后的别名变量当作可导航对象。
+`lsp_import_target_navigation.c` 现在把 `import("module")` 里的字符串字面量当成独立语义入口处理，而不是只把导入后的别名变量当作可导航对象。
 
 这条实现专门补了一个之前的结构性缺口：
 
 - 语义分析里导入绑定本身是存在的。
-- 但是 parser 当前给 string literal AST 节点留下的 `location` 在这条路径上并不可靠，`%import("greet")` 会把字面量位置漂到分号附近。
+- 但是 parser 当前给 string literal AST 节点留下的 `location` 在这条路径上并不可靠，`import("greet")` 会把字面量位置漂到分号附近。
 - 结果是 imported member 导航能工作，真正落在 `"greet"` 上的 hover / definition 却命不中。
 
 当前行为改成：
@@ -317,27 +317,27 @@ extern function 的 signature help 之前还有两个独立缺口：
 - 但 `"module"` 字面量本身的命中范围，不再信任 AST string range。
 - `lsp_import_target_navigation.c` 直接基于当前文档文本恢复字面量边界：
   - 从光标 offset 向左右收缩到当前字符串的引号范围。
-  - 验证左侧语法前缀确实是 `%import(`。
+  - 验证左侧语法前缀确实是 `import(`。
   - 现场归一化模块名，再映射到 project source record 或 native builtin descriptor。
-- definition 现在会把 `%import("greet")` 直接跳到 `greet.zr` 模块入口。
-- hover 现在会把 `%import("greet")` / `%import("zr.system")` 统一展示成：
+- definition 现在会把 `import("greet")` 直接跳到 `greet.zr` 模块入口。
+- hover 现在会把 `import("greet")` / `import("zr.system")` 统一展示成：
   - `module <...>`
   - `Source: project source` / `native builtin` / `external/unresolved`
 - references 现在也会把 import target literal 当成真实 module-level 入口：
 - `includeDeclaration=true` 时先落到 source / native descriptor plugin 的 module entry
   - binary metadata 若 `.zro` typed export 已携带 declaration span，则优先落到 symbol-level declaration；旧 schema 才回退到 module entry
-  - 然后回收 project 内所有匹配的 `%import("module")` 字面量位置
+  - 然后回收 project 内所有匹配的 `import("module")` 字面量位置
 - document highlight 现在会在当前文档里标出同一 module target 的 import literal 范围，而不是退回普通 string token 语义
 
-这让 `%import` 字面量本身进入了和 imported member、decorator、`super(...)` 一致的第一类导航模型，也避免继续在 AST 位置不稳定的情况下做“命中不到就算了”的弱处理。
+这让 `import` 字面量本身进入了和 imported member、decorator、`super(...)` 一致的第一类导航模型，也避免继续在 AST 位置不稳定的情况下做“命中不到就算了”的弱处理。
 
 ## 固定 Token 元信息
 
-`lsp_token_metadata.c` 把 `%...` directive 和 `@...` meta method 的固定元信息表从 `lsp_interface_support.c` 里抽出来，避免继续把新职责堆进一个 2000+ 行文件。当前这层统一提供三类消费：
+`lsp_token_metadata.c` 把现行关键字和 `@...` meta method 的固定元信息表从 `lsp_interface_support.c` 里抽出来，避免继续把新职责堆进一个 2000+ 行文件。当前这层统一提供三类消费：
 
-- 输入 `%` / `@` 时的固定 completion。
+- 输入关键字前缀或 `@` 时的固定 completion。
 - `@constructor` 这类 token 的 hover 类别说明。
-- semantic tokens 对 `%directive`、`@meta-method` 的识别辅助。
+- semantic tokens 对 keyword、`@meta-method` 的识别辅助。
 
 这意味着同一份固定表现在至少服务于 completion、hover、semantic tokens，不再出现“补全知道分类，hover/semantic token 不知道”的分裂状态。`@meta-method` hover 在读取源码 token 前会 acquire `SZrFileVersionContentSnapshot`，token 查找、code-span 过滤、descriptor lookup 和 hover range 构造都基于 owned snapshot，而不是直接持有 live `fileVersion->content`。
 
@@ -351,7 +351,7 @@ extern function 的 signature help 之前还有两个独立缺口：
   - 适用声明形态，当前统一写为 `class/struct meta function`
 - semantic tokens 现在会把 `@constructor` 这类声明 token 分类成 `metaMethod`
 - semantic tokens 现在会把 `#singleton#` 这类 decorator token 分类成 `decorator`
-- `%compileTime`、`%import` 等保留字语义 token 继续保留为 `keyword`，以兼容现有 LSP token legend 与测试基线
+- `comptime`、`import` 等现行保留字语义 token 保持为 `keyword`，以兼容现有 LSP token legend 与测试基线
 
 这条实现虽然还没有把 meta method 自身接进 definition / references，但已经把“类别提示”和“可视分类”从 completion-only 扩展到了 hover 和 semantic tokens。
 
@@ -359,7 +359,7 @@ extern function 的 signature help 之前还有两个独立缺口：
 
 `reference_tracker.c` 的 `FindReferenceAt(...)` 以前采用“第一个包含当前位置的引用即返回”。这个策略在有宽范围定义引用时会产生系统性误判，例如：
 
-- `%test("scope")` 的声明范围覆盖整个 test body
+- `#zr.testing.test# fn scope(): void` 的声明范围覆盖整个 test body
 - 更具体的局部变量 / compile-time 变量 usage 引用虽然也存在，但因为排在后面，永远命不中
 
 当前行为改成：
@@ -370,16 +370,16 @@ extern function 的 signature help 之前还有两个独立缺口：
 
 这使得以下行为回到一致状态：
 
-- compile-time 变量 hover 不再被 `%test` 声明覆盖
+- comptime 变量 hover 不再被测试函数声明覆盖
 - 局部变量 / lambda capture / class 内 receiver 的引用命中更稳定
 - LSP definition / hover / references 的命中逻辑更接近真实语义事实，而不是注册顺序
 
 ## Native Import Metadata 预热
 
-`$math.Vector3(4.0, 5.0, 6.0).y` 之前在 parser 单测里可推断，但在 LSP 文档分析里失败。根因不是语法不支持，而是 semantic analyzer 在建立
+`init math.Vector3(4.0, 5.0, 6.0).y` 之前在 parser 单测里可推断，但在 LSP 文档分析里失败。根因不是语法不支持，而是 semantic analyzer 在建立
 
 ```zr
-var math = %import("zr.math");
+var math = import("zr.math");
 ```
 
 这个变量的类型时，只写入了模块名字符串，没有触发 parser 的 import metadata 加载流程。
@@ -389,17 +389,17 @@ var math = %import("zr.math");
 - `semantic_analyzer_symbols.c` 里的 `infer_symbol_expression_type(...)` 在遇到 `ZR_AST_IMPORT_EXPRESSION` 时，优先调用 `ZrParser_ExpressionType_Infer(...)`
 - parser 的 import inference 会进入 `ensure_import_module_compile_info(...)`
 - native/source/binary module 的 prototype/type descriptor 会被注册到 compilerState 的 type prototype 集合
-- 随后 `lsp_interface_support.c` 对 receiver 前缀做 AST 推断时，就能把 `$math.Vector3(...)` 识别成真实 `Vector3` value type
+- 随后 `lsp_interface_support.c` 对 receiver 前缀做 AST 推断时，就能把 `init math.Vector3(...)` 识别成真实 `Vector3` value type
 
 结果是：
 
-- `$math.Vector3(...).` completion 可以列出 `x/y/z`
-- `$math.Vector3(...).y` hover 可以展示 `field y: float` 和 `Receiver: Vector3`
+- `init math.Vector3(...).` completion 可以列出 `x/y/z`
+- `init math.Vector3(...).y` hover 可以展示 `field y: float` 和 `Receiver: Vector3`
 - 这条能力直接复用 parser/type inference/native descriptor 的结构化元信息，不再靠 LSP 特判库名
 
 ## Imported Type Bindings 与嵌套 Native Module Lookup
 
-这一轮又把 `%import("zr.container")` 的显式类型绑定规则补到了 parser 和 LSP 两侧，重点覆盖两条之前会相互干扰的链：
+这一轮又把 `import("zr.container")` 的显式类型绑定规则补到了 parser 和 LSP 两侧，重点覆盖两条之前会相互干扰的链：
 
 1. imported type 不再回到“裸全局类型空间”
 2. nested native module prototype 在 compile-time lookup 时不能再自递归
@@ -409,11 +409,11 @@ var math = %import("zr.math");
 当前规则固定为：
 
 ```zr
-var container = %import("zr.container");
-var pair1: container.Pair<int, float> = $container.Pair<int, float>(1, 2.0);
+var container = import("zr.container");
+var pair1: container.Pair<int, float> = init container.Pair<int, float>(1, 2.0);
 
-var {Pair} = %import("zr.container");
-var pair2: Pair<int, float> = $Pair<int, float>(1, 2.0);
+var {Pair} = import("zr.container");
+var pair2: Pair<int, float> = init Pair<int, float>(1, 2.0);
 ```
 
 允许：
@@ -424,13 +424,13 @@ var pair2: Pair<int, float> = $Pair<int, float>(1, 2.0);
 不允许：
 
 - 没有 qualifier 或 destructuring import 的裸 `Pair`
-- 在 `var {Pair} = %import("zr.container")` 之后再声明第二个 `Pair`
+- 在 `var {Pair} = import("zr.container")` 之后再声明第二个 `Pair`
 
 这条规则现在由三层共同维持：
 
 - parser/type inference 继续把 “type name 是否在当前上下文显式可见” 当成硬约束
-- `semantic_analyzer_symbols.c` 会在 `var {Pair} = %import("zr.container")` 时把 destructured type alias 注册进 type environment，并把重复声明立即转成 LSP diagnostic
-- `semantic_analyzer_typecheck.c` 对复杂 initializer 不再一律回退成 `object`，而是回到 `ZrParser_ExpressionType_Infer(...)`，这样 `$container.Pair(...)` / `$Pair(...)` 的真实泛型实例类型会进入 LSP initializer compatibility 检查
+- `semantic_analyzer_symbols.c` 会在 `var {Pair} = import("zr.container")` 时把 destructured type alias 注册进 type environment，并把重复声明立即转成 LSP diagnostic
+- `semantic_analyzer_typecheck.c` 对复杂 initializer 不再一律回退成 `object`，而是回到 `ZrParser_ExpressionType_Infer(...)`，这样 `init container.Pair(...)` / `init Pair(...)` 的真实泛型实例类型会进入 LSP initializer compatibility 检查
 
 结果是：
 
@@ -490,7 +490,7 @@ watched dynamic library refresh 现在仍然和 binary metadata refresh 走同�
 
 这条修复针对的是一个真实崩溃场景：
 
-1. open document 已经因为 `%import("zr.pluginprobe")` 把 project-local descriptor plugin 载入进程。
+1. open document 已经因为 `import("zr.pluginprobe")` 把 project-local descriptor plugin 载入进程。
 2. 外部构建工具在原路径上直接覆盖同名 `.so/.dll`。
 3. server 收到 `workspace/didChangeWatchedFiles` 后尝试 `dlclose` 旧句柄。
 4. 如果旧句柄直接映射的就是被覆盖中的原文件，卸载阶段可能读到被替换后的 fini / dynamic 元数据，最终在 `dlclose` 里崩溃。
@@ -541,7 +541,7 @@ watched dynamic library refresh 现在仍然和 binary metadata refresh 走同�
 
 ## Imported Member References And Highlights
 
-`lsp_project_navigation.c` 现在把 `%import(...)` alias 后的第一段 member 命中先还原成统一的 imported-member 事实，再让 `definition / references / document highlight` 复用这条路径，而不是继续依赖“source symbol 找得到就工作、找不到就失效”的分裂行为。
+`lsp_project_navigation.c` 现在把 `import(...)` alias 后的第一段 member 命中先还原成统一的 imported-member 事实，再让 `definition / references / document highlight` 复用这条路径，而不是继续依赖“source symbol 找得到就工作、找不到就失效”的分裂行为。
 
 当前这条路径统一记录：
 
@@ -578,12 +578,12 @@ watched dynamic library refresh 现在仍然和 binary metadata refresh 走同�
   - `.zro` module entry 会在 metadata 文档里高亮 module entry 自身
   - descriptor plugin file entry 会在 plugin 文档里高亮 module entry 自身
 - module-entry 级 references 也补进了 import-binding 声明：
-  - binary metadata / plugin file entry 除了继续聚合 `moduleAlias.member` usages，还会回收 project 内 `var moduleAlias = %import("...")` 的 alias declaration
+  - binary metadata / plugin file entry 除了继续聚合 `moduleAlias.member` usages，还会回收 project 内 `var moduleAlias = import("...")` 的 alias declaration
   - 这样 module entry 不再只有“成员被访问过”的粗粒度引用，而开始具备真正的 module-binding 导航覆盖
-- 这条 module-entry 聚合链现在也覆盖源码模块与 `%extern` wrapper 源文件：
-  - `greet.zr` 这类 project source file entry 在 `0:0` module entry 上会回收到 `%import("greet")` 字面量、`greetModule` alias declaration，以及同模块的 imported-member usages
+- 这条 module-entry 聚合链现在也覆盖源码模块与 `native extern` wrapper 源文件：
+  - `greet.zr` 这类 project source file entry 在 `0:0` module entry 上会回收到 `import("greet")` 字面量、`greetModule` alias declaration，以及同模块的 imported-member usages
   - `native_api.zr` 这类 ffi source wrapper file entry 走同一条 declaration resolver，不再因为它是 source-backed wrapper 就退回“只能从 import literal 一侧导航”
-  - project 级 import-target references 不再依赖“当前文件必须已打开”；若文档未打开，server 会先确认该 analyzer 是否真的导入了目标模块，再从磁盘文本恢复 `%import("...")` 的精确 inner-string range；必要时才回退到 AST binding range
+  - project 级 import-target references 不再依赖“当前文件必须已打开”；若文档未打开，server 会先确认该 analyzer 是否真的导入了目标模块，再从磁盘文本恢复 `import("...")` 的精确 inner-string range；必要时才回退到 AST binding range
   - source module entry / ffi wrapper module entry 的 references 也不再局限于 `projectIndex->files`；server 现在会递归 sourceRoot 下的 `.zr` 文件，按需加载 analyzer，把未打开源码里的 import literal、alias binding、imported-member usage 一起并回同一个 module target
   - 这样 source / ffi wrapper / binary metadata / descriptor plugin 四种 module entry 现在都共享同一套 declaration + import-target + alias-binding + imported-member usage 聚合模型
 
@@ -684,13 +684,13 @@ scoped reanalysis, not a member-name cache heuristic.
 - 派生类构造函数里的 `super(...)` goto definition 到 base constructor
 - 派生类构造函数里的 `super(...)` find references 命中 base constructor + super call
 - 派生类构造函数里的 `super(...)` document highlight 命中 base constructor + super call
-- `%compileTime` 变量与函数作用域
-- `%test("scope")` 的局部作用域
+- `comptime` 变量与函数作用域
+- `#zr.testing.test# fn scope(): void` 的局部作用域
 - typed lambda 的局部参数和 capture
-- directive `%...` 与 meta method `@...` completion
+- 现行关键字与 meta method `@...` completion
 - `@constructor` meta method hover 类别说明
 - semantic tokens 对 `#decorator#` 与 `@meta-method` 的分类
-- native value constructor `$math.Vector3(...).y`
+- native value constructor `init math.Vector3(...).y`
 - watched binary metadata refresh 对 unopened project 的 bootstrap
 - watched binary metadata refresh 后 open 文档 hover 的更新
 - `.zro` 作为 binary metadata 载体的 imported member hover / completion
@@ -698,7 +698,7 @@ scoped reanalysis, not a member-name cache heuristic.
 - binary imported member definition 到 `.zro` exported declaration span（旧 schema 回退 module entry）
 - binary imported member references 到项目 usage + `.zro` exported declaration span
 - binary imported member document highlight 到当前文档 usage
-- source module entry / ffi wrapper module entry references 到 `%import(...)` literal + alias binding + imported-member usage
+- source module entry / ffi wrapper module entry references 到 `import(...)` literal + alias binding + imported-member usage
 - source module entry / ffi wrapper module entry references 覆盖未打开 project source files
 - source module entry / ffi wrapper module entry document highlight 命中 module entry 自身
 - native imported member references / document highlight 到 usage-only 结果
@@ -729,7 +729,7 @@ scoped reanalysis, not a member-name cache heuristic.
 
 ## 当前已知限制
 
-- 当前工作区还存在独立的 parser 脏改动，完整 `cmake --build` 会在 `zr_vm_parser/src/zr_vm_parser/lexer.c` 的 `ZR_LEXER_EOZ` 未定义处失败。这不是本轮 `%import` literal 导航修复引入的问题，因此本轮验证采用了对象级别重编 + 定向重链。
+- 完整验证以仓库当前 CMake 配置和语言服务回归套件为准；导入字面量导航不依赖额外的 parser 私有构建步骤。
 - Windows MSVC 的 LSP 测试可执行体仍然存在独立的 `0xC0000005` 退出问题，这不是本轮 Linux/WSDL 语义修复引入的新回归。
 - `zr_vm_language_server_lsp_interface_test` 在 WSL 通过时仍会打印两条 `Construct target must resolve to a registered prototype` 编译日志；当前没有导致目标测试失败，但说明 constructor prototype 解析路径仍有额外清理空间。
 

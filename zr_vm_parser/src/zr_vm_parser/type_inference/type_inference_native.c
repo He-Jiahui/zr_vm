@@ -10,6 +10,7 @@
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
 #include "type_inference_constant_eval.h"
+#include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -1307,6 +1308,24 @@ static SZrString *native_module_info_resolve_contract_type_name(SZrCompilerState
     return localTypeName;
 }
 
+static EZrParameterPassingMode native_module_info_parameter_passing_mode(SZrState *state,
+                                                                          SZrObject *parameterEntry) {
+    TZrInt64 passingMode = native_module_info_get_int_field(
+            state, parameterEntry, "passingMode", ZR_PARAMETER_PASSING_MODE_VALUE);
+
+    switch (passingMode) {
+        case ZR_PARAMETER_PASSING_MODE_IN:
+            return ZR_PARAMETER_PASSING_MODE_IN;
+        case ZR_PARAMETER_PASSING_MODE_OUT:
+            return ZR_PARAMETER_PASSING_MODE_OUT;
+        case ZR_PARAMETER_PASSING_MODE_REF:
+            return ZR_PARAMETER_PASSING_MODE_REF;
+        case ZR_PARAMETER_PASSING_MODE_VALUE:
+        default:
+            return ZR_PARAMETER_PASSING_MODE_VALUE;
+    }
+}
+
 static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
                                                     SZrString *moduleName,
                                                     SZrTypeMemberInfo *memberInfo,
@@ -1327,6 +1346,10 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
 
     ZrCore_Array_Init(cs->state, &memberInfo->parameterTypes, sizeof(SZrInferredType), parameterCount);
     ZrCore_Array_Init(cs->state, &memberInfo->parameterNames, sizeof(SZrString *), parameterCount);
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->parameterPassingModes,
+                      sizeof(EZrParameterPassingMode),
+                      parameterCount);
     for (TZrSize index = 0; index < parameterCount; index++) {
         SZrObject *parameterEntry = native_module_info_array_get_object(cs->state, parametersArray, index);
         SZrString *parameterName = native_module_info_get_string_field(
@@ -1334,6 +1357,8 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
         SZrString *typeName = native_module_info_get_string_field(cs->state, parameterEntry, "typeName");
         SZrString *localTypeName = native_module_info_resolve_contract_type_name(cs, moduleName, typeName);
         SZrInferredType parameterType;
+        EZrParameterPassingMode passingMode =
+                native_module_info_parameter_passing_mode(cs->state, parameterEntry);
 
         ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
         if (!inferred_type_from_type_name(cs, localTypeName, &parameterType)) {
@@ -1343,6 +1368,7 @@ static void native_module_info_copy_parameter_types(SZrCompilerState *cs,
 
         ZrCore_Array_Push(cs->state, &memberInfo->parameterTypes, &parameterType);
         ZrCore_Array_Push(cs->state, &memberInfo->parameterNames, &parameterName);
+        ZrCore_Array_Push(cs->state, &memberInfo->parameterPassingModes, &passingMode);
     }
 }
 
@@ -2198,11 +2224,11 @@ static EZrParameterPassingMode member_call_parameter_passing_mode_at(const SZrAr
 static const TZrChar *member_call_parameter_passing_mode_label(EZrParameterPassingMode passingMode) {
     switch (passingMode) {
         case ZR_PARAMETER_PASSING_MODE_IN:
-            return "%in";
+            return "in";
         case ZR_PARAMETER_PASSING_MODE_OUT:
-            return "%out";
+            return "out";
         case ZR_PARAMETER_PASSING_MODE_REF:
-            return "%ref";
+            return "ref";
         case ZR_PARAMETER_PASSING_MODE_VALUE:
         default:
             return "value";
@@ -2726,27 +2752,22 @@ TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
         }
     }
 
-    if (node->data.typeQueryExpression.kind == ZR_TYPE_QUERY_LEGACY_PERCENT_TYPE) {
-        resultTypeName = kBuiltinTypeInfoName;
-        exposePreciseDescriptor = ZR_FALSE;
-    } else {
-        category = ZrParser_ReflectionTypeCategory_FromInferred(cs, &operandType);
-        exposePreciseDescriptor =
-                !operandType.isNullable &&
-                (category == ZR_REFLECTION_TYPE_CATEGORY_STRUCT ||
-                 category == ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT ||
-                 category == ZR_REFLECTION_TYPE_CATEGORY_ENUM ||
-                 node->data.typeQueryExpression.operand->type == ZR_AST_CONSTRUCT_EXPRESSION ||
-                 node->data.typeQueryExpression.operand->type == ZR_AST_STRUCT_INIT_EXPRESSION ||
-                 node->data.typeQueryExpression.operand->type == ZR_AST_INTEGER_LITERAL ||
-                 node->data.typeQueryExpression.operand->type == ZR_AST_FLOAT_LITERAL ||
-                 node->data.typeQueryExpression.operand->type == ZR_AST_BOOLEAN_LITERAL ||
-                 node->data.typeQueryExpression.operand->type == ZR_AST_STRING_LITERAL ||
-                 node->data.typeQueryExpression.operand->type == ZR_AST_CHAR_LITERAL);
-        resultTypeName = exposePreciseDescriptor
-                                 ? ZrParser_ReflectionDescriptorTypeName(category)
-                                 : "zr.reflection.Type";
-    }
+    category = ZrParser_ReflectionTypeCategory_FromInferred(cs, &operandType);
+    exposePreciseDescriptor =
+            !operandType.isNullable &&
+            (category == ZR_REFLECTION_TYPE_CATEGORY_STRUCT ||
+             category == ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT ||
+             category == ZR_REFLECTION_TYPE_CATEGORY_ENUM ||
+             node->data.typeQueryExpression.operand->type == ZR_AST_CONSTRUCT_EXPRESSION ||
+             node->data.typeQueryExpression.operand->type == ZR_AST_STRUCT_INIT_EXPRESSION ||
+             node->data.typeQueryExpression.operand->type == ZR_AST_INTEGER_LITERAL ||
+             node->data.typeQueryExpression.operand->type == ZR_AST_FLOAT_LITERAL ||
+             node->data.typeQueryExpression.operand->type == ZR_AST_BOOLEAN_LITERAL ||
+             node->data.typeQueryExpression.operand->type == ZR_AST_STRING_LITERAL ||
+             node->data.typeQueryExpression.operand->type == ZR_AST_CHAR_LITERAL);
+    resultTypeName = exposePreciseDescriptor
+                             ? ZrParser_ReflectionDescriptorTypeName(category)
+                             : "zr.reflection.Type";
 
     reflectionTypeName = ZrCore_String_CreateFromNative(
             cs->state, (TZrNativeString)resultTypeName);
@@ -2854,13 +2875,13 @@ static TZrBool validate_receiver_call_capability(
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier) {
     switch (receiverQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "Weak-owned receivers must be upgraded before calling non-%weak methods";
+            return "Weak-owned receivers must be upgraded before calling methods that require a strong owner";
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return "Shared-owned receivers can only call %shared or %borrowed methods";
+            return "Shared-owned receivers can only call shared or readonly-reference methods";
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return "Unique-owned receivers can only call %borrowed methods";
+            return "Unique-owned receivers can only call readonly-reference methods through this path";
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return "Borrowed receivers can only call %borrowed methods";
+            return "Readonly-reference receivers can only call readonly-reference methods";
         case ZR_OWNERSHIP_QUALIFIER_NONE:
         default:
             return "Receiver ownership qualifier is not compatible with this method";
@@ -3601,6 +3622,7 @@ static void type_inference_record_array_index_bounds_if_proven(SZrCompilerState 
 }
 
 TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
+                                        SZrAstNode *primaryNode,
                                         const SZrInferredType *baseType,
                                         SZrAstNodeArray *members,
                                         TZrSize startIndex,
@@ -3790,6 +3812,16 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                         nextType.ownershipQualifier =
                                 ZrParser_OwnershipBuiltinResultQualifier(ownershipMemberKind,
                                                                          currentType.ownershipQualifier);
+                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_WEAK &&
+                            primaryNode != ZR_NULL &&
+                            primaryNode->type == ZR_AST_PRIMARY_EXPRESSION) {
+                            type_inference_record_ownership_member_fact(
+                                    cs,
+                                    primaryNode,
+                                    primaryNode->data.primaryExpression.property,
+                                    ownershipMemberKind,
+                                    nextType.ownershipQualifier);
+                        }
 
                         ZrParser_InferredType_Free(cs->state, &currentType);
                         ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
@@ -3898,7 +3930,7 @@ infer_regular_member_access:
 
                 if (nextIsFunctionCall && nextIsPrototypeReference) {
                     ZrParser_Compiler_Error(cs,
-                                            "Prototype references are not callable; use $target(...) or new target(...)",
+                                            "Prototype references are not callable; use init Type(...) for values or new Type(...) for GC classes",
                                             members->nodes[i + 1]->location);
                     ZrParser_InferredType_Free(cs->state, &currentType);
                     return ZR_FALSE;
@@ -4081,7 +4113,7 @@ infer_regular_member_access:
 
                 if (currentIsPrototypeReference) {
                     ZrParser_Compiler_Error(cs,
-                                            "Prototype references are not callable; use $target(...) or new target(...)",
+                                            "Prototype references are not callable; use init Type(...) for values or new Type(...) for GC classes",
                                             memberNode->location);
                     ZrParser_InferredType_Free(cs->state, &currentType);
                     return ZR_FALSE;
@@ -4212,13 +4244,19 @@ TZrBool resolve_compile_time_array_size(SZrCompilerState *cs,
 
 static const TZrChar *type_name_string_get_ownership_prefix(EZrOwnershipQualifier ownershipQualifier) {
     switch (ownershipQualifier) {
-        case ZR_OWNERSHIP_QUALIFIER_UNIQUE: return "%unique ";
-        case ZR_OWNERSHIP_QUALIFIER_SHARED: return "%shared ";
-        case ZR_OWNERSHIP_QUALIFIER_WEAK: return "%weak ";
-        case ZR_OWNERSHIP_QUALIFIER_BORROWED: return "%borrowed ";
-        case ZR_OWNERSHIP_QUALIFIER_LOANED: return "%loaned ";
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE: return "Unique<";
+        case ZR_OWNERSHIP_QUALIFIER_SHARED: return "Shared<";
+        case ZR_OWNERSHIP_QUALIFIER_WEAK: return "Weak<";
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED: return "ref readonly ";
+        case ZR_OWNERSHIP_QUALIFIER_LOANED: return "ref ";
         default: return "";
     }
+}
+
+static TZrBool type_name_string_ownership_is_wrapper(EZrOwnershipQualifier ownershipQualifier) {
+    return ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+           ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+           ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
 }
 
 static const TZrChar *type_name_string_get_base_or_named_type(const SZrInferredType *type) {
@@ -4266,12 +4304,14 @@ static TZrBool type_name_string_append_type(SZrState *state,
     const TZrChar *ownershipPrefix;
     const TZrChar *gcBridgePrefix = "";
     const TZrChar *baseName;
+    TZrBool ownershipIsWrapper;
 
     if (state == ZR_NULL || type == ZR_NULL || buffer == ZR_NULL || writeIndex == ZR_NULL) {
         return ZR_FALSE;
     }
 
     ownershipPrefix = type_name_string_get_ownership_prefix(type->ownershipQualifier);
+    ownershipIsWrapper = type_name_string_ownership_is_wrapper(type->ownershipQualifier);
     if (type->gcBridgeKind == ZR_GC_BRIDGE_HANDLE) {
         gcBridgePrefix = "Gc<";
     } else if (type->gcBridgeKind == ZR_GC_BRIDGE_BOX) {
@@ -4280,7 +4320,7 @@ static TZrBool type_name_string_append_type(SZrState *state,
         return ZR_FALSE;
     }
     baseName = type_name_string_get_base_or_named_type(type);
-    if (type->isReadonlyView &&
+    if (type->isReadonlyView && type->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_BORROWED &&
         !type_name_string_append(buffer, bufferSize, writeIndex, "readonly ")) {
         return ZR_FALSE;
     }
@@ -4306,6 +4346,10 @@ static TZrBool type_name_string_append_type(SZrState *state,
     }
 
     if (type->gcBridgeKind != ZR_GC_BRIDGE_NONE &&
+        !type_name_string_append(buffer, bufferSize, writeIndex, ">")) {
+        return ZR_FALSE;
+    }
+    if (ownershipIsWrapper &&
         !type_name_string_append(buffer, bufferSize, writeIndex, ">")) {
         return ZR_FALSE;
     }

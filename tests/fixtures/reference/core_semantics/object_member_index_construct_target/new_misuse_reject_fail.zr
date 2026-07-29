@@ -1,6 +1,4 @@
-%module "reference.construct.new_misuse";
-
-%test("new_misuse") {
+fn __fixture(): int {
     var bad = new int(1);
     return bad;
 }

@@ -291,7 +291,7 @@ static void test_lsp_missing_statement_body_open_parser_diagnostics(SZrState *st
                                        &timer,
                                        summary,
                                        "file:///parser_missing_using_body_open.zr",
-                                       "%using (resource)\nreturn resource;\n",
+                                       "using (resource)\nreturn resource;\n",
                                        "missing_statement_body_open",
                                        "Missing '{' to start using statement body",
                                        "Insert '{' after the using statement header",
@@ -354,7 +354,7 @@ static void test_lsp_missing_using_resource_close_parser_diagnostic(SZrState *st
                                        &timer,
                                        summary,
                                        "file:///parser_missing_using_resource_close.zr",
-                                       "%using (resource { return resource; }\n",
+                                       "using (resource { return resource; }\n",
                                        "missing_using_resource_close",
                                        "Missing closing ')' in using resource",
                                        "Insert ')' after the using resource before the using body",
@@ -378,7 +378,7 @@ static void test_lsp_using_binder_invalid_parser_diagnostic(SZrState *state) {
                                        "var resource = \"x\";\nusing (var 1 = resource) { var inner = 1; }\n",
                                        "using_binder_invalid",
                                        "invalid using guard binder",
-                                       "Use `using (var name = %import(...))`",
+                                       "Use `using (var name = import(...))`",
                                        "expected using-binder-invalid diagnostic to carry code, problem text, and suggestion")) {
         return;
     }
@@ -396,10 +396,10 @@ static void test_lsp_import_path_not_constant_parser_diagnostic(SZrState *state)
                                        &timer,
                                        summary,
                                        "file:///parser_import_path_not_constant.zr",
-                                       "var pluginName = \"zr.math\";\nusing (var plugin = %import(pluginName)) { var ok = 1; }\n",
+                                       "var pluginName = \"zr.math\";\nusing (var plugin = import(pluginName)) { var ok = 1; }\n",
                                        "import_path_not_constant",
-                                       "%import(...) requires a string literal module path",
-                                       "Use `%import(\"zr.module\")`",
+                                       "import(...) requires a string literal module path",
+                                       "Use `import(\"zr.module\")`",
                                        "expected import-path-not-constant diagnostic to carry code, problem text, and suggestion")) {
         return;
     }

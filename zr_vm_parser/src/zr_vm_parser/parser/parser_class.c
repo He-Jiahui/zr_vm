@@ -11,19 +11,12 @@ static TZrUInt32 class_member_allowed_modifier_flags(void) {
 static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
     SZrParserCursor cursor;
     EZrAstNodeType kind = ZR_AST_CLASS_METHOD;
-    TZrBool sawFieldUsingPrefix = ZR_FALSE;
 
     if (ps == ZR_NULL) {
         return ZR_AST_CLASS_METHOD;
     }
 
     save_parser_cursor(ps, &cursor);
-
-    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        sawFieldUsingPrefix = ZR_TRUE;
-    } else if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        parse_optional_method_receiver_qualifier(ps);
-    }
 
     while (ps->lexer->t.token == ZR_TK_SHARP) {
         parse_decorator_expression(ps);
@@ -36,14 +29,10 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
 
     parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
 
-    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        sawFieldUsingPrefix = ZR_TRUE;
-    }
-
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
         current_identifier_equals(ps, "property")) {
         kind = ZR_AST_PROPERTY_DECLARATION;
-    } else if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR ||
+    } else if (ps->lexer->t.token == ZR_TK_VAR ||
                ps->lexer->t.token == ZR_TK_LET) {
         kind = ZR_AST_CLASS_FIELD;
     } else if (ps->lexer->t.token == ZR_TK_CONST) {
@@ -180,7 +169,12 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
         EZrToken token = ps->lexer->t.token;
         TZrBool rejectedLegacyProperty = ZR_FALSE;
 
-        if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI ||
+        if (token == ZR_TK_PERCENT) {
+            report_removed_percent_syntax(ps);
+            break;
+        }
+
+        if (token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI ||
             token == ZR_TK_PRO || token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR || token == ZR_TK_LET || token == ZR_TK_ABSTRACT || token == ZR_TK_VIRTUAL ||
             token == ZR_TK_OVERRIDE || token == ZR_TK_FINAL || token == ZR_TK_SHADOW || token == ZR_TK_AT ||
@@ -195,22 +189,10 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
                     member = parse_class_field(ps);
                     break;
                 case ZR_AST_CLASS_PROPERTY:
-                    member = parse_class_property(ps);
-                    if (member == ZR_NULL ||
-                        !parser_property_migration_collection_append(
-                                ps->state,
-                                &legacyProperties,
-                                member)) {
-                        ZrParser_Ast_Free(ps->state, member);
-                        member = ZR_NULL;
-                        report_error(
-                                ps,
-                                "Failed to retain legacy property migration facts");
-                        rejectedLegacyProperty = ZR_FALSE;
-                        break;
-                    }
-                    member = ZR_NULL;
-                    rejectedLegacyProperty = ZR_TRUE;
+                    report_removed_legacy_syntax(
+                            ps,
+                            "split get/set property declaration",
+                            "Use one `property name: Type { get ...; set ...; }` declaration.");
                     break;
                 case ZR_AST_CLASS_META_FUNCTION:
                     member = parse_class_meta_function(ps);
@@ -310,14 +292,14 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token == ZR_TK_USING) {
-        report_error(ps, "Field-scoped '%using' is removed; write 'var field: %unique T' or 'var field: %shared T' so ownership lives in the field type");
+        report_error(ps, "Field-scoped 'using' is invalid; write `var field: Unique<T>` or `var field: Shared<T>` so ownership lives in the field type");
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
     }
 
-    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        report_error(ps, "Field-scoped '%using' is removed; write 'var field: %unique T' or 'var field: %shared T' so ownership lives in the field type");
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        report_removed_percent_syntax(ps);
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
@@ -338,10 +320,14 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
     if (!isConst && ps->lexer->t.token == ZR_TK_VAR) {
         ZrParser_Lexer_Next(ps->lexer);
 
-        // 如果 var 后面还有 const，也解析它（支持 var const 语法）
+        // `let` is the sole immutable binding spelling after the cutover.
         if (ps->lexer->t.token == ZR_TK_CONST) {
-            isConst = ZR_TRUE;
-            ZrParser_Lexer_Next(ps->lexer);
+            report_removed_legacy_syntax(
+                    ps,
+                    "var const class field",
+                    "Use `let field: Type = value;` for an immutable class field.");
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+            return ZR_NULL;
         }
     } else if (!isConst) {
         // 如果没有 const 也没有 var，期望 var 关键字
@@ -387,7 +373,7 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
     node->data.classField.decorators = decorators;
     node->data.classField.access = access;
     node->data.classField.isStatic = isStatic;
-    node->data.classField.isUsingManaged = ZR_FALSE;
+    node->data.classField.reservedRemovedUsingManaged = ZR_FALSE;
     node->data.classField.isConst = isConst;
     node->data.classField.name = name;
     node->data.classField.nameLocation = nameLoc;
@@ -407,7 +393,8 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     TZrBool isAsync = ZR_FALSE;
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        receiverQualifier = parse_optional_method_receiver_qualifier(ps);
+        report_removed_percent_syntax(ps);
+        return ZR_NULL;
     }
 
     // 解析装饰器（可选）
@@ -433,6 +420,12 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
 
     modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
 
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        report_removed_percent_syntax(ps);
+        free_ast_node_array_with_elements(ps->state, decorators);
+        return ZR_NULL;
+    }
+
     if (ps->lexer->t.token == ZR_TK_CONST) {
         receiverModifier = ZR_METHOD_RECEIVER_CONST;
         ZrParser_Lexer_Next(ps->lexer);
@@ -441,21 +434,24 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         }
     }
 
-    if (receiverQualifier == ZR_OWNERSHIP_QUALIFIER_NONE && ps->lexer->t.token == ZR_TK_PERCENT) {
-        receiverQualifier = parse_optional_method_receiver_qualifier(ps);
-    }
-
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "async") &&
         peek_token(ps) == ZR_TK_FN) {
         isAsync = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    if (ps->lexer->t.token == ZR_TK_FN) {
-        ZrParser_Lexer_Next(ps->lexer);
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
-        ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_FN) {
+        if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+            report_removed_legacy_syntax(ps, "func method", "Write `fn name(...): ReturnType { ... }`.");
+        } else {
+            report_removed_legacy_syntax(ps,
+                                         "keywordless method",
+                                         "Prefix the method declaration with `fn`.");
+        }
+        free_ast_node_array_with_elements(ps->state, decorators);
+        return ZR_NULL;
     }
+    ZrParser_Lexer_Next(ps->lexer);
 
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);

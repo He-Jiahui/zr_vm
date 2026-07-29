@@ -5,7 +5,7 @@ static void test_lsp_identical_content_update_reuses_snapshot_and_semantic_cache
         SZrState *state) {
     const TZrChar *summary = "LSP Identical Content Update Reuses Snapshot And Semantic Cache";
     const TZrChar *content =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1 + 2;\n"
             "}\n";
     SZrTestTimer timer;
@@ -109,11 +109,11 @@ static void test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(
         SZrState *state) {
     const TZrChar *summary = "LSP Changed Content Invalidates Snapshot And Semantic Cache";
     const TZrChar *initialContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1 + 2;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;
@@ -214,12 +214,12 @@ static void test_lsp_token_equivalent_comment_edit_reuses_semantic_snapshot(
         SZrState *state) {
     const TZrChar *summary = "LSP Token Equivalent Comment Edit Reuses Semantic Snapshot";
     const TZrChar *initialContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    // old note\n"
             "    return 1 + 2;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    // new note\n"
             "    return 1 + 2;\n"
             "}\n";
@@ -442,17 +442,17 @@ static void test_lsp_body_edit_records_minimal_change_and_declaration_scope(
         SZrState *state) {
     const TZrChar *summary = "LSP Body Edit Records Minimal Change And Declaration Scope";
     const TZrChar *initialContent =
-            "alpha(): int {\n"
+            "fn alpha(): int {\n"
             "    return 1 + 2;\n"
             "}\n"
-            "beta(): int {\n"
+            "fn beta(): int {\n"
             "    return 3;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "alpha(): int {\n"
+            "fn alpha(): int {\n"
             "    return 10 + 20;\n"
             "}\n"
-            "beta(): int {\n"
+            "fn beta(): int {\n"
             "    return 3;\n"
             "}\n";
     SZrTestTimer timer;
@@ -558,11 +558,11 @@ static void test_lsp_signature_edit_records_minimal_change_and_declaration_scope
         SZrState *state) {
     const TZrChar *summary = "LSP Signature Edit Records Minimal Change And Declaration Scope";
     const TZrChar *initialContent =
-            "compute(value: int): int {\n"
+            "fn compute(value: int): int {\n"
             "    return value;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "compute(value: float): int {\n"
+            "fn compute(value: float): int {\n"
             "    return value;\n"
             "}\n";
     SZrTestTimer timer;
@@ -661,18 +661,18 @@ static void test_lsp_top_level_insertion_records_module_change(
         SZrState *state) {
     const TZrChar *summary = "LSP Top Level Insertion Records Module Change";
     const TZrChar *initialContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1;\n"
             "}\n";
     const TZrChar *insertedDeclaration =
-            "added(): int {\n"
+            "fn added(): int {\n"
             "    return 0;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "added(): int {\n"
+            "fn added(): int {\n"
             "    return 0;\n"
             "}\n"
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1;\n"
             "}\n";
     SZrTestTimer timer;
@@ -755,15 +755,15 @@ static void test_lsp_fallback_ast_change_remains_module_scoped(
         SZrState *state) {
     const TZrChar *summary = "LSP Fallback AST Change Remains Module Scoped";
     const TZrChar *initialContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1;\n"
             "}\n";
     const TZrChar *invalidContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1 +;\n"
             "}\n";
     const TZrChar *recoveredContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1 + 2;\n"
             "}\n";
     SZrTestTimer timer;
@@ -818,11 +818,11 @@ static void test_lsp_non_monotonic_versions_are_rejected_before_semantic_work(
         SZrState *state) {
     const TZrChar *summary = "LSP Non-Monotonic Versions Are Rejected Before Semantic Work";
     const TZrChar *initialContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 1;\n"
             "}\n";
     const TZrChar *staleContent =
-            "compute(): int {\n"
+            "fn compute(): int {\n"
             "    return 2;\n"
             "}\n";
     SZrTestTimer timer;

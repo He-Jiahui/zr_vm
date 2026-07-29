@@ -142,11 +142,11 @@ static void test_aot_c_generated_shared_library_executes_generic_call_result_sta
     TEST_IGNORE_MESSAGE("AOT C generic call-result stack-copy equality smoke validates the Unix dlopen path");
 #else
     const char *source =
-            "func unsignedFortyTwo(): uint {\n"
+            "fn unsignedFortyTwo(): uint {\n"
             "    var value: uint = 42;\n"
             "    return value;\n"
             "}\n"
-            "func unsignedAlsoFortyTwo(): uint {\n"
+            "fn unsignedAlsoFortyTwo(): uint {\n"
             "    var value: uint = 42;\n"
             "    return value;\n"
             "}\n"

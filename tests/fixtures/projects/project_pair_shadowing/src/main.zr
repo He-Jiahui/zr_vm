@@ -1,5 +1,5 @@
-var local = %import("local_pair");
-var native = %import("native_imports");
+let local = import("local_pair");
+let native = import("native_imports");
 
 run(): int {
     return native.touch() + local.score();

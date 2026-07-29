@@ -8,7 +8,7 @@
 static TZrBool test_local_expression_query_propagates_reader_for_target_reading_symbolic_deeper_four_additional_level_sign_crossing_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"

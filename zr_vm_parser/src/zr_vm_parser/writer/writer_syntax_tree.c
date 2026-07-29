@@ -54,7 +54,6 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_FOR_LOOP: return "FOR_LOOP";
         case ZR_AST_FOREACH_LOOP: return "FOREACH_LOOP";
         case ZR_AST_LAMBDA_EXPRESSION: return "LAMBDA_EXPRESSION";
-        case ZR_AST_TEST_DECLARATION: return "TEST_DECLARATION";
         case ZR_AST_SWITCH_EXPRESSION: return "SWITCH_EXPRESSION";
         case ZR_AST_SWITCH_CASE: return "SWITCH_CASE";
         case ZR_AST_SWITCH_DEFAULT: return "SWITCH_DEFAULT";
@@ -425,35 +424,6 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
                 for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
                 fprintf(file, "body: ");
                 print_ast_node(state, file, lambda->block, indent + 1);
-            }
-            break;
-        }
-        case ZR_AST_TEST_DECLARATION: {
-            SZrTestDeclaration *test = &node->data.testDeclaration;
-            // 打印测试名称
-            if (test->name != ZR_NULL && test->name->name != ZR_NULL) {
-                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
-                fprintf(file, "name: ");
-                print_ast_node(state, file, (SZrAstNode *)test->name, indent + 1);
-            }
-            // 打印参数列表
-            if (test->params != ZR_NULL && test->params->count > 0) {
-                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
-                fprintf(file, "params (%zu):\n", test->params->count);
-                for (TZrSize i = 0; i < test->params->count; i++) {
-                    print_ast_node(state, file, test->params->nodes[i], indent + 2);
-                }
-            }
-            // 打印可变参数（如果有）
-            if (test->args != ZR_NULL) {
-                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
-                fprintf(file, "args: <parameter>\n");
-            }
-            // 打印函数体
-            if (test->body != ZR_NULL) {
-                for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
-                fprintf(file, "body: ");
-                print_ast_node(state, file, test->body, indent + 1);
             }
             break;
         }

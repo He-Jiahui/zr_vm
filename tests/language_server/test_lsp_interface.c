@@ -295,7 +295,7 @@ static void test_lsp_legacy_ownership_type_warning_preserves_current_ast(SZrStat
     SZrString *uri;
     const TZrChar *content =
         "struct Resource { }\n"
-        "var owner: %unique Resource;\n"
+        "var owner: Unique<Resource>;\n"
         "var after = 1;\n";
     SZrFileVersion *fileVersion;
     SZrSemanticAnalyzer *analyzer;
@@ -986,7 +986,7 @@ static void print_file_range(const char *label, SZrFileRange range) {
 }
 
 static const TZrChar *g_classes_full_fixture =
-    "module \"classes_full\";\n"
+    "module classes_full;\n"
     "\n"
     "class BaseHero {\n"
     "    pri var _hp: int = 0;\n"
@@ -1000,7 +1000,7 @@ static const TZrChar *g_classes_full_fixture =
     "        set { this._hp = value; }\n"
     "    }\n"
     "\n"
-    "    pub heal(amount: int): int {\n"
+    "    pub fn heal(amount: int): int {\n"
     "        this.hp = this.hp + amount;\n"
     "        return this.hp;\n"
     "    }\n"
@@ -1022,12 +1022,13 @@ static const TZrChar *g_classes_full_fixture =
     "        BossHero.created = BossHero.created + 1;\n"
     "    }\n"
     "\n"
-    "    pub total(): int {\n"
+    "    pub fn total(): int {\n"
     "        return this.hp + ScoreBoard.bonus + BossHero.created;\n"
     "    }\n"
     "}\n"
     "\n"
-    "%test(\"classesFullProjectShape\") {\n"
+    "#zr.testing.test#\n"
+    "fn classesFullProjectShape(): int {\n"
     "    var boss = new BossHero(30);\n"
     "    boss.hp = boss.hp + 7;\n"
     "    ScoreBoard.bonus = boss.heal(5);\n"
@@ -1035,7 +1036,7 @@ static const TZrChar *g_classes_full_fixture =
     "}\n";
 
 static const TZrChar *g_documentation_fixture =
-    "module \"documentation\";\n"
+    "module documentation;\n"
     "\n"
     "class ScoreBoard {\n"
     "    pri static var _bonus: int = 5;\n"
@@ -1047,7 +1048,8 @@ static const TZrChar *g_documentation_fixture =
     "    }\n"
     "}\n"
     "\n"
-    "%test(\"documentation\") {\n"
+    "#zr.testing.test#\n"
+    "fn documentation(): int {\n"
     "    return ScoreBoard.bonus;\n"
     "}\n";
 
@@ -2390,7 +2392,7 @@ static void test_lsp_project_encoded_uri_builtin_import_refresh_does_not_crash(S
     SZrLspHover *hover = ZR_NULL;
     TZrChar mainPath[1024];
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "return 1;\n";
 
     TEST_START("LSP Project Encoded URI Builtin Import Refresh Does Not Crash");
@@ -2930,18 +2932,18 @@ static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_
         "    pub set hp(v: int) {\n"
         "        this._hp = v;\n"
         "    }\n"
-        "    pub heal(amount: int): int {\n"
+        "    pub fn heal(amount: int): int {\n"
         "        this.hp = this.hp + amount;\n"
         "        return this.hp;\n"
         "    }\n"
         "}\n"
         "class BossHero: BaseHero {\n"
         "    pub @constructor(seed: int) super(seed) { }\n"
-        "    pub prepare(amount: int): int {\n"
+        "    pub fn prepare(amount: int): int {\n"
         "        this.hp = this.hp + amount;\n"
         "        return this.hp;\n"
         "    }\n"
-        "    pub afterBattle(amount: int): int {\n"
+        "    pub fn afterBattle(amount: int): int {\n"
         "        return this.heal(amount);\n"
         "    }\n"
         "}\n"
@@ -2951,7 +2953,7 @@ static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_
         "    return boss.afterBattle(battleAmount) + boss.heal(0);\n"
         "}\n"
         "pub var runBossScenario = runBossScenarioImpl;\n"
-        "useScenario(): int {\n"
+        "fn useScenario(): int {\n"
         "    return runBossScenario(30, 7, 5);\n"
         "}\n";
     SZrLspPosition callTargetPosition;
@@ -3078,7 +3080,7 @@ static void test_lsp_closed_generic_type_display_and_definition(SZrState *state)
         "}\n"
         "class Derived<T, const N: int> {\n"
         "}\n"
-        "func use(): void {\n"
+        "fn use(): void {\n"
         "    var value: Derived<Item, 2 + 2> = null;\n"
         "    value;\n"
         "}\n";
@@ -3170,9 +3172,9 @@ static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrSta
     const TZrChar *content =
         "class Matrix<T, const N: int> { }\n"
         "class Box<T> {\n"
-        "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+        "    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
         "}\n"
-        "func use(): void {\n"
+        "fn use(): void {\n"
         "    var box = new Box<int>();\n"
         "    var m = new Matrix<int, 2 + 2>();\n"
         "    box.shape(m);\n"
@@ -3267,12 +3269,12 @@ static void test_lsp_inlay_hints_surface_exact_inferred_types(SZrState *state) {
     const TZrChar *content =
         "class Matrix<T, const N: int> { }\n"
         "class Box<T> {\n"
-        "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+        "    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
         "}\n"
-        "func inferNumber() {\n"
+        "fn inferNumber() {\n"
         "    return 42;\n"
         "}\n"
-        "func use(): void {\n"
+        "fn use(): void {\n"
         "    var box = new Box<int>();\n"
         "    var m = new Matrix<int, 2 + 2>();\n"
         "    var shaped = box.shape(m);\n"
@@ -3423,7 +3425,7 @@ static void test_lsp_signature_help_and_completion_surface_exact_unannotated_ret
         "make(seed: int) {\n"
         "    return seed + 0;\n"
         "}\n"
-        "use(): void {\n"
+        "fn use(): void {\n"
         "    make(1);\n"
         "}\n";
     SZrLspPosition callPosition;
@@ -3581,10 +3583,10 @@ static void test_lsp_signature_help_ignores_comments_inside_call_arguments(SZrSt
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "use(): int {\n"
+        "fn use(): int {\n"
         "    var result = pick(/* pick(99) is prose */1);\n"
         "    return pick(result);\n"
         "}\n";
@@ -3998,7 +4000,7 @@ static void test_lsp_definition_resolves_decorator_target(SZrState *state) {
         "#singleton#\n"
         "class SingletonClass {\n"
         "    #trace#\n"
-        "    pub run(): int {\n"
+        "    pub fn run(): int {\n"
         "        return 1;\n"
         "    }\n"
         "}\n";
@@ -4200,7 +4202,7 @@ static void test_lsp_hover_ignores_meta_methods_in_non_code_text(SZrState *state
         "class Foo {\n"
         "    pub @constructor(seed: int) {\n"
         "    }\n"
-        "    pub run(): int {\n"
+        "    pub fn run(): int {\n"
         "        // @constructor is prose, not a meta method\n"
         "        var label = \"@constructor\";\n"
         "        return 1;\n"
@@ -4318,10 +4320,10 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "%extern(\"fixture\") {\n"
+        "native extern(\"fixture\") {\n"
         "    NativeAdd(lhs: i32, rhs: i32): i32;\n"
         "}\n"
-        "func use(): i32 {\n"
+        "fn use(): i32 {\n"
         "    var sum = NativeAdd(1, 2);\n"
         "    return NativeAdd(sum, 3);\n"
         "}\n";
@@ -4448,7 +4450,7 @@ static void test_lsp_extern_type_symbols_surface_hover_and_definition(SZrState *
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "%extern(\"fixture\") {\n"
+        "native extern(\"fixture\") {\n"
         "    delegate Callback(value: i32): void;\n"
         "    struct NativePoint {\n"
         "        var x: i32;\n"
@@ -4459,7 +4461,7 @@ static void test_lsp_extern_type_symbols_surface_hover_and_definition(SZrState *
         "        #zr.ffi.value(1)# On\n"
         "    }\n"
         "}\n"
-        "func apply(cb: Callback, point: NativePoint): Mode {\n"
+        "fn apply(cb: Callback, point: NativePoint): Mode {\n"
         "    return Mode.On;\n"
         "}\n";
     SZrLspPosition callbackDeclPosition;
@@ -4611,7 +4613,7 @@ static void test_lsp_extern_layout_hover_surfaces_ffi_metadata(SZrState *state) 
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "%extern(\"fixture\") {\n"
+        "native extern(\"fixture\") {\n"
         "    #zr.ffi.pack(8)#\n"
         "    #zr.ffi.align(16)#\n"
         "    struct NativePoint {\n"
@@ -4624,10 +4626,10 @@ static void test_lsp_extern_layout_hover_surfaces_ffi_metadata(SZrState *state) 
         "        #zr.ffi.value(1)# On\n"
         "    }\n"
         "}\n"
-        "func read(point: NativePoint): i32 {\n"
+        "fn read(point: NativePoint): i32 {\n"
         "    return point.y;\n"
         "}\n"
-        "func current(): Mode {\n"
+        "fn current(): Mode {\n"
         "    return Mode.On;\n"
         "}\n";
     SZrLspPosition pointUsePosition;
@@ -4755,15 +4757,15 @@ static void test_lsp_ffi_pointer_helpers_surface_extern_wrapper_types(SZrState *
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "%extern(\"fixture\") {\n"
+        "native extern(\"fixture\") {\n"
         "    struct NativePoint {\n"
         "        var x: i32;\n"
         "        #zr.ffi.offset(4)#\n"
         "        var y: i32;\n"
         "    }\n"
         "}\n"
-        "var ffi = %import(\"zr.ffi\");\n"
-        "func run(buffer: ffi.BufferHandle): i32 {\n"
+        "var ffi = import(\"zr.ffi\");\n"
+        "fn run(buffer: ffi.BufferHandle): i32 {\n"
         "    var bytePtr = buffer.pin();\n"
         "    var pointPtr = bytePtr.as({ kind: \"pointer\", to: NativePoint, direction: \"inout\" });\n"
         "    var pointValue = pointPtr.read(NativePoint);\n"
@@ -4896,22 +4898,22 @@ static void test_lsp_ffi_pointer_helpers_surface_extern_wrapper_types(SZrState *
     TEST_PASS(timer, "LSP FFI Pointer Helpers Surface Extern Wrapper Types");
 }
 
-static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *state) {
+static void test_lsp_completion_lists_current_keywords_and_meta_methods(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "%compileTime var sentinel = 1;\n"
+        "impo\n"
         "class Foo {\n"
         "    pub @constructor() { }\n"
         "}\n";
     SZrString *uri;
-    SZrLspPosition directivePosition;
+    SZrLspPosition keywordPosition;
     SZrLspPosition metaPosition;
     SZrArray completions;
 
-    TEST_START("LSP Completion Lists Directives And Meta Methods");
-    TEST_INFO("Directive/meta completion",
-              "Typing % or @ should offer reserved directives and meta method categories");
+    TEST_START("LSP Completion Lists Current Keywords And Meta Methods");
+    TEST_INFO("Keyword/meta completion",
+              "Typing a current keyword prefix or @ should offer current language forms and meta methods");
 
     context = ZrLanguageServer_LspContext_New(state);
     uri = ZrCore_String_Create(state,
@@ -4920,35 +4922,32 @@ static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *stat
     if (context == ZR_NULL || uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Completion Lists Directives And Meta Methods", "Failed to prepare completion source");
+        TEST_FAIL(timer, "LSP Completion Lists Current Keywords And Meta Methods", "Failed to prepare completion source");
         return;
     }
 
-    if (!lsp_find_position_for_substring(content, "%compileTime", 0, 1, &directivePosition)) {
+    if (!lsp_find_position_for_substring(content, "impo", 0, 4, &keywordPosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Completion Lists Directives And Meta Methods", "Failed to compute directive completion position");
+        TEST_FAIL(timer, "LSP Completion Lists Current Keywords And Meta Methods", "Failed to compute keyword completion position");
         return;
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
-    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, directivePosition, &completions) ||
-        !completion_array_contains_label(&completions, "%import") ||
-        !completion_array_contains_label(&completions, "%compileTime") ||
-        !completion_array_contains_label(&completions, "%test") ||
-        !completion_array_contains_label(&completions, "%extern") ||
-        !completion_array_contains_label(&completions, "%type")) {
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, keywordPosition, &completions) ||
+        !completion_array_contains_label(&completions, "import") ||
+        completion_array_contains_label(&completions, "import")) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
-                  "LSP Completion Lists Directives And Meta Methods",
-                  "Expected % completion to list language directives");
+                  "LSP Completion Lists Current Keywords And Meta Methods",
+                  "Expected current keyword completion to list import without legacy directives");
         return;
     }
     ZrCore_Array_Free(state, &completions);
 
     if (!lsp_find_position_for_substring(content, "@constructor", 0, 1, &metaPosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Completion Lists Directives And Meta Methods", "Failed to compute meta completion position");
+        TEST_FAIL(timer, "LSP Completion Lists Current Keywords And Meta Methods", "Failed to compute meta completion position");
         return;
     }
 
@@ -4962,23 +4961,23 @@ static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *stat
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
-                  "LSP Completion Lists Directives And Meta Methods",
+                  "LSP Completion Lists Current Keywords And Meta Methods",
                   "Expected @ completion to list lifecycle and operator meta methods");
         return;
     }
 
     ZrCore_Array_Free(state, &completions);
     ZrLanguageServer_LspContext_Free(state, context);
-    TEST_PASS(timer, "LSP Completion Lists Directives And Meta Methods");
+    TEST_PASS(timer, "LSP Completion Lists Current Keywords And Meta Methods");
 }
 
 static void test_lsp_completion_ignores_token_prefixes_in_non_code_text(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "func run(): int {\n"
+        "fn run(): int {\n"
         "    // @constructor is prose, not a meta method\n"
-        "    var label = \"%compileTime is prose, not a directive\";\n"
+        "    var label = \"comptime is prose, not a directive\";\n"
         "    return 1;\n"
         "}\n";
     SZrString *uri;
@@ -4997,7 +4996,7 @@ static void test_lsp_completion_ignores_token_prefixes_in_non_code_text(SZrState
     if (context == ZR_NULL || uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
         !lsp_find_position_for_substring(content, "@constructor is prose", 0, 1, &commentMetaPosition) ||
-        !lsp_find_position_for_substring(content, "%compileTime is prose", 0, 1, &stringDirectivePosition)) {
+        !lsp_find_position_for_substring(content, "comptime is prose", 0, 1, &stringDirectivePosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Completion Ignores Token Prefixes In Non Code Text",
@@ -5038,7 +5037,7 @@ static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZ
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "func run(seed: int): int {\n"
+        "fn run(seed: int): int {\n"
         "    var result = seed + 1;\n"
         "    return result;\n"
         "}\n";
@@ -5173,7 +5172,7 @@ static void test_lsp_hover_includes_local_reference_fact_payload(SZrState *state
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "func run(seed: int): int {\n"
+        "fn run(seed: int): int {\n"
         "    var result = seed + 1;\n"
         "    return result;\n"
         "}\n";
@@ -5233,7 +5232,7 @@ static void test_lsp_local_semantic_query_returns_expression_fact(SZrState *stat
     SZrString *uri;
     const TZrChar *uriText = "file:///local_semantic_expression_fact.zr";
     const TZrChar *content =
-        "func run(): int {\n"
+        "fn run(): int {\n"
         "    return 1 + 2;\n"
         "}\n";
     SZrLspPosition expressionPosition;
@@ -5489,7 +5488,7 @@ static void test_lsp_semantic_query_resolves_native_import_member_source_kind(SZ
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var ffi = %import(\"zr.ffi\");\n"
+        "var ffi = import(\"zr.ffi\");\n"
         "var buffer = ffi.BufferHandle.allocate(8);\n";
     SZrLspPosition memberPosition;
     SZrLspSemanticQuery query;
@@ -5542,7 +5541,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     SZrString *uri;
     SZrString *consoleModuleUri = ZR_NULL;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "run() {\n"
         "    /* \xCE\xBB */ system.console.printLine(\"one\");\n"
         "    return /* \xCE\xBB */ system.console.printLine(\"two\");\n"
@@ -5664,7 +5663,7 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "/* \xCE\xBB */ var system = %import(\"zr.system\");\n"
+        "/* \xCE\xBB */ var system = import(\"zr.system\");\n"
         "run() {\n"
         "    return system.clockTicks();\n"
         "}\n";
@@ -5713,7 +5712,7 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Unifies Import Target Navigation",
-                  "Structured semantic query should resolve %import literals as imported module targets with the native builtin source kind");
+                  "Structured semantic query should resolve import literals as imported module targets with the native builtin source kind");
         return;
     }
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
@@ -5808,7 +5807,7 @@ static void test_lsp_native_declaration_document_renders_virtual_zr_source(SZrSt
 
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
-        strstr(renderedText, "%extern(\"zr.container\")") == ZR_NULL ||
+        strstr(renderedText, "native extern(\"zr.container\")") == ZR_NULL ||
         strstr(renderedText, "pub class Array<T>") == ZR_NULL ||
         strstr(renderedText, "pub var length: int;") == ZR_NULL ||
         strstr(renderedText, "pub @constructor") == ZR_NULL) {
@@ -5857,7 +5856,7 @@ static void test_lsp_native_console_virtual_document_prefers_descriptor_signatur
 
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
-        strstr(renderedText, "%extern(\"zr.system.console\")") == ZR_NULL ||
+        strstr(renderedText, "native extern(\"zr.system.console\")") == ZR_NULL ||
         strstr(renderedText, "pub print(value: any): null;") == ZR_NULL ||
         strstr(renderedText, "pub printLine(value: any): null;") == ZR_NULL ||
         strstr(renderedText, "pub readLine(): string?;") == ZR_NULL ||
@@ -5958,7 +5957,7 @@ static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrSt
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var container = %import(\"zr.container\");\n"
+        "var container = import(\"zr.container\");\n"
         "run() {\n"
         "    return container;\n"
         "}\n";
@@ -6012,7 +6011,7 @@ static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_imp
     SZrString *documentText = ZR_NULL;
     const TZrChar *renderedText;
     const TZrChar *importContent =
-        "var tcpLeaf = %import(\"zr.network.tcp\");\n"
+        "var tcpLeaf = import(\"zr.network.tcp\");\n"
         "run() {\n"
         "    return tcpLeaf;\n"
         "}\n";
@@ -6021,7 +6020,7 @@ static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_imp
 
     TEST_START("LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI");
     TEST_INFO("zr.network.tcp leaf module",
-              "Leaf module zr.network.tcp should render a zr-decompiled virtual document and %import should navigate to the same URI (moduleLinks / dotted native name).");
+              "Leaf module zr.network.tcp should render a zr-decompiled virtual document and import should navigate to the same URI (moduleLinks / dotted native name).");
 
     context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
@@ -6046,7 +6045,7 @@ static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_imp
 
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
-        strstr(renderedText, "%extern(\"zr.network.tcp\")") == ZR_NULL ||
+        strstr(renderedText, "native extern(\"zr.network.tcp\")") == ZR_NULL ||
         strstr(renderedText, "listen") == ZR_NULL ||
         strstr(renderedText, "TcpListener") == ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
@@ -6074,7 +6073,7 @@ static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_imp
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI",
-                  "Expected goto definition on %import(\"zr.network.tcp\") to include zr-decompiled:/zr.network.tcp.zr");
+                  "Expected goto definition on import(\"zr.network.tcp\") to include zr-decompiled:/zr.network.tcp.zr");
         return;
     }
 
@@ -6088,8 +6087,8 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var task = %import(\"zr.task\");\n"
-        "var thread = %import(\"zr.thread\");\n"
+        "var task = import(\"zr.task\");\n"
+        "var thread = import(\"zr.thread\");\n"
         "run() {\n"
         "    var pending = task.spawn;\n"
         "    return thread.spawnThread;\n"
@@ -6134,7 +6133,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Auto Registers Linked Native Libraries For Import Metadata",
-                  "Hover on %import(\"zr.task\") should resolve through auto-registered native builtin metadata");
+                  "Hover on import(\"zr.task\") should resolve through auto-registered native builtin metadata");
         return;
     }
 
@@ -6145,7 +6144,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Auto Registers Linked Native Libraries For Import Metadata",
-                  "Goto definition on %import(\"zr.thread\") should resolve through the auto-registered zr-decompiled virtual document");
+                  "Goto definition on import(\"zr.thread\") should resolve through the auto-registered zr-decompiled virtual document");
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -6174,7 +6173,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
     }
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
-        strstr(renderedText, "%extern(\"zr.task\")") == ZR_NULL ||
+        strstr(renderedText, "native extern(\"zr.task\")") == ZR_NULL ||
         strstr(renderedText, "pub interface Scheduler") == ZR_NULL ||
         strstr(renderedText, "pub class Task<T>") == ZR_NULL ||
         strstr(renderedText, "pub class Job<T>") == ZR_NULL ||
@@ -6200,7 +6199,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
     }
     renderedText = test_string_ptr(documentText);
     if (renderedText == ZR_NULL ||
-        strstr(renderedText, "%extern(\"zr.thread\")") == ZR_NULL ||
+        strstr(renderedText, "native extern(\"zr.thread\")") == ZR_NULL ||
         strstr(renderedText, "pub class ThreadScheduler") == ZR_NULL ||
         strstr(renderedText, "schedule(job: zr.task.Job<T>): zr.task.Task<T>") == ZR_NULL ||
         strstr(renderedText, "spawnThread") != ZR_NULL) {
@@ -6218,10 +6217,10 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
 static void test_lsp_scheduler_contract_resolves_source_call_from_canonical_artifact(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *artifactSource =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "var task = import(\"zr.task\");\n"
+            "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrFunction *function = ZR_NULL;
@@ -6613,15 +6612,15 @@ static void test_lsp_semantic_query_collects_receiver_completion_items(SZrState 
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var math = %import(\"zr.math\");\n"
-        "run() {\n"
-        "    var vector = $math.Vector3(4.0, 5.0, 6.0);\n"
+        "var math = import(\"zr.math\");\n"
+        "fn run() {\n"
+        "    var vector = init math.Vector3(4.0, 5.0, 6.0);\n"
         "    return vector.;\n"
         "}\n";
     const TZrChar *initialContent =
-        "var math = %import(\"zr.math\");\n"
-        "run() {\n"
-        "    var vector = $math.Vector3(4.0, 5.0, 6.0);\n"
+        "var math = import(\"zr.math\");\n"
+        "fn run() {\n"
+        "    var vector = init math.Vector3(4.0, 5.0, 6.0);\n"
         "    return vector;\n"
         "}\n";
     SZrLspPosition completionPosition;
@@ -6864,7 +6863,7 @@ static void test_lsp_semantic_query_collects_import_module_completion_items(SZrS
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "run() {\n"
         "    return system.console;\n"
         "}\n";
@@ -6919,7 +6918,7 @@ static void test_lsp_semantic_query_collects_import_chain_completion_items(SZrSt
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "run() {\n"
         "    return system.console.;\n"
         "}\n";
@@ -6974,7 +6973,7 @@ static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state)
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "run() {\n"
         "    system.console.printLine(\"x\");\n"
         "}\n";
@@ -7028,9 +7027,9 @@ static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *sta
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "run() {\n"
-        "    var text = `%import(\"zr.math\") @constructor #trace# system.console.printLine`;\n"
+        "    var text = `import(\"zr.math\") @constructor #trace# system.console.printLine`;\n"
         "    return system;\n"
         "}\n";
     SZrLspPosition realImportPosition;
@@ -7056,8 +7055,8 @@ static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *sta
                                strlen("file:///semantic_tokens_template_string.zr"));
     if (uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !lsp_find_position_for_substring(content, "%import", 0, 0, &realImportPosition) ||
-        !lsp_find_position_for_substring(content, "%import", 1, 0, &templateImportPosition) ||
+        !lsp_find_position_for_substring(content, "import", 0, 0, &realImportPosition) ||
+        !lsp_find_position_for_substring(content, "import", 1, 0, &templateImportPosition) ||
         !lsp_find_position_for_substring(content, "@constructor", 0, 0, &templateMetaMethodPosition) ||
         !lsp_find_position_for_substring(content, "#trace#", 0, 0, &templateDecoratorPosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
@@ -7086,7 +7085,7 @@ static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *sta
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Tokens Ignore Template String Tokens",
-                  "Real %import directive should still be classified as a keyword token");
+                  "Real import directive should still be classified as a keyword token");
         return;
     }
 
@@ -7123,9 +7122,9 @@ static void test_lsp_semantic_query_builds_native_receiver_member_hover(SZrState
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "var math = %import(\"zr.math\");\n"
-        "runImpl() {\n"
-        "    return $math.Vector3(4.0, 5.0, 6.0).y;\n"
+        "var math = import(\"zr.math\");\n"
+        "fn runImpl() {\n"
+        "    return init math.Vector3(4.0, 5.0, 6.0).y;\n"
         "}\n";
     SZrLspPosition hoverPosition;
     SZrLspSemanticQuery query;
@@ -7133,7 +7132,7 @@ static void test_lsp_semantic_query_builds_native_receiver_member_hover(SZrState
 
     TEST_START("LSP Semantic Query Builds Native Receiver Member Hover");
     TEST_INFO("Structured native receiver hover",
-              "Hover on $module.Type(...).member should resolve through the shared semantic query instead of interface markdown fallback");
+              "Hover on init module.Type(...).member should resolve through the shared semantic query instead of interface markdown fallback");
 
     context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
@@ -7427,8 +7426,8 @@ static void test_lsp_hover_prefers_nearest_shadowed_foreach_binding(SZrState *st
     SZrLspContext *context = ZR_NULL;
     SZrString *uri = ZR_NULL;
     const TZrChar *content =
-        "var container = %import(\"zr.container\");\n"
-        "probe(): void {\n"
+        "var container = import(\"zr.container\");\n"
+        "fn probe(): void {\n"
         "    var ints = new container.Array<int>();\n"
         "    var texts = new container.Array<string>();\n"
         "    for (var item in ints) {\n"
@@ -7867,7 +7866,7 @@ int main(void) {
     test_lsp_ffi_pointer_helpers_surface_extern_wrapper_types(state);
     TEST_DIVIDER();
 
-    test_lsp_completion_lists_directives_and_meta_methods(state);
+    test_lsp_completion_lists_current_keywords_and_meta_methods(state);
     TEST_DIVIDER();
 
     test_lsp_completion_ignores_token_prefixes_in_non_code_text(state);

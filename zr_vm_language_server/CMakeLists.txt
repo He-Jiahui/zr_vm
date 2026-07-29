@@ -107,6 +107,7 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_language_server
         ${CMAKE_SOURCE_DIR}/zr_vm_core/include
         ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+        ${CMAKE_SOURCE_DIR}/zr_vm_library/include
         ${CMAKE_SOURCE_DIR}/zr_vm_common/include
     )
 

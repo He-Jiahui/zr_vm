@@ -688,6 +688,41 @@ static void test_syntax_reference_v1_formatted_and_minified_current_source_have_
     free(formatted);
 }
 
+static void syntax_reference_assert_current_source_compiles(
+        const TZrChar *relativePath) {
+    TZrSize sourceLength = 0u;
+    TZrChar *source = read_syntax_reference_project_file(
+            relativePath,
+            &sourceLength);
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_TRUE(sourceLength > 0u);
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, relativePath, strlen(relativePath));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    function = ZrParser_Compiler_Compile(state, ast);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, relativePath);
+
+    ZrCore_Function_Free(state, function);
+    ZrParser_Ast_Free(state, ast);
+    ZrTests_Runtime_State_Destroy(state);
+    free(source);
+}
+
+static void test_syntax_reference_v1_gcbox_bridge_compiles_with_its_declared_type(void) {
+    syntax_reference_assert_current_source_compiles("src/ownership.zr");
+}
+
+static void test_syntax_reference_v1_callable_parameter_retains_its_exact_signature(void) {
+    syntax_reference_assert_current_source_compiles("src/callables.zr");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_syntax_reference_v1_manifest_enumerates_stable_feature_ids);
@@ -697,5 +732,7 @@ int main(void) {
     RUN_TEST(test_syntax_reference_v1_pending_expression_arrow_preserves_its_target_syntax);
     RUN_TEST(test_syntax_reference_v1_preserves_provider_identity_without_host_paths);
     RUN_TEST(test_syntax_reference_v1_formatted_and_minified_current_source_have_identical_ast_and_semantic_hashes);
+    RUN_TEST(test_syntax_reference_v1_gcbox_bridge_compiles_with_its_declared_type);
+    RUN_TEST(test_syntax_reference_v1_callable_parameter_retains_its_exact_signature);
     return UNITY_END();
 }

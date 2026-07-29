@@ -1954,8 +1954,8 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
                 !compiler_expression_is_assignable_storage_location(argNode)) {
                 ZrParser_Compiler_Error(cs,
                                         *passingMode == ZR_PARAMETER_PASSING_MODE_OUT ?
-                                                "%out argument must be an assignable storage location" :
-                                                "%ref argument must be an assignable storage location",
+                                                "out argument must be an assignable storage location" :
+                                                "ref argument must be an assignable storage location",
                                         argNode->location);
                 return ZR_FALSE;
             }
@@ -2328,8 +2328,8 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
                 !compiler_expression_is_assignable_storage_location(argNode)) {
                 ZrParser_Compiler_Error(cs,
                                         passingMode == ZR_PARAMETER_PASSING_MODE_OUT
-                                                ? "%out argument must be an assignable storage location"
-                                                : "%ref argument must be an assignable storage location",
+                                                ? "out argument must be an assignable storage location"
+                                                : "ref argument must be an assignable storage location",
                                         argNode->location);
                 goto cleanup;
             }
@@ -2356,8 +2356,8 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
         if (passingMode == ZR_PARAMETER_PASSING_MODE_OUT || passingMode == ZR_PARAMETER_PASSING_MODE_REF) {
             ZrParser_Compiler_Error(cs,
                                     passingMode == ZR_PARAMETER_PASSING_MODE_OUT
-                                            ? "Missing %out member argument"
-                                            : "Missing %ref member argument",
+                                            ? "Missing out member argument"
+                                            : "Missing ref member argument",
                                     callLocation);
             goto cleanup;
         }
@@ -2517,8 +2517,8 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
                 !compiler_expression_is_assignable_storage_location(argNode)) {
                 ZrParser_Compiler_Error(cs,
                                         *passingMode == ZR_PARAMETER_PASSING_MODE_OUT
-                                                ? "%out argument must be an assignable storage location"
-                                                : "%ref argument must be an assignable storage location",
+                                                ? "out argument must be an assignable storage location"
+                                                : "ref argument must be an assignable storage location",
                                         argNode->location);
                 return ZR_FALSE;
             }
@@ -3357,7 +3357,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
 
             if (rootIsTypeReference) {
                 ZrParser_Compiler_Error(cs,
-                                        "Prototype references are not callable; use $target(...) or new target(...)",
+                                        "Prototype references are not callable; use init Type(...) for values or new Type(...) for GC classes",
                                         member->location);
                 free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                 free_resolved_call_signature(cs->state, &resolvedMemberSignature);

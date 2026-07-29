@@ -8,7 +8,7 @@ union PaymentResult {
     Err(error: int);
 }
 
-using (var catalog = %import("catalog")) {
+using (var catalog = import("catalog")) {
     var order: OrderState = OrderState.Ready {
         subtotal: catalog.baseSubtotal(),
         tax: catalog.taxAmount(),

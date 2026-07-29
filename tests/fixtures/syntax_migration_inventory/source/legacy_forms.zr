@@ -24,6 +24,8 @@ let info = %type(Handle);
 func oldStyle(value: int) -> int { return value; }
 keywordless(value: int) -> int { return value; }
 let callback: (int)=>int;
+let oldLambda = (value: int)=>{ return value; };
+let wrongArrowLambda = fn(value: int)->{ return value; };
 let staticConstructed = $Point(1);
 let dynamicConstructed = $(prototype)(1);
 Point(1);

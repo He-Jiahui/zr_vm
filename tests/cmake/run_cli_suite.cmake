@@ -503,7 +503,7 @@ cli_case_matches_tier("smoke;core;stress" run_inline_code)
 if (run_inline_code)
     message("---- inline_code_run")
     set(cli_inline_code [=[
-var system = %import("zr.system");
+let system = import("zr.system");
 var index = 0;
 for (var item in system.process.arguments) {
     if (index == 0) {
@@ -537,7 +537,7 @@ cli_case_matches_tier("smoke;core;stress" run_inline_code_eval_alias)
 if (run_inline_code_eval_alias)
     message("---- inline_code_eval_alias")
     set(cli_inline_eval_code [=[
-var system = %import("zr.system");
+let system = import("zr.system");
 var index = 0;
 for (var item in system.process.arguments) {
     if (index == 0) {
@@ -834,14 +834,14 @@ if (run_incremental_cleanup)
     message("---- incremental_cleanup")
     cli_copy_fixture("import_basic" cleanup_dir)
     cli_write_file("${cleanup_dir}/src/old.zr" "return 11;\n")
-    cli_write_file("${cleanup_dir}/src/main.zr" "var greetModule = %import(\"greet\");\nvar oldModule = %import(\"old\");\nreturn greetModule() + oldModule();\n")
+    cli_write_file("${cleanup_dir}/src/main.zr" "let greetModule = import(\"greet\");\nlet oldModule = import(\"old\");\nreturn greetModule() + oldModule();\n")
     file(REMOVE_RECURSE "${cleanup_dir}/bin")
     cli_run("cleanup_initial" cleanup_initial_output cleanup_initial_result "${CLI_EXE}" "--compile" "${cleanup_dir}/import_basic.zrp" "--incremental")
     cli_assert_success("cleanup_initial" cleanup_initial_result cleanup_initial_output)
     if (NOT EXISTS "${cleanup_dir}/bin/old.zro")
         message(FATAL_ERROR "cleanup_initial did not create old.zro")
     endif()
-    cli_write_file("${cleanup_dir}/src/main.zr" "var greetModule = %import(\"greet\");\nreturn greetModule();\n")
+    cli_write_file("${cleanup_dir}/src/main.zr" "let greetModule = import(\"greet\");\nreturn greetModule();\n")
     cli_run("cleanup_second" cleanup_second_output cleanup_second_result "${CLI_EXE}" "--compile" "${cleanup_dir}/import_basic.zrp" "--incremental")
     cli_assert_success("cleanup_second" cleanup_second_result cleanup_second_output)
     cli_assert_contains("cleanup_second" cleanup_second_output "removed=1")
@@ -1025,7 +1025,7 @@ if (run_interactive_after_run)
     cli_copy_fixture("cli_args" cli_args_interactive_dir)
     set(interactive_after_run_input_file "${CLI_SUITE_ROOT}/interactive_after_run_input.txt")
     file(WRITE "${interactive_after_run_input_file}"
-        "var system = %import(\"zr.system\");\n"
+        "let system = import(\"zr.system\");\n"
         "var first = \"\";\n"
         "for (var item in system.process.arguments) {\n"
         "    first = item;\n"
@@ -1059,7 +1059,7 @@ if (run_compile_interactive_after_run)
     cli_copy_fixture("cli_args" cli_args_compile_interactive_dir)
     set(compile_interactive_after_run_input_file "${CLI_SUITE_ROOT}/compile_interactive_after_run_input.txt")
     file(WRITE "${compile_interactive_after_run_input_file}"
-        "var system = %import(\"zr.system\");\n"
+        "let system = import(\"zr.system\");\n"
         "var first = \"\";\n"
         "for (var item in system.process.arguments) {\n"
         "    first = item;\n"
@@ -1092,7 +1092,7 @@ cli_case_matches_tier("core;stress" run_repl_native_import)
 if (run_repl_native_import)
     message("---- repl_native_import")
     set(repl_native_import_input_file "${CLI_SUITE_ROOT}/repl_native_import_input.txt")
-    file(WRITE "${repl_native_import_input_file}" "var s = %import(\"zr.system\");\ns.console.print(\"xxx\");\n\n:quit\n")
+    file(WRITE "${repl_native_import_input_file}" "let s = import(\"zr.system\");\ns.console.print(\"xxx\");\n\n:quit\n")
     execute_process(
         COMMAND "${CLI_EXE}"
         INPUT_FILE "${repl_native_import_input_file}"
@@ -1116,7 +1116,7 @@ if (run_repl_runtime_error)
     message("---- repl_runtime_error")
     set(repl_runtime_error_input_file "${CLI_SUITE_ROOT}/repl_runtime_error_input.txt")
     file(WRITE "${repl_runtime_error_input_file}"
-        "var system = %import(\"zr.system\");\n"
+        "let system = import(\"zr.system\");\n"
         "system.s.console.print(\"xxx\");\n"
         "\n"
         ":quit\n")

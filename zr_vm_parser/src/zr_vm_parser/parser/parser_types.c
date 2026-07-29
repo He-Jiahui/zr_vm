@@ -19,42 +19,6 @@ static SZrAstNode *create_type_node_from_type_info(SZrParserState *ps, SZrType *
     return typeNode;
 }
 
-static TZrBool parse_decorator_pseudo_type_annotation(SZrParserState *ps, SZrType **outType, TZrBool noGeneric) {
-    SZrType *innerType;
-
-    if (outType != ZR_NULL) {
-        *outType = ZR_NULL;
-    }
-
-    if (ps == ZR_NULL || outType == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        ZrParser_Lexer_Next(ps->lexer);
-    }
-
-    if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "type")) {
-        report_error(ps, "Expected ownership qualifier after '%' in type annotation");
-        return ZR_FALSE;
-    }
-
-    ZrParser_Lexer_Next(ps->lexer);
-    innerType = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
-    if (innerType == ZR_NULL) {
-        report_error(ps, "Expected decorator reflection target after '%type' in type annotation");
-        return ZR_FALSE;
-    }
-
-    innerType->isDecoratorPseudoType = ZR_TRUE;
-    *outType = innerType;
-    return ZR_TRUE;
-}
-
-static SZrType *parse_task_inner_type(SZrParserState *ps, TZrBool noGeneric) {
-    return noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
-}
-
 static TZrBool current_identifier_is_specific_owner_constraint(SZrParserState *ps,
                                                                EZrOwnershipQualifier *qualifier) {
     if (qualifier != ZR_NULL) {
@@ -112,42 +76,6 @@ static SZrType *allocate_empty_type_info(SZrParserState *ps) {
     return type;
 }
 
-static const TZrChar *ownership_generic_wrapper_name(EZrOwnershipQualifier qualifier) {
-    switch (qualifier) {
-        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return "Unique";
-        case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return "Shared";
-        case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "Weak";
-        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return "Borrow";
-        case ZR_OWNERSHIP_QUALIFIER_LOANED:
-            return "Loan";
-        case ZR_OWNERSHIP_QUALIFIER_NONE:
-        default:
-            return ZR_NULL;
-    }
-}
-
-static const TZrChar *ownership_legacy_qualifier_name(EZrOwnershipQualifier qualifier) {
-    switch (qualifier) {
-        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return "%unique";
-        case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return "%shared";
-        case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "%weak";
-        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return "%borrow";
-        case ZR_OWNERSHIP_QUALIFIER_LOANED:
-            return "%loan";
-        case ZR_OWNERSHIP_QUALIFIER_NONE:
-        default:
-            return "%ownership";
-    }
-}
-
 static TZrBool try_get_ownership_generic_qualifier(SZrString *name, EZrOwnershipQualifier *qualifier) {
     if (qualifier == ZR_NULL) {
         return ZR_FALSE;
@@ -170,15 +98,6 @@ static TZrBool try_get_ownership_generic_qualifier(SZrString *name, EZrOwnership
         *qualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
         return ZR_TRUE;
     }
-    if (zr_string_equals_literal(name, "Borrow")) {
-        *qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
-        return ZR_TRUE;
-    }
-    if (zr_string_equals_literal(name, "Loan")) {
-        *qualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
-        return ZR_TRUE;
-    }
-
     return ZR_FALSE;
 }
 
@@ -211,59 +130,6 @@ static SZrAstNode *create_task_wrapper_identifier(SZrParserState *ps,
     }
 
     return create_identifier_node_with_location(ps, value, location);
-}
-
-static SZrType *wrap_type_in_task_generic(SZrParserState *ps,
-                                          SZrType *innerType,
-                                          const TZrChar *wrapperName,
-                                          SZrFileRange location) {
-    SZrAstNode *typeArgumentNode;
-    SZrAstNodeArray *genericArguments;
-    SZrAstNode *nameNode;
-    SZrAstNode *genericNode;
-    SZrType *wrappedType;
-
-    if (ps == ZR_NULL || innerType == ZR_NULL || wrapperName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    typeArgumentNode = create_type_node_from_type_info(ps, innerType, location);
-    if (typeArgumentNode == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    genericArguments = ZrParser_AstNodeArray_New(ps->state, 1);
-    if (genericArguments == ZR_NULL) {
-        ZrParser_Ast_Free(ps->state, typeArgumentNode);
-        return ZR_NULL;
-    }
-    ZrParser_AstNodeArray_Add(ps->state, genericArguments, typeArgumentNode);
-
-    nameNode = create_task_wrapper_identifier(ps, wrapperName, location);
-    if (nameNode == ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, genericArguments);
-        return ZR_NULL;
-    }
-
-    genericNode = create_ast_node(ps, ZR_AST_GENERIC_TYPE, location);
-    if (genericNode == ZR_NULL) {
-        ZrParser_Ast_Free(ps->state, nameNode);
-        ZrParser_AstNodeArray_Free(ps->state, genericArguments);
-        return ZR_NULL;
-    }
-
-    genericNode->data.genericType.name = &nameNode->data.identifier;
-    genericNode->data.genericType.params = genericArguments;
-
-    wrappedType = allocate_empty_type_info(ps);
-    if (wrappedType == ZR_NULL) {
-        ZrParser_Ast_Free(ps->state, genericNode);
-        return ZR_NULL;
-    }
-
-    wrappedType->name = genericNode;
-    wrappedType->isImplicitBuiltinType = ZR_TRUE;
-    return wrappedType;
 }
 
 static SZrType *wrap_type_in_task_identifier(SZrParserState *ps,
@@ -337,23 +203,8 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
     }
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        ZrParser_Lexer_Next(ps->lexer);
-        if (ps->lexer->t.token == ZR_TK_IN) {
-            passingMode = ZR_PARAMETER_PASSING_MODE_IN;
-            sourceForm = ZR_PARAMETER_SOURCE_IN;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_OUT) {
-            passingMode = ZR_PARAMETER_PASSING_MODE_OUT;
-            sourceForm = ZR_PARAMETER_SOURCE_OUT;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_REF) {
-            passingMode = ZR_PARAMETER_PASSING_MODE_REF;
-            sourceForm = ZR_PARAMETER_SOURCE_REF;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else {
-            report_error(ps, "Expected 'in', 'out' or 'ref' after '%' in function type parameter");
-            return ZR_NULL;
-        }
+        report_removed_percent_syntax(ps);
+        return ZR_NULL;
     }
 
     if (ps->lexer->t.token == ZR_TK_CONST) {
@@ -476,8 +327,7 @@ static SZrAstNodeArray *parse_function_type_parameter_list(SZrParserState *ps, T
 static SZrType *parse_function_type(
         SZrParserState *ps,
         TZrBool noGeneric,
-        SZrFileRange startLoc,
-        TZrBool allowLegacyFatArrow) {
+        SZrFileRange startLoc) {
     SZrGenericDeclaration *generic = ZR_NULL;
     SZrAstNodeArray *params = ZR_NULL;
     SZrParameter *args = ZR_NULL;
@@ -551,8 +401,18 @@ static SZrType *parse_function_type(
         return ZR_NULL;
     }
 
-    if (ps->lexer->t.token != ZR_TK_THIN_ARROW &&
-        !(allowLegacyFatArrow && ps->lexer->t.token == ZR_TK_FAT_ARROW)) {
+    if (ps->lexer->t.token == ZR_TK_FAT_ARROW) {
+        report_removed_legacy_syntax(ps,
+                                     "function type fat arrow",
+                                     "Write callable types as `fn(...) -> ReturnType`.");
+        if (argsNode != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, argsNode);
+        }
+        free_ast_node_array_with_elements(ps->state, params);
+        free_generic_declaration(ps->state, generic);
+        return ZR_NULL;
+    }
+    if (ps->lexer->t.token != ZR_TK_THIN_ARROW) {
         report_error(ps, "Expected '->' after function type parameter list");
         if (argsNode != ZR_NULL) {
             ZrParser_Ast_Free(ps->state, argsNode);
@@ -605,90 +465,6 @@ static SZrType *parse_function_type(
     }
 
     type->name = functionTypeNode;
-    return type;
-}
-
-static SZrType *parse_percent_prefixed_type(SZrParserState *ps, TZrBool noGeneric) {
-    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-    SZrType *innerType;
-    SZrType *type;
-    const TZrChar *wrapperName;
-    TZrInt32 outerDimensions;
-    TZrSize outerArrayFixedSize;
-    TZrSize outerArrayMinSize;
-    TZrSize outerArrayMaxSize;
-    TZrBool outerHasArraySizeConstraint;
-    SZrAstNode *outerArraySizeExpression;
-    SZrFileRange location;
-
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
-        return ZR_NULL;
-    }
-
-    location = get_current_location(ps);
-    ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "type")) {
-        if (parse_decorator_pseudo_type_annotation(ps, &innerType, noGeneric)) {
-            return innerType;
-        }
-        return ZR_NULL;
-    }
-
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "async")) {
-        report_error(ps, "Legacy '%async T' type syntax is not supported; use zr.task.Task<T>");
-        return ZR_NULL;
-    }
-
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
-        ZrParser_Lexer_Next(ps->lexer);
-        return parse_function_type(ps, noGeneric, location, ZR_TRUE);
-    }
-
-    if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
-        !try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
-        report_error(ps, "Expected ownership qualifier after '%' in type annotation");
-        return ZR_NULL;
-    }
-    ZrParser_Lexer_Next(ps->lexer);
-
-    innerType = parse_task_inner_type(ps, noGeneric);
-    if (innerType == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    outerDimensions = innerType->dimensions;
-    outerArrayFixedSize = innerType->arrayFixedSize;
-    outerArrayMinSize = innerType->arrayMinSize;
-    outerArrayMaxSize = innerType->arrayMaxSize;
-    outerHasArraySizeConstraint = innerType->hasArraySizeConstraint;
-    outerArraySizeExpression = innerType->arraySizeExpression;
-    innerType->dimensions = 0;
-    innerType->arrayFixedSize = 0;
-    innerType->arrayMinSize = 0;
-    innerType->arrayMaxSize = 0;
-    innerType->hasArraySizeConstraint = ZR_FALSE;
-    innerType->arraySizeExpression = ZR_NULL;
-
-    wrapperName = ownership_generic_wrapper_name(ownershipQualifier);
-    report_legacy_ownership_type_syntax(ps,
-                                        location,
-                                        ownership_legacy_qualifier_name(ownershipQualifier),
-                                        wrapperName);
-    type = wrap_type_in_task_generic(ps, innerType, wrapperName, location);
-    if (type == ZR_NULL) {
-        if (outerArraySizeExpression != ZR_NULL) {
-            ZrParser_Ast_Free(ps->state, outerArraySizeExpression);
-        }
-        return ZR_NULL;
-    }
-
-    type->ownershipQualifier = ownershipQualifier;
-    type->dimensions = outerDimensions;
-    type->arrayFixedSize = outerArrayFixedSize;
-    type->arrayMinSize = outerArrayMinSize;
-    type->arrayMaxSize = outerArrayMaxSize;
-    type->hasArraySizeConstraint = outerHasArraySizeConstraint;
-    type->arraySizeExpression = outerArraySizeExpression;
     return type;
 }
 
@@ -932,13 +708,16 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
     }
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        return parse_percent_prefixed_type(ps, noGeneric);
+        if (!report_removed_percent_syntax(ps)) {
+            report_error(ps, "Unexpected '%' at the start of a type annotation");
+        }
+        return ZR_NULL;
     }
 
     if (ps->lexer->t.token == ZR_TK_FN) {
         SZrFileRange startLoc = get_current_token_location(ps);
         ZrParser_Lexer_Next(ps->lexer);
-        return parse_function_type(ps, noGeneric, startLoc, ZR_FALSE);
+        return parse_function_type(ps, noGeneric, startLoc);
     }
 
     if (ps->lexer->t.token == ZR_TK_LPAREN) {
@@ -959,9 +738,24 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
         }
 
         if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+            (zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "Borrow") ||
+             zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "Loan")) &&
+            peek_token(ps) == ZR_TK_LESS_THAN) {
+            report_removed_legacy_syntax(
+                    ps,
+                    "Borrow<T>/Loan<T> ownership type",
+                    "Use `ref readonly T` for a shared reference or `ref T` for a writable reference.");
+            ZrCore_Memory_RawFreeWithType(ps->state->global,
+                                          type,
+                                          sizeof(SZrType),
+                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            return ZR_NULL;
+        }
+
+        if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
             try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
             peek_token(ps) == ZR_TK_LESS_THAN) {
-            report_error(ps, "Legacy lowercase ownership generic syntax is removed; use 'Unique<T>', 'Shared<T>', 'Weak<T>', 'Borrow<T>' or 'Loan<T>'");
+            report_error(ps, "Legacy lowercase ownership generic syntax is removed; use 'Unique<T>', 'Shared<T>' or 'Weak<T>'");
             ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
             return ZR_NULL;
         }
@@ -1641,23 +1435,9 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        ZrParser_Lexer_Next(ps->lexer);
-        if (ps->lexer->t.token == ZR_TK_IN) {
-            passingMode = ZR_PARAMETER_PASSING_MODE_IN;
-            sourceForm = ZR_PARAMETER_SOURCE_IN;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_OUT) {
-            passingMode = ZR_PARAMETER_PASSING_MODE_OUT;
-            sourceForm = ZR_PARAMETER_SOURCE_OUT;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_REF) {
-            passingMode = ZR_PARAMETER_PASSING_MODE_REF;
-            sourceForm = ZR_PARAMETER_SOURCE_REF;
-            ZrParser_Lexer_Next(ps->lexer);
-        } else {
-            report_error(ps, "Expected 'in', 'out' or 'ref' after '%'");
-            return ZR_NULL;
-        }
+        report_removed_percent_syntax(ps);
+        free_ast_node_array_with_elements(ps->state, decorators);
+        return ZR_NULL;
     }
 
     // 解析 const 关键字（可选）
@@ -1696,7 +1476,7 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     if (!isVariadic && consume_token(ps, ZR_TK_EQUALS)) {
         defaultValue = parse_expression(ps);
         if (passingMode == ZR_PARAMETER_PASSING_MODE_OUT) {
-            report_error(ps, "%out parameter cannot have a default value");
+            report_error(ps, "out parameter cannot have a default value");
         }
     }
 

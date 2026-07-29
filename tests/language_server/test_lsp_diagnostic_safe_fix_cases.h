@@ -269,7 +269,7 @@ static void test_lsp_code_action_inserts_missing_parameter_list_close(
     const TZrChar *summary =
             "LSP code action inserts missing parameter list close";
     const TZrChar *content =
-            "func pick(value: int: int { return value; }\n";
+            "fn pick(value: int: int { return value; }\n";
     SZrTestTimer timer;
     SZrLspContext *context;
     SZrString *uri = ZR_NULL;
@@ -341,7 +341,7 @@ static void test_lsp_code_action_inserts_missing_call_close(
     const TZrChar *summary =
             "LSP code action inserts missing call close";
     const TZrChar *content =
-            "func pick(value: int): int { return value; }\n"
+            "fn pick(value: int): int { return value; }\n"
             "return pick(1 + 2;\n";
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -1227,7 +1227,7 @@ static void test_lsp_code_action_skips_placeholder_diagnostic_fix(
     const TZrChar *summary =
             "LSP code action skips placeholder diagnostic fix";
     const TZrChar *content =
-            "func choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    var seed: int;\n"
             "    if (flag) {\n"
             "        seed = 1;\n"

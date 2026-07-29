@@ -686,7 +686,7 @@ static void test_aot_c_span_artifact_executes_equivalently_to_vm(void) {
     TEST_IGNORE_MESSAGE("AOT C Span shared-library smoke currently validates the Unix toolchain path");
 #else
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var view: container.Span<int>;\n"
             "var empty = view.slice(0, 0);\n"
             "var readView = empty.asReadOnly();\n"

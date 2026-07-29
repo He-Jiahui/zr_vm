@@ -139,6 +139,8 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
     const ZrLibTypeDescriptor *handle;
     const ZrLibTypeDescriptor *writeRef;
     const ZrLibTypeDescriptor *readRef;
+    const ZrLibMethodDescriptor *tryRead;
+    const ZrLibMethodDescriptor *tryBorrow;
 
     TEST_ASSERT_NOT_NULL(module);
     TEST_ASSERT_EQUAL_STRING("zr.pooling", module->moduleName);
@@ -174,10 +176,26 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
             pool, ZR_MEMBER_CONTRACT_ROLE_POOL_VALIDATE));
     TEST_ASSERT_NOT_NULL(find_pooling_method(
             pool, ZR_MEMBER_CONTRACT_ROLE_POOL_RECYCLE));
-    TEST_ASSERT_NOT_NULL(find_pooling_method(
-            pool, ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_READ));
-    TEST_ASSERT_NOT_NULL(find_pooling_method(
-            pool, ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_WRITE));
+    tryRead = find_pooling_method(
+            pool, ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_READ);
+    tryBorrow = find_pooling_method(
+            pool, ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_WRITE);
+    TEST_ASSERT_NOT_NULL(tryRead);
+    TEST_ASSERT_NOT_NULL(tryBorrow);
+    TEST_ASSERT_EQUAL_STRING("bool", tryRead->returnTypeName);
+    TEST_ASSERT_EQUAL_STRING("bool", tryBorrow->returnTypeName);
+    TEST_ASSERT_EQUAL_UINT64(2u, tryRead->parameterCount);
+    TEST_ASSERT_EQUAL_UINT64(2u, tryBorrow->parameterCount);
+    TEST_ASSERT_EQUAL_UINT16(2u, tryRead->minArgumentCount);
+    TEST_ASSERT_EQUAL_UINT16(2u, tryRead->maxArgumentCount);
+    TEST_ASSERT_EQUAL_UINT16(2u, tryBorrow->minArgumentCount);
+    TEST_ASSERT_EQUAL_UINT16(2u, tryBorrow->maxArgumentCount);
+    TEST_ASSERT_EQUAL_STRING("handle", tryRead->parameters[0].name);
+    TEST_ASSERT_EQUAL_STRING("view", tryRead->parameters[1].name);
+    TEST_ASSERT_EQUAL_STRING("PoolReadRef<T>", tryRead->parameters[1].typeName);
+    TEST_ASSERT_EQUAL_STRING("handle", tryBorrow->parameters[0].name);
+    TEST_ASSERT_EQUAL_STRING("view", tryBorrow->parameters[1].name);
+    TEST_ASSERT_EQUAL_STRING("PoolRef<T>", tryBorrow->parameters[1].typeName);
     TEST_ASSERT_BITS_HIGH(
             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE), writeRef->protocolMask);
     TEST_ASSERT_BITS_HIGH(
@@ -256,6 +274,32 @@ static void test_native_semantic_import_preserves_ref_like_and_stable_slot_proto
     TEST_ASSERT_EQUAL_INT(
             ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION,
             valueProjection->contractRole);
+    TEST_ASSERT_EQUAL_UINT32(2u, tryRead->parameterCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, tryBorrow->parameterCount);
+    TEST_ASSERT_EQUAL_STRING(
+            "bool", ZrCore_String_GetNativeString(tryRead->returnTypeName));
+    TEST_ASSERT_EQUAL_STRING(
+            "bool", ZrCore_String_GetNativeString(tryBorrow->returnTypeName));
+    TEST_ASSERT_TRUE(tryRead->parameterPassingModes.isValid);
+    TEST_ASSERT_TRUE(tryBorrow->parameterPassingModes.isValid);
+    TEST_ASSERT_EQUAL_UINT64(2u, tryRead->parameterPassingModes.length);
+    TEST_ASSERT_EQUAL_UINT64(2u, tryBorrow->parameterPassingModes.length);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARAMETER_PASSING_MODE_VALUE,
+            *(const EZrParameterPassingMode *)ZrCore_Array_Get(
+                    (SZrArray *)&tryRead->parameterPassingModes, 0u));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARAMETER_PASSING_MODE_OUT,
+            *(const EZrParameterPassingMode *)ZrCore_Array_Get(
+                    (SZrArray *)&tryRead->parameterPassingModes, 1u));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARAMETER_PASSING_MODE_VALUE,
+            *(const EZrParameterPassingMode *)ZrCore_Array_Get(
+                    (SZrArray *)&tryBorrow->parameterPassingModes, 0u));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARAMETER_PASSING_MODE_OUT,
+            *(const EZrParameterPassingMode *)ZrCore_Array_Get(
+                    (SZrArray *)&tryBorrow->parameterPassingModes, 1u));
 
     ZrCore_Function_Free(state, compiler->currentFunction);
     compiler->currentFunction = ZR_NULL;

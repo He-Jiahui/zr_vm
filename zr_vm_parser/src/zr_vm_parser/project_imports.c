@@ -324,30 +324,17 @@ static TZrBool project_imports_canonicalize_node(SZrState *state,
                                                      errorBufferSize,
                                                      outErrorLocation);
 
-        case ZR_AST_TEST_DECLARATION:
-            return project_imports_canonicalize_node_array(state,
-                                                           node->data.testDeclaration.params,
-                                                           project,
-                                                           currentModuleKey,
-                                                           errorBuffer,
-                                                           errorBufferSize,
-                                                           outErrorLocation) &&
-                   project_imports_canonicalize_node(state,
-                                                     project_imports_parameter_node_from_ptr(node->data.testDeclaration.args),
-                                                     project,
-                                                     currentModuleKey,
-                                                     errorBuffer,
-                                                     errorBufferSize,
-                                                     outErrorLocation) &&
-                   project_imports_canonicalize_node(state,
-                                                     node->data.testDeclaration.body,
-                                                     project,
-                                                     currentModuleKey,
-                                                     errorBuffer,
-                                                     errorBufferSize,
-                                                     outErrorLocation);
-
         case ZR_AST_COMPILE_TIME_DECLARATION:
+            if (node->data.compileTimeDeclaration.isConditionalPruning) {
+                return project_imports_canonicalize_node(
+                        state,
+                        node->data.compileTimeDeclaration.selectedBranch,
+                        project,
+                        currentModuleKey,
+                        errorBuffer,
+                        errorBufferSize,
+                        outErrorLocation);
+            }
             return project_imports_canonicalize_node(state,
                                                      node->data.compileTimeDeclaration.declaration,
                                                      project,

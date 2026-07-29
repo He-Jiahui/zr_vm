@@ -171,7 +171,7 @@ typedef struct SZrCompilerState {
     EZrCompilerInitializationPhase initializationPhase; // structured constructor/init-accessor phase
     SZrAstNode *currentFunctionNode;          // 当前编译的函数 AST 节点（用于访问参数信息）
     EZrCanonicalReceiverEffect currentFunctionReceiverEffect; // 当前 callable 的结构化 receiver effect
-    TZrBool preservePropertyReferenceResult; // `%ref property` keeps the managed reference identity
+    TZrBool preservePropertyReferenceResult; // `ref property` keeps the managed reference identity
     SZrString *currentTypeName;               // 当前编译的类型名称（用于成员字段 const 检查）
     SZrAstNode *currentTypeNode;              // 当前编译的类型声明节点（用于 const 成员初始化检查）
     
@@ -212,7 +212,7 @@ typedef struct SZrCompileTimeDecoratorClass {
     SZrAstNode *declaration;               // ClassDeclaration / StructDeclaration
     SZrAstNode *decorateMethod;            // @decorate 元方法节点
     SZrAstNode *constructorMethod;         // @constructor 元方法节点（可选）
-    TZrBool isStructDecorator;             // 是否来自 %compileTime struct
+    TZrBool isStructDecorator;             // legacy decorator-struct metadata carrier
     SZrFileRange location;                 // 声明位置
 } SZrCompileTimeDecoratorClass;
 
@@ -367,7 +367,7 @@ typedef struct SZrTypeMemberInfo {
     TZrBool isStatic;                     // 是否为静态成员
     TZrUInt32 modifierFlags;              // abstract/virtual/override/final/shadow 修饰符
     TZrBool isConst;                      // 是否为 const 字段
-    TZrBool isUsingManaged;               // legacy field-scoped `%using` 元数据位
+    TZrBool reservedRemovedUsingManaged;  // reserved ABI slot; must remain false
     EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
     EZrGcBridgeKind gcBridgeKind;          // 字段显式 Gc<T>/GcBox<T> bridge kind
     EZrOwnershipQualifier receiverQualifier;  // 方法 receiver 所有权限定符

@@ -1,7 +1,7 @@
 const vscode = require('vscode');
 
 const CLASSES_FULL_SMOKE_SOURCE = [
-    'module "classes_full";',
+    'module classes_full;',
     '',
     'class BaseHero {',
     '    pri var _hp: int = 0;',
@@ -11,12 +11,9 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    }',
     '',
     '    // Current hero hit points.',
-    '    pub get hp: int {',
-    '        return this._hp;',
-    '    }',
-    '',
-    '    pub set hp(v: int) {',
-    '        this._hp = v;',
+    '    pub property hp: int {',
+    '        get { return this._hp; }',
+    '        set { this._hp = value; }',
     '    }',
     '',
     '    pub heal(amount: int): int {',
@@ -29,12 +26,9 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    pri static var _bonus: int = 5;',
     '',
     '    // Shared bonus exposed through get/set.',
-    '    pub static get bonus: int {',
-    '        return ScoreBoard._bonus;',
-    '    }',
-    '',
-    '    pub static set bonus(v: int) {',
-    '        ScoreBoard._bonus = v;',
+    '    pub static property bonus: int {',
+    '        get { return ScoreBoard._bonus; }',
+    '        set { ScoreBoard._bonus = value; }',
     '    }',
     '}',
     '',
@@ -51,8 +45,9 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    }',
     '}',
     '',
-    '%test("classesFullProjectShape") {',
-    '    var boss = new BossHero(30);',
+    '#zr.testing.test#',
+    'fn classesFullProjectShape(): int {',
+    '    let boss: BossHero = new BossHero(30);',
     '    boss.hp = boss.hp + 7;',
     '    ScoreBoard.bonus = boss.heal(5);',
     '    return boss.total() + ScoreBoard.bonus;',
@@ -61,8 +56,8 @@ const CLASSES_FULL_SMOKE_SOURCE = [
 ].join('\n');
 
 const STRUCTURE_SMOKE_MAIN_SOURCE = [
-    'var helper = %import("structure_helper");',
-    'var system = %import("zr.system");',
+    'let helper = import("structure_helper");',
+    'let system = import("zr.system");',
     '',
     'class StructureHero {',
     '    pub total(): int {',
@@ -70,7 +65,8 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
     '    }',
     '}',
     '',
-    '%test("structureViewSmoke") {',
+    '#zr.testing.test#',
+    'fn structureViewSmoke(): int {',
     '    return helper.value();',
     '}',
     '',
@@ -79,18 +75,18 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
 ].join('\n');
 
 const STRUCTURE_SMOKE_HELPER_SOURCE = [
-    'var cycle = %import("structure_cycle");',
+    'let cycle = import("structure_cycle");',
     '',
-    'pub var value = () => {',
+    'pub var value = fn() => {',
     '    return cycle.answer();',
     '};',
     '',
 ].join('\n');
 
 const STRUCTURE_SMOKE_CYCLE_SOURCE = [
-    'var helper = %import("structure_helper");',
+    'let helper = import("structure_helper");',
     '',
-    'pub var answer = () => {',
+    'pub var answer = fn() => {',
     '    return 42;',
     '};',
     '',
@@ -367,17 +363,18 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
     assert(commands.includes('zr.organizeImports'), 'Expected web zr.organizeImports command to be registered');
     assert(commands.includes('zr.removeUnusedImports'), 'Expected web zr.removeUnusedImports command to be registered');
     const advancedSource = [
-        'var system = %import("zr.system");',
-        'var tcp = %import("zr.network.tcp");',
+        'let system = import("zr.system");',
+        'let tcp = import("zr.network.tcp");',
         '',
         'class AdvancedSmoke {',
-        'pub func run(value: int): int {',
+        'pub fn run(value: int): int {',
         'let local = value;',
         'return local;',
         '}',
         '}',
         '',
-        '%test("advancedEditorSmoke") {',
+        '#zr.testing.test#',
+        'fn advancedEditorSmoke(): int {',
         'return 1;',
         '}',
         '',
@@ -474,8 +471,8 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.workspace.fs.writeFile(
             organizeUri,
             new TextEncoder().encode([
-                '%import("zr.system");',
-                '%import("zr.math");',
+                'let system = import("zr.system");',
+                'let math = import("zr.math");',
                 '',
                 'return 1;',
                 '',
@@ -485,7 +482,7 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.commands.executeCommand('zr.organizeImports');
         await withRetry(
             async () => organizeDocument.getText(),
-            (text) => text.indexOf('%import("zr.math");\n%import("zr.system");') >= 0,
+            (text) => text.indexOf('let math = import("zr.math");\nlet system = import("zr.system");') >= 0,
             15000,
             'zr.organizeImports command',
         );
@@ -493,8 +490,8 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.workspace.fs.writeFile(
             cleanupUri,
             new TextEncoder().encode([
-                'var math = %import("zr.math");',
-                'var system = %import("zr.system");',
+                'let math = import("zr.math");',
+                'let system = import("zr.system");',
                 '',
                 'return math.PI;',
                 '',
@@ -504,8 +501,8 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.commands.executeCommand('zr.removeUnusedImports');
         await withRetry(
             async () => cleanupDocument.getText(),
-            (text) => text.includes('var math = %import("zr.math");') &&
-                !text.includes('var system = %import("zr.system");'),
+            (text) => text.includes('let math = import("zr.math");') &&
+                !text.includes('let system = import("zr.system");'),
             15000,
             'zr.removeUnusedImports command',
         );
@@ -1035,7 +1032,7 @@ async function verifyStructureViews(workspaceRoot) {
                 structureChildren(mainDeclarationsGroup),
                 (node) => node.nodeType === 'declaration' && node.label === 'structureViewSmoke',
             ),
-            'Expected Declarations group to include %test symbol structureViewSmoke',
+            'Expected Declarations group to include test function structureViewSmoke',
         );
 
         const projectActionSelectNode = findImmediateStructureNode(
@@ -1126,11 +1123,11 @@ async function verifyStructureViews(workspaceRoot) {
         const nativeDocument = await withRetry(
             async () => vscode.workspace.openTextDocument(vscode.Uri.parse('zr-decompiled:/zr.system.zr')),
             (document) => typeof document?.getText === 'function' &&
-                document.getText().includes('%extern("zr.system")'),
+                document.getText().includes('native extern("zr.system")'),
             15000,
             'native declaration virtual document load',
         );
-        assert(nativeDocument.getText().includes('%extern("zr.system")'),
+        assert(nativeDocument.getText().includes('native extern("zr.system")'),
             'Expected zr-decompiled virtual documents to be backed by native declaration rendering');
 
         const nativeDefinitions = await withRetry(

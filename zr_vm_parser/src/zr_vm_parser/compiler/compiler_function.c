@@ -828,5 +828,5 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 }
 
 // 编译测试声明
-// 语法：%test("test_name") { ... }
+// Legacy test-declaration compiler retained only for migration compatibility.
 // 测试体按真实脚本语义编译；通过/失败由宿主边界决定。

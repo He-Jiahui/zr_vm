@@ -25,30 +25,30 @@ typedef struct SZrLegacyMigrationDirectiveRule {
 } SZrLegacyMigrationDirectiveRule;
 
 static const SZrLegacyMigrationDirectiveRule k_legacy_migration_directive_rules[] = {
-        {"module", "percentModule", "moduleDeclaration", "06B",
-         ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED,
-         "The module declaration target is not accepted by the current parser."},
+        {"module", "percentModule", "moduleDeclaration", "06A",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The module declaration uses the promoted module keyword."},
         {"import", "percentImport", "importBinding", "06A",
          ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
          "Legacy imports require module-scope binding and alias proof."},
         {"async", "percentAsync", "asyncDeclaration", "12",
-         ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED,
-         "The async target syntax is not promoted in the current parser."},
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The async declaration uses the promoted async keyword."},
         {"await", "percentAwait", "awaitExpression", "12",
-         ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED,
-         "The async target syntax is not promoted in the current parser."},
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The await expression uses the promoted await keyword."},
         {"extern", "percentExtern", "nativeDeclaration", "10",
-         ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED,
-         "Native declaration migration remains owned by plan 10."},
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "Native declarations use the promoted native extern spelling."},
         {"test", "percentTest", "testDeclaration", "14",
-         ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED,
-         "Test declaration migration remains owned by plan 14."},
-        {"compileTime", "percentCompileTime", "compileTimeDeclaration", "11",
-         ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED,
-         "Compile-time declaration migration remains owned by plan 11."},
-        {"func", "percentFunc", "functionType", "06A",
          ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-         "Callable type migration requires parser-owned declaration context."},
+         "Tests must become ordinary functions with zr.testing.test metadata."},
+        {"compileTime", "percentCompileTime", "compileTimeDeclaration", "11",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "Compile-time declarations use the promoted comptime keyword."},
+        {"func", "percentFunc", "functionType", "06A",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "Callable types use the promoted fn keyword."},
         {"owned", "percentOwned", "resourceModifier", "04",
          ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
          "The ownership shell maps to the promoted resource modifier."},
@@ -463,7 +463,17 @@ static TZrBool legacy_migration_append_directive(
                 ZR_NULL);
     }
     if (rule->applicability == ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE) {
-        if (strcmp(rule->directive, "module") == 0) {
+        if (strcmp(rule->directive, "async") == 0) {
+            editText = "async";
+        } else if (strcmp(rule->directive, "await") == 0) {
+            editText = "await";
+        } else if (strcmp(rule->directive, "extern") == 0) {
+            editText = "native extern";
+        } else if (strcmp(rule->directive, "compileTime") == 0) {
+            editText = "comptime";
+        } else if (strcmp(rule->directive, "func") == 0) {
+            editText = "fn";
+        } else if (strcmp(rule->directive, "module") == 0) {
             TZrSize pathStart = legacy_migration_skip_space(source, sourceLength, wordEnd);
             TZrSize lineEnd = legacy_migration_trim_end(
                     source,
@@ -679,6 +689,56 @@ static TZrBool legacy_migration_is_line_word_start(
     return index == offset;
 }
 
+static TZrBool legacy_migration_callable_open_preceded_by_fn(
+        const TZrChar *source,
+        TZrSize arrowOffset) {
+    TZrSize closeOffset = arrowOffset;
+    TZrSize openOffset;
+    TZrSize wordEnd;
+    TZrSize wordStart;
+    TZrSize depth = 0U;
+
+    while (closeOffset > 0U && source[closeOffset - 1U] != ')') {
+        if (source[closeOffset - 1U] == '\n' || source[closeOffset - 1U] == ';' ||
+            source[closeOffset - 1U] == '{' || source[closeOffset - 1U] == '}') {
+            return ZR_FALSE;
+        }
+        closeOffset--;
+    }
+    if (closeOffset == 0U) {
+        return ZR_FALSE;
+    }
+
+    openOffset = closeOffset;
+    while (openOffset > 0U) {
+        TZrChar current = source[--openOffset];
+        if (current == ')') {
+            depth++;
+        } else if (current == '(') {
+            if (depth == 0U) {
+                return ZR_FALSE;
+            }
+            depth--;
+            if (depth == 0U) {
+                break;
+            }
+        }
+    }
+    if (source[openOffset] != '(') {
+        return ZR_FALSE;
+    }
+
+    wordEnd = openOffset;
+    while (wordEnd > 0U && isspace((unsigned char)source[wordEnd - 1U])) {
+        wordEnd--;
+    }
+    wordStart = wordEnd;
+    while (wordStart > 0U && legacy_migration_is_identifier_continue(source[wordStart - 1U])) {
+        wordStart--;
+    }
+    return legacy_migration_span_equals(source, wordStart, wordEnd, "fn");
+}
+
 static TZrBool legacy_migration_append_word_item(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -855,6 +915,10 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
             continue;
         }
         if (current == '=' && index + 1U < sourceLength && source[index + 1U] == '>') {
+            if (legacy_migration_callable_open_preceded_by_fn(source, index)) {
+                index += 2U;
+                continue;
+            }
             if (!legacy_migration_append_word_item(
                         state,
                         outPlan,
@@ -875,6 +939,10 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
             continue;
         }
         if (current == '-' && index + 1U < sourceLength && source[index + 1U] == '>') {
+            if (legacy_migration_callable_open_preceded_by_fn(source, index)) {
+                index += 2U;
+                continue;
+            }
             if (!legacy_migration_append_word_item(
                         state,
                         outPlan,

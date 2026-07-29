@@ -82,7 +82,6 @@ static void test_tail_reuse_install_managed_inline_frame_metadata(SZrState *stat
     member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
     member.fieldOffset = 0u;
     member.fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
-    member.isUsingManaged = 1u;
     member.ownershipQualifier = 1u;
 
     prototypeData = (TZrByte *)ZrCore_Memory_RawMallocWithType(

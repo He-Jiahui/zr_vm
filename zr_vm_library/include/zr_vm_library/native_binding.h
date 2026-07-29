@@ -54,10 +54,18 @@ typedef struct ZrLibFieldDescriptor {
     TZrUInt32 contractRole;
 } ZrLibFieldDescriptor;
 
+typedef enum EZrLibParameterPassingMode {
+    ZR_LIB_PARAMETER_PASSING_MODE_VALUE = 0,
+    ZR_LIB_PARAMETER_PASSING_MODE_IN = 1,
+    ZR_LIB_PARAMETER_PASSING_MODE_OUT = 2,
+    ZR_LIB_PARAMETER_PASSING_MODE_REF = 3
+} EZrLibParameterPassingMode;
+
 typedef struct ZrLibParameterDescriptor {
     const TZrChar *name;
     const TZrChar *typeName;
     const TZrChar *documentation;
+    EZrLibParameterPassingMode passingMode;
 } ZrLibParameterDescriptor;
 
 typedef struct ZrLibGenericParameterDescriptor {

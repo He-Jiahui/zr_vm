@@ -24,17 +24,6 @@ TZrBool consume_token(SZrParserState *ps, EZrToken token) {
 
 EZrToken peek_token(SZrParserState *ps) { return ZrParser_Lexer_Lookahead(ps->lexer); }
 
-TZrBool consume_percent_keyword_token(SZrParserState *ps, EZrToken token) {
-    if (ps == ZR_NULL || ps->lexer == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT ||
-        peek_token(ps) != token) {
-        return ZR_FALSE;
-    }
-
-    ZrParser_Lexer_Next(ps->lexer);
-    ZrParser_Lexer_Next(ps->lexer);
-    return ZR_TRUE;
-}
-
 void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
     if (ps == ZR_NULL || ps->lexer == ZR_NULL || cursor == ZR_NULL) {
         return;
@@ -106,56 +95,170 @@ TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text) {
     return nameStr != ZR_NULL && strcmp(nameStr, text) == 0;
 }
 
-TZrBool current_percent_directive_equals(SZrParserState *ps, const TZrChar *text) {
-    TZrBool result = ZR_FALSE;
-    TZrSize savedPos;
-    TZrInt32 savedChar;
-    TZrInt32 savedLine;
-    TZrInt32 savedLastLine;
-    SZrToken savedToken;
-    SZrToken savedLookahead;
-    TZrSize savedLookaheadPos;
-    TZrInt32 savedLookaheadChar;
-    TZrInt32 savedLookaheadLine;
-    TZrInt32 savedLookaheadLastLine;
+typedef struct SZrRemovedPercentSyntaxRule {
+    const TZrChar *name;
+    const TZrChar *suggestion;
+} SZrRemovedPercentSyntaxRule;
 
-    if (ps == ZR_NULL || text == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
+#define ZR_REMOVED_PERCENT_NAME_CAPACITY 32U
+
+static const SZrRemovedPercentSyntaxRule k_removed_percent_syntax_rules[] = {
+        {"module", "Write `module path;`."},
+        {"import", "Use a module-scope immutable binding: `let alias = import(\"literal.path\");`."},
+        {"async", "Write `async fn name(...): zr.task.Task<T>`."},
+        {"await", "Write `await expression`."},
+        {"extern", "Write `native extern(\"library\") { ... }`."},
+        {"test", "Attach `#zr.testing.test#` to an ordinary `fn(...): void`."},
+        {"compileTime", "Use `comptime fn`, `comptime if`, a comptime block, or `const` data."},
+        {"func", "Write callable types as `fn(...) -> R`."},
+        {"owned", "Write `resource class Name`."},
+        {"release", "Use the canonical `drop(value)` ownership operation."},
+        {"upgrade", "Use the typed weak-reference upgrade operation."},
+        {"weak", "Use the typed owner projection API."},
+        {"shared", "Use `Unique<T>.share()` or an explicit `Shared<T>` contract."},
+        {"detach", "Use the typed ownership bridge API after proving the source owner kind."},
+        {"unique", "Construct a resource with `own Type(...)` or declare `Unique<T>` explicitly."},
+        {"in", "Write the parameter as `name: in T`."},
+        {"ref", "Write the parameter as `name: ref T` and mark the call argument with `ref`."},
+        {"out", "Write the parameter as `name: out T` and mark the call argument with `out`."},
+        {"borrow", "Use a canonical `ref` binding or reborrow expression."},
+        {"loan", "Use a canonical scoped reference contract."},
+        {"borrowed", "Use a canonical reference TypeRef."},
+        {"loaned", "Use a canonical scoped reference TypeRef."},
+        {"type", "Use `typeof(expr)` for a runtime descriptor or `typeid(TypeRef)` for identity."},
+        {"using", "Use the ordinary `using` statement only for the supported resource lifetime form."},
+};
+
+TZrBool report_removed_percent_syntax(SZrParserState *ps) {
+    const TZrChar *source;
+    TZrSize sourceLength;
+    SZrFileRange location;
+    TZrSize start;
+    TZrSize end;
+    TZrChar name[ZR_REMOVED_PERCENT_NAME_CAPACITY];
+    TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    const TZrChar *suggestion = ZR_NULL;
+    TZrSize ruleIndex;
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL ||
+        ps->lexer->t.token != ZR_TK_PERCENT || ps->lexer->source == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    savedPos = ps->lexer->currentPos;
-    savedChar = ps->lexer->currentChar;
-    savedLine = ps->lexer->lineNumber;
-    savedLastLine = ps->lexer->lastLine;
-    savedToken = ps->lexer->t;
-    savedLookahead = ps->lexer->lookahead;
-    savedLookaheadPos = ps->lexer->lookaheadPos;
-    savedLookaheadChar = ps->lexer->lookaheadChar;
-    savedLookaheadLine = ps->lexer->lookaheadLine;
-    savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
-    ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        result = current_identifier_equals(ps, text);
-    } else if (ps->lexer->t.token == ZR_TK_MODULE) {
-        result = strcmp(text, "module") == 0;
-    } else if (ps->lexer->t.token == ZR_TK_TEST) {
-        result = strcmp(text, "test") == 0;
-    } else if (ps->lexer->t.token == ZR_TK_USING) {
-        result = strcmp(text, "using") == 0;
+    source = ps->lexer->source;
+    sourceLength = ps->lexer->sourceLength;
+    location = get_current_token_location(ps);
+    start = location.start.offset;
+    if (start + 1U >= sourceLength ||
+        !((source[start + 1U] >= 'A' && source[start + 1U] <= 'Z') ||
+          (source[start + 1U] >= 'a' && source[start + 1U] <= 'z') ||
+          source[start + 1U] == '_')) {
+        return ZR_FALSE;
     }
 
-    ps->lexer->currentPos = savedPos;
-    ps->lexer->currentChar = savedChar;
-    ps->lexer->lineNumber = savedLine;
-    ps->lexer->lastLine = savedLastLine;
-    ps->lexer->t = savedToken;
-    ps->lexer->lookahead = savedLookahead;
-    ps->lexer->lookaheadPos = savedLookaheadPos;
-    ps->lexer->lookaheadChar = savedLookaheadChar;
-    ps->lexer->lookaheadLine = savedLookaheadLine;
-    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-    return result;
+    end = start + 1U;
+    while (end < sourceLength &&
+           ((source[end] >= 'A' && source[end] <= 'Z') ||
+            (source[end] >= 'a' && source[end] <= 'z') ||
+            (source[end] >= '0' && source[end] <= '9') ||
+            source[end] == '_')) {
+        end++;
+    }
+    if (end - (start + 1U) >= sizeof(name)) {
+        return ZR_FALSE;
+    }
+    memcpy(name, source + start + 1U, end - (start + 1U));
+    name[end - (start + 1U)] = '\0';
+
+    for (ruleIndex = 0U;
+         ruleIndex < sizeof(k_removed_percent_syntax_rules) / sizeof(k_removed_percent_syntax_rules[0]);
+         ruleIndex++) {
+        if (strcmp(name, k_removed_percent_syntax_rules[ruleIndex].name) == 0) {
+            suggestion = k_removed_percent_syntax_rules[ruleIndex].suggestion;
+            break;
+        }
+    }
+    if (suggestion == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    location.end.offset = end;
+    location.end.column = location.start.column + (TZrInt32)(end - start);
+    snprintf(message,
+             sizeof(message),
+             "Legacy syntax '%%%s' was removed from the production parser",
+             name);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                ps->state,
+                &diagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "legacy_syntax_removed",
+                message,
+                "The one-time syntax cutover keeps legacy recognition only for migration diagnostics.",
+                suggestion)) {
+        report_error_with_token(ps, message, ps->lexer->t.token);
+        return ZR_TRUE;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_EOS) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+    return ZR_TRUE;
+}
+
+void report_removed_legacy_syntax_at(SZrParserState *ps,
+                                     SZrFileRange location,
+                                     EZrToken token,
+                                     const TZrChar *spelling,
+                                     const TZrChar *suggestion) {
+    SZrStructuredDiagnostic diagnostic;
+    TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL ||
+        spelling == ZR_NULL || suggestion == ZR_NULL) {
+        return;
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "Legacy syntax '%s' was removed from the production parser",
+             spelling);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                ps->state,
+                &diagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "legacy_syntax_removed",
+                message,
+                "The one-time syntax cutover keeps legacy recognition only for migration diagnostics.",
+                suggestion)) {
+        report_error_with_token(ps, message, token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_removed_legacy_syntax(SZrParserState *ps,
+                                  const TZrChar *spelling,
+                                  const TZrChar *suggestion) {
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    report_removed_legacy_syntax_at(ps,
+                                    get_current_token_location(ps),
+                                    ps->lexer->t.token,
+                                    spelling,
+                                    suggestion);
+    ZrParser_Lexer_Next(ps->lexer);
 }
 
 TZrBool is_module_path_segment_token(EZrToken token) { return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST; }
@@ -233,21 +336,11 @@ void skip_to_semicolon_or_eos(SZrParserState *ps) {
     }
 }
 
-void skip_legacy_import_call(SZrParserState *ps) {
-    if (ps == ZR_NULL) {
-        return;
-    }
-
-    ZrParser_Lexer_Next(ps->lexer);
-    if (consume_token(ps, ZR_TK_LPAREN)) {
-        skip_balanced_after_open_paren(ps);
-    }
-}
-
 SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrChar *directiveName) {
     TZrChar buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
     TZrSize length = 0;
     SZrFileRange startLoc;
+    SZrFileRange endLoc;
     SZrString *pathString;
     TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
@@ -255,20 +348,28 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
         return ZR_NULL;
     }
 
-    startLoc = get_current_location(ps);
     if (!is_module_path_segment_token(ps->lexer->t.token)) {
-        snprintf(errorMsg, sizeof(errorMsg), "Expected module path after %%%s", directiveName);
+        snprintf(errorMsg, sizeof(errorMsg), "Expected module path after %s", directiveName);
         report_error(ps, errorMsg);
         return ZR_NULL;
     }
 
+    startLoc = get_current_token_location(ps);
+    endLoc = startLoc;
+
     while (is_module_path_segment_token(ps->lexer->t.token)) {
+        EZrToken segmentToken = ps->lexer->t.token;
         SZrString *segment = ps->lexer->t.seminfo.stringValue;
-        TZrNativeString nativeSegment = segment != ZR_NULL ? ZrCore_String_GetNativeString(segment) : ZR_NULL;
+        TZrNativeString nativeSegment = segmentToken == ZR_TK_TEST
+                                                ? "test"
+                                                : (segment != ZR_NULL ? ZrCore_String_GetNativeString(segment)
+                                                                     : ZR_NULL);
         TZrSize segmentLength = nativeSegment != ZR_NULL ? ZrCore_NativeString_Length(nativeSegment) : 0;
 
+        endLoc = get_current_token_location(ps);
+
         if (nativeSegment == ZR_NULL) {
-            snprintf(errorMsg, sizeof(errorMsg), "Invalid module path segment in %%%s", directiveName);
+            snprintf(errorMsg, sizeof(errorMsg), "Invalid module path segment in %s", directiveName);
             report_error(ps, errorMsg);
             return ZR_NULL;
         }
@@ -294,7 +395,7 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
             break;
         }
         if (!is_module_path_segment_token(ps->lexer->t.token)) {
-            snprintf(errorMsg, sizeof(errorMsg), "Expected identifier after '.' in %%%s path", directiveName);
+            snprintf(errorMsg, sizeof(errorMsg), "Expected identifier after '.' in %s path", directiveName);
             report_error(ps, errorMsg);
             return ZR_NULL;
         }
@@ -307,8 +408,12 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
         return ZR_NULL;
     }
 
-    return create_string_literal_node_with_location(ps, pathString, ZR_FALSE, pathString,
-                                                    ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    return create_string_literal_node_with_location(
+            ps,
+            pathString,
+            ZR_FALSE,
+            pathString,
+            ZrParser_FileRange_Merge(startLoc, endLoc));
 }
 
 SZrAstNode *parse_normalized_module_path(SZrParserState *ps, const TZrChar *directiveName) {
@@ -332,11 +437,11 @@ SZrAstNode *parse_normalized_module_path(SZrParserState *ps, const TZrChar *dire
         }
     }
 
-    if (ps->lexer->t.token == ZR_TK_STRING) {
-        return parse_literal(ps);
-    }
-
-    return parse_normalized_dotted_module_path(ps, directiveName);
+    report_removed_legacy_syntax(
+            ps,
+            "bare import path",
+            "Use `import(\"module.path\")`; static import paths must be string literals in parentheses.");
+    return ZR_NULL;
 }
 
 SZrAstNodeArray *parse_leading_decorators(SZrParserState *ps) {
@@ -851,28 +956,6 @@ void report_missing_expression_after_assignment(SZrParserState *ps) {
             &diagnostic,
             get_current_token_location(ps))) {
         report_error_with_token(ps, "Missing expression after '='", ps->lexer->t.token);
-        return;
-    }
-
-    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
-    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
-}
-
-void report_legacy_ownership_type_syntax(SZrParserState *ps,
-                                         SZrFileRange location,
-                                         const TZrChar *legacyQualifier,
-                                         const TZrChar *wrapperName) {
-    SZrStructuredDiagnostic diagnostic;
-
-    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
-        return;
-    }
-
-    if (!ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(ps->state,
-                                                                          &diagnostic,
-                                                                          location,
-                                                                          legacyQualifier,
-                                                                          wrapperName)) {
         return;
     }
 

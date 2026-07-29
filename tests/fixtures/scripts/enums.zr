@@ -1,4 +1,4 @@
-%module "enums";
+module "enums";
 
 // 枚举声明 - int基类型（默认）
 enum Direction {
@@ -24,7 +24,7 @@ enum Status: int {
 }
 
 // 枚举使用测试
-var enum_usage_test = () => {
+var enum_usage_test = fn() => {
     var dir = Direction.Up;
     var color = Color.Red;
     var status = Status.Pending;
@@ -32,7 +32,7 @@ var enum_usage_test = () => {
 };
 
 // 枚举比较测试
-var enum_compare_test = () => {
+var enum_compare_test = fn() => {
     var dir1 = Direction.Up;
     var dir2 = Direction.Up;
     // 假设枚举可以比较
@@ -40,12 +40,12 @@ var enum_compare_test = () => {
 };
 
 // 枚举作为函数参数测试
-var enum_param_test = (dir: Direction) => {
+var enum_param_test = fn(dir: Direction) => {
     return 1;
 };
 
 // 枚举作为返回值测试
-var enum_return_test = (): Direction => {
+var enum_return_test = fn(): Direction => {
     return Direction.Left;
 };
 

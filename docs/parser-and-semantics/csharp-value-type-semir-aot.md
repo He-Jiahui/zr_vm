@@ -2741,3 +2741,13 @@ runtime `ZrCore_TypeLayout_Validate` remains responsible for layouts materialize
 the current process ABI. Module-init analysis likewise treats its summary cache as movable:
 recursive import discovery may grow the cache, so callers re-resolve a summary after every
 recursive step instead of retaining an interior pointer across reallocation.
+
+Focused 2026-07-29 Syntax 10F publishes canonical native import contracts through generated
+AOT C. `ZR_VM_AOT_ABI_VERSION` is now 14; `SZrAotCodeRegistration` and
+`ZrAotCompiledModule` expose the same immutable `SZrNativeImportContract` table and count,
+and loader admission rejects mismatched mirrors or invalid contracts. The emitter writes
+explicit scalar, aggregate-field, policy, capability, target-ABI, and source-mapping fields
+instead of copying host structure bytes. VM `.zro` roundtrip, libffi lowering, and generated
+C therefore validate the same signature hashes and contract vectors. Focused WSL GCC
+validation passes native-contract 10/10, dynamic FFI 29/29, pin/callback 2/2, AOT shared
+library 14/14, and AOT frame setup 1/1.

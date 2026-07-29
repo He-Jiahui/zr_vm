@@ -474,17 +474,6 @@ SZrAstNode *parse_identifier(SZrParserState *ps) {
         name = ZrCore_String_Create(ps->state, "test", 4);
     }
 
-    if (name != ZR_NULL) {
-        TZrNativeString nativeName = ZrCore_String_GetNativeString(name);
-        if (nativeName != ZR_NULL &&
-            strcmp(nativeName, "import") == 0 &&
-            peek_token(ps) == ZR_TK_LPAREN) {
-            report_error(ps, "Legacy import() syntax is not supported; use %import");
-            skip_legacy_import_call(ps);
-            return ZR_NULL;
-        }
-    }
-
     identifierLoc = get_current_token_location(ps);
     ZrParser_Lexer_Next(ps->lexer);
     return create_identifier_node_with_location(ps, name, identifierLoc);

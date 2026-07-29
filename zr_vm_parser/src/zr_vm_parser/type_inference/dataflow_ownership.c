@@ -670,8 +670,6 @@ static TZrBool semantic_ownership_resolve_node(SZrSemanticOwnershipAnalysis *ana
                    semantic_ownership_resolve_array(analysis, node->data.script.statements);
         case ZR_AST_FUNCTION_DECLARATION:
             return semantic_ownership_run_cfg(analysis, node->data.functionDeclaration.body);
-        case ZR_AST_TEST_DECLARATION:
-            return semantic_ownership_run_cfg(analysis, node->data.testDeclaration.body);
         case ZR_AST_STRUCT_DECLARATION:
             return semantic_ownership_resolve_array(analysis, node->data.structDeclaration.members);
         case ZR_AST_CLASS_DECLARATION:

@@ -1507,10 +1507,10 @@ static void test_convert_ast_type_preserves_ownership_qualifier(void) {
 
     {
         const char *source =
-            "var owned: %unique Resource;"
-            "var sharedRef: %shared Box<int>;"
-            "var weakRef: %weak Resource;"
-            "var borrowedRef: %borrowed Resource;";
+            "var owned: Unique<Resource>;"
+            "var sharedRef: Shared<Box<int>>;"
+            "var weakRef: Weak<Resource>;"
+            "var borrowedRef: ref readonly Resource;";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_types_test.zr", 23);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *ownedDecl;
@@ -1672,8 +1672,8 @@ static void test_construct_expression_preserves_ownership_qualifier(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var owner = %unique new Holder();"
-                "%shared(owner);";
+                "var owner = own Holder();"
+                "owner.share();";
         SZrString *sourceName = ZrCore_String_Create(state, "construct_ownership_type_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *uniqueExpr = ZR_NULL;
@@ -1904,7 +1904,7 @@ static void test_unique_instance_only_calls_borrowed_methods(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var holder = %unique new Holder();"
+                "var holder = own Holder();"
                 "holder.peek();"
                 "holder.take();";
         SZrString *sourceName = ZrCore_String_Create(state, "unique_borrowed_method_test.zr", 30);
@@ -1973,7 +1973,7 @@ static void test_unique_value_is_compatible_with_borrowed_parameter(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var holder = %unique new Holder();"
+                "var holder = own Holder();"
                 "return Observe(holder);";
         SZrString *sourceName = ZrCore_String_Create(state, "borrowed_param_compat_test.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2036,9 +2036,9 @@ static void test_weak_value_requires_upgrade_before_borrowed_parameter(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var seed = %unique new Holder();"
-                "var owner = %shared(seed);"
-                "var watcher = %weak(owner);"
+                "var seed = own Holder();"
+                "var owner = seed.share();"
+                "var watcher = owner.weak();"
                 "return Observe(watcher);";
         SZrString *sourceName = ZrCore_String_Create(state, "weak_requires_upgrade_param_test.zr", 32);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2109,9 +2109,9 @@ static void test_weak_receiver_requires_upgrade_before_borrowed_method(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var seed = %unique new Holder();"
-                "var owner = %shared(seed);"
-                "var watcher = %weak(owner);"
+                "var seed = own Holder();"
+                "var owner = seed.share();"
+                "var watcher = owner.weak();"
                 "watcher.peek();";
         SZrString *sourceName = ZrCore_String_Create(state, "weak_requires_upgrade_method_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2886,10 +2886,10 @@ static void test_parser_supports_ownership_types_and_template_strings(void) {
               "Testing %unique/%shared/%weak/%borrowed type annotations and backtick template strings with interpolation");
 
     const char *source =
-        "var owned: %unique Resource;"
-        "var sharedRef: %shared Box<int>;"
-        "var weakRef: %weak Resource;"
-        "var borrowedRef: %borrowed Resource;"
+        "var owned: Unique<Resource>;"
+        "var sharedRef: Shared<Box<int>>;"
+        "var weakRef: Weak<Resource>;"
+        "var borrowedRef: ref readonly Resource;"
         "var message = `hello ${1}`;";
     SZrString *sourceName = ZrCore_String_Create(state, "ownership_template_test.zr", 26);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2972,7 +2972,7 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
     {
         const char *source =
                 "var resource = \"x\";\n"
-                "%using resource;\n"
+                "using resource;\n"
                 "var owned: Unique<Resource>;\n"
                 "using owned;";
         SZrString *sourceName =
@@ -3267,7 +3267,7 @@ static void test_type_inference_import_native_module_keeps_module_name(void) {
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var math = %import(\"zr.math\");";
+        const char *source = "let math = import(\"zr.math\");";
         SZrString *sourceName = ZrCore_String_Create(state, "native_import_test.zr", 21);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -3316,7 +3316,7 @@ static void test_type_inference_native_import_function_member_preserves_metadata
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var math = %import(\"zr.math\");";
+        const char *source = "let math = import(\"zr.math\");";
         SZrString *sourceName = ZrCore_String_Create(state, "native_import_signature_identity_test.zr", 40);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         const SZrTypePrototypeInfo *modulePrototype;
@@ -3485,8 +3485,8 @@ static void test_type_inference_type_query_returns_reflection_type(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = %import(\"zr.math\");\n"
-                "var reflection = %type(math);";
+                "let math = import(\"zr.math\");\n"
+                "var reflection = typeof(math);";
         SZrString *sourceName = ZrCore_String_Create(state, "type_query_inference_test.zr", 28);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -3538,7 +3538,7 @@ static void test_convert_function_ast_type_to_callable_inferred_type(void) {
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var f: %func(int)->int = null;";
+        const char *source = "var f: fn(int)->int = null;";
         SZrString *sourceName = ZrCore_String_Create(state, "function_type_convert_test.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *decl;
@@ -3584,7 +3584,7 @@ static void test_type_inference_function_type_annotation_accepts_lambda_assignme
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var f: %func(int)->int = (x:int)->{ return x; };";
+        const char *source = "var f: fn(int)->int = fn(x:int)=>{ return x; };";
         SZrString *sourceName = ZrCore_String_Create(state, "function_type_lambda_assign_test.zr", 35);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -3619,7 +3619,7 @@ static void test_type_inference_type_query_function_type_returns_callable_reflec
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var reflection = %type(%func(%ref value:int)->int);";
+        const char *source = "var reflection = typeof(fn(value: ref int)->int);";
         SZrString *sourceName = ZrCore_String_Create(state, "callable_type_query_test.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr;
@@ -3701,11 +3701,11 @@ static void test_type_inference_iteration_names_accept_module_qualified_and_dest
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var builtin = %import(\"zr.builtin\");\n"
-                "var iteration = %import(\"zr.iteration\");\n"
+                "let builtin = import(\"zr.builtin\");\n"
+                "let iteration = import(\"zr.iteration\");\n"
                 "var iter: iteration.Iterable<int> = null;\n"
-                "var {TypeInfo, Integer} = %import(\"zr.builtin\");\n"
-                "var meta: TypeInfo = %type(int);\n"
+                "let {TypeInfo, Integer} = import(\"zr.builtin\");\n"
+                "var meta: TypeInfo = typeof(int);\n"
                 "var boxed: Integer = null;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "builtin_names_explicit_import_ok_test.zr", 41);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3742,7 +3742,7 @@ static void test_type_inference_builtin_value_helpers_require_explicit_import(vo
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var builtin = %import(\"zr.builtin\");\n"
+                "let builtin = import(\"zr.builtin\");\n"
                 "builtin.Object.type(null);\n"
                 "Object.type(null);\n";
         SZrString *sourceName = ZrCore_String_Create(state, "builtin_value_helpers_require_import_test.zr", 45);
@@ -3839,8 +3839,8 @@ static void assert_type_inference_function_type_value_alias_case(void) {
     SZrState *state = create_test_state();
     SZrCompilerState *cs = create_test_compiler_state(state);
     const char *source =
-            "var f = %func(int)->int;\n"
-            "var c:f = (x:int)->{ return x; };";
+            "var f = fn(int)->int;\n"
+            "var c:f = fn(x:int)=>{ return x; };";
     SZrString *sourceName = ZrCore_String_Create(state, "type_value_alias_inference_test.zr", 34);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -3868,7 +3868,7 @@ static void assert_type_inference_array_type_value_alias_case(void) {
     const char *source =
             "var cubeType = int[][][];\n"
             "var value:cubeType = null;\n"
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var jaggedType = container.Array<int[]>[];\n"
             "var jagged:jaggedType = null;";
     SZrString *sourceName = ZrCore_String_Create(state, "array_type_value_alias_inference_test.zr", 40);
@@ -3924,7 +3924,7 @@ static void test_type_inference_native_prototype_construction_returns_native_typ
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = %import(\"zr.math\");"
+                "let math = import(\"zr.math\");"
                 "$math.Vector3(1.0, 2.0, 3.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_type_test.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3976,7 +3976,7 @@ static void test_type_inference_native_constructor_resolves_module_variable_bind
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = %import(\"zr.math\");\n"
+                "let math = import(\"zr.math\");\n"
                 "run() {\n"
                 "    var vector = $math.Vector3(1.0, 2.0, 3.0);\n"
                 "}\n";
@@ -4051,7 +4051,7 @@ static void test_type_inference_native_generic_iterable_propagates_protocol(void
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var container = %import(\"zr.container\");\n"
+                "let container = import(\"zr.container\");\n"
                 "run() {\n"
                 "    var values = new container.Array<int>();\n"
                 "}\n";
@@ -4129,7 +4129,7 @@ static void test_type_inference_rejects_ordinary_prototype_call(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = %import(\"zr.math\");"
+                "let math = import(\"zr.math\");"
                 "math.Vector3(1.0, 2.0, 3.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_plain_call_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4182,7 +4182,7 @@ static void test_type_inference_native_boxed_new_returns_registered_type(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = %import(\"zr.math\");"
+                "let math = import(\"zr.math\");"
                 "new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_tensor_new_type_test.zr", 30);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4234,7 +4234,7 @@ static void test_type_inference_native_enum_construction_returns_enum_type(void)
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");"
+                "let probe = import(\"probe.native_shapes\");"
                 "$probe.NativeMode(1);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_enum_type_test.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4287,7 +4287,7 @@ static void test_type_inference_native_enum_member_access_returns_enum_type(void
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");"
+                "let probe = import(\"probe.native_shapes\");"
                 "probe.NativeMode.On;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_enum_member_type_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4340,7 +4340,7 @@ static void test_type_inference_native_interface_construction_is_rejected(void) 
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");"
+                "let probe = import(\"probe.native_shapes\");"
                 "new probe.NativeReadable();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_interface_new_test.zr", 28);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4393,7 +4393,7 @@ static void test_type_inference_native_interface_members_flow_through_implements
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {NativeDevice} = %import(\"probe.native_shapes\");"
+                "let {NativeDevice} = import(\"probe.native_shapes\");"
                 "var device: NativeDevice = null;"
                 "device.read();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_interface_chain_type_test.zr", 36);
@@ -4447,7 +4447,7 @@ static void test_type_inference_source_extern_function_call_uses_declared_return
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "%extern(\"fixture\") {\n"
+                "native extern(\"fixture\") {\n"
                 "  #zr.ffi.entry(\"zr_ffi_add_i32\")# Add(lhs:i32, rhs:i32): i32;\n"
                 "}\n"
                 "return Add(<i32> 2, <i32> 4);";
@@ -4501,7 +4501,7 @@ static void test_type_inference_source_extern_enum_member_access_returns_enum_ty
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "%extern(\"fixture\") {\n"
+                "native extern(\"fixture\") {\n"
                 "  #zr.ffi.underlying(\"i32\")#\n"
                 "  enum Mode {\n"
                 "    #zr.ffi.value(0)# Off,\n"
@@ -4561,7 +4561,7 @@ static void test_type_inference_source_extern_struct_construction_returns_struct
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "%extern(\"fixture\") {\n"
+                "native extern(\"fixture\") {\n"
                 "  struct Pair {\n"
                 "    var x:i32;\n"
                 "    var y:i32;\n"
@@ -4620,7 +4620,7 @@ static void test_type_inference_native_generic_boxed_new_returns_closed_register
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {NativeBox} = %import(\"probe.native_shapes\");"
+                "let {NativeBox} = import(\"probe.native_shapes\");"
                 "new NativeBox<int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_generic_box_new_type_test.zr", 35);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4678,7 +4678,7 @@ static void test_type_inference_native_generic_constraint_mismatch_is_rejected(v
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {NativeLookup, NativeMode} = %import(\"probe.native_shapes\");"
+                "let {NativeLookup, NativeMode} = import(\"probe.native_shapes\");"
                 "new NativeLookup<NativeMode, int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_generic_constraint_type_test.zr", 39);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4969,7 +4969,7 @@ static void test_type_inference_source_const_generic_boxed_new_returns_closed_re
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {Array} = %import(\"zr.container\");\n"
+                "let {Array} = import(\"zr.container\");\n"
                 "class Matrix<T, const N: int> { var rows: Array<T>[N]; }\n"
                 "new Matrix<int, 2 + 2>();";
         SZrString *sourceName = ZrCore_String_Create(state, "source_const_generic_matrix_new_type_test.zr", 45);
@@ -5047,7 +5047,7 @@ static void test_type_inference_source_const_generic_boxed_new_succeeds_without_
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {Array} = %import(\"zr.container\");\n"
+                "let {Array} = import(\"zr.container\");\n"
                 "class Matrix<T, const N: int> { var rows: Array<T>[N]; }\n"
                 "new Matrix<int, 2 + 2>();";
         SZrString *sourceName =
@@ -5105,7 +5105,7 @@ static void test_type_inference_source_generic_function_supports_explicit_argume
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func identity<T>(value: T): T { return value; }\n"
+                "fn identity<T>(value: T): T { return value; }\n"
                 "identity(1);\n"
                 "identity<string>(\"hello\");";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_type_test.zr", 36);
@@ -5173,7 +5173,7 @@ static void test_type_inference_source_generic_function_reports_explicit_arity_m
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func identity<T>(value: T): T { return value; }\n"
+                "fn identity<T>(value: T): T { return value; }\n"
                 "identity<int, string>(1);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_arity_diag_test.zr", 41);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -5227,7 +5227,7 @@ static void test_type_inference_source_generic_function_reports_cannot_infer_typ
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func create<T>(): T { return null; }\n"
+                "fn create<T>(): T { return null; }\n"
                 "create();";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_infer_diag_test.zr", 41);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -5281,7 +5281,7 @@ static void test_type_inference_source_generic_function_reports_type_argument_ki
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func identity<T>(value: T): T { return value; }\n"
+                "fn identity<T>(value: T): T { return value; }\n"
                 "identity<1>(1);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_kind_diag_test.zr", 40);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -5335,7 +5335,7 @@ static void test_type_inference_source_generic_function_reports_conflicting_infe
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func pick<T>(left: T, right: T): T { return left; }\n"
+                "fn pick<T>(left: T, right: T): T { return left; }\n"
                 "pick(1, \"two\");";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_function_conflict_diag_test.zr", 44);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -5392,8 +5392,8 @@ static void test_type_inference_source_generic_method_supports_explicit_argument
         const char *source =
                 "class Box<T> {\n"
                 "    var value: T;\n"
-                "    func echo<U>(input: U): U { return input; }\n"
-                "    func currentOr<U>(fallback: U): T { return this.value; }\n"
+                "    fn echo<U>(input: U): U { return input; }\n"
+                "    fn currentOr<U>(fallback: U): T { return this.value; }\n"
                 "}\n"
                 "var box = new Box<int>();\n"
                 "box.echo(\"hello\");\n"
@@ -5474,7 +5474,7 @@ static void test_type_inference_source_const_generic_method_supports_explicit_ar
         const char *source =
                 "class Matrix<T, const N: int> { }\n"
                 "class Box<T> {\n"
-                "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+                "    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
                 "}\n"
                 "var box = new Box<int>();\n"
                 "var m = new Matrix<int, 4>();\n"
@@ -5630,7 +5630,7 @@ static void test_type_inference_source_const_generic_method_reports_const_argume
         const char *source =
                 "class Matrix<T, const N: int> { }\n"
                 "class Box<T> {\n"
-                "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+                "    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
                 "}\n"
                 "var box = new Box<int>();\n"
                 "var m = new Matrix<int, 4>();\n"
@@ -5693,7 +5693,7 @@ static void test_type_inference_parameter_passing_mode_in_rejects_reassignment(v
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func consume(%in value: int): void {\n"
+                "fn consume(%in value: int): void {\n"
                 "    value = 1;\n"
                 "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "passing_mode_in_reassign_test.zr", 31);
@@ -5733,10 +5733,10 @@ static void test_type_inference_parameter_passing_modes_out_and_ref_require_assi
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func fill(%out value: int): void {\n"
+                "fn fill(%out value: int): void {\n"
                 "    value = 1;\n"
                 "}\n"
-                "func swap(%ref value: int): void {\n"
+                "fn swap(%ref value: int): void {\n"
                 "}\n"
                 "fill(1);\n"
                 "swap(1);\n";
@@ -5789,7 +5789,7 @@ static void test_type_inference_out_parameter_requires_definite_assignment_on_al
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "func maybeAssign(%out value: int, flag: bool): void {\n"
+                "fn maybeAssign(%out value: int, flag: bool): void {\n"
                 "    if (flag) {\n"
                 "        value = 1;\n"
                 "    }\n"
@@ -6235,7 +6235,7 @@ static void test_type_inference_source_owner_constraint_is_enforced(void) {
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "class Resource { }\n"
-                "func requireOwner<T>(): int where T: owner { return 1; }\n"
+                "fn requireOwner<T>(): int where T: owner { return 1; }\n"
                 "requireOwner<Unique<Resource>>();\n"
                 "requireOwner<Resource>();";
         SZrString *sourceName = ZrCore_String_Create(state, "source_owner_constraint_test.zr", 31);
@@ -6395,7 +6395,7 @@ static void test_type_inference_source_import_function_call_uses_exported_signat
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
-        const char *source = "var calc = %import(\"calc\"); calc.add(1, 2);";
+        const char *source = "let calc = import(\"calc\"); calc.add(1, 2);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_type_test.zr", 36);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -6451,7 +6451,7 @@ static void test_type_inference_source_import_function_member_preserves_metadata
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
-        const char *source = "var calc = %import(\"calc\");";
+        const char *source = "let calc = import(\"calc\");";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_identity_test.zr", 40);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         const SZrTypePrototypeInfo *modulePrototype;
@@ -6512,7 +6512,7 @@ static void test_type_inference_source_import_keeps_same_name_signature_candidat
         const char *moduleSource =
                 "pick(value: int): int { return value; }\n"
                 "pick(value: float): bool { return true; }\n";
-        const char *source = "var calc = %import(\"calc\"); calc.pick(1.5);";
+        const char *source = "let calc = import(\"calc\"); calc.pick(1.5);";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "source_import_overload_signature_test.zr",
                                                      strlen("source_import_overload_signature_test.zr"));
@@ -6575,7 +6575,7 @@ static void test_type_inference_source_import_function_call_rejects_argument_mis
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
-        const char *source = "var calc = %import(\"calc\"); calc.add(1, 2.0);";
+        const char *source = "let calc = import(\"calc\"); calc.add(1, 2.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_fail_test.zr", 36);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -6645,7 +6645,7 @@ static void test_type_inference_source_import_member_chain_uses_returned_prototy
         const char *moduleSource =
                 "struct Pair { var left: int; var right: int; }\n"
                 "makePair(): Pair { return $Pair(1, 2); }";
-        const char *source = "var shapes = %import(\"shapes\"); shapes.makePair().left;";
+        const char *source = "let shapes = import(\"shapes\"); shapes.makePair().left;";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_member_chain_type_test.zr", 38);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -6702,7 +6702,7 @@ static void test_type_inference_destructured_native_type_import_allows_unqualifi
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {Pair} = %import(\"zr.container\");"
+                "let {Pair} = import(\"zr.container\");"
                 "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);"
                 "pair.first;";
         SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_import_type_test.zr", 45);
@@ -6792,7 +6792,7 @@ static void test_type_inference_destructured_native_type_import_registers_closed
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {Pair} = %import(\"zr.container\");"
+                "let {Pair} = import(\"zr.container\");"
                 "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_import_variable_type_test.zr", 54);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -6848,8 +6848,8 @@ static void test_type_inference_qualified_native_type_annotation_accepts_matchin
     {
         SZrState *state = create_test_state();
         const char *source =
-                "var container = %import(\"zr.container\");\n"
-                "var {Pair} = %import(\"zr.container\");\n"
+                "let container = import(\"zr.container\");\n"
+                "let {Pair} = import(\"zr.container\");\n"
                 "var pair1: container.Pair<int, float> = $container.Pair<int, float>(1, 2.0);\n"
                 "var pair2: Pair<int, float> = $Pair<int, float>(1, 2.0);\n"
                 "return pair1.first + <int> pair2.first;\n";
@@ -6886,7 +6886,7 @@ static void test_type_inference_native_import_requires_explicit_binding_for_unqu
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var container = %import(\"zr.container\");"
+                "let container = import(\"zr.container\");"
                 "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_pair_requires_explicit_binding_type_test.zr", 51);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -6934,7 +6934,7 @@ static void test_type_inference_native_import_requires_explicit_binding_for_unqu
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var container = %import(\"zr.container\");"
+                "let container = import(\"zr.container\");"
                 "$Pair<int,float>(1, 2.0);";
         SZrString *sourceName =
                 ZrCore_String_Create(state, "native_pair_requires_explicit_binding_construct_test.zr", 56);
@@ -6983,7 +6983,7 @@ static void test_type_inference_destructured_native_type_import_rejects_second_p
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var {Pair} = %import(\"zr.container\");"
+                "let {Pair} = import(\"zr.container\");"
                 "struct Pair { var left: int; var right: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_collision_test.zr", 41);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7033,7 +7033,7 @@ static void test_type_inference_source_import_array_assignment_rejects_incompati
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "pub var numbers = [1, 2, 3];";
-        const char *source = "var data = %import(\"data\"); data.numbers[0] = 1.5;";
+        const char *source = "let data = import(\"data\"); data.numbers[0] = 1.5;";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_array_assign_type_test.zr", 39);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -7091,7 +7091,7 @@ static void test_type_inference_source_import_array_preserves_iterable_protocol(
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "pub var numbers: int[3] = [1, 2, 3];";
-        const char *source = "var data = %import(\"data\"); data.numbers;";
+        const char *source = "let data = import(\"data\"); data.numbers;";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_array_iterable_test.zr", 40);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expression;
@@ -7152,7 +7152,7 @@ static void test_type_inference_binary_import_function_call_uses_exported_signat
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
-        const char *source = "var calc = %import(\"calc\"); calc.add(1, 2);";
+        const char *source = "let calc = import(\"calc\"); calc.add(1, 2);";
         const char *binaryPath = "test_type_inference_import_fixture.zro";
         TZrByte *binaryBytes = ZR_NULL;
         TZrSize binaryLength = 0;
@@ -7212,7 +7212,7 @@ static void test_type_inference_binary_import_function_member_preserves_metadata
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
-        const char *source = "var calc = %import(\"calc\");";
+        const char *source = "let calc = import(\"calc\");";
         const char *binaryPath = "test_type_inference_import_signature_identity.zro";
         TZrByte *binaryBytes = ZR_NULL;
         TZrSize binaryLength = 0;
@@ -7277,7 +7277,7 @@ static void test_type_inference_binary_import_keeps_same_name_signature_candidat
         const char *moduleSource =
                 "pick(value: int): int { return value; }\n"
                 "pick(value: float): bool { return true; }\n";
-        const char *source = "var calc = %import(\"calc\"); calc.pick(1.5);";
+        const char *source = "let calc = import(\"calc\"); calc.pick(1.5);";
         const char *binaryPath = "test_type_inference_import_overload_signature.zro";
         TZrByte *binaryBytes = ZR_NULL;
         TZrSize binaryLength = 0;
@@ -7344,7 +7344,7 @@ static void test_type_inference_binary_import_function_call_rejects_argument_mis
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
-        const char *source = "var calc = %import(\"calc\"); calc.add(1, 2.0);";
+        const char *source = "let calc = import(\"calc\"); calc.add(1, 2.0);";
         const char *binaryPath = "test_type_inference_import_fixture_fail.zro";
         TZrByte *binaryBytes = ZR_NULL;
         TZrSize binaryLength = 0;
@@ -7419,7 +7419,7 @@ static void test_type_inference_native_generic_receiver_call_publishes_closed_co
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");\n"
+                "let probe = import(\"probe.native_shapes\");\n"
                 "var device = new probe.NativeDevice();\n"
                 "var inferred = device.echo(1);\n"
                 "var explicit = device.echo<string>(\"value\");\n"
@@ -7512,7 +7512,7 @@ static void test_type_inference_native_method_call_rejects_registered_parameter_
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");"
+                "let probe = import(\"probe.native_shapes\");"
                 "var device = new probe.NativeDevice();"
                 "device.configure(\"bad\");";
         SZrString *sourceName = ZrCore_String_Create(state, "native_probe_method_mismatch_test.zr", 36);
@@ -7570,7 +7570,7 @@ static void test_type_inference_native_instance_method_uses_registered_return_ty
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var math = %import(\"zr.math\");"
+                "let math = import(\"zr.math\");"
                 "var v = $math.Vector3(1.0, 2.0, 3.0);"
                 "v.length();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_method_type_test.zr", 34);
@@ -7623,7 +7623,7 @@ static void test_type_inference_native_struct_field_access_uses_registered_field
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = %import(\"zr.system\");"
+                "let system = import(\"zr.system\");"
                 "system.vm.state().loadedModuleCount;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vm_state_field_type_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7673,7 +7673,7 @@ static void test_type_inference_native_nested_module_method_call_returns_null(vo
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = %import(\"zr.system\");"
+                "let system = import(\"zr.system\");"
                 "system.console.printLine(\"hello\");";
         SZrString *sourceName = ZrCore_String_Create(state, "native_system_console_type_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7723,7 +7723,7 @@ static void test_type_inference_native_fs_info_field_uses_registered_field_type(
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = %import(\"zr.system\");"
+                "let system = import(\"zr.system\");"
                 "system.fs.getInfo(system.fs.currentDirectory()).modifiedMilliseconds;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_system_fs_info_type_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7773,7 +7773,7 @@ static void test_type_inference_native_process_arguments_is_array(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = %import(\"zr.system\");"
+                "let system = import(\"zr.system\");"
                 "system.process.arguments;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_system_process_arguments_type_test.zr", 43);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7823,7 +7823,7 @@ static void test_type_inference_native_vm_loaded_modules_element_field_uses_regi
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var system = %import(\"zr.system\");"
+                "let system = import(\"zr.system\");"
                 "system.vm.loadedModules()[0].sourcePath;";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vm_loaded_modules_field_type_test.zr", 43);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7873,7 +7873,7 @@ static void test_type_inference_container_dotted_generic_new_returns_closed_regi
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var container = %import(\"zr.container\");"
+                "let container = import(\"zr.container\");"
                 "new container.Array<int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "container_dotted_generic_new_type_test.zr", 42);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7925,8 +7925,8 @@ static void test_type_inference_container_computed_access_uses_registered_meta_t
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var container = %import(\"zr.container\");"
-                "var {Array, Map} = %import(\"zr.container\");"
+                "let container = import(\"zr.container\");"
+                "let {Array, Map} = import(\"zr.container\");"
                 "var xs: Array<int> = new container.Array<int>();"
                 "var map: Map<string,int> = new container.Map<string,int>();"
                 "xs[0];"
@@ -7993,7 +7993,7 @@ static void test_type_inference_ffi_pointer_helpers_propagate_registered_pointer
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var ffi = %import(\"zr.ffi\");"
+                "let ffi = import(\"zr.ffi\");"
                 "var buffer = ffi.BufferHandle.allocate(8);"
                 "var bytePtr = buffer.pin();"
                 "var typedPtr = bytePtr.as({ kind: \"pointer\", to: \"i32\", direction: \"inout\" });"
@@ -8082,13 +8082,13 @@ static void test_type_inference_ffi_pointer_helpers_propagate_extern_wrapper_typ
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "%extern(\"fixture\") {"
+                "native extern(\"fixture\") {"
                 "    struct NativePoint {"
                 "        var x: i32;"
                 "        var y: i32;"
                 "    }"
                 "}"
-                "var ffi = %import(\"zr.ffi\");"
+                "let ffi = import(\"zr.ffi\");"
                 "var buffer = ffi.BufferHandle.allocate(8);"
                 "var bytePtr = buffer.pin();"
                 "var pointPtr = bytePtr.as({ kind: \"pointer\", to: NativePoint, direction: \"inout\" });"
@@ -8303,9 +8303,9 @@ static void test_type_inference_foreach_binds_iterated_element_type(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var container = %import(\"zr.container\");"
-                "var iteration = %import(\"zr.iteration\");"
-                "var {Array} = %import(\"zr.container\");"
+                "let container = import(\"zr.container\");"
+                "let iteration = import(\"zr.iteration\");"
+                "let {Array} = import(\"zr.container\");"
                 "var dynamic: Array<int> = new container.Array<int>();"
                 "var fixed = [1, 2, 3];"
                 "var sum: int = 0;"
@@ -8370,7 +8370,7 @@ static void test_type_inference_cyclic_import_entry_value_read_rejects_same_scc(
 
     {
         SZrState *state = create_test_state();
-        const char *source = "var a = %import(\"a\");\nreturn 0;\n";
+        const char *source = "let a = import(\"a\");\nreturn 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "cyclic_import_entry_value_read_reject.zr", 40);
         SZrFunction *entryFunction = ZR_NULL;
 
@@ -8424,7 +8424,7 @@ static void test_type_inference_cyclic_import_unsafe_imported_call_rejects_same_
 
     {
         SZrState *state = create_test_state();
-        const char *source = "var a = %import(\"a\");\nreturn 0;\n";
+        const char *source = "let a = import(\"a\");\nreturn 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "cyclic_import_unsafe_call_reject.zr", 34);
         SZrFunction *entryFunction = ZR_NULL;
 
@@ -8482,7 +8482,7 @@ static void test_type_inference_cyclic_import_local_import_outside_entry_path_pa
 
     {
         SZrState *state = create_test_state();
-        const char *source = "var a = %import(\"a\");\nreturn a.seed();\n";
+        const char *source = "let a = import(\"a\");\nreturn a.seed();\n";
         SZrString *sourceName = ZrCore_String_Create(state, "cyclic_import_local_deferred_pass.zr", 35);
         SZrFunction *entryFunction = ZR_NULL;
 

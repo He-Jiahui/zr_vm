@@ -25,9 +25,9 @@ async function main() {
         output += chunk.toString();
     });
 
-    child.stdin.write('var owner: %unique int;\n');
+    child.stdin.write('var owner: Unique<int>;\n');
     child.stdin.write('\n');
-    child.stdin.write(':type %borrow(owner)\n');
+    child.stdin.write(':type owner\n');
     child.stdin.write(':quit\n');
     child.stdin.end();
 
@@ -36,12 +36,12 @@ async function main() {
     });
 
     assert(exitCode === 0, `REPL exited with code ${exitCode}\n${output}`);
-    assert(output.includes('Type: %borrowed int'),
-        `:type should infer the borrowed ownership-qualified type\n${output}`);
-    assert(output.includes('Ownership: borrow %borrowed'),
-        `:type should print the shared ownership semantic fact for %borrow(owner)\n${output}`);
+    assert(output.includes('Type: Unique<int>'),
+        `:type should infer the current unique ownership-qualified type\n${output}`);
+    assert(output.includes('Expression: identifier exact'),
+        `:type should preserve the owner identifier expression fact\n${output}`);
     assert(output.includes('Reference: read owner'),
-        `:type should print the shared owner operand reference fact for %borrow(owner)\n${output}`);
+        `:type should print the owner identifier reference fact\n${output}`);
     assert(output.includes('Declared at: 1:5'),
         `:type should print the owner operand declaration location for %borrow(owner)\n${output}`);
     assert(!output.includes('\nint\n') && !output.includes('failed to infer expression type'),

@@ -32,6 +32,8 @@ from syntax_migration_inventory import (  # noqa: E402
     SourceKind,
     SourcePosition,
     SourceRange,
+    _embedded_context_is_zr_input,
+    _scan_path,
     build_inventory,
     build_repository_inventory,
     repository_candidate_paths,
@@ -103,6 +105,7 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 "keywordlessFunction",
                 "legacyDefinitionArrow",
                 "legacyFunctionTypeArrow",
+                "legacyLambdaWithoutFn",
                 "legacyDollarConstruct",
                 "legacyDynamicDollarConstruct",
                 "legacyBareTypeCall",
@@ -166,29 +169,29 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 "import_binding_context_required",
             ),
             "percentAsync": (
-                MigrationClassification.TARGET_NOT_PROMOTED,
+                MigrationClassification.MACHINE_APPLICABLE,
                 "12",
-                "target_plan_not_promoted",
+                "async_keyword_has_current_syntax",
             ),
             "percentAwait": (
-                MigrationClassification.TARGET_NOT_PROMOTED,
+                MigrationClassification.MACHINE_APPLICABLE,
                 "12",
-                "target_plan_not_promoted",
+                "await_keyword_has_current_syntax",
             ),
             "percentExtern": (
-                MigrationClassification.TARGET_NOT_PROMOTED,
+                MigrationClassification.MACHINE_APPLICABLE,
                 "10",
-                "target_plan_not_promoted",
+                "native_extern_has_current_syntax",
             ),
             "percentTest": (
-                MigrationClassification.TARGET_NOT_PROMOTED,
+                MigrationClassification.REQUIRES_REVIEW,
                 "14",
-                "target_plan_not_promoted",
+                "test_metadata_function_required",
             ),
             "percentCompileTime": (
-                MigrationClassification.TARGET_NOT_PROMOTED,
+                MigrationClassification.MACHINE_APPLICABLE,
                 "11",
-                "target_plan_not_promoted",
+                "comptime_keyword_has_current_syntax",
             ),
             "percentType": (
                 MigrationClassification.MACHINE_APPLICABLE,
@@ -224,6 +227,11 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 MigrationClassification.MACHINE_APPLICABLE,
                 "03",
                 "static_constructor_has_current_syntax",
+            ),
+            "legacyLambdaWithoutFn": (
+                MigrationClassification.REQUIRES_REVIEW,
+                "06A",
+                "lambda_keyword_has_current_syntax",
             ),
             "legacyDynamicDollarConstruct": (
                 MigrationClassification.REQUIRES_REVIEW,
@@ -312,6 +320,10 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 "tests/fixtures/projects/syntax_reference_v1/negative/function_delimiters.zr"
             ],
         )
+        self.assertEqual(
+            "historicalSyntaxReference",
+            exclusion_reasons["docs/zr_language_specification.md"],
+        )
         self.assertFalse(
             any(entry.file.endswith((".zro", ".zri", ".zrs")) for entry in first.scanned_files)
         )
@@ -328,6 +340,75 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 for finding in first.findings
             ),
             "printf-style host strings are not embedded ZR source",
+        )
+
+    def test_embedded_context_recognizes_content_named_lsp_source_inputs(self) -> None:
+        self.assertTrue(
+            _embedded_context_is_zr_input(
+                'const TZrChar *content = "',
+                len('const TZrChar *content = "'),
+                '%import("zr.math");',
+            )
+        )
+
+    def test_repository_inventory_excludes_historical_syntax_reference(self) -> None:
+        report = build_repository_inventory(REPOSITORY_ROOT)
+        exclusion_reasons = {entry.file: entry.reason for entry in report.exclusions}
+
+        self.assertEqual(
+            "historicalSyntaxReference",
+            exclusion_reasons["docs/zr_language_specification.md"],
+        )
+
+    def test_embedded_scan_tracks_adjacent_zr_source_literals(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "adjacent_fixture.c"
+            path.write_text(
+                'const TZrChar *testCode =\n'
+                '    "class Demo {\\n"\n'
+                '    "}\\n"\n'
+                '    "%import(\\\"zr.math\\\");\\n";\n',
+                encoding="utf-8",
+            )
+
+            findings = _scan_path(
+                path,
+                file="adjacent_fixture.c",
+                source_kind=SourceKind.EMBEDDED_ZR_FIXTURE,
+                require_embedded_source_context=True,
+            )
+
+        self.assertEqual(["percentImport"], [finding.legacy_form for finding in findings])
+        self.assertTrue(
+            _embedded_context_is_zr_input(
+                'const TZrChar *testCode = "',
+                len('const TZrChar *testCode = "'),
+                '%import("zr.math");',
+            )
+        )
+        self.assertTrue(
+            _embedded_context_is_zr_input(
+                'const TZrChar *nativeContent = "',
+                len('const TZrChar *nativeContent = "'),
+                'native extern("zr.math") {}',
+            )
+        )
+
+    def test_repository_inventory_has_no_machine_applicable_language_server_legacy_fixtures(self) -> None:
+        report = build_repository_inventory(REPOSITORY_ROOT)
+        findings = [
+            finding
+            for finding in report.findings
+            if finding.file.startswith("tests/language_server/")
+        ]
+
+        self.assertEqual(
+            [],
+            [
+                (finding.file, finding.legacy_form, finding.source_range.start.line)
+                for finding in findings
+                if finding.classification == MigrationClassification.MACHINE_APPLICABLE
+            ],
         )
 
     def test_cli_json_output_is_utf8_lf_and_matches_the_repository_baseline(self) -> None:

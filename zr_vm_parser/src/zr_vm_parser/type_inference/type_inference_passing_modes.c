@@ -19,11 +19,11 @@ static EZrParameterPassingMode get_parameter_passing_mode_at(const SZrArray *par
 static const TZrChar *parameter_passing_mode_label(EZrParameterPassingMode passingMode) {
     switch (passingMode) {
         case ZR_PARAMETER_PASSING_MODE_IN:
-            return "%in";
+            return "in";
         case ZR_PARAMETER_PASSING_MODE_OUT:
-            return "%out";
+            return "out";
         case ZR_PARAMETER_PASSING_MODE_REF:
-            return "%ref";
+            return "ref";
         case ZR_PARAMETER_PASSING_MODE_VALUE:
         default:
             return "value";

@@ -1,4 +1,4 @@
-%module "char_literals";
+module char.literals;
 
 // 基本字符测试
 var c1 = 'a';
@@ -24,7 +24,7 @@ var c14 = '\u0041'; // A
 var c15 = '\u4E2D'; // 中
 
 // 测试用例
-%test("charLiteralsTest"){
+fn __fixture(): int {
     var result = 0;
     
     // 验证基本字符
@@ -52,5 +52,7 @@ var c15 = '\u4E2D'; // 中
     
     return result;
 }
+
+return __fixture();
 
 

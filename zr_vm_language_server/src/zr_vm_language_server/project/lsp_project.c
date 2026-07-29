@@ -519,7 +519,7 @@ static TZrBool project_script_contains_top_level_ffi_wrapper(SZrAstNode *ast) {
 }
 
 static TZrBool project_content_contains_ffi_wrapper_marker(const TZrChar *content) {
-    return content != ZR_NULL && strstr(content, "%extern") != ZR_NULL;
+    return content != ZR_NULL && strstr(content, "native extern") != ZR_NULL;
 }
 
 static TZrBool project_string_array_contains(SZrArray *values, SZrString *needle) {
@@ -599,6 +599,33 @@ static TZrBool project_collect_import_module_names_from_ast(SZrState *state,
     return success;
 }
 
+static const TZrChar *project_find_import_call(const TZrChar *content, const TZrChar *cursor) {
+    const TZrChar *match;
+
+    if (content == ZR_NULL || cursor == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    while ((match = strstr(cursor, "import")) != ZR_NULL) {
+        const TZrChar *scan = match + strlen("import");
+
+        if ((match > content && (isalnum((unsigned char)match[-1]) || match[-1] == '_' || match[-1] == '.')) ||
+            isalnum((unsigned char)*scan) || *scan == '_') {
+            cursor = scan;
+            continue;
+        }
+        while (*scan != '\0' && isspace((unsigned char)*scan)) {
+            scan++;
+        }
+        if (*scan == '(') {
+            return match;
+        }
+        cursor = scan;
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool project_collect_import_module_names_from_text(SZrState *state,
                                                              const TZrChar *content,
                                                              SZrArray *moduleNames) {
@@ -613,8 +640,8 @@ static TZrBool project_collect_import_module_names_from_text(SZrState *state,
     }
 
     cursor = content;
-    while ((cursor = strstr(cursor, "%import")) != ZR_NULL) {
-        const TZrChar *scan = cursor + strlen("%import");
+    while ((cursor = project_find_import_call(content, cursor)) != ZR_NULL) {
+        const TZrChar *scan = cursor + strlen("import");
         const TZrChar *start;
         SZrString *moduleName;
 

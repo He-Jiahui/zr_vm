@@ -26,6 +26,8 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
+static int test_failures = 0;
+
 // 测试日志宏
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
@@ -48,6 +50,7 @@ typedef struct {
 #define TEST_FAIL(timer, summary, reason) do { \
     timer.endTime = clock(); \
     double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    test_failures++; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while(0)
@@ -646,8 +649,8 @@ static void test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics
 
     {
         const TZrChar *testCode =
-            "var math = %import zr.math;"
-            "pipeline(seed: float) {"
+            "let math = import(\"zr.math\");"
+            "fn pipeline(seed: float) {"
             "    var matrix = math.Matrix4x4.translation(seed, seed + 2.0, seed + 4.0);"
             "    var banner = \"PIPELINE\";"
             "    return banner + matrix.m00;"
@@ -705,7 +708,7 @@ static void test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatc
 
     {
         const TZrChar *testCode =
-            "validateNumericAssignments(left: int, right: int) {\n"
+            "fn validateNumericAssignments(left: int, right: int) {\n"
             "    var sum: int = left + right;\n"
             "    var widenedFromZero: float = left + 0;\n"
             "    var widenedFromFloatLiteral: float = left + 0.0;\n"
@@ -760,10 +763,10 @@ static void test_semantic_analyzer_unannotated_function_records_exact_return_typ
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "make(seed: int) {\n"
+            "fn make(seed: int) {\n"
             "    return seed + 0;\n"
             "}\n"
-            "useIt() {\n"
+            "fn useIt() {\n"
             "    return make(1);\n"
             "}\n";
         SZrString *sourceName =
@@ -836,7 +839,7 @@ static void test_semantic_analyzer_reports_initializer_requires_annotation(SZrSt
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "probe() {\n"
+            "fn probe() {\n"
             "    var missing;\n"
             "}\n";
         SZrString *sourceName =
@@ -895,7 +898,7 @@ static void test_semantic_analyzer_reports_return_type_not_provable(SZrState *st
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "probe(flag: bool) {\n"
+            "fn probe(flag: bool) {\n"
             "    if (flag) {\n"
             "        return 1;\n"
             "    }\n"
@@ -973,7 +976,7 @@ static void test_semantic_analyzer_accepts_all_path_return_chains(SZrState *stat
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "labelFor(value: int) {\n"
+            "fn labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
             "    }\n"
@@ -1054,7 +1057,7 @@ static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_an
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "probe() {\n"
+            "fn probe() {\n"
             "    var missing;\n"
             "    missing;\n"
             "}\n";
@@ -1159,10 +1162,10 @@ static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_si
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "make(seed: int) {\n"
+            "fn make(seed: int) {\n"
             "    return seed + 0;\n"
             "}\n"
-            "use(): void {\n"
+            "fn use(): void {\n"
             "    make(1);\n"
             "}\n";
         SZrString *sourceName =
@@ -1274,8 +1277,8 @@ static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
 
     const TZrChar *testCode =
         "var x = 1; "
-        "add(a: int): int { return a; } "
-        "add(a: int, b: int): int { return a + b; }";
+        "fn add(a: int): int { return a; } "
+        "fn add(a: int, b: int): int { return a + b; }";
     SZrString *sourceName = ZrCore_String_Create(state, "semantic_context_test.zr", 24);
     SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
     if (ast == ZR_NULL) {
@@ -1348,7 +1351,7 @@ static void test_semantic_analyzer_records_reference_facts_with_precise_ranges(S
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const char *source =
             "var value = 1;\n"
-            "read(): int {\n"
+            "fn read(): int {\n"
             "    return value;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "reference_fact_test.zr", 22);
@@ -1445,8 +1448,7 @@ static void test_semantic_analyzer_records_using_cleanup_and_template_segments(S
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
             "var resource = 1; "
-            "%using resource; "
-            "%using (resource) { var message = `hello ${resource}`; }";
+            "using (resource) { var message = `hello ${resource}`; }";
         SZrString *sourceName = ZrCore_String_Create(state, "using_template_test.zr", 22);
         SZrAstNode *ast;
         SZrString *resourceName;
@@ -1481,7 +1483,7 @@ static void test_semantic_analyzer_records_using_cleanup_and_template_segments(S
         }
 
         if (analyzer->semanticContext == ZR_NULL ||
-            analyzer->semanticContext->cleanupPlan.length < 2 ||
+            analyzer->semanticContext->cleanupPlan.length < 1 ||
             analyzer->semanticContext->templateSegments.length < 3) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -1537,13 +1539,14 @@ static void test_semantic_analyzer_records_owned_field_cleanup_metadata(SZrState
     TEST_START("Semantic Analyzer Records Owned Field Cleanup Metadata");
 
     TEST_INFO("Owned field semantic metadata",
-              "Analyzing direct %unique/%shared fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup");
+              "Analyzing Unique<T>/Shared<T> fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "struct HandleBox { var handle: %unique Resource; }\n"
-            "class Holder { var resource: %shared Resource; }";
+            "resource class Resource { }\n"
+            "struct HandleBox { var handle: Unique<Resource>; }\n"
+            "class Holder { var resource: Shared<Resource>; }";
         SZrString *sourceName = ZrCore_String_Create(state, "owned_field_semantic_test.zr", 27);
         SZrAstNode *ast;
         SZrString *handleName;
@@ -1773,7 +1776,7 @@ static void test_semantic_analyzer_get_completions_includes_local_scope_symbols(
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "helper(seed: float) {\n"
+            "fn helper(seed: float) {\n"
             "    var localValue = seed + 1.0;\n"
             "    return localValue;\n"
             "}\n";
@@ -1844,7 +1847,7 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
             "var seed = 0.0;\n"
-            "helper(seed: float) {\n"
+            "fn helper(seed: float) {\n"
             "    var localValue = seed + 1.0;\n"
             "    return localValue;\n"
             "}\n";
@@ -1877,11 +1880,7 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
             return;
         }
 
-        position = ZrParser_FileRange_Create(
-            ZrParser_FilePosition_Create(59, 3, 22),
-            ZrParser_FilePosition_Create(59, 3, 22),
-            sourceName
-        );
+        position = file_range_for_nth_substring(testCode, "seed", 2, ZR_FALSE);
         symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
         if (symbol == ZR_NULL ||
             symbol->name == ZR_NULL ||
@@ -1948,11 +1947,7 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
             return;
         }
 
-        position = ZrParser_FileRange_Create(
-            ZrParser_FilePosition_Create(82, 4, 12),
-            ZrParser_FilePosition_Create(82, 4, 12),
-            sourceName
-        );
+        position = file_range_for_nth_substring(testCode, "localValue", 1, ZR_FALSE);
         symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
         if (symbol == ZR_NULL ||
             symbol->name == ZR_NULL ||
@@ -1983,8 +1978,8 @@ static void test_semantic_analyzer_get_completions_includes_native_hint_entries(
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "var system = %import zr.system;\n"
-            "var math = %import zr.math;\n";
+            "let system = import(\"zr.system\");\n"
+            "let math = import(\"zr.math\");\n";
         SZrString *sourceName = ZrCore_String_Create(state, "native_hint_completion_test.zr", 30);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrFileRange position;
@@ -2056,7 +2051,7 @@ static void test_semantic_analyzer_local_symbols_surface_rich_hover_and_completi
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "helper(seed: float) {\n"
+            "fn helper(seed: float) {\n"
             "    var localValue: float = seed + 1.0;\n"
             "    return localValue;\n"
             "}\n";
@@ -2162,10 +2157,10 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "func swap<T>(%ref value: T): T {\n"
+            "fn swap<T>(value: ref T): T {\n"
             "    return value;\n"
             "}\n"
-            "func use(): void {\n"
+            "fn use(): void {\n"
             "    var slot: int = 1;\n"
             "    swap<int>(ref slot);\n"
             "}\n";
@@ -2235,7 +2230,7 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
         detailText = completion_detail_for_label(&completions, "swap");
         if (detailText == ZR_NULL ||
             strstr(detailText, "swap<T>(") == ZR_NULL ||
-            strstr(detailText, "%ref value: T") == ZR_NULL ||
+            strstr(detailText, "value: ref T") == ZR_NULL ||
             strstr(detailText, "): T") == ZR_NULL) {
             ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
@@ -2261,7 +2256,7 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
         hoverText = hover_contents_string(hoverInfo);
         if (hoverText == ZR_NULL ||
             strstr(hoverText, "swap<T>(") == ZR_NULL ||
-            strstr(hoverText, "%ref value: T") == ZR_NULL ||
+            strstr(hoverText, "value: ref T") == ZR_NULL ||
             strstr(hoverText, "Access: public") == ZR_NULL) {
             ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
@@ -2290,10 +2285,10 @@ static void test_semantic_analyzer_generic_call_infers_type_argument_without_exp
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "func id<T>(x: T): T {\n"
+            "fn id<T>(x: T): T {\n"
             "    return x;\n"
             "}\n"
-            "func use(): void {\n"
+            "fn use(): void {\n"
             "    var inferredFromCall = id(1);\n"
             "}\n";
         SZrString *sourceName =
@@ -2375,14 +2370,14 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Hero {\n"
+            "resource class Hero {\n"
             "    pub @constructor() {\n"
             "    }\n"
             "}\n"
-            "take(seed: %shared Hero): %unique Hero {\n"
-            "    return %unique new Hero();\n"
+            "fn take(seed: Shared<Hero>): Unique<Hero> {\n"
+            "    return own Hero();\n"
             "}\n"
-            "func use(sharedSeed: %shared Hero): void {\n"
+            "fn use(sharedSeed: Shared<Hero>): void {\n"
             "    var hero = take(sharedSeed);\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_signature_hover_test.zr", 33);
@@ -2451,8 +2446,8 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
         detailText = completion_detail_for_label(&completions, "take");
         if (detailText == ZR_NULL ||
             strstr(detailText, "take(") == ZR_NULL ||
-            strstr(detailText, "seed: %shared Hero") == ZR_NULL ||
-            strstr(detailText, "): %unique Hero") == ZR_NULL) {
+            strstr(detailText, "seed: Shared<Hero>") == ZR_NULL ||
+            strstr(detailText, "): Unique<Hero>") == ZR_NULL) {
             ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -2477,8 +2472,8 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
         hoverText = hover_contents_string(hoverInfo);
         if (hoverText == ZR_NULL ||
             strstr(hoverText, "Signature: take(") == ZR_NULL ||
-            strstr(hoverText, "seed: %shared Hero") == ZR_NULL ||
-            strstr(hoverText, "): %unique Hero") == ZR_NULL) {
+            strstr(hoverText, "seed: Shared<Hero>") == ZR_NULL ||
+            strstr(hoverText, "): Unique<Hero>") == ZR_NULL) {
             ZrCore_Array_Free(state, &completions);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -2507,7 +2502,7 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
             "interface Producer<out T> {\n"
-            "    next(): T;\n"
+            "    fn next(): T;\n"
             "}\n"
             "class Item {\n"
             "    pub @constructor() { }\n"
@@ -2515,7 +2510,7 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
             "class Derived<T, const N: int> : Producer<T>\n"
             "where T: class, new() {\n"
             "}\n"
-            "func use(): void {\n"
+            "fn use(): void {\n"
             "    var value: Derived<Item, 4> = null;\n"
             "    value;\n"
             "}\n";
@@ -2664,9 +2659,9 @@ static void test_semantic_analyzer_closed_generic_receiver_calls_stay_local_to_t
         const TZrChar *testCode =
             "class Matrix<T, const N: int> { }\n"
             "class Box<T> {\n"
-            "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+            "    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
             "}\n"
-            "func use(): void {\n"
+            "fn use(): void {\n"
             "    var box = new Box<int>();\n"
             "    var m = new Matrix<int, 2 + 2>();\n"
             "    var shaped = box.shape(m);\n"
@@ -2770,10 +2765,10 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
             "interface Producer<out T> {\n"
-            "    accept(value: T): void;\n"
+            "    fn accept(value: T): void;\n"
             "}\n"
             "interface Consumer<in T> {\n"
-            "    next(): T;\n"
+            "    fn next(): T;\n"
             "}\n"
             "interface Store<out T> {\n"
             "    pub var value: T;\n"
@@ -2785,10 +2780,10 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
             "    pub property item: T { get; }\n"
             "}\n"
             "interface Sink<in T> {\n"
-            "    accept(value: T): void;\n"
+            "    fn accept(value: T): void;\n"
             "}\n"
             "interface Nested<out T> {\n"
-            "    next(): Sink<T>;\n"
+            "    fn next(): Sink<T>;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "invalid_variance_positions_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
@@ -2869,11 +2864,11 @@ static void test_semantic_analyzer_preserves_owner_generic_context_in_member_sig
         const TZrChar *testCode =
             "class Matrix<T, const N: int> { }\n"
             "class Box<T> {\n"
-            "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> {\n"
+            "    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> {\n"
             "        return value;\n"
             "    }\n"
             "}\n"
-            "func use(): void {\n"
+            "fn use(): void {\n"
             "    var box = new Box<int>();\n"
             "    var value = new Matrix<int, 4>();\n"
             "    box.shape(value);\n"
@@ -2934,11 +2929,11 @@ static void test_semantic_analyzer_records_reachability_facts_for_unreachable_st
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "returnFlow() {\n"
+            "fn returnFlow() {\n"
             "    return 1;\n"
             "    var deadAfterReturn = 2;\n"
             "}\n"
-            "throwFlow() {\n"
+            "fn throwFlow() {\n"
             "    throw \"boom\";\n"
             "    var deadAfterThrow = 3;\n"
             "}\n";
@@ -3017,7 +3012,7 @@ static void test_semantic_analyzer_records_short_circuit_logical_facts(SZrState 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "shorts() {\n"
+            "fn shorts() {\n"
             "    var skippedOr = true || false;\n"
             "    var skippedAnd = false && true;\n"
             "}\n";
@@ -3096,11 +3091,11 @@ static void test_semantic_analyzer_warns_on_unreachable_statements_after_return_
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "returnFlow() {\n"
+            "fn returnFlow() {\n"
             "    return 1;\n"
             "    var deadAfterReturn = 2;\n"
             "}\n"
-            "throwFlow() {\n"
+            "fn throwFlow() {\n"
             "    throw \"boom\";\n"
             "    var deadAfterThrow = 3;\n"
             "}\n";
@@ -3165,7 +3160,7 @@ static void test_semantic_analyzer_warns_on_unreachable_if_branches(SZrState *st
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "branching() {\n"
+            "fn branching() {\n"
             "    if (true) {\n"
             "        var liveThen = 1;\n"
             "    } else {\n"
@@ -3238,7 +3233,7 @@ static void test_semantic_analyzer_warns_on_deterministic_short_circuit_branches
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "shorts() {\n"
+            "fn shorts() {\n"
             "    var skippedOr = true || false;\n"
             "    var skippedAnd = false && true;\n"
             "}\n";
@@ -3298,15 +3293,15 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
     TEST_START("Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
 
     TEST_INFO("Ownership compatibility in variable declarations",
-              "Analyzing an explicit %unique T declaration initialized from %shared T should emit a specific ownership_mismatch diagnostic and fact");
+              "Analyzing an explicit Unique<T> declaration initialized from Shared<T> should emit a specific ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
-            "var borrowed: %shared Resource;\n"
-            "var owned: %unique Resource = borrowed;\n";
+            "var borrowed: Shared<Resource>;\n"
+            "var owned: Unique<Resource> = borrowed;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_decl_mismatch_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
@@ -3346,8 +3341,8 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
             return;
         }
         if (!diagnostic_message_contains(diagnostic, "Ownership") ||
-            !diagnostic_cause_contains(diagnostic, "%shared") ||
-            !diagnostic_suggestion_contains(diagnostic, "%unique")) {
+            !diagnostic_cause_contains(diagnostic, "Shared<Resource>") ||
+            !diagnostic_suggestion_contains(diagnostic, "Unique<Resource>")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -3383,16 +3378,16 @@ static void test_semantic_analyzer_reports_owner_to_plain_initializer_escape(SZr
     TEST_START("Semantic Analyzer Reports Owner To Plain Initializer Escape");
 
     TEST_INFO("Ownership compatibility in variable declarations",
-              "Analyzing %unique/%shared values assigned to plain GC declarations should emit owner_to_plain_escape diagnostics and facts");
+              "Analyzing Unique<T>/Shared<T> values assigned to plain GC declarations should emit owner_to_plain_escape diagnostics and facts");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
-            "var owner: %unique Resource;\n"
+            "var owner: Unique<Resource>;\n"
             "var plainFromUnique: Resource = owner;\n"
-            "var sharedOwner: %shared Resource;\n"
+            "var sharedOwner: Shared<Resource>;\n"
             "var plainFromShared: Resource = sharedOwner;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_plain_escape_test.zr", 30);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
@@ -3437,8 +3432,8 @@ static void test_semantic_analyzer_reports_owner_to_plain_initializer_escape(SZr
                       "Expected owner_to_plain_escape diagnostics for implicit owner-to-plain assignments");
             return;
         }
-        if (!diagnostic_suggestion_contains(uniqueDiagnostic, "%detach") ||
-            !diagnostic_suggestion_contains(sharedDiagnostic, "%detach")) {
+        if (!diagnostic_suggestion_contains(uniqueDiagnostic, "ownership wrapper") ||
+            !diagnostic_suggestion_contains(sharedDiagnostic, "ownership wrapper")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -3479,14 +3474,14 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
     TEST_START("Semantic Analyzer Reports Return Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in return statements",
-              "Analyzing a function that promises %unique T but returns %shared T should emit a specific ownership_mismatch diagnostic and fact");
+              "Analyzing a function that promises Unique<T> but returns Shared<T> should emit a specific ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
-            "upgrade(resource: %shared Resource): %unique Resource {\n"
+            "fn upgrade(resource: Shared<Resource>): Unique<Resource> {\n"
             "    return resource;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_return_mismatch_test.zr", 33);
@@ -3527,8 +3522,8 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
                       "Expected ownership_mismatch diagnostic on the incompatible return ownership");
             return;
         }
-        if (!diagnostic_cause_contains(diagnostic, "%shared") ||
-            !diagnostic_suggestion_contains(diagnostic, "%unique")) {
+        if (!diagnostic_cause_contains(diagnostic, "Shared<Resource>") ||
+            !diagnostic_suggestion_contains(diagnostic, "Unique<Resource>")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -3538,7 +3533,7 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "resource", 1, ZR_FALSE));
+                file_range_for_nth_substring(testCode, "resource", 2, ZR_FALSE));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
@@ -3563,15 +3558,15 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
     TEST_START("Semantic Analyzer Reports Borrowed Return Escape");
 
     TEST_INFO("Ownership borrow escape in return statements",
-              "Analyzing a function that returns %borrow(owner) should emit a borrow_escape diagnostic and ownership fact");
+              "Analyzing a function that returns ref owner should emit a borrow_escape diagnostic and ownership fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
-            "leak(resource: %shared Resource): %borrowed Resource {\n"
-            "    return %borrow(resource);\n"
+            "fn leak(resource: Unique<Resource>): ref readonly Resource {\n"
+            "    return ref resource;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_borrowed_return_escape_test.zr", 39);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
@@ -3612,7 +3607,7 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
             return;
         }
         if (!diagnostic_message_contains(diagnostic, "Borrowed value cannot escape") ||
-            !diagnostic_cause_contains(diagnostic, "%borrow") ||
+            !diagnostic_cause_contains(diagnostic, "ref") ||
             !diagnostic_suggestion_contains(diagnostic, "Return")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -3623,7 +3618,7 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "%borrow(resource)", 0, ZR_FALSE));
+                file_range_for_nth_substring(testCode, "ref resource", 0, ZR_FALSE));
         if (fact == ZR_NULL) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -3663,16 +3658,16 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
     TEST_START("Semantic Analyzer Reports Function Argument Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in function calls",
-              "Analyzing a direct function call that passes %shared T into %unique T should emit an ownership_mismatch diagnostic and fact");
+              "Analyzing a direct function call that passes Shared<T> into Unique<T> should emit an ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
-            "consume(resource: %unique Resource) {\n"
+            "fn consume(resource: Unique<Resource>) {\n"
             "}\n"
-            "run(resource: %shared Resource) {\n"
+            "fn run(resource: Shared<Resource>) {\n"
             "    consume(resource);\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_call_mismatch_test.zr", 31);
@@ -3740,17 +3735,18 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
     TEST_START("Semantic Analyzer Reports Weak Argument Requires Upgrade");
 
     TEST_INFO("Ownership compatibility in function calls",
-              "Analyzing a direct function call that passes %weak T into %borrowed T should emit a weak_value_requires_upgrade diagnostic and fact");
+              "Passing Weak<T> through an explicit ref call must emit a weak_value_requires_upgrade diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
-            "observe(resource: %borrowed Resource) {\n"
-            "}\n"
-            "run(resource: %weak Resource) {\n"
-            "    observe(resource);\n"
+            "fn observe(resource: ref readonly Resource): int { return 0; }\n"
+            "fn run(owner: Shared<Resource>): int {\n"
+            "    var watcher = owner.weak();\n"
+            "    observe(ref watcher);\n"
+            "    return 0;\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_weak_upgrade_required_test.zr", 38);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
@@ -3787,12 +3783,12 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Weak Argument Requires Upgrade",
-                      "Expected weak_value_requires_upgrade diagnostic for implicit weak-to-borrowed argument use");
+                      "Expected weak_value_requires_upgrade diagnostic for an explicit weak ref argument");
             return;
         }
         if (!diagnostic_message_contains(diagnostic, "Weak value must be upgraded") ||
-            !diagnostic_cause_contains(diagnostic, "%weak") ||
-            !diagnostic_suggestion_contains(diagnostic, "%upgrade")) {
+            !diagnostic_cause_contains(diagnostic, "Weak<T>") ||
+            !diagnostic_suggestion_contains(diagnostic, "upgrade")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -3802,7 +3798,7 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring_offset(testCode, "observe(resource);", 0, strlen("observe(")));
+                file_range_for_nth_substring_offset(testCode, "observe(ref watcher);", 0, strlen("observe(ref ")));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_WEAK ||
@@ -3828,19 +3824,19 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
     TEST_START("Semantic Analyzer Reports Method Argument Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in method calls",
-              "Analyzing an instance method call that passes %shared T into %unique T should emit an ownership_mismatch diagnostic and fact");
+              "Analyzing an instance method call that passes Shared<T> into Unique<T> should emit an ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
             "class ResourceBox {\n"
-            "    consume(resource: %unique Resource): int {\n"
+            "    fn consume(resource: Unique<Resource>): int {\n"
             "        return 0;\n"
             "    }\n"
             "}\n"
-            "run(box: ResourceBox, resource: %shared Resource) {\n"
+            "fn run(box: ResourceBox, resource: Shared<Resource>) {\n"
             "    box.consume(resource);\n"
             "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_method_call_mismatch_test.zr", 38);
@@ -3913,13 +3909,13 @@ static void test_semantic_analyzer_resolves_overloads_for_call_compatibility(SZr
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "mix(value: int): int {\n"
+            "fn mix(value: int): int {\n"
             "    return value;\n"
             "}\n"
-            "mix(value: string): string {\n"
+            "fn mix(value: string): string {\n"
             "    return value;\n"
             "}\n"
-            "run(flag: bool) {\n"
+            "fn run(flag: bool) {\n"
             "    mix(\"ok\");\n"
             "    mix(flag);\n"
             "}\n";
@@ -3982,9 +3978,9 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "%extern(\"fixture\") {\n"
+            "native extern(\"fixture\") {\n"
             "    #zr.ffi.unknown(\"native_bad\")#\n"
-            "    BadUnknown(lhs:i32): i32;\n"
+            "    fn BadUnknown(lhs:i32): i32;\n"
             "    #zr.ffi.entry(\"native_struct\")#\n"
             "    struct InvalidTarget {\n"
             "        var value:i32;\n"
@@ -3995,7 +3991,7 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
             "        value:pointer<i32>\n"
             "    ): void;\n"
             "    #zr.ffi.callconv(123)#\n"
-            "    BadCallconv(): void;\n"
+            "    fn BadCallconv(): void;\n"
             "}\n"
             "#zr.ffi.lowering(\"bad\")#\n"
             "#zr.ffi.underlying(123)#\n"
@@ -4084,7 +4080,7 @@ static void test_semantic_analyzer_class_method_scope_surfaces_this_super_and_lo
             "}\n"
             "class Derived: Base {\n"
             "    pub var derivedValue: int = 20;\n"
-            "    pub total(extra: int): int {\n"
+            "    pub fn total(extra: int): int {\n"
             "        var localResult = extra + 1;\n"
             "        return this.derivedValue + localResult;\n"
             "    }\n"
@@ -4217,13 +4213,13 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "%compileTime var MAX_SIZE = 100;\n"
-            "%compileTime addBias(seed: int): int {\n"
+            "comptime fn addBias(seed: int): int {\n"
+            "    let MAX_SIZE = 100;\n"
             "    return seed + MAX_SIZE;\n"
             "}\n"
-            "%test(\"scope\") {\n"
+            "fn verifyScope(): int {\n"
             "    var result = addBias(1);\n"
-            "    var typed = (value: int) => {\n"
+            "    var typed = fn(value: int): int => {\n"
             "        return value + result;\n"
             "    };\n"
             "    return typed(2);\n"
@@ -4588,5 +4584,5 @@ int main(void) {
     printf("All Semantic Analyzer Tests Completed\n");
     printf("==========\n");
     
-    return 0;
+    return test_failures == 0 ? 0 : 1;
 }

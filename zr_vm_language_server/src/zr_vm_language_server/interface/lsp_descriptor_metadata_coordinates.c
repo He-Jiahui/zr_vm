@@ -2,8 +2,9 @@
 
 #include <string.h>
 
-TZrBool ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(SZrFileRange range,
-                                                                       SZrLspRange *outRange) {
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(
+        SZrFileRange range,
+        SZrLspRange *outRange) {
     if (outRange != ZR_NULL) {
         memset(outRange, 0, sizeof(*outRange));
     }

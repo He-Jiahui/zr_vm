@@ -5,13 +5,13 @@ static void test_semantic_analyzer_links_weak_receiver_to_owner_release(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Links Weak Receiver To Owner Release";
     const TZrChar *testCode =
-        "class Resource {\n"
-        "    ping(): int { return 0; }\n"
+        "resource class Resource {\n"
+        "    fn ping(): int { return 0; }\n"
         "}\n"
-        "use(owner: %shared Resource): int {\n"
-        "    var watcher = %weak(owner);\n"
+        "fn use(owner: Shared<Resource>): int {\n"
+        "    var watcher = owner.weak();\n"
         "    watcher.ping();\n"
-        "    var released = %release(owner);\n"
+        "    drop(owner);\n"
         "    watcher.ping();\n"
         "    return 0;\n"
         "}\n";
@@ -78,15 +78,15 @@ static void test_semantic_analyzer_links_rebound_weak_receiver_owner_set(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Links Rebound Weak Receiver Owner Set";
     const TZrChar *testCode =
-        "class Resource {\n"
-        "    ping(): int { return 0; }\n"
+        "resource class Resource {\n"
+        "    fn ping(): int { return 0; }\n"
         "}\n"
-        "use(first: %shared Resource, second: %shared Resource, choose: bool): int {\n"
-        "    var watcher = %weak(first);\n"
+        "fn use(first: Shared<Resource>, second: Shared<Resource>, choose: bool): int {\n"
+        "    var watcher = first.weak();\n"
         "    if (choose) {\n"
-        "        watcher = %weak(second);\n"
+        "        watcher = second.weak();\n"
         "    }\n"
-        "    var released = %release(second);\n"
+        "    drop(second);\n"
         "    watcher.ping();\n"
         "    return 0;\n"
         "}\n";

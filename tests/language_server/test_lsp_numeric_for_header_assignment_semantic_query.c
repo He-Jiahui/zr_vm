@@ -75,7 +75,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
 static TZrBool test_local_expression_query_joins_for_init_and_step_assignment_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1; flag; narrowed = 10) {\n"
         "        flag;\n"

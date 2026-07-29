@@ -362,9 +362,9 @@ static void test_intermediate_writer_emits_semir_sections(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "class Box {}\n"
-                "var owner = %unique new Box();\n"
-                "var alias = %shared(owner);\n"
-                "var watcher = %weak(alias);";
+                "var owner = own Box();\n"
+                "var alias = owner.share();\n"
+                "var watcher = alias.weak();";
         const char *intermediatePath = "semir_sections_test.zri";
         SZrString *sourceName;
         SZrFunction *func;
@@ -414,9 +414,9 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "class Box {}\n"
-                "var owner = %unique new Box();\n"
-                "var alias = %shared(owner);\n"
-                "var watcher = %weak(alias);";
+                "var owner = own Box();\n"
+                "var alias = owner.share();\n"
+                "var watcher = alias.weak();";
         SZrString *sourceName;
         SZrFunction *func;
 
@@ -871,9 +871,9 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "class Box {}\n"
-                "var owner = %unique new Box();\n"
-                "var alias = %shared(owner);\n"
-                "var watcher = %weak(alias);";
+                "var owner = own Box();\n"
+                "var alias = owner.share();\n"
+                "var watcher = alias.weak();";
         const char *binaryPath = "semir_roundtrip_test.zro";
         SZrString *sourceName;
         SZrFunction *func;

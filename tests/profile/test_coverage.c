@@ -58,7 +58,7 @@ static TZrBool has_active_line(const TZrUInt32 *lines, TZrSize count, TZrUInt32 
 
 static void test_core_active_lines_extract_unique_executable_lines(void) {
     const char *source =
-            "func choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    if (flag) {\n"
             "        return 10;\n"
             "    }\n"
@@ -90,7 +90,7 @@ static void test_core_active_lines_extract_unique_executable_lines(void) {
 
 static void test_coverage_records_executed_and_uncovered_lines(void) {
     const char *source =
-            "func choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    if (flag) {\n"
             "        return 10;\n"
             "    }\n"

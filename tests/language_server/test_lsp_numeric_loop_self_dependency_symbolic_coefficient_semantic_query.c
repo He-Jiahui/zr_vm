@@ -165,7 +165,7 @@ static TZrBool run_assignment_range_case_at(SZrState *state,
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_divided_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -204,7 +204,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_divided
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_modulo_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -243,7 +243,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_modulo_
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_shifted_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -282,7 +282,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_shifted
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_right_shifted_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -321,7 +321,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_right_s
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise_and_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -360,7 +360,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise_or_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -399,7 +399,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise_xor_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -438,7 +438,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_singleton_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -478,7 +478,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_singlet
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_singleton_coefficient_invalidated_by_loop_write(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -519,7 +519,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_single
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_singleton_coefficient_invalidated_by_nested_if_write(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, inner: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, inner: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -564,7 +564,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_single
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_positive_range_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed + 1;\n"
@@ -592,7 +592,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_positi
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_commuted_positive_range_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed + 1;\n"
@@ -620,7 +620,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_commut
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commuted_range_coefficient_residual_exact_cancel(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed + 1;\n"
@@ -660,7 +660,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commute
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commuted_sign_crossing_product_exact_cancel(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) - 1;\n"
@@ -700,7 +700,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commute
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_negative_range_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed + 1;\n"

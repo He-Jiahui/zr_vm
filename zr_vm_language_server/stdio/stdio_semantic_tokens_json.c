@@ -21,6 +21,7 @@ cJSON *create_semantic_token_legend_json(void) {
         }
     }
 
+    cJSON_AddItemToArray(modifiers, cJSON_CreateString("deprecated"));
     cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_TYPES, types);
     cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_MODIFIERS, modifiers);
     return legend;

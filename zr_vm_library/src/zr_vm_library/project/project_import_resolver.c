@@ -196,6 +196,25 @@ static TZrBool project_resolver_normalize_module_key_text(const TZrChar *moduleP
     return ZR_TRUE;
 }
 
+static TZrBool project_resolver_module_path_equals(const TZrChar *left, const TZrChar *right) {
+    TZrSize index = 0;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (left[index] != '\0' && right[index] != '\0') {
+        TZrChar leftCharacter = left[index] == '.' ? '/' : left[index];
+        TZrChar rightCharacter = right[index] == '.' ? '/' : right[index];
+        if (leftCharacter != rightCharacter) {
+            return ZR_FALSE;
+        }
+        index++;
+    }
+
+    return left[index] == '\0' && right[index] == '\0';
+}
+
 static TZrBool project_resolver_build_source_root(const SZrLibrary_Project *project,
                                                   TZrChar *buffer,
                                                   TZrSize bufferSize) {
@@ -722,7 +741,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary
         hasDerived = ZR_TRUE;
     }
 
-    if (hasExplicit && hasDerived && strcmp(explicitNormalized, derivedFromPath) != 0) {
+    if (hasExplicit && hasDerived && !project_resolver_module_path_equals(explicitNormalized, derivedFromPath)) {
         project_resolver_set_error(errorBuffer,
                                    errorBufferSize,
                                    "explicit module key '%s' does not match project path '%s'",
@@ -731,7 +750,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary
         return ZR_FALSE;
     }
 
-    if (hasExplicit) {
+    if (hasExplicit && !hasDerived) {
         return project_resolver_copy_text(explicitNormalized, buffer, bufferSize);
     }
 

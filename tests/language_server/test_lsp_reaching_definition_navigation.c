@@ -142,7 +142,7 @@ static void test_lsp_definition_prefers_reaching_write_for_read(SZrState *state)
     const TZrChar *summary = "LSP Definition Prefers Reaching Write For Read";
     const TZrChar *uriText = "file:///reaching_definition_navigation.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    var seed = 1;\n"
         "    seed = 3;\n"
         "    return seed;\n"
@@ -192,7 +192,7 @@ static void test_lsp_definition_returns_branch_writes_for_divergent_branch_write
     const TZrChar *summary = "LSP Definition Returns Branch Writes For Divergent Branch Writes";
     const TZrChar *uriText = "file:///reaching_definition_branch_join.zr";
     const TZrChar *content =
-        "func choose(flag: bool): int {\n"
+        "fn choose(flag: bool): int {\n"
         "    var seed: int;\n"
         "    if (flag) {\n"
         "        seed = 1;\n"

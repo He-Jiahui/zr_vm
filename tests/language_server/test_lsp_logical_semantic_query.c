@@ -268,7 +268,7 @@ static void test_local_expression_query_returns_interval_comparison_logical_fact
     const TZrChar *summary = "LSP Local Expression Query Returns Interval Comparison Logical Fact";
     const TZrChar *uriText = "file:///local_interval_comparison_logical_fact.zr";
     const TZrChar *content =
-        "func logic(seed: u8): bool {\n"
+        "fn logic(seed: u8): bool {\n"
         "    return seed < 300;\n"
         "}\n";
     SZrTestTimer timer;

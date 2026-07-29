@@ -1438,7 +1438,7 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                     memberInfo.returnTypeName = function_constant_string(cs->state,
                                                                          function,
                                                                          compiledMember->returnTypeNameStringIndex);
-                    memberInfo.isUsingManaged = compiledMember->isUsingManaged ? ZR_TRUE : ZR_FALSE;
+                    memberInfo.reservedRemovedUsingManaged = ZR_FALSE;
                     memberInfo.ownershipQualifier = (EZrOwnershipQualifier)compiledMember->ownershipQualifier;
                     memberInfo.callsClose = compiledMember->callsClose ? ZR_TRUE : ZR_FALSE;
                     memberInfo.callsDestructor = compiledMember->callsDestructor ? ZR_TRUE : ZR_FALSE;

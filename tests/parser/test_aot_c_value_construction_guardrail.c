@@ -41,7 +41,7 @@
 #endif
 
 static const char *const CZrAotTypedLoopSource =
-        "func sum_to(limit: int): int {\n"
+        "fn sum_to(limit: int): int {\n"
         "    var index: int = 0;\n"
         "    var sum: int = 0;\n"
         "    while (index < limit) {\n"
@@ -375,7 +375,7 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
     TEST_IGNORE_MESSAGE("AOT C value-construction guardrail executes the Unix shared-library path");
 #else
     static const char *const source =
-            "func add(left: int, right: int): int {\n"
+            "fn add(left: int, right: int): int {\n"
             "    return left + right;\n"
             "}\n"
             "return add(19, 23);";

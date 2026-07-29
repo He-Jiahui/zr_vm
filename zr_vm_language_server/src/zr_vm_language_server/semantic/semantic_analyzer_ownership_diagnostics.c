@@ -65,18 +65,20 @@ TZrBool ZrLanguageServer_SemanticOwnership_AddEscapeRelatedInformation(
         SZrSemanticAnalyzer *analyzer,
         SZrStructuredDiagnostic *diagnostic,
         SZrAstNode *ownershipNode,
+        SZrAstNode *sourceNode,
         SZrAstNode *enclosingCallable,
         EZrOwnershipQualifier qualifier) {
-    SZrAstNode *sourceNode;
     SZrFileRange lifetimeEnd;
     const TZrChar *sourceMessage;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || diagnostic == ZR_NULL ||
-        ownershipNode == ZR_NULL || ownershipNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        ownershipNode == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    sourceNode = ownershipNode->data.constructExpression.target;
+    if (sourceNode == ZR_NULL && ownershipNode->type == ZR_AST_CONSTRUCT_EXPRESSION) {
+        sourceNode = ownershipNode->data.constructExpression.target;
+    }
     if (sourceNode == ZR_NULL ||
         !semantic_ownership_source_lifetime_end(analyzer, sourceNode, enclosingCallable, &lifetimeEnd)) {
         return ZR_FALSE;

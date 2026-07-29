@@ -151,7 +151,7 @@ static void test_lsp_diagnostics_publish_definite_assignment_related_information
     const TZrChar *summary = "LSP Diagnostics Publish Definite Assignment Related Information";
     const TZrChar *uriText = "file:///semantic_query_definite_assignment_related.zr";
     const TZrChar *content =
-        "func choose(flag: bool): int {\n"
+        "fn choose(flag: bool): int {\n"
         "    var seed: int;\n"
         "    if (flag) {\n"
         "        seed = 1;\n"
@@ -256,7 +256,7 @@ static void test_lsp_diagnostics_publish_semantic_query_unreachable_branch(SZrSt
     const TZrChar *summary = "LSP Diagnostics Publish Semantic Query Unreachable Branch";
     const TZrChar *uriText = "file:///semantic_query_unreachable_branch.zr";
     const TZrChar *content =
-        "func choose(): int {\n"
+        "fn choose(): int {\n"
         "    return true ? 1 : 2;\n"
         "}\n";
     SZrTestTimer timer;
@@ -307,7 +307,7 @@ static void test_lsp_diagnostics_publish_interval_logical_unreachable_branch(SZr
     const TZrChar *summary = "LSP Diagnostics Publish Interval Logical Unreachable Branch";
     const TZrChar *uriText = "file:///semantic_query_interval_logical_branch.zr";
     const TZrChar *content =
-        "func choose(seed: u8): int {\n"
+        "fn choose(seed: u8): int {\n"
         "    if (seed < 300) {\n"
         "        return 1;\n"
         "    } else {\n"
@@ -362,7 +362,7 @@ static void test_lsp_diagnostics_publish_numeric_overflow(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Numeric Overflow";
     const TZrChar *uriText = "file:///semantic_query_numeric_overflow.zr";
     const TZrChar *content =
-        "func overflow(): int {\n"
+        "fn overflow(): int {\n"
         "    return 9223372036854775807 + 1;\n"
         "}\n";
     SZrTestTimer timer;
@@ -413,7 +413,7 @@ static void test_lsp_diagnostics_publish_array_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_array_bounds.zr";
     const TZrChar *content =
-        "func pick(): int {\n"
+        "fn pick(): int {\n"
         "    var values = [1, 2];\n"
         "    return values[2];\n"
         "}\n";
@@ -465,7 +465,7 @@ static void test_lsp_diagnostics_publish_interval_array_bounds(SZrState *state) 
     const TZrChar *summary = "LSP Diagnostics Publish Interval Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_interval_array_bounds.zr";
     const TZrChar *content =
-        "func pick(index: u8): int {\n"
+        "fn pick(index: u8): int {\n"
         "    var values = [1, 2];\n"
         "    var maybe = values[index];\n"
         "    return values[index + 2];\n"
@@ -518,7 +518,7 @@ static void test_lsp_diagnostics_publish_possible_interval_array_bounds(SZrState
     const TZrChar *summary = "LSP Diagnostics Publish Possible Interval Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_possible_interval_array_bounds.zr";
     const TZrChar *content =
-        "func pick(index: u8): int {\n"
+        "fn pick(index: u8): int {\n"
         "    var values = [1, 2];\n"
         "    return values[index];\n"
         "}\n";
@@ -586,7 +586,7 @@ static void test_lsp_diagnostics_publish_primitive_integer_array_bounds(SZrState
     const TZrChar *summary = "LSP Diagnostics Publish Primitive Integer Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_primitive_integer_array_bounds.zr";
     const TZrChar *content =
-        "func pick(index: int): int {\n"
+        "fn pick(index: int): int {\n"
         "    var values = [1, 2];\n"
         "    return values[index];\n"
         "}\n";
@@ -654,11 +654,11 @@ static void test_lsp_diagnostics_publish_array_min_max_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Array Min Max Bounds";
     const TZrChar *uriText = "file:///semantic_query_array_min_max_bounds.zr";
     const TZrChar *content =
-        "func maybe(index: u8): int {\n"
+        "fn maybe(index: u8): int {\n"
         "    var values: int[1 .. 3] = [1, 2];\n"
         "    return values[index];\n"
         "}\n"
-        "func definite(): int {\n"
+        "fn definite(): int {\n"
         "    var values: int[1 .. 3] = [1, 2];\n"
         "    return values[3];\n"
         "}\n";
@@ -733,11 +733,11 @@ static void test_lsp_diagnostics_publish_min_only_array_negative_interval(SZrSta
     const TZrChar *summary = "LSP Diagnostics Publish Min Only Array Negative Interval";
     const TZrChar *uriText = "file:///semantic_query_min_only_array_negative_interval.zr";
     const TZrChar *content =
-        "func maybe(index: int): int {\n"
+        "fn maybe(index: int): int {\n"
         "    var values: int[1 ..] = [1, 2];\n"
         "    return values[index];\n"
         "}\n"
-        "func positive(index: u8): int {\n"
+        "fn positive(index: u8): int {\n"
         "    var values: int[1 ..] = [1, 2];\n"
         "    return values[index];\n"
         "}\n";
@@ -813,7 +813,7 @@ static void test_lsp_diagnostics_publish_non_integer_array_index(SZrState *state
     const TZrChar *summary = "LSP Diagnostics Publish Non Integer Array Index";
     const TZrChar *uriText = "file:///semantic_query_array_index_type_mismatch.zr";
     const TZrChar *content =
-        "func pick(): int {\n"
+        "fn pick(): int {\n"
         "    var values = [1, 2];\n"
         "    return values[\"name\"];\n"
         "}\n";

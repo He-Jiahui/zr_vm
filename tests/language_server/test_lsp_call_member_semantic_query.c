@@ -106,10 +106,10 @@ static TZrBool signature_help_contains_text(SZrLspSignatureHelp *help, const TZr
 static TZrBool test_local_expression_query_returns_call_target_payload(SZrState *state) {
     const TZrChar *uriText = "file:///local_call_expression_payload.zr";
     const TZrChar *content =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    return pick(42);\n"
         "}\n";
     SZrLspContext *context;
@@ -177,18 +177,18 @@ static TZrBool test_local_expression_query_returns_call_target_payload(SZrState 
 static TZrBool test_local_expression_query_preserves_call_payload_after_incomplete_edit(SZrState *state) {
     const TZrChar *uriText = "file:///local_call_payload_incomplete_edit.zr";
     const TZrChar *validContent =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    return pick(42);\n"
         "}\n"
         "var tail: int = 7;\n";
     const TZrChar *brokenContent =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    return pick(42);\n"
         "\n"
         "var tail: int = 7;\n";
@@ -255,18 +255,18 @@ static TZrBool test_local_expression_query_preserves_call_payload_after_incomple
 static TZrBool test_signature_help_preserves_call_payload_after_incomplete_edit(SZrState *state) {
     const TZrChar *uriText = "file:///signature_payload_incomplete_edit.zr";
     const TZrChar *validContent =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    return pick(42);\n"
         "}\n"
         "var tail: int = 7;\n";
     const TZrChar *brokenContent =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    return pick(42);\n"
         "\n"
         "var tail: int = 7;\n";
@@ -320,7 +320,7 @@ static TZrBool test_local_expression_query_returns_member_payload(SZrState *stat
     const TZrChar *uriText = "file:///local_member_expression_payload.zr";
     const TZrChar *content =
         "var seed = 2;\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    return seed.value;\n"
         "}\n";
     SZrLspContext *context;

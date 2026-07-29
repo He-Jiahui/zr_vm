@@ -62,6 +62,7 @@ static TZrBool parser_token_can_start_expression(EZrToken token) {
         case ZR_TK_NEW:
         case ZR_TK_USING:
         case ZR_TK_PERCENT:
+        case ZR_TK_REF:
         case ZR_TK_SUPER:
         case ZR_TK_LESS_THAN:
         case ZR_TK_TYPEID:
@@ -160,6 +161,10 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
 
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "await")) {
         return parse_await_expression(ps);
+    }
+
+    if (token == ZR_TK_REF) {
+        return parse_reference_expression(ps);
     }
 
     if (token == ZR_TK_IDENTIFIER &&
@@ -267,22 +272,11 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     }
 
     if (token == ZR_TK_PERCENT) {
-        SZrAstNode *node = ZR_NULL;
-        if (current_percent_directive_equals(ps, "import")) {
-            node = parse_reserved_import_expression(ps);
-        } else if (current_percent_directive_equals(ps, "await")) {
-            node = parse_reserved_await_expression(ps);
-        } else if (current_percent_directive_equals(ps, "type")) {
-            node = parse_reserved_type_expression(ps);
-        } else if (current_percent_directive_equals(ps, "func")) {
-            node = parse_type_literal_expression(ps);
-        } else {
-            node = parse_percent_ownership_expression(ps);
-        }
-        if (node == ZR_NULL) {
+        if (report_removed_percent_syntax(ps)) {
             return ZR_NULL;
         }
-        return parse_member_access(ps, node);
+        report_error(ps, "Unexpected '%' at the start of an expression");
+        return ZR_NULL;
     }
 
     if (token == ZR_TK_NEW) {
@@ -298,11 +292,11 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     }
 
     if (token == ZR_TK_DOLLAR) {
-        SZrAstNode *node = parse_prototype_reference_expression(ps);
-        if (node == ZR_NULL) {
-            return ZR_NULL;
-        }
-        return parse_member_access(ps, node);
+        report_removed_legacy_syntax(
+                ps,
+                "$ construct",
+                "Use `init TypeRef(...)` for struct values, `own TypeRef(...)` for resources, or an ordinary call for callable values.");
+        return ZR_NULL;
     }
 
     // 检查一元操作符

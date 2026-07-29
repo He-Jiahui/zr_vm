@@ -1,3 +1,3 @@
-pub var seed = () => {
+pub var seed = fn() => {
     return 37;
 };

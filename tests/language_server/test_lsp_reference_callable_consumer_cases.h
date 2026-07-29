@@ -335,7 +335,7 @@ static void test_lsp_reference_call_diagnostic_is_published_from_query_facts(
             "fn use(value: ref readonly int): int { return inspect(value); }\n";
     const TZrChar *expectedCode = "compiler_error";
     const TZrChar *expectedMessage =
-            "%ref parameter requires the 'ref' argument marker";
+            "ref parameter requires the 'ref' argument marker";
     SZrTestTimer timer;
     SZrLspContext *context;
     SZrString *uri;

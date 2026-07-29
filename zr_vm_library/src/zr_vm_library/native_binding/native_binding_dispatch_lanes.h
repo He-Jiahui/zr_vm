@@ -366,7 +366,7 @@ static ZR_FORCE_INLINE void native_binding_context_adopt_inline_frame_anchor_inl
         ZrLibCallContext *context,
         const SZrFunctionStackAnchor *functionBaseAnchor) {
     if (context == ZR_NULL || context->state == ZR_NULL || context->functionBase == ZR_NULL ||
-        functionBaseAnchor == ZR_NULL || context->inlineFrameFunction == ZR_NULL) {
+        functionBaseAnchor == ZR_NULL) {
         return;
     }
 

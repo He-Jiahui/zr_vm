@@ -1085,7 +1085,7 @@ static void semantic_type_prototypes_append_class_member(SZrState *state,
             memberInfo.accessModifier = field->access;
             memberInfo.isStatic = field->isStatic;
             memberInfo.isConst = field->isConst;
-            memberInfo.isUsingManaged = field->isUsingManaged;
+            memberInfo.reservedRemovedUsingManaged = ZR_FALSE;
             memberInfo.name = field->name != ZR_NULL ? field->name->name : ZR_NULL;
             memberInfo.baseDefinitionName = memberInfo.name;
             memberInfo.fieldType = field->typeInfo;
@@ -1253,7 +1253,7 @@ static void semantic_type_prototypes_append_struct_member(SZrState *state,
             memberInfo.accessModifier = field->access;
             memberInfo.isStatic = field->isStatic;
             memberInfo.isConst = field->isConst;
-            memberInfo.isUsingManaged = field->isUsingManaged;
+            memberInfo.reservedRemovedUsingManaged = ZR_FALSE;
             memberInfo.name = field->name != ZR_NULL ? field->name->name : ZR_NULL;
             memberInfo.baseDefinitionName = memberInfo.name;
             memberInfo.fieldType = field->typeInfo;

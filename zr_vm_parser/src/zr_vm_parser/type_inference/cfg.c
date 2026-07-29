@@ -132,11 +132,6 @@ static SZrAstNodeArray *cfg_statement_array_from_root(SZrAstNode *root) {
                            root->data.functionDeclaration.body->type == ZR_AST_BLOCK
                        ? root->data.functionDeclaration.body->data.block.body
                        : ZR_NULL;
-        case ZR_AST_TEST_DECLARATION:
-            return root->data.testDeclaration.body != ZR_NULL &&
-                           root->data.testDeclaration.body->type == ZR_AST_BLOCK
-                       ? root->data.testDeclaration.body->data.block.body
-                       : ZR_NULL;
         default:
             return ZR_NULL;
     }

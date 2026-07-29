@@ -69,7 +69,7 @@ static TZrChar *build_deep_type_source(TZrUInt32 depth) {
     length = (TZrSize)snprintf(
             source,
             capacity,
-            "%%module \"reflection_deep_stress\";\n"
+            "module reflection_deep_stress;\n"
             "pub class C0000 { pub var f0000: int; }\n");
     for (TZrUInt32 index = 1u; index < depth; index++) {
         if (!append_text(
@@ -288,7 +288,7 @@ cleanup:
 static void test_reflection_query_caches_one_hundred_thousand_members(void) {
     const TZrUInt32 memberCount = 100000u;
     static const TZrChar *source =
-            "%module \"reflection_wide_stress\";\n"
+            "module reflection_wide_stress;\n"
             "pub class Wide { pub var seed: int; }\n";
     SZrFunction *function = ZR_NULL;
     SZrObjectModule *module;
@@ -475,7 +475,7 @@ static void test_reflection_deep_inheritance_cache_survives_compacting_gc(void) 
 
 static void test_reflection_constructor_throw_reports_boundary_and_clears_result(void) {
     static const TZrChar *source =
-            "%module \"reflection_throw_stress\";\n"
+            "module reflection_throw_stress;\n"
             "pub class Payload {}\n"
             "pub class Throwing {\n"
             "  pub var value: object;\n"

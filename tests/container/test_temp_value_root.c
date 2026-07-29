@@ -109,7 +109,7 @@ static void test_object_invoke_member_restores_existing_function_top_without_gro
     SZrTypeValue resultValue;
     SZrString *memberName;
     const char *factorySource =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "return new container.Array<int>();\n";
 
     TEST_ASSERT_NOT_NULL(state);

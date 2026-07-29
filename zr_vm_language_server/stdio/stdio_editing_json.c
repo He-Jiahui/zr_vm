@@ -102,26 +102,38 @@ static cJSON *serialize_workspace_edit(const char *uriText,
                                        SZrArray *edits,
                                        const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot) {
     cJSON *json = cJSON_CreateObject();
-    cJSON *changes = cJSON_CreateObject();
 
-    if (json == NULL || changes == NULL) {
+    if (json == NULL) {
         cJSON_Delete(json);
-        cJSON_Delete(changes);
         return NULL;
     }
 
-    cJSON_AddItemToObject(changes, uriText != NULL ? uriText : "", serialize_text_edits_array(edits));
-    cJSON_AddItemToObject(json, ZR_LSP_FIELD_CHANGES, changes);
     if (documentSnapshot != ZR_NULL && documentSnapshot->isOpenDocument) {
         cJSON *documentChanges = cJSON_CreateArray();
-        if (documentChanges != NULL) {
-            cJSON *documentChange = serialize_versioned_document_change(
-                    uriText, documentSnapshot->version, edits);
-            if (documentChange != NULL) {
-                cJSON_AddItemToArray(documentChanges, documentChange);
-            }
-            cJSON_AddItemToObject(json, ZR_LSP_FIELD_DOCUMENT_CHANGES, documentChanges);
+        cJSON *documentChange = serialize_versioned_document_change(
+                uriText, documentSnapshot->version, edits);
+
+        if (documentChanges == NULL || documentChange == NULL) {
+            cJSON_Delete(documentChanges);
+            cJSON_Delete(documentChange);
+            cJSON_Delete(json);
+            return NULL;
         }
+        cJSON_AddItemToArray(documentChanges, documentChange);
+        cJSON_AddItemToObject(json, ZR_LSP_FIELD_DOCUMENT_CHANGES, documentChanges);
+        return json;
+    }
+
+    {
+        cJSON *changes = cJSON_CreateObject();
+        if (changes == NULL) {
+            cJSON_Delete(json);
+            return NULL;
+        }
+        cJSON_AddItemToObject(changes,
+                              uriText != NULL ? uriText : "",
+                              serialize_text_edits_array(edits));
+        cJSON_AddItemToObject(json, ZR_LSP_FIELD_CHANGES, changes);
     }
     return json;
 }

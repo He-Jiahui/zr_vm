@@ -1,12 +1,12 @@
-%module "named_args_and_compile_time";
+module "named_args_and_compile_time";
 
 // 综合测试：命名参数和编译期执行的结合使用
 
 // 编译期配置
-%compileTime var CONFIG_MAX_PARAMS = 5;
-%compileTime var CONFIG_MIN_PARAMS = 1;
+comptime var CONFIG_MAX_PARAMS = 5;
+comptime var CONFIG_MIN_PARAMS = 1;
 
-%compileTime validateParamCount(count: int): bool {
+comptime validateParamCount(count: int): bool {
     if (count < CONFIG_MIN_PARAMS) {
         FatalError("Parameter count below minimum");
     }
@@ -28,7 +28,7 @@ flexibleFunction(
 }
 
 // 编译期验证参数数量
-%compileTime {
+comptime {
     // 验证函数定义符合配置
     validateParamCount(5);
 }
@@ -63,9 +63,9 @@ flexibleFunction(
 }
 
 // 编译期计算的函数参数
-%compileTime var computedParam1 = 10;
-%compileTime var computedParam2 = 20;
-%compileTime var computedParam3 = 30;
+comptime var computedParam1 = 10;
+comptime var computedParam2 = 20;
+comptime var computedParam3 = 30;
 
 computeSum(a: int, b: int, c: int): int {
     return a + b + c;
@@ -81,7 +81,7 @@ computeSum(a: int, b: int, c: int): int {
 }
 
 // 编译期函数用于验证命名参数
-%compileTime checkNamedArgs(
+comptime checkNamedArgs(
     hasNamed: bool,
     argCount: int
 ): bool {

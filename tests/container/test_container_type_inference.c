@@ -114,8 +114,8 @@ static void test_container_type_inference_fixed_arrays_satisfy_arraylike_and_ite
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var builtin = %import(\"zr.builtin\");\n"
-            "var iteration = %import(\"zr.iteration\");\n"
+            "let builtin = import(\"zr.builtin\");\n"
+            "let iteration = import(\"zr.iteration\");\n"
             "class NeedsArrayLike<T> where T: builtin.IArrayLike<int> { var value: T; }\n"
             "class NeedsIterable<T> where T: iteration.Iterable<int> { var value: T; }\n"
             "new NeedsArrayLike<int[3]>();\n"
@@ -264,13 +264,13 @@ static void test_container_type_inference_native_generic_constraints_accept_pair
     SZrAstNode *okAst;
     SZrAstNode *errorAst;
     const char *okSource =
-            "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Pair} = import(\"zr.container\");\n"
             "new container.Map<Pair<int, string>, int>();\n"
             "new container.Set<Pair<int, string>>();\n";
     const char *errorSource =
             "class Device { }\n"
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "new container.Map<Device, int>();\n";
     SZrInferredType result;
 
@@ -339,8 +339,8 @@ static void test_container_type_inference_computed_access_and_native_method_sign
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Map, LinkedList} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Map, LinkedList} = import(\"zr.container\");\n"
             "var xs: Array<int> = new container.Array<int>();\n"
             "var map: Map<string, int> = new container.Map<string, int>();\n"
             "var list: LinkedList<int> = new container.LinkedList<int>();\n"
@@ -414,8 +414,8 @@ static void test_container_type_inference_typed_function_returns_preserve_native
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {LinkedList} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {LinkedList} = import(\"zr.container\");\n"
             "buildList(): LinkedList<int> {\n"
             "    var list: LinkedList<int> = new container.LinkedList<int>();\n"
             "    return list;\n"
@@ -477,7 +477,7 @@ static void test_container_type_inference_requires_explicit_binding_for_imported
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs: Array<int> = new container.Array<int>();\n";
 
     TEST_START(summary);
@@ -519,9 +519,9 @@ static void test_container_type_inference_accepts_qualified_and_destructured_imp
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs: container.Array<int> = new container.Array<int>();\n"
-            "var {Map, Set} = %import(\"zr.container\");\n"
+            "let {Map, Set} = import(\"zr.container\");\n"
             "var map: Map<string, int> = new container.Map<string, int>();\n"
             "var values: Set<int> = new container.Set<int>();\n"
             "xs[0];\n";
@@ -571,7 +571,7 @@ static void test_container_type_inference_alias_import_does_not_leak_type_values
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "container.Array;\n"
             "Array;\n";
 
@@ -619,13 +619,13 @@ static void test_container_type_inference_rejects_invalid_computed_access_on_set
     SZrAstNode *listAst;
     SZrInferredType result;
     const char *setSource =
-            "var container = %import(\"zr.container\");\n"
-            "var {Set} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Set} = import(\"zr.container\");\n"
             "var values: Set<int> = new container.Set<int>();\n"
             "values[0];\n";
     const char *listSource =
-            "var container = %import(\"zr.container\");\n"
-            "var {LinkedList} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {LinkedList} = import(\"zr.container\");\n"
             "var values: LinkedList<int> = new container.LinkedList<int>();\n"
             "values[0];\n";
 

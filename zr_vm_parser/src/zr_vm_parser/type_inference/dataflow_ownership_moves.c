@@ -266,8 +266,13 @@ static TZrBool ownership_move_argument_requires_weak_upgrade(
             call,
             argumentIndex);
     return parameter != ZR_NULL &&
-           parameter->typeInfo != ZR_NULL &&
-           parameter->typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+           ((parameter->typeInfo != ZR_NULL &&
+             parameter->typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_IN ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_REF ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_REF_READONLY ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_SCOPED_REF ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY);
 }
 
 static TZrBool ownership_move_expression_contains_call(
@@ -359,6 +364,29 @@ static TZrBool ownership_weak_expression_requires_upgrade(
         SZrAstNode *expression,
         const SZrSemanticReferenceFact *fact);
 
+static TZrBool ownership_weak_primary_invokes_upgrade(
+        const SZrAstNodeArray *members,
+        TZrSize callIndex) {
+    SZrAstNode *member;
+    EZrOwnershipBuiltinKind builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+
+    if (members == ZR_NULL || callIndex == 0U) {
+        return ZR_FALSE;
+    }
+    member = members->nodes[callIndex - 1U];
+    if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
+        member->data.memberExpression.computed ||
+        member->data.memberExpression.property == ZR_NULL ||
+        member->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    return ZrParser_OwnershipMemberNameToBuiltinKind(
+                   member->data.memberExpression.property->data.identifier.name,
+                   &builtinKind) &&
+           builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE;
+}
+
 static TZrBool ownership_weak_primary_requires_upgrade(
         const SZrSemanticContext *context,
         SZrAstNode *primaryNode,
@@ -379,7 +407,8 @@ static TZrBool ownership_weak_primary_requires_upgrade(
             member->type == ZR_AST_FUNCTION_CALL &&
             ownership_move_node_contains_fact(
                     primaryNode->data.primaryExpression.property,
-                    fact)) {
+                    fact) &&
+            !ownership_weak_primary_invokes_upgrade(members, memberIndex)) {
             return ZR_TRUE;
         }
         if (member == ZR_NULL || member->type != ZR_AST_FUNCTION_CALL) {

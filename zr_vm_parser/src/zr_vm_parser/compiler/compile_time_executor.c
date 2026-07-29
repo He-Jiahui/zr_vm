@@ -249,9 +249,6 @@ static TZrBool ct_prepare_build_fact_module_bindings(
             SZrCompileTimeDeclaration *declaration =
                     &node->data.compileTimeDeclaration;
 
-            if (!declaration->isCurrentSyntax) {
-                continue;
-            }
             if (declaration->declarationType == ZR_COMPILE_TIME_FUNCTION) {
                 if (!ZrParser_CompileTimeDeclaration_Execute(cs, node) ||
                     cs->hasCompileTimeError || cs->hasError ||
@@ -357,10 +354,6 @@ static TZrBool ct_prepare_build_fact_node_with_context(
 
     if (node->type == ZR_AST_COMPILE_TIME_DECLARATION) {
         SZrCompileTimeDeclaration *declaration = &node->data.compileTimeDeclaration;
-        if (!declaration->isCurrentSyntax) {
-            return ZR_TRUE;
-        }
-
         if (!declaration->isConditionalPruning &&
             declaration->declarationType == ZR_COMPILE_TIME_STATEMENT) {
             if (!moduleDeclarationList) {
@@ -425,13 +418,6 @@ static TZrBool ct_prepare_build_fact_node_with_context(
                     node->data.functionDeclaration.args,
                     node->data.functionDeclaration.decorators,
                     node->data.functionDeclaration.body);
-        case ZR_AST_TEST_DECLARATION:
-            return ct_prepare_function_body(
-                    cs,
-                    node->data.testDeclaration.params,
-                    node->data.testDeclaration.args,
-                    ZR_NULL,
-                    node->data.testDeclaration.body);
         case ZR_AST_CLASS_DECLARATION:
             return (TZrBool)(ct_prepare_build_fact_decorators(
                                      cs, node->data.classDeclaration.decorators) &&
@@ -1107,7 +1093,7 @@ static TZrBool ct_validate_named_decorator_target_param(SZrCompilerState *cs,
                                ZR_COMPILE_TIME_ERROR_ERROR,
                                decoratorKind != ZR_NULL
                                        ? decoratorKind
-                                       : "Compile-time decorator target parameter must use a supported %type target",
+                                       : "Compile-time decorator target parameter must use a supported typeof target",
                                location);
     return ZR_FALSE;
 }
@@ -1140,7 +1126,7 @@ static TZrBool ct_validate_decorator_meta_method_target(SZrCompilerState *cs,
     return ct_validate_named_decorator_target_param(cs,
                                                     &params->nodes[0]->data.parameter,
                                                     expectedTargetName,
-                                                    "Compile-time decorator @decorate target must use %type Class, %type Struct, %type Function, %type Field, %type Method, %type Property, %type Parameter, or %type Object",
+                                                    "Compile-time decorator @decorate target must use typeof Class, typeof Struct, typeof Function, typeof Field, typeof Method, typeof Property, typeof Parameter, or typeof Object",
                                                     location);
 }
 
@@ -2761,7 +2747,7 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
     if (!ct_validate_named_decorator_target_param(cs,
                                                   &decl->params->nodes[0]->data.parameter,
                                                   expectedTargetName,
-                                                  "Compile-time decorator function target must use %type Class, %type Struct, %type Function, %type Field, %type Method, %type Property, or %type Object",
+                                                  "Compile-time decorator function target must use typeof Class, typeof Struct, typeof Function, typeof Field, typeof Method, typeof Property, or typeof Object",
                                                   location)) {
         return ZR_FALSE;
     }
@@ -4990,7 +4976,7 @@ ZR_PARSER_API TZrBool ZrParser_CompileTimeDeclaration_Execute(SZrCompilerState *
     oldContext = cs->isInCompileTimeContext;
     cs->isInCompileTimeContext = ZR_TRUE;
 
-    if (decl->isCurrentSyntax && decl->isConditionalPruning) {
+    if (decl->isConditionalPruning) {
         SZrIfExpression *ifExpression;
         SZrTypeValue conditionValue;
 

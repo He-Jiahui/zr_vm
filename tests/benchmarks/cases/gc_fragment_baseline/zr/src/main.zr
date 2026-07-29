@@ -1,6 +1,6 @@
-var benchConfig = %import("bench_config");
-var system = %import("zr.system");
-var container = %import("zr.container");
+let benchConfig = import("bench_config");
+let system = import("zr.system");
+let container = import("zr.container");
 
 toText(value: int): string {
     return <string> value;

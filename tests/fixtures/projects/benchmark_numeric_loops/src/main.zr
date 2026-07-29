@@ -1,4 +1,4 @@
-var system = %import("zr.system");
+let system = import("zr.system");
 
 var outer = 0;
 var value = 17;

@@ -97,10 +97,10 @@ static void test_scoped_semantic_analysis_limits_body_facts_and_reuses_scope_cac
     const TZrChar *summary = "Scoped Semantic Analysis Limits Body Facts And Reuses Scope Cache";
     const TZrChar *uriText = "file:///local_scoped_semantic_analysis.zr";
     const TZrChar *content =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 + 2;\n"
             "}\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;
@@ -257,27 +257,27 @@ static void test_scoped_query_analyzer_cache_reuses_scope_and_invalidates_on_edi
             "Scoped Query Analyzer Cache Reuses Scope And Invalidates On Edit";
     const TZrChar *uriText = "file:///scoped_query_analyzer_cache.zr";
     const TZrChar *initialContent =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 + 2;\n"
             "}\n"
             "// old note\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *tokenEquivalentContent =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 + 2;\n"
             "}\n"
             "// new note\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 + 3;\n"
             "}\n"
             "// new note\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;
@@ -437,32 +437,32 @@ static void test_body_edit_preserves_unaffected_scoped_query_cache(
             "Body Edit Preserves Unaffected Scoped Query Cache";
     const TZrChar *uriText = "file:///unaffected_scoped_query_cache.zr";
     const TZrChar *initialContent =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 + 2;\n"
             "}\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 + 3;\n"
             "}\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *secondStableContent =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 + 4;\n"
             "}\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *shiftedContent =
-            "first(): int {\n"
+            "fn first(): int {\n"
             "    return 1 +\n"
             "4;\n"
             "}\n"
-            "second(): int {\n"
+            "fn second(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;

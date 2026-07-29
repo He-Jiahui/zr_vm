@@ -1,15 +1,15 @@
-pub func discountAmount(): int {
+pub fn discountAmount(): int {
     return 15;
 }
 
-pub func loyaltyCode(): int {
+pub fn loyaltyCode(): int {
     return 7;
 }
 
-pub func baseSubtotal(): int {
+pub fn baseSubtotal(): int {
     return 120;
 }
 
-pub func taxAmount(): int {
+pub fn taxAmount(): int {
     return 20;
 }

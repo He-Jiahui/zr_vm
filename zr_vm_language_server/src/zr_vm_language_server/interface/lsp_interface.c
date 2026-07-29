@@ -293,7 +293,7 @@ static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
                                                   SZrSymbol *symbol,
                                                   SZrString *uri) {
     if (table == ZR_NULL || scope == ZR_NULL || symbol == ZR_NULL || symbol->location.source == ZR_NULL || uri == ZR_NULL ||
-        !ZrLanguageServer_Lsp_StringsEqual(symbol->location.source, uri)) {
+        !ZrLanguageServer_Lsp_UrisResolveToSameNativePath(symbol->location.source, uri)) {
         return ZR_FALSE;
     }
 

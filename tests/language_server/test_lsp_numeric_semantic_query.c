@@ -80,7 +80,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
 static TZrBool test_local_expression_query_returns_unsigned_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_unsigned_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(seed: u64): uint {\n"
+        "fn calc(seed: u64): uint {\n"
         "    return seed;\n"
         "}\n";
     SZrLspContext *context;
@@ -143,7 +143,7 @@ static TZrBool test_local_expression_query_returns_unsigned_range_fact(SZrState 
 static TZrBool test_local_expression_query_returns_interval_addition_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_interval_addition_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    return seed + 3;\n"
         "}\n";
     SZrLspContext *context;
@@ -212,7 +212,7 @@ static TZrBool test_local_expression_query_returns_interval_addition_range_fact(
 static TZrBool test_local_expression_query_returns_interval_division_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_interval_division_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    return seed / 2;\n"
         "}\n";
     SZrLspContext *context;
@@ -281,7 +281,7 @@ static TZrBool test_local_expression_query_returns_interval_division_range_fact(
 static TZrBool test_local_expression_query_returns_interval_modulo_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_interval_modulo_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    return seed % 5;\n"
         "}\n";
     SZrLspContext *context;

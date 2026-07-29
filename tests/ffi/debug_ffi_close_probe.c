@@ -245,7 +245,7 @@ int main(int argc, char **argv) {
     static const char *kTernarySource =
             "return true ? 1 : 0;\n";
     static const char *kLoadFailureSource =
-            "var ffi = %import(\"zr.ffi\");\n"
+            "let ffi = import(\"zr.ffi\");\n"
             "ffi.loadLibrary(\"__zr_ffi_missing_fixture__\");\n"
             "return 0;\n";
     static const char *kAllTemplate =
@@ -266,22 +266,22 @@ int main(int argc, char **argv) {
             "buffer.close();\n"
             "return (!beforeClose && afterFirstClose && afterSecondClose) ? 1 : 0;\n";
     static const char *kCallbackSource =
-            "var ffi = %import(\"zr.ffi\");\n"
-            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, (value) => {\n"
+            "let ffi = import(\"zr.ffi\");\n"
+            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, fn(value) => {\n"
             "    return value;\n"
             "});\n"
             "cb.close();\n"
             "cb.close();\n"
             "return 1;\n";
     static const char *kBufferSource =
-            "var ffi = %import(\"zr.ffi\");\n"
+            "let ffi = import(\"zr.ffi\");\n"
             "var buffer = ffi.BufferHandle.allocate(4);\n"
             "buffer.close();\n"
             "buffer.close();\n"
             "return 1;\n";
     static const char *kAllWithoutLibrarySource =
-            "var ffi = %import(\"zr.ffi\");\n"
-            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, (value) => {\n"
+            "let ffi = import(\"zr.ffi\");\n"
+            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, fn(value) => {\n"
             "    return value;\n"
             "});\n"
             "cb.close();\n"

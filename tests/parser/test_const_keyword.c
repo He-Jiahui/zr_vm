@@ -112,7 +112,7 @@ static void destroy_test_state(SZrState *state) {
     }
 }
 
-// 测试 1: 局部 const 变量声明和赋值
+// 测试 1: 局部 immutable 变量声明和赋值
 void test_const_local_variable_declaration(void) {
     ZR_TEST_START("Const Local Variable Declaration");
     SZrTestTimer timer;
@@ -124,7 +124,7 @@ void test_const_local_variable_declaration(void) {
         return;
     }
     
-    const char *source = "var const a: int = 1;";
+    const char *source = "let a: int = 1;";
     SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_local.zr");
     SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
     
@@ -402,7 +402,7 @@ void test_const_function_parameter(void) {
     }
     
     const char *source = 
-        "func process(const data: int) {\n"
+        "fn process(const data: int) {\n"
         "    return data;\n"
         "}";
     SZrString *sourceName = ZrCore_String_CreateFromNative(state, "test_const_parameter.zr");
@@ -434,7 +434,7 @@ void test_const_parameter_modification_error(void) {
     }
     
     const char *source = 
-        "func process(const data: int) {\n"
+        "fn process(const data: int) {\n"
         "    data = 2;\n"
         "    return data;\n"
         "}";

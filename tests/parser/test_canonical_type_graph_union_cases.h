@@ -433,10 +433,10 @@ static void test_open_const_function_and_closed_member_returns_preserve_structur
     const TZrChar *source =
             "union Matrix<T, const N: int> { Empty; Item(value: T); }\n"
             "class Box<const N: int> {\n"
-            "    func shape(value: Matrix<int, N>): Matrix<int, N> { return value; }\n"
-            "    func fixed(value: Matrix<int, 4>): Matrix<int, 4> { return value; }\n"
+            "    fn shape(value: Matrix<int, N>): Matrix<int, N> { return value; }\n"
+            "    fn fixed(value: Matrix<int, 4>): Matrix<int, 4> { return value; }\n"
             "}\n"
-            "func echo<T, const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+            "fn echo<T, const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
             "var box: Box<4>;\n";
     SZrAstNode *ast = ZrParser_Parse(
             g_state,

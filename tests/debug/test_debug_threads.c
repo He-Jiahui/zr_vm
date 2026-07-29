@@ -44,7 +44,7 @@ static SZrFunction *compile_thread_debug_source(SZrState *state, const char *sou
 
 static SZrFunction *compile_thread_debug_fixture(SZrState *state, const char *sourceLabel) {
     const char *source =
-            "func addOne(value: int): int {\n"
+            "fn addOne(value: int): int {\n"
             "    var base = value + 1;\n"
             "    return base;\n"
             "}\n"

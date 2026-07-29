@@ -147,7 +147,7 @@ static TZrBool run_foreach_cardinality_case(SZrState *state,
 static TZrBool test_local_expression_query_keeps_unknown_foreach_zero_iteration_path(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(items: int[]): int {\n"
+        "fn calc(items: int[]): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var item in items) {\n"
         "        narrowed = 10;\n"
@@ -167,7 +167,7 @@ static TZrBool test_local_expression_query_keeps_unknown_foreach_zero_iteration_
 static TZrBool test_local_expression_query_drops_nonempty_foreach_zero_iteration_path(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(items: int[2]): int {\n"
+        "fn calc(items: int[2]): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var item in items) {\n"
         "        narrowed = 10;\n"

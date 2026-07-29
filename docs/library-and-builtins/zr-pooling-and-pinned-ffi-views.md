@@ -4,6 +4,8 @@ related_code:
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.h
+  - zr_vm_lib_container/include/zr_vm_lib_container/generational_pool.h
+  - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_ffi/include/zr_vm_lib_ffi/runtime.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
@@ -12,9 +14,13 @@ related_code:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.h
+  - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
@@ -24,10 +30,12 @@ implementation_files:
 plan_sources:
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
+  - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
 tests:
   - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_span_core.c
   - tests/parser/test_span_semantic_ir_cases.c
+  - tests/container/test_generational_pool.c
 doc_type: module-detail
 ---
 
@@ -61,6 +69,32 @@ field role, the view-create method role, index meta methods, and close meta. The
 compiler therefore derives the mutable source loan from protocol/role and the
 resolved receiver Place. A later Span use keeps the loan live and rejects lease
 close/reuse; when the view reaches non-lexical last use, close becomes legal.
+
+## Generational Stable-Slot Pool
+
+`zr.pooling.Pool<T>` publishes the provider-neutral `STABLE_SLOT_SOURCE`
+protocol. Its ordinary `PoolHandle<T>` contains only the pool identity, slot
+index, and generation, so a handle remains a weak, storable identity and never
+acts as a direct reference. A successful `deliver` publishes the handle only
+after element initialization completes. `recycle` immediately retires the
+identity, rejects later acquisition, and delays physical drop and slot reuse
+until every active guard has closed.
+
+`tryRead(handle, view: out PoolReadRef<T>): bool` and
+`tryBorrow(handle, view: out PoolRef<T>): bool` are the canonical acquisition
+contracts. The native descriptor carries the parameter passing mode as
+structured metadata; the native metadata projection and parser import path
+preserve it as `EZrParameterPassingMode`, rather than encoding `out` in a type
+name. This descriptor schema is native plugin/runtime ABI v2. Providers built
+against ABI v1 are rejected during registration and must be rebuilt.
+
+Read guards may coexist, while a write guard excludes every other guard. A
+retired entity remains readable through guards acquired before retirement; the
+last guard release performs the pending drop and permits reuse with a new
+generation. The runtime keeps fixed-capacity slabs, validates full
+pool/slot/generation identity, permanently exhausts a slot before generation
+wrap, and scans only initialized live or retired elements according to the
+closed element layout's `GcFree`, `GcMapped`, or `GcBarriered` classification.
 
 ## Exception Cleanup
 

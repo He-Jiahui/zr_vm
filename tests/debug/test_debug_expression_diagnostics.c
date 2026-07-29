@@ -171,7 +171,7 @@ static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInf
 
 static void test_debug_semantic_binding_preserves_paused_frame_canonical_identity(void) {
     const char *source =
-            "func target(paused: int): int {\n"
+            "fn target(paused: int): int {\n"
             "    return paused;\n"
             "}\n"
             "return target(4);";
@@ -408,7 +408,7 @@ static void test_debug_evaluate_semantic_summary_reports_parser_member_reference
 
 static void test_debug_semantic_summary_replays_compiled_function_call_reference_fact(void) {
     const char *source =
-            "func pick(value: int): int {\n"
+            "fn pick(value: int): int {\n"
             "    return value;\n"
             "}\n"
             "return 0;";
@@ -476,7 +476,7 @@ static void test_debug_semantic_summary_replays_compiled_top_level_variable_refe
 
 static void test_debug_semantic_summary_replays_compiled_ownership_fact(void) {
     const char *source =
-            "var owner: %unique int;\n"
+            "var owner: Unique<int>;\n"
             "return 0;";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -506,7 +506,7 @@ static void test_debug_semantic_summary_replays_compiled_ownership_fact(void) {
 
 static void test_debug_semantic_summary_walks_type_query_operand_reference(void) {
     const char *source =
-            "var owner: %unique int;\n"
+            "var owner: Unique<int>;\n"
             "return 0;";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1018,57 +1018,7 @@ static void test_debug_evaluate_reports_unsupported_string_escape_with_cause_and
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_evaluate_rejects_function_call_with_cause_and_suggestion(void) {
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    ZrDebugAgent agent;
-    ZrDebugEvaluateResult result;
-    TZrChar error[ZR_DEBUG_TEXT_CAPACITY];
-
-    TEST_ASSERT_NOT_NULL(state);
-    memset(&agent, 0, sizeof(agent));
-    memset(&result, 0, sizeof(result));
-    error[0] = '\0';
-    agent.state = state;
-    agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
-
-    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "sideEffect()", &result, error, sizeof(error)));
-    assert_text_contains(error, "Function calls are not allowed");
-    assert_text_contains(error, "Cause:");
-    assert_text_contains(error, "safe debug evaluate");
-    assert_text_contains(error, "Suggestion:");
-
-    ZrTests_Runtime_State_Destroy(state);
-}
-
-static void test_debug_evaluate_rejects_assignment_with_cause_and_suggestion(void) {
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    ZrDebugAgent agent;
-    ZrDebugEvaluateResult result;
-    TZrChar error[ZR_DEBUG_TEXT_CAPACITY];
-
-    TEST_ASSERT_NOT_NULL(state);
-    memset(&agent, 0, sizeof(agent));
-    memset(&result, 0, sizeof(result));
-    error[0] = '\0';
-    agent.state = state;
-    agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
-
-    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "true = false", &result, error, sizeof(error)));
-    assert_text_contains(error, "Assignment is not allowed");
-    assert_text_contains(error, "Cause:");
-    assert_text_contains(error, "read-only");
-    assert_text_contains(error, "Suggestion:");
-
-    memset(&result, 0, sizeof(result));
-    error[0] = '\0';
-    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "local = 1", &result, error, sizeof(error)));
-    assert_text_contains(error, "Assignment is not allowed");
-    assert_text_contains(error, "Cause:");
-    assert_text_contains(error, "read-only");
-    assert_text_contains(error, "Suggestion:");
-
-    ZrTests_Runtime_State_Destroy(state);
-}
+#include "test_debug_evaluation_effect_policy_cases.h"
 
 void setUp(void) {}
 
@@ -1109,6 +1059,9 @@ int main(void) {
     RUN_TEST(test_debug_evaluate_reports_unsupported_string_escape_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluate_rejects_function_call_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluate_rejects_assignment_with_cause_and_suggestion);
+    RUN_TEST(test_debug_evaluation_effect_policy_classifies_canonical_expression_shapes);
+    RUN_TEST(test_debug_evaluation_effect_policy_requires_explicit_capabilities);
+    RUN_TEST(test_debug_evaluation_effect_policy_marks_resolved_property_getter);
     RUN_TEST(test_debug_semantic_binding_preserves_paused_frame_canonical_identity);
     return UNITY_END();
 }

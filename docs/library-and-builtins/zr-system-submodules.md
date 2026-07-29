@@ -388,16 +388,16 @@ region 统计只汇总当前仍有 live object 的 active region，而不是 reg
 `FileStream` 的 lowering 只在 FFI/native binding helper 边界生效。典型例子如下：
 
 ```zr
-%extern("ffi_fixture") {
+native extern("ffi_fixture") {
   #zr.ffi.entry("zr_ffi_tell_fd")# tellFd(fd:i32): i32;
 }
 
-var fs = %import("zr.system.fs");
+let fs = import("zr.system.fs");
 var file = new fs.File("sample.txt");
 file.parent.create(true);
 
 var stream = file.open("w+");
-%using stream;
+using stream;
 stream.writeText("abc");
 
 if (tellFd(stream) != 3) {
@@ -410,9 +410,9 @@ if (tellFd(stream) != 3) {
 相反，普通 zr 调用点不会触发 lowering：
 
 ```zr
-var fs = %import("zr.system.fs");
+let fs = import("zr.system.fs");
 
-func acceptFd(fd:i32): i32 {
+fn acceptFd(fd:i32): i32 {
   return fd;
 }
 

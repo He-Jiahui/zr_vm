@@ -198,14 +198,14 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
     TEST_START("Semantic Analyzer Reports Loaned Return Escape");
 
     TEST_INFO("Ownership loan escape in return statements",
-              "Returning %loan(owner) as a %loaned result must emit loan_escape with cause, suggestion, and ownership fact");
+              "Returning ref owner as a ref result must emit loan_escape with cause, suggestion, and ownership fact");
 
     {
         const TZrChar *testCode =
-            "class Resource {\n"
+            "resource class Resource {\n"
             "}\n"
-            "leak(resource: %unique Resource): %loaned Resource {\n"
-            "    return %loan(resource);\n"
+            "fn leak(resource: Unique<Resource>): ref Resource {\n"
+            "    return ref resource;\n"
             "}\n";
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_loaned_return_escape_test.zr", 37);
@@ -241,7 +241,7 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
             return;
         }
         if (!diagnostic_string_contains(diagnostic->message, "Loaned value cannot escape") ||
-            !diagnostic_string_contains(diagnostic->cause, "%loan") ||
+            !diagnostic_string_contains(diagnostic->cause, "ref") ||
             !diagnostic_string_contains(diagnostic->suggestion, "Return")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -268,9 +268,9 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
         if (sourceRelated == ZR_NULL ||
             !test_string_equals(sourceRelated->message, "Loan source is here") ||
             sourceRelated->location.start.line != 4 ||
-            sourceRelated->location.start.column != 18 ||
+            sourceRelated->location.start.column != 16 ||
             sourceRelated->location.end.line != 4 ||
-            sourceRelated->location.end.column != 26 ||
+            sourceRelated->location.end.column != 24 ||
             endRelated == ZR_NULL ||
             !test_string_equals(endRelated->message, "Source lifetime ends here") ||
             endRelated->location.start.line != 5 ||
@@ -285,7 +285,7 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
 
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "%loan(resource)", 0));
+            file_range_for_nth_substring(testCode, "ref resource", 0));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_LOANED ||
@@ -294,7 +294,7 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
             fact->relatedNode == ZR_NULL ||
             fact->relatedNode == fact->node ||
             fact->relatedNode->location.start.line != 4 ||
-            fact->relatedNode->location.start.column != 18) {
+            fact->relatedNode->location.start.column != 16) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -313,10 +313,10 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
 static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Borrowed Return Escape";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "leak(resource: %unique Resource): %borrowed Resource {\n"
-        "    return %borrow(resource);\n"
+        "fn leak(resource: Unique<Resource>): ref readonly Resource {\n"
+        "    return ref resource;\n"
         "}\n";
     SZrTestTimer timer;
     SZrSemanticAnalyzer *analyzer;
@@ -328,7 +328,7 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
 
     TEST_START(summary);
     TEST_INFO("Ownership borrow escape in return statements",
-              "Returning %borrow(owner) must retain the borrow source and source lifetime end");
+              "Returning ref owner must retain the borrow source and source lifetime end");
 
     analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
     sourceName = ZrCore_String_Create(state,
@@ -366,9 +366,9 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
     if (sourceRelated == ZR_NULL ||
         !test_string_equals(sourceRelated->message, "Borrow source is here") ||
         sourceRelated->location.start.line != 4 ||
-        sourceRelated->location.start.column != 20 ||
+        sourceRelated->location.start.column != 16 ||
         sourceRelated->location.end.line != 4 ||
-        sourceRelated->location.end.column != 28 ||
+        sourceRelated->location.end.column != 24 ||
         endRelated == ZR_NULL ||
         !test_string_equals(endRelated->message, "Source lifetime ends here") ||
         endRelated->location.start.line != 5 ||
@@ -388,10 +388,10 @@ static void test_lsp_translates_loan_escape_related_information(SZrState *state)
     const TZrChar *summary = "LSP Translates Loan Escape Related Information";
     const TZrChar *uriText = "file:///ownership_loan_escape_related.zr";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "leak(resource: %unique Resource): %loaned Resource {\n"
-        "    return %loan(resource);\n"
+        "fn leak(resource: Unique<Resource>): ref Resource {\n"
+        "    return ref resource;\n"
         "}\n";
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -443,9 +443,9 @@ static void test_lsp_translates_loan_escape_related_information(SZrState *state)
     if (sourceRelated == ZR_NULL ||
         !test_string_equals(sourceRelated->message, "Loan source is here") ||
         sourceRelated->location.range.start.line != 3 ||
-        sourceRelated->location.range.start.character != 17 ||
+        sourceRelated->location.range.start.character != 15 ||
         sourceRelated->location.range.end.line != 3 ||
-        sourceRelated->location.range.end.character != 25 ||
+        sourceRelated->location.range.end.character != 23 ||
         endRelated == ZR_NULL ||
         !test_string_equals(endRelated->message, "Source lifetime ends here") ||
         endRelated->location.range.start.line != 4 ||
@@ -465,10 +465,10 @@ static void test_lsp_translates_loan_escape_related_information(SZrState *state)
 static void test_semantic_analyzer_reports_use_after_unique_move(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Use After Unique Move";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "consume(value: %unique Resource): int { return 0; }\n"
-        "use(resource: %unique Resource): int {\n"
+        "fn consume(value: Unique<Resource>): int { return 0; }\n"
+        "fn use(resource: Unique<Resource>): int {\n"
         "    consume(resource);\n"
         "    resource;\n"
         "    return 0;\n"
@@ -532,10 +532,10 @@ static void test_semantic_analyzer_reports_use_after_unique_move(SZrState *state
 
     moveFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "resource", 1));
+            file_range_for_nth_substring(testCode, "resource", 2));
     violationFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "resource", 2));
+            file_range_for_nth_substring(testCode, "resource", 3));
     if (moveFact == ZR_NULL ||
         moveFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_MOVE ||
         moveFact->qualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
@@ -561,10 +561,10 @@ static void test_lsp_reports_possible_path_use_after_move(SZrState *state) {
     const TZrChar *summary = "LSP Reports Possible-Path Use After Move";
     const TZrChar *uriText = "file:///ownership_possible_path_use_after_move.zr";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "consume(value: %unique Resource): int { return 0; }\n"
-        "use(resource: %unique Resource, flag: bool): int {\n"
+        "fn consume(value: Unique<Resource>): int { return 0; }\n"
+        "fn use(resource: Unique<Resource>, flag: bool): int {\n"
         "    if (flag) { consume(resource); }\n"
         "    resource;\n"
         "    return 0;\n"
@@ -635,10 +635,10 @@ static void test_lsp_reports_possible_path_use_after_move(SZrState *state) {
 static void test_semantic_analyzer_reports_use_after_unique_assignment_move(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Use After Unique Assignment Move";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(resource: %unique Resource): int {\n"
-        "    var next: %unique Resource = resource;\n"
+        "fn use(resource: Unique<Resource>): int {\n"
+        "    var next: Unique<Resource> = resource;\n"
         "    resource;\n"
         "    return 0;\n"
         "}\n";
@@ -701,11 +701,11 @@ static void test_semantic_analyzer_reports_use_after_unique_assignment_move(SZrS
 static void test_semantic_analyzer_does_not_move_unique_ref_argument(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Does Not Move Unique Ref Argument";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "inspect(%ref value: %unique Resource): int { return 0; }\n"
-        "use(resource: %unique Resource): int {\n"
-        "    inspect(resource);\n"
+        "fn inspect(value: ref Unique<Resource>): int { return 0; }\n"
+        "fn use(resource: Unique<Resource>): int {\n"
+        "    inspect(ref resource);\n"
         "    resource;\n"
         "    return 0;\n"
         "}\n";

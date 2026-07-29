@@ -163,7 +163,7 @@ static TZrBool run_assignment_range_case_at(SZrState *state,
 }
 
 static const TZrChar *associative_commutative_product_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -180,7 +180,7 @@ static const TZrChar *associative_commutative_product_content(void) {
 }
 
 static const TZrChar *folded_constant_product_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -196,7 +196,7 @@ static const TZrChar *folded_constant_product_content(void) {
 }
 
 static const TZrChar *unary_negative_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -212,7 +212,7 @@ static const TZrChar *unary_negative_product_factor_content(void) {
 }
 
 static const TZrChar *unary_positive_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -228,7 +228,7 @@ static const TZrChar *unary_positive_product_factor_content(void) {
 }
 
 static const TZrChar *double_negative_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -244,7 +244,7 @@ static const TZrChar *double_negative_product_factor_content(void) {
 }
 
 static const TZrChar *divided_constant_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -260,7 +260,7 @@ static const TZrChar *divided_constant_product_factor_content(void) {
 }
 
 static const TZrChar *modulo_constant_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -276,7 +276,7 @@ static const TZrChar *modulo_constant_product_factor_content(void) {
 }
 
 static const TZrChar *additive_constant_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -292,7 +292,7 @@ static const TZrChar *additive_constant_product_factor_content(void) {
 }
 
 static const TZrChar *subtractive_constant_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) - 1;\n"
@@ -308,7 +308,7 @@ static const TZrChar *subtractive_constant_product_factor_content(void) {
 }
 
 static const TZrChar *target_self_canceling_product_factor_content(void) {
-    return "func calc(flag: bool, seed: u8): int {\n"
+    return "fn calc(flag: bool, seed: u8): int {\n"
            "    var narrowed: int = 5;\n"
            "    var other: int = 0;\n"
            "    var step: int = (seed % 3) + 1;\n"

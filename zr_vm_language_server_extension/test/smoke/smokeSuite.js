@@ -4,7 +4,7 @@ const { spawn } = require('node:child_process');
 const vscode = require('vscode');
 
 const RICH_DEBUG_SOURCE = [
-    'func total(delta: int): int {',
+    'fn total(delta: int): int {',
     '    return delta + 31;',
     '}',
     'return total(7);',
@@ -19,12 +19,9 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    }',
     '',
     '    // Current hero hit points.',
-    '    pub get hp: int {',
-    '        return this._hp;',
-    '    }',
-    '',
-    '    pub set hp(v: int) {',
-    '        this._hp = v;',
+    '    pub property hp: int {',
+    '        get { return this._hp; }',
+    '        set { this._hp = value; }',
     '    }',
     '',
     '    pub heal(amount: int): int {',
@@ -37,12 +34,9 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    pri static var _bonus: int = 5;',
     '',
     '    // Shared bonus exposed through get/set.',
-    '    pub static get bonus: int {',
-    '        return ScoreBoard._bonus;',
-    '    }',
-    '',
-    '    pub static set bonus(v: int) {',
-    '        ScoreBoard._bonus = v;',
+    '    pub static property bonus: int {',
+    '        get { return ScoreBoard._bonus; }',
+    '        set { ScoreBoard._bonus = value; }',
     '    }',
     '}',
     '',
@@ -59,8 +53,9 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    }',
     '}',
     '',
-    '%test("classesFullProjectShape") {',
-    '    var boss = new BossHero(30);',
+    '#zr.testing.test#',
+    'fn classesFullProjectShape(): int {',
+    '    let boss: BossHero = new BossHero(30);',
     '    boss.hp = boss.hp + 7;',
     '    ScoreBoard.bonus = boss.heal(5);',
     '    return boss.total() + ScoreBoard.bonus;',
@@ -69,16 +64,16 @@ const CLASSES_FULL_SMOKE_SOURCE = [
 ].join('\n');
 
 const PROJECT_INFERENCE_SMOKE_SOURCE = [
-    'var greetModule = %import("greet");',
+    'let greetModule = import("greet");',
     '',
-    'class Hero {',
+    'resource class Hero {',
     '    pub total(): int {',
     '        return 1;',
     '    }',
     '}',
     '',
-    'take(): %unique Hero {',
-    '    return %unique new Hero();',
+    'fn take(): Unique<Hero> {',
+    '    return own Hero();',
     '}',
     '',
     'var hero = take();',
@@ -87,8 +82,8 @@ const PROJECT_INFERENCE_SMOKE_SOURCE = [
 ].join('\n');
 
 const STRUCTURE_SMOKE_MAIN_SOURCE = [
-    'var helper = %import("structure_helper");',
-    'var system = %import("zr.system");',
+    'let helper = import("structure_helper");',
+    'let system = import("zr.system");',
     '',
     'class StructureHero {',
     '    pub total(): int {',
@@ -96,7 +91,8 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
     '    }',
     '}',
     '',
-    '%test("structureViewSmoke") {',
+    '#zr.testing.test#',
+    'fn structureViewSmoke(): int {',
     '    return helper.value();',
     '}',
     '',
@@ -105,18 +101,18 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
 ].join('\n');
 
 const STRUCTURE_SMOKE_HELPER_SOURCE = [
-    'var cycle = %import("structure_cycle");',
+    'let cycle = import("structure_cycle");',
     '',
-    'pub var value = () => {',
+    'pub var value = fn() => {',
     '    return cycle.answer();',
     '};',
     '',
 ].join('\n');
 
 const STRUCTURE_SMOKE_CYCLE_SOURCE = [
-    'var helper = %import("structure_helper");',
+    'let helper = import("structure_helper");',
     '',
-    'pub var answer = () => {',
+    'pub var answer = fn() => {',
     '    return 42;',
     '};',
     '',
@@ -385,17 +381,18 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
     assert(commands.includes('zr.organizeImports'), 'Expected zr.organizeImports command to be registered');
     assert(commands.includes('zr.removeUnusedImports'), 'Expected zr.removeUnusedImports command to be registered');
     const advancedSource = [
-        'var system = %import("zr.system");',
-        'var tcp = %import("zr.network.tcp");',
+        'let system = import("zr.system");',
+        'let tcp = import("zr.network.tcp");',
         '',
         'class AdvancedSmoke {',
-        'pub func run(value: int): int {',
+        'pub fn run(value: int): int {',
         'let local = value;',
         'return local;',
         '}',
         '}',
         '',
-        '%test("advancedEditorSmoke") {',
+        '#zr.testing.test#',
+        'fn advancedEditorSmoke(): int {',
         'return 1;',
         '}',
         '',
@@ -495,8 +492,8 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.workspace.fs.writeFile(
             organizeUri,
             new TextEncoder().encode([
-                '%import("zr.system");',
-                '%import("zr.math");',
+                'let system = import("zr.system");',
+                'let math = import("zr.math");',
                 '',
                 'return 1;',
                 '',
@@ -506,7 +503,7 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.commands.executeCommand('zr.organizeImports');
         await withRetry(
             async () => organizeDocument.getText(),
-            (text) => text.indexOf('%import("zr.math");\n%import("zr.system");') >= 0,
+            (text) => text.indexOf('let math = import("zr.math");\nlet system = import("zr.system");') >= 0,
             15000,
             'zr.organizeImports command',
         );
@@ -514,8 +511,8 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.workspace.fs.writeFile(
             cleanupUri,
             new TextEncoder().encode([
-                'var math = %import("zr.math");',
-                'var system = %import("zr.system");',
+                'let math = import("zr.math");',
+                'let system = import("zr.system");',
                 '',
                 'return math.PI;',
                 '',
@@ -525,8 +522,8 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         await vscode.commands.executeCommand('zr.removeUnusedImports');
         await withRetry(
             async () => cleanupDocument.getText(),
-            (text) => text.includes('var math = %import("zr.math");') &&
-                !text.includes('var system = %import("zr.system");'),
+            (text) => text.includes('let math = import("zr.math");') &&
+                !text.includes('let system = import("zr.system");'),
             15000,
             'zr.removeUnusedImports command',
         );
@@ -952,7 +949,7 @@ async function verifyProjectInferenceAndSemanticTokens(workspaceRoot) {
     );
 
     const document = await openDocument(smokeUri);
-    const takeUsagePosition = findPositionBySubstring(document, 'take(): %unique Hero', 0, 1);
+    const takeUsagePosition = findPositionBySubstring(document, 'take(): Unique<Hero>', 0, 1);
 
     const takeHover = await withRetry(
         async () => vscode.commands.executeCommand(
@@ -986,10 +983,10 @@ async function verifyProjectInferenceAndSemanticTokens(workspaceRoot) {
         'semantic tokens',
     );
     const decodedTokens = decodeSemanticTokens(document, semanticLegend, semanticTokens);
-    assert(hasSemanticToken(decodedTokens, 'keyword', '%import'),
-        'Semantic tokens should mark %import as a keyword');
-    assert(hasSemanticToken(decodedTokens, 'keyword', '%unique'),
-        'Semantic tokens should mark ownership directives as keywords');
+    assert(hasSemanticToken(decodedTokens, 'keyword', 'import'),
+        'Semantic tokens should mark import as a keyword');
+    assert(hasSemanticToken(decodedTokens, 'class', 'Unique'),
+        'Semantic tokens should mark ownership wrapper types as classes');
     assert(hasSemanticToken(decodedTokens, 'namespace', 'greetModule'),
         'Semantic tokens should mark imported module aliases as namespaces');
 
@@ -1106,7 +1103,7 @@ async function verifyStructureViews(workspaceRoot) {
                 structureChildren(mainDeclarationsGroup),
                 (node) => node.nodeType === 'declaration' && node.label === 'structureViewSmoke',
             ),
-            'Expected Declarations group to include %test symbol structureViewSmoke',
+            'Expected Declarations group to include test function structureViewSmoke',
         );
 
         const projectActionSelectNode = findImmediateStructureNode(
@@ -1197,11 +1194,11 @@ async function verifyStructureViews(workspaceRoot) {
         const nativeDocument = await withRetry(
             async () => vscode.workspace.openTextDocument(vscode.Uri.parse('zr-decompiled:/zr.system.zr')),
             (document) => typeof document?.getText === 'function' &&
-                document.getText().includes('%extern("zr.system")'),
+                document.getText().includes('native extern("zr.system")'),
             15000,
             'native declaration virtual document load',
         );
-        assert(nativeDocument.getText().includes('%extern("zr.system")'),
+        assert(nativeDocument.getText().includes('native extern("zr.system")'),
             'Expected zr-decompiled virtual documents to be backed by native declaration rendering');
 
         const nativeDefinitions = await withRetry(
@@ -1311,7 +1308,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
 
     const document = await openDocument(smokeUri);
     const bossHeroUsage = findPositionBySubstring(document, `${bossHeroName}(30)`, 0);
-    const bossCompletionPosition = findPositionBySubstring(document, 'boss.hp =', 0, 4);
+    const bossCompletionPosition = findPositionBySubstring(document, 'boss.hp =', 0, 5);
     const scoreBoardCompletionPosition = findPositionBySubstring(document, `${scoreBoardName}.bonus =`, 0, scoreBoardName.length);
     const scoreBoardCompletionAfterDotPosition =
         findPositionBySubstring(document, `${scoreBoardName}.bonus =`, 0, scoreBoardName.length + 1);
@@ -2206,7 +2203,7 @@ async function verifyDebugIntegration(workspaceRoot) {
                     sourceReference: 0,
                 });
                 assert(typeof sourceResponse?.content === 'string' &&
-                    sourceResponse.content.includes('%module "lib";'),
+                    sourceResponse.content.includes('module lib;'),
                 'Expected launch-session DAP source request for lib to return lib.zr content');
             },
             startSession: async () => vscode.debug.startDebugging(workspaceRoot, {

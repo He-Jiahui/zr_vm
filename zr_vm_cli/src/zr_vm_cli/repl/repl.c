@@ -156,6 +156,15 @@ static TZrChar *zr_cli_repl_build_return_wrapper(const TZrChar *code) {
     while (end > begin && ZrCli_ReplInput_IsSpace(end[-1])) {
         --end;
     }
+    if (end > begin && end[-1] == ';') {
+        --end;
+        while (end > begin && ZrCli_ReplInput_IsSpace(end[-1])) {
+            --end;
+        }
+    }
+    if (end == begin) {
+        return ZR_NULL;
+    }
 
     expressionLength = (TZrSize)(end - begin);
     prefixLength = strlen(prefix);
@@ -172,41 +181,6 @@ static TZrChar *zr_cli_repl_build_return_wrapper(const TZrChar *code) {
     memcpy(wrapper + prefixLength + expressionLength, suffix, suffixLength);
     wrapper[wrapperLength] = '\0';
     return wrapper;
-}
-
-static TZrChar *zr_cli_repl_build_expression_statement_source(const TZrChar *code) {
-    const TZrChar *begin;
-    const TZrChar *end;
-    TZrSize expressionLength;
-    TZrBool hasTrailingSemicolon;
-    TZrChar *source;
-
-    begin = ZrCli_ReplInput_SkipSpace(code);
-    if (begin == ZR_NULL || *begin == '\0') {
-        return ZR_NULL;
-    }
-
-    end = begin + strlen(begin);
-    while (end > begin && ZrCli_ReplInput_IsSpace(end[-1])) {
-        --end;
-    }
-    if (end == begin) {
-        return ZR_NULL;
-    }
-
-    hasTrailingSemicolon = (TZrBool)(end[-1] == ';');
-    expressionLength = (TZrSize)(end - begin);
-    source = (TZrChar *)malloc(expressionLength + (hasTrailingSemicolon ? 1u : 2u));
-    if (source == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    memcpy(source, begin, expressionLength);
-    if (!hasTrailingSemicolon) {
-        source[expressionLength++] = ';';
-    }
-    source[expressionLength] = '\0';
-    return source;
 }
 
 static TZrChar *zr_cli_repl_build_prefixed_source(const TZrChar *prefix, const TZrChar *code) {
@@ -241,9 +215,7 @@ static TZrChar *zr_cli_repl_build_prefixed_source(const TZrChar *prefix, const T
     return source;
 }
 
-static SZrAstNode *zr_cli_repl_last_expression_statement_expression(SZrAstNode *ast) {
-    SZrAstNode *statement;
-
+static SZrAstNode *zr_cli_repl_type_query_expression(SZrAstNode *ast) {
     if (ast == ZR_NULL ||
         ast->type != ZR_AST_SCRIPT ||
         ast->data.script.statements == ZR_NULL ||
@@ -251,12 +223,14 @@ static SZrAstNode *zr_cli_repl_last_expression_statement_expression(SZrAstNode *
         return ZR_NULL;
     }
 
-    statement = ast->data.script.statements->nodes[ast->data.script.statements->count - 1u];
-    if (statement == ZR_NULL || statement->type != ZR_AST_EXPRESSION_STATEMENT) {
-        return ZR_NULL;
+    for (TZrSize index = ast->data.script.statements->count; index > 0; --index) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index - 1u];
+        if (statement != ZR_NULL && statement->type == ZR_AST_RETURN_STATEMENT) {
+            return statement->data.returnStatement.expr;
+        }
     }
 
-    return statement->data.expressionStatement.expr;
+    return ZR_NULL;
 }
 
 static TZrBool zr_cli_repl_session_append(ZrCliReplSessionContext *session, const TZrChar *code) {
@@ -319,16 +293,22 @@ static TZrBool zr_cli_repl_should_persist_submission(const TZrChar *code) {
         return ZR_TRUE;
     }
 
-    return (TZrBool)(ZrCli_ReplInput_StartsWithKeyword(trimmed, "class") ||
+    return (TZrBool)(ZrCli_ReplInput_StartsWithKeyword(trimmed, "async") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "class") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "comptime") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "const") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "enum") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "extern") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "fn") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "func") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "interface") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "let") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "module") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "native") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "pri") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "pro") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "pub") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "resource") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "struct") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "using") ||
                      ZrCli_ReplInput_StartsWithKeyword(trimmed, "var"));
@@ -621,7 +601,7 @@ static int zr_cli_repl_type_query(const TZrChar *sessionSource, const TZrChar *e
         return 1;
     }
 
-    source = zr_cli_repl_build_expression_statement_source(expression);
+    source = zr_cli_repl_build_return_wrapper(expression);
     if (source == ZR_NULL) {
         ZrCore_Log_Error(ZR_NULL, "failed to prepare REPL type query\n");
         return 1;
@@ -659,7 +639,7 @@ static int zr_cli_repl_type_query(const TZrChar *sessionSource, const TZrChar *e
     }
     ZrParser_State_Free(&parserState);
 
-    expr = zr_cli_repl_last_expression_statement_expression(ast);
+    expr = zr_cli_repl_type_query_expression(ast);
     if (expr == ZR_NULL) {
         ZrCore_Log_Error(state, ":type expects an expression, not a statement or declaration\n");
         goto cleanup;

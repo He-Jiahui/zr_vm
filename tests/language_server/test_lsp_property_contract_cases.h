@@ -375,7 +375,7 @@ static void test_lsp_binary_property_preserves_canonical_contract(
             "    }\n"
             "}\n";
     const TZrChar *mainContent =
-            "var binaryStage = %import(\"graph_binary_stage\");\n"
+            "var binaryStage = import(\"graph_binary_stage\");\n"
             "var answer = binaryStage.Meter.shared;\n"
             "binaryStage.Meter.\n"
             "return answer;\n";

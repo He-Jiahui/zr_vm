@@ -1,16 +1,16 @@
-%module "async_native";
+module "async_native";
 
-var math = %import("zr.math");
-var system = %import("zr.system");
-var network = %import("zr.network");
-var ffi = %import("zr.ffi");
-var container = %import("zr.container");
+let math = import("zr.math");
+let system = import("zr.system");
+let network = import("zr.network");
+let ffi = import("zr.ffi");
+let container = import("zr.container");
 
 class Holder {
 }
 
 makeEscapingCallback(offset: int) {
-    var callback = (value: int) -> {
+    var callback = fn(value: int) => {
         return value + offset;
     };
     return callback;
@@ -21,12 +21,12 @@ pub nativeScore(): int {
     var handle = ffi.BufferHandle.allocate(8);
     var tcp = network.tcp;
     var list = new container.LinkedList<int>();
-    var owner = %unique new Holder();
-    var shared = %shared(owner);
-    var weak = %weak(shared);
-    var upgraded = %upgrade(weak);
-    var releasedShared = %release(shared);
-    var releasedUpgrade = %release(upgraded);
+    var owner = own Holder();
+    var shared = owner.share();
+    var weak = shared.weak();
+    var upgraded = weak.upgrade();
+    var releasedShared = drop(shared);
+    var releasedUpgrade = drop(upgraded);
     var escaped = makeEscapingCallback(5);
 
     list.addLast(<int> vector.x);

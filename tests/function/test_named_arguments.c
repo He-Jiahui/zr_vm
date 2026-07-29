@@ -192,18 +192,18 @@ static TZrBool find_reference_test_call(SZrAstNode* ast,
         return ZR_FALSE;
     }
 
-    functionNode = ast->data.script.statements->nodes[0];
-    testNode = ast->data.script.statements->nodes[1];
+    functionNode = ast->data.script.statements->nodes[ast->data.script.statements->count - 2];
+    testNode = ast->data.script.statements->nodes[ast->data.script.statements->count - 1];
     if (functionNode == ZR_NULL || functionNode->type != ZR_AST_FUNCTION_DECLARATION ||
-        testNode == ZR_NULL || testNode->type != ZR_AST_TEST_DECLARATION ||
-        testNode->data.testDeclaration.body == ZR_NULL ||
-        testNode->data.testDeclaration.body->type != ZR_AST_BLOCK ||
-        testNode->data.testDeclaration.body->data.block.body == ZR_NULL ||
-        testNode->data.testDeclaration.body->data.block.body->count == 0) {
+        testNode == ZR_NULL || testNode->type != ZR_AST_FUNCTION_DECLARATION ||
+        testNode->data.functionDeclaration.body == ZR_NULL ||
+        testNode->data.functionDeclaration.body->type != ZR_AST_BLOCK ||
+        testNode->data.functionDeclaration.body->data.block.body == ZR_NULL ||
+        testNode->data.functionDeclaration.body->data.block.body->count == 0) {
         return ZR_FALSE;
     }
 
-    returnNode = testNode->data.testDeclaration.body->data.block.body->nodes[0];
+    returnNode = testNode->data.functionDeclaration.body->data.block.body->nodes[0];
     if (returnNode == ZR_NULL || returnNode->type != ZR_AST_RETURN_STATEMENT || returnNode->data.returnStatement.expr == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -243,15 +243,15 @@ static SZrAstNode* find_reference_test_return_expression(SZrAstNode* ast) {
 
     testNode = ast->data.script.statements->nodes[ast->data.script.statements->count - 1];
     if (testNode == ZR_NULL ||
-        testNode->type != ZR_AST_TEST_DECLARATION ||
-        testNode->data.testDeclaration.body == ZR_NULL ||
-        testNode->data.testDeclaration.body->type != ZR_AST_BLOCK ||
-        testNode->data.testDeclaration.body->data.block.body == ZR_NULL ||
-        testNode->data.testDeclaration.body->data.block.body->count == 0) {
+        testNode->type != ZR_AST_FUNCTION_DECLARATION ||
+        testNode->data.functionDeclaration.body == ZR_NULL ||
+        testNode->data.functionDeclaration.body->type != ZR_AST_BLOCK ||
+        testNode->data.functionDeclaration.body->data.block.body == ZR_NULL ||
+        testNode->data.functionDeclaration.body->data.block.body->count == 0) {
         return ZR_NULL;
     }
 
-    returnNode = testNode->data.testDeclaration.body->data.block.body->nodes[0];
+    returnNode = testNode->data.functionDeclaration.body->data.block.body->nodes[0];
     if (returnNode == ZR_NULL ||
         returnNode->type != ZR_AST_RETURN_STATEMENT ||
         returnNode->data.returnStatement.expr == ZR_NULL) {
@@ -297,6 +297,59 @@ static TZrBool execute_test_function(SZrState* state, SZrFunction* testFunc, TZr
     return ZR_TRUE;
 }
 
+static SZrFunction* find_fixture_function(SZrFunction* mainFunction) {
+    TZrUInt32 index;
+
+    if (mainFunction == ZR_NULL || mainFunction->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < mainFunction->childFunctionLength; index++) {
+        SZrFunction* child = &mainFunction->childFunctionList[index];
+        if (child->functionName != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(child->functionName), "__fixture") == 0) {
+            return child;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool compile_fixture_with_entry(SZrState* state, SZrAstNode* ast, SZrCompileResult* result) {
+    SZrFunction* fixtureFunction;
+
+    if (state == ZR_NULL || ast == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(result, 0, sizeof(*result));
+    result->mainFunction = ZrParser_Compiler_Compile(state, ast);
+    if (result->mainFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fixtureFunction = find_fixture_function(result->mainFunction);
+    if (fixtureFunction == ZR_NULL) {
+        ZrCore_Function_Free(state, result->mainFunction);
+        result->mainFunction = ZR_NULL;
+        return ZR_FALSE;
+    }
+
+    result->testFunctions = (SZrFunction**)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunction*),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (result->testFunctions == ZR_NULL) {
+        ZrCore_Function_Free(state, result->mainFunction);
+        result->mainFunction = ZR_NULL;
+        return ZR_FALSE;
+    }
+
+    result->testFunctions[0] = result->mainFunction;
+    result->testFunctionCount = 1;
+    return ZR_TRUE;
+}
+
 static void test_reference_named_arguments_fixture_executes(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Reference Named Arguments Fixture Executes";
@@ -321,7 +374,7 @@ static void test_reference_named_arguments_fixture_executes(void) {
     sourceName = ZrCore_String_Create(state, "reference_named_arguments_defaults_pass.zr", 42);
     ast = ZrParser_Parse(state, source, sourceLength, sourceName);
     TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 128, testSummary));
 
@@ -554,13 +607,14 @@ static void test_named_arguments_basic(void) {
               "Testing function call with named arguments: func(c: 3, a: 1, b: 2)");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "testBasicNamedArgs(a: int, b: int, c: int): int {\n"
+        "module test;\n"
+        "fn testBasicNamedArgs(a: int, b: int, c: int): int {\n"
         "    return a + b + c;\n"
         "}\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return testBasicNamedArgs(c: 3, a: 1, b: 2);\n"
-        "}\n";
+        "}\n"
+        "return __fixture();\n";
     
     SZrString* sourceName = ZrCore_String_Create(state, "test_named_args.zr", 20);
     
@@ -587,7 +641,7 @@ static void test_named_arguments_basic(void) {
     printf("  [DEBUG] Starting compilation with tests...\n");
     fflush(stdout);
     
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -631,13 +685,14 @@ static void test_named_arguments_mixed(void) {
               "Testing: func(1, c: 3, b: 2)");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "testMixedArgs(a: int, b: int, c: int): int {\n"
+        "module test;\n"
+        "fn testMixedArgs(a: int, b: int, c: int): int {\n"
         "    return a * 100 + b * 10 + c;\n"
         "}\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return testMixedArgs(1, c: 3, b: 2);\n"
-        "}\n";
+        "}\n"
+        "return __fixture();\n";
     
     SZrString* sourceName = ZrCore_String_Create(state, "test_mixed_args.zr", 20);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -649,7 +704,7 @@ static void test_named_arguments_mixed(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -689,15 +744,16 @@ static void test_named_arguments_with_defaults(void) {
               "Testing: func(5) and func(5, c: 30)");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "testDefaultArgs(a: int, b: int = 10, c: int = 20): int {\n"
+        "module test;\n"
+        "fn testDefaultArgs(a: int, b: int = 10, c: int = 20): int {\n"
         "    return a + b + c;\n"
         "}\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    var r1 = testDefaultArgs(5);\n"
         "    var r2 = testDefaultArgs(5, c: 30);\n"
         "    return r1 + r2;\n"
-        "}\n";
+        "}\n"
+        "return __fixture();\n";
     
     SZrString* sourceName = ZrCore_String_Create(state, "test_default_args.zr", 22);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -709,7 +765,7 @@ static void test_named_arguments_with_defaults(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -749,13 +805,14 @@ static void test_named_arguments_order_independent(void) {
               "Testing: func(c: 10, a: 5, b: 3)");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "testNamedOrder(a: int, b: int, c: int): int {\n"
+        "module test;\n"
+        "fn testNamedOrder(a: int, b: int, c: int): int {\n"
         "    return a - b + c;\n"
         "}\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return testNamedOrder(c: 10, a: 5, b: 3);\n"
-        "}\n";
+        "}\n"
+        "return __fixture();\n";
     
     SZrString* sourceName = ZrCore_String_Create(state, "test_order.zr", 14);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -767,7 +824,7 @@ static void test_named_arguments_order_independent(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -807,13 +864,14 @@ static void test_named_arguments_complex(void) {
               "Testing: complexFunction(w: 4, x: 1, z: 3, y: 2)");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "complexFunction(x: int, y: int, z: int, w: int): int {\n"
+        "module test;\n"
+        "fn complexFunction(x: int, y: int, z: int, w: int): int {\n"
         "    return x * 1000 + y * 100 + z * 10 + w;\n"
         "}\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return complexFunction(w: 4, x: 1, z: 3, y: 2);\n"
-        "}\n";
+        "}\n"
+        "return __fixture();\n";
     
     SZrString* sourceName = ZrCore_String_Create(state, "test_complex.zr", 16);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -825,7 +883,7 @@ static void test_named_arguments_complex(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);

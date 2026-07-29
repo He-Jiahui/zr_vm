@@ -4670,17 +4670,17 @@ TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
 static const TZrChar *ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
-            return "'%shared' requires a %unique owner";
+            return "share() requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
-            return "'%weak' requires a %shared owner";
+            return "weak() requires a Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
-            return "'%loan' requires a %unique owner";
+            return "A mutable reference requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
-            return "'%upgrade' requires a %weak owner";
+            return "upgrade() requires a Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
-            return "'%release' requires a %unique or %shared owner";
+            return "drop() requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-            return "'%detach' requires a %unique or %shared owner";
+            return "intoGc() requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return "intoGc() requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
@@ -4844,6 +4844,12 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     if (!construct->isNew && builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
         if (!ZrParser_ExpressionType_Infer(cs, construct->target, result)) {
             return ZR_FALSE;
+        }
+
+        if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW &&
+            result->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
+            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_LOAN;
+            construct->builtinKind = builtinKind;
         }
 
         if (!validate_ownership_builtin_operand_type(cs,

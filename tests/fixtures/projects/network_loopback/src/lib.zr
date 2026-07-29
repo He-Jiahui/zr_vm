@@ -1,4 +1,4 @@
-%module "lib";
+module lib;
 
 pub var a: i32 = 10;
 
@@ -15,7 +15,7 @@ pub class Record {
         return this.x + this.y;
     }
 
-    pub static newInstance(x: i32, y: i32) : Record {
+    pub static fn newInstance(x: i32, y: i32): Record {
         return new Record (x, y);
     }
 }

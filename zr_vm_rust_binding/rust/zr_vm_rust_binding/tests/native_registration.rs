@@ -39,7 +39,7 @@ fn native_module_registration_roundtrip() -> Result<(), Box<dyn std::error::Erro
     fs::write(
         &main_source,
         concat!(
-            "var host = %import(\"host_demo\");\n",
+            "let host = import(\"host_demo\");\n",
             "return host.answer + host.bump(2, 3) + host.Counter.mul(4, 5);\n",
         ),
     )?;
@@ -149,7 +149,7 @@ fn native_module_registration_drop_waits_for_live_result_handles(
     fs::write(
         &main_source,
         concat!(
-            "var host = %import(\"host_demo\");\n",
+            "let host = import(\"host_demo\");\n",
             "return host.answer + host.bump(2, 3);\n",
         ),
     )?;
@@ -216,7 +216,7 @@ fn native_module_reregistration_replaces_active_entry_without_invalidating_live_
     fs::write(
         &main_source,
         concat!(
-            "var host = %import(\"host_demo\");\n",
+            "let host = import(\"host_demo\");\n",
             "return host.bump(0, 0);\n",
         ),
     )?;
@@ -303,7 +303,7 @@ fn native_module_registration_drop_allows_re_registration() -> Result<(), Box<dy
     fs::write(
         &main_source,
         concat!(
-            "var host = %import(\"host_demo\");\n",
+            "let host = import(\"host_demo\");\n",
             "return host.answer;\n",
         ),
     )?;
@@ -401,9 +401,9 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
     fs::write(
         &main_source,
         concat!(
-            "var host = %import(\"host_demo\");\n",
+            "let host = import(\"host_demo\");\n",
             "\n",
-            "pub replay(): int {\n",
+            "pub fn replay(): int {\n",
             "    return host.answer + host.bump(2, 3);\n",
             "}\n",
             "\n",

@@ -2284,7 +2284,7 @@ static void compile_using_plugin_guard_statement(SZrCompilerState *cs, SZrAstNod
         stmt->pattern == ZR_NULL || stmt->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
         stmt->pattern->data.identifier.name == ZR_NULL || stmt->body == ZR_NULL) {
         ZrParser_Compiler_Error(cs,
-                                "Using import guard requires `using (var name = %import(...)) { ... }`",
+                                "Using import guard requires `using (let name = import(...)) { ... }`",
                                 node->location);
         return;
     }

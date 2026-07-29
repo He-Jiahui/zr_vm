@@ -189,8 +189,6 @@ static SZrAstNodeArray *typed_metadata_current_parameter_list(SZrCompilerState *
     switch (node->type) {
         case ZR_AST_FUNCTION_DECLARATION:
             return node->data.functionDeclaration.params;
-        case ZR_AST_TEST_DECLARATION:
-            return node->data.testDeclaration.params;
         case ZR_AST_STRUCT_METHOD:
             return node->data.structMethod.params;
         case ZR_AST_STRUCT_META_FUNCTION:
@@ -602,23 +600,6 @@ static void free_compile_time_function_infos(SZrState *state,
                                   ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 }
 
-static void free_test_infos(SZrState *state,
-                            SZrFunctionTestInfo *infos,
-                            TZrUInt32 count) {
-    if (state == ZR_NULL || state->global == ZR_NULL || infos == ZR_NULL) {
-        return;
-    }
-
-    for (TZrUInt32 index = 0; index < count; index++) {
-        free_metadata_parameters(state, infos[index].parameters, infos[index].parameterCount);
-    }
-
-    ZrCore_Memory_RawFreeWithType(state->global,
-                                  infos,
-                                  sizeof(SZrFunctionTestInfo) * count,
-                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-}
-
 TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
                                                    SZrAstNodeArray *params,
                                                    TZrBool includeDefaultValues,
@@ -920,77 +901,6 @@ static TZrBool build_compile_time_function_infos(SZrCompilerState *cs,
                 return ZR_FALSE;
             }
         }
-    }
-
-    *outInfos = infos;
-    *outCount = infoCount;
-    return ZR_TRUE;
-}
-
-static TZrBool build_test_infos(SZrCompilerState *cs,
-                                SZrFunctionTestInfo **outInfos,
-                                TZrUInt32 *outCount) {
-    TZrUInt32 infoCount = 0;
-    SZrFunctionTestInfo *infos;
-    TZrUInt32 writeIndex = 0;
-
-    if (outInfos == ZR_NULL || outCount == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    *outInfos = ZR_NULL;
-    *outCount = 0;
-    if (cs == ZR_NULL ||
-        cs->scriptAst == ZR_NULL ||
-        cs->scriptAst->type != ZR_AST_SCRIPT ||
-        cs->scriptAst->data.script.statements == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    for (TZrSize index = 0; index < cs->scriptAst->data.script.statements->count; index++) {
-        SZrAstNode *statement = cs->scriptAst->data.script.statements->nodes[index];
-        if (statement != ZR_NULL && statement->type == ZR_AST_TEST_DECLARATION) {
-            infoCount++;
-        }
-    }
-
-    if (infoCount == 0) {
-        return ZR_TRUE;
-    }
-
-    infos = (SZrFunctionTestInfo *)ZrCore_Memory_RawMallocWithType(
-            cs->state->global,
-            sizeof(SZrFunctionTestInfo) * infoCount,
-            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-    if (infos == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Memory_RawSet(infos, 0, sizeof(SZrFunctionTestInfo) * infoCount);
-    for (TZrSize index = 0; index < cs->scriptAst->data.script.statements->count; index++) {
-        SZrAstNode *statement = cs->scriptAst->data.script.statements->nodes[index];
-        SZrTestDeclaration *declaration;
-
-        if (statement == ZR_NULL || statement->type != ZR_AST_TEST_DECLARATION) {
-            continue;
-        }
-
-        declaration = &statement->data.testDeclaration;
-        infos[writeIndex].name = declaration->name != ZR_NULL ? declaration->name->name : ZR_NULL;
-        infos[writeIndex].hasVariableArguments = declaration->args != ZR_NULL ? ZR_TRUE : ZR_FALSE;
-        infos[writeIndex].lineInSourceStart =
-                statement->location.start.line > 0 ? (TZrUInt32)statement->location.start.line : 0;
-        infos[writeIndex].lineInSourceEnd =
-                statement->location.end.line > 0 ? (TZrUInt32)statement->location.end.line : 0;
-        if (!compiler_build_function_parameter_metadata(cs,
-                                                        declaration->params,
-                                                        ZR_FALSE,
-                                                        &infos[writeIndex].parameters,
-                                                        &infos[writeIndex].parameterCount)) {
-            free_test_infos(cs->state, infos, infoCount);
-            return ZR_FALSE;
-        }
-        writeIndex++;
     }
 
     *outInfos = infos;
@@ -2499,8 +2409,6 @@ TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs) {
     TZrUInt32 compileTimeVariableInfoCount = 0;
     SZrFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos = ZR_NULL;
     TZrUInt32 compileTimeFunctionInfoCount = 0;
-    SZrFunctionTestInfo *testInfos = ZR_NULL;
-    TZrUInt32 testInfoCount = 0;
 
     if (cs == ZR_NULL || cs->currentFunction == ZR_NULL || cs->state == ZR_NULL || cs->state->global == ZR_NULL) {
         return ZR_FALSE;
@@ -2552,28 +2460,6 @@ TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs) {
         return ZR_FALSE;
     }
 
-    if (!build_test_infos(cs, &testInfos, &testInfoCount)) {
-        if (localBindings != ZR_NULL && localBindingCount > 0) {
-            ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                          localBindings,
-                                          sizeof(SZrFunctionTypedLocalBinding) * localBindingCount,
-                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        }
-        if (exportSymbols != ZR_NULL && exportSymbolCount > 0) {
-            free_typed_export_symbols(cs->state, exportSymbols, exportSymbolCount);
-        }
-        if (compileTimeVariableInfos != ZR_NULL && compileTimeVariableInfoCount > 0) {
-            ZrCore_Memory_RawFreeWithType(cs->state->global,
-                                          compileTimeVariableInfos,
-                                          sizeof(SZrFunctionCompileTimeVariableInfo) * compileTimeVariableInfoCount,
-                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        }
-        if (compileTimeFunctionInfos != ZR_NULL && compileTimeFunctionInfoCount > 0) {
-            free_compile_time_function_infos(cs->state, compileTimeFunctionInfos, compileTimeFunctionInfoCount);
-        }
-        return ZR_FALSE;
-    }
-
     cs->currentFunction->typedLocalBindings = localBindings;
     cs->currentFunction->typedLocalBindingLength = localBindingCount;
     cs->currentFunction->typedExportedSymbols = exportSymbols;
@@ -2582,7 +2468,5 @@ TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs) {
     cs->currentFunction->compileTimeVariableInfoLength = compileTimeVariableInfoCount;
     cs->currentFunction->compileTimeFunctionInfos = compileTimeFunctionInfos;
     cs->currentFunction->compileTimeFunctionInfoLength = compileTimeFunctionInfoCount;
-    cs->currentFunction->testInfos = testInfos;
-    cs->currentFunction->testInfoLength = testInfoCount;
     return compiler_build_function_metadata_tokens(cs, cs->currentFunction);
 }

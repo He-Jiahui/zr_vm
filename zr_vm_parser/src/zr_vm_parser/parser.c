@@ -54,7 +54,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
 
     // 解析可选的模块声明
     SZrAstNode *moduleName = ZR_NULL;
-    if (current_percent_directive_equals(ps, "module")) {
+    if (ps->lexer->t.token == ZR_TK_MODULE) {
         moduleName = parse_module_declaration(ps);
     }
 
@@ -116,19 +116,10 @@ SZrAstNode *parse_script(SZrParserState *ps) {
                         token == ZR_TK_INTERMEDIATE || token == ZR_TK_MODULE || token == ZR_TK_IDENTIFIER) {
                         break;
                     }
-                    // 如果遇到 %，需要特殊处理（可能是 %test 或 %compileTime）
                     if (token == ZR_TK_PERCENT) {
-                        // 检查下一个 token 是否是标识符
-                        EZrToken nextToken = peek_token(ps);
-                        if (nextToken == ZR_TK_IDENTIFIER) {
-                            // 可能是 %test 或 %compileTime，停止跳过
-                            break;
-                        } else {
-                            // 不是有效的指令，跳过 % token
-                            ZrParser_Lexer_Next(ps->lexer);
-                            skipCount++;
-                            continue;
-                        }
+                        ZrParser_Lexer_Next(ps->lexer);
+                        skipCount++;
+                        continue;
                     }
                     // 跳过当前 token
                     ZrParser_Lexer_Next(ps->lexer);
@@ -147,19 +138,8 @@ SZrAstNode *parse_script(SZrParserState *ps) {
                 }
                 // 尝试跳过当前 token 继续解析
                 if (currentToken != ZR_TK_EOS) {
-                    // 特殊处理 % token：如果后面不是有效的指令，需要跳过
                     if (currentToken == ZR_TK_PERCENT) {
-                        EZrToken nextToken = peek_token(ps);
-                        if (nextToken != ZR_TK_IDENTIFIER) {
-                            // 不是有效的指令，跳过 % token
-                            ZrParser_Lexer_Next(ps->lexer);
-                        } else {
-                            // 可能是有效的指令，但解析失败了，跳过 % 和标识符
-                            ZrParser_Lexer_Next(ps->lexer); // 跳过 %
-                            if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-                                ZrParser_Lexer_Next(ps->lexer); // 跳过标识符
-                            }
-                        }
+                        ZrParser_Lexer_Next(ps->lexer);
                     } else {
                         ZrParser_Lexer_Next(ps->lexer);
                     }

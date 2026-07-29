@@ -689,13 +689,6 @@ static TZrBool semantic_da_resolve_node(SZrSemanticContext *context,
             return semantic_da_resolve_function_like_body(context,
                                                          symbols,
                                                          node->data.functionDeclaration.body);
-        case ZR_AST_TEST_DECLARATION:
-            if (!semantic_da_run_cfg_for_root(context, symbols, node)) {
-                return ZR_FALSE;
-            }
-            return semantic_da_resolve_function_like_body(context,
-                                                         symbols,
-                                                         node->data.testDeclaration.body);
         case ZR_AST_BLOCK:
             return semantic_da_resolve_function_like_body(context, symbols, node);
         default:

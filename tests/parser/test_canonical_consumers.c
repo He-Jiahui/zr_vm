@@ -581,9 +581,9 @@ static void test_semantic_query_projects_expression_and_call_types_from_canonica
 
 static void test_resolved_generic_call_publishes_closed_canonical_signature(void) {
     const TZrChar *source =
-            "func identity<T>(value: T): T { return value; }\n"
-            "func zero(): int { return 0; }\n"
-            "func use(): int { var value = identity(42); return zero(); }\n";
+            "fn identity<T>(value: T): T { return value; }\n"
+            "fn zero(): int { return 0; }\n"
+            "fn use(): int { var value = identity(42); return zero(); }\n";
     const TZrChar *call = strstr(source, "identity(42)");
     const TZrChar *emptyCallDeclaration = strstr(source, "zero()");
     const TZrChar *emptyCall = emptyCallDeclaration != ZR_NULL
@@ -696,10 +696,10 @@ static void test_resolved_generic_member_call_preserves_declaration_generic_clau
 
 static void test_resolved_extern_call_preserves_parameter_names_in_canonical_signature(void) {
     const TZrChar *source =
-            "%extern(\"fixture\") {\n"
+            "native extern(\"fixture\") {\n"
             "    NativeAdd(lhs: i32, rhs: i32): i32;\n"
             "}\n"
-            "func use(): i32 { return NativeAdd(1, 2); }\n";
+            "fn use(): i32 { return NativeAdd(1, 2); }\n";
     const TZrChar *call = strstr(source, "NativeAdd(1, 2)");
     SZrCompilerState cs;
     SZrString *sourceName;

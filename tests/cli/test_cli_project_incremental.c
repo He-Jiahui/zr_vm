@@ -383,8 +383,8 @@ static TZrBool prepare_dependency_compile_fixture(TZrChar *projectRoot,
             "  }\n"
             "}\n";
     static const TZrChar *mainContent =
-            "var sum = %import(\"&math.ops.sum\");\n"
-            "pub func run(): i32 { return 0; }\n";
+            "let sum = import(\"&math.ops.sum\");\n"
+            "pub fn run(): i32 { return 0; }\n";
     static const TZrChar *mathProjectContent =
             "{\n"
             "  \"name\": \"math\",\n"
@@ -814,8 +814,8 @@ static void test_cli_incremental_decorator_import_rename_reuses_clean_dependenci
                                                       "%module \"decorated_user\";",
                                                       "%module \"decorated_user_v2\";"));
     TEST_ASSERT_TRUE(rewrite_text_file_replacing_once(mainSourcePath,
-                                                      "%import(\"decorated_user\")",
-                                                      "%import(\"decorated_user_v2\")"));
+                                                       "let decorated = import(\"decorated_user\")",
+                                                       "let decorated = import(\"decorated_user_v2\")"));
 
     TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &renameSummary));
     TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)renameSummary.compiledCount);
@@ -1143,7 +1143,7 @@ static void test_cli_compile_emit_aot_c_writes_full_aot_project_c_source(void) {
             "    pub @constructor(value: int) { this.value = value; }\n"
             "}\n"
             "class RefA { }\n"
-            "func stamp<T>(value: T): Stamp where T: class {\n"
+            "fn stamp<T>(value: T): Stamp where T: class {\n"
             "    var local: Stamp = $Stamp(42);\n"
             "    return local;\n"
             "}\n"

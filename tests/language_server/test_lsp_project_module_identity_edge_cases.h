@@ -11,23 +11,23 @@ static void test_lsp_source_module_identity_change_refreshes_old_and_new_importe
         "  \"entry\": \"old_user\"\n"
         "}\n";
     static const TZrChar *oldUserContent =
-        "var legacy = %import(\"legacy\");\n"
+        "var legacy = import(\"legacy\");\n"
         "var cached = legacy.value();\n"
         "return cached;\n";
     static const TZrChar *newUserContent =
-        "var legacy = %import(\"legacy\");\n"
-        "var modern = %import(\"modern\");\n"
+        "var legacy = import(\"legacy\");\n"
+        "var modern = import(\"modern\");\n"
         "var prior = legacy.value();\n"
         "var cached = modern.value();\n"
         "return cached;\n";
     static const TZrChar *initialProviderContent =
-        "%module \"legacy\";\n"
-        "pub value(): int {\n"
+        "module legacy;\n"
+        "pub fn value(): int {\n"
         "    return 1;\n"
         "}\n";
     static const TZrChar *renamedProviderContent =
-        "%module \"modern\";\n"
-        "pub value(): float {\n"
+        "module modern;\n"
+        "pub fn value(): float {\n"
         "    return 1.5;\n"
         "}\n";
     const TZrChar *summary =

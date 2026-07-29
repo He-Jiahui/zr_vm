@@ -8,7 +8,7 @@ union Option<T> {
     @Some(value: T);
 }
 
-using (var catalog = %import("catalog")) {
+using (var catalog = import("catalog")) {
     var subtotal = 120;
     var coupon: Coupon = Coupon.Found {
         amount: catalog.discountAmount(),

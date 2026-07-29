@@ -1,6 +1,6 @@
-%module "decorated_user";
+module "decorated_user";
 
-var decorators = %import("decorators");
+let decorators = import("decorators");
 
 #decorators.Serializable#
 pub class User {
@@ -9,11 +9,11 @@ pub class User {
 
 #decorators.markFunction#
 pub decoratedBonus(): int {
-    var meta = %type(decoratedBonus).metadata;
+    var meta = typeof(decoratedBonus).metadata;
     return meta.instrumented;
 }
 
-pub var verifyDecorators = () => {
-    var typeMeta = %type(User).metadata;
+pub var verifyDecorators = fn() => {
+    var typeMeta = typeof(User).metadata;
     return typeMeta.serializable ? 15 : 0;
 };

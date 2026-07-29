@@ -8,7 +8,7 @@
 static TZrBool test_local_expression_query_keeps_commuted_zero_minus_positive_offset_conditional_positive_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -62,7 +62,7 @@ static TZrBool test_local_expression_query_keeps_commuted_zero_minus_positive_of
 static TZrBool test_local_expression_query_keeps_negative_delta_commuted_zero_minus_positive_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -116,7 +116,7 @@ static TZrBool test_local_expression_query_keeps_negative_delta_commuted_zero_mi
 static TZrBool test_local_expression_query_keeps_commuted_bounded_negative_subtractive_offset_conditional_positive_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -170,7 +170,7 @@ static TZrBool test_local_expression_query_keeps_commuted_bounded_negative_subtr
 static TZrBool test_local_expression_query_keeps_negative_delta_commuted_bounded_negative_subtractive_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -224,7 +224,7 @@ static TZrBool test_local_expression_query_keeps_negative_delta_commuted_bounded
 static TZrBool test_local_expression_query_keeps_subtract_zero_minus_positive_offset_conditional_negative_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -278,7 +278,7 @@ static TZrBool test_local_expression_query_keeps_subtract_zero_minus_positive_of
 static TZrBool test_local_expression_query_keeps_positive_delta_subtract_zero_minus_positive_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -332,7 +332,7 @@ static TZrBool test_local_expression_query_keeps_positive_delta_subtract_zero_mi
 static TZrBool test_local_expression_query_keeps_subtract_bounded_negative_subtractive_offset_conditional_negative_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -386,7 +386,7 @@ static TZrBool test_local_expression_query_keeps_subtract_bounded_negative_subtr
 static TZrBool test_local_expression_query_keeps_positive_delta_subtract_bounded_negative_subtractive_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -440,7 +440,7 @@ static TZrBool test_local_expression_query_keeps_positive_delta_subtract_bounded
 static TZrBool test_local_expression_query_keeps_subtract_negative_binding_offset_conditional_negative_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -493,7 +493,7 @@ static TZrBool test_local_expression_query_keeps_subtract_negative_binding_offse
 static TZrBool test_local_expression_query_keeps_positive_delta_subtract_negative_binding_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -546,7 +546,7 @@ static TZrBool test_local_expression_query_keeps_positive_delta_subtract_negativ
 static TZrBool test_local_expression_query_keeps_subtract_unary_negative_positive_offset_conditional_negative_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -599,7 +599,7 @@ static TZrBool test_local_expression_query_keeps_subtract_unary_negative_positiv
 static TZrBool test_local_expression_query_keeps_positive_delta_subtract_unary_negative_positive_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -652,7 +652,7 @@ static TZrBool test_local_expression_query_keeps_positive_delta_subtract_unary_n
 static TZrBool test_local_expression_query_keeps_subtract_negative_binding_sum_offset_conditional_negative_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -706,7 +706,7 @@ static TZrBool test_local_expression_query_keeps_subtract_negative_binding_sum_o
 static TZrBool test_local_expression_query_keeps_positive_delta_subtract_negative_binding_sum_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -760,7 +760,7 @@ static TZrBool test_local_expression_query_keeps_positive_delta_subtract_negativ
 static TZrBool test_local_expression_query_keeps_subtract_zero_minus_negative_binding_offset_conditional_positive_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -814,7 +814,7 @@ static TZrBool test_local_expression_query_keeps_subtract_zero_minus_negative_bi
 static TZrBool test_local_expression_query_keeps_negative_delta_subtract_zero_minus_negative_binding_offset_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"

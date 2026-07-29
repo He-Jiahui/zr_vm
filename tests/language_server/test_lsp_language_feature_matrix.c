@@ -670,7 +670,7 @@ static void test_lsp_matrix_builtin_import_hover_and_completion(SZrState *state)
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Matrix Builtin Import Hover And Completion",
-                  "Hover on %import(\"zr.system\") should surface native builtin module metadata");
+                  "Hover on import(\"zr.system\") should surface native builtin module metadata");
         return;
     }
 
@@ -699,10 +699,10 @@ static void test_lsp_matrix_imported_type_bindings_surface_qualified_and_destruc
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
     const TZrChar *content =
-            "var container = %import(\"zr.container\");\n"
-            "var pair1: container.Pair<int, float> = $container.Pair<int, float>(1, 2.0);\n"
-            "var {Pair} = %import(\"zr.container\");\n"
-            "var pair2: Pair<int, float> = $Pair<int, float>(1, 2.0);\n"
+            "var container = import(\"zr.container\");\n"
+            "var pair1: container.Pair<int, float> = init container.Pair<int, float>(1, 2.0);\n"
+            "var {Pair} = import(\"zr.container\");\n"
+            "var pair2: Pair<int, float> = init Pair<int, float>(1, 2.0);\n"
             "container.Pair;\n"
             "pair2.first;\n"
             "pair2;\n";
@@ -808,8 +808,8 @@ static void test_lsp_matrix_unqualified_imported_type_requires_explicit_binding_
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
     const TZrChar *content =
-            "var container = %import(\"zr.container\");\n"
-            "var pair: Pair<int, float> = $Pair<int, float>(1, 2.0);\n";
+            "var container = import(\"zr.container\");\n"
+            "var pair: Pair<int, float> = init Pair<int, float>(1, 2.0);\n";
     SZrString *uri = ZR_NULL;
     SZrArray diagnostics;
 
@@ -851,7 +851,7 @@ static void test_lsp_matrix_destructured_imported_type_rejects_duplicate_pair_de
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
     const TZrChar *content =
-            "var {Pair} = %import(\"zr.container\");\n"
+            "var {Pair} = import(\"zr.container\");\n"
             "struct Pair {\n"
             "    var left: int;\n"
             "    var right: int;\n"
@@ -884,7 +884,7 @@ static void test_lsp_matrix_destructured_imported_type_rejects_duplicate_pair_de
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Matrix Destructured Imported Type Rejects Duplicate Pair Declaration",
-                  "Declaring struct Pair after var {Pair} = %import(\"zr.container\") should surface a duplicate-type diagnostic");
+                  "Declaring struct Pair after var {Pair} = import(\"zr.container\") should surface a duplicate-type diagnostic");
         return;
     }
 

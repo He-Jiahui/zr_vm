@@ -48,15 +48,22 @@ TZrBool consume_token(SZrParserState *ps, EZrToken token);
 
 EZrToken peek_token(SZrParserState *ps);
 
-TZrBool consume_percent_keyword_token(SZrParserState *ps, EZrToken token);
-
 void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor);
 
 void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor);
 
 TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text);
 
-TZrBool current_percent_directive_equals(SZrParserState *ps, const TZrChar *text);
+TZrBool report_removed_percent_syntax(SZrParserState *ps);
+
+void report_removed_legacy_syntax(SZrParserState *ps,
+                                  const TZrChar *spelling,
+                                  const TZrChar *suggestion);
+void report_removed_legacy_syntax_at(SZrParserState *ps,
+                                     SZrFileRange location,
+                                     EZrToken token,
+                                     const TZrChar *spelling,
+                                     const TZrChar *suggestion);
 
 TZrBool is_module_path_segment_token(EZrToken token);
 
@@ -72,7 +79,6 @@ void skip_balanced_after_open_paren(SZrParserState *ps);
 
 void skip_to_semicolon_or_eos(SZrParserState *ps);
 
-void skip_legacy_import_call(SZrParserState *ps);
 
 SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrChar *directiveName);
 
@@ -184,11 +190,6 @@ void report_missing_extern_spec_close(SZrParserState *ps, SZrFileRange location)
 
 void report_missing_test_name_close(SZrParserState *ps, SZrFileRange location);
 
-void report_legacy_ownership_type_syntax(SZrParserState *ps,
-                                         SZrFileRange location,
-                                         const TZrChar *legacyQualifier,
-                                         const TZrChar *wrapperName);
-
 SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRange location);
 
 SZrAstNode *create_identifier_node_with_location(SZrParserState *ps, SZrString *name, SZrFileRange location);
@@ -282,21 +283,13 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
 
 SZrAstNode *parse_struct_init_expression(SZrParserState *ps);
 
-EZrOwnershipQualifier parse_optional_method_receiver_qualifier(SZrParserState *ps);
-
-SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps);
+SZrAstNode *parse_reference_expression(SZrParserState *ps);
 
 SZrAstNode *parse_reserved_import_expression(SZrParserState *ps);
 
-SZrAstNode *parse_reserved_await_expression(SZrParserState *ps);
-
 SZrAstNode *parse_await_expression(SZrParserState *ps);
 
-SZrAstNode *parse_reserved_type_expression(SZrParserState *ps);
-
 SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps);
-
-SZrAstNode *parse_owned_class_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base);
 
@@ -462,13 +455,7 @@ SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArra
 
 SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArray *decorators);
 
-SZrAstNode *parse_extern_member_declaration(SZrParserState *ps);
-
 SZrAstNode *parse_extern_block(SZrParserState *ps);
-
-SZrAstNode *parse_test_declaration(SZrParserState *ps);
-
-TZrBool is_compile_time_function_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_compile_time_declaration(SZrParserState *ps);
 

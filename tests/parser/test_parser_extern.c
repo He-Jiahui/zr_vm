@@ -109,7 +109,7 @@ void test_extern_delegate_parameter_decorator_flags_parsing(void) {
     SZrExternParserTestTimer timer;
     const char *testSummary = "Extern Delegate Parameter Decorator Flags Parsing";
     const char *source =
-            "%extern(\"fixture\") {\n"
+            "native extern(\"fixture\") {\n"
             "    delegate MutPtr(\n"
             "        #zr.ffi.out#\n"
             "        #zr.ffi.inout#\n"
@@ -218,13 +218,10 @@ void test_top_level_class_decorator_parsing(void) {
 
 void test_compile_time_class_decorator_parsing(void) {
     SZrExternParserTestTimer timer;
-    const char *testSummary = "Compile Time Class Decorator Parsing";
+    const char *testSummary = "Attribute Class Decorator Parsing";
     const char *source =
-            "%compileTime class Serializable {\n"
-            "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
-            "        return { metadata: { serializable: true } };\n"
-            "    }\n"
-            "}\n"
+            "#AttributeUsage#\n"
+            "readonly struct Serializable {}\n"
             "\n"
             "#Serializable#\n"
             "class User {\n"
@@ -253,12 +250,9 @@ void test_compile_time_class_decorator_parsing(void) {
 
     compileTimeDecl = get_script_statement(ast, 0);
     TEST_ASSERT_NOT_NULL(compileTimeDecl);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_COMPILE_TIME_DECLARATION, compileTimeDecl->type);
-    TEST_ASSERT_NOT_NULL(compileTimeDecl->data.compileTimeDeclaration.declaration);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, compileTimeDecl->data.compileTimeDeclaration.declaration->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, compileTimeDecl->type);
     TEST_ASSERT_EQUAL_STRING("Serializable",
-                             identifier_native(
-                                     compileTimeDecl->data.compileTimeDeclaration.declaration->data.classDeclaration.name));
+                             identifier_native(compileTimeDecl->data.structDeclaration.name));
 
     decoratedClassDecl = get_script_statement(ast, 1);
     TEST_ASSERT_NOT_NULL(decoratedClassDecl);
@@ -284,13 +278,10 @@ void test_compile_time_class_decorator_parsing(void) {
 
 void test_compile_time_public_class_decorator_parsing(void) {
     SZrExternParserTestTimer timer;
-    const char *testSummary = "Compile Time Public Class Decorator Parsing";
+    const char *testSummary = "Attribute Public Class Decorator Parsing";
     const char *source =
-            "%compileTime class Serializable {\n"
-            "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
-            "        return { metadata: { serializable: true } };\n"
-            "    }\n"
-            "}\n"
+            "#AttributeUsage#\n"
+            "readonly struct Serializable {}\n"
             "\n"
             "#Serializable#\n"
             "pub class User {\n"
@@ -341,13 +332,10 @@ void test_compile_time_public_class_decorator_parsing(void) {
 
 void test_compile_time_struct_decorator_parsing(void) {
     SZrExternParserTestTimer timer;
-    const char *testSummary = "Compile Time Struct Decorator Parsing";
+    const char *testSummary = "Attribute Struct Decorator Parsing";
     const char *source =
-            "%compileTime struct Packed {\n"
-            "    @decorate(target: %type Struct): zr.DecoratorPatch {\n"
-            "        return { metadata: { packed: true } };\n"
-            "    }\n"
-            "}\n"
+            "#AttributeUsage#\n"
+            "readonly struct Packed {}\n"
             "\n"
             "#Packed#\n"
             "struct Packet {\n"
@@ -377,13 +365,9 @@ void test_compile_time_struct_decorator_parsing(void) {
 
     compileTimeDecl = get_script_statement(ast, 0);
     TEST_ASSERT_NOT_NULL(compileTimeDecl);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_COMPILE_TIME_DECLARATION, compileTimeDecl->type);
-    TEST_ASSERT_EQUAL_INT(ZR_COMPILE_TIME_STRUCT, compileTimeDecl->data.compileTimeDeclaration.declarationType);
-    TEST_ASSERT_NOT_NULL(compileTimeDecl->data.compileTimeDeclaration.declaration);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, compileTimeDecl->data.compileTimeDeclaration.declaration->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, compileTimeDecl->type);
     TEST_ASSERT_EQUAL_STRING("Packed",
-                             identifier_native(
-                                     compileTimeDecl->data.compileTimeDeclaration.declaration->data.structDeclaration.name));
+                             identifier_native(compileTimeDecl->data.structDeclaration.name));
 
     decoratedStructDecl = get_script_statement(ast, 1);
     TEST_ASSERT_NOT_NULL(decoratedStructDecl);
@@ -409,10 +393,11 @@ void test_compile_time_struct_decorator_parsing(void) {
 
 void test_compile_time_function_decorator_parsing(void) {
     SZrExternParserTestTimer timer;
-    const char *testSummary = "Compile Time Function Decorator Parsing";
+    const char *testSummary = "Declaration Transform Function Decorator Parsing";
     const char *source =
-            "%compileTime decorate(target: %type Class, version: int = 7): zr.DecoratorPatch {\n"
-            "    return { metadata: { version: version } };\n"
+            "#zr.compile.declarationTransform#\n"
+            "comptime fn decorate(target: declaration.Class, version: int = 7): declaration.Patch {\n"
+            "    return null;\n"
             "}\n"
             "\n"
             "#decorate(version: 11)#\n"
@@ -449,6 +434,9 @@ void test_compile_time_function_decorator_parsing(void) {
     TEST_ASSERT_EQUAL_STRING("decorate",
                              identifier_native(
                                      compileTimeDecl->data.compileTimeDeclaration.declaration->data.functionDeclaration.name));
+    TEST_ASSERT_NOT_NULL(compileTimeDecl->data.compileTimeDeclaration.declaration->data.functionDeclaration.decorators);
+    TEST_ASSERT_EQUAL_INT(1,
+                          (int)compileTimeDecl->data.compileTimeDeclaration.declaration->data.functionDeclaration.decorators->count);
 
     decoratedClassDecl = get_script_statement(ast, 1);
     TEST_ASSERT_NOT_NULL(decoratedClassDecl);

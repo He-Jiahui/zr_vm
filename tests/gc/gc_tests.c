@@ -140,7 +140,6 @@ static TZrUInt32 gc_test_write_single_compiled_struct_prototype(TZrByte *buffer,
     member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
     member.fieldOffset = fieldOffset;
     member.fieldSize = fieldSize;
-    member.isUsingManaged = 1u;
     member.ownershipQualifier = 1u;
 
     memcpy(buffer + cursor, &prototypeCount, sizeof(prototypeCount));

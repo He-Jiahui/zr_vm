@@ -73,15 +73,15 @@ static void test_possible_owner_release_case(
 
 static void test_semantic_analyzer_joins_borrowed_alias_owner_set(SZrState *state) {
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(first: %shared Resource, second: %shared Resource, choose: bool): int {\n"
-        "    var alias = %borrow(first);\n"
+        "fn use(first: Shared<Resource>, second: Shared<Resource>, choose: bool): int {\n"
+        "    var alias = ref first;\n"
         "    if (choose) {\n"
-        "        alias = %borrow(second);\n"
+        "        alias = ref second;\n"
         "    }\n"
-        "    var released = %release(first);\n"
-        "    var alsoReleased = %release(second);\n"
+        "    drop(first);\n"
+        "    drop(second);\n"
         "    alias;\n"
         "    return 0;\n"
         "}\n";
@@ -100,14 +100,14 @@ static void test_semantic_analyzer_joins_borrowed_alias_owner_set(SZrState *stat
 
 static void test_semantic_analyzer_joins_loaned_alias_owner_set(SZrState *state) {
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(first: %unique Resource, second: %unique Resource, choose: bool): int {\n"
-        "    var alias = %loan(first);\n"
+        "fn use(first: Unique<Resource>, second: Unique<Resource>, choose: bool): int {\n"
+        "    var alias = ref first;\n"
         "    if (choose) {\n"
-        "        alias = %loan(second);\n"
+        "        alias = ref second;\n"
         "    }\n"
-        "    var released = %release(second);\n"
+        "    drop(second);\n"
         "    alias;\n"
         "    return 0;\n"
         "}\n";
@@ -126,16 +126,16 @@ static void test_semantic_analyzer_joins_loaned_alias_owner_set(SZrState *state)
 
 static void test_semantic_analyzer_joins_weak_alias_owner_set(SZrState *state) {
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "observe(resource: %borrowed Resource): int { return 0; }\n"
-        "use(first: %shared Resource, second: %shared Resource, choose: bool): int {\n"
-        "    var watcher = %weak(first);\n"
+        "fn observe(resource: ref readonly Resource): int { return 0; }\n"
+        "fn use(first: Shared<Resource>, second: Shared<Resource>, choose: bool): int {\n"
+        "    var watcher = first.weak();\n"
         "    if (choose) {\n"
-        "        watcher = %weak(second);\n"
+        "        watcher = second.weak();\n"
         "    }\n"
-        "    var released = %release(second);\n"
-        "    observe(watcher);\n"
+        "    drop(second);\n"
+        "    observe(ref watcher);\n"
         "    return 0;\n"
         "}\n";
 
@@ -154,14 +154,14 @@ static void test_semantic_analyzer_joins_weak_alias_owner_set(SZrState *state) {
 static void test_semantic_analyzer_ignores_release_outside_alias_owner_set(
         SZrState *state) {
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(first: %shared Resource, second: %shared Resource, unrelated: %shared Resource, choose: bool): int {\n"
-        "    var alias = %borrow(first);\n"
+        "fn use(first: Shared<Resource>, second: Shared<Resource>, unrelated: Shared<Resource>, choose: bool): int {\n"
+        "    var alias = ref first;\n"
         "    if (choose) {\n"
-        "        alias = %borrow(second);\n"
+        "        alias = ref second;\n"
         "    }\n"
-        "    var released = %release(unrelated);\n"
+        "    drop(unrelated);\n"
         "    alias;\n"
         "    return 0;\n"
         "}\n";

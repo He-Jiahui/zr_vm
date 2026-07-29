@@ -8,6 +8,7 @@ TZrBool ZrLanguageServer_SemanticOwnership_AddEscapeRelatedInformation(
         SZrSemanticAnalyzer *analyzer,
         SZrStructuredDiagnostic *diagnostic,
         SZrAstNode *ownershipNode,
+        SZrAstNode *sourceNode,
         SZrAstNode *enclosingCallable,
         EZrOwnershipQualifier qualifier);
 

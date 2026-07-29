@@ -161,7 +161,7 @@ static void test_lsp_document_formatting_returns_single_document_edit(SZrState *
     const TZrChar *summary = "LSP document formatting returns a full-document edit";
     const TZrChar *content =
         "class Sample {\n"
-        "pub func run(value: int): int {\n"
+        "pub fn run(value: int): int {\n"
         "let local = value;\n"
         "return local;\n"
         "}\n"
@@ -175,7 +175,7 @@ static void test_lsp_document_formatting_returns_single_document_edit(SZrState *
     if (context == ZR_NULL ||
         !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &edits) ||
         edits.length != 1 ||
-        !text_edit_contains(&edits, "    pub func run") ||
+        !text_edit_contains(&edits, "    pub fn run") ||
         !text_edit_contains(&edits, "        return local;")) {
         (*failures)++;
         TEST_FAIL(timer, summary, "formatting did not return the expected indented full-document edit");
@@ -194,7 +194,7 @@ static void test_lsp_formatting_skips_noop_edits(SZrState *state, int *failures)
     const TZrChar *summary = "LSP formatting skips no-op edits";
     const TZrChar *content =
         "class Sample {\n"
-        "    pub func run(value: int): int {\n"
+        "    pub fn run(value: int): int {\n"
         "        return value;\n"
         "    }\n"
         "}\n";
@@ -230,7 +230,7 @@ static void test_lsp_folding_and_selection_ranges(SZrState *state, int *failures
     const TZrChar *summary = "LSP folding and selection ranges use source structure";
     const TZrChar *content =
         "class Sample {\n"
-        "    pub func run(value: int): int {\n"
+        "    pub fn run(value: int): int {\n"
         "        let local = value;\n"
         "        return local;\n"
         "    }\n"
@@ -280,15 +280,15 @@ static void test_lsp_folding_ranges_include_import_regions(SZrState *state, int 
     SZrTestTimer timer;
     const TZrChar *summary = "LSP folding ranges include import regions";
     const TZrChar *content =
-        "%import(\"zr.system\");\n"
-        "%import(\"zr.math\");\n"
-        "%import(\"zr.container\");\n"
+        "let system = import(\"zr.system\");\n"
+        "let math = import(\"zr.math\");\n"
+        "let container = import(\"zr.container\");\n"
         "\n"
         "// first note\n"
         "// second note\n"
         "\n"
         "//#region setup\n"
-        "func main(): int {\n"
+        "fn main(): int {\n"
         "    return 0;\n"
         "}\n"
         "//#endregion\n";
@@ -355,14 +355,14 @@ static void test_lsp_formatting_ignores_non_code_braces(SZrState *state, int *fa
     SZrTestTimer timer;
     const TZrChar *summary = "LSP formatting ignores braces in strings and comments";
     const TZrChar *content =
-        "func render(): string {\n"
+        "fn render(): string {\n"
         "let text = \"{\";\n"
         "// }\n"
         "/* { */\n"
         "return text;\n"
         "}\n";
     const TZrChar *expected =
-        "func render(): string {\n"
+        "fn render(): string {\n"
         "    let text = \"{\";\n"
         "    // }\n"
         "    /* { */\n"
@@ -396,7 +396,7 @@ static void test_lsp_folding_ignores_non_code_braces(SZrState *state, int *failu
     SZrTestTimer timer;
     const TZrChar *summary = "LSP folding ignores braces in strings and comments";
     const TZrChar *content =
-        "func render(): string {\n"
+        "fn render(): string {\n"
         "    let text = \"{\";\n"
         "    // }\n"
         "    /* { */\n"
@@ -444,7 +444,7 @@ static void test_lsp_folding_ignores_non_code_braces(SZrState *state, int *failu
 static void test_lsp_document_links_resolve_import_literals(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP document links resolve import literals";
-    const TZrChar *content = "%import(\"zr.math\");\n";
+    const TZrChar *content = "import(\"zr.math\");\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray links = {0};
@@ -479,12 +479,12 @@ static void test_lsp_document_links_ignore_non_code_import_text(SZrState *state,
     SZrTestTimer timer;
     const TZrChar *summary = "LSP document links ignore import text in strings and comments";
     const TZrChar *content =
-        "var text = \"%import(\\\"zr.system\\\")\";\n"
-        "// %import(\"zr.network\");\n"
+        "var text = \"import(\\\"zr.system\\\")\";\n"
+        "// import(\"zr.network\");\n"
         "/*\n"
-        "%import(\"zr.container\");\n"
+        "import(\"zr.container\");\n"
         "*/\n"
-        "%import(\"zr.math\");\n";
+        "import(\"zr.math\");\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray links = {0};
@@ -646,11 +646,11 @@ static void test_lsp_code_action_organizes_imports(SZrState *state, int *failure
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action organizes import directives";
     const TZrChar *content =
-        "%import(\"zr.system\");\n"
-        "%import(\"zr.math\");\n"
-        "%import(\"zr.system\");\n"
+        "let system = import(\"zr.system\");\n"
+        "let math = import(\"zr.math\");\n"
+        "let system = import(\"zr.system\");\n"
         "\n"
-        "func main(): int { return 0; }\n";
+        "fn main(): int { return 0; }\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray actions = {0};
@@ -671,7 +671,7 @@ static void test_lsp_code_action_organizes_imports(SZrState *state, int *failure
         if (title == ZR_NULL ||
             strstr(title, "Organize") == ZR_NULL ||
             !text_edit_contains(&(*actionPtr)->edits,
-                                "%import(\"zr.math\");\n%import(\"zr.system\");")) {
+                                "let math = import(\"zr.math\");\nlet system = import(\"zr.system\");")) {
             (*failures)++;
             TEST_FAIL(timer, summary, "organize imports action did not contain the sorted import edit");
         } else {
@@ -689,12 +689,12 @@ static void test_lsp_code_action_organizes_imports_after_module(SZrState *state,
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action organizes imports after module declaration";
     const TZrChar *content =
-        "module \"demo\";\n"
+        "module demo;\n"
         "\n"
-        "%import(\"zr.system\");\n"
-        "%import(\"zr.math\");\n"
+        "let system = import(\"zr.system\");\n"
+        "let math = import(\"zr.math\");\n"
         "\n"
-        "func main(): int { return 0; }\n";
+        "fn main(): int { return 0; }\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray actions = {0};
@@ -712,7 +712,7 @@ static void test_lsp_code_action_organizes_imports_after_module(SZrState *state,
         if (actionPtr == ZR_NULL ||
             *actionPtr == ZR_NULL ||
             !text_edit_contains(&(*actionPtr)->edits,
-                                "%import(\"zr.math\");\n%import(\"zr.system\");")) {
+                                "let math = import(\"zr.math\");\nlet system = import(\"zr.system\");")) {
             (*failures)++;
             TEST_FAIL(timer, summary, "organize imports did not sort the module-local import block");
         } else {
@@ -730,11 +730,11 @@ static void test_lsp_code_action_organizes_import_aliases(SZrState *state, int *
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action organizes import aliases";
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
-        "var math = %import(\"zr.math\");\n"
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
+        "var math = import(\"zr.math\");\n"
+        "var system = import(\"zr.system\");\n"
         "\n"
-        "func main(): int { return 0; }\n";
+        "fn main(): int { return 0; }\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray actions = {0};
@@ -752,7 +752,7 @@ static void test_lsp_code_action_organizes_import_aliases(SZrState *state, int *
         if (actionPtr == ZR_NULL ||
             *actionPtr == ZR_NULL ||
             !text_edit_contains(&(*actionPtr)->edits,
-                                "var math = %import(\"zr.math\");\nvar system = %import(\"zr.system\");")) {
+                                "var math = import(\"zr.math\");\nvar system = import(\"zr.system\");")) {
             (*failures)++;
             TEST_FAIL(timer, summary, "organize imports did not sort and dedupe alias import lines");
         } else {
@@ -770,11 +770,11 @@ static void test_lsp_code_action_organizes_duplicate_alias_imports(SZrState *sta
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action organizes duplicate alias imports";
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
-        "var math = %import(\"zr.math\");\n"
-        "var system = %import(\"zr.network\");\n"
+        "var system = import(\"zr.system\");\n"
+        "var math = import(\"zr.math\");\n"
+        "var system = import(\"zr.network\");\n"
         "\n"
-        "func main(): int { return 0; }\n";
+        "fn main(): int { return 0; }\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray actions = {0};
@@ -792,7 +792,7 @@ static void test_lsp_code_action_organizes_duplicate_alias_imports(SZrState *sta
         if (actionPtr == ZR_NULL ||
             *actionPtr == ZR_NULL ||
             !text_edit_contains(&(*actionPtr)->edits,
-                                "var math = %import(\"zr.math\");\nvar system = %import(\"zr.system\");") ||
+                                "var math = import(\"zr.math\");\nvar system = import(\"zr.system\");") ||
             text_edit_contains(&(*actionPtr)->edits, "zr.network")) {
             (*failures)++;
             TEST_FAIL(timer, summary, "organize imports did not keep the first duplicate alias import");
@@ -811,10 +811,10 @@ static void test_lsp_code_action_does_not_organize_import_text_in_strings(SZrSta
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action does not organize import text inside strings";
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
-        "var text = \"%import(\\\"zr.math\\\")\";\n"
+        "var system = import(\"zr.system\");\n"
+        "var text = \"import(\\\"zr.math\\\")\";\n"
         "\n"
-        "func main(): int { return 0; }\n";
+        "fn main(): int { return 0; }\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray actions = {0};
@@ -856,10 +856,14 @@ static void test_lsp_code_action_skips_organized_imports(SZrState *state, int *f
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action skips already organized imports";
     const TZrChar *content =
-        "%import(\"zr.math\");\n"
-        "%import(\"zr.system\");\n"
+        "let math = import(\"zr.math\");\n"
+        "let system = import(\"zr.system\");\n"
         "\n"
-        "func main(): int { return 0; }\n";
+        "fn main(): int {\n"
+        "    let activeMath = math;\n"
+        "    let activeSystem = system;\n"
+        "    return 0;\n"
+        "}\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray actions = {0};
@@ -888,10 +892,10 @@ static void test_lsp_code_action_removes_unused_alias_imports(SZrState *state, i
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action removes unused alias imports";
     const TZrChar *content =
-        "var math = %import(\"zr.math\");\n"
-        "var system = %import(\"zr.system\");\n"
+        "let math = import(\"zr.math\");\n"
+        "let system = import(\"zr.system\");\n"
         "\n"
-        "func main(value: int): int {\n"
+        "fn main(value: int): int {\n"
         "    return math.abs(value);\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -962,10 +966,10 @@ static void test_lsp_code_action_ignores_text_mentions_when_removing_unused_alia
     SZrTestTimer timer;
     const TZrChar *summary = "LSP remove-unused action ignores alias mentions in comments and strings";
     const TZrChar *content =
-        "var math = %import(\"zr.math\");\n"
-        "var system = %import(\"zr.system\");\n"
+        "let math = import(\"zr.math\");\n"
+        "let system = import(\"zr.system\");\n"
         "\n"
-        "func main(value: int): int {\n"
+        "fn main(value: int): int {\n"
         "    // system.console\n"
         "    var text = \"system.console\";\n"
         "    /* system.print(value); */\n"
@@ -1162,7 +1166,7 @@ static void test_lsp_code_action_inserts_missing_native_import(SZrState *state, 
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action inserts a missing native module import";
     const TZrChar *content =
-        "func main(value: int): int {\n"
+        "fn main(value: int): int {\n"
         "    return math.abs(value);\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -1185,7 +1189,7 @@ static void test_lsp_code_action_inserts_missing_native_import(SZrState *state, 
                                        : ZR_NULL;
             if (title != ZR_NULL &&
                 strcmp(title, "Import zr.math as math") == 0 &&
-                text_edit_contains(&(*actionPtr)->edits, "var math = %import(\"zr.math\");\n")) {
+                text_edit_contains(&(*actionPtr)->edits, "let math = import(\"zr.math\");\n")) {
                 foundImportAction = ZR_TRUE;
                 break;
             }
@@ -1208,7 +1212,7 @@ static void test_lsp_code_action_uses_requested_range_for_missing_import(SZrStat
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action uses requested range for missing import";
     const TZrChar *content =
-        "func main(value: int): int {\n"
+        "fn main(value: int): int {\n"
         "    return system.print(math.abs(value));\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -1232,7 +1236,7 @@ static void test_lsp_code_action_uses_requested_range_for_missing_import(SZrStat
                                        : ZR_NULL;
             if (title != ZR_NULL && strcmp(title, "Import zr.math as math") == 0) {
                 foundMathImportAction = text_edit_contains(&(*actionPtr)->edits,
-                                                           "var math = %import(\"zr.math\");\n");
+                                                           "let math = import(\"zr.math\");\n");
             }
             if (title != ZR_NULL && strcmp(title, "Import zr.system as system") == 0) {
                 foundSystemImportAction = ZR_TRUE;
@@ -1256,9 +1260,9 @@ static void test_lsp_code_action_skips_existing_import_alias(SZrState *state, in
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action skips missing import when alias already exists";
     const TZrChar *content =
-        "var math = %import(\"zr.math\");\n"
+        "var math = import(\"zr.math\");\n"
         "\n"
-        "func main(value: int): int {\n"
+        "fn main(value: int): int {\n"
         "    return math.abs(value);\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -1302,7 +1306,7 @@ static void test_lsp_code_action_ignores_non_code_missing_import_text(SZrState *
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action ignores missing imports in strings and comments";
     const TZrChar *content =
-        "func main(value: int): int {\n"
+        "fn main(value: int): int {\n"
         "    // math.abs(value);\n"
         "    var text = \"math.abs\";\n"
         "    /* math.abs(value); */\n"
@@ -1362,7 +1366,7 @@ static void test_lsp_code_action_ignores_multiline_block_comment_missing_import(
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action ignores missing imports in multiline block comments";
     const TZrChar *content =
-        "func main(value: int): int {\n"
+        "fn main(value: int): int {\n"
         "    /*\n"
         "    math.abs(value);\n"
         "    */\n"
@@ -1408,7 +1412,8 @@ static void test_lsp_code_lens_exposes_test_command(SZrState *state, int *failur
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code lens exposes test commands";
     const TZrChar *content =
-        "%test(\"advanced\") {\n"
+        "#zr.testing.test#\n"
+        "fn advanced(): int {\n"
         "    return 1;\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -1445,11 +1450,11 @@ static void test_lsp_code_lens_ignores_non_code_test_markers(SZrState *state, in
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code lens ignores test markers in comments and strings";
     const TZrChar *content =
-        "func run(): int {\n"
-        "    var text = \"%test(\\\"string\\\")\";\n"
-        "    // %test(\"line\") { }\n"
+        "fn run(): int {\n"
+        "    var text = \"#zr.testing.test#\";\n"
+        "    // #zr.testing.test#\n"
         "    /*\n"
-        "    %test(\"block\") { }\n"
+        "    #zr.testing.test#\n"
         "    */\n"
         "    return 0;\n"
         "}\n";
@@ -1477,7 +1482,7 @@ static void test_lsp_code_lens_ignores_non_code_test_markers(SZrState *state, in
         }
         if (foundRunLens) {
             (*failures)++;
-            TEST_FAIL(timer, summary, "non-code %test text produced a run CodeLens");
+        TEST_FAIL(timer, summary, "non-code test attribute text produced a run CodeLens");
         } else {
             TEST_PASS(timer, summary);
         }
@@ -1493,15 +1498,15 @@ static void test_lsp_code_lens_exposes_reference_count(SZrState *state, int *fai
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code lens exposes function reference counts";
     const TZrChar *content =
-        "func helper(value: int): int {\n"
+        "fn helper(value: int): int {\n"
         "    return value;\n"
         "}\n"
         "\n"
-        "func first(value: int): int {\n"
+        "fn first(value: int): int {\n"
         "    return helper(value);\n"
         "}\n"
         "\n"
-        "func second(value: int): int {\n"
+        "fn second(value: int): int {\n"
         "    return helper(value);\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -1545,7 +1550,7 @@ static void test_lsp_call_hierarchy_prepare_returns_symbol_item(SZrState *state,
     const TZrChar *summary = "LSP call hierarchy prepare returns a callable symbol item";
     const TZrChar *content =
         "class Sample {\n"
-        "    pub func run(value: int): int {\n"
+        "    pub fn run(value: int): int {\n"
         "        return value;\n"
         "    }\n"
         "}\n";
@@ -1587,11 +1592,11 @@ static void test_lsp_call_hierarchy_outgoing_returns_direct_calls(SZrState *stat
     SZrTestTimer timer;
     const TZrChar *summary = "LSP call hierarchy outgoing returns direct calls";
     const TZrChar *content =
-        "func helper(value: int): int {\n"
+        "fn helper(value: int): int {\n"
         "    return value;\n"
         "}\n"
         "\n"
-        "func run(value: int): int {\n"
+        "fn run(value: int): int {\n"
         "    return helper(value);\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -1641,11 +1646,11 @@ static void test_lsp_call_hierarchy_incoming_returns_direct_callers(SZrState *st
     SZrTestTimer timer;
     const TZrChar *summary = "LSP call hierarchy incoming returns direct callers";
     const TZrChar *content =
-        "func helper(value: int): int {\n"
+        "fn helper(value: int): int {\n"
         "    return value;\n"
         "}\n"
         "\n"
-        "func run(value: int): int {\n"
+        "fn run(value: int): int {\n"
         "    return helper(value);\n"
         "}\n";
     SZrString *uri = ZR_NULL;
@@ -1695,11 +1700,11 @@ static void test_lsp_call_hierarchy_ignores_non_code_call_mentions(SZrState *sta
     SZrTestTimer timer;
     const TZrChar *summary = "LSP call hierarchy ignores call-looking text in comments and strings";
     const TZrChar *content =
-        "func helper(value: int): int {\n"
+        "fn helper(value: int): int {\n"
         "    return value;\n"
         "}\n"
         "\n"
-        "func run(value: int): int {\n"
+        "fn run(value: int): int {\n"
         "    // helper(value) is prose\n"
         "    var text = \"helper(value) is text\";\n"
         "    return value;\n"
@@ -1757,7 +1762,7 @@ static void test_lsp_type_hierarchy_prepare_returns_type_item(SZrState *state, i
     const TZrChar *summary = "LSP type hierarchy prepare returns a type symbol item";
     const TZrChar *content =
         "class Sample {\n"
-        "    pub func run(): int { return 1; }\n"
+        "    pub fn run(): int { return 1; }\n"
         "}\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
@@ -1904,7 +1909,7 @@ static void test_lsp_definition_ignores_non_code_receiver_member_text(SZrState *
         "    pub var value: int = 0;\n"
         "}\n"
         "\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    var box = new Box();\n"
         "    // box.value should stay prose\n"
         "    var text = \"box.value should stay text\";\n"

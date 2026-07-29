@@ -82,6 +82,7 @@ compile_commands.json
 /lua
 /out
 /build
+/build-*/
 /build_wasm
 /build_wasm_test
 /dumps

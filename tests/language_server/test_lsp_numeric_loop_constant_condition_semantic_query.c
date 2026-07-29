@@ -75,7 +75,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
 static TZrBool test_local_expression_query_applies_for_constant_false_init_assignment(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1; 1 == 2; ) {\n"
         "        narrowed = 10;\n"
@@ -153,7 +153,7 @@ static TZrBool test_local_expression_query_applies_for_constant_false_init_assig
 static TZrBool test_local_expression_query_for_false_var_init_does_not_leak(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var step: int = 10; false; ) {\n"
         "        narrowed = step;\n"
@@ -300,7 +300,7 @@ static TZrBool expect_local_for_body_assignment_before_break_range(
 static TZrBool test_local_expression_query_for_true_condition_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (; true; ) {\n"
         "        narrowed = 10;\n"
@@ -319,7 +319,7 @@ static TZrBool test_local_expression_query_for_true_condition_body_assignment_be
 static TZrBool test_local_expression_query_for_omitted_condition_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (;;) {\n"
         "        narrowed = 10;\n"
@@ -339,7 +339,7 @@ static TZrBool
 test_local_expression_query_for_true_condition_step_assignment_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (; true; narrowed = 20) {\n"
         "        narrowed = 10;\n"
@@ -359,7 +359,7 @@ static TZrBool
 test_local_expression_query_for_omitted_condition_step_assignment_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (;; narrowed = 20) {\n"
         "        narrowed = 10;\n"
@@ -379,7 +379,7 @@ static TZrBool
 test_local_expression_query_for_true_condition_assignment_init_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1; true; ) {\n"
         "        narrowed = 10;\n"
@@ -399,7 +399,7 @@ static TZrBool
 test_local_expression_query_for_omitted_condition_assignment_init_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1;;) {\n"
         "        narrowed = 10;\n"
@@ -419,7 +419,7 @@ static TZrBool
 test_local_expression_query_for_true_condition_var_init_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var step: int = 10; true; ) {\n"
         "        narrowed = step;\n"
@@ -439,7 +439,7 @@ static TZrBool
 test_local_expression_query_for_omitted_condition_var_init_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var step: int = 10;;) {\n"
         "        narrowed = step;\n"
@@ -459,7 +459,7 @@ static TZrBool
 test_local_expression_query_for_true_condition_assignment_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1; true; narrowed = 20) {\n"
         "        narrowed = 10;\n"
@@ -479,7 +479,7 @@ static TZrBool
 test_local_expression_query_for_omitted_condition_assignment_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1;; narrowed = 20) {\n"
         "        narrowed = 10;\n"
@@ -499,7 +499,7 @@ static TZrBool
 test_local_expression_query_for_true_condition_var_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var step: int = 10; true; narrowed = 20) {\n"
         "        narrowed = step;\n"
@@ -519,7 +519,7 @@ static TZrBool
 test_local_expression_query_for_omitted_condition_var_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var step: int = 10;; narrowed = 20) {\n"
         "        narrowed = step;\n"
@@ -539,7 +539,7 @@ static TZrBool
 test_local_expression_query_for_true_condition_step_assignment_nested_if_break_branches(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (; true; narrowed = 20) {\n"
         "        if (flag) {\n"
@@ -566,7 +566,7 @@ static TZrBool
 test_local_expression_query_for_true_condition_step_assignment_known_true_if_break_branch(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (; true; narrowed = 20) {\n"
         "        if (true) {\n"

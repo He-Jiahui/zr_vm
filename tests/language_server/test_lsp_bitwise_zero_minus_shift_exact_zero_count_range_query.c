@@ -18,7 +18,7 @@ static TZrBool run_shift_exact_zero_count_range_query(SZrState *state,
     written = snprintf(
             content,
             sizeof(content),
-            "func calc(seed: u8): int {\n"
+            "fn calc(seed: u8): int {\n"
             "    var unit: int = (seed %% 2) + 2;\n"
             "    var zero: int = 0;\n"
             "    var span: int = seed - 128;\n"

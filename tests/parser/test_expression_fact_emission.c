@@ -769,7 +769,7 @@ static void test_lambda_expression_fact_records_callable_type(void) {
     SZrAstNode *lambdaExpr;
     SZrInferredType result;
     const SZrSemanticExpressionFact *lambdaFact;
-    const char *source = "var mapper = (x:int)->{ return x; };";
+    const char *source = "var mapper = fn(x:int)=>{ return x; };";
 
     sourceName = ZrCore_String_Create(g_state,
                                       "lambda_expression_fact_test.zr",
@@ -812,7 +812,7 @@ static void test_lambda_constant_true_loop_return_records_callable_type_and_body
     const SZrSemanticExpressionFact *lambdaFact;
     const SZrSemanticExpressionFact *returnExprFact;
     const SZrSemanticNumericFact *returnNumericFact;
-    const char *source = "var worker = ()->{ while (true) { return 1 + 2; } };";
+    const char *source = "var worker = fn()=>{ while (true) { return 1 + 2; } };";
 
     sourceName = ZrCore_String_Create(g_state,
                                       "lambda_loop_return_fact_test.zr",
@@ -880,7 +880,7 @@ static void test_ownership_builtin_expression_fact_records_builtin_kind(void) {
     const SZrSemanticExpressionFact *builtinFact;
     const SZrSemanticExpressionFact *targetFact;
     const SZrSemanticOwnershipFact *ownershipFact;
-    const char *source = "%borrow(owner);";
+    const char *source = "ref readonly owner;";
 
     sourceName = ZrCore_String_Create(g_state,
                                       "ownership_builtin_expression_fact_test.zr",

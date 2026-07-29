@@ -1,6 +1,6 @@
-var core = %import("core_semantics");
-var meta = %import("oop_meta");
-var native = %import("async_native");
+let core = import("core_semantics");
+let meta = import("oop_meta");
+let native = import("async_native");
 
 runMatrix(): int {
     var meter = new meta.SignalBox(4);

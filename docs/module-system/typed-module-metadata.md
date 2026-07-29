@@ -967,7 +967,7 @@ Shared metadata string heap update (2026-06-18 11:42:19 +08:00): `SZrMetadataStr
 source module 的 init summary 与最终 `typedExportedSymbols` 现在都把“导出变量别名到 imported callable”的形态保留为 callable signature：
 
 ```zr
-var b = %import("b");
+let b = import("b");
 pub var other = b.pong;
 ```
 
@@ -985,8 +985,8 @@ pub var other = b.pong;
 `module_init_analysis.c` also treats plugin-guard `using` bodies as scoped import alias regions:
 
 ```zr
-pub func run(): i32 {
-    using (var helper = %import(".helper.math")) {
+pub fn run(): i32 {
+    using (let helper = import(".helper.math")) {
         return helper.answer;
     } else {
         return 0;
@@ -1004,19 +1004,19 @@ union DynamicModule<T> where T: zr.Module {
     @Available(m: Module);
 }
 
-using (var [m]: DynamicModule<Plugins> = %import("zr.plugins")) {
+using (let [m]: DynamicModule<Plugins> = import("zr.plugins")) {
     return m.answer;
 } else {
     return 0;
 }
 
-using (var [m] = %import("zr.plugins")) {
+using (let [m] = import("zr.plugins")) {
     return m.answer;
 } else {
     return 0;
 }
 
-using (var [m]: PluginLoad.Available = %import("zr.plugins")) {
+using (let [m]: PluginLoad.Available = import("zr.plugins")) {
     return m.answer;
 } else {
     return 0;

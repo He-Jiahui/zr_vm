@@ -192,7 +192,7 @@ static void test_inlay_hint_uses_initializer_numeric_fact(SZrState *state) {
     const TZrChar *summary = "LSP Inlay Hint Uses Initializer Numeric Fact";
     const TZrChar *uriText = "file:///inlay_initializer_numeric_fact.zr";
     const TZrChar *content =
-        "func calc(): void {\n"
+        "fn calc(): void {\n"
         "    var sum = 1 + 2;\n"
         "}\n";
     SZrTestTimer timer;
@@ -242,7 +242,7 @@ static void test_completion_detail_uses_initializer_numeric_fact(SZrState *state
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Numeric Fact";
     const TZrChar *uriText = "file:///completion_initializer_numeric_fact.zr";
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var sum = 1 + 2;\n"
         "    su\n"
         "    return sum;\n"
@@ -308,10 +308,10 @@ static void test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_si
         "range 2..12 (segments 2..2, 4..4, 6..6, 8..8, ... +2 more)";
     const TZrChar *symbolUriText = "file:///segmented_numeric_fact_symbol_surfaces.zr";
     const TZrChar *symbolContent =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func calc(seed: u8): int {\n"
+        "fn calc(seed: u8): int {\n"
         "    if (seed == 1 || seed == 3 || seed == 5 || seed == 7 || seed == 9 || seed == 11) {\n"
         "        var segmented = seed + 1;\n"
         "        seg\n"
@@ -321,10 +321,10 @@ static void test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_si
         "}\n";
     const TZrChar *signatureUriText = "file:///segmented_numeric_fact_signature_surface.zr";
     const TZrChar *signatureContent =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func calc(seed: u8): int {\n"
+        "fn calc(seed: u8): int {\n"
         "    if (seed == 1 || seed == 3 || seed == 5 || seed == 7 || seed == 9 || seed == 11) {\n"
         "        return pick(seed + 1);\n"
         "    }\n"
@@ -469,7 +469,7 @@ static void test_completion_detail_uses_initializer_expression_fact(SZrState *st
     SZrTestTimer timer;
     const TZrChar *uriText = "file:///completion_initializer_expression_fact.zr";
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var sum = 1 + 2;\n"
         "    su\n"
         "    return sum;\n"
@@ -537,7 +537,7 @@ static void test_completion_detail_escapes_initializer_string_expression_fact(SZ
     SZrTestTimer timer;
     const TZrChar *uriText = "file:///completion_initializer_string_expression_fact.zr";
     const TZrChar *content =
-        "func text(): string {\n"
+        "fn text(): string {\n"
         "    var label = \"a\\\"b\\\\c\\n\\t\";\n"
         "    la\n"
         "    return label;\n"
@@ -605,8 +605,8 @@ static void test_completion_detail_uses_initializer_logical_fact(SZrState *state
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Logical Fact";
     const TZrChar *uriText = "file:///completion_initializer_logical_fact.zr";
     const TZrChar *content =
-        "func calc(): bool {\n"
-        "    var const flag = true || false;\n"
+        "fn calc(): bool {\n"
+        "    let flag = true || false;\n"
         "    fl\n"
         "    return flag;\n"
         "}\n";
@@ -670,9 +670,9 @@ static void test_completion_detail_uses_initializer_ownership_fact(SZrState *sta
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Ownership Fact";
     const TZrChar *uriText = "file:///completion_initializer_ownership_fact.zr";
     const TZrChar *content =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "var owner: %unique Resource;\n"
+        "var owner: Unique<Resource>;\n"
         "var plainFromUnique: Resource = owner;\n"
         "pla\n";
     SZrTestTimer timer;
@@ -735,10 +735,10 @@ static void test_signature_help_parameter_docs_use_argument_semantic_facts(SZrSt
     const TZrChar *summary = "LSP Signature Help Parameter Docs Use Argument Semantic Facts";
     const TZrChar *uriText = "file:///signature_argument_semantic_facts.zr";
     const TZrChar *content =
-        "func pick(value: int, flag: bool): int {\n"
+        "fn pick(value: int, flag: bool): int {\n"
         "    return value;\n"
         "}\n"
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    return pick(1 + 2, true || false);\n"
         "}\n";
     SZrTestTimer timer;
@@ -812,12 +812,12 @@ static void test_signature_help_parameter_docs_use_argument_ownership_fact(SZrSt
     const TZrChar *summary = "LSP Signature Help Parameter Docs Use Argument Ownership Fact";
     const TZrChar *uriText = "file:///signature_argument_ownership_fact.zr";
     const TZrChar *content =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "func observe(resource: %borrowed Resource): void {\n"
+        "fn observe(resource: ref readonly Resource): void {\n"
         "}\n"
-        "func run(resource: %weak Resource): void {\n"
-        "    observe(resource);\n"
+        "fn run(resource: Weak<Resource>): void {\n"
+        "    observe(ref resource);\n"
         "}\n";
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -835,9 +835,9 @@ static void test_signature_help_parameter_docs_use_argument_ownership_fact(SZrSt
         uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
         !find_position_for_substring(content,
-                                     "observe(resource);",
+                                     "observe(ref resource);",
                                      0,
-                                     (TZrInt32)strlen("observe("),
+                                     (TZrInt32)strlen("observe(ref "),
                                      &position)) {
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);

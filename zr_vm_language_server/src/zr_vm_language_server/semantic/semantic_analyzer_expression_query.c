@@ -209,11 +209,6 @@ ZR_LANGUAGE_SERVER_API SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindExpress
                     node->data.functionDeclaration.body,
                     position);
 
-        case ZR_AST_TEST_DECLARATION:
-            return ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
-                    node->data.testDeclaration.body,
-                    position);
-
         case ZR_AST_COMPILE_TIME_DECLARATION:
             return ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
                     node->data.compileTimeDeclaration.declaration,

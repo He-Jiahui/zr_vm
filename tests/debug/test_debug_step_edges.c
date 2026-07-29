@@ -373,11 +373,11 @@ static void test_step_over_tail_call_stops_after_logical_tail_frame(void) {
     const char *moduleName = "tests.debug.step_edges.tail";
     const char *sourcePath = "debug_step_tail_call.zr";
     const char *source =
-            "func leaf(value: int): int {\n"
+            "fn leaf(value: int): int {\n"
             "    var computed = value + 1;\n"
             "    return computed;\n"
             "}\n"
-            "func tail(value: int): int {\n"
+            "fn tail(value: int): int {\n"
             "    return leaf(value);\n"
             "}\n"
             "var result = tail(4);\n"
@@ -408,8 +408,8 @@ static void test_step_in_native_call_behaves_like_step_over(void) {
     const char *moduleName = "tests.debug.step_edges.native";
     const char *sourcePath = "debug_step_native_call.zr";
     const char *source =
-            "var system = %import(\"zr.system\");\n"
-            "func visit(value: int): int {\n"
+            "let system = import(\"zr.system\");\n"
+            "fn visit(value: int): int {\n"
             "    system.console.printLine(\"native-step-edge\");\n"
             "    var after = value + 1;\n"
             "    return after;\n"
@@ -435,13 +435,13 @@ static void test_step_out_after_exception_unwind_stops_at_catcher(void) {
     const char *moduleName = "tests.debug.step_edges.unwind";
     const char *sourcePath = "debug_step_exception_unwind.zr";
     const char *source =
-            "func fail(): int {\n"
+            "fn fail(): int {\n"
             "    throw \"boom\";\n"
             "}\n"
-            "func wrapper(): int {\n"
+            "fn wrapper(): int {\n"
             "    return fail();\n"
             "}\n"
-            "func top(): int {\n"
+            "fn top(): int {\n"
             "    try {\n"
             "        return wrapper();\n"
             "    } catch (error) {\n"
@@ -471,7 +471,7 @@ static void test_step_over_recursive_same_line_skips_child_call(void) {
     const char *moduleName = "tests.debug.step_edges.recursive";
     const char *sourcePath = "debug_step_recursive_same_line.zr";
     const char *source =
-            "func bounce(value: int): int {\n"
+            "fn bounce(value: int): int {\n"
             "    if (value <= 0) { return 1; }\n"
             "    var nested = bounce(value - 1); return nested + 1;\n"
             "}\n"

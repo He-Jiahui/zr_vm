@@ -1,9 +1,9 @@
-%module "reference.types.explicit_narrowing";
-
-%test("explicit_narrowing_boundary") {
+fn __fixture(): int {
     var left = <int> 255.99;
     var right = <int> -255.99;
     var nearZeroPositive = <int> 0.99;
     var nearZeroNegative = <int> -0.99;
     return left + right + nearZeroPositive + nearZeroNegative;
 }
+
+return __fixture();

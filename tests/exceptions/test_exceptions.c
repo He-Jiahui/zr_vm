@@ -197,9 +197,9 @@ static void test_throw_string_is_boxed_and_caught_by_base_error(void) {
 static void test_derived_exception_prefers_first_matching_catch_clause(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
-            "var exception = %import(\"zr.system.exception\");\n"
+            "let exception = import(\"zr.system.exception\");\n"
             "try {\n"
-            "    throw $exception.RuntimeError(\"boom\");\n"
+            "    throw new exception.RuntimeError(\"boom\");\n"
             "} catch (e: RuntimeError) {\n"
             "    return 1;\n"
             "} catch (e: Error) {\n"
@@ -231,7 +231,7 @@ static void test_derived_exception_prefers_first_matching_catch_clause(void) {
 static void test_qualified_exception_catch_uses_member_type_name(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
-            "var exception = %import(\"zr.system.exception\");\n"
+            "let exception = import(\"zr.system.exception\");\n"
             "try {\n"
             "    throw \"boom\";\n"
             "} catch (e: exception.RuntimeError) {\n"
@@ -282,7 +282,7 @@ static void test_finally_runs_for_normal_return_and_throw_paths(void) {
             "return value;\n";
     const TZrChar *returnSource =
             "var marker = 0;\n"
-            "run() {\n"
+            "fn run(): int {\n"
             "    try {\n"
             "        return 7;\n"
             "    } finally {\n"
@@ -340,7 +340,7 @@ static void test_named_function_finally_closure_and_sibling_function_metadata(vo
     SZrTestTimer timer = {0};
     const TZrChar *closureSource =
             "var marker = 0;\n"
-            "run() {\n"
+            "fn run(): int {\n"
             "    try {\n"
             "        return 7;\n"
             "    } finally {\n"
@@ -349,10 +349,10 @@ static void test_named_function_finally_closure_and_sibling_function_metadata(vo
             "}\n"
             "return 0;\n";
     const TZrChar *siblingSource =
-            "outer() {\n"
+            "fn outer(): int {\n"
             "    return inner();\n"
             "}\n"
-            "inner() {\n"
+            "fn inner(): int {\n"
             "    return 1;\n"
             "}\n"
             "return outer();\n";
@@ -389,7 +389,7 @@ static void test_named_function_finally_closure_and_sibling_function_metadata(vo
 static void test_return_from_catch_discards_frame_exception_handlers(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
-            "guarded(flag: int) {\n"
+            "fn guarded(flag: int): int {\n"
             "    var marker = 0;\n"
             "    try {\n"
             "        try {\n"
@@ -435,10 +435,10 @@ static void test_return_from_catch_discards_frame_exception_handlers(void) {
 static void test_caught_error_exposes_stack_frames_in_throw_order(void) {
     SZrTestTimer timer = {0};
     const TZrChar *source =
-            "outer() {\n"
+            "fn outer(): void {\n"
             "    inner();\n"
             "}\n"
-            "inner() {\n"
+            "fn inner(): void {\n"
             "    throw \"boom\";\n"
             "}\n"
             "try {\n"
@@ -474,12 +474,13 @@ static void test_caught_error_exposes_stack_frames_in_throw_order(void) {
     TEST_DIVIDER();
 }
 
-static void test_test_declaration_no_longer_wraps_throw_into_zero_one_contract(void) {
+static void test_ordinary_function_throw_is_not_wrapped(void) {
     SZrTestTimer timer = {0};
-    const TZrChar *source = "%test(\"uncaught_throw\") { throw \"boom\"; }";
-    SZrCompileResult compileResult;
-    SZrAstNode *ast;
-    SZrString *sourceName;
+    const TZrChar *source =
+            "fn uncaughtThrow(): int { throw \"boom\"; }\n"
+            "return uncaughtThrow();\n";
+    SZrFunction *function;
+    SZrFunction *throwingFunction;
     SZrState *state;
     TZrInt64 result = 0;
 
@@ -489,34 +490,20 @@ static void test_test_declaration_no_longer_wraps_throw_into_zero_one_contract(v
     state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("test declaration exception flow",
-              "Testing that %test bodies compile without synthetic try/catch wrapping and escape uncaught throws.");
+    TEST_INFO("ordinary function exception flow",
+              "Testing that ordinary functions use real exception flow without a synthetic test wrapper.");
 
-    memset(&compileResult, 0, sizeof(compileResult));
-    sourceName = ZrCore_String_Create(state,
-                                      "test_declaration_uncaught_exception.zr",
-                                      strlen("test_declaration_uncaught_exception.zr"));
-    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(compile_source_to_function(
+            state, source, "ordinary_function_uncaught_exception.zr", &function));
+    throwingFunction = find_child_function_by_name(function, "uncaughtThrow");
+    TEST_ASSERT_NOT_NULL(throwingFunction);
+    TEST_ASSERT_FALSE(function_contains_opcode(throwingFunction, ZR_INSTRUCTION_ENUM(TRY)));
+    TEST_ASSERT_FALSE(function_contains_opcode(throwingFunction, ZR_INSTRUCTION_ENUM(CATCH)));
+    TEST_ASSERT_TRUE(function_contains_opcode(throwingFunction, ZR_INSTRUCTION_ENUM(THROW)));
 
-    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
 
-    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
-    ZrParser_Ast_Free(state, ast);
-
-    TEST_ASSERT_EQUAL_UINT64(1, compileResult.testFunctionCount);
-    TEST_ASSERT_NOT_NULL(compileResult.testFunctions);
-    TEST_ASSERT_NOT_NULL(compileResult.testFunctions[0]);
-    TEST_ASSERT_FALSE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(TRY)));
-    TEST_ASSERT_FALSE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(CATCH)));
-    TEST_ASSERT_TRUE(function_contains_opcode(compileResult.testFunctions[0], ZR_INSTRUCTION_ENUM(THROW)));
-
-    TEST_ASSERT_FALSE(ZrTests_Function_ExecuteExpectInt64(state, compileResult.testFunctions[0], &result));
-
-    ZrParser_CompileResult_Free(state, &compileResult);
-    if (compileResult.mainFunction != ZR_NULL) {
-        ZrCore_Function_Free(state, compileResult.mainFunction);
-    }
+    ZrCore_Function_Free(state, function);
     destroy_test_state(state);
 
     timer.endTime = clock();
@@ -538,7 +525,7 @@ int main(void) {
     RUN_TEST(test_named_function_finally_closure_and_sibling_function_metadata);
     RUN_TEST(test_return_from_catch_discards_frame_exception_handlers);
     RUN_TEST(test_caught_error_exposes_stack_frames_in_throw_order);
-    RUN_TEST(test_test_declaration_no_longer_wraps_throw_into_zero_one_contract);
+    RUN_TEST(test_ordinary_function_throw_is_not_wrapped);
 
     return UNITY_END();
 }

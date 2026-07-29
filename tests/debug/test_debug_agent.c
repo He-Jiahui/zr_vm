@@ -175,7 +175,7 @@ static TZrBool debug_project_source_loader(SZrState *state, TZrNativeString sour
 
 static SZrFunction *compile_debug_agent_fixture(SZrState *state, const char *sourceLabel) {
     const char *source =
-            "func addOne(value: int): int {\n"
+            "fn addOne(value: int): int {\n"
             "    var base = value + 1;\n"
             "    return base;\n"
             "}\n"
@@ -998,8 +998,8 @@ static void test_debug_agent_exposes_entry_script_locals_with_initializers(void)
 static void test_debug_agent_expands_object_members_and_runtime_globals(void) {
     const char *sourcePath = "debug_agent_object_globals_fixture.zr";
     const char *source =
-            "var system = %import(\"zr.system\");\n"
-            "func makeProfile() {\n"
+            "let system = import(\"zr.system\");\n"
+            "fn makeProfile() {\n"
             "    var profile = { name: \"alice\", score: 7, nested: { enabled: true } };\n"
             "    return profile;\n"
             "}\n"
@@ -1215,9 +1215,9 @@ static void test_debug_agent_expands_object_members_and_runtime_globals(void) {
 static void test_debug_agent_expands_native_network_methods_without_asserting(void) {
     const char *sourcePath = "debug_agent_native_network_methods_fixture.zr";
     const char *source =
-            "var network = %import(\"zr.network\");\n"
+            "let network = import(\"zr.network\");\n"
             "var tcp = network.tcp;\n"
-            "func openListener(): int {\n"
+            "fn openListener(): int {\n"
             "    var listener = tcp.listen(\"127.0.0.1\", 0);\n"
             "    var port = listener.port();\n"
             "    listener.close();\n"
@@ -1908,10 +1908,10 @@ static void test_debug_agent_separates_instance_metadata_and_supports_index_wind
 static void test_debug_agent_supports_function_hit_condition_and_log_breakpoints(void) {
     const char *sourcePath = "debug_agent_control_fixture.zr";
     const char *source =
-            "func addOne(value: int): int {\n"
+            "fn addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "func run(): int {\n"
+            "fn run(): int {\n"
             "    var total = 0;\n"
             "    var index = 0;\n"
             "    while (index < 4) {\n"
@@ -2085,7 +2085,7 @@ static void test_debug_agent_supports_function_hit_condition_and_log_breakpoints
 static void test_debug_agent_supports_caught_exception_breakpoints(void) {
     const char *sourcePath = "debug_agent_caught_exception_fixture.zr";
     const char *source =
-            "func handle(flag: bool): int {\n"
+            "fn handle(flag: bool): int {\n"
             "    try {\n"
             "        if (flag) { throw \"boom\"; }\n"
             "    } catch (error) {\n"
@@ -2409,7 +2409,7 @@ static void test_debug_agent_step_in_and_out_cross_call_boundaries(void) {
 static void test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack(void) {
     const char *sourcePath = "debug_agent_pause_fixture.zr";
     const char *source =
-            "func spin(limit: int): int {\n"
+            "fn spin(limit: int): int {\n"
             "    var total = 0;\n"
             "    var index = 0;\n"
             "    while (index < limit) {\n"
@@ -2587,7 +2587,7 @@ static void test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack(v
 static void test_debug_agent_reports_uncaught_exception_from_runtime_without_cli_bridge(void) {
     const char *sourcePath = "debug_agent_uncaught_exception_fixture.zr";
     const char *source =
-            "func explode(): int {\n"
+            "fn explode(): int {\n"
             "    throw \"boom\";\n"
             "}\n"
             "return explode();";

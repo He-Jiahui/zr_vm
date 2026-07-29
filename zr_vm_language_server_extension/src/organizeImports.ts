@@ -48,19 +48,24 @@ function toVsCodeWorkspaceEdit(edit: ProtocolWorkspaceEdit | undefined): vscode.
     }
 
     const workspaceEdit = new vscode.WorkspaceEdit();
+    const documentChanges = edit.documentChanges ?? [];
+    if (documentChanges.length > 0) {
+        for (const documentChange of documentChanges) {
+            const uriText = documentChange.textDocument?.uri;
+            if (!uriText) {
+                continue;
+            }
+            const uri = vscode.Uri.parse(uriText);
+            for (const textEdit of documentChange.edits ?? []) {
+                workspaceEdit.replace(uri, toVsCodeRange(textEdit.range), textEdit.newText);
+            }
+        }
+        return workspaceEdit;
+    }
+
     for (const [uriText, edits] of Object.entries(edit.changes ?? {})) {
         const uri = vscode.Uri.parse(uriText);
         for (const textEdit of edits) {
-            workspaceEdit.replace(uri, toVsCodeRange(textEdit.range), textEdit.newText);
-        }
-    }
-    for (const documentChange of edit.documentChanges ?? []) {
-        const uriText = documentChange.textDocument?.uri;
-        if (!uriText) {
-            continue;
-        }
-        const uri = vscode.Uri.parse(uriText);
-        for (const textEdit of documentChange.edits ?? []) {
             workspaceEdit.replace(uri, toVsCodeRange(textEdit.range), textEdit.newText);
         }
     }

@@ -124,7 +124,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_no_arg_local
     TEST_IGNORE_MESSAGE("AOT C typed direct-call smoke currently validates the Unix shared-library path");
 #else
     const char *source =
-            "func answer(): int {\n"
+            "fn answer(): int {\n"
             "    var result: int = 42;\n"
             "    return result;\n"
             "}\n"
@@ -274,7 +274,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_type
     TEST_IGNORE_MESSAGE("AOT C typed direct-call smoke currently validates the Unix shared-library path");
 #else
     const char *source =
-            "func echo(value: int): int {\n"
+            "fn echo(value: int): int {\n"
             "    return value;\n"
             "}\n"
             "var seed: int = 41;\n"
@@ -426,7 +426,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_add_
     TEST_IGNORE_MESSAGE("AOT C typed direct-call smoke currently validates the Unix shared-library path");
 #else
     const char *source =
-            "func inc(value: int): int {\n"
+            "fn inc(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "var seed: int = 40;\n"
@@ -578,7 +578,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_type
     TEST_IGNORE_MESSAGE("AOT C typed direct-call smoke currently validates the Unix shared-library path");
 #else
     const char *source =
-            "func sum(left: int, right: int): int {\n"
+            "fn sum(left: int, right: int): int {\n"
             "    return left + right;\n"
             "}\n"
             "var left: int = 19;\n"
@@ -733,7 +733,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_subt
     TEST_IGNORE_MESSAGE("AOT C typed direct-call smoke currently validates the Unix shared-library path");
 #else
     const char *source =
-            "func diff(left: int, right: int): int {\n"
+            "fn diff(left: int, right: int): int {\n"
             "    return left - right;\n"
             "}\n"
             "var left: int = 50;\n"

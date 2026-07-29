@@ -1,4 +1,4 @@
-var benchConfig = %import("bench_config");
+let benchConfig = import("bench_config");
 
 var scale = benchConfig.scale();
 var outerLimit = 180 * scale;

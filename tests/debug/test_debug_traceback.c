@@ -215,16 +215,16 @@ static void debug_traceback_fold_hook(struct SZrState *state, SZrDebugInfo *debu
 
 static void test_traceback_formats_active_script_frames_and_truncates_safely(void) {
     const char *source =
-            "func leaf(value: int): int {\n"
+            "fn leaf(value: int): int {\n"
             "    var local = value + 1;\n"
             "    return local;\n"
             "}\n"
-            "func middle(seed: int): int {\n"
+            "fn middle(seed: int): int {\n"
             "    var next = seed + 1;\n"
             "    var answer = leaf(next);\n"
             "    return answer + 1;\n"
             "}\n"
-            "func root(): int {\n"
+            "fn root(): int {\n"
             "    var answer = middle(3);\n"
             "    return answer - 1;\n"
             "}\n"
@@ -310,7 +310,7 @@ static void test_traceback_formats_mixed_native_and_script_frames(void) {
 
 static void test_traceback_folds_deep_stacks_with_skip_marker(void) {
     const char *source =
-            "func recur(depth: int): int {\n"
+            "fn recur(depth: int): int {\n"
             "    if (depth == 0) {\n"
             "        var here = depth + 1;\n"
             "        return here;\n"
@@ -345,15 +345,15 @@ static void test_traceback_folds_deep_stacks_with_skip_marker(void) {
 
 static void test_throw_normalizes_exception_with_text_traceback(void) {
     const char *source =
-            "func leaf(): int {\n"
+            "fn leaf(): int {\n"
             "    throw \"boom\";\n"
             "    return 0;\n"
             "}\n"
-            "func middle(): int {\n"
+            "fn middle(): int {\n"
             "    var value = leaf();\n"
             "    return value;\n"
             "}\n"
-            "func root(): int {\n"
+            "fn root(): int {\n"
             "    var value = middle();\n"
             "    return value;\n"
             "}\n"

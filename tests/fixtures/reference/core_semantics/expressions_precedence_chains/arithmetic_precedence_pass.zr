@@ -1,5 +1,5 @@
-%module "reference.expressions.arithmetic";
-
-%test("arithmetic_precedence") {
+fn __fixture(): int {
     return 2 + 3 * 4 + (10 - 5);
 }
+
+return __fixture();

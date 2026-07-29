@@ -46,8 +46,6 @@ static SZrAstNode *semantic_change_scope_body(SZrAstNode *scopeRoot) {
             return scopeRoot->data.structMetaFunction.body;
         case ZR_AST_CLASS_META_FUNCTION:
             return scopeRoot->data.classMetaFunction.body;
-        case ZR_AST_TEST_DECLARATION:
-            return scopeRoot->data.testDeclaration.body;
         case ZR_AST_LAMBDA_EXPRESSION:
             return scopeRoot->data.lambdaExpression.block;
         case ZR_AST_PROPERTY_GET:

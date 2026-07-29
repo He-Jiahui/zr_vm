@@ -167,11 +167,11 @@ static void prepare_zrm_reference_runtime_fixture(TZrChar *rootPath,
             "  }\n"
             "}\n";
     static const TZrChar *consumerModuleContent =
-            "var math = %import(\"&math.ops\");\n"
+            "let math = import(\"&math.ops\");\n"
             "\n"
             "return math.answer;\n";
     static const TZrChar *consumerResourceProbeContent =
-            "var system = %import(\"zr.system\");\n"
+            "let system = import(\"zr.system\");\n"
             "\n"
             "return system.assembly.readResourceText(\"config/runtime.txt\");\n";
 

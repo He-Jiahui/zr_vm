@@ -8,7 +8,7 @@
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_positive_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -54,7 +54,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_positive_non_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -100,7 +100,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_zero_inclusive_positive_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -146,7 +146,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_zero_inclusive_negative_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -192,7 +192,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_negative_non_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -238,7 +238,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_sign_crossing_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -272,7 +272,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_preserves_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_noop(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -305,7 +305,7 @@ static TZrBool test_local_expression_query_preserves_target_reading_symbolic_dee
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_then_positive_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -339,7 +339,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_same_assignment_positive_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -384,7 +384,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_inner_zero_factor_scale_product_coefficient_same_assignment_positive_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -429,7 +429,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_zero_only_scale_product_coefficient_subtractive_positive_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -474,7 +474,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -519,7 +519,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_commuted_product_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"

@@ -94,6 +94,13 @@ static TZrBool workspace_file_uri_has_metadata_extension(SZrString *uri) {
            workspace_file_string_ends_with(uri, ".dylib");
 }
 
+static TZrBool workspace_file_has_open_overlay(SZrStdioServer *server, SZrString *uri) {
+    SZrFileVersion *fileVersion;
+
+    fileVersion = get_file_version_for_uri(server, uri);
+    return fileVersion != ZR_NULL && fileVersion->isOpenDocument;
+}
+
 static int handle_single_workspace_file_change(SZrStdioServer *server, SZrString *uri, TZrSize changeType) {
     if (server == ZR_NULL || uri == ZR_NULL) {
         return 0;
@@ -124,6 +131,10 @@ static int handle_single_workspace_file_change(SZrStdioServer *server, SZrString
     }
 
     if (workspace_file_string_ends_with(uri, ".zrp") || workspace_file_string_ends_with(uri, ".zr")) {
+        /* didOpen/didChange owns an editor overlay; a watcher event must not replace it from disk. */
+        if (workspace_file_has_open_overlay(server, uri)) {
+            return 1;
+        }
         return update_document_contents_from_disk(server, uri);
     }
 

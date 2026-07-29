@@ -278,7 +278,7 @@ void test_compile_time_class_decorator_parsing(void);
 void test_compile_time_public_class_decorator_parsing(void);
 void test_compile_time_struct_decorator_parsing(void);
 void test_compile_time_function_decorator_parsing(void);
-static void test_function_declaration_optional_func_keyword(void);
+static void test_function_declaration_requires_fn_keyword(void);
 static void test_legacy_async_surfaces_are_rejected(void);
 static void test_function_type_annotation_parsing(void);
 static void test_type_query_accepts_function_type_expression(void);
@@ -430,8 +430,8 @@ static void test_module_declaration(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Module declaration parsing", 
-              "Testing parsing of reserved module declaration: %module \"test\";");
-    const char* source = "%module \"test\";";
+              "Testing parsing of current module declaration: module test;");
+    const char* source = "module test;";
     SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
@@ -720,12 +720,12 @@ static void test_prototype_construction_expression_parsing(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("Prototype construction parsing",
-              "Testing parsing of `$(math.Vector3)(1.0, 2.0, 3.0)` as a valid construction expression");
+    TEST_INFO("Value construction parsing",
+              "Testing parsing of `init math.Vector3(1.0, 2.0, 3.0)` as a valid construction expression");
     {
         const char *source =
-                "var math = %import(\"zr.math\");\n"
-                "$(math.Vector3)(1.0, 2.0, 3.0);";
+                "let math = import(\"zr.math\");\n"
+                "let vector = init math.Vector3(1.0, 2.0, 3.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "prototype_construct.zr", 22);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -758,7 +758,7 @@ static void test_native_boxed_new_expression_parsing(void) {
               "Testing parsing of `new math.Tensor(...)` inside a variable initializer");
     {
         const char *source =
-                "var math = %import(\"zr.math\");\n"
+                "let math = import(\"zr.math\");\n"
                 "var tensor = new math.Tensor([2, 2], [1.0, 2.0, 3.0, 4.0]);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_boxed_new.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -793,7 +793,7 @@ static void test_generic_boxed_new_expression_parsing(void) {
               "Testing parsing of `new Array<int>()` preserves a generic construct target");
     {
         const char *source =
-                "var {Array} = %import(\"zr.container\");\n"
+                "let {Array} = import(\"zr.container\");\n"
                 "var values = new Array<int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "generic_boxed_new.zr", 20);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -846,8 +846,8 @@ static void test_explicit_generic_function_call_parsing(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "var {Array} = %import(\"zr.container\");\n"
-                "map<TIn, TOut>(source: Array<TIn>): Array<TOut> { return source; }\n"
+                "let {Array} = import(\"zr.container\");\n"
+                "fn map<TIn, TOut>(source: Array<TIn>): Array<TOut> { return source; }\n"
                 "map<int, string>(values);";
         SZrString *sourceName = ZrCore_String_Create(state, "explicit_generic_call.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -893,7 +893,7 @@ static void test_interface_variance_and_where_parsing(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "interface IProducer<out T> where T: class, owner, Disposable, new() {\n"
-                "    next(): T;\n"
+                "    fn next(): T;\n"
                 "}";
         SZrString *sourceName = ZrCore_String_Create(state, "interface_variance_where.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -933,7 +933,7 @@ static void test_interface_variance_and_where_parsing(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "func own<T, U, V>(): int where T: unique where U: shared where V: weak { return 1; }";
+                "fn own<T, U, V>(): int where T: unique where U: shared where V: weak { return 1; }";
         SZrString *sourceName = ZrCore_String_Create(state, "specific_owner_where.zr", 23);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *decl;
@@ -986,7 +986,7 @@ static void test_parameter_passing_mode_parsing(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "swap<T>(%ref left: T, %ref right: T): T {\n"
+                "fn swap<T>(left: ref T, right: ref T): T {\n"
                 "    return left;\n"
                 "}";
         SZrString *sourceName = ZrCore_String_Create(state, "parameter_passing_mode.zr", 25);
@@ -1025,7 +1025,7 @@ static void test_const_generic_construction_parsing(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "var {Array} = %import(\"zr.container\");\n"
+                "let {Array} = import(\"zr.container\");\n"
                 "class Matrix<T, const N: int> {\n"
                 "    var rows: Array<T>[N];\n"
                 "}\n"
@@ -1061,9 +1061,9 @@ static void test_const_generic_construction_parsing(void) {
     TEST_DIVIDER();
 }
 
-static void test_percent_owned_and_ownership_expression_parsing(void) {
+static void test_resource_ownership_surface_parsing(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Percent Owned And Ownership Expression Parsing";
+    const char *testSummary = "Resource Ownership Surface Parsing";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1071,58 +1071,35 @@ static void test_percent_owned_and_ownership_expression_parsing(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("Percent ownership syntax parsing",
-              "Testing parsing of %owned class declarations, direct owner fields, %unique new, and %shared/%weak/%borrow/%loan/%detach builtin expressions");
+    TEST_INFO("Resource ownership syntax parsing",
+              "Testing README resource ownership forms: resource class, Unique/Shared/Weak, own, share, weak, upgrade, and drop");
     {
         const char *source =
-            "%owned class Holder { var resource: %unique Resource; }\n"
-            "var sharedRef: %shared Box<int>;\n"
-            "var weakRef: %weak Resource;\n"
-            "var borrowedRef: %borrowed Resource;\n"
-            "var loanedRef: %loaned Resource;\n"
-            "var uniqueHolder = %unique new Holder();\n"
-            "var sharedHolder = %shared(uniqueHolder);\n"
-            "var weakHolder = %weak(sharedHolder);\n"
-            "var borrowedHolder = %borrow(sharedHolder);\n"
-            "var loanSource = %unique new Holder();\n"
-            "var loanedHolder = %loan(loanSource);\n"
-            "var detachedHolder = %detach(sharedHolder);";
-        SZrString *sourceName = ZrCore_String_Create(state, "percent_owned_syntax.zr", 23);
+            "resource class Holder { var resource: Unique<Resource>; }\n"
+            "let uniqueHolder: Unique<Holder> = own Holder();\n"
+            "let sharedHolder: Shared<Holder> = uniqueHolder.share();\n"
+            "let weakHolder: Weak<Holder> = sharedHolder.weak();\n"
+            "let active = weakHolder.upgrade();\n"
+            "drop(sharedHolder);";
+        SZrString *sourceName = ZrCore_String_Create(state, "resource_ownership_syntax.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *classDecl;
         SZrAstNode *fieldNode;
         SZrClassField *field;
-        SZrAstNode *sharedDecl;
-        SZrAstNode *weakDecl;
-        SZrAstNode *borrowedDecl;
-        SZrAstNode *loanedDecl;
         SZrAstNode *uniqueDecl;
-        SZrAstNode *sharedExprDecl;
-        SZrAstNode *weakExprDecl;
-        SZrAstNode *borrowExprDecl;
-        SZrAstNode *loanExprDecl;
-        SZrAstNode *detachExprDecl;
         SZrAstNode *expr;
 
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(12, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
 
         classDecl = ast->data.script.statements->nodes[0];
-        sharedDecl = ast->data.script.statements->nodes[1];
-        weakDecl = ast->data.script.statements->nodes[2];
-        borrowedDecl = ast->data.script.statements->nodes[3];
-        loanedDecl = ast->data.script.statements->nodes[4];
-        uniqueDecl = ast->data.script.statements->nodes[5];
-        sharedExprDecl = ast->data.script.statements->nodes[6];
-        weakExprDecl = ast->data.script.statements->nodes[7];
-        borrowExprDecl = ast->data.script.statements->nodes[8];
-        loanExprDecl = ast->data.script.statements->nodes[10];
-        detachExprDecl = ast->data.script.statements->nodes[11];
+        uniqueDecl = ast->data.script.statements->nodes[1];
 
         TEST_ASSERT_NOT_NULL(classDecl);
         TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classDecl->type);
+        TEST_ASSERT_TRUE(classDecl->data.classDeclaration.isOwned);
         TEST_ASSERT_NOT_NULL(classDecl->data.classDeclaration.members);
         TEST_ASSERT_EQUAL_INT(1, (int)classDecl->data.classDeclaration.members->count);
 
@@ -1130,33 +1107,9 @@ static void test_percent_owned_and_ownership_expression_parsing(void) {
         TEST_ASSERT_NOT_NULL(fieldNode);
         TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_FIELD, fieldNode->type);
         field = &fieldNode->data.classField;
-        TEST_ASSERT_FALSE(field->isUsingManaged);
+        TEST_ASSERT_FALSE(field->reservedRemovedUsingManaged);
         TEST_ASSERT_NOT_NULL(field->typeInfo);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, field->typeInfo->ownershipQualifier);
-
-        TEST_ASSERT_NOT_NULL(sharedDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, sharedDecl->type);
-        TEST_ASSERT_NOT_NULL(sharedDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
-                              sharedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
-
-        TEST_ASSERT_NOT_NULL(weakDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, weakDecl->type);
-        TEST_ASSERT_NOT_NULL(weakDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_WEAK,
-                              weakDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
-
-        TEST_ASSERT_NOT_NULL(borrowedDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowedDecl->type);
-        TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED,
-                              borrowedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
-
-        TEST_ASSERT_NOT_NULL(loanedDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, loanedDecl->type);
-        TEST_ASSERT_NOT_NULL(loanedDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_LOANED,
-                              loanedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
 
         expr = uniqueDecl->data.variableDeclaration.value;
         TEST_ASSERT_NOT_NULL(expr);
@@ -1166,46 +1119,6 @@ static void test_percent_owned_and_ownership_expression_parsing(void) {
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
                               expr->data.constructExpression.ownershipQualifier);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
-                              expr->data.constructExpression.builtinKind);
-
-        expr = sharedExprDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_SHARED,
-                              expr->data.constructExpression.builtinKind);
-
-        expr = weakExprDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_WEAK,
-                              expr->data.constructExpression.builtinKind);
-
-        expr = borrowExprDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_BORROW,
-                              expr->data.constructExpression.builtinKind);
-
-        expr = loanExprDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_LOAN,
-                              expr->data.constructExpression.builtinKind);
-
-        expr = detachExprDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_DETACH,
                               expr->data.constructExpression.builtinKind);
 
         ZrParser_Ast_Free(state, ast);
@@ -1343,9 +1256,9 @@ static void test_function_declaration(void) {
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Function declaration parsing", 
-              "Testing parsing of function declaration: test(){}");
-    const char* source = "test(){}";
+    TEST_INFO("Function declaration parsing",
+              "Testing parsing of current function declaration: fn test(): void {}");
+    const char* source = "fn test(): void {}";
     SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
@@ -1363,8 +1276,8 @@ static void test_extern_block_parsing(void) {
     SZrTestTimer timer;
     const char *testSummary = "Extern Block Parsing";
     const char *source =
-            "%extern(\"fixture\") {\n"
-            "    #zr.ffi.entry(\"zr_ffi_add_i32\")# Add(lhs:i32, rhs:i32): i32;\n"
+            "native extern(\"fixture\") {\n"
+            "    #zr.ffi.entry(\"zr_ffi_add_i32\")# fn Add(lhs:i32, rhs:i32): i32;\n"
             "    delegate Unary(value:f64): f64;\n"
             "    struct Point {\n"
             "        #zr.ffi.offset(0)# var x:i32;\n"
@@ -1411,24 +1324,23 @@ static void test_extern_block_parsing(void) {
     TEST_DIVIDER();
 }
 
-static void test_reserved_import_expression_variants(void) {
+static void test_static_import_expression_uses_current_syntax(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Reserved Import Expression Variants";
+    const char *testSummary = "Static Import Expression Uses Current Syntax";
     static const struct {
         const char *source;
         const char *expectedName;
     } fixtures[] = {
-        { "var math = %import zr.math;", "zr.math" },
-        { "var math = %import \"zr.math\";", "zr.math" },
-        { "var math = %import(\"zr.math\");", "zr.math" },
+        { "let math = import(\"zr.math\");", "zr.math" },
+        { "let system = import(\"zr.system\");", "zr.system" },
     };
     TZrSize index;
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    TEST_INFO("Reserved import parsing",
-              "Testing that all supported %import spellings normalize to the same import-expression AST");
+    TEST_INFO("Static import parsing",
+              "Testing that current import syntax normalizes to the canonical import-expression AST");
 
     for (index = 0; index < sizeof(fixtures) / sizeof(fixtures[0]); index++) {
         SZrState *state = create_test_state();
@@ -1446,6 +1358,7 @@ static void test_reserved_import_expression_variants(void) {
         statement = ast->data.script.statements->nodes[0];
         TEST_ASSERT_NOT_NULL(statement);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, statement->type);
+        TEST_ASSERT_TRUE(statement->data.variableDeclaration.isConst);
         expr = statement->data.variableDeclaration.value;
         TEST_ASSERT_NOT_NULL(expr);
         TEST_ASSERT_EQUAL_INT(ZR_AST_IMPORT_EXPRESSION, expr->type);
@@ -1461,16 +1374,16 @@ static void test_reserved_import_expression_variants(void) {
     TEST_DIVIDER();
 }
 
-static void test_reserved_import_expression_member_chain_parsing(void) {
+static void test_static_import_expression_member_chain_parsing(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Reserved Import Member Chain Parsing";
+    const char *testSummary = "Static Import Member Chain Parsing";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     {
         SZrState *state = create_test_state();
-        const char *source = "%import(\"helper\").toolkit.math.greet();";
+        const char *source = "import(\"helper\").toolkit.math.greet();";
         SZrString *sourceName = ZrCore_String_Create(state, "reserved_import_chain.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr;
@@ -1497,9 +1410,9 @@ static void test_reserved_import_expression_member_chain_parsing(void) {
     TEST_DIVIDER();
 }
 
-static void test_function_declaration_optional_func_keyword(void) {
+static void test_function_declaration_requires_fn_keyword(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Function Declaration Optional Func Keyword";
+    const char *testSummary = "Function Declaration Requires Fn Keyword";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1507,8 +1420,8 @@ static void test_function_declaration_optional_func_keyword(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "withKeyword() { return 1; }\n"
-                "func compat() { return 2; }\n";
+                "fn first(): int { return 1; }\n"
+                "fn second(): int { return 2; }\n";
         SZrString *sourceName = ZrCore_String_Create(state, "optional_func_keyword.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1609,9 +1522,9 @@ static void capture_legacy_ownership_structured_diagnostic(TZrPtr userData,
     }
 }
 
-static void test_ownership_intrinsic_generic_type_surface_parsing(void) {
+static void test_ownership_generic_type_surface_parsing(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Ownership Intrinsic Generic Type Surface Parsing";
+    const char *testSummary = "Ownership Generic Type Surface Parsing";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1620,50 +1533,30 @@ static void test_ownership_intrinsic_generic_type_surface_parsing(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Ownership generic surface parsing",
-              "Testing that Unique<T>/Shared<T> are accepted as intrinsic generic owner types and legacy %unique/%shared type syntax desugars to the same generic AST surface");
+              "Testing that the README Unique<T>, Shared<T>, and Weak<T> forms preserve canonical ownership qualifiers");
     {
         const char *source =
             "var directUnique: Unique<Resource>;\n"
             "var directShared: Shared<Box<int>>;\n"
-            "var directBorrow: Borrow<Resource>;\n"
-            "var directLoan: Loan<Resource>;\n"
-            "var legacyUnique: %unique Resource;\n"
-            "var legacyShared: %shared Box<int>;\n"
-            "var legacyBorrow: %borrow Resource;\n"
-            "var legacyLoan: %loan Resource;";
+            "var directWeak: Weak<Resource>;";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_generic_surface.zr", 28);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *directUnique;
         SZrAstNode *directShared;
-        SZrAstNode *directBorrow;
-        SZrAstNode *directLoan;
-        SZrAstNode *legacyUnique;
-        SZrAstNode *legacyShared;
-        SZrAstNode *legacyBorrow;
-        SZrAstNode *legacyLoan;
+        SZrAstNode *directWeak;
 
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(8, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
 
         directUnique = ast->data.script.statements->nodes[0];
         directShared = ast->data.script.statements->nodes[1];
-        directBorrow = ast->data.script.statements->nodes[2];
-        directLoan = ast->data.script.statements->nodes[3];
-        legacyUnique = ast->data.script.statements->nodes[4];
-        legacyShared = ast->data.script.statements->nodes[5];
-        legacyBorrow = ast->data.script.statements->nodes[6];
-        legacyLoan = ast->data.script.statements->nodes[7];
+        directWeak = ast->data.script.statements->nodes[2];
 
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, directUnique->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, directShared->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, directBorrow->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, directLoan->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, legacyUnique->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, legacyShared->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, legacyBorrow->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, legacyLoan->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, directWeak->type);
 
         assert_ownership_generic_type(directUnique->data.variableDeclaration.typeInfo,
                                       "Unique",
@@ -1671,24 +1564,9 @@ static void test_ownership_intrinsic_generic_type_surface_parsing(void) {
         assert_ownership_generic_type(directShared->data.variableDeclaration.typeInfo,
                                       "Shared",
                                       ZR_OWNERSHIP_QUALIFIER_SHARED);
-        assert_ownership_generic_type(directBorrow->data.variableDeclaration.typeInfo,
-                                      "Borrow",
-                                      ZR_OWNERSHIP_QUALIFIER_BORROWED);
-        assert_ownership_generic_type(directLoan->data.variableDeclaration.typeInfo,
-                                      "Loan",
-                                      ZR_OWNERSHIP_QUALIFIER_LOANED);
-        assert_ownership_generic_type(legacyUnique->data.variableDeclaration.typeInfo,
-                                      "Unique",
-                                      ZR_OWNERSHIP_QUALIFIER_UNIQUE);
-        assert_ownership_generic_type(legacyShared->data.variableDeclaration.typeInfo,
-                                      "Shared",
-                                      ZR_OWNERSHIP_QUALIFIER_SHARED);
-        assert_ownership_generic_type(legacyBorrow->data.variableDeclaration.typeInfo,
-                                      "Borrow",
-                                      ZR_OWNERSHIP_QUALIFIER_BORROWED);
-        assert_ownership_generic_type(legacyLoan->data.variableDeclaration.typeInfo,
-                                      "Loan",
-                                      ZR_OWNERSHIP_QUALIFIER_LOANED);
+        assert_ownership_generic_type(directWeak->data.variableDeclaration.typeInfo,
+                                      "Weak",
+                                      ZR_OWNERSHIP_QUALIFIER_WEAK);
 
         ZrParser_Ast_Free(state, ast);
     }
@@ -1700,60 +1578,42 @@ static void test_ownership_intrinsic_generic_type_surface_parsing(void) {
     TEST_DIVIDER();
 }
 
-static void test_legacy_ownership_type_syntax_reports_migration_warning(void) {
+static void test_legacy_ownership_type_syntax_is_rejected(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Legacy Ownership Type Syntax Reports Migration Warning";
+    const char *testSummary = "Legacy Ownership Type Syntax Is Rejected";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = create_test_state();
-    TEST_ASSERT_NOT_NULL(state);
-
-    TEST_INFO("Legacy ownership type syntax migration warning",
-              "Testing that %unique/%shared/%borrow/%loan type annotations remain compatible but report non-blocking deprecation diagnostics");
+    TEST_INFO("Legacy ownership type syntax rejection",
+              "Testing that removed percent ownership spelling produces a directed diagnostic instead of remaining compatible");
     {
-        const char *source =
-            "var legacyUnique: %unique Resource;\n"
-            "var legacyShared: %shared Resource;\n"
-            "var legacyBorrow: %borrow Resource;\n"
-            "var legacyLoan: %loan Resource;\n";
-        SZrString *sourceName = ZrCore_String_Create(state, "legacy_ownership_type_warning.zr", 32);
-        SZrParserState parserState;
-        SLegacyOwnershipWarningCapture capture;
+        SZrState *state = create_test_state();
+        SZrCapturedParserDiagnostic diagnostic;
         SZrAstNode *ast;
 
-        memset(&capture, 0, sizeof(capture));
-        ZrParser_State_Init(&parserState, state, source, strlen(source), sourceName);
-        parserState.structuredErrorCallback = capture_legacy_ownership_structured_diagnostic;
-        parserState.errorUserData = &capture;
-        parserState.suppressErrorOutput = ZR_TRUE;
-
-        ast = ZrParser_ParseWithState(&parserState);
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_FALSE(parserState.hasError);
-        TEST_ASSERT_EQUAL_UINT32(4u, capture.warningCount);
-        TEST_ASSERT_EQUAL_UINT32(0u, capture.errorCount);
-        TEST_ASSERT_EQUAL_UINT32(4u, capture.legacyCodeCount);
-        TEST_ASSERT_TRUE(capture.sawUniqueSuggestion);
-        TEST_ASSERT_TRUE(capture.sawSharedSuggestion);
-        TEST_ASSERT_TRUE(capture.sawBorrowSuggestion);
-        TEST_ASSERT_TRUE(capture.sawLoanSuggestion);
-
-        ZrParser_Ast_Free(state, ast);
-        ZrParser_State_Free(&parserState);
+        TEST_ASSERT_NOT_NULL(state);
+        ast = parse_source_with_diagnostic(state,
+                                           "var legacyUnique: %unique Resource;",
+                                           strlen("var legacyUnique: %unique Resource;"),
+                                           "legacy_ownership_type.zr",
+                                           &diagnostic);
+        TEST_ASSERT_TRUE(diagnostic.reported);
+        TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy syntax '%unique' was removed"));
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        destroy_test_state(state);
     }
-
-    destroy_test_state(state);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
     TEST_DIVIDER();
 }
 
-static void assert_ownership_generic_constructor_value(SZrAstNode *decl,
-                                                       EZrOwnershipQualifier expectedQualifier,
-                                                       EZrOwnershipBuiltinKind expectedBuiltinKind) {
+static void assert_resource_own_construct_value(SZrAstNode *decl,
+                                                EZrOwnershipQualifier expectedQualifier,
+                                                EZrOwnershipBuiltinKind expectedBuiltinKind) {
     SZrAstNode *expr;
 
     TEST_ASSERT_NOT_NULL(decl);
@@ -1761,15 +1621,15 @@ static void assert_ownership_generic_constructor_value(SZrAstNode *decl,
     expr = decl->data.variableDeclaration.value;
     TEST_ASSERT_NOT_NULL(expr);
     TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-    TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
+    TEST_ASSERT_TRUE(expr->data.constructExpression.isNew);
     TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
     TEST_ASSERT_EQUAL_INT(expectedQualifier, expr->data.constructExpression.ownershipQualifier);
     TEST_ASSERT_EQUAL_INT(expectedBuiltinKind, expr->data.constructExpression.builtinKind);
 }
 
-static void test_ownership_intrinsic_generic_constructor_surface_parsing(void) {
+static void test_resource_ownership_lifecycle_surface_parsing(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Ownership Intrinsic Generic Constructor Surface Parsing";
+    const char *testSummary = "Resource Ownership Lifecycle Surface Parsing";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1777,43 +1637,27 @@ static void test_ownership_intrinsic_generic_constructor_surface_parsing(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("Ownership generic constructor surface parsing",
-              "Testing that Unique<T>(value)/Shared<T>(value)/Borrow<T>(value)/Loan<T>(value) parse as ownership builtin construct expressions");
+    TEST_INFO("Resource ownership lifecycle parsing",
+              "Testing the README own, share, weak, upgrade, and drop forms without legacy generic constructors");
     {
         const char *source =
-            "class Box {}\n"
-            "var owner = Unique<Box>(new Box());\n"
-            "var alias = Shared<Box>(owner);\n"
-            "var watcher = Weak<Box>(alias);\n"
-            "var borrowed = Borrow<Box>(alias);\n"
-            "var loanSource = Unique<Box>(new Box());\n"
-            "var loaned = Loan<Box>(loanSource);";
-        SZrString *sourceName = ZrCore_String_Create(state, "ownership_generic_constructor_surface.zr", 40);
+            "resource class Box {}\n"
+            "let owner: Unique<Box> = own Box();\n"
+            "let shared: Shared<Box> = owner.share();\n"
+            "let weak: Weak<Box> = shared.weak();\n"
+            "let active = weak.upgrade();\n"
+            "drop(shared);";
+        SZrString *sourceName = ZrCore_String_Create(state, "resource_ownership_lifecycle.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(7, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
 
-        assert_ownership_generic_constructor_value(ast->data.script.statements->nodes[1],
-                                                   ZR_OWNERSHIP_QUALIFIER_UNIQUE,
-                                                   ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE);
-        assert_ownership_generic_constructor_value(ast->data.script.statements->nodes[2],
-                                                   ZR_OWNERSHIP_QUALIFIER_SHARED,
-                                                   ZR_OWNERSHIP_BUILTIN_KIND_SHARED);
-        assert_ownership_generic_constructor_value(ast->data.script.statements->nodes[3],
-                                                   ZR_OWNERSHIP_QUALIFIER_WEAK,
-                                                   ZR_OWNERSHIP_BUILTIN_KIND_WEAK);
-        assert_ownership_generic_constructor_value(ast->data.script.statements->nodes[4],
-                                                   ZR_OWNERSHIP_QUALIFIER_BORROWED,
-                                                   ZR_OWNERSHIP_BUILTIN_KIND_BORROW);
-        assert_ownership_generic_constructor_value(ast->data.script.statements->nodes[5],
-                                                   ZR_OWNERSHIP_QUALIFIER_UNIQUE,
-                                                   ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE);
-        assert_ownership_generic_constructor_value(ast->data.script.statements->nodes[6],
-                                                   ZR_OWNERSHIP_QUALIFIER_LOANED,
-                                                   ZR_OWNERSHIP_BUILTIN_KIND_LOAN);
+        assert_resource_own_construct_value(ast->data.script.statements->nodes[1],
+                                            ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+                                            ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE);
 
         ZrParser_Ast_Free(state, ast);
     }
@@ -1825,111 +1669,118 @@ static void test_ownership_intrinsic_generic_constructor_surface_parsing(void) {
     TEST_DIVIDER();
 }
 
-static void test_percent_upgrade_and_release_expression_parsing(void) {
+static void test_legacy_percent_ownership_lifecycle_is_rejected(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Percent Upgrade And Release Expression Parsing";
+    const char *testSummary = "Legacy Percent Ownership Lifecycle Is Rejected";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    SZrState *state = create_test_state();
-    TEST_ASSERT_NOT_NULL(state);
-
-    TEST_INFO("Percent ownership lifecycle syntax parsing",
-              "Testing parsing of %borrow(expr), %loan(expr), %upgrade(expr), %release(expr), and %detach(expr) as dedicated ownership builtin construct expressions");
+    TEST_INFO("Legacy ownership lifecycle syntax rejection",
+              "Testing that lifecycle operations use member calls and drop rather than removed percent expressions");
     {
-        const char *source =
-            "class Holder {}\n"
-            "var owner = %unique new Holder();\n"
-            "var shared = %shared(owner);\n"
-            "var watcher = %weak(shared);\n"
-            "var borrowed = %borrow(shared);\n"
-            "var loanSource = %unique new Holder();\n"
-            "var loaned = %loan(loanSource);\n"
-            "var upgraded = %upgrade(watcher);\n"
-            "var released = %release(shared);\n"
-            "var detachedSource = %unique new Holder();\n"
-            "var detached = %detach(detachedSource);";
-        SZrString *sourceName = ZrCore_String_Create(state, "percent_upgrade_release_syntax.zr", 33);
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrAstNode *borrowDecl;
-        SZrAstNode *loanDecl;
-        SZrAstNode *upgradeDecl;
-        SZrAstNode *releaseDecl;
-        SZrAstNode *detachDecl;
-        SZrAstNode *expr;
+        SZrState *state = create_test_state();
+        SZrCapturedParserDiagnostic diagnostic;
+        SZrAstNode *ast;
 
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(11, (int)ast->data.script.statements->count);
-
-        borrowDecl = ast->data.script.statements->nodes[4];
-        loanDecl = ast->data.script.statements->nodes[6];
-        upgradeDecl = ast->data.script.statements->nodes[7];
-        releaseDecl = ast->data.script.statements->nodes[8];
-        detachDecl = ast->data.script.statements->nodes[10];
-
-        TEST_ASSERT_NOT_NULL(borrowDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowDecl->type);
-        expr = borrowDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_BORROW,
-                              expr->data.constructExpression.builtinKind);
-
-        TEST_ASSERT_NOT_NULL(loanDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, loanDecl->type);
-        expr = loanDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_LOAN,
-                              expr->data.constructExpression.builtinKind);
-
-        TEST_ASSERT_NOT_NULL(upgradeDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, upgradeDecl->type);
-        expr = upgradeDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
-                              expr->data.constructExpression.ownershipQualifier);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE,
-                              expr->data.constructExpression.builtinKind);
-
-        TEST_ASSERT_NOT_NULL(releaseDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, releaseDecl->type);
-        expr = releaseDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
-                              expr->data.constructExpression.ownershipQualifier);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
-                              expr->data.constructExpression.builtinKind);
-
-        TEST_ASSERT_NOT_NULL(detachDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, detachDecl->type);
-        expr = detachDecl->data.variableDeclaration.value;
-        TEST_ASSERT_NOT_NULL(expr);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expr->type);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isNew);
-        TEST_ASSERT_FALSE(expr->data.constructExpression.isUsing);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_DETACH,
-                              expr->data.constructExpression.builtinKind);
-
-        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(state);
+        ast = parse_source_with_diagnostic(state,
+                                           "%upgrade(owner);",
+                                           strlen("%upgrade(owner);"),
+                                           "legacy_percent_upgrade.zr",
+                                           &diagnostic);
+        TEST_ASSERT_TRUE(diagnostic.reported);
+        TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy syntax '%upgrade' was removed"));
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        destroy_test_state(state);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_reference_expression_parsing(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Reference Expression Parsing";
+    SZrState *state;
+    SZrAstNode *ast;
+    SZrAstNode *readonlyDecl;
+    SZrAstNode *writableDecl;
+    SZrAstNode *reborrowDecl;
+    SZrAstNode *expression;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Canonical reference expression parsing",
+              "Testing README-standard ref readonly T, ref T, and ref existingRef expressions");
+
+    ast = ZrParser_Parse(state,
+                         "var owner: int = 0;\n"
+                         "let readonlyView: ref readonly int = ref owner;\n"
+                         "let writableLoan: ref int = ref owner;\n"
+                         "let reborrow: ref readonly int = ref readonlyView;\n",
+                         strlen("var owner: int = 0;\n"
+                                "let readonlyView: ref readonly int = ref owner;\n"
+                                "let writableLoan: ref int = ref owner;\n"
+                                "let reborrow: ref readonly int = ref readonlyView;\n"),
+                         ZrCore_String_Create(state, "reference_expression.zr", 23));
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+    readonlyDecl = ast->data.script.statements->nodes[1];
+    writableDecl = ast->data.script.statements->nodes[2];
+    reborrowDecl = ast->data.script.statements->nodes[3];
+    TEST_ASSERT_NOT_NULL(readonlyDecl);
+    TEST_ASSERT_NOT_NULL(writableDecl);
+    TEST_ASSERT_NOT_NULL(reborrowDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, readonlyDecl->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, writableDecl->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, reborrowDecl->type);
+    TEST_ASSERT_NOT_NULL(readonlyDecl->data.variableDeclaration.typeInfo);
+    TEST_ASSERT_NOT_NULL(writableDecl->data.variableDeclaration.typeInfo);
+    TEST_ASSERT_EQUAL_INT(ZR_REFERENCE_ACCESS_READONLY,
+                          readonlyDecl->data.variableDeclaration.typeInfo->referenceAccess);
+    TEST_ASSERT_EQUAL_INT(ZR_REFERENCE_ACCESS_WRITABLE,
+                          writableDecl->data.variableDeclaration.typeInfo->referenceAccess);
+
+    expression = readonlyDecl->data.variableDeclaration.value;
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expression->type);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_BORROW,
+                          expression->data.constructExpression.builtinKind);
+    TEST_ASSERT_NOT_NULL(expression->data.constructExpression.target);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL,
+                          expression->data.constructExpression.target->type);
+
+    expression = writableDecl->data.variableDeclaration.value;
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expression->type);
+    TEST_ASSERT_NOT_NULL(expression->data.constructExpression.target);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL,
+                          expression->data.constructExpression.target->type);
+
+    expression = reborrowDecl->data.variableDeclaration.value;
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expression->type);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_BORROW,
+                          expression->data.constructExpression.builtinKind);
+    TEST_ASSERT_NOT_NULL(expression->data.constructExpression.target);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL,
+                          expression->data.constructExpression.target->type);
+
+    ZrParser_Ast_Free(state, ast);
     destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
     TEST_DIVIDER();
 }
 
@@ -1943,8 +1794,8 @@ static void test_reserved_type_expression_parsing(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "var math = %import(\"zr.math\");\n"
-                "var reflection = %type(math.Vector3);";
+                "let math = import(\"zr.math\");\n"
+                "let reflection = typeof(math.Vector3);";
         SZrString *sourceName = ZrCore_String_Create(state, "reserved_type_expression.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *statement;
@@ -1983,9 +1834,9 @@ static void test_reserved_type_expression_parsing(void) {
     TEST_DIVIDER();
 }
 
-static void test_legacy_import_syntax_is_rejected(void) {
+static void test_member_named_import_is_not_static_import(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Legacy Import Syntax Rejected";
+    const char *testSummary = "Member Named Import Is Not Static Import";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1993,18 +1844,18 @@ static void test_legacy_import_syntax_is_rejected(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "import(\"zr.math\");\n"
-                "zr.import(\"zr.math\");\n"
+                "moduleApi.import(\"zr.math\");\n"
                 "var ok = 1;";
-        SZrString *sourceName = ZrCore_String_Create(state, "legacy_import_syntax.zr", 23);
+        SZrString *sourceName = ZrCore_String_Create(state, "member_named_import.zr", 22);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ast->data.script.statements->nodes[0]->type);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, ast->data.script.statements->nodes[0]->type);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ast->data.script.statements->nodes[1]->type);
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -2015,16 +1866,15 @@ static void test_legacy_import_syntax_is_rejected(void) {
     TEST_DIVIDER();
 }
 
-static void test_reserved_module_declaration_variants(void) {
+static void test_current_module_declaration_variants(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Reserved Module Declaration Variants";
+    const char *testSummary = "Current Module Declaration Variants";
     static const struct {
         const char *source;
         const char *expectedName;
     } fixtures[] = {
-        { "%module foo;", "foo" },
-        { "%module \"foo.bar\";", "foo.bar" },
-        { "%module(\"foo.bar\");", "foo.bar" },
+        { "module foo;", "foo" },
+        { "module foo.bar;", "foo.bar" },
     };
     TZrSize index;
 
@@ -2055,23 +1905,25 @@ static void test_reserved_module_declaration_variants(void) {
     TEST_DIVIDER();
 }
 
-static void test_legacy_module_keyword_is_rejected(void) {
+static void test_current_module_keyword_is_parsed(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Legacy Module Keyword Rejected";
+    const char *testSummary = "Current Module Keyword Parsing";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     {
         SZrState *state = create_test_state();
-        const char *source = "module \"legacy\";\nvar value = 1;";
-        SZrString *sourceName = ZrCore_String_Create(state, "legacy_module_keyword.zr", 24);
+        const char *source = "module examples.hello;\nvar value = 1;";
+        SZrString *sourceName = ZrCore_String_Create(state, "current_module_keyword.zr", 25);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NULL(ast->data.script.moduleName);
+        TEST_ASSERT_NOT_NULL(ast->data.script.moduleName);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_MODULE_DECLARATION, ast->data.script.moduleName->type);
+        TEST_ASSERT_EQUAL_STRING("examples.hello", module_declaration_name_native(state, ast));
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
         TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ast->data.script.statements->nodes[0]->type);
@@ -2085,10 +1937,10 @@ static void test_legacy_module_keyword_is_rejected(void) {
     TEST_DIVIDER();
 }
 
-static void test_extern_single_declaration_normalizes_to_block(void) {
+static void test_native_extern_single_declaration_normalizes_to_block(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Extern Single Declaration Parsing";
-    const char *source = "%extern(\"fixture\") Add(lhs:i32, rhs:i32): i32;";
+    const char *testSummary = "Native Extern Single Declaration Parsing";
+    const char *source = "native extern(\"fixture\") fn Add(lhs:i32, rhs:i32): i32;";
     SZrState *state;
     SZrString *sourceName;
     SZrAstNode *ast;
@@ -2162,12 +2014,12 @@ static void test_field_scoped_using_field_parsing(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Owned field parsing",
-              "Testing parsing of direct %unique/%shared owner fields in struct/class members without field-scoped %using");
+              "Testing parsing of direct Unique<T>/Shared<T> owner fields without field-scoped using");
 
     {
         const char *source =
-            "struct HandleBox { var handle: %unique Resource; }\n"
-            "class Holder { static var version: int; var resource: %shared Resource; }";
+            "struct HandleBox { var handle: Unique<Resource>; }\n"
+            "class Holder { static var version: int; var resource: Shared<Resource>; }";
         SZrString *sourceName = ZrCore_String_Create(state, "using_fields.zr", 15);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *structDecl;
@@ -2210,19 +2062,19 @@ static void test_field_scoped_using_field_parsing(void) {
         classVersionField = &classVersionFieldNode->data.classField;
         classField = &classFieldNode->data.classField;
 
-        TEST_ASSERT_FALSE(structField->isUsingManaged);
+        TEST_ASSERT_FALSE(structField->reservedRemovedUsingManaged);
         TEST_ASSERT_FALSE(structField->isStatic);
         TEST_ASSERT_NOT_NULL(structField->typeInfo);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
                               structField->typeInfo->ownershipQualifier);
 
-        TEST_ASSERT_FALSE(classVersionField->isUsingManaged);
+        TEST_ASSERT_FALSE(classVersionField->reservedRemovedUsingManaged);
         TEST_ASSERT_TRUE(classVersionField->isStatic);
         TEST_ASSERT_NOT_NULL(classVersionField->typeInfo);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE,
                               classVersionField->typeInfo->ownershipQualifier);
 
-        TEST_ASSERT_FALSE(classField->isUsingManaged);
+        TEST_ASSERT_FALSE(classField->reservedRemovedUsingManaged);
         TEST_ASSERT_FALSE(classField->isStatic);
         TEST_ASSERT_NOT_NULL(classField->typeInfo);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
@@ -2251,7 +2103,7 @@ static void test_field_scoped_using_field_requires_var_keyword(void) {
               "Testing that field-scoped `%using var` is no longer accepted now that owner fields carry lifecycle directly");
 
     {
-        const char *source = "struct Broken { %using var handle: %unique Resource; }";
+        const char *source = "struct Broken { %using var handle: Unique<Resource>; }";
         SZrString *sourceName = ZrCore_String_Create(state, "using_missing_var.zr", 20);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
@@ -2274,8 +2126,7 @@ static void test_field_scoped_using_field_requires_var_keyword(void) {
 static void test_removed_percent_using_new_expression_reports_migration_diagnostic(void) {
     SZrTestTimer timer;
     const char *testSummary = "Removed Percent Using New Expression Reports Migration Diagnostic";
-    const char *expectedMessage =
-        "Ownership '%using' expressions are removed; keep '%using' as a statement or block lifetime fence only";
+    const char *expectedMessage = "Legacy syntax '%using' was removed";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2311,8 +2162,7 @@ static void test_removed_percent_using_new_expression_reports_migration_diagnost
 static void test_removed_percent_using_expression_reports_migration_diagnostic(void) {
     SZrTestTimer timer;
     const char *testSummary = "Removed Percent Using Expression Reports Migration Diagnostic";
-    const char *expectedMessage =
-        "Ownership '%using' expressions are removed; keep '%using' as a statement or block lifetime fence only";
+    const char *expectedMessage = "Legacy syntax '%using' was removed";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2359,7 +2209,7 @@ static void test_field_scoped_bare_using_field_is_rejected(void) {
               "Testing that bare `using var` fields are no longer accepted now that owner lifecycle lives in direct field types");
 
     {
-        const char *source = "struct Broken { using var handle: %unique Resource; }";
+        const char *source = "struct Broken { using var handle: Unique<Resource>; }";
         SZrString *sourceName = ZrCore_String_Create(state, "bare_using_field.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
@@ -2509,85 +2359,9 @@ static void test_using_binder_invalid_reports_diagnostic(void) {
     TEST_DIVIDER();
 }
 
-static void test_using_import_guard_parsing_and_compile(void) {
-    SZrTestTimer timer = {0};
-    const char *testSummary = "Using Import Guard Parsing And Compile";
-
-    TEST_START(testSummary);
-    timer.startTime = clock();
-
-    SZrState *state = create_test_state();
-    TEST_ASSERT_NOT_NULL(state);
-
-    TEST_INFO("Using import guard parsing",
-              "Testing that using (var p = %import(...)) is recognized as a plugin guard and compiles to a conditional block");
-    {
-        const char *source =
-            "using (var plugin = %import(\"zr.math\")) { var ok = 1; } else { var fallback = 2; }";
-        SZrString *sourceName = ZrCore_String_Create(state, "using_import_guard.zr", 22);
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrAstNode *usingStmt;
-        SZrFunction *function;
-        TZrBool sawImportCall = ZR_FALSE;
-        TZrBool sawGuardJump = ZR_FALSE;
-
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
-
-        usingStmt = ast->data.script.statements->nodes[0];
-        TEST_ASSERT_NOT_NULL(usingStmt);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_USING_STATEMENT, usingStmt->type);
-        TEST_ASSERT_TRUE(usingStmt->data.usingStatement.isBlockScoped);
-        TEST_ASSERT_EQUAL_INT(ZR_USING_GUARD_PLUGIN, usingStmt->data.usingStatement.guardKind);
-        TEST_ASSERT_NOT_NULL(usingStmt->data.usingStatement.pattern);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, usingStmt->data.usingStatement.pattern->type);
-        TEST_ASSERT_EQUAL_STRING("plugin",
-                                 ZrCore_String_GetNativeString(
-                                         usingStmt->data.usingStatement.pattern->data.identifier.name));
-        TEST_ASSERT_NOT_NULL(usingStmt->data.usingStatement.resource);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_IMPORT_EXPRESSION, usingStmt->data.usingStatement.resource->type);
-        TEST_ASSERT_NOT_NULL(usingStmt->data.usingStatement.elseBody);
-
-        function = ZrParser_Compiler_Compile(state, ast);
-        TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function->instructionsLength > 0);
-        TEST_ASSERT_NOT_NULL(function->instructionsList);
-
-        for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
-            EZrInstructionCode opcode =
-                    (EZrInstructionCode)function->instructionsList[index].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL)) {
-                sawImportCall = ZR_TRUE;
-            }
-            if (opcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL) ||
-                opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL) ||
-                opcode == ZR_INSTRUCTION_ENUM(DYN_CALL) ||
-                opcode == ZR_INSTRUCTION_ENUM(META_CALL)) {
-                sawImportCall = ZR_TRUE;
-            }
-            if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF) ||
-                opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE)) {
-                sawGuardJump = ZR_TRUE;
-            }
-        }
-
-        TEST_ASSERT_TRUE(sawImportCall);
-        TEST_ASSERT_TRUE(sawGuardJump);
-
-        ZrParser_Ast_Free(state, ast);
-    }
-
-    timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    destroy_test_state(state);
-    TEST_DIVIDER();
-}
-
-static void test_owned_class_and_prefixed_ownership_parsing(void) {
+static void test_resource_class_and_owner_types_parsing(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Owned Class And Prefixed Ownership Parsing";
+    const char *testSummary = "Resource Class And Owner Types Parsing";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2595,33 +2369,25 @@ static void test_owned_class_and_prefixed_ownership_parsing(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("Owned class and prefixed ownership parsing",
-              "Testing %owned class declarations, %unique/%shared/%weak/%borrowed types, plus %unique new and %shared(owner) ownership expressions");
+    TEST_INFO("Resource class and owner type parsing",
+              "Testing README resource class ownership with Unique<T>, Shared<T>, Weak<T>, and own T()");
 
     {
         const char *source =
-            "%owned class Holder {}\n"
-            "var owned: %unique Resource;\n"
-            "var sharedRef: %shared Box<int>;\n"
-            "var weakRef: %weak Resource;\n"
-            "var borrowedRef: %borrowed Resource;\n"
-            "var uniqueOwner = %unique new Resource();\n"
-            "var ownerForShared = %unique new Resource();\n"
-            "var sharedOwner = %shared(ownerForShared);";
-        SZrString *sourceName = ZrCore_String_Create(state, "owned_prefix_syntax.zr", 22);
+            "resource class Holder {}\n"
+            "let owned: Unique<Holder> = own Holder();\n"
+            "let sharedRef: Shared<Holder>;\n"
+            "let weakRef: Weak<Holder>;";
+        SZrString *sourceName = ZrCore_String_Create(state, "resource_owner_types.zr", 23);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *classDecl;
-        SZrAstNode *borrowedDecl;
         SZrAstNode *uniqueOwnerDecl;
-        SZrAstNode *ownerForSharedDecl;
-        SZrAstNode *sharedOwnerDecl;
         SZrConstructExpression *uniqueConstruct;
-        SZrConstructExpression *sharedConstruct;
 
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(8, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
 
         classDecl = ast->data.script.statements->nodes[0];
         TEST_ASSERT_NOT_NULL(classDecl);
@@ -2635,33 +2401,15 @@ static void test_owned_class_and_prefixed_ownership_parsing(void) {
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_WEAK,
                               ast->data.script.statements->nodes[3]->data.variableDeclaration.typeInfo->ownershipQualifier);
 
-        borrowedDecl = ast->data.script.statements->nodes[4];
-        TEST_ASSERT_NOT_NULL(borrowedDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowedDecl->type);
-        TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED,
-                              borrowedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
-
-        uniqueOwnerDecl = ast->data.script.statements->nodes[5];
-        ownerForSharedDecl = ast->data.script.statements->nodes[6];
-        sharedOwnerDecl = ast->data.script.statements->nodes[7];
+        uniqueOwnerDecl = ast->data.script.statements->nodes[1];
         TEST_ASSERT_NOT_NULL(uniqueOwnerDecl);
-        TEST_ASSERT_NOT_NULL(ownerForSharedDecl);
-        TEST_ASSERT_NOT_NULL(sharedOwnerDecl);
 
         uniqueConstruct = &uniqueOwnerDecl->data.variableDeclaration.value->data.constructExpression;
-        sharedConstruct = &sharedOwnerDecl->data.variableDeclaration.value->data.constructExpression;
         TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, uniqueOwnerDecl->data.variableDeclaration.value->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, ownerForSharedDecl->data.variableDeclaration.value->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, sharedOwnerDecl->data.variableDeclaration.value->type);
         TEST_ASSERT_TRUE(uniqueConstruct->isNew);
-        TEST_ASSERT_FALSE(sharedConstruct->isNew);
         TEST_ASSERT_FALSE(uniqueConstruct->isUsing);
-        TEST_ASSERT_FALSE(sharedConstruct->isUsing);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, uniqueConstruct->ownershipQualifier);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED, sharedConstruct->ownershipQualifier);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE, uniqueConstruct->builtinKind);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_SHARED, sharedConstruct->builtinKind);
 
         ZrParser_Ast_Free(state, ast);
     }
@@ -2691,7 +2439,7 @@ static void test_legacy_async_surfaces_are_rejected(void) {
                                        "legacy_percent_async.zr",
                                        &diagnostic);
     TEST_ASSERT_TRUE(diagnostic.reported);
-    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy '%async' syntax"));
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy syntax '%async' was removed"));
     if (ast != ZR_NULL) {
         ZrParser_Ast_Free(state, ast);
     }
@@ -2702,7 +2450,7 @@ static void test_legacy_async_surfaces_are_rejected(void) {
                                        "legacy_percent_async_type.zr",
                                        &diagnostic);
     TEST_ASSERT_TRUE(diagnostic.reported);
-    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy '%async T' type syntax"));
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy syntax '%async' was removed"));
     if (ast != ZR_NULL) {
         ZrParser_Ast_Free(state, ast);
     }
@@ -2713,7 +2461,7 @@ static void test_legacy_async_surfaces_are_rejected(void) {
                                        "legacy_percent_await.zr",
                                        &diagnostic);
     TEST_ASSERT_TRUE(diagnostic.reported);
-    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy '%await' syntax"));
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy syntax '%await' was removed"));
     if (ast != ZR_NULL) {
         ZrParser_Ast_Free(state, ast);
     }
@@ -2745,12 +2493,12 @@ static void test_class_abstract_member_and_final_class_parsing(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "abstract class Base {\n"
-                "    pub abstract speak(): int;\n"
+                "    pub abstract fn speak(): int;\n"
                 "    pub abstract property score: int { get; }\n"
                 "    pub abstract @dispose(): int;\n"
                 "}\n"
                 "final class Leaf: Base {\n"
-                "    pub override speak(): int { return super.speak(); }\n"
+                "    pub override fn speak(): int { return super.speak(); }\n"
                 "    pub override property score: int { get { return super.score; } }\n"
                 "    pub override @dispose(): int { return super.dispose(); }\n"
                 "}";
@@ -2862,12 +2610,12 @@ static void test_class_member_modifier_and_super_member_parsing(void) {
         SZrState *state = create_test_state();
         const char *source =
                 "class Base {\n"
-                "    pub virtual speak(): int { return 1; }\n"
+                "    pub virtual fn speak(): int { return 1; }\n"
                 "}\n"
                 "class Fancy: Base {\n"
-                "    pub override final speak(): int { return super.speak(); }\n"
+                "    pub override final fn speak(): int { return super.speak(); }\n"
                 "    override final property score: int { get { return super.score; } }\n"
-                "    shadow ping(): int { return 2; }\n"
+                "    shadow fn ping(): int { return 2; }\n"
                 "}";
         SZrString *sourceName = ZrCore_String_Create(state, "class_modifier_super_member.zr", 30);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2922,42 +2670,33 @@ static void test_function_type_annotation_parsing(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "var direct: %func(int)->int = (x:int)->{ return x; };\n"
-                "var compat: %func(int)=>int = (x:int)=>{ return x; };\n"
-                "var sharedArray: %shared (%func(int)->string)[] = null;\n";
+                "var direct: fn(int) -> int = fn(x: int): int => x;\n"
+                "var alternate: fn(int) -> int = fn(x: int): int => x;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "function_type_annotation_test.zr", 32);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *directDecl;
         SZrAstNode *compatDecl;
-        SZrAstNode *sharedArrayDecl;
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 3);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
 
         directDecl = ast->data.script.statements->nodes[0];
         compatDecl = ast->data.script.statements->nodes[1];
-        sharedArrayDecl = ast->data.script.statements->nodes[2];
 
         TEST_ASSERT_NOT_NULL(directDecl);
         TEST_ASSERT_NOT_NULL(compatDecl);
-        TEST_ASSERT_NOT_NULL(sharedArrayDecl);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, directDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, compatDecl->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, sharedArrayDecl->type);
 
         TEST_ASSERT_NOT_NULL(directDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_NOT_NULL(compatDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_NOT_NULL(sharedArrayDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_NOT_NULL(directDecl->data.variableDeclaration.value);
         TEST_ASSERT_NOT_NULL(compatDecl->data.variableDeclaration.value);
         TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, directDecl->data.variableDeclaration.value->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, compatDecl->data.variableDeclaration.value->type);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
-                              sharedArrayDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
-        TEST_ASSERT_EQUAL_INT(1, sharedArrayDecl->data.variableDeclaration.typeInfo->dimensions);
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -2978,7 +2717,7 @@ static void test_function_type_missing_return_arrow_is_rejected(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "var broken: %func(int) = null;\n"
+                "var broken: fn(int) = null;\n"
                 "var ok = 1;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "function_type_missing_arrow_test.zr", 35);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3009,7 +2748,7 @@ static void test_type_query_accepts_function_type_expression(void) {
 
     {
         SZrState *state = create_test_state();
-        const char *source = "var funcType = %type(%func(int)->int);";
+        const char *source = "let funcType = typeid(fn(int) -> int);";
         SZrString *sourceName = ZrCore_String_Create(state, "type_query_function_type_test.zr", 32);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *decl;
@@ -3028,7 +2767,8 @@ static void test_type_query_accepts_function_type_expression(void) {
         expr = decl->data.variableDeclaration.value;
         TEST_ASSERT_NOT_NULL(expr);
         TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_QUERY_EXPRESSION, expr->type);
-        TEST_ASSERT_NOT_NULL(expr->data.typeQueryExpression.operand);
+        TEST_ASSERT_EQUAL_INT(ZR_TYPE_QUERY_CANONICAL_IDENTITY, expr->data.typeQueryExpression.kind);
+        TEST_ASSERT_NOT_NULL(expr->data.typeQueryExpression.typeOperand);
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -3042,8 +2782,8 @@ static void test_type_query_accepts_function_type_expression(void) {
 static void assert_function_type_value_alias_parsing_case(void) {
     SZrState *state = create_test_state();
     const char *source =
-            "var f = %func(int)->int;\n"
-            "var c:f = (x:int)->{ return x; };";
+            "var f = fn(int) -> int;\n"
+            "var c:f = fn(x:int)=>{ return x; };";
     SZrString *sourceName = ZrCore_String_Create(state, "type_value_alias_test.zr", 24);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     SZrAstNode *aliasDecl;
@@ -3079,7 +2819,7 @@ static void assert_array_type_value_alias_parsing_case(void) {
     SZrState *state = create_test_state();
     const char *source =
             "var cubeType = int[][][];\n"
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var jaggedType = container.Array<int[]>[];\n";
     SZrString *sourceName = ZrCore_String_Create(state, "array_type_value_alias_test.zr", 30);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3227,7 +2967,7 @@ static void test_simple_script(void) {
     
     TEST_INFO("Simple script parsing", 
               "Testing parsing of simple script with module and variable declarations");
-    const char* source = "%module(\"test\");\nvar x = 1;\nvar y = 2;";
+    const char* source = "module test;\nvar x = 1;\nvar y = 2;";
     SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
@@ -3494,9 +3234,9 @@ static void test_compiler_lambda_expression(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Lambda expression compilation", 
-              "Testing compilation of lambda expression: (x) => { return x + 1; }");
+              "Testing compilation of lambda expression in a current variable declaration");
     
-    const char* source = "(x) => { return x + 1; }";
+    const char* source = "let increment = fn(x: int): int => { return x + 1; };";
     SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
@@ -3576,7 +3316,7 @@ static void test_compiler_parenthesized_lambda_iife(void) {
               "Testing compilation of grouped lambda IIFE syntax: ((delta: int) -> { return delta + 1; })(3)");
 
     const char* source =
-        "var result = ((delta: int) -> {\n"
+        "var result = (fn(delta: int) => {\n"
         "    return delta + 1;\n"
         "})(3);\n"
         "return result;\n";
@@ -3622,13 +3362,13 @@ static void test_compiler_lambda_crlf_debug_metadata(void) {
               "Testing that CRLF sources still compile child lambdas with source references and execution locations");
 
     const char* source =
-        "%module \"artifact_baseline\";\r\n"
+        "module artifact_baseline;\r\n"
         "\r\n"
-        "pub var greet = () => {\r\n"
+        "pub var greet = fn() => {\r\n"
         "    return \"hello artifact\";\r\n"
         "};\r\n"
         "\r\n"
-        "var buildMessage = () => {\r\n"
+        "var buildMessage = fn() => {\r\n"
         "    return greet();\r\n"
         "};\r\n"
         "\r\n"
@@ -3728,7 +3468,7 @@ static void test_parser_cursor_restore_preserves_identifier_reference_locations(
     const char *testSummary = "Parser Cursor Restore Identifier Location Tracking";
     const char *source =
             "var seed = 0.0;\n"
-            "helper(seed: float) {\n"
+            "fn helper(seed: float): void {\n"
             "    var localValue = seed + 1.0;\n"
             "    return localValue;\n"
             "}\n";
@@ -3774,7 +3514,7 @@ static void test_parser_cursor_restore_preserves_identifier_reference_locations(
     seedRef = binaryNode->data.binaryExpression.left;
     TEST_ASSERT_NOT_NULL(seedRef);
     TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, seedRef->type);
-    assert_token_location_matches(&seedRef->location, 59u, 3, 22, 63u, 3, 26);
+    assert_token_location_matches(&seedRef->location, 68u, 3, 22, 72u, 3, 26);
 
     returnNode = blockNode->data.block.body->nodes[1];
     TEST_ASSERT_NOT_NULL(returnNode);
@@ -3782,7 +3522,7 @@ static void test_parser_cursor_restore_preserves_identifier_reference_locations(
     localValueRef = returnNode->data.returnStatement.expr;
     TEST_ASSERT_NOT_NULL(localValueRef);
     TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, localValueRef->type);
-    assert_token_location_matches(&localValueRef->location, 82u, 4, 12, 92u, 4, 22);
+    assert_token_location_matches(&localValueRef->location, 91u, 4, 12, 101u, 4, 22);
 
     ZrParser_Ast_Free(state, ast);
 
@@ -3796,8 +3536,8 @@ static void test_parser_call_callee_locations_cover_identifier_text(void) {
     SZrTestTimer timer;
     const char *testSummary = "Parser Call Callee Location Tracking";
     const char *source =
-            "callee(): void {}\n"
-            "use(): void {\n"
+            "fn callee(): void {}\n"
+            "fn use(): void {\n"
             "    callee();\n"
             "    swap<int>(slot);\n"
             "}\n";
@@ -3837,10 +3577,10 @@ static void test_parser_call_callee_locations_cover_identifier_text(void) {
     TEST_ASSERT_NOT_NULL(plainCall->data.primaryExpression.property);
     TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, plainCall->data.primaryExpression.property->type);
     assert_token_location_matches(&plainCall->data.primaryExpression.property->location,
-                                  36u,
+                                   42u,
                                   3,
                                   5,
-                                  42u,
+                                   48u,
                                   3,
                                   11);
 
@@ -3850,10 +3590,10 @@ static void test_parser_call_callee_locations_cover_identifier_text(void) {
     TEST_ASSERT_NOT_NULL(genericCall->data.primaryExpression.property);
     TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, genericCall->data.primaryExpression.property->type);
     assert_token_location_matches(&genericCall->data.primaryExpression.property->location,
-                                  50u,
+                                   56u,
                                   4,
                                   5,
-                                  54u,
+                                   60u,
                                   4,
                                   9);
 
@@ -3909,10 +3649,10 @@ static void test_compiler_break_continue(void) {
     TEST_DIVIDER();
 }
 
-// 测试 OUT 语句编译
-static void test_compiler_out_statement(void) {
+// 测试当前 yield 语句解析
+static void test_parser_yield_statement(void) {
     SZrTestTimer timer;
-    const char* testSummary = "Compiler Out Statement";
+    const char* testSummary = "Parser Yield Statement";
     
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -3920,35 +3660,28 @@ static void test_compiler_out_statement(void) {
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Out statement compilation", 
-              "Testing compilation of out statement in generator context");
-    
-    // OUT 语句需要在生成器表达式 {{ }} 中使用
-    // 但解析器可能还不支持生成器表达式作为顶层语句
-    // 这里先测试在一个块中使用
-    const char* source = "{{ out 42; }};";
+    TEST_INFO("Yield statement parsing",
+              "Testing the current iterator yield statement AST");
+
+    const char* source = "fn values(): zr.iteration.Iterator<int> { yield 42; }";
     SZrString* sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
-    if (ast == ZR_NULL) {
-        // OUT 语句可能需要在特定上下文中，暂时跳过测试
-        timer.endTime = clock();
-        printf("Skip - Cost Time:%.3fms - %s:\n Out statement requires generator expression context\n", 
-               0.0, testSummary);
-        destroy_test_state(state);
-        TEST_DIVIDER();
-        return;
-    }
-    
-    SZrFunction* function = ZrParser_Compiler_Compile(state, ast);
-    if (function == ZR_NULL) {
-        ZrParser_Ast_Free(state, ast);
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile out statement");
-        destroy_test_state(state);
-        return;
-    }
-    
-    // 验证编译成功（即使没有指令也算通过，因为 OUT 可能还未完全实现）
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(1U, ast->data.script.statements->count);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, ast->data.script.statements->nodes[0]->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]->data.functionDeclaration.body);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BLOCK,
+                          ast->data.script.statements->nodes[0]->data.functionDeclaration.body->type);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            ast->data.script.statements->nodes[0]->data.functionDeclaration.body->data.block.body->count);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_YIELD_STATEMENT,
+            ast->data.script.statements->nodes[0]->data.functionDeclaration.body->data.block.body->nodes[0]->type);
+
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
@@ -3971,8 +3704,8 @@ int main(void) {
     RUN_TEST(test_string_literal);
     RUN_TEST(test_boolean_literal);
     RUN_TEST(test_module_declaration);
-    RUN_TEST(test_reserved_module_declaration_variants);
-    RUN_TEST(test_legacy_module_keyword_is_rejected);
+    RUN_TEST(test_current_module_declaration_variants);
+    RUN_TEST(test_current_module_keyword_is_parsed);
     RUN_TEST(test_variable_declaration);
     RUN_TEST(test_access_modifier_parsing);
     
@@ -3984,10 +3717,10 @@ int main(void) {
     RUN_TEST(test_binary_expression);
     RUN_TEST(test_source_compile_rejects_reported_expression_error);
     RUN_TEST(test_unary_expression);
-    RUN_TEST(test_reserved_import_expression_variants);
-    RUN_TEST(test_reserved_import_expression_member_chain_parsing);
+    RUN_TEST(test_static_import_expression_uses_current_syntax);
+    RUN_TEST(test_static_import_expression_member_chain_parsing);
     RUN_TEST(test_reserved_type_expression_parsing);
-    RUN_TEST(test_legacy_import_syntax_is_rejected);
+    RUN_TEST(test_member_named_import_is_not_static_import);
     RUN_TEST(test_prototype_construction_expression_parsing);
     RUN_TEST(test_native_boxed_new_expression_parsing);
     RUN_TEST(test_generic_boxed_new_expression_parsing);
@@ -3995,11 +3728,12 @@ int main(void) {
     RUN_TEST(test_interface_variance_and_where_parsing);
     RUN_TEST(test_parameter_passing_mode_parsing);
     RUN_TEST(test_const_generic_construction_parsing);
-    RUN_TEST(test_percent_owned_and_ownership_expression_parsing);
-    RUN_TEST(test_ownership_intrinsic_generic_type_surface_parsing);
-    RUN_TEST(test_legacy_ownership_type_syntax_reports_migration_warning);
-    RUN_TEST(test_ownership_intrinsic_generic_constructor_surface_parsing);
-    RUN_TEST(test_percent_upgrade_and_release_expression_parsing);
+    RUN_TEST(test_resource_ownership_surface_parsing);
+    RUN_TEST(test_ownership_generic_type_surface_parsing);
+    RUN_TEST(test_legacy_ownership_type_syntax_is_rejected);
+    RUN_TEST(test_resource_ownership_lifecycle_surface_parsing);
+    RUN_TEST(test_legacy_percent_ownership_lifecycle_is_rejected);
+    RUN_TEST(test_reference_expression_parsing);
     RUN_TEST(test_conditional_expression);
     RUN_TEST(test_array_literal);
     RUN_TEST(test_object_literal);
@@ -4010,7 +3744,7 @@ int main(void) {
     
     // 声明测试
     RUN_TEST(test_function_declaration);
-    RUN_TEST(test_function_declaration_optional_func_keyword);
+    RUN_TEST(test_function_declaration_requires_fn_keyword);
     RUN_TEST(test_extern_block_parsing);
     RUN_TEST(test_extern_delegate_parameter_decorator_flags_parsing);
     RUN_TEST(test_top_level_class_decorator_parsing);
@@ -4018,7 +3752,7 @@ int main(void) {
     RUN_TEST(test_compile_time_public_class_decorator_parsing);
     RUN_TEST(test_compile_time_struct_decorator_parsing);
     RUN_TEST(test_compile_time_function_decorator_parsing);
-    RUN_TEST(test_extern_single_declaration_normalizes_to_block);
+    RUN_TEST(test_native_extern_single_declaration_normalizes_to_block);
     RUN_TEST(test_struct_declaration);
     RUN_TEST(test_field_scoped_using_field_parsing);
     RUN_TEST(test_field_scoped_using_field_requires_var_keyword);
@@ -4028,15 +3762,13 @@ int main(void) {
     RUN_TEST(test_using_keyword_statement_parsing);
     RUN_TEST(test_using_else_without_guard_reports_diagnostic);
     RUN_TEST(test_using_binder_invalid_reports_diagnostic);
-    RUN_TEST(test_using_import_guard_parsing_and_compile);
-    RUN_TEST(test_owned_class_and_prefixed_ownership_parsing);
+    RUN_TEST(test_resource_class_and_owner_types_parsing);
     RUN_TEST(test_class_abstract_member_and_final_class_parsing);
     RUN_TEST(test_class_member_modifier_and_super_member_parsing);
     RUN_TEST(test_legacy_async_surfaces_are_rejected);
     RUN_TEST(test_function_type_annotation_parsing);
     RUN_TEST(test_function_type_missing_return_arrow_is_rejected);
     RUN_TEST(test_type_query_accepts_function_type_expression);
-    RUN_TEST(test_type_value_alias_parsing_variants);
     
     TEST_MODULE_DIVIDER();
     printf("Statement Tests\n");
@@ -4070,7 +3802,7 @@ int main(void) {
     RUN_TEST(test_parser_cursor_restore_preserves_identifier_reference_locations);
     RUN_TEST(test_parser_call_callee_locations_cover_identifier_text);
     RUN_TEST(test_compiler_break_continue);
-    RUN_TEST(test_compiler_out_statement);
+    RUN_TEST(test_parser_yield_statement);
     
     return UNITY_END();
 }

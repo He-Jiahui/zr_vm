@@ -75,7 +75,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
 static TZrBool test_local_expression_query_joins_nested_loop_assignment_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, inner: bool): int {\n"
+        "fn calc(flag: bool, inner: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        while (inner) {\n"

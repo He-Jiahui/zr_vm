@@ -1368,18 +1368,6 @@ static TZrBool semantic_query_append_external_type_member_locations_recursive(SZ
                                                                                   uri,
                                                                                   result) || appended;
 
-        case ZR_AST_TEST_DECLARATION:
-            return semantic_query_append_external_type_member_locations_recursive(state, context,
-                                                                                  projectIndex,
-                                                                                  analyzer,
-                                                                                  astRoot,
-                                                                                  node->data.testDeclaration.body,
-                                                                                  content,
-                                                                                  contentLength,
-                                                                                  query,
-                                                                                  uri,
-                                                                                  result) || appended;
-
         case ZR_AST_STRUCT_METHOD:
             return semantic_query_append_external_type_member_locations_recursive(state, context,
                                                                                   projectIndex,

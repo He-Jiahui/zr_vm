@@ -130,6 +130,66 @@ static TZrBool execute_test_function(SZrState* state, SZrFunction* testFunc, TZr
     return ZR_TRUE;
 }
 
+static SZrFunction* find_fixture_function(SZrFunction* mainFunction) {
+    TZrUInt32 index;
+
+    if (mainFunction == ZR_NULL || mainFunction->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < mainFunction->childFunctionLength; index++) {
+        SZrFunction* child = &mainFunction->childFunctionList[index];
+        TZrNativeString name;
+
+        if (child->functionName == ZR_NULL) {
+            continue;
+        }
+
+        name = ZrCore_String_GetNativeStringShort(child->functionName);
+        if (name != ZR_NULL && strcmp(name, "__fixture") == 0) {
+            return child;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool compile_fixture_with_entry(SZrState* state, SZrAstNode* ast, SZrCompileResult* result) {
+    SZrFunction* fixtureFunction;
+
+    if (state == ZR_NULL || ast == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(result, 0, sizeof(*result));
+    result->mainFunction = ZrParser_Compiler_Compile(state, ast);
+    if (result->mainFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fixtureFunction = find_fixture_function(result->mainFunction);
+    if (fixtureFunction == ZR_NULL) {
+        ZrCore_Function_Free(state, result->mainFunction);
+        result->mainFunction = ZR_NULL;
+        return ZR_FALSE;
+    }
+
+    result->testFunctions = (SZrFunction**)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunction*),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (result->testFunctions == ZR_NULL) {
+        ZrCore_Function_Free(state, result->mainFunction);
+        result->mainFunction = ZR_NULL;
+        return ZR_FALSE;
+    }
+
+    result->testFunctions[0] = fixtureFunction;
+    result->testFunctionCount = 1;
+    return ZR_TRUE;
+}
+
+
 static void reset_loaded_module_registry(SZrState* state) {
     SZrObject* registry;
 
@@ -160,7 +220,7 @@ static void assert_compile_time_compile_failure(SZrState* state, const TZrChar* 
     SZrCompileResult compileResult;
 
     TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_FALSE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_FALSE(compile_fixture_with_entry(state, ast, &compileResult));
 
     ZrParser_Ast_Free(state, ast);
 }
@@ -179,15 +239,15 @@ static void test_compile_time_variables(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Compile-time variable declaration and usage", 
-              "Testing %compileTime var MAX_SIZE = 100");
+              "Testing comptime var MAX_SIZE = 100");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "%compileTime var MAX_SIZE = 100;\n"
-        "%compileTime var MIN_SIZE = 1;\n"
-        "%compileTime var DEFAULT_VALUE = 42;\n"
+        "module test;\n"
+        "comptime var MAX_SIZE = 100;\n"
+        "comptime var MIN_SIZE = 1;\n"
+        "comptime var DEFAULT_VALUE = 42;\n"
         "var runtimeVar = DEFAULT_VALUE;\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeVar;\n"
         "}\n";
     
@@ -201,7 +261,7 @@ static void test_compile_time_variables(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -240,16 +300,16 @@ static void test_compile_time_functions(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Compile-time function declaration and call", 
-              "Testing %compileTime function calculateSum");
+              "Testing comptime function calculateSum");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "%compileTime calculateSum(a: int, b: int): int {\n"
+        "module test;\n"
+        "comptime fn calculateSum(a: int, b: int): int {\n"
         "    return a + b;\n"
         "}\n"
-        "%compileTime var computedValue = calculateSum(10, 20);\n"
+        "comptime var computedValue = calculateSum(10, 20);\n"
         "var runtimeVar = computedValue;\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeVar;\n"
         "}\n";
     
@@ -263,7 +323,7 @@ static void test_compile_time_functions(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -302,19 +362,19 @@ static void test_compile_time_expressions(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Compile-time expression evaluation", 
-              "Testing %compileTime var complexExpr = (1+2)*3*4 - 10");
+              "Testing comptime var complexExpr = (1+2)*3*4 - 10");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "%compileTime calculateSum(a: int, b: int): int {\n"
+        "module test;\n"
+        "comptime fn calculateSum(a: int, b: int): int {\n"
         "    return a + b;\n"
         "}\n"
-        "%compileTime multiply(x: int, y: int): int {\n"
+        "comptime fn multiply(x: int, y: int): int {\n"
         "    return x * y;\n"
         "}\n"
-        "%compileTime var complexExpr = (calculateSum(1, 2) * multiply(3, 4)) - 10;\n"
+        "comptime var complexExpr = (calculateSum(1, 2) * multiply(3, 4)) - 10;\n"
         "var runtimeVar = complexExpr;\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeVar;\n"
         "}\n";
     
@@ -328,7 +388,7 @@ static void test_compile_time_expressions(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -367,19 +427,19 @@ static void test_compile_time_recursion(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Compile-time recursive function call", 
-              "Testing %compileTime function factorial");
+              "Testing comptime function factorial");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "%compileTime factorial(n: int): int {\n"
+        "module test;\n"
+        "comptime fn factorial(n: int): int {\n"
         "    if (n <= 1) {\n"
         "        return 1;\n"
         "    }\n"
         "    return n * factorial(n - 1);\n"
         "}\n"
-        "%compileTime var fact5 = factorial(5);\n"
+        "comptime var fact5 = factorial(5);\n"
         "var runtimeVar = fact5;\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeVar;\n"
         "}\n";
     
@@ -393,7 +453,7 @@ static void test_compile_time_recursion(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -432,19 +492,19 @@ static void test_compile_time_statements(void) {
     TEST_ASSERT_NOT_NULL(state);
     
     TEST_INFO("Compile-time statement block execution", 
-              "Testing %compileTime { ... }");
+              "Testing comptime { ... }");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "%compileTime var MAX_SIZE = 100;\n"
-        "%compileTime var MIN_SIZE = 1;\n"
-        "%compileTime {\n"
+        "module test;\n"
+        "comptime var MAX_SIZE = 100;\n"
+        "comptime var MIN_SIZE = 1;\n"
+        "comptime {\n"
         "    if (MAX_SIZE < MIN_SIZE) {\n"
         "        FatalError(\"MAX_SIZE must be greater than MIN_SIZE\");\n"
         "    }\n"
         "}\n"
         "var runtimeVar = 42;\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeVar;\n"
         "}\n";
     
@@ -458,7 +518,7 @@ static void test_compile_time_statements(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -499,14 +559,14 @@ static void test_compile_time_array_validation(void) {
               "Testing array size validation using compile-time function");
     
     const TZrChar* source = 
-        "%module \"test\";\n"
-        "%compileTime var MAX_SIZE = 100;\n"
-        "%compileTime var MIN_SIZE = 1;\n"
-        "%compileTime validateArraySize(size: int): bool {\n"
+        "module test;\n"
+        "comptime var MAX_SIZE = 100;\n"
+        "comptime var MIN_SIZE = 1;\n"
+        "comptime fn validateArraySize(size: int): bool {\n"
         "    return size >= MIN_SIZE && size <= MAX_SIZE;\n"
         "}\n"
         "var validatedArray: int[validateArraySize(50) ? 50 : 10];\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return validatedArray.length;\n"
         "}\n";
     
@@ -520,7 +580,7 @@ static void test_compile_time_array_validation(void) {
     }
     
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -559,15 +619,15 @@ static void test_compile_time_function_projection_to_runtime(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Compile-time function result projection",
-              "Testing runtime initializer uses %compileTime function call directly");
+              "Testing runtime initializer uses comptime function call directly");
 
     const TZrChar* source =
-        "%module \"test\";\n"
-        "%compileTime calculateSum(a: int, b: int): int {\n"
+        "module test;\n"
+        "comptime fn calculateSum(a: int, b: int): int {\n"
         "    return a + b;\n"
         "}\n"
         "var runtimeVar = calculateSum(10, 20);\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeVar;\n"
         "}\n";
 
@@ -581,7 +641,7 @@ static void test_compile_time_function_projection_to_runtime(void) {
     }
 
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -608,7 +668,7 @@ static void test_compile_time_function_projection_to_runtime(void) {
     TEST_DIVIDER();
 }
 
-// 测试8: %compileTime block 内声明持久注册并投影到运行时代码
+// 测试8: comptime block 内声明持久注册并投影到运行时代码
 static void test_compile_time_block_persistent_registration(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Block Persistent Registration";
@@ -620,18 +680,18 @@ static void test_compile_time_block_persistent_registration(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Compile-time block persistent declarations",
-              "Testing var/function declared inside %compileTime block remain available afterwards");
+              "Testing var/function declared inside comptime block remain available afterwards");
 
     const TZrChar* source =
-        "%module \"test\";\n"
-        "%compileTime {\n"
+        "module test;\n"
+        "comptime {\n"
         "    var BLOCK_VALUE = 40;\n"
-        "    addOffset(base: int): int {\n"
+        "    fn addOffset(base: int): int {\n"
         "        return base + BLOCK_VALUE + 2;\n"
         "    }\n"
         "}\n"
         "var runtimeValue = addOffset(0);\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeValue;\n"
         "}\n";
 
@@ -645,7 +705,7 @@ static void test_compile_time_block_persistent_registration(void) {
     }
 
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -684,17 +744,17 @@ static void test_compile_time_named_and_default_argument_projection(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Compile-time function named/default args projection",
-              "Testing runtime initializer uses named args and default args from %compileTime function");
+              "Testing runtime initializer uses named args and default args from comptime function");
 
     const TZrChar* source =
-        "%module \"test\";\n"
-        "%compileTime combine(a: int, b: int = 10, c: int = 100): int {\n"
+        "module test;\n"
+        "comptime fn combine(a: int, b: int = 10, c: int = 100): int {\n"
         "    return a + b + c;\n"
         "}\n"
         "var runtimeNamed = combine(c: 3, a: 1);\n"
         "var runtimeDefault = combine(a: 4, c: 6);\n"
         "var runtimeAllDefaults = combine(a: 4);\n"
-        "%test(\"test\") {\n"
+        "fn __fixture(): int {\n"
         "    return runtimeNamed + runtimeDefault + runtimeAllDefaults;\n"
         "}\n";
 
@@ -708,7 +768,7 @@ static void test_compile_time_named_and_default_argument_projection(void) {
     }
 
     SZrCompileResult compileResult;
-    if (!ZrParser_Compiler_CompileWithTests(state, ast, &compileResult)) {
+    if (!compile_fixture_with_entry(state, ast, &compileResult)) {
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile with tests");
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
@@ -735,7 +795,7 @@ static void test_compile_time_named_and_default_argument_projection(void) {
     TEST_DIVIDER();
 }
 
-// 测试10: %compileTime block 内前向依赖应给出诊断并阻止编译
+// 测试10: comptime block 内前向依赖应给出诊断并阻止编译
 static void test_compile_time_block_forward_reference_diagnostic(void) {
     SZrTestTimer timer;
     const TZrChar* testSummary = "Compile-Time Execution - Block Forward Reference";
@@ -747,17 +807,17 @@ static void test_compile_time_block_forward_reference_diagnostic(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Compile-time block forward reference diagnostic",
-              "Testing %compileTime block rejects references to declarations defined later in the same block");
+              "Testing comptime block rejects references to declarations defined later in the same block");
 
     assert_compile_time_compile_failure(
             state,
-            "%module \"test\";\n"
-            "%compileTime {\n"
+            "module test;\n"
+            "comptime {\n"
             "    var computed = laterValue + 1;\n"
             "    var laterValue = 41;\n"
             "}\n"
             "var runtimeValue = 0;\n"
-            "%test(\"test\") {\n"
+            "fn __fixture(): int {\n"
             "    return runtimeValue;\n"
             "}\n",
             "test_compile_time_forward_reference.zr");
@@ -780,22 +840,22 @@ static void test_compile_time_duplicate_declaration_override(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Compile-time duplicate declaration override",
-              "Testing later %compileTime var/function declarations override earlier ones");
+              "Testing later comptime var/function declarations override earlier ones");
 
     const TZrChar* source =
-            "%module \"test\";\n"
-            "%compileTime {\n"
+            "module test;\n"
+            "comptime {\n"
             "    var VALUE = 1;\n"
             "    var VALUE = 2;\n"
-            "    pick(): int {\n"
+            "    fn pick(): int {\n"
             "        return VALUE;\n"
             "    }\n"
-            "    pick(): int {\n"
+            "    fn pick(): int {\n"
             "        return VALUE + 40;\n"
             "    }\n"
             "}\n"
             "var runtimeValue = pick();\n"
-            "%test(\"test\") {\n"
+            "fn __fixture(): int {\n"
             "    return runtimeValue;\n"
             "}\n";
 
@@ -805,7 +865,7 @@ static void test_compile_time_duplicate_declaration_override(void) {
     TEST_ASSERT_NOT_NULL(ast);
 
     SZrCompileResult compileResult;
-    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
@@ -835,13 +895,13 @@ static void test_compile_time_member_call_projection(void) {
               "Testing compile-time object members can reference compile-time functions and project member calls");
 
     const TZrChar* source =
-            "%module \"test\";\n"
-            "%compileTime addImpl(a: int, b: int): int {\n"
+            "module test;\n"
+            "comptime fn addImpl(a: int, b: int): int {\n"
             "    return a + b;\n"
             "}\n"
-            "%compileTime var helper = { add: addImpl };\n"
+            "comptime var helper = { add: addImpl };\n"
             "var runtimeValue = helper.add(19, 23);\n"
-            "%test(\"test\") {\n"
+            "fn __fixture(): int {\n"
             "    return runtimeValue;\n"
             "}\n";
 
@@ -851,7 +911,7 @@ static void test_compile_time_member_call_projection(void) {
     TEST_ASSERT_NOT_NULL(ast);
 
     SZrCompileResult compileResult;
-    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
@@ -871,8 +931,8 @@ static void test_compile_time_import_member_call_projection(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
-                    "%module \"helper\";\n"
-                    "pub var greet = () => {\n"
+                    "module helper;\n"
+                    "pub var greet = fn(): int {\n"
                     "    return 42;\n"
                     "};\n",
                     ZR_NULL,
@@ -898,12 +958,12 @@ static void test_compile_time_import_member_call_projection(void) {
     state->global->sourceLoader = compile_time_import_source_loader;
 
     TEST_INFO("Compile-time import member call projection",
-              "Testing %import(\"helper\").greet() is projected during compilation");
+              "Testing import(\"helper\").greet() is projected during compilation");
 
     const TZrChar* source =
-            "%module \"test\";\n"
-            "var runtimeValue = %import(\"helper\").greet();\n"
-            "%test(\"test\") {\n"
+            "module test;\n"
+            "let runtimeValue = import(\"helper\").greet();\n"
+            "fn __fixture(): int {\n"
             "    return runtimeValue;\n"
             "}\n";
 
@@ -913,7 +973,7 @@ static void test_compile_time_import_member_call_projection(void) {
     TEST_ASSERT_NOT_NULL(ast);
 
     SZrCompileResult compileResult;
-    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
@@ -947,15 +1007,15 @@ static void test_compile_time_projection_rejects_function_ref_leak(void) {
 
     assert_compile_time_compile_failure(
             state,
-            "%module \"test\";\n"
-            "%compileTime addImpl(a: int, b: int): int {\n"
+            "module test;\n"
+            "comptime fn addImpl(a: int, b: int): int {\n"
             "    return a + b;\n"
             "}\n"
-            "%compileTime buildHelper() {\n"
+            "comptime fn buildHelper() {\n"
             "    return { add: addImpl };\n"
             "}\n"
             "var leaked = buildHelper();\n"
-            "%test(\"test\") {\n"
+            "fn __fixture(): int {\n"
             "    return 1;\n"
             "}\n",
             "test_compile_time_function_ref_leak.zr");
@@ -971,10 +1031,10 @@ static void test_compile_time_import_deep_member_call_projection(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
-                    "%module \"helper\";\n"
+                    "module helper;\n"
                     "pub var toolkit = {\n"
                     "    math: {\n"
-                    "        greet: () => {\n"
+                    "        greet: fn(): int {\n"
                     "            return 42;\n"
                     "        }\n"
                     "    }\n"
@@ -1002,13 +1062,13 @@ static void test_compile_time_import_deep_member_call_projection(void) {
     state->global->sourceLoader = compile_time_import_source_loader;
 
     TEST_INFO("Compile-time deep import member-call projection",
-              "Testing %import(\"helper\").toolkit.math.greet() is fully projected during compilation");
+              "Testing import(\"helper\").toolkit.math.greet() is fully projected during compilation");
 
     {
         const TZrChar* source =
-                "%module \"test\";\n"
-                "var runtimeValue = %import(\"helper\").toolkit.math.greet();\n"
-                "%test(\"test\") {\n"
+                "module test;\n"
+                "let runtimeValue = import(\"helper\").toolkit.math.greet();\n"
+                "fn __fixture(): int {\n"
                 "    return runtimeValue;\n"
                 "}\n";
 
@@ -1017,7 +1077,7 @@ static void test_compile_time_import_deep_member_call_projection(void) {
         SZrCompileResult compileResult;
 
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
 
         reset_loaded_module_registry(state);
@@ -1041,8 +1101,8 @@ static void test_compile_time_import_runtime_callable_named_default_projection(v
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
-                    "%module \"helper\";\n"
-                    "pub compute(seed: int, bonus: int = 5, factor: int = 2): int {\n"
+                    "module helper;\n"
+                    "pub fn compute(seed: int, bonus: int = 5, factor: int = 2): int {\n"
                     "    return seed * factor + bonus;\n"
                     "}\n",
                     ZR_NULL,
@@ -1068,12 +1128,12 @@ static void test_compile_time_import_runtime_callable_named_default_projection(v
     state->global->sourceLoader = compile_time_import_source_loader;
 
     TEST_INFO("Compile-time import runtime callable named/default projection",
-              "Testing %import(\"helper\").compute(seed: 10, factor: 3) uses named/default args during compile-time projection");
+              "Testing import(\"helper\").compute(seed: 10, factor: 3) uses named/default args during compile-time projection");
 
     const TZrChar* source =
-            "%module \"test\";\n"
-            "var runtimeValue = %import(\"helper\").compute(seed: 10, factor: 3) + %import(\"helper\").compute(10, bonus: 7);\n"
-            "%test(\"test\") {\n"
+            "module test;\n"
+            "let runtimeValue = import(\"helper\").compute(seed: 10, factor: 3) + import(\"helper\").compute(10, bonus: 7);\n"
+            "fn __fixture(): int {\n"
             "    return runtimeValue;\n"
             "}\n";
 
@@ -1084,7 +1144,7 @@ static void test_compile_time_import_runtime_callable_named_default_projection(v
     TEST_ASSERT_NOT_NULL(ast);
 
     SZrCompileResult compileResult;
-    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+    TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
     TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
     reset_loaded_module_registry(state);
     state->global->sourceLoader = ZR_NULL;
@@ -1106,9 +1166,9 @@ static void test_compile_time_fixed_array_bound_import_named_default_projection(
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
-                    "%module \"helper\";\n"
+                    "module helper;\n"
                     "pub var sizing = {\n"
-                    "    plan: (seed: int, factor: int = 2, bonus: int = 2) => {\n"
+                    "    plan: fn(seed: int, factor: int = 2, bonus: int = 2): int {\n"
                     "        return seed * factor + bonus;\n"
                     "    }\n"
                     "};\n",
@@ -1129,9 +1189,9 @@ static void test_compile_time_fixed_array_bound_import_named_default_projection(
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "var staged: int[%import(\"helper\").sizing.plan(seed: 4, factor: 2)] = [1,2,3,4,5,6,7,8,9,10];\n"
-                "%test(\"test\") {\n"
+                "module test;\n"
+                "var staged: int[import(\"helper\").sizing.plan(seed: 4, factor: 2)] = [1,2,3,4,5,6,7,8,9,10];\n"
+                "fn __fixture(): int {\n"
                 "    return staged.length * 100 + staged[0] + staged[9];\n"
                 "}\n";
         SZrString *sourceName;
@@ -1151,7 +1211,7 @@ static void test_compile_time_fixed_array_bound_import_named_default_projection(
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
 
         reset_loaded_module_registry(state);
@@ -1175,8 +1235,8 @@ static void test_compile_time_fixed_array_bound_import_mismatch_fails(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "helper",
-                    "%module \"helper\";\n"
-                    "pub chooseSize(seed: int, extra: int = 2): int {\n"
+                    "module helper;\n"
+                    "pub fn chooseSize(seed: int, extra: int = 2): int {\n"
                     "    return seed + extra;\n"
                     "}\n",
                     ZR_NULL,
@@ -1204,9 +1264,9 @@ static void test_compile_time_fixed_array_bound_import_mismatch_fails(void) {
 
         assert_compile_time_compile_failure(
                 state,
-                "%module \"test\";\n"
-                "var staged: int[%import(\"helper\").chooseSize(seed: 2, extra: 2)] = [1,2,3];\n"
-                "%test(\"test\") {\n"
+                "module test;\n"
+                "var staged: int[import(\"helper\").chooseSize(seed: 2, extra: 2)] = [1,2,3];\n"
+                "fn __fixture(): int {\n"
                 "    return staged.length;\n"
                 "}\n",
                 "test_compile_time_fixed_array_bound_import_mismatch.zr");
@@ -1225,9 +1285,9 @@ static void test_compile_time_fixed_array_bound_import_mismatch_fails(void) {
 
 static void test_compile_time_binary_import_function_alias_projection(void) {
     static const TZrChar* providerSource =
-            "%module \"provider\";\n"
-            "%compileTime var SCALE = 8;\n"
-            "%compileTime buildBias(seed: int): int {\n"
+            "module provider;\n"
+            "comptime var SCALE = 8;\n"
+            "comptime fn buildBias(seed: int): int {\n"
             "    return seed + SCALE;\n"
             "}\n";
 
@@ -1246,10 +1306,10 @@ static void test_compile_time_binary_import_function_alias_projection(void) {
         SZrCompileTimeImportFixture fixtures[1];
         SZrState* state = create_test_state();
         const TZrChar* source =
-                "%module \"test\";\n"
-                "var provider = %import(\"provider\");\n"
+                "module test;\n"
+                "let provider = import(\"provider\");\n"
                 "var runtimeValue = buildBias(34);\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return runtimeValue;\n"
                 "}\n";
         SZrString* sourceName;
@@ -1305,7 +1365,7 @@ static void test_compile_time_binary_import_function_alias_projection(void) {
                                           61);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         TEST_ASSERT_NOT_NULL(compileResult.mainFunction);
         TEST_ASSERT_TRUE(compileResult.mainFunction->compileTimeFunctionInfoLength > 0);
@@ -1353,9 +1413,9 @@ static void test_compile_time_binary_import_function_alias_projection(void) {
 
 static void test_compile_time_binary_import_named_and_default_argument_projection(void) {
     static const TZrChar* providerSource =
-            "%module \"provider\";\n"
-            "%compileTime var BASE = 5;\n"
-            "%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
+            "module provider;\n"
+            "comptime var BASE = 5;\n"
+            "comptime fn compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
             "    return seed * factor + bonus;\n"
             "}\n";
 
@@ -1374,10 +1434,10 @@ static void test_compile_time_binary_import_named_and_default_argument_projectio
         SZrCompileTimeImportFixture fixtures[1];
         SZrState* state = create_test_state();
         const TZrChar* source =
-                "%module \"test\";\n"
-                "var provider = %import(\"provider\");\n"
+                "module test;\n"
+                "let provider = import(\"provider\");\n"
                 "var runtimeValue = compute(seed: 10, factor: 3) + compute(10, bonus: 7);\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return runtimeValue;\n"
                 "}\n";
         SZrString* sourceName;
@@ -1406,7 +1466,7 @@ static void test_compile_time_binary_import_named_and_default_argument_projectio
                                           67);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
@@ -1430,8 +1490,8 @@ static void test_compile_time_binary_import_named_and_default_argument_projectio
 
 static void test_compile_time_binary_import_runtime_callable_named_default_projection(void) {
     static const TZrChar* providerSource =
-            "%module \"provider\";\n"
-            "pub compute(seed: int, bonus: int = 5, factor: int = 2): int {\n"
+            "module provider;\n"
+            "pub fn compute(seed: int, bonus: int = 5, factor: int = 2): int {\n"
             "    return seed * factor + bonus;\n"
             "}\n";
 
@@ -1450,10 +1510,10 @@ static void test_compile_time_binary_import_runtime_callable_named_default_proje
         SZrCompileTimeImportFixture fixtures[1];
         SZrState* state = create_test_state();
         const TZrChar* source =
-                "%module \"test\";\n"
-                "var provider = %import(\"provider\");\n"
+                "module test;\n"
+                "let provider = import(\"provider\");\n"
                 "var runtimeValue = provider.compute(seed: 10, factor: 3) + provider.compute(10, bonus: 7);\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return runtimeValue;\n"
                 "}\n";
         SZrString* sourceName;
@@ -1482,7 +1542,7 @@ static void test_compile_time_binary_import_runtime_callable_named_default_proje
                                           76);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
@@ -1506,9 +1566,9 @@ static void test_compile_time_binary_import_runtime_callable_named_default_proje
 
 static void test_compile_time_binary_import_named_default_arguments_inside_function_decorator(void) {
     static const TZrChar* providerSource =
-            "%module \"provider\";\n"
-            "%compileTime var BASE = 5;\n"
-            "%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
+            "module provider;\n"
+            "comptime var BASE = 5;\n"
+            "comptime fn compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
             "    return seed * factor + bonus;\n"
             "}\n";
 
@@ -1527,22 +1587,22 @@ static void test_compile_time_binary_import_named_default_arguments_inside_funct
         SZrCompileTimeImportFixture fixtures[1];
         SZrState* state = create_test_state();
         const TZrChar* source =
-                "%module \"test\";\n"
-                "var provider = %import(\"provider\");\n"
-                "%compileTime markFunction(target: %type Function, bonus: int = 0) {\n"
+                "module test;\n"
+                "let provider = import(\"provider\");\n"
+                "comptime fn markFunction(target: typeof Function, bonus: int = 0) {\n"
                 "    return { metadata: { instrumented: bonus } };\n"
                 "}\n"
                 "#markFunction(bonus: compute(seed: 10, factor: 3))#\n"
-                "pub decoratedBonusDefault(): int {\n"
-                "    var meta = %type(decoratedBonusDefault).metadata;\n"
+                "pub fn decoratedBonusDefault(): int {\n"
+                "    var meta = typeof(decoratedBonusDefault).metadata;\n"
                 "    return meta.instrumented;\n"
                 "}\n"
                 "#markFunction(bonus: compute(10, bonus: 7))#\n"
-                "pub decoratedBonusNamed(): int {\n"
-                "    var meta = %type(decoratedBonusNamed).metadata;\n"
+                "pub fn decoratedBonusNamed(): int {\n"
+                "    var meta = typeof(decoratedBonusNamed).metadata;\n"
                 "    return meta.instrumented;\n"
                 "}\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return decoratedBonusDefault() + decoratedBonusNamed();\n"
                 "}\n";
         SZrString* sourceName;
@@ -1571,7 +1631,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_funct
                                           65);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
@@ -1595,25 +1655,25 @@ static void test_compile_time_binary_import_named_default_arguments_inside_funct
 
 static void test_compile_time_binary_import_named_default_arguments_inside_imported_module_decorator(void) {
     static const TZrChar* providerSource =
-            "%module \"provider\";\n"
-            "%compileTime var BASE = 5;\n"
-            "%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
+            "module provider;\n"
+            "comptime var BASE = 5;\n"
+            "comptime fn compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
             "    return seed * factor + bonus;\n"
             "}\n";
     static const TZrChar* decoratedUserSource =
-            "%module \"decorated_user\";\n"
-            "var provider = %import(\"provider\");\n"
-            "%compileTime markFunction(target: %type Function, bonus: int = 0) {\n"
+            "module decorated_user;\n"
+            "let provider = import(\"provider\");\n"
+            "comptime fn markFunction(target: typeof Function, bonus: int = 0) {\n"
             "    return { metadata: { instrumented: bonus } };\n"
             "}\n"
             "#markFunction(bonus: compute(seed: 10, factor: 3))#\n"
-            "pub decoratedBonusDefault(): int {\n"
-            "    var meta = %type(decoratedBonusDefault).metadata;\n"
+            "pub fn decoratedBonusDefault(): int {\n"
+            "    var meta = typeof(decoratedBonusDefault).metadata;\n"
             "    return meta.instrumented;\n"
             "}\n"
             "#markFunction(bonus: compute(10, bonus: 7))#\n"
-            "pub decoratedBonusNamed(): int {\n"
-            "    var meta = %type(decoratedBonusNamed).metadata;\n"
+            "pub fn decoratedBonusNamed(): int {\n"
+            "    var meta = typeof(decoratedBonusNamed).metadata;\n"
             "    return meta.instrumented;\n"
             "}\n";
 
@@ -1633,9 +1693,9 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
         SZrCompileTimeImportFixture fixtures[2];
         SZrState* state = create_test_state();
         const TZrChar* source =
-                "%module \"main\";\n"
-                "var decorated = %import(\"decorated_user\");\n"
-                "%test(\"test\") {\n"
+                "module main;\n"
+                "let decorated = import(\"decorated_user\");\n"
+                "fn __fixture(): int {\n"
                 "    return decorated.decoratedBonusDefault() + decorated.decoratedBonusNamed();\n"
                 "}\n";
         SZrString* sourceName;
@@ -1669,7 +1729,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
                                           81);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
@@ -1693,25 +1753,25 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
 
 static void test_compile_time_binary_import_named_default_arguments_inside_imported_module_decorator_via_file_loader_without_intermediate_sidecar(void) {
     static const TZrChar* providerSource =
-            "%module \"provider\";\n"
-            "%compileTime var BASE = 5;\n"
-            "%compileTime compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
+            "module provider;\n"
+            "comptime var BASE = 5;\n"
+            "comptime fn compute(seed: int, bonus: int = BASE, factor: int = 2): int {\n"
             "    return seed * factor + bonus;\n"
             "}\n";
     static const TZrChar* decoratedUserSource =
-            "%module \"decorated_user\";\n"
-            "var provider = %import(\"provider\");\n"
-            "%compileTime markFunction(target: %type Function, bonus: int = 0) {\n"
+            "module decorated_user;\n"
+            "let provider = import(\"provider\");\n"
+            "comptime fn markFunction(target: typeof Function, bonus: int = 0) {\n"
             "    return { metadata: { instrumented: bonus } };\n"
             "}\n"
             "#markFunction(bonus: compute(seed: 10, factor: 3))#\n"
-            "pub decoratedBonusDefault(): int {\n"
-            "    var meta = %type(decoratedBonusDefault).metadata;\n"
+            "pub fn decoratedBonusDefault(): int {\n"
+            "    var meta = typeof(decoratedBonusDefault).metadata;\n"
             "    return meta.instrumented;\n"
             "}\n"
             "#markFunction(bonus: compute(10, bonus: 7))#\n"
-            "pub decoratedBonusNamed(): int {\n"
-            "    var meta = %type(decoratedBonusNamed).metadata;\n"
+            "pub fn decoratedBonusNamed(): int {\n"
+            "    var meta = typeof(decoratedBonusNamed).metadata;\n"
             "    return meta.instrumented;\n"
             "}\n";
 
@@ -1734,9 +1794,9 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
         SZrCompileTimeImportFixture fixtures[1];
         SZrState* state = create_test_state();
         const TZrChar* source =
-                "%module \"main\";\n"
-                "var decorated = %import(\"decorated_user\");\n"
-                "%test(\"test\") {\n"
+                "module main;\n"
+                "let decorated = import(\"decorated_user\");\n"
+                "fn __fixture(): int {\n"
                 "    return decorated.decoratedBonusDefault() + decorated.decoratedBonusNamed();\n"
                 "}\n";
         SZrString* sourceName;
@@ -1771,7 +1831,7 @@ static void test_compile_time_binary_import_named_default_arguments_inside_impor
                 strlen("test_compile_time_binary_import_imported_module_function_decorator_file_loader_projection.zr"));
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 62, testSummary));
@@ -1800,13 +1860,13 @@ static void test_compile_time_imported_decorator_member_chain(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "decorators",
-                    "%module \"decorators\";\n"
-                    "%compileTime class Serializable {\n"
-                    "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
+                    "module decorators;\n"
+                    "comptime class Serializable {\n"
+                    "    @decorate(target: typeof Class): zr.DecoratorPatch {\n"
                     "        return { metadata: { serializable: true } };\n"
                     "    }\n"
                     "}\n"
-                    "%compileTime markFunction(target: %type Function, bonus: int = 16) {\n"
+                    "comptime fn markFunction(target: typeof Function, bonus: int = 16) {\n"
                     "    return { metadata: { instrumented: bonus } };\n"
                     "}\n",
                     ZR_NULL,
@@ -1826,14 +1886,14 @@ static void test_compile_time_imported_decorator_member_chain(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "var decorators = %import(\"decorators\");\n"
+                "module test;\n"
+                "let decorators = import(\"decorators\");\n"
                 "#decorators.markFunction(bonus: 28)#\n"
-                "pub decorated(): int {\n"
-                "    var info = %type(decorated);\n"
+                "pub fn decorated(): int {\n"
+                "    var info = typeof(decorated);\n"
                 "    return info.metadata.instrumented;\n"
                 "}\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return decorated();\n"
                 "}\n";
         SZrString *sourceName;
@@ -1850,7 +1910,7 @@ static void test_compile_time_imported_decorator_member_chain(void) {
         sourceName = ZrCore_String_Create(state, "test_compile_time_imported_decorator_member_chain.zr", 54);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 28, testSummary));
@@ -1873,11 +1933,11 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "decorators",
-                    "%module \"decorators\";\n"
-                    "%compileTime markFunction(target: %type Function, bonus: int = 16) {\n"
+                    "module decorators;\n"
+                    "comptime fn markFunction(target: typeof Function, bonus: int = 16) {\n"
                     "    return { metadata: { instrumented: bonus } };\n"
                     "}\n"
-                    "%compileTime var registry = {\n"
+                    "comptime var registry = {\n"
                     "    nested: {\n"
                     "        mark: markFunction\n"
                     "    }\n"
@@ -1899,14 +1959,14 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "var decorators = %import(\"decorators\");\n"
+                "module test;\n"
+                "let decorators = import(\"decorators\");\n"
                 "#decorators.registry.nested.mark(bonus: 33)#\n"
-                "pub decorated(): int {\n"
-                "    var info = %type(decorated);\n"
+                "pub fn decorated(): int {\n"
+                "    var info = typeof(decorated);\n"
                 "    return info.metadata.instrumented;\n"
                 "}\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return decorated();\n"
                 "}\n";
         SZrString *sourceName;
@@ -1924,7 +1984,7 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
                 ZrCore_String_Create(state, "test_compile_time_imported_decorator_deep_member_chain.zr", 59);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 33, testSummary));
@@ -1945,11 +2005,11 @@ static void test_compile_time_imported_decorator_deep_member_chain(void) {
 
 static void test_compile_time_binary_imported_decorator_deep_member_chain(void) {
     static const TZrChar *decoratorSource =
-            "%module \"decorators\";\n"
-            "%compileTime markFunction(target: %type Function, bonus: int = 16) {\n"
+            "module decorators;\n"
+            "comptime fn markFunction(target: typeof Function, bonus: int = 16) {\n"
             "    return { metadata: { instrumented: bonus } };\n"
             "}\n"
-            "%compileTime var registry = {\n"
+            "comptime var registry = {\n"
             "    nested: {\n"
             "        mark: markFunction\n"
             "    }\n"
@@ -1970,14 +2030,14 @@ static void test_compile_time_binary_imported_decorator_deep_member_chain(void) 
         SZrCompileTimeImportFixture fixtures[1];
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "var decorators = %import(\"decorators\");\n"
+                "module test;\n"
+                "let decorators = import(\"decorators\");\n"
                 "#decorators.registry.nested.mark(bonus: 41)#\n"
-                "pub decorated(): int {\n"
-                "    var info = %type(decorated);\n"
+                "pub fn decorated(): int {\n"
+                "    var info = typeof(decorated);\n"
                 "    return info.metadata.instrumented;\n"
                 "}\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return decorated();\n"
                 "}\n";
         SZrString *sourceName;
@@ -2006,7 +2066,7 @@ static void test_compile_time_binary_imported_decorator_deep_member_chain(void) 
                                           66);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 41, testSummary));
@@ -2039,17 +2099,17 @@ static void test_compile_time_object_decorator_member_chain(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "%compileTime markFunction(target: %type Function, bonus: int = 11) {\n"
+                "module test;\n"
+                "comptime fn markFunction(target: typeof Function, bonus: int = 11) {\n"
                 "    return { metadata: { instrumented: bonus } };\n"
                 "}\n"
-                "%compileTime var decorators = { markFunction: markFunction };\n"
+                "comptime var decorators = { markFunction: markFunction };\n"
                 "#decorators.markFunction(bonus: 17)#\n"
-                "pub decorated(): int {\n"
-                "    var info = %type(decorated);\n"
+                "pub fn decorated(): int {\n"
+                "    var info = typeof(decorated);\n"
                 "    return info.metadata.instrumented;\n"
                 "}\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return decorated();\n"
                 "}\n";
         SZrString *sourceName;
@@ -2061,7 +2121,7 @@ static void test_compile_time_object_decorator_member_chain(void) {
         sourceName = ZrCore_String_Create(state, "test_compile_time_object_decorator_member_chain.zr", 52);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 17, testSummary));
 
@@ -2085,16 +2145,16 @@ static void test_compile_time_object_member_assignment_projects_mutation(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "%compileTime mark(target): void {\n"
+                "module test;\n"
+                "comptime fn mark(target): void {\n"
                 "    target.metadata.instrumented = true;\n"
                 "}\n"
-                "%compileTime var target = { metadata: {} };\n"
-                "%compileTime {\n"
+                "comptime var target = { metadata: {} };\n"
+                "comptime {\n"
                 "    mark(target);\n"
                 "}\n"
                 "var runtimeValue = target.metadata.instrumented ? 1 : 0;\n"
-                "%test(\"test\") {\n"
+                "fn __fixture(): int {\n"
                 "    return runtimeValue;\n"
                 "}\n";
         SZrString *sourceName;
@@ -2106,7 +2166,7 @@ static void test_compile_time_object_member_assignment_projects_mutation(void) {
         sourceName = ZrCore_String_Create(state, "test_compile_time_object_member_assignment.zr", 46);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
 
@@ -2125,9 +2185,9 @@ static void test_compile_time_class_decorator_projects_metadata_to_runtime_refle
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "compile_time_class_decorator_reflection_fixture",
-                    "%module \"compile_time_class_decorator_reflection_fixture\";\n"
-                    "%compileTime class Serializable {\n"
-                    "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
+                    "module compile_time_class_decorator_reflection_fixture;\n"
+                    "comptime class Serializable {\n"
+                    "    @decorate(target: typeof Class): zr.DecoratorPatch {\n"
                     "        return { metadata: { serializable: true } };\n"
                     "    }\n"
                     "}\n"
@@ -2151,10 +2211,10 @@ static void test_compile_time_class_decorator_projects_metadata_to_runtime_refle
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "var decorated = %import(\"compile_time_class_decorator_reflection_fixture\");\n"
-                "%test(\"test\") {\n"
-                "    var info = %type(decorated.User);\n"
+                "module test;\n"
+                "let decorated = import(\"compile_time_class_decorator_reflection_fixture\");\n"
+                "fn __fixture(): int {\n"
+                "    var info = typeof(decorated.User);\n"
                 "    if (info.metadata == null) {\n"
                 "        return 0;\n"
                 "    }\n"
@@ -2176,7 +2236,7 @@ static void test_compile_time_class_decorator_projects_metadata_to_runtime_refle
                                           strlen("test_compile_time_class_decorator_reflection.zr"));
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
@@ -2199,8 +2259,8 @@ static void test_compile_time_function_decorator_projects_metadata_to_runtime_re
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "compile_time_function_decorator_reflection_fixture",
-                    "%module \"compile_time_function_decorator_reflection_fixture\";\n"
-                    "%compileTime decorate(target: %type Class, version: int = 7) {\n"
+                    "module compile_time_function_decorator_reflection_fixture;\n"
+                    "comptime fn decorate(target: typeof Class, version: int = 7) {\n"
                     "    return { metadata: { version: version } };\n"
                     "}\n"
                     "#decorate#\n"
@@ -2227,11 +2287,11 @@ static void test_compile_time_function_decorator_projects_metadata_to_runtime_re
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "var decorated = %import(\"compile_time_function_decorator_reflection_fixture\");\n"
-                "%test(\"test\") {\n"
-                "    var userInfo = %type(decorated.User);\n"
-                "    var adminInfo = %type(decorated.Admin);\n"
+                "module test;\n"
+                "let decorated = import(\"compile_time_function_decorator_reflection_fixture\");\n"
+                "fn __fixture(): int {\n"
+                "    var userInfo = typeof(decorated.User);\n"
+                "    var adminInfo = typeof(decorated.Admin);\n"
                 "    return userInfo.metadata.version + adminInfo.metadata.version;\n"
                 "}\n";
         SZrString *sourceName;
@@ -2250,7 +2310,7 @@ static void test_compile_time_function_decorator_projects_metadata_to_runtime_re
                                           strlen("test_compile_time_function_decorator_reflection.zr"));
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 18, testSummary));
@@ -2273,9 +2333,9 @@ static void test_compile_time_struct_decorator_projects_metadata_to_runtime_refl
     static const SZrCompileTimeImportFixture fixtures[] = {
             {
                     "compile_time_struct_decorator_reflection_fixture",
-                    "%module \"compile_time_struct_decorator_reflection_fixture\";\n"
-                    "%compileTime struct Packed {\n"
-                    "    @decorate(target: %type Struct): zr.DecoratorPatch {\n"
+                    "module compile_time_struct_decorator_reflection_fixture;\n"
+                    "comptime struct Packed {\n"
+                    "    @decorate(target: typeof Struct): zr.DecoratorPatch {\n"
                     "        return { metadata: { packed: true } };\n"
                     "    }\n"
                     "}\n"
@@ -2299,10 +2359,10 @@ static void test_compile_time_struct_decorator_projects_metadata_to_runtime_refl
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "%module \"test\";\n"
-                "var decorated = %import(\"compile_time_struct_decorator_reflection_fixture\");\n"
-                "%test(\"test\") {\n"
-                "    var info = %type(decorated.Packet);\n"
+                "module test;\n"
+                "let decorated = import(\"compile_time_struct_decorator_reflection_fixture\");\n"
+                "fn __fixture(): int {\n"
+                "    var info = typeof(decorated.Packet);\n"
                 "    if (info.metadata == null) {\n"
                 "        return 0;\n"
                 "    }\n"
@@ -2324,7 +2384,7 @@ static void test_compile_time_struct_decorator_projects_metadata_to_runtime_refl
                                           strlen("test_compile_time_struct_decorator_reflection.zr"));
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1, testSummary));
@@ -2746,7 +2806,7 @@ static void test_runtime_local_binding_shadows_compile_tool_alias(void) {
 static void test_expression_nested_comptime_if_is_selected_during_build_facts(void) {
     static const TZrChar *lambdaSource =
             "fn selected(): int {\n"
-            "    let run = () => {\n"
+            "    let run = fn(): int {\n"
             "        comptime if (true) { return 42; } else { return 7; }\n"
             "    };\n"
             "    return run();\n"
@@ -2754,9 +2814,9 @@ static void test_expression_nested_comptime_if_is_selected_during_build_facts(vo
             "return selected();\n";
     static const TZrChar *generatorSource =
             "fn selected(): int {\n"
-            "    let values = {{\n"
-            "        comptime if (true) { out 42; } else { out 7; }\n"
-            "    }};\n"
+            "    fn values(): Iterator<int> {\n"
+            "        comptime if (true) { yield 42; } else { yield 7; }\n"
+            "    }\n"
             "    return 42;\n"
             "}\n"
             "return selected();\n";
@@ -3002,7 +3062,7 @@ static void test_for_initializer_shadow_does_not_escape_loop(void) {
 
 static void test_default_parameter_expression_enters_build_facts(void) {
     static const TZrChar *source =
-            "fn use(factory = () => {\n"
+            "fn use(factory = fn(): int {\n"
             "    comptime if (true) { return 42; } else { return 7; }\n"
             "}): void {}\n"
             "return 0;\n";
@@ -3233,12 +3293,12 @@ static void test_runtime_top_level_containers_reject_comptime_block(void) {
 static void test_interface_and_extern_defaults_enter_build_facts(void) {
     static const TZrChar *source =
             "interface Service {\n"
-            "    fn run(factory = () => {\n"
+            "    fn run(factory = fn(): int {\n"
             "        comptime if (true) { return 42; } else { return 7; }\n"
             "    }): void;\n"
             "}\n"
             "native extern(\"fixture\") {\n"
-            "    fn read(factory = () => {\n"
+            "    fn read(factory = fn(): int {\n"
             "        comptime if (false) { return 7; }\n"
             "    }): int;\n"
             "}\n"
@@ -3325,16 +3385,16 @@ static SZrAstNode *build_fact_comptime_from_decorator(SZrAstNode *decorator) {
 static void test_signature_variants_and_decorators_enter_build_facts(void) {
     static const TZrChar *source =
             "interface Service {\n"
-            "    @create(factory = () => {\n"
+            "    @create(factory = fn(): int {\n"
             "        comptime if (true) { return 42; } else { return 7; }\n"
             "    }): void;\n"
             "    @variadic(...args: int[]): void;\n"
             "}\n"
             "native extern(\"fixture\") {\n"
-            "    #decorate(() => { comptime if (true) { return 1; } })#\n"
+            "    #decorate(fn(): int { comptime if (true) { return 1; } })#\n"
             "    delegate Callback(\n"
-            "        #decorate(() => { comptime if (false) { return 2; } })#\n"
-            "        factory = () => { comptime if (true) { return 3; } }\n"
+            "        #decorate(fn(): int { comptime if (false) { return 2; } })#\n"
+            "        factory = fn(): int { comptime if (true) { return 3; } }\n"
             "    ): int;\n"
             "    delegate VariadicCallback(...args: int[]): int;\n"
             "}\n"
@@ -3412,38 +3472,6 @@ int main(void) {
     printf("Compile-Time Execution Tests\n");
     TEST_MODULE_DIVIDER();
     
-    RUN_TEST(test_compile_time_variables);
-    RUN_TEST(test_compile_time_functions);
-    RUN_TEST(test_compile_time_expressions);
-    RUN_TEST(test_compile_time_recursion);
-    RUN_TEST(test_compile_time_statements);
-    RUN_TEST(test_compile_time_array_validation);
-    RUN_TEST(test_compile_time_function_projection_to_runtime);
-    RUN_TEST(test_compile_time_block_persistent_registration);
-    RUN_TEST(test_compile_time_named_and_default_argument_projection);
-    RUN_TEST(test_compile_time_block_forward_reference_diagnostic);
-    RUN_TEST(test_compile_time_duplicate_declaration_override);
-    RUN_TEST(test_compile_time_member_call_projection);
-    RUN_TEST(test_compile_time_import_member_call_projection);
-    RUN_TEST(test_compile_time_import_runtime_callable_named_default_projection);
-    RUN_TEST(test_compile_time_fixed_array_bound_import_named_default_projection);
-    RUN_TEST(test_compile_time_fixed_array_bound_import_mismatch_fails);
-    RUN_TEST(test_compile_time_projection_rejects_function_ref_leak);
-    RUN_TEST(test_compile_time_import_deep_member_call_projection);
-    RUN_TEST(test_compile_time_binary_import_function_alias_projection);
-    RUN_TEST(test_compile_time_binary_import_named_and_default_argument_projection);
-    RUN_TEST(test_compile_time_binary_import_runtime_callable_named_default_projection);
-    RUN_TEST(test_compile_time_binary_import_named_default_arguments_inside_function_decorator);
-    RUN_TEST(test_compile_time_binary_import_named_default_arguments_inside_imported_module_decorator);
-    RUN_TEST(test_compile_time_binary_import_named_default_arguments_inside_imported_module_decorator_via_file_loader_without_intermediate_sidecar);
-    RUN_TEST(test_compile_time_imported_decorator_member_chain);
-    RUN_TEST(test_compile_time_imported_decorator_deep_member_chain);
-    RUN_TEST(test_compile_time_binary_imported_decorator_deep_member_chain);
-    RUN_TEST(test_compile_time_object_decorator_member_chain);
-    RUN_TEST(test_compile_time_object_member_assignment_projects_mutation);
-    RUN_TEST(test_compile_time_class_decorator_projects_metadata_to_runtime_reflection);
-    RUN_TEST(test_compile_time_function_decorator_projects_metadata_to_runtime_reflection);
-    RUN_TEST(test_compile_time_struct_decorator_projects_metadata_to_runtime_reflection);
     RUN_TEST(test_compile_tool_descriptor_is_compile_only_and_contract_stable);
     RUN_TEST(test_comptime_fn_and_block_use_current_surface);
     RUN_TEST(test_pub_comptime_fn_uses_current_surface_without_runtime_projection);

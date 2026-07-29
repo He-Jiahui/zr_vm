@@ -1,14 +1,5 @@
 #include "parser_internal.h"
 
-SZrAstNode *parse_reserved_await_expression(SZrParserState *ps) {
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
-        return ZR_NULL;
-    }
-
-    report_error(ps, "Legacy '%await' syntax is not supported; use 'await'");
-    return ZR_NULL;
-}
-
 SZrAstNode *parse_await_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *operand;
@@ -52,10 +43,6 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
         parse_access_modifier(ps);
     }
 
-    if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        report_error(ps, "Legacy '%async' syntax is not supported; use 'async fn ...: zr.task.Task<T>'");
-        return ZR_NULL;
-    }
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
         !current_identifier_equals(ps, "async")) {
         report_error(ps, "Expected 'async' before function declaration");
@@ -70,7 +57,6 @@ SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps) {
 
     declaration = &functionNode->data.functionDeclaration;
     declaration->isAsync = ZR_TRUE;
-    declaration->isLegacyAsyncSyntax = ZR_FALSE;
     functionNode->location = ZrParser_FileRange_Merge(startLoc, functionNode->location);
     return functionNode;
 }

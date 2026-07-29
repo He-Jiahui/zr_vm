@@ -27,8 +27,8 @@ enum EZrAstNodeType {
     ZR_AST_ENUM_DECLARATION,
     ZR_AST_FUNCTION_DECLARATION,
     ZR_AST_VARIABLE_DECLARATION,
-    ZR_AST_TEST_DECLARATION,
-    ZR_AST_COMPILE_TIME_DECLARATION,
+    /* Preserve the removed test-declaration wire value without retaining its AST kind. */
+    ZR_AST_COMPILE_TIME_DECLARATION = ZR_AST_VARIABLE_DECLARATION + 2,
     ZR_AST_EXTERN_BLOCK,
     ZR_AST_EXTERN_FUNCTION_DECLARATION,
     ZR_AST_EXTERN_DELEGATE_DECLARATION,
@@ -323,7 +323,7 @@ typedef struct SZrType {
     EZrReferenceAccess referenceAccess; // ref/ref readonly TypeRef
     TZrBool isScopedReference; // scoped 只约束 region，不参与 TypeId identity
     TZrBool isReadonlyView; // readonly T capability view
-    TZrBool isDecoratorPseudoType; // 是否来自 %type 反射伪类型注解
+    TZrBool isDecoratorPseudoType; // 是否来自 typeof 反射伪类型注解
     TZrBool isImplicitBuiltinType; // 是否由 parser 内部糖语法生成，可绕过显式导入检查
     
     // 数组大小约束
@@ -463,7 +463,6 @@ typedef struct SZrLambdaExpression {
     SZrFileRange bodyDelimiterLocation;
     TZrBool isExpressionBody;
     TZrBool isAsync;
-    TZrBool isLegacyAsyncSyntax;
 } SZrLambdaExpression;
 
 typedef struct SZrIfExpression {
@@ -523,8 +522,7 @@ typedef struct SZrImportExpression {
 } SZrImportExpression;
 
 typedef enum EZrTypeQueryKind {
-    ZR_TYPE_QUERY_LEGACY_PERCENT_TYPE = 0,
-    ZR_TYPE_QUERY_CANONICAL_IDENTITY,
+    ZR_TYPE_QUERY_CANONICAL_IDENTITY = 0,
     ZR_TYPE_QUERY_RUNTIME_DESCRIPTOR,
 } EZrTypeQueryKind;
 
@@ -632,17 +630,8 @@ typedef struct SZrFunctionDeclaration {
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
     SZrFileRange fnKeywordLocation;
     SZrFileRange returnDelimiterLocation;
-    TZrBool usesFnKeyword;
     TZrBool isAsync;
-    TZrBool isLegacyAsyncSyntax;
 } SZrFunctionDeclaration;
-
-typedef struct SZrTestDeclaration {
-    SZrIdentifier *name; // 可选，测试名称
-    SZrAstNodeArray *params; // Parameter 数组
-    SZrParameter *args; // 可变参数（可选）
-    SZrAstNode *body; // Block
-} SZrTestDeclaration;
 
 // 编译期声明类型
 enum EZrCompileTimeDeclarationType {
@@ -659,8 +648,7 @@ typedef enum EZrCompileTimeDeclarationType EZrCompileTimeDeclarationType;
 typedef struct SZrCompileTimeDeclaration {
     EZrCompileTimeDeclarationType declarationType;  // FUNCTION, VARIABLE, STATEMENT, EXPRESSION
     SZrAstNode *declaration;                       // 对应的声明节点（函数、变量等）
-    SZrAstNode *selectedBranch;                    // active branch for current-syntax comptime if
-    TZrBool isCurrentSyntax;
+    SZrAstNode *selectedBranch;                    // active branch for comptime if
     TZrBool isConditionalPruning;
     TZrBool buildFactsEvaluated;
 } SZrCompileTimeDeclaration;
@@ -668,7 +656,6 @@ typedef struct SZrCompileTimeDeclaration {
 typedef struct SZrExternBlock {
     SZrAstNode *libraryName; // StringLiteral
     SZrAstNodeArray *declarations; // ExternFunctionDeclaration / ExternDelegateDeclaration / Struct / Enum
-    TZrBool isNativeSyntax; // true for native extern(...), false for legacy %extern(...)
 } SZrExternBlock;
 
 typedef struct SZrExternFunctionDeclaration {
@@ -704,7 +691,7 @@ typedef struct SZrStructField {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
-    TZrBool isUsingManaged; // legacy field-scoped `%using` 标记；当前语义固定为 false
+    TZrBool reservedRemovedUsingManaged; // reserved ABI slot; must remain false
     TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
@@ -791,7 +778,7 @@ typedef struct SZrClassField {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
-    TZrBool isUsingManaged; // legacy field-scoped `%using` 标记；当前语义固定为 false
+    TZrBool reservedRemovedUsingManaged; // reserved ABI slot; must remain false
     TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrFileRange nameLocation;
@@ -1077,7 +1064,6 @@ typedef struct SZrAstNode {
         SZrInterfaceDeclaration interfaceDeclaration;
         SZrEnumDeclaration enumDeclaration;
         SZrFunctionDeclaration functionDeclaration;
-        SZrTestDeclaration testDeclaration;
         SZrCompileTimeDeclaration compileTimeDeclaration;
         SZrExternBlock externBlock;
         SZrExternFunctionDeclaration externFunctionDeclaration;

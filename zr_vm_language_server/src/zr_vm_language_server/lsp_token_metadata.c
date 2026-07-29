@@ -11,17 +11,29 @@ typedef struct SZrLspTokenMetadataDescriptor {
     const TZrChar *applicableTo;
 } SZrLspTokenMetadataDescriptor;
 
-static const SZrLspTokenMetadataDescriptor g_lspDirectiveTokens[] = {
-    {"%import", "keyword", "module import directive", "directive", "statement / expression prefix"},
-    {"%type", "keyword", "type query / reflection directive", "directive", "expression prefix"},
-    {"%module", "keyword", "module declaration directive", "directive", "module declaration"},
-    {"%test", "keyword", "test declaration directive", "directive", "test declaration"},
-    {"%compileTime", "keyword", "compile-time declaration directive", "directive", "compile-time declaration"},
-    {"%extern", "keyword", "FFI extern declaration directive", "directive", "extern declaration"},
-    {"%unique", "keyword", "ownership qualifier", "ownership", "ownership-qualified declarations"},
-    {"%shared", "keyword", "ownership qualifier", "ownership", "ownership-qualified declarations"},
-    {"%weak", "keyword", "ownership qualifier", "ownership", "ownership-qualified declarations"},
-    {"%borrowed", "keyword", "ownership qualifier", "ownership", "ownership-qualified declarations"}
+static const SZrLspTokenMetadataDescriptor g_lspKeywordTokens[] = {
+    {"let", "keyword", "immutable binding", "declaration", "local and module bindings"},
+    {"var", "keyword", "mutable binding", "declaration", "local and module bindings"},
+    {"fn", "keyword", "function declaration", "declaration", "functions and methods"},
+    {"ref", "keyword", "reference parameter qualifier", "parameter", "function parameters"},
+    {"in", "keyword", "input parameter qualifier", "parameter", "function parameters"},
+    {"out", "keyword", "output parameter qualifier", "parameter", "function parameters"},
+    {"scoped", "keyword", "scoped lifetime qualifier", "ownership", "references and parameters"},
+    {"readonly", "keyword", "readonly qualifier", "ownership", "references and parameters"},
+    {"init", "keyword", "initializer declaration", "lifecycle", "class and struct members"},
+    {"own", "keyword", "ownership operation", "ownership", "ownership expressions"},
+    {"move", "keyword", "move operation", "ownership", "ownership expressions"},
+    {"drop", "keyword", "release operation", "ownership", "ownership expressions"},
+    {"native", "keyword", "native declaration modifier", "ffi", "native declarations"},
+    {"extern", "keyword", "extern declaration modifier", "ffi", "native declarations"},
+    {"import", "keyword", "module import expression", "module", "module bindings"},
+    {"typeid", "keyword", "runtime type query", "reflection", "expressions"},
+    {"typeof", "keyword", "static type query", "reflection", "expressions"},
+    {"loadModule", "keyword", "dynamic module loader", "module", "expressions"},
+    {"loadPlugin", "keyword", "dynamic plugin loader", "module", "expressions"},
+    {"async", "keyword", "asynchronous function modifier", "async", "function declarations"},
+    {"await", "keyword", "asynchronous wait expression", "async", "expressions"},
+    {"yield", "keyword", "generator yield expression", "async", "function bodies"}
 };
 
 static const SZrLspTokenMetadataDescriptor g_lspMetaMethodTokens[] = {
@@ -88,14 +100,6 @@ static const SZrLspTokenMetadataDescriptor *token_metadata_find_descriptor(
     return ZR_NULL;
 }
 
-static const SZrLspTokenMetadataDescriptor *token_metadata_find_directive_descriptor(const TZrChar *text,
-                                                                                      TZrSize length) {
-    return token_metadata_find_descriptor(g_lspDirectiveTokens,
-                                          sizeof(g_lspDirectiveTokens) / sizeof(g_lspDirectiveTokens[0]),
-                                          text,
-                                          length);
-}
-
 static const SZrLspTokenMetadataDescriptor *token_metadata_find_meta_method_descriptor(const TZrChar *text,
                                                                                         TZrSize length) {
     return token_metadata_find_descriptor(g_lspMetaMethodTokens,
@@ -120,6 +124,30 @@ static void token_metadata_append_completion_descriptors(SZrState *state,
             continue;
         }
 
+        item = ZrLanguageServer_CompletionItem_New(state,
+                                                   descriptor->label,
+                                                   descriptor->kind,
+                                                   descriptor->detail,
+                                                   ZR_NULL,
+                                                   ZR_NULL);
+        if (item != ZR_NULL) {
+            ZrCore_Array_Push(state, result, &item);
+        }
+    }
+}
+
+static void token_metadata_append_keyword_prefix_completions(SZrState *state,
+                                                             SZrArray *result,
+                                                             const TZrChar *prefix,
+                                                             TZrSize prefixLength) {
+    for (TZrSize index = 0; index < sizeof(g_lspKeywordTokens) / sizeof(g_lspKeywordTokens[0]); index++) {
+        const SZrLspTokenMetadataDescriptor *descriptor = &g_lspKeywordTokens[index];
+        TZrSize labelLength = strlen(descriptor->label);
+        SZrCompletionItem *item;
+
+        if (prefixLength > labelLength || memcmp(descriptor->label, prefix, prefixLength) != 0) {
+            continue;
+        }
         item = ZrLanguageServer_CompletionItem_New(state,
                                                    descriptor->label,
                                                    descriptor->kind,
@@ -204,10 +232,6 @@ static TZrBool token_metadata_find_prefixed_identifier_at_offset(const TZrChar *
     return *outEnd > *outStart + 1;
 }
 
-TZrBool ZrLanguageServer_Lsp_IsKnownDirectiveToken(const TZrChar *text, TZrSize length) {
-    return token_metadata_find_directive_descriptor(text, length) != ZR_NULL;
-}
-
 TZrBool ZrLanguageServer_Lsp_IsKnownMetaMethodToken(const TZrChar *text, TZrSize length) {
     return token_metadata_find_meta_method_descriptor(text, length) != ZR_NULL;
 }
@@ -218,6 +242,7 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
                                                               TZrSize cursorOffset,
                                                               SZrArray *result) {
     TZrChar prefixChar;
+    TZrSize prefixStart;
 
     if (state == ZR_NULL || content == ZR_NULL || result == ZR_NULL || cursorOffset == 0 ||
         cursorOffset > contentLength) {
@@ -226,11 +251,7 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
 
     prefixChar = content[cursorOffset - 1];
     if (prefixChar == '%') {
-        token_metadata_append_completion_descriptors(state,
-                                                     result,
-                                                     g_lspDirectiveTokens,
-                                                     sizeof(g_lspDirectiveTokens) / sizeof(g_lspDirectiveTokens[0]));
-        return result->length > 0;
+        return ZR_FALSE;
     }
 
     if (prefixChar == '@') {
@@ -241,7 +262,18 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
         return result->length > 0;
     }
 
-    return ZR_FALSE;
+    if (!token_metadata_is_identifier_char(prefixChar)) {
+        return ZR_FALSE;
+    }
+    prefixStart = cursorOffset;
+    while (prefixStart > 0 && token_metadata_is_identifier_char(content[prefixStart - 1])) {
+        prefixStart--;
+    }
+    token_metadata_append_keyword_prefix_completions(state,
+                                                     result,
+                                                     content + prefixStart,
+                                                     cursorOffset - prefixStart);
+    return result->length > 0;
 }
 
 TZrBool ZrLanguageServer_Lsp_TryGetMetaMethodHover(SZrState *state,

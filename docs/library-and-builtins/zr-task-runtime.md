@@ -31,8 +31,8 @@ The module provides `currentScheduler` as the local provider. `yieldNow()` and
 `Task.result()` or by direct `await` inside an `async` callable.
 
 ```zr
-var task = %import("zr.task");
-var job = init task.Job<int>(() => { return 17; });
+let task = import("zr.task");
+var job = init task.Job<int>(fn() => { return 17; });
 var completion = task.currentScheduler.schedule<int>(job);
 return completion.result();
 ```

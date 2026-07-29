@@ -16,8 +16,8 @@ export const ZR_STRUCTURE_REFRESH_COMMAND = 'zr.structure.refresh';
 export const ZR_STRUCTURE_INSPECT_COMMAND = 'zr.__inspectStructureViews';
 export const ZR_STRUCTURE_OPEN_TARGET_COMMAND = 'zr.structure.openTarget';
 
-const MODULE_PATTERN = /^\s*module\s+(['"])([^'"]+)\1\s*;/m;
-const IMPORT_PATTERN = /(?:\bvar\s+([A-Za-z_]\w*)\s*=\s*)?%import\s*\(\s*(['"])([^'"]+)\2\s*\)/g;
+const MODULE_PATTERN = /^\s*module\s+(?:(['"])([^'"]+)\1|([A-Za-z_]\w*(?:[./][A-Za-z_]\w*)*))\s*;/m;
+const IMPORT_PATTERN = /(?:\b(?:let|var)\s+([A-Za-z_]\w*)\s*=\s*)?(?<![\w.%])import\b\s*\(\s*(['"])([^'"]+)\2\s*\)/g;
 const REFRESH_DEBOUNCE_MS = 150;
 
 type NodeType = 'info' | 'group' | 'file' | 'import' | 'declaration' | 'project' | 'module' | 'action';
@@ -459,7 +459,7 @@ function createImportNode(document: vscode.TextDocument, entry: ImportEntry): Tr
         nodeType: 'import',
         label: entry.moduleName,
         description: entry.alias ? `as ${entry.alias}` : undefined,
-        tooltip: entry.alias ? `${entry.alias} = %import("${entry.moduleName}")` : `%import("${entry.moduleName}")`,
+        tooltip: entry.alias ? `let ${entry.alias} = import("${entry.moduleName}")` : `import("${entry.moduleName}")`,
         uri: document.uri,
         icon: new vscode.ThemeIcon('package'),
         collapsibleState: vscode.TreeItemCollapsibleState.None,
@@ -583,8 +583,9 @@ function serializeNode(node: TreeNode): SerializedTreeNode {
 
 function parseModuleName(document: vscode.TextDocument): string {
     const match = MODULE_PATTERN.exec(document.getText());
-    if (match?.[2]) {
-        return match[2];
+    const moduleName = match?.[2] ?? match?.[3];
+    if (moduleName) {
+        return moduleName;
     }
 
     return removeExtension(lastPathSegment(document.uri.path));

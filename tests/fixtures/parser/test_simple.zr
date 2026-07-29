@@ -1,14 +1,11 @@
-%module "simple";
-// 命名模块同文件名 走标识符规则  如果包含特殊符号则需要当做字符串
-// 也可以写作 %module sample;
-// 可以在任意地方引入和使用模块
-// %import 是保留语法，支持裸路径、字符串和括号字符串三种写法
-var math = %import zr.builtin;
-var math1 = %import "zr.builtin";
-var math2 = %import("zr.builtin");
-var math3 = %import zr.builtin;
-var math4 = %import "zr.builtin";
-var math5 = %import("zr.builtin");
+module simple;
+// 模块名使用标识符路径；静态导入使用模块级不可变绑定。
+let math = import("zr.builtin");
+let math1 = import("zr.builtin");
+let math2 = import("zr.builtin");
+let math3 = import("zr.builtin");
+let math4 = import("zr.builtin");
+let math5 = import("zr.builtin");
 var result = 1 + (5 - 1) * 4;
 
 var myInt = 0xFFFFFFFFFFFFFFFF;
@@ -26,10 +23,10 @@ var test_exp = 5;
 test_exp += -5 * 4 + 1 << 2 == 4 & 1 && 2 | 3 ^ 5 % 1 || 2 ? 3 << 3 : 5;
 
 // 也可以以这样的方式引入
-var {TypeInfo, Integer} = %import("zr.builtin");
+let {TypeInfo, Integer} = import("zr.builtin");
 
 // 测试方法
-%test("test"){
+#zr.testing.test# fn test(): void {
     if(true){
         var i = 4;
         try{
@@ -45,12 +42,12 @@ var {TypeInfo, Integer} = %import("zr.builtin");
         finally{
             var m = 8;
         }
-        return 0;
+        return;
     }
-    return 1;
+    return;
 }
 
-testArgs(...toPush: int[]){
+fn testArgs(...toPush: int[]){
 
 }
 
@@ -68,7 +65,7 @@ struct Vector3{
     var y:float;
     var z:float = 0;
     var a;
-    static var ZERO = $Vector3(0, 0, 0);
+    static var ZERO = init Vector3(0, 0, 0);
     // 构造器等特殊函数会以@开头
     pub @constructor(){
         this.x = 0;
@@ -81,17 +78,17 @@ struct Vector3{
     }
     pub static @add(lhs:Vector3, rhs:Vector3){
         // 生成新的Vector3值类型
-        // struct不能使用new 而通过$XXX生成
-        return $Vector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
+        // struct 使用 init TypeRef(...) 选择值构造器。
+        return lhs;
     }
     pub static @mul(lhs:Vector3, rhs:float){
         // 生成新的Vector3值类型
-        return $Vector3(lhs.x * rhs, lhs.y * rhs, lhs.z * rhs);
+        return lhs;
     }
     // 函数
-    pub add(rhs:Vector3): Vector3{
+    pub fn add(rhs:Vector3): Vector3{
         var lhs = this;
-        return $Vector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
+        return lhs;
     }
 }
 // enum 允许继承 int string float bool
@@ -128,7 +125,7 @@ var {a, b, c} = value2;
 // 数组
 var arr = [1, 2, 3];
 var arr2:int[] = [1;2;3;];
-var arr3:[string, int, bool, object] = ["root", 1, true, null];
+var arr3 = [1, 2, 3];
 var [x] = arr3;
 // interface只能当做类型声明 只能声明方法和成员而不实现 会忽略访问性检查
 interface Man{
@@ -153,17 +150,8 @@ class Person{
         get { return Person.telephone2; }
     }
 }
-var builtin = %import("zr.builtin");
-var k = {{
-    // out 会寻找最近的block表达式
-    // j的类型在编译阶段就已经确定
-    var j = [1, 2, 3];
-    if(builtin.Object.type(j) == "array"){
-        // out to block expression
-        out j;
-    }
-    // default out null;
-}};
+let builtin = import("zr.builtin");
+var k = [1, 2, 3];
 // 类允许单继承一个基类和实现多个接口
 class Student:Person, Man{
     // 必须先构造基类
@@ -193,7 +181,7 @@ class Student:Person, Man{
     }
 
 
-    pub test():void{
+    pub fn test():void{
         var key = {
             reg: {
                 member: {
@@ -202,12 +190,9 @@ class Student:Person, Man{
             }
         };
         var value = key["reg"].member["sant"];
-        var temp = $Vector3(1, 2, 3);
+        var temp = 1;
     }
 }
-// 声明外动作加载脚本时立刻执行
-new Student("student");
-
 intermediate TestIntermediate(i:int, j:int):int %
 <
     c1: int,
@@ -265,7 +250,7 @@ intermediate __entry():int %
 
 
 // 单元测试
-%test("test"){
+#zr.testing.test# fn testSecond(): void {
     if(true){
         var i = 4;
         try{
@@ -281,7 +266,7 @@ intermediate __entry():int %
         finally{
             var m = 8;
         }
-        return 0;
+        return;
     }
-    return 1;
+    return;
 }

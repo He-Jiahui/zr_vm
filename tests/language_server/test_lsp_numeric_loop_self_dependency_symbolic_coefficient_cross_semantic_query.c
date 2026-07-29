@@ -165,7 +165,7 @@ static TZrBool run_assignment_range_case_at(SZrState *state,
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -193,7 +193,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_sign_c
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_nested_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -222,7 +222,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_nested
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_non_singleton_scale_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -251,7 +251,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_non_si
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_negative_scale_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -280,7 +280,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_negati
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_negative_non_singleton_scale_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -309,7 +309,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_negati
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_sign_crossing_scale_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -338,7 +338,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_sign_c
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_zero_inclusive_positive_scale_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"
@@ -367,7 +367,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_zero_i
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_zero_inclusive_negative_scale_sign_crossing_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = (seed % 3) + 1;\n"

@@ -1029,7 +1029,7 @@ static void test_semantic_token_symbol_after_utf8_prefix_uses_utf16_columns(void
 }
 
 static void test_semantic_token_text_scan_after_utf8_prefix_uses_utf16_columns(void) {
-    const TZrChar *content = "/* \xCE\xBB */ var system = %import(\"zr.system\");\n";
+    const TZrChar *content = "/* \xCE\xBB */ var system = import(\"zr.system\");\n";
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
     SZrState *state;

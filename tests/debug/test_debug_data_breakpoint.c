@@ -476,7 +476,7 @@ static void test_debug_data_breakpoint_stops_when_local_value_changes(void) {
     const char *moduleName = "tests.debug.data_breakpoint";
     const char *sourcePath = "debug_data_breakpoint_local.zr";
     const char *source =
-            "func watchTarget(): int {\n"
+            "fn watchTarget(): int {\n"
             "    var watched = 1;\n"
             "    var other = 10;\n"
             "    watched = watched + 1;\n"
@@ -515,9 +515,9 @@ static void test_debug_data_breakpoint_stops_when_upvalue_changes(void) {
     const char *moduleName = "tests.debug.data_breakpoint.upvalue";
     const char *sourcePath = "debug_data_breakpoint_upvalue.zr";
     const char *source =
-            "var run = () => {\n"
+            "var run = fn() => {\n"
             "    var captured = 4;\n"
-            "    var bump = () => {\n"
+            "    var bump = fn() => {\n"
             "        captured = captured + 3;\n"
             "        var observed = captured + 1;\n"
             "        return observed;\n"

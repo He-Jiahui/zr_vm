@@ -1,25 +1,25 @@
-%module "decorated_user";
+module "decorated_user";
 
-var decorators = %import("decorators");
+let decorators = import("decorators");
 
 #decorators.Serializable#
 pub class User {
     pub var id: int = 1;
 }
 
-#decorators.registry.nested.mark(bonus: %import("provider").compute(seed: 10, factor: 3))#
+#decorators.registry.nested.mark(bonus: import("provider").compute(seed: 10, factor: 3))#
 pub decoratedBonusComputed(): int {
-    var meta = %type(decoratedBonusComputed).metadata;
+    var meta = typeof(decoratedBonusComputed).metadata;
     return meta.instrumented;
 }
 
-#decorators.registry.nested.mark(bonus: %import("provider").compute(8))#
+#decorators.registry.nested.mark(bonus: import("provider").compute(8))#
 pub decoratedBonusDefault(): int {
-    var meta = %type(decoratedBonusDefault).metadata;
+    var meta = typeof(decoratedBonusDefault).metadata;
     return meta.instrumented;
 }
 
-pub var verifyDecorators = () => {
-    var typeMeta = %type(User).metadata;
+pub var verifyDecorators = fn() => {
+    var typeMeta = typeof(User).metadata;
     return (typeMeta.serializable ? 15 : 0) + decoratedBonusComputed() + decoratedBonusDefault();
 };

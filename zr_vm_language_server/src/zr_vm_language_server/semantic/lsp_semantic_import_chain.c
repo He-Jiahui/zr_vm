@@ -470,15 +470,6 @@ static TZrBool semantic_import_chain_resolve_recursive(SZrState *state,
                                                            node->data.functionDeclaration.body,
                                                            queryRange,
                                                            outHit);
-        case ZR_AST_TEST_DECLARATION:
-            return semantic_import_chain_resolve_recursive(state,
-                                                           provider,
-                                                           analyzer,
-                                                           projectIndex,
-                                                           bindings,
-                                                           node->data.testDeclaration.body,
-                                                           queryRange,
-                                                           outHit);
         case ZR_AST_STRUCT_METHOD:
             return semantic_import_chain_resolve_recursive(state,
                                                            provider,
@@ -1074,17 +1065,6 @@ static TZrBool semantic_import_chain_append_recursive(SZrState *state,
                                                           projectIndex,
                                                           bindings,
                                                           node->data.functionDeclaration.body,
-                                                          uri,
-                                                          targetModuleName,
-                                                          targetMemberName,
-                                                          result) || appended;
-        case ZR_AST_TEST_DECLARATION:
-            return semantic_import_chain_append_recursive(state,
-                                                          provider,
-                                                          analyzer,
-                                                          projectIndex,
-                                                          bindings,
-                                                          node->data.testDeclaration.body,
                                                           uri,
                                                           targetModuleName,
                                                           targetMemberName,

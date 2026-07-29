@@ -1,5 +1,5 @@
-var benchConfig = %import("bench_config");
-var {Array} = %import("zr.container");
+let benchConfig = import("bench_config");
+let {Array} = import("zr.container");
 
 var scale = benchConfig.scale();
 var length = 128 * scale;

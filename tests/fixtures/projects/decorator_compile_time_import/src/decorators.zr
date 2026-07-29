@@ -1,11 +1,11 @@
-%module "decorators";
+module "decorators";
 
-%compileTime class Serializable {
-    @decorate(target: %type Class): zr.DecoratorPatch {
+comptime class Serializable {
+    @decorate(target: typeof Class): zr.DecoratorPatch {
         return { metadata: { serializable: true } };
     }
 }
 
-%compileTime markFunction(target: %type Function, bonus: int = 16) {
+comptime markFunction(target: typeof Function, bonus: int = 16) {
     return { metadata: { instrumented: bonus } };
 }

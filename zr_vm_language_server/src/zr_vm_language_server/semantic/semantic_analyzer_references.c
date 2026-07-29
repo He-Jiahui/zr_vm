@@ -267,14 +267,6 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             break;
         }
 
-        case ZR_AST_TEST_DECLARATION: {
-            SZrTestDeclaration *testDecl = &node->data.testDeclaration;
-            if (testDecl->body != ZR_NULL) {
-                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, testDecl->body);
-            }
-            break;
-        }
-
         case ZR_AST_COMPILE_TIME_DECLARATION:
             if (node->data.compileTimeDeclaration.declaration != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,

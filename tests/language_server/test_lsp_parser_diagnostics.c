@@ -201,7 +201,7 @@ static void test_lsp_missing_call_close_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Missing Call Close Parser Diagnostic";
     const TZrChar *content =
-        "func pick(value: int): int { return value; }\n"
+        "fn pick(value: int): int { return value; }\n"
         "return pick(1 + 2;\n";
 
     TEST_START(summary);
@@ -244,7 +244,7 @@ static void test_lsp_missing_group_close_parser_diagnostic(SZrState *state) {
 static void test_lsp_missing_parameter_list_close_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Missing Parameter List Close Parser Diagnostic";
-    const TZrChar *content = "func pick(value: int: int { return value; }\n";
+    const TZrChar *content = "fn pick(value: int: int { return value; }\n";
 
     TEST_START(summary);
     if (!run_parser_diagnostic_case(state,
@@ -267,7 +267,7 @@ static void test_lsp_missing_method_parameter_list_close_parser_diagnostic(SZrSt
     const TZrChar *summary = "LSP Missing Method Parameter List Close Parser Diagnostic";
     const TZrChar *content =
         "class Box {\n"
-        "    func read(value: int: int { return value; }\n"
+        "    fn read(value: int: int { return value; }\n"
         "}\n";
 
     TEST_START(summary);
@@ -338,7 +338,7 @@ static void test_lsp_missing_extern_function_parameter_list_close_parser_diagnos
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Missing Extern Function Parameter List Close Parser Diagnostic";
     const TZrChar *content =
-        "%extern(\"fixture\") {\n"
+        "native extern(\"fixture\") {\n"
         "    NativeAdd(value: int: int;\n"
         "}\n";
 
@@ -362,7 +362,7 @@ static void test_lsp_missing_extern_delegate_parameter_list_close_parser_diagnos
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Missing Extern Delegate Parameter List Close Parser Diagnostic";
     const TZrChar *content =
-        "%extern(\"fixture\") {\n"
+        "native extern(\"fixture\") {\n"
         "    delegate Callback(value: int: int;\n"
         "}\n";
 
@@ -711,7 +711,7 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
                                     &timer,
                                     summary,
                                     "file:///parser_missing_module_declaration_semicolon.zr",
-                                    "%module \"main\"\n"
+                                    "module main\n"
                                     "var next = 2;\n",
                                     "missing_statement_semicolon",
                                     "Missing ';' after module declaration statement",
@@ -781,7 +781,7 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
                                     summary,
                                     "file:///parser_missing_using_semicolon.zr",
                                     "var resource = 1;\n"
-                                    "%using resource\n"
+                                    "using resource\n"
                                     "var next = 2;\n",
                                     "missing_statement_semicolon",
                                     "Missing ';' after using statement",
@@ -893,7 +893,7 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
                                     summary,
                                     "file:///parser_missing_class_method_semicolon.zr",
                                     "class Box {\n"
-                                    "    func read(value: int): int\n"
+                                    "    fn read(value: int): int\n"
                                     "}\n",
                                     "missing_statement_semicolon",
                                     "Missing ';' after class method statement",

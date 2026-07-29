@@ -1,19 +1,19 @@
-%module "decorated_user";
+module "decorated_user";
 
-var provider = %import("provider");
+let provider = import("provider");
 
-%compileTime markFunction(target: %type Function, bonus: int = 0) {
+comptime markFunction(target: typeof Function, bonus: int = 0) {
     return { metadata: { instrumented: bonus } };
 }
 
 #markFunction(bonus: compute(seed: 10, factor: 3))#
 pub decoratedBonusDefault(): int {
-    var meta = %type(decoratedBonusDefault).metadata;
+    var meta = typeof(decoratedBonusDefault).metadata;
     return meta.instrumented;
 }
 
 #markFunction(bonus: compute(10, bonus: 7))#
 pub decoratedBonusNamed(): int {
-    var meta = %type(decoratedBonusNamed).metadata;
+    var meta = typeof(decoratedBonusNamed).metadata;
     return meta.instrumented;
 }

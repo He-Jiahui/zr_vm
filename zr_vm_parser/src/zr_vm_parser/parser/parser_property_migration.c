@@ -1,6 +1,8 @@
 #include "parser_internal.h"
 #include "parser_property_migration.h"
 
+#include <ctype.h>
+
 typedef struct SZrLegacyPropertySlice {
     TZrSize start;
     TZrSize length;

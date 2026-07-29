@@ -1358,7 +1358,7 @@ TZrBool ZrParser_UnaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *nod
     SZrAstNode *arg = node->data.unaryExpression.argument;
     if (strcmp(op, "new") == 0 || strcmp(op, "$") == 0) {
         ZrParser_Compiler_Error(cs,
-                        "Legacy unary constructor syntax is no longer supported; use $target(...) or new target(...)",
+                        "Legacy unary constructor syntax is no longer supported; use init Type(...) for values or new Type(...) for GC classes",
                         node->location);
         return ZR_FALSE;
     }
@@ -1569,9 +1569,9 @@ TZrBool ZrParser_LambdaType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInf
 
 static const TZrChar *function_type_passing_mode_prefix(EZrParameterPassingMode passingMode) {
     switch (passingMode) {
-        case ZR_PARAMETER_PASSING_MODE_IN: return "%in ";
-        case ZR_PARAMETER_PASSING_MODE_OUT: return "%out ";
-        case ZR_PARAMETER_PASSING_MODE_REF: return "%ref ";
+        case ZR_PARAMETER_PASSING_MODE_IN: return "in ";
+        case ZR_PARAMETER_PASSING_MODE_OUT: return "out ";
+        case ZR_PARAMETER_PASSING_MODE_REF: return "ref ";
         case ZR_PARAMETER_PASSING_MODE_VALUE:
         default:
             return "";
@@ -1612,7 +1612,7 @@ static SZrString *build_callable_type_name_from_signature(SZrState *state,
     }
 
     buffer[0] = '\0';
-    if (!function_type_name_append(buffer, sizeof(buffer), &writeIndex, "%func(")) {
+    if (!function_type_name_append(buffer, sizeof(buffer), &writeIndex, "fn(")) {
         return ZR_NULL;
     }
 
@@ -1654,7 +1654,7 @@ static SZrString *build_callable_type_name_from_signature(SZrState *state,
         }
     }
 
-    if (!function_type_name_append(buffer, sizeof(buffer), &writeIndex, ")->")) {
+    if (!function_type_name_append(buffer, sizeof(buffer), &writeIndex, ") -> ")) {
         return ZR_NULL;
     }
 
@@ -2453,7 +2453,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
 
                 if (find_compiler_type_prototype_inference(cs, funcName) != ZR_NULL) {
                     ZrParser_Compiler_Error(cs,
-                                            "Prototype references are not callable; use $target(...) or new target(...)",
+                                            "Prototype references are not callable; use init Type(...) for values or new Type(...) for GC classes",
                                             firstMember->location);
                     ZrParser_InferredType_Free(cs->state, &baseType);
                     return ZR_FALSE;
@@ -2488,7 +2488,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                             cs, node, firstMember, funcTypeInfo, &resolvedSignature);
                     if (primary->members->count > 1) {
                         TZrBool success =
-                                infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);
+                                infer_primary_member_chain_type(cs, node, &baseType, primary->members, 1, ZR_FALSE, result);
                         if (success) {
                             type_inference_record_member_access_reference_fact(cs, node);
                         }
@@ -2537,7 +2537,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                             cs, node, firstMember, funcTypeInfo, &resolvedSignature);
                     if (primary->members->count > 1) {
                         TZrBool success =
-                                infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);
+                                infer_primary_member_chain_type(cs, node, &baseType, primary->members, 1, ZR_FALSE, result);
                         if (success) {
                             type_inference_record_member_access_reference_fact(cs, node);
                         }
@@ -2579,6 +2579,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                                                           basePrototypeTypeName);
                         }
                         if (infer_primary_member_chain_type(cs,
+                                                            node,
                                                             &baseType,
                                                             primary->members,
                                                             0,
@@ -2629,6 +2630,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
             // 如果有members，需要根据members推断最终类型
             if (primary->members != ZR_NULL && primary->members->count > 0) {
                 TZrBool success = infer_primary_member_chain_type(cs,
+                                                                  node,
                                                                   &baseType,
                                                                   primary->members,
                                                                   0,

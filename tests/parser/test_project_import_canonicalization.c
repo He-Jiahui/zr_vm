@@ -354,11 +354,11 @@ static TZrBool prepare_project_import_fixture(SZrProjectImportFixture *fixture) 
             "  }\n"
             "}\n";
     static const TZrChar *mainContent =
-            "var localMath = %import(\".helper.math\");\n"
-            "var localMathAgain = %import(\"feature/app/helper/math\");\n"
-            "var sharedHash = %import(\"@shared.crypto.hash\");\n"
+            "let localMath = import(\".helper.math\");\n"
+            "let localMathAgain = import(\"feature/app/helper/math\");\n"
+            "let sharedHash = import(\"@shared.crypto.hash\");\n"
             "\n"
-            "pub func run(): i32 {\n"
+            "pub fn run(): i32 {\n"
             "    return localMath.answer + localMathAgain.answer + sharedHash.seed;\n"
             "}\n";
     static const TZrChar *helperContent =
@@ -431,14 +431,14 @@ static TZrBool prepare_project_dependency_import_fixture(SZrProjectDependencyImp
             "  \"version\": \"1.0.0\"\n"
             "}\n";
     static const TZrChar *rootMainContent =
-            "var math = %import(\"&math.ops.sum\");\n"
-            "pub func run(): i32 { return 1; }\n";
+            "let math = import(\"&math.ops.sum\");\n"
+            "pub fn run(): i32 { return 1; }\n";
     static const TZrChar *mathMainContent =
-            "var core = %import(\"@core.util\");\n"
-            "var helper = %import(\".helper\");\n"
-            "var bare = %import(\"bare.local\");\n"
-            "var trig = %import(\"&trig.wave\");\n"
-            "pub func run(): i32 { return 2; }\n";
+            "let core = import(\"@core.util\");\n"
+            "let helper = import(\".helper\");\n"
+            "let bare = import(\"bare.local\");\n"
+            "let trig = import(\"&trig.wave\");\n"
+            "pub fn run(): i32 { return 2; }\n";
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar sourceRoot[ZR_TESTS_PATH_MAX];
     TZrChar mathProjectPath[ZR_TESTS_PATH_MAX];
@@ -522,7 +522,7 @@ static TZrBool prepare_project_dependency_import_version_range_fixture(SZrProjec
             "  \"version\": \"1.2.3\"\n"
             "}\n";
     static const TZrChar *rootMainContent =
-            "var math = %import(\"&math.ops.sum\");\n"
+            "let math = import(\"&math.ops.sum\");\n"
             "return math.value;\n";
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar sourceRoot[ZR_TESTS_PATH_MAX];
@@ -590,7 +590,7 @@ static TZrBool prepare_project_assembly_reference_import_fixture(SZrProjectDepen
             "  \"entry\": \"ops/sum\"\n"
             "}\n";
     static const TZrChar *rootMainContent =
-            "var math = %import(\"&mathLocal.ops.sum\");\n"
+            "let math = import(\"&mathLocal.ops.sum\");\n"
             "return math.value;\n";
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
     TZrChar sourceRoot[ZR_TESTS_PATH_MAX];
@@ -2069,7 +2069,7 @@ static void test_using_import_guard_runtime_rejects_signature_hash_mismatch(void
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2106,7 +2106,7 @@ static void test_using_import_guard_runtime_rejects_target_token_mismatch(void) 
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2143,7 +2143,7 @@ static void test_using_import_guard_runtime_rejects_target_module_hash_mismatch(
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2181,7 +2181,7 @@ static void test_required_import_runtime_rejects_signature_hash_mismatch(void) {
     const TZrChar *message;
     SZrTypeValue resultValue;
     static const TZrChar *source =
-            "var helper = %import(\".helper.math\");\n"
+            "let helper = import(\".helper.math\");\n"
             "return helper.answer;\n";
 
     TEST_ASSERT_TRUE(prepare_project_import_fixture(&fixture));
@@ -2221,7 +2221,7 @@ static void test_required_import_runtime_reports_target_token_mismatch(void) {
     const TZrChar *message;
     SZrTypeValue resultValue;
     static const TZrChar *source =
-            "var helper = %import(\".helper.math\");\n"
+            "let helper = import(\".helper.math\");\n"
             "return helper.answer;\n";
 
     TEST_ASSERT_TRUE(prepare_project_import_fixture(&fixture));
@@ -2268,7 +2268,7 @@ static void test_required_import_runtime_rejects_target_module_hash_mismatch(voi
     const TZrChar *message;
     SZrTypeValue resultValue;
     static const TZrChar *source =
-            "var helper = %import(\".helper.math\");\n"
+            "let helper = import(\".helper.math\");\n"
             "return helper.answer;\n";
 
     TEST_ASSERT_TRUE(prepare_project_import_fixture(&fixture));
@@ -2310,7 +2310,7 @@ static void test_required_import_runtime_rejects_assembly_ref_version_mismatch(v
     const TZrChar *message;
     SZrTypeValue resultValue;
     static const TZrChar *source =
-            "var helper = %import(\".helper.math\");\n"
+            "let helper = import(\".helper.math\");\n"
             "return helper.answer;\n";
 
     TEST_ASSERT_TRUE(prepare_project_import_fixture(&fixture));
@@ -2357,7 +2357,7 @@ static void test_required_import_runtime_resolves_same_name_signature_candidate(
     TZrSize helperLength = 0;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "var helper = %import(\".helper.math\");\n"
+            "let helper = import(\".helper.math\");\n"
             "return helper.pick(true);\n";
     static const TZrChar *helperContent =
             "pub func pick(value: int): int {\n"
@@ -2406,7 +2406,7 @@ static void test_using_import_guard_runtime_rejects_signature_blob_mismatch_with
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2443,7 +2443,7 @@ static void test_using_import_guard_runtime_consumes_module_ref_signature_blob(v
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2481,7 +2481,7 @@ static void test_using_import_guard_runtime_rejects_module_ref_target_token_mism
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2519,7 +2519,7 @@ static void test_using_import_guard_runtime_rejects_module_ref_owner_chain_misma
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2557,7 +2557,7 @@ static void test_using_import_guard_runtime_uses_module_ref_identity_when_effect
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2655,7 +2655,7 @@ static void test_using_import_guard_runtime_verifies_module_ref_table_without_en
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2700,7 +2700,7 @@ static void test_using_import_guard_runtime_records_module_ref_binding_result(vo
     TZrMetadataToken memberRefToken;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2770,7 +2770,7 @@ static void test_using_import_guard_runtime_unavailable_provider_falls_back_to_e
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var helper = %import(\".helper.math\")) {\n"
+            "using (let helper = import(\".helper.math\")) {\n"
             "    return helper.answer;\n"
             "} else {\n"
             "    return 77;\n"
@@ -2844,7 +2844,7 @@ static void test_using_import_guard_records_native_target_signature_hash(void) {
     SZrFunction *function;
     SZrString *sourceName;
     static const TZrChar *source =
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (let math = import(\"zr.math\")) {\n"
             "    return math.abs(-3.0);\n"
             "} else {\n"
             "    return 0.0;\n"
@@ -2878,7 +2878,7 @@ static void test_using_import_guard_runtime_rejects_native_target_signature_hash
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (let math = import(\"zr.math\")) {\n"
             "    math.abs(-3.0);\n"
             "    return 40;\n"
             "} else {\n"
@@ -2915,7 +2915,7 @@ static void test_required_import_runtime_accepts_native_module_link_signature(vo
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "var system = %import(\"zr.system\");\n"
+            "let system = import(\"zr.system\");\n"
             "var console = system.console;\n"
             "return 1;\n";
 
@@ -2950,7 +2950,7 @@ static void test_required_import_runtime_reports_native_provider_unavailable(voi
     const TZrChar *message;
     SZrTypeValue resultValue;
     static const TZrChar *source =
-            "var math = %import(\"zr.math\");\n"
+            "let math = import(\"zr.math\");\n"
             "return math.abs(-3.0);\n";
 
     TEST_ASSERT_TRUE(prepare_project_import_fixture(&fixture));
@@ -2990,7 +2990,7 @@ static void test_required_import_runtime_reports_source_loader_attempts(void) {
     const TZrChar *message;
     SZrTypeValue resultValue;
     static const TZrChar *source =
-            "var helper = %import(\".helper.math\");\n"
+            "let helper = import(\".helper.math\");\n"
             "return helper.answer;\n";
 
     TEST_ASSERT_TRUE(prepare_project_import_fixture(&fixture));
@@ -3418,7 +3418,7 @@ static void test_project_derive_current_module_key_accepts_mixed_windows_separat
 static void test_project_compile_rejects_explicit_module_key_path_mismatch(void) {
     SZrProjectImportFixture fixture;
     static const TZrChar *mismatchSource =
-            "%module(\"feature/other/main\");\n"
+            "module(\"feature/other/main\");\n"
             "pub var value = 1;\n";
     SZrGlobalState *global;
     SZrState *state;

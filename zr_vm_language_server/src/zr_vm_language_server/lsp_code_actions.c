@@ -78,7 +78,8 @@ static TZrBool lsp_editor_line_declares_import_alias(const TZrChar *line,
     while (cursor < length && (line[cursor] == ' ' || line[cursor] == '\t')) {
         cursor++;
     }
-    if (length - cursor < 4 || memcmp(line + cursor, "var ", 4) != 0) {
+    if (length - cursor < 4 ||
+        (memcmp(line + cursor, "let ", 4) != 0 && memcmp(line + cursor, "var ", 4) != 0)) {
         return ZR_FALSE;
     }
     cursor += 4;
@@ -92,7 +93,7 @@ static TZrBool lsp_editor_line_declares_import_alias(const TZrChar *line,
     if (cursor < length && lsp_editor_is_identifier_part(line[cursor])) {
         return ZR_FALSE;
     }
-    return lsp_editor_line_contains_text(line + cursor, length - cursor, "%import(");
+    return lsp_editor_line_contains_text(line + cursor, length - cursor, "import(");
 }
 
 static TZrSize lsp_editor_skip_non_code_span_on_line(const TZrChar *content,
@@ -478,7 +479,7 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
     }
 
     titleLength = strlen("Import ") + strlen(candidate.moduleName) + strlen(" as ") + strlen(candidate.alias);
-    editTextLength = strlen("var ") + strlen(candidate.alias) + strlen(" = %import(\"") +
+    editTextLength = strlen("let ") + strlen(candidate.alias) + strlen(" = import(\"") +
                      strlen(candidate.moduleName) + strlen("\");\n");
     title = (TZrChar *)malloc(titleLength + 1);
     editText = (TZrChar *)malloc(editTextLength + 1);
@@ -488,7 +489,7 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
         return ZR_FALSE;
     }
     snprintf(title, titleLength + 1, "Import %s as %s", candidate.moduleName, candidate.alias);
-    snprintf(editText, editTextLength + 1, "var %s = %%import(\"%s\");\n", candidate.alias, candidate.moduleName);
+    snprintf(editText, editTextLength + 1, "let %s = import(\"%s\");\n", candidate.alias, candidate.moduleName);
 
     action = (SZrLspCodeAction *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspCodeAction));
     if (action == ZR_NULL) {

@@ -512,7 +512,6 @@ static void compiler_collect_function_like_return_type(SZrCompilerState *cs,
         case ZR_AST_CLASS_DECLARATION:
         case ZR_AST_STRUCT_DECLARATION:
         case ZR_AST_INTERFACE_DECLARATION:
-        case ZR_AST_TEST_DECLARATION:
             return;
 
         default:

@@ -446,6 +446,10 @@ ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspRange_ToFileRangeWithCon
                                                                                      const TZrChar *content,
                                                                                      TZrSize contentLength);
 
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(
+        SZrFileRange range,
+        SZrLspRange *outRange);
+
 // 转换 FilePosition 到 LspPosition（带文件内容）
 ZR_LANGUAGE_SERVER_API SZrLspPosition ZrLanguageServer_LspPosition_FromFilePositionWithContent(
         SZrFilePosition filePosition,

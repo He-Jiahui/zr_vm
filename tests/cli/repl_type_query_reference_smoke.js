@@ -25,10 +25,10 @@ async function main() {
         output += chunk.toString();
     });
 
-    child.stdin.write('var owner: %unique int;\n');
+    child.stdin.write('var owner: Unique<int>;\n');
     child.stdin.write('\n');
-    child.stdin.write(':type %type(owner)\n');
-    child.stdin.write(':type %type(1 + 2)\n');
+    child.stdin.write(':type typeof(owner)\n');
+    child.stdin.write(':type typeof(1 + 2)\n');
     child.stdin.write(':quit\n');
     child.stdin.end();
 
@@ -38,11 +38,11 @@ async function main() {
 
     assert(exitCode === 0, `REPL exited with code ${exitCode}\n${output}`);
     assert(output.includes('Reference: read owner'),
-        `:type should print references from inside %type(...) operands\n${output}`);
+        `:type should print references from inside typeof(...) operands\n${output}`);
     assert(output.includes('Declared at: 1:5'),
         `:type should preserve the operand declaration location\n${output}`);
     assert(output.includes('Expression: binary exact'),
-        `:type should print expression facts from inside %type(...) operands\n${output}`);
+        `:type should print expression facts from inside typeof(...) operands\n${output}`);
     assert(output.includes('Constant: 3'),
         `:type should print folded constants from inside %type(...) operands\n${output}`);
     assert(!output.includes('failed to infer expression type') &&

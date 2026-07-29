@@ -591,6 +591,16 @@ static const ZrLibParameterDescriptor kPoolHandleParameters[] = {
         {"handle", "PoolHandle<T>", "Weak generational entity identity."},
 };
 
+static const ZrLibParameterDescriptor kPoolReadParameters[] = {
+        {"handle", "PoolHandle<T>", "Weak generational entity identity."},
+        {"view", "PoolReadRef<T>", "Receives the scoped readonly guard.", ZR_LIB_PARAMETER_PASSING_MODE_OUT},
+};
+
+static const ZrLibParameterDescriptor kPoolBorrowParameters[] = {
+        {"handle", "PoolHandle<T>", "Weak generational entity identity."},
+        {"view", "PoolRef<T>", "Receives the scoped writable guard.", ZR_LIB_PARAMETER_PASSING_MODE_OUT},
+};
+
 static const ZrLibFieldDescriptor kPoolHandleFields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
                 "poolId",
@@ -635,20 +645,20 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
          .parameterCount = ZR_ARRAY_COUNT(kPoolHandleParameters),
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RECYCLE},
         {.name = "tryRead",
-         .minArgumentCount = 1u,
-         .maxArgumentCount = 1u,
-         .returnTypeName = "PoolReadRef<T>",
-         .documentation = "Acquire a scoped readonly guard or return its default value.",
-         .parameters = kPoolHandleParameters,
-         .parameterCount = ZR_ARRAY_COUNT(kPoolHandleParameters),
+         .minArgumentCount = 2u,
+         .maxArgumentCount = 2u,
+         .returnTypeName = "bool",
+         .documentation = "Acquire a scoped readonly guard through an out parameter.",
+         .parameters = kPoolReadParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kPoolReadParameters),
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_READ},
         {.name = "tryBorrow",
-         .minArgumentCount = 1u,
-         .maxArgumentCount = 1u,
-         .returnTypeName = "PoolRef<T>",
-         .documentation = "Acquire an exclusive scoped writable guard or return its default value.",
-         .parameters = kPoolHandleParameters,
-         .parameterCount = ZR_ARRAY_COUNT(kPoolHandleParameters),
+         .minArgumentCount = 2u,
+         .maxArgumentCount = 2u,
+         .returnTypeName = "bool",
+         .documentation = "Acquire an exclusive scoped writable guard through an out parameter.",
+         .parameters = kPoolBorrowParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kPoolBorrowParameters),
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_WRITE},
 };
 

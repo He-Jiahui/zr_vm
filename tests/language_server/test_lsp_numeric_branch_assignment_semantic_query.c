@@ -270,7 +270,7 @@ static TZrBool run_assignment_segment_range_case(SZrState *state,
 
 static TZrBool test_local_expression_query_joins_if_else_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 0;\n"
         "    if (flag) {\n"
         "        narrowed = 1;\n"
@@ -291,7 +291,7 @@ static TZrBool test_local_expression_query_joins_if_else_assignment_range(SZrSta
 
 static TZrBool test_local_expression_query_preserves_if_else_assignment_segments(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 0;\n"
         "    if (flag) {\n"
         "        narrowed = 1;\n"
@@ -317,7 +317,7 @@ static TZrBool test_local_expression_query_preserves_if_else_assignment_segments
 
 static TZrBool test_local_expression_query_joins_if_else_multi_statement_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 0;\n"
         "    if (flag) {\n"
         "        flag;\n"
@@ -340,7 +340,7 @@ static TZrBool test_local_expression_query_joins_if_else_multi_statement_assignm
 
 static TZrBool test_local_expression_query_joins_if_else_nonterminal_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 0;\n"
         "    if (flag) {\n"
         "        narrowed = 1;\n"
@@ -363,7 +363,7 @@ static TZrBool test_local_expression_query_joins_if_else_nonterminal_assignment_
 
 static TZrBool test_local_expression_query_joins_if_else_rhs_dependent_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 0;\n"
         "    if (flag) {\n"
         "        narrowed = 1;\n"
@@ -386,7 +386,7 @@ static TZrBool test_local_expression_query_joins_if_else_rhs_dependent_assignmen
 
 static TZrBool test_local_expression_query_joins_if_else_multi_target_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var low: int = 0;\n"
         "    var high: int = 0;\n"
         "    if (flag) {\n"
@@ -410,7 +410,7 @@ static TZrBool test_local_expression_query_joins_if_else_multi_target_assignment
 
 static TZrBool test_local_expression_query_joins_nested_if_else_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, inner: bool): int {\n"
+        "fn calc(flag: bool, inner: bool): int {\n"
         "    var narrowed: int = 0;\n"
         "    if (flag) {\n"
         "        if (inner) {\n"
@@ -439,7 +439,7 @@ static TZrBool test_local_expression_query_joins_nested_if_else_assignment_range
 
 static TZrBool test_local_expression_query_joins_while_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        narrowed = 10;\n"
@@ -458,7 +458,7 @@ static TZrBool test_local_expression_query_joins_while_assignment_range(SZrState
 
 static TZrBool test_local_expression_query_joins_while_multi_statement_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        flag;\n"
@@ -479,7 +479,7 @@ static TZrBool test_local_expression_query_joins_while_multi_statement_assignmen
 
 static TZrBool test_local_expression_query_joins_while_nested_if_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, inner: bool): int {\n"
+        "fn calc(flag: bool, inner: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        if (inner) {\n"
@@ -502,7 +502,7 @@ static TZrBool test_local_expression_query_joins_while_nested_if_assignment_rang
 
 static TZrBool test_local_expression_query_joins_while_multi_target_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var low: int = 5;\n"
         "    var high: int = 20;\n"
         "    while (flag) {\n"
@@ -523,7 +523,7 @@ static TZrBool test_local_expression_query_joins_while_multi_target_assignment_r
 
 static TZrBool test_local_expression_query_widens_while_self_dependent_increment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        narrowed = narrowed + 1;\n"
@@ -543,7 +543,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_increment
 
 static TZrBool test_local_expression_query_widens_while_self_dependent_singleton_delta_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = 1;\n"
         "    while (flag) {\n"
@@ -565,7 +565,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_singleton
 static TZrBool test_local_expression_query_widens_while_self_dependent_positive_range_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = seed + 1;\n"
         "    while (flag) {\n"
@@ -586,7 +586,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_positive_
 
 static TZrBool test_local_expression_query_widens_while_self_dependent_decrement_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        narrowed = narrowed - 1;\n"
@@ -606,7 +606,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_decrement
 
 static TZrBool test_local_expression_query_joins_for_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (; flag; ) {\n"
         "        narrowed = 10;\n"
@@ -625,7 +625,7 @@ static TZrBool test_local_expression_query_joins_for_assignment_range(SZrState *
 
 static TZrBool test_local_expression_query_joins_for_init_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1; flag; ) {\n"
         "        narrowed = 10;\n"
@@ -645,7 +645,7 @@ static TZrBool test_local_expression_query_joins_for_init_assignment_range(SZrSt
 static TZrBool test_local_expression_query_applies_for_false_condition_init_assignment_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (narrowed = 1; false; ) {\n"
         "        narrowed = 10;\n"
@@ -665,7 +665,7 @@ static TZrBool test_local_expression_query_applies_for_false_condition_init_assi
 
 static TZrBool test_local_expression_query_joins_for_step_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (; flag; narrowed = 10) {\n"
         "        flag;\n"
@@ -685,7 +685,7 @@ static TZrBool test_local_expression_query_joins_for_step_assignment_range(SZrSt
 static TZrBool test_local_expression_query_joins_for_non_assignment_step_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (; flag; flag) {\n"
         "        narrowed = 10;\n"
@@ -705,7 +705,7 @@ static TZrBool test_local_expression_query_joins_for_non_assignment_step_range(
 
 static TZrBool test_local_expression_query_joins_for_var_init_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var step: int = 10; flag; ) {\n"
         "        narrowed = step;\n"
@@ -724,7 +724,7 @@ static TZrBool test_local_expression_query_joins_for_var_init_assignment_range(S
 
 static TZrBool test_local_expression_query_joins_foreach_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(items: int[]): int {\n"
+        "fn calc(items: int[]): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var item in items) {\n"
         "        narrowed = 10;\n"
@@ -743,7 +743,7 @@ static TZrBool test_local_expression_query_joins_foreach_assignment_range(SZrSta
 
 static TZrBool test_local_expression_query_joins_foreach_item_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(items: u8[]): int {\n"
+        "fn calc(items: u8[]): int {\n"
         "    var narrowed: int = 5;\n"
         "    for (var item in items) {\n"
         "        narrowed = item;\n"
@@ -762,7 +762,7 @@ static TZrBool test_local_expression_query_joins_foreach_item_assignment_range(S
 
 static TZrBool test_local_expression_query_joins_if_then_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    if (flag) {\n"
         "        narrowed = 10;\n"
@@ -781,7 +781,7 @@ static TZrBool test_local_expression_query_joins_if_then_assignment_range(SZrSta
 
 static TZrBool test_local_expression_query_joins_if_else_only_assignment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    if (flag) {\n"
         "        flag;\n"

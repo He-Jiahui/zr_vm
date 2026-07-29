@@ -315,17 +315,14 @@ SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArra
     return node;
 }
 
-static SZrAstNode *parse_extern_member_declaration_impl(
-        SZrParserState *ps,
-        TZrBool requireFnKeyword) {
+static SZrAstNode *parse_extern_member_declaration_impl(SZrParserState *ps) {
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
     SZrAstNode *node = ZR_NULL;
     EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
 
-    if (requireFnKeyword &&
-        (ps->lexer->t.token == ZR_TK_PUB ||
-         ps->lexer->t.token == ZR_TK_PRI ||
-         ps->lexer->t.token == ZR_TK_PRO)) {
+    if (ps->lexer->t.token == ZR_TK_PUB ||
+        ps->lexer->t.token == ZR_TK_PRI ||
+        ps->lexer->t.token == ZR_TK_PRO) {
         accessModifier = parse_access_modifier(ps);
     }
 
@@ -348,11 +345,8 @@ static SZrAstNode *parse_extern_member_declaration_impl(
     } else if (current_identifier_equals(ps, "delegate")) {
         node = parse_extern_delegate_declaration(ps, decorators);
         decorators = ZR_NULL;
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && requireFnKeyword) {
-        report_error(ps, "Functions in a native extern block must start with 'fn'");
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        node = parse_extern_function_declaration(ps, decorators);
-        decorators = ZR_NULL;
+        report_error(ps, "Functions in a native extern block must start with 'fn'");
     } else {
         report_error(ps, "Unexpected declaration inside extern block");
     }
@@ -387,17 +381,9 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
     SZrAstNode *libraryName = ZR_NULL;
     SZrAstNodeArray *declarations = ZR_NULL;
     SZrAstNode *node;
-    TZrBool nativeSyntax = ZR_FALSE;
 
-    if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        ZrParser_Lexer_Next(ps->lexer);
-        if (!current_identifier_equals(ps, "extern")) {
-            report_error(ps, "Expected 'extern' after '%'");
-            return ZR_NULL;
-        }
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                current_identifier_equals(ps, "native")) {
-        nativeSyntax = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
         if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
             !current_identifier_equals(ps, "extern")) {
@@ -436,8 +422,7 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
         bodyOpenLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_LBRACE);
         while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
-            SZrAstNode *declaration = parse_extern_member_declaration_impl(
-                    ps, nativeSyntax);
+            SZrAstNode *declaration = parse_extern_member_declaration_impl(ps);
             if (declaration == ZR_NULL) {
                 break;
             }
@@ -456,8 +441,7 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
         ZrParser_AstNodeArray_Free(ps->state, declarations);
         return ZR_NULL;
     } else {
-        SZrAstNode *declaration = parse_extern_member_declaration_impl(
-                ps, nativeSyntax);
+        SZrAstNode *declaration = parse_extern_member_declaration_impl(ps);
         if (declaration == ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, declarations);
             return ZR_NULL;
@@ -473,217 +457,33 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
 
     node->data.externBlock.libraryName = libraryName;
     node->data.externBlock.declarations = declarations;
-    node->data.externBlock.isNativeSyntax = nativeSyntax;
     return node;
 }
-
-// 解析测试声明
-// 语法：%test("test_name") { ... }
-
-SZrAstNode *parse_test_declaration(SZrParserState *ps) {
-    SZrFileRange startLoc;
-
-    // 解析 %test
-    if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        // 保存 % token 的位置信息（在调用 ZrParser_Lexer_Next 之前）
-        startLoc = get_current_location(ps);
-        TZrInt32 percentLine = startLoc.start.line;
-        TZrInt32 percentColumn = startLoc.start.column;
-        ZrParser_Lexer_Next(ps->lexer);
-        // 期望 "test" 标识符或关键字
-        // 注意：test 可能是关键字 ZR_TK_TEST，也可能是标识符 ZR_TK_IDENTIFIER
-        if (ps->lexer->t.token == ZR_TK_TEST) {
-            // test 是关键字，直接接受
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-            // test 是标识符，需要检查名称
-            SZrString *identName = ps->lexer->t.seminfo.stringValue;
-            if (identName == ZR_NULL) {
-                report_error(ps, "Expected 'test' after '%'");
-                return ZR_NULL;
-            }
-            TZrNativeString nameStr = ZrCore_String_GetNativeString(identName);
-            if (nameStr == ZR_NULL || strcmp(nameStr, "test") != 0) {
-                TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-                snprintf(errorMsg, sizeof(errorMsg), "Expected 'test' after '%%', but got identifier '%s'",
-                         nameStr ? nameStr : "<null>");
-                report_error(ps, errorMsg);
-                return ZR_NULL;
-            }
-            ZrParser_Lexer_Next(ps->lexer);
-        } else {
-            // 使用保存的位置信息报告错误
-            const TZrChar *fileName = "<unknown>";
-            if (startLoc.source != ZR_NULL) {
-                TZrNativeString nameStr = ZrCore_String_GetNativeString(startLoc.source);
-                if (nameStr != ZR_NULL) {
-                    fileName = nameStr;
-                }
-            }
-            const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
-            if (!ps->suppressErrorOutput) {
-                ZrCore_Log_Diagnosticf(ps->state,
-                                       ZR_LOG_LEVEL_ERROR,
-                                       ZR_OUTPUT_CHANNEL_STDERR,
-                                       "  [%s:%d:%d] Expected 'test' after '%%' (遇到 token: '%s')\n",
-                                       fileName,
-                                       percentLine,
-                                       percentColumn,
-                                       tokenStr);
-            }
-            report_error(ps, "Expected 'test' after '%'");
-            return ZR_NULL;
-        }
-    } else if (ps->lexer->t.token == ZR_TK_TEST) {
-        // 兼容旧的语法：test() { ... }
-        startLoc = get_current_location(ps);
-        ZrParser_Lexer_Next(ps->lexer);
-    } else {
-        report_error(ps, "Expected '%test' or 'test'");
-        return ZR_NULL;
-    }
-
-    // 解析测试名称参数：("test_name")
-    expect_token(ps, ZR_TK_LPAREN);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    // 期望字符串字面量作为测试名
-    SZrIdentifier *name = ZR_NULL;
-    if (ps->lexer->t.token == ZR_TK_STRING) {
-        SZrString *testNameStr = ps->lexer->t.seminfo.stringValue;
-        ZrParser_Lexer_Next(ps->lexer);
-
-        // 创建标识符节点来存储测试名
-        SZrAstNode *nameNode = create_identifier_node(ps, testNameStr);
-        if (nameNode != ZR_NULL) {
-            name = &nameNode->data.identifier;
-        }
-    } else {
-        report_error(ps, "Expected string literal as test name");
-        return ZR_NULL;
-    }
-
-    if (ps->lexer->t.token != ZR_TK_RPAREN) {
-        report_missing_test_name_close(ps, get_current_token_location(ps));
-        return ZR_NULL;
-    }
-
-    consume_token(ps, ZR_TK_RPAREN);
-
-    // 解析测试体
-    if (ps->lexer->t.token != ZR_TK_LBRACE) {
-        report_missing_declaration_body_open(ps, "test declaration", get_current_token_location(ps));
-        return ZR_NULL;
-    }
-
-    SZrAstNode *body = parse_declaration_body_block(ps, "test declaration");
-    if (body == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange testLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
-
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_TEST_DECLARATION, testLoc);
-    if (node == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    node->data.testDeclaration.name = name;
-    node->data.testDeclaration.params = ZrParser_AstNodeArray_New(ps->state, 0); // 测试没有参数列表
-    node->data.testDeclaration.args = ZR_NULL;
-    node->data.testDeclaration.body = body;
-    return node;
-}
-
-TZrBool is_compile_time_function_declaration(SZrParserState *ps) {
-    TZrSize savedPos = ps->lexer->currentPos;
-    TZrInt32 savedChar = ps->lexer->currentChar;
-    TZrInt32 savedLine = ps->lexer->lineNumber;
-    TZrInt32 savedLastLine = ps->lexer->lastLine;
-    SZrToken savedToken = ps->lexer->t;
-    SZrToken savedLookahead = ps->lexer->lookahead;
-    TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-    TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-    TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-    TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-    TZrInt32 parenDepth = 0;
-    TZrBool isFunctionDeclaration = ZR_FALSE;
-
-    if (ps->lexer->t.token != ZR_TK_IDENTIFIER) {
-        return ZR_FALSE;
-    }
-
-    ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token != ZR_TK_LPAREN) {
-        goto restore;
-    }
-
-    do {
-        if (ps->lexer->t.token == ZR_TK_LPAREN) {
-            parenDepth++;
-        } else if (ps->lexer->t.token == ZR_TK_RPAREN) {
-            parenDepth--;
-        }
-        ZrParser_Lexer_Next(ps->lexer);
-    } while (parenDepth > 0 && ps->lexer->t.token != ZR_TK_EOS);
-
-    if (parenDepth == 0 && (ps->lexer->t.token == ZR_TK_LBRACE || ps->lexer->t.token == ZR_TK_COLON)) {
-        isFunctionDeclaration = ZR_TRUE;
-    }
-
-restore:
-    ps->lexer->currentPos = savedPos;
-    ps->lexer->currentChar = savedChar;
-    ps->lexer->lineNumber = savedLine;
-    ps->lexer->lastLine = savedLastLine;
-    ps->lexer->t = savedToken;
-    ps->lexer->lookahead = savedLookahead;
-    ps->lexer->lookaheadPos = savedLookaheadPos;
-    ps->lexer->lookaheadChar = savedLookaheadChar;
-    ps->lexer->lookaheadLine = savedLookaheadLine;
-    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-    return isFunctionDeclaration;
-}
-
-// Legacy: %compileTime ...; current surface: comptime fn / comptime block / comptime if.
 
 SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     SZrFileRange startLoc;
-    TZrBool isCurrentSyntax = ZR_FALSE;
     TZrBool isConditionalPruning = ZR_FALSE;
 
-    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
         startLoc = get_current_location(ps);
-        ZrParser_Lexer_Next(ps->lexer);
-
-        // 期望 "compileTime" 标识符
-        if (ps->lexer->t.token != ZR_TK_IDENTIFIER) {
-            report_error(ps, "Expected 'compileTime' after '%'");
-            return ZR_NULL;
-        }
-
-        SZrString *identName = ps->lexer->t.seminfo.stringValue;
-        if (identName == ZR_NULL) {
-            report_error(ps, "Expected 'compileTime' after '%'");
-            return ZR_NULL;
-        }
-
-        TZrNativeString nameStr = ZrCore_String_GetNativeString(identName);
-        if (nameStr == ZR_NULL || strcmp(nameStr, "compileTime") != 0) {
-            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            snprintf(errorMsg, sizeof(errorMsg), "Expected 'compileTime' after '%%', but got identifier '%s'",
-                     nameStr ? nameStr : "<null>");
-            report_error(ps, errorMsg);
-            return ZR_NULL;
-        }
-        ZrParser_Lexer_Next(ps->lexer);
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
-        startLoc = get_current_location(ps);
-        isCurrentSyntax = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     } else {
         report_error(ps, "Expected 'comptime'");
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_VAR || ps->lexer->t.token == ZR_TK_LET) {
+        report_removed_legacy_syntax(
+                ps,
+                "comptime variable declaration",
+                "Use ordinary immutable data or declare values inside a module-scope `comptime { ... }` block.");
+        return ZR_NULL;
+    }
+    if (ps->lexer->t.token == ZR_TK_CLASS || ps->lexer->t.token == ZR_TK_STRUCT) {
+        report_removed_legacy_syntax(
+                ps,
+                "comptime decorator type",
+                "Use a role-marked ordinary `comptime fn(...): DeclarationPatch` transform.");
         return ZR_NULL;
     }
 
@@ -691,38 +491,17 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     EZrCompileTimeDeclarationType declType;
     SZrAstNode *declaration = ZR_NULL;
 
-    if (isCurrentSyntax && ps->lexer->t.token == ZR_TK_FN) {
+    if (ps->lexer->t.token == ZR_TK_FN) {
         declType = ZR_COMPILE_TIME_FUNCTION;
         declaration = parse_function_declaration(ps);
-    } else if (isCurrentSyntax && ps->lexer->t.token == ZR_TK_IF) {
+    } else if (ps->lexer->t.token == ZR_TK_IF) {
         declType = ZR_COMPILE_TIME_STATEMENT;
         declaration = parse_if_expression(ps);
         isConditionalPruning = ZR_TRUE;
         if (declaration != ZR_NULL) {
             declaration->data.ifExpression.isStatement = ZR_TRUE;
         }
-    } else if (ps->lexer->t.token == ZR_TK_VAR && !isCurrentSyntax) {
-        // 编译期变量声明：%compileTime var name = value;
-        declType = ZR_COMPILE_TIME_VARIABLE;
-        declaration = parse_variable_declaration(ps);
-    } else if (ps->lexer->t.token == ZR_TK_CLASS && !isCurrentSyntax) {
-        declType = ZR_COMPILE_TIME_CLASS;
-        declaration = parse_class_declaration(ps);
-    } else if (ps->lexer->t.token == ZR_TK_STRUCT && !isCurrentSyntax) {
-        declType = ZR_COMPILE_TIME_STRUCT;
-        declaration = parse_struct_declaration(ps);
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && !isCurrentSyntax) {
-        if (is_compile_time_function_declaration(ps)) {
-            // 函数声明：%compileTime functionName(...) { ... }
-            declType = ZR_COMPILE_TIME_FUNCTION;
-            declaration = parse_function_declaration(ps);
-        } else {
-            // 函数调用表达式或其他编译期表达式
-            declType = ZR_COMPILE_TIME_EXPRESSION;
-            declaration = parse_expression(ps);
-        }
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
-        // 编译期语句块：%compileTime { ... }
         declType = ZR_COMPILE_TIME_STATEMENT;
         declaration = parse_block(ps);
     } else {
@@ -746,14 +525,9 @@ SZrAstNode *parse_compile_time_declaration(SZrParserState *ps) {
     node->data.compileTimeDeclaration.declarationType = declType;
     node->data.compileTimeDeclaration.declaration = declaration;
     node->data.compileTimeDeclaration.selectedBranch = ZR_NULL;
-    node->data.compileTimeDeclaration.isCurrentSyntax = isCurrentSyntax;
     node->data.compileTimeDeclaration.isConditionalPruning = isConditionalPruning;
     node->data.compileTimeDeclaration.buildFactsEvaluated = ZR_FALSE;
     return node;
-}
-
-SZrAstNode *parse_extern_member_declaration(SZrParserState *ps) {
-    return parse_extern_member_declaration_impl(ps, ZR_FALSE);
 }
 
 // 存根实现：中间代码声明解析

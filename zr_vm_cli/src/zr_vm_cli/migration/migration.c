@@ -11,6 +11,7 @@
 #endif
 
 #include "project/project.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
@@ -251,19 +252,21 @@ static TZrBool zr_cli_migration_validate_current_source(
         TZrSize sourceLength,
         SZrString *sourceName) {
     SZrAstNode *ast;
-    SZrCompileResult compileResult;
+    SZrFunction *function;
     TZrBool valid;
 
     if (state == ZR_NULL || source == ZR_NULL || sourceName == ZR_NULL) {
         return ZR_FALSE;
     }
-    memset(&compileResult, 0, sizeof(compileResult));
     ast = ZrParser_Parse(state, source, sourceLength, sourceName);
     if (ast == ZR_NULL) {
         return ZR_FALSE;
     }
-    valid = ZrParser_Compiler_CompileWithTests(state, ast, &compileResult);
-    ZrParser_CompileResult_Free(state, &compileResult);
+    function = ZrParser_Compiler_Compile(state, ast);
+    valid = function != ZR_NULL;
+    if (function != ZR_NULL) {
+        ZrCore_Function_Free(state, function);
+    }
     ZrParser_Ast_Free(state, ast);
     return valid;
 }

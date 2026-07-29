@@ -1,4 +1,4 @@
-%module "compile_time_errors";
+module "compile_time_errors";
 
 // 这个文件用于测试编译期执行的错误处理
 // 注意：某些测试用例应该导致编译错误或警告
@@ -41,13 +41,13 @@ var runtimeVar = 100;
 // 由于这些是错误情况，实际的测试应该通过编译失败来验证
 
 // 测试8: 编译期Info级别（不应该阻止编译）
-%compileTime {
+comptime {
     // Info("This is an informational message");
     // 编译应该继续
 }
 
 // 测试9: 编译期Warning级别（不应该阻止编译）
-%compileTime {
+comptime {
     // Warning("This is a warning message");
     // 编译应该继续，但会显示警告
 }
@@ -61,7 +61,7 @@ var runtimeVar = 100;
 // 测试11: 编译期只读访问运行时变量（应该允许）
 var runtimeReadOnly = 50;
 
-%compileTime {
+comptime {
     // 应该允许读取
     var readValue = runtimeReadOnly;
     if (readValue > 0) {

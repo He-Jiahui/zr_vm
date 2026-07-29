@@ -8,7 +8,7 @@
 static TZrBool test_local_expression_query_keeps_target_reading_nested_commuted_bitwise_identity_zero_over_unary_plus_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"

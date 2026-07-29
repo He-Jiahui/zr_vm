@@ -1,12 +1,12 @@
-%module "decorated_user";
+module "decorated_user";
 
-%compileTime class Serializable {
-    @decorate(target: %type Class): zr.DecoratorPatch {
+comptime class Serializable {
+    @decorate(target: typeof Class): zr.DecoratorPatch {
         return { metadata: { serializable: true } };
     }
 }
 
-%compileTime markFunction(target: %type Function, bonus: int = 16) {
+comptime markFunction(target: typeof Function, bonus: int = 16) {
     return { metadata: { instrumented: bonus } };
 }
 
@@ -17,11 +17,11 @@ pub class User {
 
 #markFunction#
 pub decoratedBonus(): int {
-    var meta = %type(decoratedBonus).metadata;
+    var meta = typeof(decoratedBonus).metadata;
     return meta.instrumented;
 }
 
-pub var verifyDecorators = () => {
-    var typeMeta = %type(User).metadata;
+pub var verifyDecorators = fn() => {
+    var typeMeta = typeof(User).metadata;
     return typeMeta.serializable ? 15 : 0;
 };

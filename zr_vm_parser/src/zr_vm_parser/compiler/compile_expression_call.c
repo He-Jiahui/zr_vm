@@ -392,13 +392,13 @@ static SZrString *compile_type_literal_mode_name(SZrCompilerState *cs, EZrParame
 
     switch (passingMode) {
         case ZR_PARAMETER_PASSING_MODE_IN:
-            modeName = "%in";
+            modeName = "in";
             break;
         case ZR_PARAMETER_PASSING_MODE_OUT:
-            modeName = "%out";
+            modeName = "out";
             break;
         case ZR_PARAMETER_PASSING_MODE_REF:
-            modeName = "%ref";
+            modeName = "ref";
             break;
         case ZR_PARAMETER_PASSING_MODE_VALUE:
         default:

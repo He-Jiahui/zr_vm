@@ -1,10 +1,10 @@
-var math = %import("zr.math");
-var system = %import("zr.system");
-var lin = %import("lin_alg");
-var signal = %import("signal");
-var tensor = %import("tensor_pipeline");
-var io = %import("system_io");
-var callbacks = %import("callbacks");
+let math = import("zr.math");
+let system = import("zr.system");
+let lin = import("lin_alg");
+let signal = import("signal");
+let tensor = import("tensor_pipeline");
+let io = import("system_io");
+let callbacks = import("callbacks");
 
 var summary = callbacks.runCallbacks(lin, signal, tensor);
 var output = io.persistReport(summary);

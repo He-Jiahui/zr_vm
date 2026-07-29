@@ -104,7 +104,7 @@ ownership world 里的字段生命周期现在直接写在字段类型上，而�
 当前推荐写法：
 
 ```zr
-%owned class Bag {
+resource class Bag {
     var value: Unique<Resource>;
     var cache: Shared<Cache>;
 }

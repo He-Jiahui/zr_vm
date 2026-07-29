@@ -8,7 +8,7 @@
 static TZrBool test_local_expression_query_keeps_subtract_zero_minus_zero_inclusive_negative_binding_offset_conditional_positive_delta_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"
@@ -62,7 +62,7 @@ static TZrBool test_local_expression_query_keeps_subtract_zero_minus_zero_inclus
 static TZrBool test_local_expression_query_keeps_subtract_zero_minus_zero_inclusive_negative_binding_offset_conditional_negative_delta_guarded(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var mirror: int = 0;\n"

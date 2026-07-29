@@ -102,16 +102,6 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             free_ast_node_array_with_elements(state, func->decorators);
             break;
         }
-        case ZR_AST_TEST_DECLARATION: {
-            SZrTestDeclaration *test = &node->data.testDeclaration;
-            free_identifier_node_from_ptr(state, test->name);
-            free_ast_node_array_with_elements(state, test->params);
-            free_parameter_node_from_ptr(state, test->args);
-            if (test->body != ZR_NULL) {
-                ZrParser_Ast_Free(state, test->body);
-            }
-            break;
-        }
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *var = &node->data.variableDeclaration;
             if (var->pattern != ZR_NULL) {

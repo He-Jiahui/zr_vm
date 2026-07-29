@@ -486,7 +486,7 @@ static void test_zr_task_registers_only_canonical_public_shapes(void) {
 
 static void test_legacy_task_source_surfaces_are_rejected(void) {
     static const char *source =
-            "%async addOne(value: int): int {\n"
+            "async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "return 0;\n";
@@ -529,8 +529,8 @@ static void test_legacy_task_source_surfaces_are_rejected(void) {
 
 static void test_canonical_job_scheduler_path_executes(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var job = init task.Job<int>(() => { return 17; });\n"
+            "let task = import(\"zr.task\");\n"
+            "var job = init task.Job<int>(fn() => { return 17; });\n"
             "var completion = task.currentScheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_task_test_state();
@@ -567,7 +567,6 @@ static void test_async_function_preserves_explicit_task_return_and_direct_await(
     TEST_ASSERT_NOT_NULL(functionNode);
     TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionNode->type);
     TEST_ASSERT_TRUE(functionNode->data.functionDeclaration.isAsync);
-    TEST_ASSERT_FALSE(functionNode->data.functionDeclaration.isLegacyAsyncSyntax);
     returnType = functionNode->data.functionDeclaration.returnType;
     TEST_ASSERT_NOT_NULL(returnType);
     TEST_ASSERT_NOT_NULL(returnType->name);
@@ -642,7 +641,6 @@ static void test_async_lambda_preserves_explicit_task_signature(void) {
     TEST_ASSERT_NOT_NULL(lambda);
     TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, lambda->type);
     TEST_ASSERT_TRUE(lambda->data.lambdaExpression.isAsync);
-    TEST_ASSERT_FALSE(lambda->data.lambdaExpression.isLegacyAsyncSyntax);
     TEST_ASSERT_NOT_NULL(lambda->data.lambdaExpression.returnType);
     TEST_ASSERT_NOT_NULL(lambda->data.lambdaExpression.block);
     TEST_ASSERT_EQUAL_INT(ZR_AST_AWAIT_EXPRESSION,
@@ -880,13 +878,13 @@ static void test_percent_mutex_and_percent_atomic_are_rejected(void) {
 #if 0
 static void test_percent_await_is_rejected_outside_async_context(void) {
     static const char *source =
-            "%async addOne(value: int): int {\n"
+            "async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "func invalid(): int {\n"
+            "fn invalid(): int {\n"
             "    var runner = addOne(1);\n"
             "    var task = runner.start();\n"
-            "    return %await task;\n"
+            "    return await task;\n"
             "}\n"
             "return invalid();\n";
     SZrState *state = create_task_test_state();
@@ -901,12 +899,12 @@ static void test_percent_await_is_rejected_outside_async_context(void) {
 
 static void test_percent_await_rejects_task_runner_values(void) {
     static const char *source =
-            "%async addOne(value: int): int {\n"
+            "async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    var runner = addOne(4);\n"
-            "    return %await runner;\n"
+            "    return await runner;\n"
             "}\n"
             "return 0;\n";
     SZrState *state = create_task_test_state();
@@ -921,10 +919,10 @@ static void test_percent_await_rejects_task_runner_values(void) {
 
 static void test_borrowed_value_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(value: %borrowed string): string {\n"
-            "    %async pause(): int { return 1; }\n"
+            "async invalid(value: %borrowed string): string {\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return value;\n"
             "}\n"
             "return 0;\n";
@@ -935,11 +933,11 @@ static void test_borrowed_value_cannot_cross_await_boundary(void) {
 
 static void test_borrowed_value_used_before_await_still_compiles(void) {
     static const char *source =
-            "%async valid(value: %borrowed string): string {\n"
+            "async valid(value: %borrowed string): string {\n"
             "    var before = value;\n"
-            "    %async pause(): int { return 1; }\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return \"done\";\n"
             "}\n"
             "return 0;\n";
@@ -957,13 +955,13 @@ static void test_borrowed_value_used_before_await_still_compiles(void) {
 static void test_local_borrowed_value_cannot_cross_await_boundary(void) {
     static const char *source =
             "class Box {}\n"
-            "%async invalid(): int {\n"
-            "    var owner = %unique new Box();\n"
-            "    var shared = %shared(owner);\n"
-            "    var borrowed = %borrow(shared);\n"
-            "    %async pause(): int { return 1; }\n"
+            "async invalid(): int {\n"
+            "    var owner = own Box();\n"
+            "    var shared = owner.share();\n"
+            "    var borrowed = ref readonly shared;\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return borrowed == null ? 0 : 1;\n"
             "}\n"
             "return 0;\n";
@@ -975,12 +973,12 @@ static void test_local_borrowed_value_cannot_cross_await_boundary(void) {
 static void test_loaned_value_cannot_cross_await_boundary(void) {
     static const char *source =
             "class Box {}\n"
-            "%async invalid(): int {\n"
-            "    var owner = %unique new Box();\n"
-            "    var loaned = %loan(owner);\n"
-            "    %async pause(): int { return 1; }\n"
+            "async invalid(): int {\n"
+            "    var owner = own Box();\n"
+            "    var loaned = ref owner;\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return loaned == null ? 0 : 1;\n"
             "}\n"
             "return 0;\n";
@@ -991,10 +989,10 @@ static void test_loaned_value_cannot_cross_await_boundary(void) {
 
 static void test_generic_borrow_parameter_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(value: Borrow<string>): string {\n"
-            "    %async pause(): int { return 1; }\n"
+            "async invalid(value: Borrow<string>): string {\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return value;\n"
             "}\n"
             "return 0;\n";
@@ -1006,10 +1004,10 @@ static void test_generic_borrow_parameter_cannot_cross_await_boundary(void) {
 static void test_generic_loan_parameter_cannot_cross_await_boundary(void) {
     static const char *source =
             "class Box {}\n"
-            "%async invalid(value: Loan<Box>): int {\n"
-            "    %async pause(): int { return 1; }\n"
+            "async invalid(value: Loan<Box>): int {\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return value == null ? 0 : 1;\n"
             "}\n"
             "return 0;\n";
@@ -1021,11 +1019,11 @@ static void test_generic_loan_parameter_cannot_cross_await_boundary(void) {
 static void test_generic_loan_typed_local_cannot_cross_await_boundary(void) {
     static const char *source =
             "class Box {}\n"
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    var value: Loan<Box> = null;\n"
-            "    %async pause(): int { return 1; }\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return value == null ? 0 : 1;\n"
             "}\n"
             "return 0;\n";
@@ -1038,11 +1036,11 @@ static void test_nested_generic_borrow_typed_local_cannot_cross_await_boundary(v
     static const char *source =
             "class Box {}\n"
             "class Holder<T> {}\n"
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    var value: Holder<Borrow<Box>> = null;\n"
-            "    %async pause(): int { return 1; }\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return value == null ? 0 : 1;\n"
             "}\n"
             "return 0;\n";
@@ -1055,11 +1053,11 @@ static void test_nested_generic_loan_typed_local_cannot_cross_await_boundary(voi
     static const char *source =
             "class Box {}\n"
             "class Holder<T> {}\n"
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    var value: Holder<Loan<Box>> = null;\n"
-            "    %async pause(): int { return 1; }\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
+            "    await task;\n"
             "    return value == null ? 0 : 1;\n"
             "}\n"
             "return 0;\n";
@@ -1070,13 +1068,13 @@ static void test_nested_generic_loan_typed_local_cannot_cross_await_boundary(voi
 
 static void test_using_else_branch_borrow_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(value: Borrow<string>): string {\n"
+            "async invalid(value: Borrow<string>): string {\n"
             "    using (var plugin = %import(\"missing.plugin\")) {\n"
             "        return \"ok\";\n"
             "    } else {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        return value;\n"
             "    }\n"
             "}\n"
@@ -1088,11 +1086,11 @@ static void test_using_else_branch_borrow_cannot_cross_await_boundary(void) {
 
 static void test_plugin_guard_binding_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        return plugin;\n"
             "    }\n"
             "    return 0;\n"
@@ -1109,11 +1107,11 @@ static void test_dynamic_module_payload_binding_cannot_cross_await_boundary(void
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "%async invalid(): int {\n"
-            "    using (var [m] = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "async invalid(): int {\n"
+            "    using (let [m] = import(\"zr.plugins\")) {\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        return m;\n"
             "    }\n"
             "    return 0;\n"
@@ -1126,13 +1124,13 @@ static void test_dynamic_module_payload_binding_cannot_cross_await_boundary(void
 
 static void test_plugin_guard_alias_assignment_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    var alias = 0;\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        alias = plugin;\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        return alias;\n"
             "    }\n"
             "    return 0;\n"
@@ -1145,12 +1143,12 @@ static void test_plugin_guard_alias_assignment_cannot_cross_await_boundary(void)
 
 static void test_plugin_guard_conditional_alias_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(flag: bool): int {\n"
+            "async invalid(flag: bool): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var alias = flag ? plugin : null;\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = alias == null ? 0 : 1;\n"
             "        return seen;\n"
             "    }\n"
@@ -1164,12 +1162,12 @@ static void test_plugin_guard_conditional_alias_cannot_cross_await_boundary(void
 
 static void test_plugin_guard_logical_alias_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var alias = plugin || null;\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = alias == null ? 0 : 1;\n"
             "        return seen;\n"
             "    }\n"
@@ -1183,12 +1181,12 @@ static void test_plugin_guard_logical_alias_cannot_cross_await_boundary(void) {
 
 static void test_plugin_guard_cast_alias_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var alias = <object> plugin;\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = alias == null ? 0 : 1;\n"
             "        return seen;\n"
             "    }\n"
@@ -1202,13 +1200,13 @@ static void test_plugin_guard_cast_alias_cannot_cross_await_boundary(void) {
 
 static void test_plugin_guard_assignment_expression_alias_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var temp = null;\n"
             "        var alias = (temp = plugin);\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = alias == null ? 0 : 1;\n"
             "        return seen;\n"
             "    }\n"
@@ -1222,12 +1220,12 @@ static void test_plugin_guard_assignment_expression_alias_cannot_cross_await_bou
 
 static void test_plugin_guard_generator_body_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var gen = {{\n"
-            "            %async pause(): int { return 1; }\n"
+            "            async pause(): int { return 1; }\n"
             "            var task = pause().start();\n"
-            "            %await task;\n"
+            "            await task;\n"
             "            out plugin;\n"
             "        }};\n"
             "        return 0;\n"
@@ -1242,11 +1240,11 @@ static void test_plugin_guard_generator_body_cannot_cross_await_boundary(void) {
 
 static void test_plugin_guard_template_interpolation_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var text = `plugin ${plugin}`;\n"
             "        return 0;\n"
             "    }\n"
@@ -1260,12 +1258,12 @@ static void test_plugin_guard_template_interpolation_cannot_cross_await_boundary
 
 static void test_plugin_guard_type_query_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
-            "        var reflected = %type(plugin);\n"
+            "        await task;\n"
+            "        var reflected = typeof(plugin);\n"
             "        return 0;\n"
             "    }\n"
             "    return 0;\n"
@@ -1278,12 +1276,12 @@ static void test_plugin_guard_type_query_cannot_cross_await_boundary(void) {
 
 static void test_plugin_guard_array_alias_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var alias = [plugin];\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = alias == null ? 0 : 1;\n"
             "        return seen;\n"
             "    }\n"
@@ -1297,12 +1295,12 @@ static void test_plugin_guard_array_alias_cannot_cross_await_boundary(void) {
 
 static void test_plugin_guard_object_alias_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var alias = { handle: plugin };\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = alias == null ? 0 : 1;\n"
             "        return seen;\n"
             "    }\n"
@@ -1319,11 +1317,11 @@ static void test_plugin_guard_construct_argument_cannot_cross_await_boundary(voi
             "class Sink {\n"
             "    pub @constructor(value) { var observed = value; }\n"
             "}\n"
-            "%async invalid(): int {\n"
-            "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "async invalid(): int {\n"
+            "    using (let plugin = import(\"zr.plugins\")) {\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var box = new Sink(plugin);\n"
             "        return 0;\n"
             "    }\n"
@@ -1337,13 +1335,13 @@ static void test_plugin_guard_construct_argument_cannot_cross_await_boundary(voi
 
 static void test_plugin_guard_decorator_argument_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        #plugin.Decorate(plugin)#\n"
-            "        func nested(): int { return 1; }\n"
+            "        fn nested(): int { return 1; }\n"
             "        return 0;\n"
             "    }\n"
             "    return 0;\n"
@@ -1356,11 +1354,11 @@ static void test_plugin_guard_decorator_argument_cannot_cross_await_boundary(voi
 
 static void test_plugin_guard_if_branch_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(flag: bool): int {\n"
+            "async invalid(flag: bool): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        if (flag) {\n"
             "            return plugin == null ? 0 : 1;\n"
             "        } else {\n"
@@ -1377,15 +1375,15 @@ static void test_plugin_guard_if_branch_cannot_cross_await_boundary(void) {
 
 static void test_plugin_guard_block_expression_alias_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
             "        var alias = {\n"
             "            var marker = 0;\n"
             "            plugin;\n"
             "        };\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = alias == null ? 0 : 1;\n"
             "        return seen;\n"
             "    }\n"
@@ -1399,11 +1397,11 @@ static void test_plugin_guard_block_expression_alias_cannot_cross_await_boundary
 
 static void test_plugin_guard_generic_call_argument_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = sink<plugin + 0>();\n"
             "        return seen;\n"
             "    }\n"
@@ -1417,11 +1415,11 @@ static void test_plugin_guard_generic_call_argument_cannot_cross_await_boundary(
 
 static void test_plugin_guard_generic_call_type_argument_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
+            "        await task;\n"
             "        var seen = sink<plugin.Vector>();\n"
             "        return seen;\n"
             "    }\n"
@@ -1435,12 +1433,12 @@ static void test_plugin_guard_generic_call_type_argument_cannot_cross_await_boun
 
 static void test_plugin_guard_nested_function_after_parent_await_cannot_read_binding(void) {
     static const char *source =
-            "%async invalid(): int {\n"
+            "async invalid(): int {\n"
             "    using (var plugin = %import(\"zr.plugins\")) {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        %await task;\n"
-            "        func nested(): int {\n"
+            "        await task;\n"
+            "        fn nested(): int {\n"
             "            return plugin == null ? 0 : 1;\n"
             "        }\n"
             "        return nested();\n"
@@ -1455,11 +1453,11 @@ static void test_plugin_guard_nested_function_after_parent_await_cannot_read_bin
 
 static void test_nested_function_after_parent_await_allows_fresh_local_binding(void) {
     static const char *source =
-            "%async valid(): int {\n"
-            "    %async pause(): int { return 1; }\n"
+            "async valid(): int {\n"
+            "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
-            "    %await task;\n"
-            "    func nested(): int {\n"
+            "    await task;\n"
+            "    fn nested(): int {\n"
             "        var local = 1;\n"
             "        return local;\n"
             "    }\n"
@@ -1474,9 +1472,9 @@ static void test_task_effects_reject_await_inside_class_method(void) {
     static const char *source =
             "class Worker {\n"
             "    run(): int {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        return %await task;\n"
+            "        return await task;\n"
             "    }\n"
             "}\n"
             "return 0;\n";
@@ -1490,9 +1488,9 @@ static void test_task_effects_reject_await_inside_struct_method(void) {
     static const char *source =
             "struct Worker {\n"
             "    run(): int {\n"
-            "        %async pause(): int { return 1; }\n"
+            "        async pause(): int { return 1; }\n"
             "        var task = pause().start();\n"
-            "        return %await task;\n"
+            "        return await task;\n"
             "    }\n"
             "}\n"
             "return 0;\n";
@@ -1504,14 +1502,14 @@ static void test_task_effects_reject_await_inside_struct_method(void) {
 
 static void test_task_runner_start_and_await_execute_on_default_scheduler(void) {
     static const char *source =
-            "%async addOne(value: int): int {\n"
+            "async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async run(): int {\n"
+            "async run(): int {\n"
             "    var task = addOne(9).start();\n"
-            "    return %await task;\n"
+            "    return await task;\n"
             "}\n"
-            "return %await run().start();\n";
+            "return await run().start();\n";
     SZrState *state = create_task_test_state();
     SZrFunction *function;
     TZrInt64 result = 0;
@@ -1527,14 +1525,14 @@ static void test_task_runner_start_and_await_execute_on_default_scheduler(void) 
 
 static void test_task_runner_start_and_await_execute_with_explicit_async_return_type(void) {
     static const char *source =
-            "%async addOne(value: int): %async int {\n"
+            "async addOne(value: int): async int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async run(): %async int {\n"
+            "async run(): async int {\n"
             "    var task = addOne(9).start();\n"
-            "    return %await task;\n"
+            "    return await task;\n"
             "}\n"
-            "return %await run().start();\n";
+            "return await run().start();\n";
     SZrState *state = create_task_test_state();
     SZrFunction *function;
     TZrInt64 result = 0;
@@ -1551,14 +1549,14 @@ static void test_task_runner_start_and_await_execute_with_explicit_async_return_
 
 static void test_coroutine_scheduler_manual_pump_executes_started_runner(void) {
     static const char *source =
-            "var coroutine = %import(\"zr.coroutine\");\n"
-            "%async addOne(value: int): int {\n"
+            "let coroutine = import(\"zr.coroutine\");\n"
+            "async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "coroutine.coroutineScheduler.setAutoCoroutine(false);\n"
             "var task = coroutine.start(addOne(6));\n"
             "coroutine.coroutineScheduler.pump();\n"
-            "return %await task;\n";
+            "return await task;\n";
     SZrState *state = create_task_test_state_with_project_flags(ZR_FALSE, ZR_FALSE);
     SZrFunction *function;
     TZrInt64 result = 0;
@@ -1574,8 +1572,8 @@ static void test_coroutine_scheduler_manual_pump_executes_started_runner(void) {
 
 static void test_default_scheduler_property_is_readable_and_writable(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var coroutine = %import(\"zr.coroutine\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let coroutine = import(\"zr.coroutine\");\n"
             "task.defaultScheduler = coroutine.coroutineScheduler;\n"
             "if (task.defaultScheduler != coroutine.coroutineScheduler) { return 0; }\n"
             "return 1;\n";

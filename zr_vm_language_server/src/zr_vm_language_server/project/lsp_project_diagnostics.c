@@ -694,16 +694,6 @@ static TZrBool project_diagnostic_append_member_diagnostics_recursive(SZrState *
                                                                           node->data.functionDeclaration.body,
                                                                           result);
 
-        case ZR_AST_TEST_DECLARATION:
-            return project_diagnostic_append_member_diagnostics_recursive(state,
-                                                                          provider,
-                                                                          analyzer,
-                                                                          projectIndex,
-                                                                          uri,
-                                                                          bindings,
-                                                                          node->data.testDeclaration.body,
-                                                                          result);
-
         case ZR_AST_STRUCT_METHOD:
             return project_diagnostic_append_member_diagnostics_recursive(state,
                                                                           provider,

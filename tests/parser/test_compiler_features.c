@@ -61,7 +61,7 @@ typedef struct SZrCompiledMemberInfoView {
     TZrUInt32 functionConstantIndex;
     TZrUInt32 parameterCount;
     TZrUInt32 returnTypeNameStringIndex;
-    TZrUInt32 isUsingManaged;
+    TZrUInt32 reservedRemovedUsingManaged;
     TZrUInt32 ownershipQualifier;
     TZrUInt32 callsClose;
     TZrUInt32 callsDestructor;
@@ -1252,7 +1252,7 @@ void test_closure_capture(void) {
     }
 
     // 测试代码：lambda表达式捕获外部变量
-    const char *source = "var x = 10; var f = () => { return x; };";
+    const char *source = "var x = 10; var f = fn() => { return x; };";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1843,7 +1843,7 @@ void test_using_statement_compiles_through_frontend(void) {
     }
 
     {
-        const char *source = "var resource = \"x\"; %using (resource) { var inner = 1; } return 7;";
+        const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
         SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -1896,7 +1896,7 @@ void test_using_owner_generic_emits_release_cleanup(void) {
                 "var owner = Shared<Box>(seed);\n"
                 "var watcher = Weak<Box>(owner);\n"
                 "using (owner) { var inner = 1; }\n"
-                "var after = %upgrade(watcher);\n"
+                "var after = watcher.upgrade();\n"
                 "if (after == null && owner == null) { return 1; }\n"
                 "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -1933,7 +1933,7 @@ void test_using_owner_generic_emits_release_cleanup(void) {
     {
         const char *source =
             "var seen = 0;\n"
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (let math = import(\"zr.math\")) {\n"
             "    seen = 1;\n"
             "} else {\n"
             "    seen = 2;\n"
@@ -2073,7 +2073,7 @@ void test_using_owner_generic_release_runs_before_break(void) {
                 "while (true) {\n"
                 "    using (owner) { break; }\n"
                 "}\n"
-                "var after = %upgrade(watcher);\n"
+                "var after = watcher.upgrade();\n"
                 "if (after == null && owner == null) { return 1; }\n"
                 "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -2965,22 +2965,22 @@ void test_owned_field_metadata_serializes_into_prototype_data(void) {
         TEST_ASSERT_NOT_NULL(resourceMember);
         TEST_ASSERT_NOT_NULL(versionMember);
 
-        TEST_ASSERT_FALSE(handleMember->isUsingManaged);
+        TEST_ASSERT_FALSE(handleMember->reservedRemovedUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_UNIQUE, handleMember->ownershipQualifier);
         TEST_ASSERT_TRUE(handleMember->callsClose);
         TEST_ASSERT_TRUE(handleMember->callsDestructor);
         TEST_ASSERT_EQUAL_UINT32(0, handleMember->declarationOrder);
 
-        TEST_ASSERT_FALSE(countMember->isUsingManaged);
+        TEST_ASSERT_FALSE(countMember->reservedRemovedUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_NONE, countMember->ownershipQualifier);
 
-        TEST_ASSERT_FALSE(resourceMember->isUsingManaged);
+        TEST_ASSERT_FALSE(resourceMember->reservedRemovedUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_SHARED, resourceMember->ownershipQualifier);
         TEST_ASSERT_TRUE(resourceMember->callsClose);
         TEST_ASSERT_TRUE(resourceMember->callsDestructor);
         TEST_ASSERT_EQUAL_UINT32(0, resourceMember->declarationOrder);
 
-        TEST_ASSERT_FALSE(versionMember->isUsingManaged);
+        TEST_ASSERT_FALSE(versionMember->reservedRemovedUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_NONE, versionMember->ownershipQualifier);
 
         ZrCore_Function_Free(state, func);
@@ -3654,8 +3654,8 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
     {
         const char *source =
             "class Box {}\n"
-            "var owner = %unique new Box();\n"
-            "var alias = %shared(owner);";
+            "var owner = own Box();\n"
+            "var alias = owner.share();";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_builtin_shared_expr.zr",
                                                      strlen("ownership_builtin_shared_expr.zr"));
@@ -3837,13 +3837,13 @@ void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
     {
         const char *source =
             "class Box {}\n"
-            "var owner = %unique new Box();\n"
-            "var shared = %shared(owner);\n"
-            "var borrowed = %borrow(shared);\n"
-            "var loanSource = %unique new Box();\n"
-            "var loaned = %loan(loanSource);\n"
-            "var detachSource = %unique new Box();\n"
-            "var detached = %detach(detachSource);";
+            "var owner = own Box();\n"
+            "var shared = owner.share();\n"
+            "var borrowed = ref readonly shared;\n"
+            "var loanSource = own Box();\n"
+            "var loaned = ref loanSource;\n"
+            "var detachSource = own Box();\n"
+            "var detached = detachSource.intoGc();";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_borrow_loan_detach.zr",
                                                      strlen("ownership_borrow_loan_detach.zr"));
@@ -3893,8 +3893,8 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
     {
         const char *source =
             "class Box {}\n"
-            "var owner = %unique new Box();\n"
-            "var alias = %shared(owner);\n"
+            "var owner = own Box();\n"
+            "var alias = owner.share();\n"
             "if (owner == null && alias != null) {\n"
             "    return 1;\n"
             "}\n"
@@ -3944,14 +3944,14 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
     {
         const char *source =
             "class Box {}\n"
-            "var owner = %unique new Box();\n"
-            "var shared = %shared(owner);\n"
-            "var borrowed = %borrow(shared);\n"
+            "var owner = own Box();\n"
+            "var shared = owner.share();\n"
+            "var borrowed = ref readonly shared;\n"
             "var borrowedAlive = borrowed != null;\n"
-            "var loanSource = %unique new Box();\n"
-            "var loaned = %loan(loanSource);\n"
-            "var detachSource = %unique new Box();\n"
-            "var detached = %detach(detachSource);\n"
+            "var loanSource = own Box();\n"
+            "var loaned = ref loanSource;\n"
+            "var detachSource = own Box();\n"
+            "var detached = detachSource.intoGc();\n"
             "var mask = 0;\n"
             "if (owner == null) { mask = mask + 1; }\n"
             "if (shared != null) { mask = mask + 2; }\n"
@@ -4097,11 +4097,11 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
     {
         const char *source =
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var watcher = %weak(owner);\n"
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var watcher = owner.weak();\n"
             "drop(owner);\n"
-            "var after = %upgrade(watcher);\n"
+            "var after = watcher.upgrade();\n"
             "if (after == null) {\n"
             "    return 1;\n"
             "}\n"
@@ -4163,15 +4163,15 @@ void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void) 
     {
         const char *source =
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var watcher = %weak(owner);\n"
-            "var alias = %upgrade(watcher);\n"
-            "var releasedOwner = %release(owner);\n"
-            "var stillAlive = %upgrade(watcher);\n"
-            "var releasedAlias = %release(alias);\n"
-            "var releasedStillAlive = %release(stillAlive);\n"
-            "var second = %upgrade(watcher);\n"
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var watcher = owner.weak();\n"
+            "var alias = watcher.upgrade();\n"
+            "var releasedOwner = drop(owner);\n"
+            "var stillAlive = watcher.upgrade();\n"
+            "var releasedAlias = drop(alias);\n"
+            "var releasedStillAlive = drop(stillAlive);\n"
+            "var second = watcher.upgrade();\n"
             "if (releasedOwner == null && releasedAlias == null && releasedStillAlive == null && owner == null && alias == null && stillAlive == null && second == null) {\n"
             "    return 1;\n"
             "}\n"
@@ -4240,11 +4240,11 @@ void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(v
             "        return this(n - 1, acc + 1);\n"
             "    }\n"
             "}\n"
-            "func direct(n: int, acc: int): int {\n"
+            "fn direct(n: int, acc: int): int {\n"
             "    if (n == 0) { return acc; }\n"
             "    return direct(n - 1, acc + 1);\n"
             "}\n"
-            "func guarded(flag: int): int {\n"
+            "fn guarded(flag: int): int {\n"
             "    var marker = 0;\n"
             "    try {\n"
             "        try {\n"
@@ -4258,16 +4258,16 @@ void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(v
             "    }\n"
             "}\n"
             "class Box {}\n"
-            "var ownerSeed = %unique new Box();\n"
-            "var owner = %shared(ownerSeed);\n"
-            "var weak = %weak(owner);\n"
-            "var alias = %upgrade(weak);\n"
+            "var ownerSeed = own Box();\n"
+            "var owner = ownerSeed.share();\n"
+            "var weak = owner.weak();\n"
+            "var alias = weak.upgrade();\n"
             "var loop = new Loop();\n"
             "var directValue = direct(12, 0);\n"
             "var metaValue = loop(10, 0);\n"
             "var guardedValue = guarded(1);\n"
-            "var releasedOwner = %release(owner);\n"
-            "var releasedAlias = %release(alias);\n"
+            "var releasedOwner = drop(owner);\n"
+            "var releasedAlias = drop(alias);\n"
             "return directValue + metaValue + guardedValue;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_release_preserves_stack_values.zr",
@@ -4332,9 +4332,9 @@ void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "using (var [math] = %import(\"zr.math\")) {\n"
+            "using (let [math] = import(\"zr.math\")) {\n"
             "    var handle = math.share();\n"
-            "    var released = %release(handle);\n"
+            "    var released = drop(handle);\n"
             "    return 1;\n"
             "} else {\n"
             "    return 2;\n"
@@ -4408,7 +4408,7 @@ void test_plugin_guard_scoped_module_handle_releases_on_scope_exit(void) {
             "    @Available(m: Module);\n"
             "}\n"
             "var seen = 0;\n"
-            "using (var [math] = %import(\"zr.math\")) {\n"
+            "using (let [math] = import(\"zr.math\")) {\n"
             "    seen = 1;\n"
             "} else {\n"
             "    seen = 2;\n"
@@ -4478,9 +4478,9 @@ void test_plugin_load_available_import_guard_lowers_to_available_payload(void) {
     {
         const char *source =
             "var seen = 0;\n"
-            "using (var [math]: PluginLoad.Available = %import(\"zr.math\")) {\n"
+            "using (let [math]: PluginLoad.Available = import(\"zr.math\")) {\n"
             "    var handle = math.share();\n"
-            "    var released = %release(handle);\n"
+            "    var released = drop(handle);\n"
             "    seen = 1;\n"
             "} else {\n"
             "    seen = 2;\n"
@@ -4994,7 +4994,7 @@ void test_plugin_guard_global_assignment_reports_escape_boundary(void) {
     const char *testSummary = "Plugin Guard Global Assignment Reports Escape Boundary";
     const char *source =
         "var leaked = null;\n"
-        "using (var math = %import(\"zr.math\")) {\n"
+        "using (let math = import(\"zr.math\")) {\n"
         "    leaked = math;\n"
         "} else {\n"
         "    var fallback = 0;\n"
@@ -5222,9 +5222,9 @@ void test_plugin_guard_decorator_reports_escape_boundary(void) {
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Decorator Reports Escape Boundary";
     const char *source =
-        "using (var math = %import(\"zr.math\")) {\n"
+        "using (let math = import(\"zr.math\")) {\n"
         "    #math.Decorate#\n"
-        "    func nested(): int {\n"
+        "    fn nested(): int {\n"
         "        return 1;\n"
         "    }\n"
         "} else {\n"
@@ -5299,8 +5299,8 @@ void test_plugin_guard_parameter_default_reports_escape_boundary(void) {
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Parameter Default Reports Escape Boundary";
     const char *source =
-        "using (var math = %import(\"zr.math\")) {\n"
-        "    func nested(value = math): int {\n"
+        "using (let math = import(\"zr.math\")) {\n"
+        "    fn nested(value = math): int {\n"
         "        return 1;\n"
         "    }\n"
         "} else {\n"
@@ -5375,8 +5375,8 @@ void test_plugin_guard_signature_type_reports_escape_boundary(void) {
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Signature Type Reports Escape Boundary";
     const char *source =
-        "using (var math = %import(\"zr.math\")) {\n"
-        "    func nested(): math.Vector {\n"
+        "using (let math = import(\"zr.math\")) {\n"
+        "    fn nested(): math.Vector {\n"
         "        return null;\n"
         "    }\n"
         "} else {\n"
@@ -5451,7 +5451,7 @@ void test_plugin_guard_foreach_binding_type_reports_escape_boundary(void) {
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Foreach Binding Type Reports Escape Boundary";
     const char *source =
-        "using (var math = %import(\"zr.math\")) {\n"
+        "using (let math = import(\"zr.math\")) {\n"
         "    for(var item: math.Vector in []) {\n"
         "        var observed = item;\n"
         "    }\n"
@@ -5721,10 +5721,10 @@ void test_ownership_detach_runtime_rejects_multi_owner_shared_value(void) {
     {
         const char *source =
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
             "var alias = owner;\n"
-            "var detached = %detach(owner);\n"
+            "var detached = owner.intoGc();\n"
             "if (owner != null && alias != null && detached == null) {\n"
             "    return 1;\n"
             "}\n"
@@ -5893,8 +5893,8 @@ void test_intermediate_writer_emits_compile_time_and_test_metadata(void) {
 
     {
         const char *source =
-                "%compileTime var MAX_SCALE: int = 8;\n"
-                "%compileTime buildBias(seed: int): int { return seed + MAX_SCALE; }\n"
+                "comptime var MAX_SCALE: int = 8;\n"
+                "comptime buildBias(seed: int): int { return seed + MAX_SCALE; }\n"
                 "%test(\"vector_meta\") { return MAX_SCALE; }\n"
                 "return MAX_SCALE;";
         const char *intermediatePath = "compiletime_metadata_intermediate_test.zri";
@@ -6341,8 +6341,8 @@ void test_type_expression_compiles_to_typeof_opcode(void) {
 
     {
         const char *source =
-                "var math = %import(\"zr.math\");\n"
-                "var reflection = %type(math);";
+                "let math = import(\"zr.math\");\n"
+                "var reflection = typeof(math);";
         SZrString *sourceName = ZrCore_String_Create(state, "type_expression_compile_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;

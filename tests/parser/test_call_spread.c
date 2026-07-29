@@ -106,7 +106,7 @@ static void test_call_spread_has_dedicated_argument_ast(void) {
 
 static void test_return_call_spread_preserves_argument_ast(void) {
     const char *source =
-            "func sum(a: int, b: int, c: int): int { return a + b + c; }\n"
+            "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
             "return sum(...[1, 2, 3]);\n";
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "call_spread_return_ast.zr");
@@ -146,7 +146,7 @@ static void test_return_call_spread_preserves_argument_ast(void) {
 
 static void test_call_spread_executes_dynamic_array_arguments(void) {
     const char *source =
-            "func sum(a: int, b: int, c: int): int {\n"
+            "fn sum(a: int, b: int, c: int): int {\n"
             "    return a + b + c;\n"
             "}\n"
             "var values = [10, 20, 12];\n"
@@ -171,14 +171,14 @@ static void test_call_spread_executes_dynamic_array_arguments(void) {
 
 static void test_call_spread_struct_values_survive_gc_during_expansion(void) {
     const char *source =
-            "struct Pair {\n"
+            "class Pair {\n"
             "    pub var value: int;\n"
             "    pub @constructor(value: int) { this.value = value; }\n"
             "}\n"
-            "func sum(a: Pair, b: Pair, c: Pair): int {\n"
+            "fn sum(a: Pair, b: Pair, c: Pair): int {\n"
             "    return a.value + b.value + c.value;\n"
             "}\n"
-            "var values = [$Pair(10), $Pair(20), $Pair(12)];\n"
+            "var values = [new Pair(10), new Pair(20), new Pair(12)];\n"
             "return sum(...values);\n";
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "call_spread_struct_gc.zr");
@@ -219,7 +219,7 @@ static void assert_source_executes_to_int64(
 
 static void test_call_spread_supports_fixed_prefix(void) {
     assert_source_executes_to_int64(
-            "func sum(a: int, b: int, c: int): int { return a + b + c; }\n"
+            "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
             "return sum(10, ...[20, 12]);\n",
             "call_spread_prefix.zr",
             42);
@@ -227,7 +227,7 @@ static void test_call_spread_supports_fixed_prefix(void) {
 
 static void test_call_spread_supports_empty_array(void) {
     assert_source_executes_to_int64(
-            "func answer(): int { return 42; }\n"
+            "fn answer(): int { return 42; }\n"
             "return answer(...[]);\n",
             "call_spread_empty.zr",
             42);
@@ -236,11 +236,11 @@ static void test_call_spread_supports_empty_array(void) {
 static void test_call_spread_evaluates_elements_once(void) {
     assert_source_executes_to_int64(
             "var count = 0;\n"
-            "func bump(value: int): int {\n"
+            "fn bump(value: int): int {\n"
             "    count = count + 1;\n"
             "    return value;\n"
             "}\n"
-            "func sum(a: int, b: int, c: int): int { return a + b + c; }\n"
+            "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
             "var result = sum(...[bump(10), bump(20), bump(12)]);\n"
             "return result + count * 100;\n",
             "call_spread_once.zr",
@@ -249,7 +249,7 @@ static void test_call_spread_evaluates_elements_once(void) {
 
 static SZrFunction *compile_aot_call_spread_fixture(void) {
     const char *source =
-            "func sum(a: int, b: int, c: int): int { return a + b + c; }\n"
+            "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
             "var values = [10, 20, 12];\n"
             "return sum(...values);\n";
     SZrString *sourceName = ZrCore_String_CreateFromNative(
@@ -346,50 +346,50 @@ static void assert_source_rejects(const char *source, const char *sourceNameText
 
 static void test_call_spread_rejects_non_array_operand(void) {
     assert_source_rejects(
-            "func identity(value: int): int { return value; }\n"
+            "fn identity(value: int): int { return value; }\n"
             "return identity(...42);\n",
             "call_spread_non_array.zr");
 }
 
 static void test_call_spread_rejects_non_trailing_operand(void) {
     assert_source_rejects(
-            "func sum(a: int, b: int): int { return a + b; }\n"
+            "fn sum(a: int, b: int): int { return a + b; }\n"
             "return sum(...[1], 2);\n",
             "call_spread_non_trailing.zr");
 }
 
 static void test_call_spread_rejects_multiple_spreads(void) {
     assert_source_rejects(
-            "func sum(a: int, b: int): int { return a + b; }\n"
+            "fn sum(a: int, b: int): int { return a + b; }\n"
             "return sum(...[1], ...[2]);\n",
             "call_spread_multiple.zr");
 }
 
 static void test_call_spread_rejects_named_arguments(void) {
     assert_source_rejects(
-            "func sum(a: int, b: int): int { return a + b; }\n"
+            "fn sum(a: int, b: int): int { return a + b; }\n"
             "return sum(a: 1, ...[2]);\n",
             "call_spread_named.zr");
 }
 
 static void test_call_spread_rejects_element_conversion(void) {
     assert_source_rejects(
-            "func identity(value: float): float { return value; }\n"
+            "fn identity(value: float): float { return value; }\n"
             "return identity(...[42]);\n",
             "call_spread_element_conversion.zr");
 }
 
 static void test_call_spread_rejects_known_argument_count_mismatch(void) {
     assert_source_rejects(
-            "func sum(a: int, b: int, c: int): int { return a + b + c; }\n"
+            "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
             "return sum(...[1, 2]);\n",
             "call_spread_known_arity.zr");
 }
 
 static void test_call_spread_rejects_dynamic_argument_count_mismatch_at_runtime(void) {
     const char *source =
-            "func sum(a: int, b: int, c: int): int { return a + b + c; }\n"
-            "func invoke(values: int[]): int { return sum(...values); }\n"
+            "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
+            "fn invoke(values: int[]): int { return sum(...values); }\n"
             "return invoke([1, 2]);\n";
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "call_spread_dynamic_arity.zr");

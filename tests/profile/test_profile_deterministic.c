@@ -22,10 +22,10 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
 
 static void test_deterministic_profile_counts_calls_and_returns(void) {
     const char *source =
-            "func leaf(value: int): int {\n"
+            "fn leaf(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "func mid(value: int): int {\n"
+            "fn mid(value: int): int {\n"
             "    return leaf(value) + leaf(value + 1);\n"
             "}\n"
             "var first = mid(1);\n"
@@ -69,7 +69,7 @@ static void test_deterministic_profile_counts_calls_and_returns(void) {
 
 static void test_sampling_profile_records_hot_function_lines(void) {
     const char *source =
-            "func leaf(value: int): int {\n"
+            "fn leaf(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "var total = 0;\n"

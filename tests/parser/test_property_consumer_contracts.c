@@ -20,6 +20,8 @@
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 static SZrState *g_state;
+static const ZrTestsFixtureSource *g_property_consumer_import_fixtures;
+static TZrSize g_property_consumer_import_fixture_count;
 
 #define PROPERTY_MIGRATION_CAPTURE_LIMIT 8U
 #define PROPERTY_MIGRATION_TEXT_LIMIT 1024U
@@ -216,6 +218,20 @@ static SZrFunction *property_consumer_load_binary_entry(
     ZrCore_Io_Free(g_state->global, io);
     free(bytes);
     return function;
+}
+
+static TZrBool property_consumer_import_source_loader(
+        SZrState *state,
+        TZrNativeString sourcePath,
+        TZrNativeString md5,
+        SZrIo *io) {
+    return ZrTests_Fixture_SourceLoaderFromArray(
+            state,
+            sourcePath,
+            md5,
+            io,
+            g_property_consumer_import_fixtures,
+            g_property_consumer_import_fixture_count);
 }
 
 #include "test_property_consumer_stripping_cases.h"
@@ -667,6 +683,150 @@ static void test_current_zro_property_carrier_roundtrips_exact_rows(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_binary_import_merges_property_contract_into_placeholder(void) {
+    static const TZrChar binaryPath[] =
+            "property_consumer_binary_import.zro";
+    static const TZrChar providerSource[] =
+            "pub class Meter {\n"
+            "  pub static property shared: int {\n"
+            "    get { return 7; }\n"
+            "  }\n"
+            "}\n";
+    static const TZrChar consumerSource[] =
+            "var binaryStage = %import(\"graph_binary_stage\");\n"
+            "var answer = binaryStage.Meter.shared;\n"
+            "return answer;\n";
+    SZrFunction *provider = ZR_NULL;
+    SZrString *providerName = ZR_NULL;
+    SZrString *consumerName = ZR_NULL;
+    SZrAstNode *consumerAst = ZR_NULL;
+    TZrByte *binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0U;
+    ZrTestsFixtureSource fixture;
+    TZrBool (*previousSourceLoader)(
+            SZrState *, TZrNativeString, TZrNativeString, SZrIo *) = ZR_NULL;
+    SZrCompilerState cs;
+    SZrTypeMemberInfo *visibleProperty = ZR_NULL;
+    SZrTypeMemberInfo *getter = ZR_NULL;
+    SZrParserSemanticPropertyQuery query;
+
+    providerName = ZrCore_String_CreateFromNative(
+            g_state,
+            "graph_binary_stage.zr");
+    TEST_ASSERT_NOT_NULL(providerName);
+    provider = ZrParser_Source_Compile(
+            g_state,
+            providerSource,
+            strlen(providerSource),
+            providerName);
+    TEST_ASSERT_NOT_NULL(provider);
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(
+            g_state,
+            provider,
+            binaryPath));
+    binaryBytes = ZrTests_Fixture_ReadFileBytes(binaryPath, &binaryLength);
+    TEST_ASSERT_NOT_NULL(binaryBytes);
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, (TZrUInt32)binaryLength);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.path = "graph_binary_stage";
+    fixture.bytes = binaryBytes;
+    fixture.length = binaryLength;
+    fixture.isBinary = ZR_TRUE;
+    previousSourceLoader = g_state->global->sourceLoader;
+    g_property_consumer_import_fixtures = &fixture;
+    g_property_consumer_import_fixture_count = 1U;
+    g_state->global->sourceLoader = property_consumer_import_source_loader;
+
+    consumerName = ZrCore_String_CreateFromNative(
+            g_state,
+            "property_consumer_binary_import.zr");
+    consumerAst = ZrParser_Parse(
+            g_state,
+            consumerSource,
+            strlen(consumerSource),
+            consumerName);
+    TEST_ASSERT_NOT_NULL(consumerAst);
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, consumerAst);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    for (TZrSize prototypeIndex = 0U;
+         prototypeIndex < cs.typePrototypes.length;
+         prototypeIndex++) {
+        SZrTypePrototypeInfo *prototype =
+                (SZrTypePrototypeInfo *)ZrCore_Array_Get(
+                        &cs.typePrototypes,
+                        prototypeIndex);
+
+        if (prototype == ZR_NULL || prototype->name == ZR_NULL ||
+            strcmp(
+                    ZrCore_String_GetNativeString(prototype->name),
+                    "Meter") != 0) {
+            continue;
+        }
+        TEST_ASSERT_NOT_NULL(prototype->importModuleName);
+        TEST_ASSERT_EQUAL_STRING(
+                "graph_binary_stage",
+                ZrCore_String_GetNativeString(prototype->importModuleName));
+        for (TZrSize memberIndex = 0U;
+             memberIndex < prototype->members.length;
+             memberIndex++) {
+            SZrTypeMemberInfo *member =
+                    (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                            &prototype->members,
+                            memberIndex);
+
+            if (member == ZR_NULL ||
+                member->propertyIdentity == UINT32_MAX) {
+                continue;
+            }
+            if (member->memberType == ZR_AST_PROPERTY_DECLARATION &&
+                member->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
+                visibleProperty = member;
+            } else if (member->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_GET) {
+                getter = member;
+            }
+        }
+        break;
+    }
+
+    TEST_ASSERT_NOT_NULL(visibleProperty);
+    TEST_ASSERT_NOT_NULL(getter);
+    TEST_ASSERT_EQUAL_UINT32(
+            visibleProperty->propertyIdentity,
+            getter->propertyIdentity);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_SEMANTIC_ID_INVALID,
+            visibleProperty->propertySymbolId);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_SEMANTIC_ID_INVALID,
+            visibleProperty->propertyValueTypeId);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_PropertyBySymbolId(
+            cs.semanticContext,
+            visibleProperty->propertySymbolId,
+            &query));
+    TEST_ASSERT_EQUAL_UINT32(
+            visibleProperty->propertyValueTypeId,
+            query.propertyTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, query.getterSymbolId);
+
+    property_consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, consumerAst);
+    g_state->global->sourceLoader = previousSourceLoader;
+    g_property_consumer_import_fixtures = ZR_NULL;
+    g_property_consumer_import_fixture_count = 0U;
+    free(binaryBytes);
+    remove(binaryPath);
+    ZrCore_Function_Free(g_state, provider);
+}
+
 static void test_source_reflection_exposes_linked_property_accessors(void) {
     static const TZrChar binaryPath[] =
             "property_consumer_reflection_roundtrip.zro";
@@ -679,8 +839,8 @@ static void test_source_reflection_exposes_linked_property_accessors(void) {
             "  }\n"
             "  pub __get_fake(): int { return 1; }\n"
             "}\n"
-            "var reflected = %type(Meter).members.value[0];\n"
-            "var decoy = %type(Meter).members.__get_fake[0];\n"
+            "var reflected = typeof(Meter).members.value[0];\n"
+            "var decoy = typeof(Meter).members.__get_fake[0];\n"
             "return reflected.kind == \"property\" &&\n"
             "       reflected.getter != null &&\n"
             "       reflected.setter != null &&\n"
@@ -875,6 +1035,7 @@ int main(void) {
     RUN_TEST(test_many_properties_publish_unique_canonical_contracts);
     RUN_TEST(test_property_def_row_preserves_initializer_and_visible_name);
     RUN_TEST(test_current_zro_property_carrier_roundtrips_exact_rows);
+    RUN_TEST(test_binary_import_merges_property_contract_into_placeholder);
     RUN_TEST(test_source_reflection_exposes_linked_property_accessors);
     RUN_TEST(test_aot_stripping_preserves_structured_property_dispatch_roots);
     RUN_TEST(test_legacy_property_migrations_publish_exact_structured_edits);

@@ -182,7 +182,7 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     if (strcmp(op, "$") == 0 || strcmp(op, "new") == 0) {
         ZrParser_Compiler_Error(cs,
-                                "Legacy unary constructor syntax is no longer supported; use $target(...) or new target(...)",
+                                "Legacy unary constructor syntax is no longer supported; use init Type(...) for values or new Type(...) for GC classes",
                                 node->location);
         return;
     } else {

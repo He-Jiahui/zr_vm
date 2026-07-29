@@ -2,3 +2,5 @@ module migration.inventory.current;
 
 let remainder = 7 % 3;
 let visible = "literal %import and $Point(1) are not source forms";
+let increment = fn(value: int): int => value + 1;
+let callback: fn(in int, out int, ref int) -> int;

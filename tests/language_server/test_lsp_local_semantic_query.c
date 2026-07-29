@@ -152,7 +152,7 @@ static void test_local_expression_query_returns_numeric_range_fact(SZrState *sta
     const TZrChar *summary = "LSP Local Expression Query Returns Numeric Range Fact";
     const TZrChar *uriText = "file:///local_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    return 1 + 2;\n"
         "}\n";
     SZrTestTimer timer;
@@ -228,7 +228,7 @@ static void test_local_expression_query_propagates_variable_numeric_range_fact(S
     const TZrChar *summary = "LSP Local Expression Query Propagates Variable Numeric Range Fact";
     const TZrChar *uriText = "file:///local_variable_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    var seed = 2;\n"
         "    return seed + 3;\n"
         "}\n";
@@ -297,7 +297,7 @@ static void test_local_expression_query_propagates_expression_statement_numeric_
     const TZrChar *summary = "LSP Local Expression Query Propagates Expression Statement Numeric Range Fact";
     const TZrChar *uriText = "file:///local_expression_statement_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(): void {\n"
+        "fn calc(): void {\n"
         "    var seed = 2;\n"
         "    seed + 3;\n"
         "}\n";
@@ -366,7 +366,7 @@ static void test_local_expression_query_propagates_object_computed_key_numeric_r
     const TZrChar *summary = "LSP Local Expression Query Propagates Object Computed Key Numeric Range Fact";
     const TZrChar *uriText = "file:///local_object_computed_key_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(): void {\n"
+        "fn calc(): void {\n"
         "    {[1 + 2]: 4};\n"
         "}\n";
     SZrTestTimer timer;
@@ -451,7 +451,7 @@ static void test_local_expression_query_propagates_integer_interval_range_fact(S
     const TZrChar *summary = "LSP Local Expression Query Propagates Integer Interval Range Fact";
     const TZrChar *uriText = "file:///local_integer_interval_range_fact.zr";
     const TZrChar *content =
-        "func calc(seed: i8): int {\n"
+        "fn calc(seed: i8): int {\n"
         "    return seed + 3;\n"
         "}\n";
     SZrTestTimer timer;
@@ -519,7 +519,7 @@ static void test_local_expression_query_keeps_unsigned_numeric_range_payload(SZr
     const TZrChar *summary = "LSP Local Expression Query Keeps Unsigned Numeric Range Payload";
     const TZrChar *uriText = "file:///local_unsigned_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(seed: u8): int {\n"
+        "fn calc(seed: u8): int {\n"
         "    return seed + 3;\n"
         "}\n";
     SZrTestTimer timer;
@@ -597,7 +597,7 @@ static void test_local_expression_query_returns_numeric_overflow_fact(SZrState *
     const TZrChar *summary = "LSP Local Expression Query Returns Numeric Overflow Fact";
     const TZrChar *uriText = "file:///local_numeric_overflow_fact.zr";
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    return 9223372036854775807 + 1;\n"
         "}\n";
     SZrTestTimer timer;
@@ -671,7 +671,7 @@ static void test_local_expression_query_returns_float_numeric_range_fact(SZrStat
     const TZrChar *summary = "LSP Local Expression Query Returns Float Numeric Range Fact";
     const TZrChar *uriText = "file:///local_float_numeric_range_fact.zr";
     const TZrChar *content =
-        "func calc(): double {\n"
+        "fn calc(): double {\n"
         "    return 1.5 + 2.25;\n"
         "}\n";
     SZrTestTimer timer;
@@ -1035,7 +1035,7 @@ static void test_local_reference_query_returns_member_write_fact(SZrState *state
     const TZrChar *uriText = "file:///local_reference_member_write_fact.zr";
     const TZrChar *content =
         "var seed = { value: 1 };\n"
-        "mutate(): int {\n"
+        "fn mutate(): int {\n"
         "    seed.value = 3;\n"
         "    return seed.value;\n"
         "}\n";
@@ -1287,10 +1287,10 @@ static void test_local_reference_query_returns_call_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Reference Query Returns Call Fact";
     const TZrChar *uriText = "file:///local_reference_call_fact.zr";
     const TZrChar *content =
-        "target(): int {\n"
+        "fn target(): int {\n"
         "    return 1;\n"
         "}\n"
-        "run(): int {\n"
+        "fn run(): int {\n"
         "    return target();\n"
         "}\n";
     SZrTestTimer timer;
@@ -1361,7 +1361,7 @@ static void test_local_expression_query_includes_reference_fact(SZrState *state)
     const TZrChar *uriText = "file:///local_expression_reference_fact.zr";
     const TZrChar *content =
         "var total = 2;\n"
-        "read(): int {\n"
+        "fn read(): int {\n"
         "    return total;\n"
         "}\n";
     SZrTestTimer timer;
@@ -1432,10 +1432,10 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
     const TZrChar *summary = "LSP Local Expression Query Reaches Type Query Operands";
     const TZrChar *uriText = "file:///local_type_query_operand_facts.zr";
     const TZrChar *content =
-        "var owner: %unique int;\n"
+        "var owner: Unique<int>;\n"
         "probe() {\n"
-        "    var ownerType = %type(owner);\n"
-        "    var foldedType = %type(1 + 2);\n"
+        "    var ownerType = typeof(owner);\n"
+        "    var foldedType = typeof(1 + 2);\n"
         "}\n";
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -1464,7 +1464,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
     ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
     if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, ownerPosition, &query)) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, summary, "ExpressionAt returned false for %type(owner)");
+        TEST_FAIL(timer, summary, "ExpressionAt returned false for typeof(owner)");
         return;
     }
 
@@ -1476,7 +1476,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
         strcmp(test_string_ptr(query.referenceFact->name), "owner") != 0) {
         snprintf(reason,
                  sizeof(reason),
-                 "Expected %%type(owner) operand read reference; status=%d expr=%p reference=%p kind=%d resolved=%d name=%s",
+                 "Expected %typeof(owner) operand read reference; status=%d expr=%p reference=%p kind=%d resolved=%d name=%s",
                  (int)query.status,
                  (void *)query.expressionFact,
                  (void *)query.referenceFact,
@@ -1493,7 +1493,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
     ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
     if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, plusPosition, &query)) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, summary, "ExpressionAt returned false for %type(1 + 2)");
+        TEST_FAIL(timer, summary, "ExpressionAt returned false for typeof(1 + 2)");
         return;
     }
 
@@ -1507,7 +1507,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
         query.numericFact->maxValue != 3) {
         snprintf(reason,
                  sizeof(reason),
-                 "Expected %%type(1 + 2) operand binary numeric fact; status=%d expr=%p kind=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld",
+                 "Expected %typeof(1 + 2) operand binary numeric fact; status=%d expr=%p kind=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld",
                  (int)query.status,
                  (void *)query.expressionFact,
                  query.expressionFact != ZR_NULL ? (int)query.expressionFact->kind : -1,
@@ -1529,10 +1529,10 @@ static void test_local_expression_query_returns_ownership_violation_fact(SZrStat
     const TZrChar *summary = "LSP Local Expression Query Returns Ownership Violation Fact";
     const TZrChar *uriText = "file:///local_ownership_violation_fact.zr";
     const TZrChar *content =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "leak(resource: %unique Resource): %loaned Resource {\n"
-        "    return %loan(resource);\n"
+        "fn leak(resource: Unique<Resource>): ref Resource {\n"
+        "    return ref resource;\n"
         "}\n";
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -1552,7 +1552,7 @@ static void test_local_expression_query_returns_ownership_violation_fact(SZrStat
     if (context == ZR_NULL ||
         uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !lsp_find_position_for_substring(content, "%loan", 1, 0, &position)) {
+        !lsp_find_position_for_substring(content, "ref resource", 1, 0, &position)) {
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);
         }

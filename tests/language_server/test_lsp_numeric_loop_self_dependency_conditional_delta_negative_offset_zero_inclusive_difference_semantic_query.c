@@ -33,7 +33,7 @@ static TZrBool run_zero_inclusive_difference_query_case(
     written = snprintf(
             content,
             sizeof(content),
-            "func calc(flag: bool, choose: bool, seed: u8): int {\n"
+            "fn calc(flag: bool, choose: bool, seed: u8): int {\n"
             "    var narrowed: int = 5;\n"
             "    var other: int = 0;\n"
             "    var mirror: int = 0;\n"

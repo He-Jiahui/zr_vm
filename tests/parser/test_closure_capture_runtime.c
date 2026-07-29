@@ -27,9 +27,9 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
 
 static void test_returned_lambda_preserves_captured_local_value(void) {
     const char *source =
-            "func makeRunner() {\n"
+            "fn makeRunner() {\n"
             "    var seed = 4;\n"
-            "    return () => {\n"
+            "    return fn() => {\n"
             "        return seed + 1;\n"
             "    };\n"
             "}\n"

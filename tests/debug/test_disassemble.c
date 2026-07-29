@@ -82,7 +82,7 @@ static TZrSize count_instruction_rows(const char *text) {
 
 static void test_disassemble_function_prints_opcode_count_and_line_comments(void) {
     const char *source =
-            "func add(left: int, right: int): int {\n"
+            "fn add(left: int, right: int): int {\n"
             "    return left + right;\n"
             "}\n"
             "var result = add(1, 2);\n"

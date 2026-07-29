@@ -1257,7 +1257,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.memberType = member->type;
             memberInfo.isStatic = ZR_FALSE;
             memberInfo.isConst = ZR_FALSE;
-            memberInfo.isUsingManaged = ZR_FALSE;
+            memberInfo.reservedRemovedUsingManaged = ZR_FALSE;
             memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             memberInfo.gcBridgeKind = ZR_GC_BRIDGE_NONE;
             memberInfo.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;

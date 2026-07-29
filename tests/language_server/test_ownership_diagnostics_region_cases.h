@@ -4,11 +4,11 @@
 static void test_semantic_analyzer_records_borrow_and_loan_regions(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Records Borrow And Loan Regions";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "regions(shared: %shared Resource, unique: %unique Resource): int {\n"
-        "    var borrowed = %borrow(shared);\n"
-        "    var loaned = %loan(unique);\n"
+        "fn regions(shared: Shared<Resource>, unique: Unique<Resource>): int {\n"
+        "    var borrowed = ref shared;\n"
+        "    var loaned = ref unique;\n"
         "    borrowed;\n"
         "    loaned;\n"
         "    return 0;\n"
@@ -43,10 +43,10 @@ static void test_semantic_analyzer_records_borrow_and_loan_regions(SZrState *sta
 
     borrowFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "shared", 2));
+            file_range_for_nth_substring(testCode, "shared", 1));
     loanFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "unique", 2));
+            file_range_for_nth_substring(testCode, "unique", 1));
     if (borrowFact == ZR_NULL ||
         borrowFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_BORROW ||
         borrowFact->qualifier != ZR_OWNERSHIP_QUALIFIER_BORROWED ||
@@ -76,11 +76,11 @@ static void test_semantic_analyzer_records_borrow_and_loan_regions(SZrState *sta
 static void test_semantic_analyzer_reports_borrow_after_owner_release(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Borrow After Owner Release";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(owner: %shared Resource): int {\n"
-        "    var borrowed = %borrow(owner);\n"
-        "    var released = %release(owner);\n"
+        "fn use(owner: Shared<Resource>): int {\n"
+        "    var borrowed = ref owner;\n"
+        "    drop(owner);\n"
         "    borrowed;\n"
         "    return 0;\n"
         "}\n";
@@ -156,11 +156,11 @@ static void test_lsp_reports_possible_path_borrow_after_owner_release(SZrState *
     const TZrChar *summary = "LSP Reports Possible-Path Borrow After Owner Release";
     const TZrChar *uriText = "file:///ownership_possible_path_borrow_after_release.zr";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(owner: %shared Resource, flag: bool): int {\n"
-        "    var borrowed = %borrow(owner);\n"
-        "    if (flag) { var released = %release(owner); }\n"
+        "fn use(owner: Shared<Resource>, flag: bool): int {\n"
+        "    var borrowed = ref owner;\n"
+        "    if (flag) { drop(owner); }\n"
         "    borrowed;\n"
         "    return 0;\n"
         "}\n";
@@ -227,10 +227,10 @@ static void test_lsp_reports_possible_path_borrow_after_owner_release(SZrState *
 static void test_semantic_analyzer_releases_using_owner_at_scope_exit(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Releases Using Owner At Scope Exit";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(owner: %shared Resource): int {\n"
-        "    var borrowed = %borrow(owner);\n"
+        "fn use(owner: Shared<Resource>): int {\n"
+        "    var borrowed = ref owner;\n"
         "    using (owner) {\n"
         "        borrowed;\n"
         "    }\n"
@@ -309,10 +309,10 @@ static void test_semantic_analyzer_releases_using_owner_at_scope_exit(SZrState *
 static void test_semantic_analyzer_releases_using_borrow_at_scope_exit(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Releases Using Borrow At Scope Exit";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(owner: %shared Resource): int {\n"
-        "    var borrowed = %borrow(owner);\n"
+        "fn use(owner: Shared<Resource>): int {\n"
+        "    var borrowed = ref owner;\n"
         "    using (borrowed) {\n"
         "        borrowed;\n"
         "    }\n"
@@ -376,14 +376,14 @@ static void test_semantic_analyzer_releases_using_borrow_at_scope_exit(SZrState 
 static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Links Weak Use To Possible Owner Release";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "observe(resource: %borrowed Resource): int { return 0; }\n"
-        "use(owner: %shared Resource, flag: bool): int {\n"
-        "    var watcher = %weak(owner);\n"
-        "    if (flag) { var released = %release(owner); }\n"
-        "    observe(watcher);\n"
-        "    var upgraded = %upgrade(watcher);\n"
+        "fn observe(resource: ref readonly Resource): int { return 0; }\n"
+        "fn use(owner: Shared<Resource>, flag: bool): int {\n"
+        "    var watcher = owner.weak();\n"
+        "    if (flag) { drop(owner); }\n"
+        "    observe(ref watcher);\n"
+        "    var upgraded = watcher.upgrade();\n"
         "    upgraded == null;\n"
         "    return 0;\n"
         "}\n";
@@ -471,14 +471,14 @@ static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrS
 static void test_semantic_analyzer_rebinds_borrowed_alias_owner(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Rebinds Borrowed Alias Owner";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(first: %shared Resource, second: %shared Resource): int {\n"
-        "    var alias = %borrow(first);\n"
-        "    alias = %borrow(second);\n"
-        "    var firstReleased = %release(first);\n"
+        "fn use(first: Shared<Resource>, second: Shared<Resource>): int {\n"
+        "    var alias = ref first;\n"
+        "    alias = ref second;\n"
+        "    drop(first);\n"
         "    alias;\n"
-        "    var secondReleased = %release(second);\n"
+        "    drop(second);\n"
         "    alias;\n"
         "    return 0;\n"
         "}\n";
@@ -554,14 +554,14 @@ static void test_semantic_analyzer_rebinds_borrowed_alias_owner(SZrState *state)
 static void test_semantic_analyzer_rebinds_loaned_alias_owner(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Rebinds Loaned Alias Owner";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(first: %unique Resource, second: %unique Resource): int {\n"
-        "    var alias = %loan(first);\n"
-        "    alias = %loan(second);\n"
-        "    var firstReleased = %release(first);\n"
+        "fn use(first: Unique<Resource>, second: Unique<Resource>): int {\n"
+        "    var alias = ref first;\n"
+        "    alias = ref second;\n"
+        "    drop(first);\n"
         "    alias;\n"
-        "    var secondReleased = %release(second);\n"
+        "    drop(second);\n"
         "    alias;\n"
         "    return 0;\n"
         "}\n";
@@ -637,17 +637,17 @@ static void test_semantic_analyzer_rebinds_loaned_alias_owner(SZrState *state) {
 static void test_semantic_analyzer_rebinds_weak_alias_owner(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Rebinds Weak Alias Owner";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "observe(resource: %borrowed Resource): int { return 0; }\n"
-        "use(first: %shared Resource, second: %shared Resource): int {\n"
-        "    var watcher = %weak(first);\n"
-        "    watcher = %weak(second);\n"
-        "    var firstReleased = %release(first);\n"
-        "    observe(watcher);\n"
-        "    var secondReleased = %release(second);\n"
-        "    observe(watcher);\n"
-        "    var upgraded = %upgrade(watcher);\n"
+        "fn observe(resource: ref readonly Resource): int { return 0; }\n"
+        "fn use(first: Shared<Resource>, second: Shared<Resource>): int {\n"
+        "    var watcher = first.weak();\n"
+        "    watcher = second.weak();\n"
+        "    drop(first);\n"
+        "    observe(ref watcher);\n"
+        "    drop(second);\n"
+        "    observe(ref watcher);\n"
+        "    var upgraded = watcher.upgrade();\n"
         "    return 0;\n"
         "}\n";
     SZrTestTimer timer;

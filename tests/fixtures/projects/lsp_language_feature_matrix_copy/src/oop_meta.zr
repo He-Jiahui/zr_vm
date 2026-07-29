@@ -1,6 +1,6 @@
-%module "oop_meta";
+module "oop_meta";
 
-traceClass(target: %type Class): void {
+traceClass(target: typeof Class): void {
     target.metadata.traceClass = true;
 }
 

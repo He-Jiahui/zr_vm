@@ -946,7 +946,6 @@ static void test_install_managed_value_inline_frame_metadata(SZrState *state,
     member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
     member.fieldOffset = 0u;
     member.fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
-    member.isUsingManaged = 1u;
     member.ownershipQualifier = 1u;
 
     prototypeData = (TZrByte *)ZrCore_Memory_RawMallocWithType(
@@ -1325,7 +1324,6 @@ static void test_function_prototype_type_layout_resolver_builds_managed_value_fi
     member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
     member.fieldOffset = 0u;
     member.fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
-    member.isUsingManaged = 1u;
     member.ownershipQualifier = 1u;
     member.callsClose = 1u;
     member.callsDestructor = 1u;
@@ -1458,7 +1456,6 @@ static void test_function_prototype_type_layout_resolver_flattens_nested_managed
     childMember.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
     childMember.fieldOffset = 0u;
     childMember.fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
-    childMember.isUsingManaged = 1u;
     childMember.ownershipQualifier = 1u;
 
     function.constantValueList = constants;
@@ -1591,7 +1588,6 @@ static void test_function_prototype_type_layout_resolver_fails_when_managed_fiel
     member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
     member.fieldOffset = 0u;
     member.fieldSize = (TZrUInt32)sizeof(TZrPtr);
-    member.isUsingManaged = 1u;
     member.ownershipQualifier = 1u;
 
     function.prototypeData = data.bytes;

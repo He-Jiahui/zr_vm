@@ -43,6 +43,14 @@ function assertDiagnosticIncludes(diagnostics, code, messageFragment, reason) {
     return matchingDiagnostic;
 }
 
+function uriWithEncodedWindowsDrive(uri) {
+    if (process.platform !== 'win32') {
+        return uri;
+    }
+    return uri.replace(/^file:\/\/\/([A-Za-z]):/, (_match, drive) =>
+        `file:///${drive.toLowerCase()}%3A`);
+}
+
 async function waitForDiagnosticsUri(client, uri, message) {
     for (let attempt = 0; attempt < 16; attempt += 1) {
         const diagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
@@ -130,10 +138,67 @@ function findPosition(text, substring, occurrence = 0, offset = 0) {
     };
 }
 
+function decodeSemanticTokens(data) {
+    let line = 0;
+    let character = 0;
+    const tokens = [];
+
+    for (let index = 0; index < data.length; index += 5) {
+        const lineDelta = data[index];
+        const characterDelta = data[index + 1];
+        line += lineDelta;
+        character = lineDelta === 0 ? character + characterDelta : characterDelta;
+        tokens.push({
+            line,
+            character,
+            length: data[index + 2],
+            type: data[index + 3],
+            modifiers: data[index + 4],
+        });
+    }
+
+    return tokens;
+}
+
+function hasSemanticToken(tokens, position, length, type, modifiers) {
+    return tokens.some((token) => token.line === position.line &&
+        token.character === position.character &&
+        token.length === length &&
+        token.type === type &&
+        token.modifiers === modifiers);
+}
+
+function assertSemanticTokensDoNotOverlap(tokens, reason) {
+    let previous;
+
+    for (const token of tokens) {
+        if (previous && previous.line === token.line &&
+            previous.character + previous.length > token.character) {
+            throw new Error(`${reason}: overlapping semantic tokens at line ${token.line}, ` +
+                `characters ${previous.character}-${previous.character + previous.length} and ` +
+                `${token.character}-${token.character + token.length}`);
+        }
+        previous = token;
+    }
+}
+
+function workspaceEditTextEdits(workspaceEdit, uri) {
+    const documentChange = workspaceEdit && Array.isArray(workspaceEdit.documentChanges)
+        ? workspaceEdit.documentChanges.find((change) => change &&
+            change.textDocument && change.textDocument.uri === uri &&
+            Array.isArray(change.edits))
+        : undefined;
+
+    if (documentChange) {
+        return documentChange.edits;
+    }
+    return workspaceEdit && workspaceEdit.changes && Array.isArray(workspaceEdit.changes[uri])
+        ? workspaceEdit.changes[uri]
+        : [];
+}
+
 function workspaceEditContainsTextEdit(workspaceEdit, uri, start, end, newText) {
-    return workspaceEdit && workspaceEdit.changes &&
-        Array.isArray(workspaceEdit.changes[uri]) &&
-        workspaceEdit.changes[uri].some((edit) => edit && edit.range &&
+    return workspaceEditTextEdits(workspaceEdit, uri).some((edit) => edit && edit.range &&
             edit.range.start.line === start.line &&
             edit.range.start.character === start.character &&
             edit.range.end.line === end.line &&
@@ -166,7 +231,7 @@ function createWatchedProjectFixture() {
     fs.writeFileSync(mainPath, [
         'module "main";',
         '',
-        'pub func watched_before_refresh(): int {',
+        'pub fn watched_before_refresh(): int {',
         '    return 1;',
         '}',
         '',
@@ -190,29 +255,29 @@ function createModuleIdentityRenameFixture() {
     const oldProviderPath = path.join(sourcePath, 'legacy.zr');
     const newProviderPath = path.join(sourcePath, 'modern.zr');
     const oldUserContent = [
-        'var legacy = %import("legacy");',
+        'var legacy = import("legacy");',
         'var cached = legacy.value();',
         'return cached;',
         '',
     ].join('\n');
     const newUserContent = [
-        'var legacy = %import("legacy");',
-        'var modern = %import("modern");',
+        'var legacy = import("legacy");',
+        'var modern = import("modern");',
         'var prior = legacy.value();',
         'var cached = modern.value();',
         'return cached;',
         '',
     ].join('\n');
     const initialProviderContent = [
-        '%module "legacy";',
-        'pub value(): int {',
+        'module legacy;',
+        'pub fn value(): int {',
         '    return 1;',
         '}',
         '',
     ].join('\n');
     const renamedProviderContent = [
-        '%module "modern";',
-        'pub value(): float {',
+        'module modern;',
+        'pub fn value(): float {',
         '    return 1.5;',
         '}',
         '',
@@ -327,7 +392,7 @@ function createImportDiagnosticsFixture() {
         entry: 'main',
     }, null, 2));
     fs.writeFileSync(mainPath, [
-        'var greet = %import("greet");',
+        'var greet = import("greet");',
         'var answer = greet.missing;',
         '',
     ].join('\n'));
@@ -367,7 +432,7 @@ function createDescriptorPluginGenericCallableFixture(serverPath) {
         nativePath,
         `zrvm_native_zr_pluginprobe${path.extname(fixtureSourcePath)}`);
     const content = [
-        'var plugin = %import("zr.pluginprobe");',
+        'var plugin = import("zr.pluginprobe");',
         'var point = plugin.makePoint();',
         'var echoed = point.echo(1);',
         'return echoed;',
@@ -698,6 +763,8 @@ async function main() {
     const noopFormatUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-noop.zr';
     const importFoldingUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-import-folding.zr';
     const moduleImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-module-imports.zr';
+    const legacySemanticUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-legacy-semantic.zr';
     const semanticDeltaUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-semantic-delta.zr';
     const colorUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-colors.zr';
     const inlineCompletionUri =
@@ -722,7 +789,7 @@ async function main() {
         '',
     ].join('\n');
     const inlineCompletionText = [
-        'func main(): int {',
+        'fn main(): int {',
         '    ret',
         '    // ret',
         '    var label = "ret";',
@@ -731,13 +798,13 @@ async function main() {
         '',
     ].join('\n');
     const inlineReturnText = [
-        'func main(): int {',
+        'fn main(): int {',
         '    return 1 + 2;',
         '}',
         '',
     ].join('\n');
     const inlineExpressionText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    1 + 2;',
         '    true || false;',
         '}',
@@ -765,7 +832,7 @@ async function main() {
         '',
     ].join('\n');
     const documentationText = [
-        'module "documentation";',
+        'module documentation;',
         '',
         'class ScoreBoard {',
         '    pri static var _bonus: int = 5;',
@@ -777,9 +844,18 @@ async function main() {
         '    }',
         '}',
         '',
-        '%test("documentation") {',
+        '#zr.testing.test#',
+        'fn documentationTest(): int {',
         '    return ScoreBoard.bonus;',
         '}',
+        '',
+        'let currentModule = import("zr.math");',
+        'let scoreBoard = new ScoreBoard();',
+        '',
+    ].join('\n');
+    const legacySemanticText = [
+        '%import("zr.system");',
+        'let remainder = rate % divisor;',
         '',
     ].join('\n');
     const propertyContractText = [
@@ -809,15 +885,15 @@ async function main() {
         '}',
         'class Matrix<T, const N: int> { }',
         'class Box<T> {',
-        '    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }',
+        '    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }',
         '}',
-        'func pick(value: int, flag: bool): int {',
+        'fn pick(value: int, flag: bool): int {',
         '    return value;',
         '}',
-        'func inferNumber() {',
+        'fn inferNumber() {',
         '    return 42;',
         '}',
-        'func use(): void {',
+        'fn use(): void {',
         '    var value: Derived<Item, 2 + 2> = null;',
         '    var box = new Box<int>();',
         '    var m = new Matrix<int, 2 + 2>();',
@@ -828,16 +904,16 @@ async function main() {
         '',
     ].join('\n');
     const nativeCallableText = [
-        'var gc = %import("zr.system.gc");',
+        'var gc = import("zr.system.gc");',
         'gc.set_budget(2000);',
-        'var {LinkedList} = %import("zr.container");',
+        'var {LinkedList} = import("zr.container");',
         'var list: LinkedList<int> = null;',
         'list.addLast(1);',
         '',
     ].join('\n');
     const noopFormatText = [
         'class Sample {',
-        '    pub func run(value: int): int {',
+        '    pub fn run(value: int): int {',
         '        return value;',
         '    }',
         '}',
@@ -845,22 +921,22 @@ async function main() {
     ].join('\n');
     const formatEditText = [
         'class Sample {',
-        'pub func run(value: int): int {',
+        'pub fn run(value: int): int {',
         'return value;',
         '}',
         '}',
         '',
     ].join('\n');
     const importFoldingText = [
-        '%import("zr.system");',
-        '%import("zr.math");',
-        '%import("zr.container");',
+        'let system = import("zr.system");',
+        'let math = import("zr.math");',
+        'let container = import("zr.container");',
         '',
         '// first note',
         '// second note',
         '',
         '//#region setup',
-        'func main(): int {',
+        'fn main(): int {',
         '    return 0;',
         '}',
         '//#endregion',
@@ -869,19 +945,19 @@ async function main() {
     const moduleImportsText = [
         'module "stdio";',
         '',
-        '%import("zr.system");',
-        '%import("zr.math");',
+        'let system = import("zr.system");',
+        'let math = import("zr.math");',
         '',
-        'func main(): int { return 0; }',
+        'fn main(): int { return 0; }',
         '',
     ].join('\n');
     const semanticDeltaText = [
-        'func alpha(): int {',
+        'fn alpha(): int {',
         '    var value = 1;',
         '    return value;',
         '}',
         '',
-        'func omega(): int {',
+        'fn omega(): int {',
         '    return alpha();',
         '}',
         '',
@@ -927,9 +1003,15 @@ async function main() {
     const semanticTokenTypes = semanticTokensProvider &&
         semanticTokensProvider.legend &&
         semanticTokensProvider.legend.tokenTypes;
+    const semanticTokenModifiers = semanticTokensProvider &&
+        semanticTokensProvider.legend &&
+        semanticTokensProvider.legend.tokenModifiers;
     assert(Array.isArray(semanticTokenTypes) &&
         semanticTokenTypes.includes('keyword'),
         'semantic token legend must include keyword');
+    assert(Array.isArray(semanticTokenModifiers) &&
+        semanticTokenModifiers.includes('deprecated'),
+        'semantic token legend must include deprecated');
     assert(initializeResult.capabilities.inlayHintProvider &&
         initializeResult.capabilities.inlayHintProvider.resolveProvider === true,
         'inlayHintProvider resolveProvider must be enabled');
@@ -1548,8 +1630,7 @@ async function main() {
         position: { line: 0, character: 4 },
         newName: 'renamedX',
     });
-    assert(rename && rename.changes && Array.isArray(rename.changes[documentUri]) &&
-        rename.changes[documentUri].length > 0 &&
+    assert(rename && !rename.changes &&
         Array.isArray(rename.documentChanges) &&
         rename.documentChanges.some((documentChange) =>
             documentChange &&
@@ -1565,15 +1646,15 @@ async function main() {
         position: { line: 0, character: 20 },
         newName: 'renamedFromUsageX',
     });
-    assert(usageRename && usageRename.changes && Array.isArray(usageRename.changes[documentUri]) &&
-        usageRename.changes[documentUri].length > 0 &&
-        usageRename.changes[documentUri].some((edit) =>
+    assert(usageRename && !usageRename.changes &&
+        workspaceEditTextEdits(usageRename, documentUri).length > 0 &&
+        workspaceEditTextEdits(usageRename, documentUri).some((edit) =>
             edit &&
             edit.range &&
             edit.range.start &&
             edit.range.start.line === 0 &&
             edit.range.start.character === 4) &&
-        usageRename.changes[documentUri].some((edit) =>
+        workspaceEditTextEdits(usageRename, documentUri).some((edit) =>
             edit &&
             edit.range &&
             edit.range.start &&
@@ -1731,8 +1812,7 @@ async function main() {
     assert(Array.isArray(legacyPropertyActions) && legacyPropertyActions.some((action) =>
         action && typeof action.title === 'string' &&
         action.title.includes('Migrate legacy property') && action.edit &&
-        action.edit.changes && Array.isArray(action.edit.changes[legacyPropertyUri]) &&
-        action.edit.changes[legacyPropertyUri].some((edit) =>
+        workspaceEditTextEdits(action.edit, legacyPropertyUri).some((edit) =>
             edit && typeof edit.newText === 'string' &&
             edit.newText.includes('property value: int') &&
             edit.newText.includes('get') && edit.newText.includes('set') &&
@@ -1749,7 +1829,7 @@ async function main() {
         lens.data &&
         lens.data.command === lens.command.command &&
         lens.data.range),
-        'textDocument/codeLens must expose a run command with resolve data for %test blocks');
+        'textDocument/codeLens must expose a run command with resolve data for test attributes');
     const resolvedDocsCodeLens = await client.request('codeLens/resolve', docsCodeLens[0]);
     assert(resolvedDocsCodeLens &&
         resolvedDocsCodeLens.command &&
@@ -2142,7 +2222,7 @@ async function main() {
         options: { tabSize: 4, insertSpaces: true },
     });
     assert(Array.isArray(formatted) && formatted.length === 1 &&
-        formatted[0].newText.includes('    pub func run') &&
+        formatted[0].newText.includes('    pub fn run') &&
         formatted[0].newText.includes('        return value;'),
         'textDocument/formatting must return a full-document indented edit');
     const willSaveEdits = await client.request('textDocument/willSaveWaitUntil', {
@@ -2150,7 +2230,7 @@ async function main() {
         reason: 1,
     });
     assert(Array.isArray(willSaveEdits) && willSaveEdits.length === 1 &&
-        willSaveEdits[0].newText.includes('    pub func run') &&
+        willSaveEdits[0].newText.includes('    pub fn run') &&
         willSaveEdits[0].newText.includes('        return value;'),
         'textDocument/willSaveWaitUntil must return save-time formatting edits');
 
@@ -2337,10 +2417,7 @@ async function main() {
         action &&
         action.kind === 'source.organizeImports' &&
         action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[moduleImportsUri]) &&
-        action.edit.changes[moduleImportsUri].some((edit) =>
-            edit.newText.includes('%import("zr.math");\n%import("zr.system");')) &&
+        !action.edit.changes &&
         Array.isArray(action.edit.documentChanges) &&
         action.edit.documentChanges.some((documentChange) =>
             documentChange &&
@@ -2349,8 +2426,8 @@ async function main() {
             documentChange.textDocument.version === 0 &&
             Array.isArray(documentChange.edits) &&
             documentChange.edits.some((edit) =>
-                edit.newText.includes('%import("zr.math");\n%import("zr.system");')))),
-    'textDocument/codeAction must organize imports with versioned document changes');
+                edit.newText.includes('let math = import("zr.math");\nlet system = import("zr.system");')))),
+    'textDocument/codeAction must serialize current imports with one versioned edit representation');
     const organizeImportAction = moduleImportActions.find((action) =>
         action && action.kind === 'source.organizeImports' && action.edit);
     assert(organizeImportAction &&
@@ -2369,8 +2446,8 @@ async function main() {
     assert(resolvedOrganizeImportAction &&
         resolvedOrganizeImportAction.title === organizeImportAction.title &&
         resolvedOrganizeImportAction.edit &&
-        resolvedOrganizeImportAction.edit.changes &&
-        Array.isArray(resolvedOrganizeImportAction.edit.changes[moduleImportsUri]) &&
+        !resolvedOrganizeImportAction.edit.changes &&
+        workspaceEditTextEdits(resolvedOrganizeImportAction.edit, moduleImportsUri).length > 0 &&
         resolvedOrganizeImportAction.data &&
         resolvedOrganizeImportAction.data.uri === moduleImportsUri,
     'codeAction/resolve must preserve resolved edits');
@@ -2399,6 +2476,7 @@ async function main() {
         freshOrganizeImportAction.data &&
         freshOrganizeImportAction.data.snapshot &&
         freshOrganizeImportAction.data.snapshot.version === 1 &&
+        !freshOrganizeImportAction.edit.changes &&
         freshOrganizeImportAction.edit.documentChanges.some((documentChange) =>
             documentChange &&
             documentChange.textDocument &&
@@ -2413,11 +2491,11 @@ async function main() {
 
     const aliasImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-alias-imports.zr';
     const aliasImportsText = [
-        'var system = %import("zr.system");',
-        'var math = %import("zr.math");',
-        'var system = %import("zr.system");',
+        'let system = import("zr.system");',
+        'let math = import("zr.math");',
+        'let system = import("zr.system");',
         '',
-        'func main(): int { return 0; }',
+        'fn main(): int { return 0; }',
         '',
     ].join('\n');
     client.notify('textDocument/didOpen', {
@@ -2438,19 +2516,18 @@ async function main() {
         action &&
         action.kind === 'source.organizeImports' &&
         action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[aliasImportsUri]) &&
-        action.edit.changes[aliasImportsUri].some((edit) =>
-            edit.newText.includes('var math = %import("zr.math");\nvar system = %import("zr.system");'))),
+        !action.edit.changes &&
+        workspaceEditTextEdits(action.edit, aliasImportsUri).some((edit) =>
+            edit.newText.includes('let math = import("zr.math");\nlet system = import("zr.system");'))),
     'textDocument/codeAction must organize alias imports');
 
     const duplicateAliasImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-duplicate-alias-imports.zr';
     const duplicateAliasImportsText = [
-        'var system = %import("zr.system");',
-        'var math = %import("zr.math");',
-        'var system = %import("zr.network");',
+        'let system = import("zr.system");',
+        'let math = import("zr.math");',
+        'let system = import("zr.network");',
         '',
-        'func main(): int { return 0; }',
+        'fn main(): int { return 0; }',
         '',
     ].join('\n');
     client.notify('textDocument/didOpen', {
@@ -2473,19 +2550,18 @@ async function main() {
         action &&
         action.kind === 'source.organizeImports' &&
         action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[duplicateAliasImportsUri]) &&
-        action.edit.changes[duplicateAliasImportsUri].some((edit) =>
-            edit.newText.includes('var math = %import("zr.math");\nvar system = %import("zr.system");') &&
+        !action.edit.changes &&
+        workspaceEditTextEdits(action.edit, duplicateAliasImportsUri).some((edit) =>
+            edit.newText.includes('let math = import("zr.math");\nlet system = import("zr.system");') &&
             !edit.newText.includes('zr.network'))),
     'textDocument/codeAction must remove duplicate alias imports while preserving the first alias binding');
 
     const unusedAliasImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-unused-alias-imports.zr';
     const unusedAliasImportsText = [
-        'var math = %import("zr.math");',
-        'var system = %import("zr.system");',
+        'let math = import("zr.math");',
+        'let system = import("zr.system");',
         '',
-        'func main(value: int): int {',
+        'fn main(value: int): int {',
         '    return math.abs(value);',
         '}',
         '',
@@ -2510,14 +2586,13 @@ async function main() {
         action &&
         action.kind === 'source.removeUnused' &&
         action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[unusedAliasImportsUri]) &&
-        action.edit.changes[unusedAliasImportsUri].some((edit) =>
+        !action.edit.changes &&
+        workspaceEditTextEdits(action.edit, unusedAliasImportsUri).some((edit) =>
             edit.newText === '' &&
             edit.range &&
             edit.range.start.line === 1 &&
             edit.range.end.line === 2) &&
-        !action.edit.changes[unusedAliasImportsUri].some((edit) =>
+        !workspaceEditTextEdits(action.edit, unusedAliasImportsUri).some((edit) =>
             edit.range &&
             edit.range.start.line === 0)),
     'textDocument/codeAction must remove unused alias imports without deleting used aliases');
@@ -2560,9 +2635,8 @@ async function main() {
         semicolonAction.data.snapshot.version === 1 &&
         semicolonAction.data.snapshot.isOpenDocument === true &&
         semicolonAction.edit &&
-        semicolonAction.edit.changes &&
-        Array.isArray(semicolonAction.edit.changes[semicolonFixtureUri]) &&
-        semicolonAction.edit.changes[semicolonFixtureUri].some((edit) =>
+        !semicolonAction.edit.changes &&
+        workspaceEditTextEdits(semicolonAction.edit, semicolonFixtureUri).some((edit) =>
             edit.newText === ';' &&
             edit.range.start.line === 0 &&
             edit.range.start.character === 15 &&
@@ -2625,7 +2699,7 @@ async function main() {
     const missingImportFixturePath = path.join(watchedFixture.rootPath, 'missing_import_action.zr');
     const missingImportFixtureUri = pathToFileURL(missingImportFixturePath).toString();
     const missingImportFixtureText = [
-        'func main(value: int): int {',
+        'fn main(value: int): int {',
         '    return math.abs(value);',
         '}',
         '',
@@ -2651,17 +2725,16 @@ async function main() {
         action.kind === 'quickfix' &&
         action.title === 'Import zr.math as math' &&
         action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[missingImportFixtureUri]) &&
-        action.edit.changes[missingImportFixtureUri].some((edit) =>
-            edit.newText === 'var math = %import("zr.math");\n')),
+        !action.edit.changes &&
+        workspaceEditTextEdits(action.edit, missingImportFixtureUri).some((edit) =>
+            edit.newText === 'let math = import("zr.math");\n')),
     'textDocument/codeAction must return a missing native import quickfix edit');
 
     const rangeMissingImportFixturePath =
         path.join(importDiagnosticsFixture.rootPath, 'src', 'range_missing_import_action.zr');
     const rangeMissingImportFixtureUri = pathToFileURL(rangeMissingImportFixturePath).toString();
     const rangeMissingImportFixtureText = [
-        'func main(value: int): int {',
+        'fn main(value: int): int {',
         '    return system.print(math.abs(value));',
         '}',
         '',
@@ -2689,10 +2762,9 @@ async function main() {
         action.kind === 'quickfix' &&
         action.title === 'Import zr.math as math' &&
         action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[rangeMissingImportFixtureUri]) &&
-        action.edit.changes[rangeMissingImportFixtureUri].some((edit) =>
-            edit.newText === 'var math = %import("zr.math");\n')) &&
+        !action.edit.changes &&
+        workspaceEditTextEdits(action.edit, rangeMissingImportFixtureUri).some((edit) =>
+            edit.newText === 'let math = import("zr.math");\n')) &&
         !rangeMissingImportActions.some((action) =>
             action && action.title === 'Import zr.system as system'),
     'textDocument/codeAction must use the requested range for missing import quickfixes');
@@ -2702,7 +2774,7 @@ async function main() {
         path.join(importDiagnosticsFixture.rootPath, 'src', 'missing_project_import_action.zr');
     const missingProjectImportFixtureUri = pathToFileURL(missingProjectImportFixturePath).toString();
     const missingProjectImportFixtureText = [
-        'func main(): int {',
+        'fn main(): int {',
         '    return helper.present;',
         '}',
         '',
@@ -2734,10 +2806,9 @@ async function main() {
         action.kind === 'quickfix' &&
         action.title === 'Import helper as helper' &&
         action.edit &&
-        action.edit.changes &&
-        Array.isArray(action.edit.changes[missingProjectImportFixtureUri]) &&
-        action.edit.changes[missingProjectImportFixtureUri].some((edit) =>
-            edit.newText === 'var helper = %import("helper");\n')),
+        !action.edit.changes &&
+        workspaceEditTextEdits(action.edit, missingProjectImportFixtureUri).some((edit) =>
+            edit.newText === 'let helper = import("helper");\n')),
     'textDocument/codeAction must return a missing project import quickfix edit');
 
     const sourceOnlyActions = await client.request('textDocument/codeAction', {
@@ -2788,11 +2859,11 @@ async function main() {
     const hierarchyFixturePath = path.join(watchedFixture.rootPath, 'src', 'call_hierarchy.zr');
     const hierarchyFixtureUri = pathToFileURL(hierarchyFixturePath).toString();
     const hierarchyFixtureText = [
-        'func helper(value: int): int {',
+        'fn helper(value: int): int {',
         '    return value;',
         '}',
         '',
-        'func run(value: int): int {',
+        'fn run(value: int): int {',
         '    return helper(value);',
         '}',
         '',
@@ -2819,7 +2890,7 @@ async function main() {
         lens.command.arguments[0] === hierarchyFixtureUri &&
         lens.command.arguments[1] &&
         lens.command.arguments[1].line === 0 &&
-        lens.command.arguments[1].character === 5),
+        lens.command.arguments[1].character === 3),
     'textDocument/codeLens must expose callable reference counts with a reference command');
     const hierarchyRunPosition = findPosition(hierarchyFixtureText, 'run(value', 0, 1);
     const preparedRunItems = await client.request('textDocument/prepareCallHierarchy', {
@@ -3126,11 +3197,11 @@ async function main() {
     const watchedOpenedText = [
         'module "opened_after_project";',
         '',
-        'func opened_project_helper(value: int): int {',
+        'fn opened_project_helper(value: int): int {',
         '    return value;',
         '}',
         '',
-        'pub func opened_project_entry(): int {',
+        'pub fn opened_project_entry(): int {',
         '    return opened_project_helper(7);',
         '}',
         '',
@@ -3188,10 +3259,70 @@ async function main() {
         call.fromRanges.length > 0),
     'callHierarchy/outgoingCalls must work for project source opened after watched project indexing');
 
+    const watchedOpenOverlayPath = path.join(watchedFixture.rootPath, 'src', 'opened_overlay.zr');
+    const watchedOpenOverlayRequestUri = pathToFileURL(watchedOpenOverlayPath).toString();
+    const watchedOpenOverlayUri = uriWithEncodedWindowsDrive(watchedOpenOverlayRequestUri);
+    const watchedOpenOverlayText = [
+        'module opened_overlay;',
+        '',
+        'class WatchedOpenOverlay {',
+        '    pub @constructor() {',
+        '    }',
+        '',
+        '    pub fn total(): int {',
+        '        return 42;',
+        '    }',
+        '}',
+        '',
+        'fn watched_open_overlay_entry(): int {',
+        '    let overlay: WatchedOpenOverlay = new WatchedOpenOverlay();',
+        '    return overlay.total();',
+        '}',
+        '',
+    ].join('\n');
+    fs.writeFileSync(watchedOpenOverlayPath, watchedOpenOverlayText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: watchedOpenOverlayUri,
+            languageId: 'zr',
+            version: 1,
+            text: watchedOpenOverlayText,
+        },
+    });
+    await waitForDiagnosticsUri(
+        client,
+        watchedOpenOverlayUri,
+        'watched open overlay diagnostics uri mismatch');
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: watchedOpenOverlayUri, type: 2 },
+        ],
+    });
+    const watchedOpenOverlayDefinition = await client.request('textDocument/definition', {
+        textDocument: { uri: watchedOpenOverlayRequestUri },
+        position: findPosition(watchedOpenOverlayText, 'overlay.total()', 0, 'overlay.'.length),
+    });
+    const watchedOpenOverlayTotalPosition = findPosition(watchedOpenOverlayText, 'total()', 0);
+    assert(Array.isArray(watchedOpenOverlayDefinition) && watchedOpenOverlayDefinition.some((item) =>
+        item &&
+        diagnosticRelatedUriMatches(watchedOpenOverlayUri, item.uri) &&
+        item.range &&
+        item.range.start.line === watchedOpenOverlayTotalPosition.line &&
+        item.range.start.character === watchedOpenOverlayTotalPosition.character &&
+        item.range.end.line === watchedOpenOverlayTotalPosition.line &&
+        item.range.end.character === watchedOpenOverlayTotalPosition.character + 'total'.length),
+    'workspace watcher updates must preserve an open document overlay and its member definitions');
+    const watchedOpenOverlaySymbols = await client.request('textDocument/documentSymbol', {
+        textDocument: { uri: watchedOpenOverlayRequestUri },
+    });
+    assert(Array.isArray(watchedOpenOverlaySymbols) && watchedOpenOverlaySymbols.some((item) =>
+        item && item.name === 'WatchedOpenOverlay'),
+    'document symbols must resolve encoded Windows document URIs through their native file path');
+
     fs.writeFileSync(watchedFixture.mainPath, [
         'module "main";',
         '',
-        'pub func watched_after_refresh(): int {',
+        'pub fn watched_after_refresh(): int {',
         '    return 2;',
         '}',
         '',
@@ -3426,6 +3557,62 @@ async function main() {
         typeof semanticTokens.resultId === 'string' &&
         semanticTokens.resultId.length > 0,
     'semanticTokens/full must return a data array with a resultId');
+    const decodedSemanticTokens = decodeSemanticTokens(semanticTokens.data);
+    assertSemanticTokensDoNotOverlap(decodedSemanticTokens,
+        'semanticTokens/full must not return overlapping spans');
+    const keywordTokenType = semanticTokenTypes.indexOf('keyword');
+    const deprecatedModifier = 1 << semanticTokenModifiers.indexOf('deprecated');
+    assert(hasSemanticToken(decodedSemanticTokens,
+        findPosition(documentationText, 'module'),
+        'module'.length,
+        keywordTokenType,
+        0),
+    'semanticTokens/full must classify module as a current keyword');
+    assert(hasSemanticToken(decodedSemanticTokens,
+        findPosition(documentationText, 'import'),
+        'import'.length,
+        keywordTokenType,
+        0),
+    'semanticTokens/full must classify import as a current keyword');
+    assert(hasSemanticToken(decodedSemanticTokens,
+        findPosition(documentationText, 'new'),
+        'new'.length,
+        keywordTokenType,
+        0),
+    'semanticTokens/full must classify new class construction as current');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: legacySemanticUri,
+            languageId: 'zr',
+            version: 1,
+            text: legacySemanticText,
+        },
+    });
+    const legacySemanticDiagnostics = await waitForDiagnosticsUri(
+        client,
+        legacySemanticUri,
+        'legacy semantic diagnostics uri mismatch');
+    assertDiagnosticIncludes(
+        legacySemanticDiagnostics,
+        'legacy_syntax_removed',
+        '%import',
+        'legacy semantic fixture must remain a migration diagnostic');
+    const legacySemanticTokens = await client.request('textDocument/semanticTokens/full', {
+        textDocument: { uri: legacySemanticUri },
+    });
+    const decodedLegacySemanticTokens = decodeSemanticTokens(legacySemanticTokens.data);
+    assert(hasSemanticToken(decodedLegacySemanticTokens,
+        findPosition(legacySemanticText, '%import'),
+        '%import'.length,
+        keywordTokenType,
+        deprecatedModifier),
+    'semanticTokens/full must classify removed percent syntax as deprecated');
+    assert(!hasSemanticToken(decodedLegacySemanticTokens,
+        findPosition(legacySemanticText, '%', 1),
+        '%'.length,
+        keywordTokenType,
+        deprecatedModifier),
+    'semanticTokens/full must not classify modulo as removed syntax');
     const staleSemanticResultId = `zr-semantic:${semanticTokens.data.length}:stale`;
     const semanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
         textDocument: { uri: docsUri },

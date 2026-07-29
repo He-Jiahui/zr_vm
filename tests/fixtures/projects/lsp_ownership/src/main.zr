@@ -1,8 +1,10 @@
-%owned class PointSet {
+module main;
+
+resource class PointSet {
     pub @constructor() {
     }
 }
 
-takeFromPoolTest(): %unique PointSet {
-    return %unique new PointSet();
+pub fn takeFromPoolTest(): Unique<PointSet> {
+    return own PointSet();
 }

@@ -25,9 +25,9 @@ async function main() {
         output += chunk.toString();
     });
 
-    child.stdin.write('var owner: %unique int;\n');
+    child.stdin.write('var owner: Unique<int>;\n');
     child.stdin.write('\n');
-    child.stdin.write(':type [%borrow(owner)]\n');
+    child.stdin.write(':type [owner]\n');
     child.stdin.write(':quit\n');
     child.stdin.end();
 
@@ -36,16 +36,14 @@ async function main() {
     });
 
     assert(exitCode === 0, `REPL exited with code ${exitCode}\n${output}`);
-    assert(output.includes('Type: %borrowed int[1]<%borrowed int>'),
-        `:type should infer the aggregate borrowed type\n${output}`);
+    assert(output.includes('Type: Unique<int>[1]<Unique<int>>'),
+        `:type should infer the aggregate unique ownership type\n${output}`);
     assert(output.includes('Expression: array exact'),
         `:type should print the aggregate expression fact\n${output}`);
-    assert(output.includes('Expression: ownership builtin exact'),
-        `:type should print the nested ownership builtin expression fact\n${output}`);
-    assert(output.includes('Ownership: borrow %borrowed'),
-        `:type should print the nested ownership semantic fact\n${output}`);
+    assert(output.includes('Expression: identifier exact'),
+        `:type should print the nested owner identifier expression fact\n${output}`);
     assert(output.includes('Reference: read owner'),
-        `:type should print the nested owner operand reference fact\n${output}`);
+        `:type should print the nested owner identifier reference fact\n${output}`);
     assert(output.includes('Declared at: 1:5'),
         `:type should print the nested owner operand declaration location\n${output}`);
     assert(!output.includes('failed to infer expression type') &&

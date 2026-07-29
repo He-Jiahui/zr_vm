@@ -304,10 +304,6 @@ void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNo
             ZrLanguageServer_LspProject_CollectImportBindings(state, node->data.functionDeclaration.body, bindings);
             break;
 
-        case ZR_AST_TEST_DECLARATION:
-            ZrLanguageServer_LspProject_CollectImportBindings(state, node->data.testDeclaration.body, bindings);
-            break;
-
         case ZR_AST_COMPILE_TIME_DECLARATION:
             ZrLanguageServer_LspProject_CollectImportBindings(state,
                                                               node->data.compileTimeDeclaration.declaration,
@@ -757,9 +753,6 @@ static TZrBool find_imported_member_hit_recursive(SZrAstNode *node,
         case ZR_AST_FUNCTION_DECLARATION:
             return find_imported_member_hit_recursive(node->data.functionDeclaration.body, bindings, position, outHit);
 
-        case ZR_AST_TEST_DECLARATION:
-            return find_imported_member_hit_recursive(node->data.testDeclaration.body, bindings, position, outHit);
-
         case ZR_AST_STRUCT_METHOD:
             return find_imported_member_hit_recursive(node->data.structMethod.body, bindings, position, outHit);
 
@@ -1013,13 +1006,6 @@ static TZrBool find_import_binding_hit_recursive(SZrAstNode *node,
 
         case ZR_AST_FUNCTION_DECLARATION:
             return find_import_binding_hit_recursive(node->data.functionDeclaration.body,
-                                                    bindings,
-                                                    position,
-                                                    outBinding,
-                                                    outLocation);
-
-        case ZR_AST_TEST_DECLARATION:
-            return find_import_binding_hit_recursive(node->data.testDeclaration.body,
                                                     bindings,
                                                     position,
                                                     outBinding,
@@ -1547,16 +1533,6 @@ static TZrBool append_matching_imported_member_locations_recursive(SZrState *sta
                                                                       context,
                                                                       uri,
                                                                       node->data.functionDeclaration.body,
-                                                                      bindings,
-                                                                      moduleName,
-                                                                      memberName,
-                                                                      result);
-
-        case ZR_AST_TEST_DECLARATION:
-            return append_matching_imported_member_locations_recursive(state,
-                                                                      context,
-                                                                      uri,
-                                                                      node->data.testDeclaration.body,
                                                                       bindings,
                                                                       moduleName,
                                                                       memberName,

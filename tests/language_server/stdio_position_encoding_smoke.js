@@ -53,7 +53,7 @@ const serverPath = process.argv[2];
 assert(serverPath, 'Expected stdio server executable path');
 
 const documentUri = 'file:///zr-position-encoding-smoke.zr';
-const documentText = '/* \u03bb */ var system = %import("zr.system");\n';
+const documentText = '/* \u03bb */ var system = import("zr.system");\n';
 const importLiteralIndex = documentText.indexOf('"zr.system"');
 const hoverIndex = documentText.indexOf('zr.system') + 1;
 const expectedRangeStart = utf8ColumnForIndex(documentText, importLiteralIndex);

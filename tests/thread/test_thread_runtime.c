@@ -519,7 +519,7 @@ static void test_thread_markers_reject_nested_isolate_alias_generic_arguments(vo
 
 static void test_lock_guard_is_rejected_after_await_boundary(void) {
     static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "async fn pause(): Task<int> {\n"
             "    return 1;\n"
             "}\n"
@@ -553,10 +553,10 @@ static void test_lock_guard_is_rejected_after_await_boundary(void) {
 
 static void test_thread_scheduler_requires_support_multithread(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 1; });\n"
+            "var job = init task.Job<int>(fn() => { return 1; });\n"
             "return scheduler.schedule<int>(job).result();\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_FALSE, ZR_TRUE);
     SZrFunction *function;
@@ -572,7 +572,7 @@ static void test_thread_scheduler_requires_support_multithread(void) {
 
 static void test_unique_mutex_lock_guard_updates_value(void) {
     static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var mutex = new thread.UniqueMutex<int>(41);\n"
             "var lock = mutex.lock();\n"
             "if (lock.load() != 41) { return 0; }\n"
@@ -597,7 +597,7 @@ static void test_unique_mutex_lock_guard_updates_value(void) {
 
 static void test_shared_mutex_read_and_write_guards_observe_updates(void) {
     static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var mutex = new thread.SharedMutex<int>(7);\n"
             "var readOne = mutex.read();\n"
             "if (readOne.load() != 7) { return 0; }\n"
@@ -624,7 +624,7 @@ static void test_shared_mutex_read_and_write_guards_observe_updates(void) {
 
 static void test_lock_guard_rejects_transfer_storage(void) {
     static const char *source =
-            "var thread = %import(\"zr.thread\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var mutex = new thread.UniqueMutex<int>(1);\n"
             "var lock = mutex.lock();\n"
             "var moved = new thread.Transfer(lock);\n"
@@ -672,10 +672,10 @@ static void test_thread_worker_state_attaches_to_caller_gc_domain(void) {
 
 static void test_thread_scheduler_constructs_with_worker_count_and_consumes_job(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
@@ -693,10 +693,10 @@ static void test_thread_scheduler_constructs_with_worker_count_and_consumes_job(
 
 static void test_thread_scheduler_isolated_domain_completes_caller_task(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 29; });\n"
+            "var job = init task.Job<int>(fn() => { return 29; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
@@ -724,11 +724,11 @@ static void test_thread_scheduler_isolated_domain_completes_caller_task(void) {
 
 static void test_thread_scheduler_isolated_domain_transfers_scalar_capture(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var captured = 17;\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return captured + 1; });\n"
+            "var job = init task.Job<int>(fn() => { return captured + 1; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
@@ -749,11 +749,11 @@ static void test_thread_scheduler_isolated_domain_transfers_scalar_capture(void)
 
 static void test_thread_scheduler_isolated_domain_clones_string_capture(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var captured = \"isolated clone\";\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => {\n"
+            "var job = init task.Job<int>(fn() => {\n"
             "    if (captured == \"isolated clone\") { return 37; }\n"
             "    return 0;\n"
             "});\n"
@@ -777,11 +777,11 @@ static void test_thread_scheduler_isolated_domain_clones_string_capture(void) {
 
 static void test_thread_scheduler_isolated_domain_clones_string_result(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var captured = \"isolated result\";\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<string>(() => { return captured; });\n"
+            "var job = init task.Job<string>(fn() => { return captured; });\n"
             "var completion = scheduler.schedule<string>(job);\n"
             "var result = completion.result();\n"
             "if (result == \"isolated result\") { return 43; }\n"
@@ -804,13 +804,13 @@ static void test_thread_scheduler_isolated_domain_clones_string_result(void) {
 
 static void test_thread_scheduler_isolated_domain_settles_multiple_requests(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var firstValue = 6;\n"
             "var secondValue = 8;\n"
             "var scheduler = new thread.ThreadScheduler(2);\n"
-            "var firstJob = init task.Job<int>(() => { return firstValue; });\n"
-            "var secondJob = init task.Job<int>(() => { return secondValue; });\n"
+            "var firstJob = init task.Job<int>(fn() => { return firstValue; });\n"
+            "var secondJob = init task.Job<int>(fn() => { return secondValue; });\n"
             "var first = scheduler.schedule<int>(firstJob);\n"
             "var second = scheduler.schedule<int>(secondJob);\n"
             "return first.result() * 10 + second.result();\n";
@@ -832,17 +832,17 @@ static void test_thread_scheduler_isolated_domain_settles_multiple_requests(void
 
 static void test_thread_scheduler_isolated_domain_drains_shared_provider_queue(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var firstValue = 1;\n"
             "var secondValue = 2;\n"
             "var thirdValue = 3;\n"
             "var fourthValue = 4;\n"
             "var scheduler = new thread.ThreadScheduler(2);\n"
-            "var firstJob = init task.Job<int>(() => { return firstValue; });\n"
-            "var secondJob = init task.Job<int>(() => { return secondValue; });\n"
-            "var thirdJob = init task.Job<int>(() => { return thirdValue; });\n"
-            "var fourthJob = init task.Job<int>(() => { return fourthValue; });\n"
+            "var firstJob = init task.Job<int>(fn() => { return firstValue; });\n"
+            "var secondJob = init task.Job<int>(fn() => { return secondValue; });\n"
+            "var thirdJob = init task.Job<int>(fn() => { return thirdValue; });\n"
+            "var fourthJob = init task.Job<int>(fn() => { return fourthValue; });\n"
             "var first = scheduler.schedule<int>(firstJob);\n"
             "var second = scheduler.schedule<int>(secondJob);\n"
             "var third = scheduler.schedule<int>(thirdJob);\n"
@@ -868,11 +868,11 @@ static void test_thread_scheduler_isolated_domain_drains_shared_provider_queue(v
 
 static void test_thread_scheduler_isolated_domain_quota_faults_prepared_task(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var captured = \"quota must reject this clone\";\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => {\n"
+            "var job = init task.Job<int>(fn() => {\n"
             "    if (captured == \"quota must reject this clone\") { return 1; }\n"
             "    return 0;\n"
             "});\n"
@@ -896,8 +896,8 @@ static void test_thread_scheduler_isolated_domain_quota_faults_prepared_task(voi
 
 static void test_thread_scheduler_isolated_domain_faults_forbidden_resource_capture(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "resource class Counter {\n"
             "  pub var value: int;\n"
             "  pub @constructor(value: int) { this.value = value; }\n"
@@ -905,7 +905,7 @@ static void test_thread_scheduler_isolated_domain_faults_forbidden_resource_capt
             "}\n"
             "var captured: Unique<Counter> = own Counter(47);\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return captured.read(); });\n"
+            "var job = init task.Job<int>(fn() => { return captured.read(); });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
@@ -926,10 +926,10 @@ static void test_thread_scheduler_isolated_domain_faults_forbidden_resource_capt
 
 static void test_thread_scheduler_isolated_domain_shutdown_faults_later_submission(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 5; });\n"
+            "var job = init task.Job<int>(fn() => { return 5; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
@@ -950,12 +950,12 @@ static void test_thread_scheduler_isolated_domain_shutdown_faults_later_submissi
 
 static void test_thread_scheduler_isolated_domain_shutdown_faults_queued_submission(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
-            "var host = %import(\"thread.test.host\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
+            "let host = import(\"thread.test.host\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var firstJob = init task.Job<int>(() => { return 3; });\n"
-            "var secondJob = init task.Job<int>(() => { return 5; });\n"
+            "var firstJob = init task.Job<int>(fn() => { return 3; });\n"
+            "var secondJob = init task.Job<int>(fn() => { return 5; });\n"
             "var first = scheduler.schedule<int>(firstJob);\n"
             "var second = scheduler.schedule<int>(secondJob);\n"
             "var shutDown = host.shutdownIsolatedSchedulers();\n"
@@ -980,11 +980,11 @@ static void test_thread_scheduler_isolated_domain_shutdown_faults_queued_submiss
 
 static void test_thread_scheduler_drains_one_worker_queue_in_submission_order(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var firstJob = init task.Job<int>(() => { return 3; });\n"
-            "var secondJob = init task.Job<int>(() => { return 5; });\n"
+            "var firstJob = init task.Job<int>(fn() => { return 3; });\n"
+            "var secondJob = init task.Job<int>(fn() => { return 5; });\n"
             "var first = scheduler.schedule<int>(firstJob);\n"
             "var second = scheduler.schedule<int>(secondJob);\n"
             "return first.result() * 10 + second.result();\n";
@@ -1006,10 +1006,10 @@ static void test_thread_scheduler_drains_one_worker_queue_in_submission_order(vo
 
 static void test_thread_scheduler_rejects_non_send_job_result(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<thread.ThreadScheduler>(() => { return scheduler; });\n"
+            "var job = init task.Job<thread.ThreadScheduler>(fn() => { return scheduler; });\n"
             "var completion = scheduler.schedule(job);\n"
             "return 0;\n";
     SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
@@ -1022,10 +1022,10 @@ static void test_thread_scheduler_rejects_non_send_job_result(void) {
 
 static void test_thread_scheduler_rejects_reused_job(void) {
     static const char *source =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var first = scheduler.schedule<int>(job);\n"
             "var second = scheduler.schedule<int>(job);\n"
             "return first.result() + second.result();\n";

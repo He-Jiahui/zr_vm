@@ -913,7 +913,7 @@ void test_runtime_global_binding_marks_returned_object_as_global_root(void) {
 
 void test_runtime_native_callback_capture_marks_returned_object_as_native_handle(void) {
     static const TZrChar *kSource =
-            "var ffiNative = %import(\"zr.ffi\");\n"
+            "let ffiNative = import(\"zr.ffi\");\n"
             "var payload = { extra: 2.0 };\n"
             "nativeCallback(value: float): float {\n"
             "    return value + payload.extra;\n"
@@ -963,7 +963,7 @@ void test_binary_roundtrip_runtime_global_binding_preserves_escape_flags(void) {
 
 void test_binary_roundtrip_runtime_native_callback_preserves_escape_flags(void) {
     static const TZrChar *kSource =
-            "var ffiNative = %import(\"zr.ffi\");\n"
+            "let ffiNative = import(\"zr.ffi\");\n"
             "var payload = { extra: 4.0 };\n"
             "nativeCallback(value: float): float {\n"
             "    return value + payload.extra;\n"

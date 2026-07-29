@@ -1,4 +1,4 @@
-%module "type_cast_struct";
+module type_cast_struct;
 
 // 结构体定义
 struct Vector3 {
@@ -14,14 +14,14 @@ struct Vector3 {
 }
 
 // 结构体类型转换测试
-var test_struct_cast = () => {
+var test_struct_cast = fn(): float {
     var obj = {x: 1.0, y: 2.0, z: 3.0};
     var v = <Vector3> obj;
     return v.x + v.y + v.z;
 };
 
 // 测试用例
-%test("typeCastStructTest"){
+fn __fixture(): int {
     var result = 0;
     
     // 测试结构体转换
@@ -30,5 +30,7 @@ var test_struct_cast = () => {
     
     return result;
 }
+
+return __fixture();
 
 

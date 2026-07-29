@@ -1259,7 +1259,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             memberInfo.isStatic = ZR_FALSE;
             memberInfo.modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
             memberInfo.isConst = ZR_FALSE;
-            memberInfo.isUsingManaged = ZR_FALSE;
+            memberInfo.reservedRemovedUsingManaged = ZR_FALSE;
             memberInfo.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             memberInfo.gcBridgeKind = ZR_GC_BRIDGE_NONE;
             memberInfo.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;

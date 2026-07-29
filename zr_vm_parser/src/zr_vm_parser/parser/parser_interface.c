@@ -77,9 +77,13 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    if (ps->lexer->t.token == ZR_TK_FN) {
-        ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_FN) {
+        report_removed_legacy_syntax(ps,
+                                     "keywordless interface method",
+                                     "Prefix the method signature with `fn`.");
+        return ZR_NULL;
     }
+    ZrParser_Lexer_Next(ps->lexer);
 
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -436,20 +440,11 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
                 restore_parser_cursor(ps, &savedCursor);
                 member = parse_interface_field_declaration(ps);
             } else if (nextToken == ZR_TK_GET || nextToken == ZR_TK_SET) {
-                // 属性签名
                 restore_parser_cursor(ps, &savedCursor);
-                member = parse_interface_property_signature(ps);
-                if (member != ZR_NULL) {
-                    if (!parser_property_migration_collection_append(
-                                ps->state, &legacyProperties, member)) {
-                        ZrParser_Ast_Free(ps->state, member);
-                        report_error(ps, "Failed to record legacy property declaration");
-                        rejectedLegacyProperty = ZR_FALSE;
-                    } else {
-                        rejectedLegacyProperty = ZR_TRUE;
-                    }
-                    member = ZR_NULL;
-                }
+                report_removed_legacy_syntax(
+                        ps,
+                        "split get/set interface property",
+                        "Use one `property name: Type { get; set; }` declaration.");
             } else if (nextToken == ZR_TK_AT) {
                 // 元函数签名
                 restore_parser_cursor(ps, &savedCursor);
@@ -463,19 +458,10 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
             // 元函数签名
             member = parse_interface_meta_signature(ps);
         } else if (token == ZR_TK_GET || token == ZR_TK_SET) {
-            // 属性签名
-            member = parse_interface_property_signature(ps);
-            if (member != ZR_NULL) {
-                if (!parser_property_migration_collection_append(
-                            ps->state, &legacyProperties, member)) {
-                    ZrParser_Ast_Free(ps->state, member);
-                    report_error(ps, "Failed to record legacy property declaration");
-                    rejectedLegacyProperty = ZR_FALSE;
-                } else {
-                    rejectedLegacyProperty = ZR_TRUE;
-                }
-                member = ZR_NULL;
-            }
+            report_removed_legacy_syntax(
+                    ps,
+                    "split get/set interface property",
+                    "Use one `property name: Type { get; set; }` declaration.");
         } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_FN) {
             // 方法签名
             member = parse_interface_method_signature(ps);

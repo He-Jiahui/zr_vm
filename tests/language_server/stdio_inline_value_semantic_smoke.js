@@ -239,45 +239,45 @@ async function main() {
     const stringInlineValueUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-string-literals.zr';
     const text = [
-        'func main(): void {',
+        'fn main(): void {',
         '    var seed = 2;',
         '    seed + 3;',
         '}',
         '',
     ].join('\n');
     const multilineText = [
-        'func main(): int {',
+        'fn main(): int {',
         '    return 1 +',
         '        2;',
         '}',
         '',
     ].join('\n');
     const returnNextLineText = [
-        'func main(): int {',
+        'fn main(): int {',
         '    return',
         '        1 + 2;',
         '}',
         '',
     ].join('\n');
     const multilineInitializerText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    var sum =',
         '        1 + 2;',
         '}',
         '',
     ].join('\n');
     const unaryExpressionText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    !true;',
         '    -42;',
         '}',
         '',
     ].join('\n');
     const callMemberExpressionText = [
-        'func pick(value: int): int {',
+        'fn pick(value: int): int {',
         '    return value;',
         '}',
-        'func main(): void {',
+        'fn main(): void {',
         '    var seed = {value: 2};',
         '    pick(42);',
         '    seed.value;',
@@ -285,7 +285,7 @@ async function main() {
         '',
     ].join('\n');
     const computedMemberExpressionText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    var index = 0;',
         '    var seed = {value: 2};',
         '    seed[index];',
@@ -293,14 +293,14 @@ async function main() {
         '',
     ].join('\n');
     const aggregateExpressionText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    [1 + 2];',
         '    [true || false];',
         '}',
         '',
     ].join('\n');
     const objectAggregateExpressionText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    var anchor = 0;',
         '    {[1 + 2]: 4};',
         '    {',
@@ -311,14 +311,14 @@ async function main() {
         '',
     ].join('\n');
     const continuationExpressionText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    1 +',
         '        2;',
         '}',
         '',
     ].join('\n');
     const blockCommentInlineValueText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    /*',
         '    var ghost = 1;',
         '    */',
@@ -328,7 +328,7 @@ async function main() {
         '',
     ].join('\n');
     const stringInlineValueText = [
-        'func main(): void {',
+        'fn main(): void {',
         '    "var stringGhost = 4;";',
         "    'var singleGhost = 5;';",
         '    `var templateGhost = 6;`;',

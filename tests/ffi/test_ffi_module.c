@@ -454,7 +454,7 @@ static void test_zr_ffi_can_roundtrip_struct_symbols(void) {
 
 static void test_zr_ffi_buffer_and_pointer_methods_work(void) {
     static const TZrChar *kSource =
-            "var ffi = %import(\"zr.ffi\");\n"
+            "let ffi = import(\"zr.ffi\");\n"
             "var buffer = ffi.BufferHandle.allocate(8);\n"
             "var ptr = buffer.pin();\n"
             "var typed = ptr.as({ kind: \"pointer\", to: \"u8\", direction: \"inout\" });\n"
@@ -586,8 +586,8 @@ static void test_zr_ffi_can_lower_buffer_handle_directly_to_pointer_argument(voi
 
 static void test_zr_ffi_can_create_callback_handle(void) {
     static const TZrChar *kSource =
-            "var ffi = %import(\"zr.ffi\");\n"
-            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, (value) => {\n"
+            "let ffi = import(\"zr.ffi\");\n"
+            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, fn(value) => {\n"
             "  return value * 2.0;\n"
             "});\n"
             "return cb != null;\n";
@@ -844,7 +844,7 @@ static void test_zr_ffi_handle_close_methods_are_idempotent(void) {
 
 static void test_zr_ffi_load_library_failure_reports_load_error(void) {
     static const char *kSource =
-            "var ffi = %import(\"zr.ffi\");\n"
+            "let ffi = import(\"zr.ffi\");\n"
             "ffi.loadLibrary(\"__zr_ffi_missing_fixture__\");\n"
             "return 0;\n";
     SZrTestTimer timer;

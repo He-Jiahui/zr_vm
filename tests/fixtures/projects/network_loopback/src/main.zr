@@ -1,5 +1,7 @@
-var network = %import("zr.network");
-var lib = %import("lib");
+module main;
+
+let network = import("zr.network");
+let lib = import("lib");
 
 lib.a += 5;
 var r = new lib.Record(3, 4);

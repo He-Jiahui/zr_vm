@@ -335,7 +335,7 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 functionConstantIndex;
     TZrUInt32 parameterCount;
     TZrUInt32 returnTypeNameStringIndex;
-    TZrUInt32 isUsingManaged;
+    TZrUInt32 reservedRemovedUsingManaged;
     TZrUInt32 ownershipQualifier;
     TZrUInt32 callsClose;
     TZrUInt32 callsDestructor;
@@ -764,8 +764,6 @@ void optimize_jumps(SZrCompilerState *cs) ;
 ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) ;
 
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
-
-void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 
 SZrString *get_type_name_from_inferred_type(SZrCompilerState *cs, const SZrInferredType *inferredType) ;
 

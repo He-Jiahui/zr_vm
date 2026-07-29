@@ -596,10 +596,10 @@ static TZrBool prepare_generated_ffi_wrapper_fixture(const TZrChar *artifactName
         "  \"entry\": \"main\"\n"
         "}\n";
     static const TZrChar *mainContent =
-        "var nativeApi = %import(\"native_api\");\n"
+        "let nativeApi = import(\"native_api\");\n"
         "return nativeApi;\n";
     static const TZrChar *wrapperContent =
-        "%extern(\"fixture\") {\n"
+        "native extern(\"fixture\") {\n"
         "    Add(lhs: i32, rhs: i32): i32;\n"
         "}\n";
     TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
@@ -645,15 +645,15 @@ static TZrBool prepare_generated_multi_import_source_fixture(const TZrChar *arti
         "  \"entry\": \"main\"\n"
         "}\n";
     static const TZrChar *mainContent =
-        "var greetModule = %import(\"greet\");\n"
+        "let greetModule = import(\"greet\");\n"
         "return greetModule.greet();\n";
     static const TZrChar *helperContent =
-        "var greetModule = %import(\"greet\");\n"
-        "pub func helper() {\n"
+        "let greetModule = import(\"greet\");\n"
+        "pub fn helper() {\n"
         "    return greetModule.greet();\n"
         "}\n";
     static const TZrChar *moduleContent =
-        "pub var greet = () => {\n"
+        "pub var greet = fn() => {\n"
         "    return \"hello from generated import\";\n"
         "};\n";
     TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
@@ -704,8 +704,8 @@ static TZrBool prepare_generated_relative_alias_import_fixture(const TZrChar *ar
         "  }\n"
         "}\n";
     static const TZrChar *mainContent =
-        "var localMath = %import(\".helper.math\");\n"
-        "var sharedHash = %import(\"@shared.crypto.hash\");\n"
+        "let localMath = import(\".helper.math\");\n"
+        "let sharedHash = import(\"@shared.crypto.hash\");\n"
         "\n"
         "return localMath.answer + sharedHash.seed;\n";
     static const TZrChar *helperContent =
@@ -757,16 +757,20 @@ static TZrBool prepare_generated_type_member_export_fixture(const TZrChar *artif
         "  \"entry\": \"main\"\n"
         "}\n";
     static const TZrChar *mainContent =
-        "var lib = %import(\"lib\");\n"
+        "module main;\n"
+        "\n"
+        "let lib = import(\"lib\");\n"
         "\n"
         "lib.a += 5;\n"
         "var r = lib.Record.newInstance();\n"
         "lib.\n";
     static const TZrChar *moduleContent =
+        "module lib;\n"
+        "\n"
         "pub var a = 1;\n"
         "\n"
         "pub class Record {\n"
-        "    pub static newInstance(): i32 {\n"
+        "    pub static fn newInstance(): i32 {\n"
         "        return 7;\n"
         "    }\n"
         "}\n";
@@ -895,10 +899,10 @@ static TZrBool prepare_generated_descriptor_plugin_fixture(const TZrChar *artifa
         "  \"entry\": \"main\"\n"
         "}\n";
     static const TZrChar *mainContent =
-        "var plugin = %import(\"zr.pluginprobe\");\n"
+        "var plugin = import(\"zr.pluginprobe\");\n"
         "plugin.answer;\n"
         "var capture = plugin.answer;\n"
-        "pub func usePlugin() {\n"
+        "pub fn usePlugin() {\n"
         "    return plugin.answer;\n"
         "}\n";
     TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
@@ -957,15 +961,19 @@ static TZrBool prepare_generated_source_member_refresh_fixture(const TZrChar *ar
         "  \"entry\": \"main\"\n"
         "}\n";
     static const TZrChar *mainContent =
-        "var numbers = %import(\"numbers\");\n"
+        "module main;\n"
+        "\n"
+        "var numbers = import(\"numbers\");\n"
         "var cachedAnswer = numbers.answer();\n"
         "var cachedInferred = numbers.inferred();\n"
         "return cachedAnswer;\n";
     static const TZrChar *moduleContent =
-        "pub answer(): int {\n"
+        "module numbers;\n"
+        "\n"
+        "pub fn answer(): int {\n"
         "    return 1;\n"
         "}\n"
-        "pub inferred() {\n"
+        "pub fn inferred() {\n"
         "    return 1;\n"
         "}\n";
     TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
@@ -1590,6 +1598,51 @@ static TZrBool semantic_tokens_contain(SZrArray *data,
     return ZR_FALSE;
 }
 
+static TZrBool semantic_tokens_contain_with_modifiers(SZrArray *data,
+                                                      TZrInt32 line,
+                                                      TZrInt32 character,
+                                                      TZrInt32 length,
+                                                      const TZrChar *typeName,
+                                                      TZrUInt32 modifiers) {
+    TZrUInt32 currentLine = 0;
+    TZrUInt32 currentCharacter = 0;
+    TZrInt32 typeIndex = semantic_token_type_index(typeName);
+
+    if (data == ZR_NULL || typeIndex < 0) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index + 4 < data->length; index += 5) {
+        TZrUInt32 *deltaLinePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index);
+        TZrUInt32 *deltaStartPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 1);
+        TZrUInt32 *lengthPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 2);
+        TZrUInt32 *typePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 3);
+        TZrUInt32 *modifiersPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 4);
+
+        if (deltaLinePtr == ZR_NULL || deltaStartPtr == ZR_NULL || lengthPtr == ZR_NULL ||
+            typePtr == ZR_NULL || modifiersPtr == ZR_NULL) {
+            continue;
+        }
+
+        currentLine += *deltaLinePtr;
+        if (*deltaLinePtr == 0) {
+            currentCharacter += *deltaStartPtr;
+        } else {
+            currentCharacter = *deltaStartPtr;
+        }
+
+        if ((TZrInt32)currentLine == line &&
+            (TZrInt32)currentCharacter == character &&
+            (TZrInt32)(*lengthPtr) == length &&
+            (TZrInt32)(*typePtr) == typeIndex &&
+            *modifiersPtr == modifiers) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static void test_lsp_auto_discovers_project_from_source_file(SZrState *state);
 static void test_lsp_imported_type_members_do_not_leak_into_module_completion(SZrState *state);
 static void test_lsp_imported_constructor_and_meta_call_infer_through_module_type(SZrState *state);
@@ -1621,6 +1674,7 @@ static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_ke
 static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(SZrState *state);
 static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents(SZrState *state);
 static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state);
+static void test_lsp_semantic_tokens_mark_percent_syntax_deprecated(SZrState *state);
 static void test_lsp_semantic_tokens_cover_external_metadata_members(SZrState *state);
 static void test_lsp_semantic_tokens_cover_native_value_constructor_members(SZrState *state);
 
@@ -1635,6 +1689,7 @@ static void test_lsp_auto_discovers_project_from_source_file(SZrState *state) {
     SZrString *greetUri = ZR_NULL;
     SZrLspPosition memberUsage;
     SZrLspPosition aliasUsage;
+    SZrLspPosition memberCompletion;
     SZrArray definitions;
     SZrArray completions;
     SZrArray workspaceSymbols;
@@ -1689,11 +1744,13 @@ static void test_lsp_auto_discovers_project_from_source_file(SZrState *state) {
         return;
     }
 
+    memberCompletion = aliasUsage;
+    memberCompletion.character += (TZrInt32)strlen("greetModule.");
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
     if (!ZrLanguageServer_Lsp_GetCompletion(state,
                                             context,
                                             mainUri,
-                                            (SZrLspPosition){0, 23},
+                                            memberCompletion,
                                             &completions) ||
         !completion_array_contains_label(&completions, "greet")) {
         free(mainContent);
@@ -2029,7 +2086,7 @@ static void test_lsp_imported_constructor_and_meta_call_infer_through_module_typ
 
 static void test_lsp_import_diagnostics_report_unresolved_module(SZrState *state) {
     static const TZrChar *mainContent =
-        "var ghost = %import(\"ghost\");\n"
+        "var ghost = import(\"ghost\");\n"
         "return 0;\n";
     SZrTestTimer timer;
     SZrGeneratedImportDiagnosticsFixture fixture;
@@ -2040,7 +2097,7 @@ static void test_lsp_import_diagnostics_report_unresolved_module(SZrState *state
 
     TEST_START("LSP Import Diagnostics Report Unresolved Module");
     TEST_INFO("Import diagnostics",
-              "Missing import targets should surface a document diagnostic on the %import string literal");
+              "Missing import targets should surface a document diagnostic on the import string literal");
 
     ZrCore_Array_Construct(&diagnostics);
     if (!prepare_generated_import_diagnostics_fixture("project_features_import_unresolved_module",
@@ -2088,7 +2145,7 @@ static void test_lsp_import_diagnostics_report_unresolved_module(SZrState *state
 
 static void test_lsp_import_diagnostics_report_missing_imported_member(SZrState *state) {
     static const TZrChar *mainContent =
-        "var greet = %import(\"greet\");\n"
+        "var greet = import(\"greet\");\n"
         "var answer = greet.missing;\n";
     static const TZrChar *moduleContent =
         "pub var present = 1;\n";
@@ -2178,13 +2235,13 @@ static void test_lsp_import_diagnostics_report_missing_imported_member(SZrState 
 
 static void test_lsp_import_diagnostics_surface_cyclic_initialization_error(SZrState *state) {
     static const TZrChar *mainContent =
-        "var a = %import(\"a\");\n"
+        "var a = import(\"a\");\n"
         "return 0;\n";
     static const TZrChar *aContent =
-        "var b = %import(\"b\");\n"
+        "var b = import(\"b\");\n"
         "pub var a1 = b.b1;\n";
     static const TZrChar *bContent =
-        "var a = %import(\"a\");\n"
+        "var a = import(\"a\");\n"
         "pub var b1 = a.a1;\n";
     SZrTestTimer timer;
     SZrGeneratedImportDiagnosticsFixture fixture;
@@ -2385,7 +2442,7 @@ static void test_lsp_native_imports_and_ownership_display(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *nativeContent =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "system.console;\n";
     SZrString *nativeUri;
     SZrLspPosition aliasPosition;
@@ -2467,7 +2524,7 @@ static void test_lsp_native_imports_and_ownership_display(SZrState *state) {
 
     if (!ZrLanguageServer_Lsp_GetHover(state, context, mathUri, functionPosition, &ownershipHover) ||
         ownershipHover == ZR_NULL ||
-        !hover_contains_text(ownershipHover, "%unique PointSet")) {
+        !hover_contains_text(ownershipHover, "Unique<PointSet>")) {
         free(mathContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Native Imports And Ownership Display", "Hover should preserve ownership qualifiers in type display");
@@ -2541,7 +2598,7 @@ static void test_lsp_project_ast_collects_import_bindings(SZrState *state) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Project AST Collects Import Bindings",
-                  "fileVersion->ast should expose the canonical plain import binding for %import(\"greet\")");
+                  "fileVersion->ast should expose the canonical plain import binding for import(\"greet\")");
         return;
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
@@ -2554,7 +2611,7 @@ static void test_lsp_project_ast_collects_import_bindings(SZrState *state) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Project AST Collects Import Bindings",
-                  "analyzer->ast should expose the canonical plain import binding for %import(\"greet\")");
+                  "analyzer->ast should expose the canonical plain import binding for import(\"greet\")");
         return;
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
@@ -2675,13 +2732,13 @@ static void test_lsp_import_literal_navigation_and_hover(SZrState *state) {
     SZrLspPosition sourceImportPosition;
     SZrArray definitions;
     SZrLspHover *hover = ZR_NULL;
-    const TZrChar *nativeContent = "var system = %import(\"zr.system\");\n";
+    const TZrChar *nativeContent = "var system = import(\"zr.system\");\n";
     SZrString *nativeUri = ZR_NULL;
     SZrLspPosition nativeImportPosition;
 
     TEST_START("LSP Import Literal Navigation And Hover");
     TEST_INFO("Import target navigation",
-              "Hover and definition on %import string literals should resolve the target module and source kind");
+              "Hover and definition on import string literals should resolve the target module and source kind");
 
     if (!build_fixture_native_path("tests/fixtures/projects/import_basic/src/main.zr", mainPath, sizeof(mainPath)) ||
         !build_fixture_native_path("tests/fixtures/projects/import_basic/src/greet.zr", greetPath, sizeof(greetPath))) {
@@ -2716,7 +2773,7 @@ static void test_lsp_import_literal_navigation_and_hover(SZrState *state) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal Navigation And Hover",
-                  "Definition on %import(\"greet\") should jump to the imported module entry");
+                  "Definition on import(\"greet\") should jump to the imported module entry");
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -2729,7 +2786,7 @@ static void test_lsp_import_literal_navigation_and_hover(SZrState *state) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal Navigation And Hover",
-                  "Hover on %import(\"greet\") should describe the source module target");
+                  "Hover on import(\"greet\") should describe the source module target");
         return;
     }
 
@@ -2755,7 +2812,7 @@ static void test_lsp_import_literal_navigation_and_hover(SZrState *state) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal Navigation And Hover",
-                  "Hover on %import(\"zr.system\") should describe the native builtin source");
+                  "Hover on import(\"zr.system\") should describe the native builtin source");
         return;
     }
 
@@ -2823,7 +2880,7 @@ static void test_lsp_relative_and_alias_import_literal_navigation_and_hover(SZrS
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Relative And Alias Import Literal Navigation And Hover",
-                  "Definition on %import(\".helper.math\") should resolve to the relative project source module entry");
+                  "Definition on import(\".helper.math\") should resolve to the relative project source module entry");
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -2836,7 +2893,7 @@ static void test_lsp_relative_and_alias_import_literal_navigation_and_hover(SZrS
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Relative And Alias Import Literal Navigation And Hover",
-                  "Definition on %import(\"@shared.crypto.hash\") should resolve through pathAliases to the shared source module entry");
+                  "Definition on import(\"@shared.crypto.hash\") should resolve through pathAliases to the shared source module entry");
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -2849,7 +2906,7 @@ static void test_lsp_relative_and_alias_import_literal_navigation_and_hover(SZrS
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Relative And Alias Import Literal Navigation And Hover",
-                  "Hover on %import(\".helper.math\") should report the canonical relative module key");
+                  "Hover on import(\".helper.math\") should report the canonical relative module key");
         return;
     }
 
@@ -2861,7 +2918,7 @@ static void test_lsp_relative_and_alias_import_literal_navigation_and_hover(SZrS
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Relative And Alias Import Literal Navigation And Hover",
-                  "Hover on %import(\"@shared.crypto.hash\") should report the canonical alias-expanded module key");
+                  "Hover on import(\"@shared.crypto.hash\") should report the canonical alias-expanded module key");
         return;
     }
 
@@ -2884,7 +2941,7 @@ static void test_lsp_import_literal_hover_identifies_ffi_source_wrapper(SZrState
 
     TEST_START("LSP Import Literal Hover Identifies FFI Source Wrapper");
     TEST_INFO("FFI wrapper source kind",
-              "Import target hover on a %extern-backed source module should surface ffi source wrapper instead of plain project source");
+              "Import target hover on a native extern-backed source module should surface ffi source wrapper instead of plain project source");
 
     if (!prepare_generated_ffi_wrapper_fixture("project_features_ffi_wrapper_source_kind", &fixture)) {
         TEST_FAIL(timer,
@@ -2937,7 +2994,7 @@ static void test_lsp_import_literal_hover_identifies_ffi_source_wrapper(SZrState
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal Hover Identifies FFI Source Wrapper",
-                  "Hover on %import(\"native_api\") should describe the imported wrapper as ffi source wrapper");
+                  "Hover on import(\"native_api\") should describe the imported wrapper as ffi source wrapper");
         return;
     }
 
@@ -3001,7 +3058,7 @@ static void test_lsp_import_literal_hover_identifies_native_descriptor_plugin(SZ
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal Hover Identifies Native Descriptor Plugin",
-                  "Hover on %import(\"zr.pluginprobe\") should describe the imported module as native descriptor plugin");
+                  "Hover on import(\"zr.pluginprobe\") should describe the imported module as native descriptor plugin");
         return;
     }
 
@@ -3040,7 +3097,7 @@ static void test_lsp_import_literal_definition_targets_native_descriptor_plugin(
 
     TEST_START("LSP Import Literal Definition Targets Native Descriptor Plugin");
     TEST_INFO("Descriptor plugin import target definition",
-              "Definition on %import(\"zr.pluginprobe\") should navigate to the backing native descriptor plugin file when no source or binary metadata module exists");
+              "Definition on import(\"zr.pluginprobe\") should navigate to the backing native descriptor plugin file when no source or binary metadata module exists");
 
     if (!prepare_generated_descriptor_plugin_fixture("project_features_descriptor_plugin_import_definition",
                                                      ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH,
@@ -3108,7 +3165,7 @@ static void test_lsp_binary_import_literal_definition_targets_metadata(SZrState 
 
     TEST_START("LSP Binary Import Literal Definition Targets Metadata");
     TEST_INFO("Binary import target definition",
-              "Definition on %import(\"graph_binary_stage\") should navigate to the backing binary metadata module when no source module exists");
+              "Definition on import(\"graph_binary_stage\") should navigate to the backing binary metadata module when no source module exists");
 
     if (!prepare_generated_binary_metadata_fixture(state,
                                                    "project_features_binary_import_literal_definition",
@@ -3308,7 +3365,7 @@ static void test_lsp_binary_import_references_surface_metadata_and_usages(SZrSta
     SZrGeneratedBinaryMetadataFixture fixture;
     SZrLspContext *context;
     const TZrChar *customMainContent =
-        "var binaryStage = %import(\"graph_binary_stage\");\n"
+        "var binaryStage = import(\"graph_binary_stage\");\n"
         "var left = <int> binaryStage.binarySeed();\n"
         "var right = <int> binaryStage.binarySeed();\n"
         "return left + right;\n";
@@ -3595,25 +3652,25 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
     SZrTestTimer timer;
     SZrGeneratedDescriptorPluginFixture fixture;
     const TZrChar *mainSource =
-        "var plugin = %import(\"zr.pluginprobe\");\n"
-        "pub func usePlugin() {\n"
+        "var plugin = import(\"zr.pluginprobe\");\n"
+        "pub fn usePlugin() {\n"
         "    var point = plugin.makePoint();\n"
         "    point.x;\n"
         "    var first = point.y;\n"
         "    var second = point.y;\n"
-        "    var pickTotal = () => {\n"
+        "    var pickTotal = fn() => {\n"
         "        return point.total();\n"
         "    };\n"
         "    return pickTotal() + point.total() + first + second;\n"
         "}\n";
     const TZrChar *completionProbeSource =
-        "var plugin = %import(\"zr.pluginprobe\");\n"
-        "pub func usePlugin() {\n"
+        "var plugin = import(\"zr.pluginprobe\");\n"
+        "pub fn usePlugin() {\n"
         "    var point = plugin.makePoint();\n"
         "    point.;\n"
         "    var first = point.y;\n"
         "    var second = point.y;\n"
-        "    var pickTotal = () => {\n"
+        "    var pickTotal = fn() => {\n"
         "        return point.total();\n"
         "    };\n"
         "    return pickTotal() + point.total() + first + second;\n"
@@ -4180,7 +4237,7 @@ static void test_lsp_binary_import_document_highlights_cover_all_local_usages(SZ
     SZrGeneratedBinaryMetadataFixture fixture;
     SZrLspContext *context;
     const TZrChar *customMainContent =
-        "var binaryStage = %import(\"graph_binary_stage\");\n"
+        "var binaryStage = import(\"graph_binary_stage\");\n"
         "var left = <int> binaryStage.binarySeed();\n"
         "var right = <int> binaryStage.binarySeed();\n"
         "return left + right;\n";
@@ -4274,7 +4331,7 @@ static void test_lsp_native_import_member_references_and_highlights(SZrState *st
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "var system = import(\"zr.system\");\n"
         "system.console;\n"
         "var capture = system.console;\n"
         "return system.console;\n";
@@ -4867,6 +4924,7 @@ static void test_lsp_import_literal_references_include_unopened_project_files(SZ
     SZrGeneratedMultiImportSourceFixture fixture;
     TZrSize mainLength = 0;
     TZrChar *mainContent = ZR_NULL;
+    TZrChar *helperContent = ZR_NULL;
     SZrLspContext *context = ZR_NULL;
     SZrString *mainUri = ZR_NULL;
     SZrString *moduleUri = ZR_NULL;
@@ -4879,7 +4937,7 @@ static void test_lsp_import_literal_references_include_unopened_project_files(SZ
 
     TEST_START("LSP Import Literal References Include Unopened Project Files");
     TEST_INFO("Import literal references across unopened files",
-              "Find references on %import(\"module\") should include matching import literals from unopened project files, not only open documents");
+              "Find references on import(\"module\") should include matching import literals from unopened project files, not only open documents");
 
     if (!prepare_generated_multi_import_source_fixture("project_features_import_literal_unopened_refs", &fixture)) {
         TEST_FAIL(timer,
@@ -4889,9 +4947,11 @@ static void test_lsp_import_literal_references_include_unopened_project_files(SZ
     }
 
     mainContent = read_fixture_text_file(fixture.mainPath, &mainLength);
+    helperContent = read_fixture_text_file(fixture.helperPath, ZR_NULL);
     context = ZrLanguageServer_LspContext_New(state);
-    if (mainContent == ZR_NULL || context == ZR_NULL) {
+    if (mainContent == ZR_NULL || helperContent == ZR_NULL || context == ZR_NULL) {
         free(mainContent);
+        free(helperContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal References Include Unopened Project Files",
@@ -4904,17 +4964,16 @@ static void test_lsp_import_literal_references_include_unopened_project_files(SZ
     moduleUri = create_file_uri_from_native_path(state, fixture.modulePath);
     if (mainUri == ZR_NULL || helperUri == ZR_NULL || moduleUri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
-        !lsp_find_position_for_substring(mainContent, "\"greet\"", 0, 1, &importLiteralPosition)) {
+        !lsp_find_position_for_substring(mainContent, "\"greet\"", 0, 1, &importLiteralPosition) ||
+        !lsp_find_position_for_substring(helperContent, "\"greet\"", 0, 1, &helperImportLiteralPosition)) {
         free(mainContent);
+        free(helperContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Import Literal References Include Unopened Project Files",
                   "Failed to open main source or compute import literal position");
         return;
     }
-
-    helperImportLiteralPosition.line = 0;
-    helperImportLiteralPosition.character = 27;
 
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 8);
     if (!ZrLanguageServer_Lsp_FindReferences(state,
@@ -4937,6 +4996,7 @@ static void test_lsp_import_literal_references_include_unopened_project_files(SZ
                                                helperImportLiteralPosition.line,
                                                helperImportLiteralPosition.character + 5)) {
         free(mainContent);
+        free(helperContent);
         ZrCore_Array_Free(state, &references);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -4946,6 +5006,7 @@ static void test_lsp_import_literal_references_include_unopened_project_files(SZ
     }
 
     free(mainContent);
+    free(helperContent);
     ZrCore_Array_Free(state, &references);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Import Literal References Include Unopened Project Files");
@@ -5071,8 +5132,8 @@ static void test_lsp_module_entry_references_include_unopened_project_files(SZrS
 
 static void test_lsp_ffi_module_entry_references_include_unopened_project_files(SZrState *state) {
     static const TZrChar *helperContent =
-        "var nativeApi = %import(\"native_api\");\n"
-        "pub func helper() {\n"
+        "var nativeApi = import(\"native_api\");\n"
+        "pub fn helper() {\n"
         "    return nativeApi.Add(1, 2);\n"
         "}\n";
     SZrTestTimer timer;
@@ -5325,11 +5386,11 @@ static void test_lsp_watched_descriptor_plugin_refresh_bootstraps_unopened_proje
 static void test_lsp_watched_project_refresh_surfaces_advanced_editor_features(SZrState *state) {
     static const TZrChar *summary = "LSP Watched Project Refresh Surfaces Advanced Editor Features";
     static const TZrChar *openedContent =
-        "func opened_project_helper(value: int): int {\n"
+        "fn opened_project_helper(value: int): int {\n"
         "    return value;\n"
         "}\n"
         "\n"
-        "pub func opened_project_entry(): int {\n"
+        "pub fn opened_project_entry(): int {\n"
         "    return opened_project_helper(7);\n"
         "}\n";
     SZrTestTimer timer;
@@ -5573,24 +5634,30 @@ static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_ke
 
 static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *state) {
     static const TZrChar *bodyUpdatedModuleContent =
-        "pub answer(): int {\n"
+        "module numbers;\n"
+        "\n"
+        "pub fn answer(): int {\n"
         "    return 2;\n"
         "}\n"
-        "pub inferred() {\n"
+        "pub fn inferred() {\n"
         "    return 1;\n"
         "}\n";
     static const TZrChar *inferredBodyUpdatedModuleContent =
-        "pub answer(): int {\n"
+        "module numbers;\n"
+        "\n"
+        "pub fn answer(): int {\n"
         "    return 2;\n"
         "}\n"
-        "pub inferred() {\n"
+        "pub fn inferred() {\n"
         "    return 1.5;\n"
         "}\n";
     static const TZrChar *updatedModuleContent =
-        "pub answer(): float {\n"
+        "module numbers;\n"
+        "\n"
+        "pub fn answer(): float {\n"
         "    return 1.5;\n"
         "}\n"
-        "pub inferred() {\n"
+        "pub fn inferred() {\n"
         "    return 1.5;\n"
         "}\n";
     SZrTestTimer timer;
@@ -5859,13 +5926,11 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
     SZrLspContext *context;
     SZrGeneratedBinaryMetadataFixture fixture;
     const TZrChar *customMainContent =
-        "var binaryStage = %import(\"graph_binary_stage\");\n"
+        "var binaryStage = import(\"graph_binary_stage\");\n"
         "var cachedSeed = binaryStage.binarySeed();\n"
         "return cachedSeed;\n";
     static const TZrChar *updatedBinaryMetadataSource =
-        "pub var binarySeed = () => {\n"
-        "    return 40.5;\n"
-        "};\n";
+        "pub var binarySeed = fn(): float => 40.5;\n";
     TZrSize mainLength = 0;
     TZrChar *mainContent;
     SZrString *mainUri = ZR_NULL;
@@ -5875,6 +5940,7 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
     SZrLspPosition localHoverPosition;
     SZrArray completions;
     SZrLspHover *hover = ZR_NULL;
+    const TZrChar *completionDetail;
 
     TEST_START("LSP Watched Binary Metadata Refresh Reanalyzes Open Documents");
     TEST_INFO("Watched binary metadata refresh",
@@ -5971,12 +6037,15 @@ static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(S
         !completion_array_contains_label(&completions, "binarySeed") ||
         !completion_detail_contains_fragment(&completions, "binarySeed", "float") ||
         completion_detail_contains_fragment(&completions, "binarySeed", "int")) {
+        completionDetail = completion_detail_for_label(&completions, "binarySeed");
         free(mainContent);
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Watched Binary Metadata Refresh Reanalyzes Open Documents",
-                  "Watched binary metadata refresh should invalidate stale imported completion detail as well as hover");
+                  completionDetail != ZR_NULL
+                      ? completionDetail
+                      : "Watched binary metadata refresh should invalidate stale imported completion detail as well as hover");
         return;
     }
     ZrCore_Array_Free(state, &completions);
@@ -6018,7 +6087,7 @@ static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents
     SZrLspContext *context;
     SZrGeneratedDescriptorPluginFixture fixture;
     const TZrChar *customMainContent =
-        "var plugin = %import(\"zr.pluginprobe\");\n"
+        "var plugin = import(\"zr.pluginprobe\");\n"
         "var cachedAnswer = plugin.answer();\n"
         "return cachedAnswer;\n";
     TZrSize mainLength = 0;
@@ -6177,10 +6246,10 @@ static void test_lsp_builtin_native_module_members_surface_completion_and_hover(
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "var builtin = %import(\"zr.builtin\");\n"
-        "var {Integer, TypeInfo} = %import(\"zr.builtin\");\n"
+        "var builtin = import(\"zr.builtin\");\n"
+        "var {Integer, TypeInfo} = import(\"zr.builtin\");\n"
         "var boxed: Integer = null;\n"
-        "var meta: TypeInfo = %type(7);\n"
+        "var meta: TypeInfo = typeof(7);\n"
         "builtin.Integer;\n"
         "boxed.hashCode;\n"
         "TypeInfo.box;\n";
@@ -6229,7 +6298,7 @@ static void test_lsp_builtin_native_module_members_surface_completion_and_hover(
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Builtin Native Module Members Surface Completion And Hover",
-                  "Hover on %import(\"zr.builtin\") should surface the native builtin module entry");
+                  "Hover on import(\"zr.builtin\") should surface the native builtin module entry");
         return;
     }
 
@@ -6320,8 +6389,8 @@ static void test_lsp_container_native_members_surface_closed_types_and_completio
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "var container = %import(\"zr.container\");\n"
-        "var {Array, Map, LinkedList, LinkedNode} = %import(\"zr.container\");\n"
+        "var container = import(\"zr.container\");\n"
+        "var {Array, Map, LinkedList, LinkedNode} = import(\"zr.container\");\n"
         "var xs: Array<int> = null;\n"
         "var map: Map<string, int> = null;\n"
         "var list: LinkedList<int> = null;\n"
@@ -6439,7 +6508,7 @@ static void test_lsp_ffi_pointer_types_surface_hover_and_completion(SZrState *st
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "var ffi = %import(\"zr.ffi\");\n"
+        "var ffi = import(\"zr.ffi\");\n"
         "var buffer = ffi.BufferHandle.allocate(8);\n"
         "var bytePtr = buffer.pin();\n"
         "var typedPtr = bytePtr.as({ kind: \"pointer\", to: \"i32\", direction: \"inout\" });\n"
@@ -6535,9 +6604,9 @@ static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state)
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "var system = %import(\"zr.system\");\n"
+        "let system = import(\"zr.system\");\n"
         "class Foo {\n"
-        "    %borrowed pub work(arg: int) {\n"
+        "    pub fn work(arg: in int): void {\n"
         "        system.console.print(\"x\");\n"
         "    }\n"
         "}\n";
@@ -6560,14 +6629,15 @@ static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state)
 
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
-        !semantic_tokens_contain(&tokens, 0, 13, 7, "keyword") ||
+        !semantic_tokens_contain(&tokens, 0, 13, 6, "keyword") ||
         !semantic_tokens_contain(&tokens, 1, 6, 3, "class") ||
-        !semantic_tokens_contain(&tokens, 2, 4, 9, "keyword") ||
+        !semantic_tokens_contain(&tokens, 2, 8, 2, "keyword") ||
+        !semantic_tokens_contain(&tokens, 2, 21, 2, "keyword") ||
         !semantic_tokens_contain(&tokens, 3, 8, 6, "namespace") ||
         !semantic_tokens_contain(&tokens, 3, 23, 5, "method")) {
         ZrCore_Array_Free(state, &tokens);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Semantic Tokens Cover Keywords And Symbols", "Expected semantic token coverage for %import, ownership, class names, module aliases, and methods");
+        TEST_FAIL(timer, "LSP Semantic Tokens Cover Keywords And Symbols", "Expected semantic token coverage for import, fn/in, class names, module aliases, and methods");
         return;
     }
 
@@ -6576,15 +6646,60 @@ static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state)
     TEST_PASS(timer, "LSP Semantic Tokens Cover Keywords And Symbols");
 }
 
+static void test_lsp_semantic_tokens_mark_percent_syntax_deprecated(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *content =
+        "import(\"zr.system\");\n"
+        "let remainder = rate % divisor;\n";
+    SZrString *uri;
+    SZrArray tokens;
+
+    TEST_START("LSP Semantic Tokens Mark Percent Syntax Deprecated");
+    TEST_INFO("Semantic Tokens", "Legacy percent directives should carry the LSP deprecated modifier without classifying modulo expressions");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///semantic_tokens_legacy_percent.zr",
+                               strlen("file:///semantic_tokens_legacy_percent.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Mark Percent Syntax Deprecated",
+                  "Failed to prepare legacy percent semantic token source");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 16);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
+        !semantic_tokens_contain_with_modifiers(&tokens, 0, 0, 7, "keyword", 1u) ||
+        semantic_tokens_contain(&tokens, 1, 21, 1, "keyword")) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Mark Percent Syntax Deprecated",
+                  "Expected import to be deprecated and modulo to remain unclassified");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Tokens Mark Percent Syntax Deprecated");
+}
+
 static void test_lsp_semantic_tokens_cover_decorators_and_meta_methods(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
+        "module semantic.tokens;\n"
         "#singleton#\n"
         "class Foo {\n"
         "    pub @constructor() { }\n"
         "}\n"
-        "%compileTime var MAX_SIZE = 1;\n";
+        "comptime {\n"
+        "    let maxSize = 1;\n"
+        "}\n";
     SZrString *uri;
     SZrArray tokens;
 
@@ -6606,15 +6721,15 @@ static void test_lsp_semantic_tokens_cover_decorators_and_meta_methods(SZrState 
 
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
-        !semantic_tokens_contain(&tokens, 0, 0, 11, "decorator") ||
-        !semantic_tokens_contain(&tokens, 1, 6, 3, "class") ||
-        !semantic_tokens_contain(&tokens, 2, 8, 12, "metaMethod") ||
-        !semantic_tokens_contain(&tokens, 4, 0, 12, "keyword")) {
+        !semantic_tokens_contain(&tokens, 1, 0, 11, "decorator") ||
+        !semantic_tokens_contain(&tokens, 2, 6, 3, "class") ||
+        !semantic_tokens_contain(&tokens, 3, 8, 12, "metaMethod") ||
+        !semantic_tokens_contain(&tokens, 5, 0, 8, "keyword")) {
         ZrCore_Array_Free(state, &tokens);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Tokens Cover Decorators And Meta Methods",
-                  "Expected semantic token coverage for #decorator#, class names, @meta-methods, and %compileTime");
+                  "Expected semantic token coverage for #decorator#, class names, @meta-methods, and comptime");
         return;
     }
 
@@ -6625,7 +6740,7 @@ static void test_lsp_semantic_tokens_cover_decorators_and_meta_methods(SZrState 
 
 static void test_lsp_semantic_tokens_cover_external_metadata_members(SZrState *state) {
     static const TZrChar *mainContent =
-        "var plugin = %import(\"zr.pluginprobe\");\n"
+        "var plugin = import(\"zr.pluginprobe\");\n"
         "pub usePlugin(): int {\n"
         "    var point: plugin.ProbePoint = plugin.makePoint();\n"
         "    plugin.console.printLine(\"trace\");\n"
@@ -6721,9 +6836,9 @@ static void test_lsp_semantic_tokens_cover_external_metadata_members(SZrState *s
 
 static void test_lsp_semantic_tokens_cover_native_value_constructor_members(SZrState *state) {
     static const TZrChar *mainContent =
-        "var math = %import(\"zr.math\");\n"
-        "pub useMath(): float {\n"
-        "    return $math.Vector3(1.0, 2.0, 3.0).y;\n"
+        "var math = import(\"zr.math\");\n"
+        "pub fn useMath(): float {\n"
+        "    return init math.Vector3(1.0, 2.0, 3.0).y;\n"
         "}\n";
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6742,7 +6857,7 @@ static void test_lsp_semantic_tokens_cover_native_value_constructor_members(SZrS
                                strlen("file:///semantic_tokens_native_value_members.zr"));
     if (context == ZR_NULL || uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, mainContent, strlen(mainContent), 1) ||
-        !lsp_find_position_for_substring(mainContent, "$math.Vector3", 0, 6, &typePosition) ||
+        !lsp_find_position_for_substring(mainContent, "math.Vector3", 0, 5, &typePosition) ||
         !lsp_find_position_for_substring(mainContent, ").y", 0, 2, &fieldPosition)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -6759,7 +6874,7 @@ static void test_lsp_semantic_tokens_cover_native_value_constructor_members(SZrS
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Tokens Cover Native Value Constructor Members",
-                  "Expected semantic token coverage for $module.Type(...) constructors and their resolved native fields");
+                  "Expected semantic token coverage for init module.Type(...) constructors and their resolved native fields");
         return;
     }
 
@@ -6934,7 +7049,7 @@ static void test_lsp_network_native_import_chain_surfaces_module_metadata(SZrSta
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Network Native Import Chain Surfaces Module Metadata",
-                  "Hover on %import(\"zr.network\") should surface the native builtin module entry");
+                  "Hover on import(\"zr.network\") should surface the native builtin module entry");
         return;
     }
 
@@ -7354,7 +7469,7 @@ static void test_lsp_network_native_members_semantic_tokens_cover_chain_and_rece
 static void test_lsp_code_action_inserts_missing_project_source_import(SZrState *state) {
     SZrTestTimer timer;
     static const TZrChar *mainContent =
-        "func main(): int {\n"
+        "fn main(): int {\n"
         "    return greet.present;\n"
         "}\n";
     static const TZrChar *moduleContent =
@@ -7414,7 +7529,7 @@ static void test_lsp_code_action_inserts_missing_project_source_import(SZrState 
             const TZrChar *newText = (editPtr != ZR_NULL && *editPtr != ZR_NULL)
                                          ? test_string_ptr((*editPtr)->newText)
                                          : ZR_NULL;
-            if (newText != ZR_NULL && strcmp(newText, "var greet = %import(\"greet\");\n") == 0) {
+            if (newText != ZR_NULL && strcmp(newText, "let greet = import(\"greet\");\n") == 0) {
                 foundQuickFix = ZR_TRUE;
                 break;
             }
@@ -7466,7 +7581,7 @@ static TZrBool lsp_code_actions_contain_import_edit(SZrArray *actions,
 static void test_lsp_watched_project_refresh_surfaces_project_source_import_quickfix(SZrState *state) {
     SZrTestTimer timer;
     static const TZrChar *mainContent =
-        "func main(): int {\n"
+        "fn main(): int {\n"
         "    return late.present;\n"
         "}\n";
     static const TZrChar *moduleContent =
@@ -7522,7 +7637,7 @@ static void test_lsp_watched_project_refresh_surfaces_project_source_import_quic
 
     if (lsp_code_actions_contain_import_edit(&actions,
                                              "Import late as late",
-                                             "var late = %import(\"late\");\n")) {
+                                             "let late = import(\"late\");\n")) {
         ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -7547,7 +7662,7 @@ static void test_lsp_watched_project_refresh_surfaces_project_source_import_quic
 
     if (!lsp_code_actions_contain_import_edit(&actions,
                                               "Import late as late",
-                                              "var late = %import(\"late\");\n")) {
+                                              "let late = import(\"late\");\n")) {
         ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -7565,9 +7680,9 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "var math = %import(\"zr.math\");\n"
-        "runImpl() {\n"
-        "    return $math.Vector3(4.0, 5.0, 6.0).y;\n"
+        "var math = import(\"zr.math\");\n"
+        "fn runImpl() {\n"
+        "    return init math.Vector3(4.0, 5.0, 6.0).y;\n"
         "}\n";
     SZrString *uri;
     SZrLspPosition completionPosition;
@@ -7577,7 +7692,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
 
     TEST_START("LSP Native Value Constructor Members Surface Hover And Completion");
     TEST_INFO("Native value constructors",
-              "Direct $module.Type(...) receivers should expose native member completion and field hover");
+              "Direct init module.Type(...) receivers should expose native member completion and field hover");
 
     context = ZrLanguageServer_LspContext_New(state);
     uri = ZrCore_String_Create(state,
@@ -7609,7 +7724,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Native Value Constructor Members Surface Hover And Completion",
-                  "Expected $math.Vector3(...). completion to list Vector3 fields");
+                  "Expected init math.Vector3(...). completion to list Vector3 fields");
         return;
     }
     ZrCore_Array_Free(state, &completions);
@@ -7631,7 +7746,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Native Value Constructor Members Surface Hover And Completion",
-                  "Hover on $math.Vector3(...).y should expose the native field type and receiver");
+                  "Hover on init math.Vector3(...).y should expose the native field type and receiver");
         return;
     }
 
@@ -7817,6 +7932,7 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_keywords_and_symbols(state);
+    test_lsp_semantic_tokens_mark_percent_syntax_deprecated(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_decorators_and_meta_methods(state);

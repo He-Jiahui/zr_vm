@@ -372,8 +372,8 @@ static void test_container_array_runtime_supports_capacity_growth_and_structural
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Pair} = import(\"zr.container\");\n"
             "var xs = new container.Array<Pair<int, string>>(1);\n"
             "xs.add(new container.Pair<int, string>(2, \"b\"));\n"
             "xs.insert(0, new container.Pair<int, string>(1, \"a\"));\n"
@@ -412,7 +412,7 @@ static void test_container_array_runtime_constructor_populates_hidden_items_cach
     SZrTypeValue resultValue;
     SZrObject *arrayObject;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "return new container.Array<int>(2);\n";
 
     TEST_START(summary);
@@ -457,7 +457,7 @@ static void test_container_array_runtime_tracks_raw_int_storage_for_typed_add_an
     SZrHashKeyValuePair *thirdPair;
     SZrTypeValue nullValue;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "xs.add(2);\n"
@@ -529,7 +529,7 @@ static void test_container_array_runtime_raw_int_dirty_set_is_visible_to_iterato
     SZrObject *arrayObject;
     SZrObject *itemsObject;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "xs.add(2);\n"
@@ -589,7 +589,7 @@ static void test_container_array_runtime_raw_int_dirty_remove_at_shifts_current_
     SZrTypeValue key;
     const SZrTypeValue *materializedValue;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "xs.add(2);\n"
@@ -652,7 +652,7 @@ static void test_container_array_runtime_raw_int_dirty_insert_shifts_current_val
     SZrTypeValue key;
     const SZrTypeValue *materializedValue;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "xs.add(2);\n"
@@ -713,7 +713,7 @@ static void test_container_array_runtime_raw_int_clear_reuses_storage(void) {
     SZrObject *arrayObject;
     SZrObject *itemsObject;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "xs.add(2);\n"
@@ -760,7 +760,7 @@ static void test_container_array_runtime_bulk_super_array_helpers_preserve_exist
     SZrTypeValueOnStack receiverSlots[4];
     SZrTypeValue *receivers[4];
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "return new container.Array<int>();\n";
 
     TEST_START(summary);
@@ -860,7 +860,7 @@ static void test_container_array_runtime_bulk_super_array_fill_keeps_dense_bucke
     SZrTypeValueOnStack receiverSlots[4];
     SZrTypeValue *receivers[4];
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "return new container.Array<int>();\n";
 
     TEST_START(summary);
@@ -912,7 +912,7 @@ static void test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_t
     SZrTypeValueOnStack receiverSlots[4];
     SZrTypeValue *receivers[4];
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "return new container.Array<int>();\n";
 
     TEST_START(summary);
@@ -964,7 +964,7 @@ static void test_container_array_runtime_clear_preserves_capacity_and_missing_it
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>(2);\n"
             "var before = 0;\n"
             "xs.add(10);\n"
@@ -1003,8 +1003,8 @@ static void test_container_array_runtime_set_item_preserves_object_payloads(void
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Pair} = import(\"zr.container\");\n"
             "var xs = new container.Array<Pair<int, string>>();\n"
             "xs.add(new container.Pair<int, string>(1, \"a\"));\n"
             "xs.add(new container.Pair<int, string>(2, \"b\"));\n"
@@ -1039,7 +1039,7 @@ static void test_container_array_runtime_accepts_unary_negation_in_constructor_a
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>(2 + -1);\n"
             "return xs.capacity;\n";
 
@@ -1069,7 +1069,7 @@ static void test_container_array_runtime_rejects_negative_capacity(void) {
     SZrFunction *entryFunction;
     SZrTypeValue result;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "new container.Array<int>(-1);\n";
 
     TEST_START(summary);
@@ -1099,17 +1099,17 @@ static void test_container_array_runtime_rejects_invalid_indexes(void) {
     SZrFunction *removeFunction;
     SZrTypeValue result;
     const char *insertSource =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "xs.insert(2, 5);\n";
     const char *setSource =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "xs[1] = 5;\n";
     const char *removeSource =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.removeAt(0);\n";
 
@@ -1148,8 +1148,8 @@ static void test_container_map_runtime_supports_pair_keys_and_value_overwrite(vo
     SZrTypeValue rawResult;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Pair} = import(\"zr.container\");\n"
             "var map = new container.Map<Pair<int, string>, int>();\n"
             "var first = new container.Pair<int, string>(3, \"red\");\n"
             "var same = new container.Pair<int, string>(3, \"red\");\n"
@@ -1188,7 +1188,7 @@ static void test_container_map_runtime_computed_access_beats_prototype_method_na
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var map = new container.Map<string, int>();\n"
             "map[\"clear\"] = 7;\n"
             "return map[\"clear\"] + map.count;\n";
@@ -1219,7 +1219,7 @@ static void test_container_map_runtime_iterator_aggregates_pairs_without_order_a
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var map = new container.Map<string, int>();\n"
             "var sum = 0;\n"
             "var seen = 0;\n"
@@ -1263,7 +1263,7 @@ static void test_container_map_runtime_repeated_index_access_primes_entries_and_
     SZrObject *entryObject;
     const SZrTypeValue *entrySecondValue;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var map = new container.Map<string, int>();\n"
             "map[\"aa_slot\"] = 7;\n"
             "map[\"aa_slot\"] = map[\"aa_slot\"] + 5;\n"
@@ -1335,7 +1335,7 @@ static void test_container_map_runtime_repeated_index_access_invalidates_hot_loo
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var map = new container.Map<string, int>();\n"
             "map[\"aa_slot\"] = 7;\n"
             "map[\"bb_slot\"] = 3;\n"
@@ -1373,7 +1373,7 @@ static void test_container_map_runtime_four_key_concat_cycle_preserves_values(vo
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "labelFor(slot: int): string {\n"
             "    var normalized = slot % 4;\n"
             "    if (normalized == 0) { return \"aa\"; }\n"
@@ -1421,7 +1421,7 @@ static void test_container_map_runtime_stable_concat_keys_avoid_entry_slot_valid
     TZrInt64 result = 0;
     ZrVmLibContainerDebugHotMapLookupStats stats;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "labelFor(slot: int): string {\n"
             "    var normalized = slot % 4;\n"
             "    if (normalized == 0) { return \"aa\"; }\n"
@@ -1486,7 +1486,7 @@ static void test_container_map_runtime_clear_reuses_entries_storage(void) {
     SZrObject *entriesObject;
     const SZrTypeValue *countValue;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var map = new container.Map<string, int>();\n"
             "map[\"k0\"] = 0;\n"
             "map[\"k1\"] = 1;\n"
@@ -1546,8 +1546,8 @@ static void test_container_set_runtime_enforces_pair_uniqueness(void) {
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Pair} = import(\"zr.container\");\n"
             "var values = new container.Set<Pair<int, string>>();\n"
             "var score = 0;\n"
             "if (values.add(new container.Pair<int, string>(1, \"a\"))) { score = score + 10; }\n"
@@ -1588,7 +1588,7 @@ static void test_container_set_runtime_clear_reuses_entries_storage(void) {
     SZrObject *entriesObject;
     const SZrTypeValue *countValue;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var values = new container.Set<int>();\n"
             "values.add(0);\n"
             "values.add(1);\n"
@@ -1654,7 +1654,7 @@ static void test_container_set_runtime_raw_int_contains_and_remove_use_current_s
     SZrObject *setObject;
     SZrObject *entriesObject;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var values = new container.Set<int>();\n"
             "values.add(1);\n"
             "values.add(2);\n"
@@ -1705,7 +1705,7 @@ static void test_container_pair_runtime_exposes_value_semantics(void) {
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var left = new container.Pair<int, string>(1, \"a\");\n"
             "var right = new container.Pair<int, string>(1, \"b\");\n"
             "var same = new container.Pair<int, string>(1, \"a\");\n"
@@ -1741,7 +1741,7 @@ static void test_container_linked_list_runtime_detaches_removed_and_cleared_node
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var list = new container.LinkedList<int>();\n"
             "var first = list.addLast(10);\n"
             "var middle = list.addLast(20);\n"
@@ -1784,7 +1784,7 @@ static void test_container_linked_list_runtime_empty_removals_return_null(void) 
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var list = new container.LinkedList<int>();\n"
             "if (list.removeFirst() == null && list.removeLast() == null) {\n"
             "    return 1;\n"
@@ -1817,8 +1817,8 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Pair} = import(\"zr.container\");\n"
             "labelThrough(value) {\n"
             "    return value;\n"
             "}\n"
@@ -1862,8 +1862,8 @@ static void test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_s
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Pair} = import(\"zr.container\");\n"
             "var seen = new container.Set<Pair<int, string>>();\n"
             "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
             "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
@@ -1927,8 +1927,8 @@ static void test_container_array_runtime_inline_pair_constructor_argument_preser
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Pair} = import(\"zr.container\");\n"
             "var xs = new container.Array<Pair<int, string>>();\n"
             "xs.add(new container.Pair<int, string>(2, \"even\"));\n"
             "xs.add(new container.Pair<int, string>(4, \"even\"));\n"
@@ -1975,8 +1975,8 @@ static void test_container_linked_set_map_runtime_preserves_native_call_argument
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Pair} = import(\"zr.container\");\n"
             "labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
@@ -2523,7 +2523,7 @@ static void test_container_array_add_uses_dense_pair_pool_for_gc_object_values(v
     SZrObject *itemsObject;
     SZrHashKeyValuePair *firstPair;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<object>();\n"
             "var value = {};\n"
             "xs.add(value);\n"

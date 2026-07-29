@@ -465,7 +465,7 @@ static void test_typeof_evaluates_runtime_operand_exactly_once(void) {
 
 static void test_member_query_filters_orders_and_selects_overloads(void) {
     const char *source =
-            "%module \"reflection_query\";\n"
+            "module reflection_query;\n"
             "pub class Base {\n"
             "  pub var inheritedField: int;\n"
             "  pub fn same(value: int): int { return value; }\n"
@@ -637,7 +637,7 @@ static void test_member_query_filters_orders_and_selects_overloads(void) {
 
 static void test_reflection_construction_binds_public_constructor_and_rejects_invalid_categories(void) {
     const char *source =
-            "%module \"reflection_construction\";\n"
+            "module reflection_construction;\n"
             "pub class Box {\n"
             "  pub var value: int;\n"
             "  pub @constructor(value: int) { this.value = value; }\n"
@@ -764,7 +764,7 @@ static void test_reflection_construction_binds_public_constructor_and_rejects_in
 
 static void test_reflection_constructor_binder_caches_success_and_negative_plans(void) {
     const char *source =
-            "%module \"reflection_constructor_cache\";\n"
+            "module reflection_constructor_cache;\n"
             "pub class TwoArgs {\n"
             "  pub var sum: int;\n"
             "  pub @constructor(first: int, second: int) {\n"

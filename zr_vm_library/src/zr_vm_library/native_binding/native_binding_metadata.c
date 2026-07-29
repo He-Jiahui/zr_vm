@@ -259,6 +259,7 @@ static SZrObject *native_metadata_make_parameter_entry(SZrState *state, const Zr
     native_metadata_set_string_field(state, object, "name", descriptor->name);
     native_metadata_set_string_field(state, object, "typeName", descriptor->typeName);
     native_metadata_set_string_field(state, object, "documentation", descriptor->documentation);
+    native_metadata_set_int_field(state, object, "passingMode", (TZrInt64)descriptor->passingMode);
     return object;
 }
 

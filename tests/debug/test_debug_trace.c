@@ -83,7 +83,7 @@ static void debug_trace_capture(struct SZrState *state, SZrDebugInfo *debugInfo)
 
 static SZrFunction *compile_debug_trace_fixture(SZrState *state, const char *sourceLabel) {
     const char *source =
-            "func addOne(value: int): int {\n"
+            "fn addOne(value: int): int {\n"
             "    var base = value + 1;\n"
             "    return base;\n"
             "}\n"

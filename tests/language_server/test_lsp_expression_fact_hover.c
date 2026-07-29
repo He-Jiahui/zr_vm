@@ -201,7 +201,7 @@ static TZrBool lsp_range_equals(SZrLspRange range,
 static TZrBool test_lsp_hover_surfaces_expression_fact_kind_and_constant(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_hover.zr";
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    return 1 + 2;\n"
         "}\n";
     SZrLspContext *context;
@@ -285,7 +285,7 @@ static TZrBool test_lsp_hover_surfaces_expression_fact_kind_and_constant(SZrStat
 static TZrBool test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_utf16_hover.zr";
     const TZrChar *content =
-        "func calc(): int {\n"
+        "fn calc(): int {\n"
         "    /* \xCE\xBB */ return 1 + 2;\n"
         "}\n";
     SZrLspContext *context;
@@ -334,7 +334,7 @@ static TZrBool test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(SZrStat
 static TZrBool test_lsp_hover_surfaces_segmented_numeric_range(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_segment_range_hover.zr";
     const TZrChar *content =
-        "func calc(seed: u8): int {\n"
+        "fn calc(seed: u8): int {\n"
         "    if (seed < 10 || seed > 20) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -431,7 +431,7 @@ static TZrBool test_lsp_hover_surfaces_segmented_numeric_range(SZrState *state) 
 static TZrBool test_lsp_hover_compacts_large_segmented_numeric_range(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_large_segment_range_hover.zr";
     const TZrChar *content =
-        "func calc(seed: u8): int {\n"
+        "fn calc(seed: u8): int {\n"
         "    if (seed == 1 || seed == 3 || seed == 5 || seed == 7 || seed == 9 || seed == 11) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -517,7 +517,7 @@ static TZrBool test_lsp_hover_compacts_large_segmented_numeric_range(SZrState *s
 static TZrBool test_lsp_hover_escapes_string_constant_payload(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_string_hover.zr";
     const TZrChar *content =
-        "func text(): string {\n"
+        "fn text(): string {\n"
         "    return \"a\\\"b\\\\c\\n\\t\";\n"
         "}\n";
     const TZrChar expectedDecoded[] = "a\"b\\c\n\t";
@@ -604,7 +604,7 @@ static TZrBool test_lsp_hover_escapes_string_constant_payload(SZrState *state) {
 static TZrBool test_lsp_hover_formats_reference_type_from_type_id(SZrState *state) {
     const TZrChar *uriText = "file:///canonical_type_hover.zr";
     const TZrChar *content =
-        "func inspect(items: [int, bool]): int {\n"
+        "fn inspect(items: [int, bool]): int {\n"
         "    items;\n"
         "    return 0;\n"
         "}\n";
@@ -676,7 +676,7 @@ static TZrBool test_lsp_hover_formats_reference_type_from_type_id(SZrState *stat
 static TZrBool test_lsp_hover_surfaces_precise_reflection_query_types(SZrState *state) {
     const TZrChar *uriText = "file:///reflection_query_type_hover.zr";
     const TZrChar *content =
-        "func inspect(value: int): int {\n"
+        "fn inspect(value: int): int {\n"
         "    var staticType = typeid(int);\n"
         "    var runtimeType = typeof(value);\n"
         "    staticType;\n"
@@ -777,7 +777,7 @@ static TZrBool test_lsp_hover_surfaces_precise_reflection_query_types(SZrState *
 static TZrBool test_lsp_completion_respects_reflection_descriptor_hierarchy(SZrState *state) {
     const TZrChar *uriText = "file:///reflection_query_completion.zr";
     const TZrChar *content =
-        "func inspect(value: int): int {\n"
+        "fn inspect(value: int): int {\n"
         "    var runtimeType = typeof(value);\n"
         "    runtimeType.representedTypeId;\n"
         "    return 0;\n"

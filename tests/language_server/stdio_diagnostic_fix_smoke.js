@@ -69,7 +69,7 @@ const arrayElementSeparatorDocumentUri =
 const arrayElementAssignmentDocumentUri =
     'file:///zr-diagnostic-array-element-assignment-fix-smoke.zr';
 const documentText = [
-    'func choose(flag: bool): int {',
+    'fn choose(flag: bool): int {',
     '    var seed: int;',
     '    if (flag) {',
     '        seed = 1;',
@@ -81,9 +81,9 @@ const documentText = [
 const semicolonDocumentText = 'var answer = 42';
 const conditionDocumentText = 'if (ready { return 1; }\n';
 const indexDocumentText = 'return value[0;\n';
-const parameterListDocumentText = 'func pick(value: int: int { return value; }\n';
+const parameterListDocumentText = 'fn pick(value: int: int { return value; }\n';
 const callDocumentText = [
-    'func pick(value: int): int { return value; }',
+    'fn pick(value: int): int { return value; }',
     'return pick(1 + 2;',
     '',
 ].join('\n');
@@ -245,7 +245,7 @@ const payload = Buffer.concat([
         params: {
             textDocument: { uri: parameterListDocumentUri, version: 2 },
             contentChanges: [{
-                text: 'func pick(value: int): int { return value; }\n',
+                text: 'fn pick(value: int): int { return value; }\n',
             }],
         },
     }),
@@ -280,7 +280,7 @@ const payload = Buffer.concat([
             textDocument: { uri: callDocumentUri, version: 2 },
             contentChanges: [{
                 text: [
-                    'func pick(value: int): int { return value; }',
+                    'fn pick(value: int): int { return value; }',
                     'return pick(1 + 2);',
                     '',
                 ].join('\n'),
@@ -811,9 +811,9 @@ assert(parameterListFix.title === "Insert missing ')'" &&
     parameterListFix.edit.newText === ')',
     'Expected a machine-applicable serialized parameter-list-close edit');
 assert(parameterListFix.edit.range.start.line === 0 &&
-    parameterListFix.edit.range.start.character === 20 &&
+    parameterListFix.edit.range.start.character === 18 &&
     parameterListFix.edit.range.end.line === 0 &&
-    parameterListFix.edit.range.end.character === 20,
+    parameterListFix.edit.range.end.character === 18,
     'Expected the parameter-list-close edit before the return-type colon');
 
 const fixedParameterListPublication = messages.find((message) =>

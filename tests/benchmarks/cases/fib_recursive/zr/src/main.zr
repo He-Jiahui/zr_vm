@@ -1,6 +1,6 @@
-var benchConfig = %import("bench_config");
+let benchConfig = import("bench_config");
 
-func fib(n: int): int {
+fn fib(n: int): int {
     if (n <= 1) {
         return n;
     }

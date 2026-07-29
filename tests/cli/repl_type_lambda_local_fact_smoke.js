@@ -25,7 +25,7 @@ async function main() {
         output += chunk.toString();
     });
 
-    child.stdin.write(':type () => { var folded = 1 + 2; return folded; }\n');
+    child.stdin.write(':type fn(): int => { var folded = 1 + 2; return folded; }\n');
     child.stdin.write(':quit\n');
     child.stdin.end();
 

@@ -29,12 +29,16 @@ The scanner reads Git-tracked candidates under `tests`, `examples`, `docs`, `ext
 `zr_vm_lib_*`, and `zr_vm_library`. ZR files are lexed directly. Test and extension host files are
 considered only for string literals that are explicitly assigned or passed as ZR source input; this
 prevents C format strings, generated C source, and diagnostics text from being mistaken for ZR syntax.
+The detector accepts conventional source identifiers both as prefixes and suffixes, including
+`source`, `script`, `fixture`, `testCode`, and `nativeContent`, and treats adjacent C string literals as
+one source sequence. A sequence must still begin with recognizable ZR syntax, so ordinary host text and
+diagnostics remain outside the input boundary.
 Documentation contributes only fenced `zr` snippets.
 
-The report retains every selected candidate exactly once. Binary artifacts, historical plans,
-third-party sources, expected-diagnostic fixtures, migration self-fixtures, and generated output are
-written to `exclusions` with a stable reason. They are not silently skipped. Artifact formats are never
-text-patched by this tool.
+The report retains every selected candidate exactly once. Binary artifacts, historical plans and syntax
+references, third-party sources, expected-diagnostic fixtures, migration self-fixtures, and generated
+output are written to `exclusions` with a stable reason. They are not silently skipped. Artifact formats
+are never text-patched by this tool.
 
 ## Classification Contract
 

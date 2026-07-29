@@ -475,7 +475,7 @@ static void test_import_target_signature_emits_stable_provider_type_ref(void) {
             "    None;\n"
             "    Some(value: T);\n"
             "}\n"
-            "pub func choose(): Option<int> {\n"
+            "pub fn choose(): Option<int> {\n"
             "    return Option<int>.None;\n"
             "}\n";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -557,7 +557,7 @@ static void test_nested_generic_import_target_signature_emits_provider_type_ref(
             "    None;\n"
             "    Some(value: T);\n"
             "}\n"
-            "pub func choose(): Option<int> {\n"
+            "pub fn choose(): Option<int> {\n"
             "    return Option<int>.None;\n"
             "}\n";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);

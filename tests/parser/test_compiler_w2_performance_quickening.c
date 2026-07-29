@@ -938,7 +938,7 @@ void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void) {
 
 void test_w2_static_iterator_move_next_branch_fuses(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var values = new container.Array<int>();\n"
             "values.add(3);\n"
             "values.add(5);\n"
@@ -990,8 +990,8 @@ void test_w2_static_iterator_move_next_branch_fuses(void) {
 
 void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Pair} = import(\"zr.container\");\n"
             "var values = new container.Set<Pair<int, string>>();\n"
             "var score = 0;\n"
             "if (values.add(new container.Pair<int, string>(1, \"a\"))) { score = score + 10; }\n"
@@ -1041,8 +1041,8 @@ void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void) {
 
 void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array} = import(\"zr.container\");\n"
             "var values = new container.Array<int>();\n"
             "var buckets = new container.Map<string, Array<int>>();\n"
             "var i = 0;\n"
@@ -1098,7 +1098,7 @@ void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void) {
 
 void test_w2_get_member_slot_direct_result_store_elides_temp_copy(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var queue = new container.LinkedList<int>();\n"
             "queue.addLast(7);\n"
             "queue.addLast(11);\n"
@@ -1149,7 +1149,7 @@ void test_w2_get_member_slot_direct_result_store_elides_temp_copy(void) {
 
 void test_w2_known_native_member_call_skips_argument_loads(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var queue = new container.LinkedList<int>();\n"
             "var base = 10;\n"
             "queue.addLast(base);\n"
@@ -1195,7 +1195,7 @@ void test_w2_known_native_member_call_skips_argument_loads(void) {
 
 void test_w2_set_member_slot_null_fuses_dead_null_temp(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var queue = new container.LinkedList<int>();\n"
             "queue.addLast(7);\n"
             "queue.addLast(9);\n"
@@ -1414,7 +1414,7 @@ void test_w2_set_member_slot_receiver_forwarding_rewrites_receiver(void) {
 
 void test_w2_null_not_equal_branch_fuses_dead_null_temp(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var queue = new container.LinkedList<int>();\n"
             "queue.addLast(7);\n"
             "queue.addLast(9);\n"
@@ -1470,7 +1470,7 @@ void test_w2_null_not_equal_branch_fuses_dead_null_temp(void) {
 
 void test_w2_get_stack_set_member_slot_value_forwards_source(void) {
     static const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var queue = new container.LinkedList<int>();\n"
             "queue.addLast(7);\n"
             "queue.addLast(9);\n"

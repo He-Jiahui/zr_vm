@@ -37,9 +37,6 @@ static TZrBool compile_time_execute_late_check_node(
     }
 
     declaration = &node->data.compileTimeDeclaration;
-    if (!declaration->isCurrentSyntax) {
-        return ZR_TRUE;
-    }
     if (declaration->isConditionalPruning) {
         selectedBranch = declaration->selectedBranch;
         return selectedBranch == ZR_NULL ||

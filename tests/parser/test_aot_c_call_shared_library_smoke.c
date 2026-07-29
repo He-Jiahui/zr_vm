@@ -179,10 +179,10 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
     TEST_IGNORE_MESSAGE("AOT C call shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "func addFour(value: int): int {\n"
+            "fn addFour(value: int): int {\n"
             "    return value + 4;\n"
             "}\n"
-            "func apply(callback: %func(int)->int, value: int): int {\n"
+            "fn apply(callback: fn(int)->int, value: int): int {\n"
             "    return callback(value);\n"
             "}\n"
             "return apply(addFour, 3);";
@@ -346,11 +346,11 @@ static void test_aot_c_generated_shared_library_executes_static_numeric_call_loc
     TEST_IGNORE_MESSAGE("AOT C call shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "func addUnsigned(): uint {\n"
+            "fn addUnsigned(): uint {\n"
             "    var value: uint = 13;\n"
             "    return value;\n"
             "}\n"
-            "func addFloat(): float {\n"
+            "fn addFloat(): float {\n"
             "    var value: float = 2.5;\n"
             "    return value;\n"
             "}\n"
@@ -529,7 +529,7 @@ static void test_aot_c_generated_shared_library_executes_stack_value_call_local_
     TEST_IGNORE_MESSAGE("AOT C call shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "func maybeAdd(value: int): int {\n"
+            "fn maybeAdd(value: int): int {\n"
             "    if (value > 0) {\n"
             "        return value + 4;\n"
             "    }\n"

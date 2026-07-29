@@ -1,10 +1,10 @@
 {
   "classificationCounts": {
     "blocked": 1,
-    "machineApplicable": 21,
+    "machineApplicable": 24,
     "maybeIncorrect": 0,
-    "requiresReview": 14,
-    "targetNotPromoted": 6
+    "requiresReview": 17,
+    "targetNotPromoted": 1
   },
   "contracts": [
     {
@@ -51,6 +51,12 @@
     },
     {
       "classification": "requiresReview",
+      "legacyForm": "legacyLambdaWithoutFn",
+      "reason": "lambda_keyword_has_current_syntax",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
       "legacyForm": "legacyNewStruct",
       "reason": "new_struct_binding_required",
       "targetPlan": "06A"
@@ -68,15 +74,15 @@
       "targetPlan": "10"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "legacyForm": "percentAsync",
-      "reason": "target_plan_not_promoted",
+      "reason": "async_keyword_has_current_syntax",
       "targetPlan": "12"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "legacyForm": "percentAwait",
-      "reason": "target_plan_not_promoted",
+      "reason": "await_keyword_has_current_syntax",
       "targetPlan": "12"
     },
     {
@@ -92,9 +98,9 @@
       "targetPlan": "02"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "legacyForm": "percentCompileTime",
-      "reason": "target_plan_not_promoted",
+      "reason": "comptime_keyword_has_current_syntax",
       "targetPlan": "11"
     },
     {
@@ -104,9 +110,9 @@
       "targetPlan": "04"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "machineApplicable",
       "legacyForm": "percentExtern",
-      "reason": "target_plan_not_promoted",
+      "reason": "native_extern_has_current_syntax",
       "targetPlan": "10"
     },
     {
@@ -176,9 +182,9 @@
       "targetPlan": "04"
     },
     {
-      "classification": "targetNotPromoted",
+      "classification": "requiresReview",
       "legacyForm": "percentTest",
-      "reason": "target_plan_not_promoted",
+      "reason": "test_metadata_function_required",
       "targetPlan": "14"
     },
     {

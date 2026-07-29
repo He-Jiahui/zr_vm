@@ -1,5 +1,5 @@
-var benchConfig = %import("bench_config");
-var {Map} = %import("zr.container");
+let benchConfig = import("bench_config");
+let {Map} = import("zr.container");
 
 labelFor(slot: int): string {
     var normalized = slot % 4;

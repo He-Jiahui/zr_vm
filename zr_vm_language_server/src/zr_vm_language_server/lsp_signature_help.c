@@ -244,9 +244,9 @@ static const TZrChar *signature_string_native(SZrString *value) {
 
 static const TZrChar *signature_parameter_passing_mode_text(EZrParameterPassingMode passingMode) {
     switch (passingMode) {
-        case ZR_PARAMETER_PASSING_MODE_IN: return "%in";
-        case ZR_PARAMETER_PASSING_MODE_OUT: return "%out";
-        case ZR_PARAMETER_PASSING_MODE_REF: return "%ref";
+        case ZR_PARAMETER_PASSING_MODE_IN: return "in";
+        case ZR_PARAMETER_PASSING_MODE_OUT: return "out";
+        case ZR_PARAMETER_PASSING_MODE_REF: return "ref";
         case ZR_PARAMETER_PASSING_MODE_VALUE:
         default:
             return ZR_NULL;
@@ -1199,10 +1199,6 @@ static void signature_find_call_context_in_node(SZrAstNode *node,
             signature_find_call_context_in_array(node->data.block.body, position, best);
             break;
 
-        case ZR_AST_TEST_DECLARATION:
-            signature_find_call_context_in_node(node->data.testDeclaration.body, position, best);
-            break;
-
         case ZR_AST_VARIABLE_DECLARATION:
             signature_find_call_context_in_node(node->data.variableDeclaration.value, position, best);
             break;
@@ -1445,17 +1441,6 @@ static void signature_find_named_value_type_recursive(SZrCompilerState *compiler
                                                              found);
                 }
             }
-            break;
-
-        case ZR_AST_TEST_DECLARATION:
-            signature_find_named_value_type_recursive(compilerState,
-                                                     node->data.testDeclaration.body,
-                                                     nameText,
-                                                     nameLength,
-                                                     cursorOffset,
-                                                     bestType,
-                                                     bestOffset,
-                                                     found);
             break;
 
         case ZR_AST_FUNCTION_DECLARATION:

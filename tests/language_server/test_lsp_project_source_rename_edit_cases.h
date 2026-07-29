@@ -37,14 +37,14 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
             "  \"entry\": \"main\"\n"
             "}\n";
     static const TZrChar *mainContent =
-            "var legacy = %import(\"legacy\");\n"
+            "var legacy = import(\"legacy\");\n"
             "return legacy.value();\n";
     static const TZrChar *secondaryContent =
-            "var dep = %import(\"legacy\");\n"
+            "var dep = import(\"legacy\");\n"
             "return dep.value();\n";
     static const TZrChar *providerContent =
-            "%module \"legacy\";\n"
-            "pub value(): int {\n"
+            "module legacy;\n"
+            "pub fn value(): int {\n"
             "    return 1;\n"
             "}\n";
     const TZrChar *summary =
@@ -247,9 +247,9 @@ static void test_lsp_source_rename_collects_canonical_workspace_edits(
                 state, context, &documentSnapshots) ||
         !write_text_file(
                 secondaryPath,
-                "var dep = %import(\"legacy\");\n"
+                "var dep = import(\"legacy\");\n"
                 "return dep.value() + 0;\n",
-                strlen("var dep = %import(\"legacy\");\n"
+                strlen("var dep = import(\"legacy\");\n"
                        "return dep.value() + 0;\n")) ||
         ZrLanguageServer_LspProject_ValidateSourceRenameEditPlan(
                 state, context, &documentSnapshots)) {

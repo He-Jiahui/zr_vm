@@ -1,7 +1,7 @@
-%module "provider";
+module "provider";
 
-%compileTime class MarkParameter {
-    @decorate(target: %type Parameter): zr.DecoratorPatch {
+comptime class MarkParameter {
+    @decorate(target: typeof Parameter): zr.DecoratorPatch {
         return { metadata: { compileTimeParameter: 62 } };
     }
 }

@@ -929,8 +929,7 @@ static TZrBool should_suppress_parser_diagnostic(SZrDiagnostic *diag) {
     TZrNativeString messageText;
     TZrSize messageLength;
     static const TZrChar parserSyntaxCode[] = "parser_syntax_error";
-    static const TZrChar legacyModuleMessage[] = "Legacy module syntax is not supported; use %module";
-    static const TZrChar legacyImportMessage[] = "Legacy import() syntax is not supported; use %import";
+    static const TZrChar legacyModuleMessage[] = "Legacy module syntax is not supported; use `module dotted.name;`";
 
     if (diag == ZR_NULL || diag->code == ZR_NULL || diag->message == ZR_NULL) {
         return ZR_FALSE;
@@ -952,8 +951,7 @@ static TZrBool should_suppress_parser_diagnostic(SZrDiagnostic *diag) {
         return ZR_TRUE;
     }
 
-    return messageLength == strlen(legacyImportMessage) &&
-           memcmp(messageText, legacyImportMessage, messageLength) == 0;
+    return ZR_FALSE;
 }
 
 static SZrString *lsp_diagnostic_message_with_context(SZrState *state, SZrDiagnostic *diag) {
@@ -3217,13 +3215,6 @@ static TZrBool find_receiver_member_context_recursive(SZrAstNode *node,
                                                           outMemberIndex,
                                                           outMemberName);
 
-        case ZR_AST_TEST_DECLARATION:
-            return find_receiver_member_context_recursive(node->data.testDeclaration.body,
-                                                          cursorOffset,
-                                                          outPrimaryNode,
-                                                          outMemberIndex,
-                                                          outMemberName);
-
         case ZR_AST_COMPILE_TIME_DECLARATION:
             return find_receiver_member_context_recursive(node->data.compileTimeDeclaration.declaration,
                                                           cursorOffset,
@@ -4403,21 +4394,6 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
             }
             break;
 
-        case ZR_AST_TEST_DECLARATION:
-            if (node->data.testDeclaration.body != ZR_NULL) {
-                find_receiver_variable_prototype_recursive(state,
-                                                           analyzer,
-                                                           node->data.testDeclaration.body,
-                                                           receiverText,
-                                                           receiverLength,
-                                                           cursorOffset,
-                                                           bestPrototype,
-                                                           bestTypeName,
-                                                           bestTypeNameSize,
-                                                           bestOffset);
-            }
-            break;
-
         case ZR_AST_EXPRESSION_STATEMENT:
             if (node->data.expressionStatement.expr != ZR_NULL) {
                 find_receiver_variable_prototype_recursive(state,
@@ -4712,19 +4688,6 @@ static void find_construct_initialized_class_symbol_recursive(SZrState *state,
             }
             break;
         }
-
-        case ZR_AST_TEST_DECLARATION:
-            if (node->data.testDeclaration.body != ZR_NULL) {
-                find_construct_initialized_class_symbol_recursive(state,
-                                                                  analyzer,
-                                                                  node->data.testDeclaration.body,
-                                                                  receiverText,
-                                                                  receiverLength,
-                                                                  cursorOffset,
-                                                                  bestClassSymbol,
-                                                                  bestOffset);
-            }
-            break;
 
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;

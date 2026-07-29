@@ -201,8 +201,8 @@ static void test_container_metadata_closed_native_prototypes_substitute_members_
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Map, Pair, LinkedList} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Map, Pair, LinkedList} = import(\"zr.container\");\n"
             "var xs: Array<int> = new container.Array<int>();\n"
             "var map: Map<string, int> = new container.Map<string, int>();\n"
             "var pair: Pair<int, string> = new container.Pair<int, string>(1, \"a\");\n"
@@ -296,8 +296,8 @@ static void test_container_metadata_closed_native_method_parameter_types_preserv
     SZrCompilerState *cs;
     SZrAstNode *ast;
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Map, LinkedList} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Map, LinkedList} = import(\"zr.container\");\n"
             "var map: Map<string, int> = new container.Map<string, int>();\n"
             "var list: LinkedList<int> = new container.LinkedList<int>();\n";
     const SZrTypePrototypeInfo *mapPrototype;

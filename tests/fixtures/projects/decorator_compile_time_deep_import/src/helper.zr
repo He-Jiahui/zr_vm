@@ -1,8 +1,8 @@
-%module "helper";
+module "helper";
 
 pub var toolkit = {
     math: {
-        greet: () => {
+        greet: fn() => {
             return 42;
         }
     }

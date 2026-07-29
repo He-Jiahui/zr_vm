@@ -1,7 +1,7 @@
-%module "async_native";
+module "async_native";
 
-var math = %import("zr.math");
-var ffi = %import("zr.ffi");
+let math = import("zr.math");
+let ffi = import("zr.ffi");
 
 pub nativeScore(): int {
     var vector = $math.Vector3(1.0, 2.0, 3.0);

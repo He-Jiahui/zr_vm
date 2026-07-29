@@ -24,14 +24,14 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token == ZR_TK_USING) {
-        report_error(ps, "Field-scoped '%using' is removed; write 'var field: %unique T' or 'var field: %shared T' so ownership lives in the field type");
+        report_error(ps, "Field-scoped 'using' is invalid; write `var field: Unique<T>` or `var field: Shared<T>` so ownership lives in the field type");
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
     }
 
-    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        report_error(ps, "Field-scoped '%using' is removed; write 'var field: %unique T' or 'var field: %shared T' so ownership lives in the field type");
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        report_removed_percent_syntax(ps);
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
@@ -52,10 +52,14 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
     if (!isConst && ps->lexer->t.token == ZR_TK_VAR) {
         ZrParser_Lexer_Next(ps->lexer);
 
-        // 如果 var 后面还有 const，也解析它（支持 var const 语法）
+        // `let` is the sole immutable binding spelling after the cutover.
         if (ps->lexer->t.token == ZR_TK_CONST) {
-            isConst = ZR_TRUE;
-            ZrParser_Lexer_Next(ps->lexer);
+            report_removed_legacy_syntax(
+                    ps,
+                    "var const struct field",
+                    "Use `let field: Type = value;` for an immutable struct field.");
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+            return ZR_NULL;
         }
     } else if (!isConst) {
         // 如果没有 const 也没有 var，期望 var 关键字
@@ -99,7 +103,7 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
     node->data.structField.decorators = decorators;
     node->data.structField.access = access;
     node->data.structField.isStatic = isStatic;
-    node->data.structField.isUsingManaged = ZR_FALSE;
+    node->data.structField.reservedRemovedUsingManaged = ZR_FALSE;
     node->data.structField.isConst = isConst;
     node->data.structField.name = name;
     node->data.structField.typeInfo = typeInfo;
@@ -116,7 +120,8 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
     TZrBool isAsync = ZR_FALSE;
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        receiverQualifier = parse_optional_method_receiver_qualifier(ps);
+        report_removed_percent_syntax(ps);
+        return ZR_NULL;
     }
 
     // 解析装饰器（可选）
@@ -154,9 +159,14 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    if (ps->lexer->t.token == ZR_TK_FN) {
-        ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_FN) {
+        report_removed_legacy_syntax(ps,
+                                     "keywordless struct method",
+                                     "Prefix the method declaration with `fn`.");
+        free_ast_node_array_with_elements(ps->state, decorators);
+        return ZR_NULL;
     }
+    ZrParser_Lexer_Next(ps->lexer);
 
     // 解析方法名
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -445,7 +455,10 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         EZrToken token = ps->lexer->t.token;
         if (member != ZR_NULL) {
             // 已由共享 property parser 消费。
-        } else if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP ||
+        } else if (token == ZR_TK_PERCENT) {
+            report_removed_percent_syntax(ps);
+            break;
+        } else if (token == ZR_TK_SHARP ||
             token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
             token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR || token == ZR_TK_LET) {
@@ -461,14 +474,6 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-            TZrBool sawFieldUsingPrefix = ZR_FALSE;
-            // 跳过字段 %using 前缀或方法 receiver qualifier。
-            if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-                sawFieldUsingPrefix = ZR_TRUE;
-                // 字段前缀已消费，继续向前看字段声明。
-            } else if (ps->lexer->t.token == ZR_TK_PERCENT) {
-                parse_optional_method_receiver_qualifier(ps);
-            }
             while (ps->lexer->t.token == ZR_TK_SHARP) {
                 parse_decorator_expression(ps);
             }
@@ -479,16 +484,6 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             }
 
             EZrToken nextToken = ps->lexer->t.token;
-            if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-                sawFieldUsingPrefix = ZR_TRUE;
-                nextToken = ps->lexer->t.token;
-            } else if (nextToken == ZR_TK_PERCENT) {
-                parse_optional_method_receiver_qualifier(ps);
-                nextToken = ps->lexer->t.token;
-            }
-            if (sawFieldUsingPrefix) {
-                nextToken = ZR_TK_USING;
-            }
 
             if (nextToken == ZR_TK_CONST) {
                 ZrParser_Lexer_Next(ps->lexer);
@@ -541,7 +536,12 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_AT) {
             // 元函数
             member = parse_struct_meta_function(ps);
-        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP || token == ZR_TK_PERCENT ||
+        } else if (token == ZR_TK_GET || token == ZR_TK_SET) {
+            report_removed_legacy_syntax(
+                    ps,
+                    "split get/set struct property",
+                    "Use one `property name: Type { get ...; set ...; }` declaration.");
+        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP ||
                    token == ZR_TK_FN) {
             // 方法（可能有装饰器）
             member = parse_struct_method(ps);

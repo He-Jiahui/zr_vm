@@ -395,9 +395,6 @@ static TZrBool zr_cli_collect_imports_from_ast(SZrAstNode *node, SZrCliStringLis
         case ZR_AST_FUNCTION_DECLARATION:
             return zr_cli_collect_imports_from_ast(node->data.functionDeclaration.body, imports);
 
-        case ZR_AST_TEST_DECLARATION:
-            return zr_cli_collect_imports_from_ast(node->data.testDeclaration.body, imports);
-
         case ZR_AST_COMPILE_TIME_DECLARATION:
             return zr_cli_collect_imports_from_ast(node->data.compileTimeDeclaration.declaration, imports);
 

@@ -47,7 +47,7 @@ typedef struct SExplicitFieldCompiledMemberView {
     TZrUInt32 functionConstantIndex;
     TZrUInt32 parameterCount;
     TZrUInt32 returnTypeNameStringIndex;
-    TZrUInt32 isUsingManaged;
+    TZrUInt32 reservedRemovedUsingManaged;
     TZrUInt32 ownershipQualifier;
     TZrUInt32 callsClose;
     TZrUInt32 callsDestructor;

@@ -1033,7 +1033,7 @@ static void test_aot_c_generated_shared_library_executes_call_spread(void) {
     TEST_IGNORE_MESSAGE("AOT C call-spread smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "func sum(a: int, b: int, c: int): int { return a + b + c; }\n"
+            "fn sum(a: int, b: int, c: int): int { return a + b + c; }\n"
             "var values = [10, 20, 12];\n"
             "return sum(...values);\n";
     const char *projectJson =

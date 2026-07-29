@@ -1,4 +1,4 @@
-%module "core_semantics";
+module "core_semantics";
 
 pub interface ScoreReadable {
     read(): int;
@@ -32,7 +32,7 @@ pub enum Mode: int {
 }
 
 makeEscaping(offset: int) {
-    var callback = (value: int) -> {
+    var callback = fn(value: int) => {
         return value + offset;
     };
     return callback;
@@ -40,7 +40,7 @@ makeEscaping(offset: int) {
 
 pub lambdaScore(): int {
     var captured = 4;
-    var direct = ((delta: int) -> {
+    var direct = (fn(delta: int) => {
         return captured + delta;
     })(3);
     var escaped = makeEscaping(5);

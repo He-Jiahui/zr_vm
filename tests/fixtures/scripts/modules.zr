@@ -1,26 +1,26 @@
-%module "modules";
+module "modules";
 
 // 模块声明测试
 // 模块名已在顶部声明: %module "modules";
 
 // import 保留语法测试
-var import_test = () => {
+var import_test = fn() => {
     // 注意: %import 是保留语法，这里只验证脚本写法
     // 实际模块加载需要运行时支持
-    var math = %import("math");
+    let math = import("math");
     // 假设 %import 返回一个对象
     return 1;
 };
 
 // 模块导出测试（通过顶层声明）
-var exported_function = () => {
+var exported_function = fn() => {
     return 42;
 };
 
 var exported_variable = 100;
 
 // 模块内部使用测试
-var use_exported_test = () => {
+var use_exported_test = fn() => {
     var result = exported_function();
     result = result + exported_variable;
     return result;

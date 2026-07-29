@@ -162,7 +162,7 @@ static TZrBool test_local_expression_hover_surfaces_reference_fact(SZrState *sta
     const TZrChar *uriText = "file:///local_expression_reference_hover.zr";
     const TZrChar *content =
         "var total = 2;\n"
-        "read(): int {\n"
+        "fn read(): int {\n"
         "    return total;\n"
         "}\n";
     SZrLspContext *context;
@@ -214,7 +214,7 @@ static TZrBool test_local_expression_hover_surfaces_assignment_write_reference_f
     const TZrChar *uriText = "file:///local_assignment_write_reference_hover.zr";
     const TZrChar *content =
         "var seed = 1;\n"
-        "mutate(): int {\n"
+        "fn mutate(): int {\n"
         "    seed = 3;\n"
         "    return seed;\n"
         "}\n";
@@ -277,7 +277,7 @@ static TZrBool test_local_expression_hover_surfaces_member_write_reference_fact(
     const TZrChar *uriText = "file:///local_member_write_reference_hover.zr";
     const TZrChar *content =
         "var seed = { value: 1 };\n"
-        "mutate(): int {\n"
+        "fn mutate(): int {\n"
         "    seed.value = 3;\n"
         "    return seed.value;\n"
         "}\n";
@@ -340,7 +340,7 @@ static TZrBool test_local_rich_hover_structures_shared_fact_sections(SZrState *s
     const TZrChar *uriText = "file:///local_rich_hover_fact_sections.zr";
     const TZrChar *content =
         "var total = 2;\n"
-        "read(): int {\n"
+        "fn read(): int {\n"
         "    var numeric = 1 + 2;\n"
         "    var logical = true || false;\n"
         "    return total;\n"
@@ -400,10 +400,10 @@ static TZrBool test_local_rich_hover_structures_shared_fact_sections(SZrState *s
 static TZrBool test_local_hover_surfaces_call_member_payloads(SZrState *state) {
     const TZrChar *uriText = "file:///local_call_member_payload_hover.zr";
     const TZrChar *content =
-        "func pick(value: int): int {\n"
+        "fn pick(value: int): int {\n"
         "    return value;\n"
         "}\n"
-        "func read(): int {\n"
+        "fn read(): int {\n"
         "    var seed = 2;\n"
         "    var chosen = pick(42);\n"
         "    return seed.value;\n"
@@ -496,7 +496,7 @@ static TZrBool test_local_hover_surfaces_call_member_payloads(SZrState *state) {
 static TZrBool test_local_hover_surfaces_reachability_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_reachability_hover.zr";
     const TZrChar *content =
-        "flow(): int {\n"
+        "fn flow(): int {\n"
         "    return 1;\n"
         "    var dead = 2;\n"
         "}\n";
@@ -554,7 +554,7 @@ static TZrBool test_local_hover_surfaces_reachability_cause(SZrState *state) {
 static TZrBool test_local_hover_surfaces_constant_boolean_branch_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_boolean_branch_hover.zr";
     const TZrChar *content =
-        "flow(): int {\n"
+        "fn flow(): int {\n"
         "    var const flag = false;\n"
         "    if (flag) {\n"
         "        var deadThen = 2;\n"
@@ -624,7 +624,7 @@ static TZrBool test_local_hover_surfaces_constant_boolean_branch_cause(SZrState 
 static TZrBool test_local_hover_surfaces_constant_false_loop_body_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_false_loop_hover.zr";
     const TZrChar *content =
-        "flow(): int {\n"
+        "fn flow(): int {\n"
         "    var const keepGoing = false;\n"
         "    while (keepGoing) {\n"
         "        var deadLoop = 2;\n"
@@ -693,7 +693,7 @@ static TZrBool test_local_hover_surfaces_constant_false_loop_body_cause(SZrState
 static TZrBool test_local_hover_surfaces_constant_true_branch_exit_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_true_branch_exit_hover.zr";
     const TZrChar *content =
-        "flow(): int {\n"
+        "fn flow(): int {\n"
         "    var const flag = true;\n"
         "    if (flag) {\n"
         "        return 1;\n"
@@ -762,7 +762,7 @@ static TZrBool test_local_hover_surfaces_constant_true_branch_exit_cause(SZrStat
 static TZrBool test_local_hover_surfaces_loop_jump_exit_causes(SZrState *state) {
     const TZrChar *uriText = "file:///local_loop_jump_exit_hover.zr";
     const TZrChar *content =
-        "flow(): int {\n"
+        "fn flow(): int {\n"
         "    var sum = 0;\n"
         "    for (var i = 0; i < 3; i = i + 1) {\n"
         "        if (i == 0) {\n"
@@ -853,7 +853,7 @@ static TZrBool test_local_hover_surfaces_loop_jump_exit_causes(SZrState *state) 
 static TZrBool test_local_hover_surfaces_constant_true_loop_exit_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_true_loop_exit_hover.zr";
     const TZrChar *content =
-        "flow(): int {\n"
+        "fn flow(): int {\n"
         "    while (true) {\n"
         "        return 1;\n"
         "    }\n"
@@ -912,10 +912,10 @@ static TZrBool test_local_hover_surfaces_constant_true_loop_exit_cause(SZrState 
 static TZrBool test_local_hover_surfaces_ownership_violation_message(SZrState *state) {
     const TZrChar *uriText = "file:///local_ownership_violation_hover.zr";
     const TZrChar *content =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "leak(resource: %unique Resource): %loaned Resource {\n"
-        "    return %loan(resource);\n"
+        "fn leak(resource: Unique<Resource>): ref Resource {\n"
+        "    return ref resource;\n"
         "}\n";
     SZrLspContext *context;
     SZrString *uri;
@@ -931,7 +931,7 @@ static TZrBool test_local_hover_surfaces_ownership_violation_message(SZrState *s
     if (context == ZR_NULL ||
         uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !find_position_for_substring(content, "%loan", 1, &position)) {
+        !find_position_for_substring(content, "ref resource", 1, &position)) {
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);
         }

@@ -10,14 +10,14 @@ static void test_receiver_signature_edit_preserves_unrelated_scope_with_target_f
             "class Counter {\n"
             "    const fn read(): int { return 1; }\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *updatedContent =
             "class Counter {\n"
             "    fn       read(): int { return 1; }\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;
@@ -113,14 +113,14 @@ static void test_inferred_method_body_edit_preserves_unrelated_scope(
             "class Counter {\n"
             "    fn inferred() { return 1.0; }\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *updatedContent =
             "class Counter {\n"
             "    fn inferred() { return \"a\"; }\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;
@@ -216,14 +216,14 @@ static void test_inferred_method_body_edit_invalidates_resolved_direct_caller(
             "class Counter {\n"
             "    fn inferred() { return 1.0; }\n"
             "}\n"
-            "run(counter: Counter): object {\n"
+            "fn run(counter: Counter): object {\n"
             "    return counter.inferred();\n"
             "}\n";
     const TZrChar *updatedContent =
             "class Counter {\n"
             "    fn inferred() { return \"a\"; }\n"
             "}\n"
-            "run(counter: Counter): object {\n"
+            "fn run(counter: Counter): object {\n"
             "    return counter.inferred();\n"
             "}\n";
     SZrTestTimer timer;

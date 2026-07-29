@@ -347,29 +347,29 @@ _MIGRATION_RULES = {
         "import_binding_context_required",
     ),
     "percentAsync": MigrationRule(
-        MigrationClassification.TARGET_NOT_PROMOTED,
+        MigrationClassification.MACHINE_APPLICABLE,
         "12",
-        "target_plan_not_promoted",
+        "async_keyword_has_current_syntax",
     ),
     "percentAwait": MigrationRule(
-        MigrationClassification.TARGET_NOT_PROMOTED,
+        MigrationClassification.MACHINE_APPLICABLE,
         "12",
-        "target_plan_not_promoted",
+        "await_keyword_has_current_syntax",
     ),
     "percentExtern": MigrationRule(
-        MigrationClassification.TARGET_NOT_PROMOTED,
+        MigrationClassification.MACHINE_APPLICABLE,
         "10",
-        "target_plan_not_promoted",
+        "native_extern_has_current_syntax",
     ),
     "percentTest": MigrationRule(
-        MigrationClassification.TARGET_NOT_PROMOTED,
+        MigrationClassification.REQUIRES_REVIEW,
         "14",
-        "target_plan_not_promoted",
+        "test_metadata_function_required",
     ),
     "percentCompileTime": MigrationRule(
-        MigrationClassification.TARGET_NOT_PROMOTED,
+        MigrationClassification.MACHINE_APPLICABLE,
         "11",
-        "target_plan_not_promoted",
+        "comptime_keyword_has_current_syntax",
     ),
     "percentFunc": MigrationRule(
         MigrationClassification.MACHINE_APPLICABLE,
@@ -476,6 +476,11 @@ _MIGRATION_RULES = {
         "06A",
         "function_type_arrow_has_current_syntax",
     ),
+    "legacyLambdaWithoutFn": MigrationRule(
+        MigrationClassification.REQUIRES_REVIEW,
+        "06A",
+        "lambda_keyword_has_current_syntax",
+    ),
     "legacyDollarConstruct": MigrationRule(
         MigrationClassification.MACHINE_APPLICABLE,
         "03",
@@ -514,6 +519,36 @@ _MIGRATION_RULES = {
 }
 
 
+def _callable_open_before_arrow(text: str, arrow_start: int) -> int | None:
+    close = arrow_start
+    while close > 0 and text[close - 1] != ")":
+        if text[close - 1] in "\n;{}":
+            return None
+        close -= 1
+    if close == 0:
+        return None
+
+    depth = 0
+    for offset in range(close - 1, -1, -1):
+        if text[offset] == ")":
+            depth += 1
+        elif text[offset] == "(":
+            depth -= 1
+            if depth == 0:
+                return offset
+    return None
+
+
+def _word_before_offset(text: str, offset: int) -> str:
+    end = offset
+    while end > 0 and text[end - 1].isspace():
+        end -= 1
+    start = end
+    while start > 0 and (text[start - 1].isalnum() or text[start - 1] == "_"):
+        start -= 1
+    return text[start:end]
+
+
 def _scan_zr_text(
     text: str,
     *,
@@ -540,7 +575,7 @@ def _scan_zr_text(
             legacy_form=form,
         )
 
-    for match in re.finditer(r"\bfunc\b", mask):
+    for match in re.finditer(r"(?<!%)\bfunc\b", mask):
         _append_finding(
             findings,
             file=file,
@@ -565,6 +600,18 @@ def _scan_zr_text(
         )
 
     for match in re.finditer(r"->", mask):
+        open_offset = _callable_open_before_arrow(mask, match.start())
+        callable_word = _word_before_offset(mask, open_offset) if open_offset is not None else ""
+        suffix = mask[match.end() :]
+        if callable_word == "func" or (
+            callable_word == "fn" and not re.match(r"\s*\{", suffix)
+        ):
+            continue
+        legacy_form = (
+            "legacyLambdaWithoutFn"
+            if re.match(r"\s*\{", suffix)
+            else "legacyDefinitionArrow"
+        )
         _append_finding(
             findings,
             file=file,
@@ -573,10 +620,24 @@ def _scan_zr_text(
             start=match.start(),
             end=match.end(),
             base=base,
-            legacy_form="legacyDefinitionArrow",
+            legacy_form=legacy_form,
         )
 
     for match in re.finditer(r"=>", mask):
+        open_offset = _callable_open_before_arrow(mask, match.start())
+        callable_word = _word_before_offset(mask, open_offset) if open_offset is not None else ""
+        if callable_word == "fn":
+            continue
+        line_start = mask.rfind("\n", 0, match.start()) + 1
+        line_prefix = mask[line_start : match.start()]
+        if not re.search(r"\)\s*(?::\s*[^=;\n]+)?$", line_prefix):
+            continue
+        preceding = mask[:open_offset].rstrip() if open_offset is not None else ""
+        legacy_form = (
+            "legacyFunctionTypeArrow"
+            if callable_word == "func" or preceding.endswith(":")
+            else "legacyLambdaWithoutFn"
+        )
         _append_finding(
             findings,
             file=file,
@@ -585,7 +646,7 @@ def _scan_zr_text(
             start=match.start(),
             end=match.end(),
             base=base,
-            legacy_form="legacyFunctionTypeArrow",
+            legacy_form=legacy_form,
         )
 
     for match in re.finditer(r"\$\(", mask):
@@ -711,9 +772,12 @@ def _embedded_context_is_zr_input(
     preceding = host_text[max(0, literal_start - 256) : literal_start]
     has_input_context = bool(
         re.search(
-        r"\b(?:source|src|script|program|input|fixture|code|text)\w*\s*=\s*$",
-        preceding,
-        flags=re.IGNORECASE,
+            r"\b(?:"
+            r"(?:source|src|script|program|input|fixture|code|content|document)\w*"
+            r"|[A-Za-z_][A-Za-z0-9_]*(?:source|src|script|program|input|fixture|code|content|document)"
+            r")\s*=\s*(?:[\"'`])?$",
+            preceding,
+            flags=re.IGNORECASE,
         )
     )
     has_parser_context = bool(
@@ -726,7 +790,7 @@ def _embedded_context_is_zr_input(
     has_zr_opening = bool(
         re.match(
             r"\s*(?:%[A-Za-z_][A-Za-z0-9_]{2,}|func\b|"
-            r"(?:class|struct|resource|interface|enum|union|module|import|"
+            r"(?:class|struct|resource|interface|enum|union|module|import|native|"
             r"let|var|return|if|while|for|foreach|switch|using|new)\b|"
             r"\$[A-Za-z_(]|[A-Z][A-Za-z0-9_]*\s*\()",
             payload,
@@ -757,7 +821,7 @@ def _scan_path(
             )
             contiguous_source_segment = (
                 source_sequence
-                and text[previous_literal_end + 1 : literal_start].strip() == ""
+                and text[previous_literal_end + 1 : literal_start - 1].strip() == ""
             )
             if require_embedded_source_context and not (
                 direct_source_input or contiguous_source_segment
@@ -910,6 +974,8 @@ def _repository_exclusion_reason(relative_path: Path) -> str | None:
         return "thirdParty"
     if normalized.startswith("docs/plans/") or normalized.startswith("docs/superpowers/"):
         return "historicalPlan"
+    if normalized == "docs/zr_language_specification.md":
+        return "historicalSyntaxReference"
     if normalized.startswith("tests/fixtures/syntax_migration_inventory/"):
         return "inventorySelfFixture"
     if normalized.startswith("tests/fixtures/reference/"):

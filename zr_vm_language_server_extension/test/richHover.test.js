@@ -10,8 +10,8 @@ test('summarizeRichHover keeps standard hover concise while preserving key seman
     const summary = summarizeRichHover({
         sections: [
             { role: 'name', label: 'function', value: 'takeFromPoolTest' },
-            { role: 'signature', label: 'Signature', value: 'takeFromPoolTest(seed: int): %unique PointSet' },
-            { role: 'resolvedType', label: 'Resolved Type', value: '%unique PointSet' },
+            { role: 'signature', label: 'Signature', value: 'takeFromPoolTest(seed: int): Unique<PointSet>' },
+            { role: 'resolvedType', label: 'Resolved Type', value: 'Unique<PointSet>' },
             { role: 'access', label: 'Access', value: 'public' },
             { role: 'docs', label: 'Documentation', value: 'Allocates and returns a unique point set.' },
             { role: 'source', label: 'Source', value: 'project source' },
@@ -21,8 +21,8 @@ test('summarizeRichHover keeps standard hover concise while preserving key seman
     assert.equal(summary.title, 'takeFromPoolTest');
     assert.deepEqual(summary.lines, [
         '**function**: takeFromPoolTest',
-        'Signature: `takeFromPoolTest(seed: int): %unique PointSet`',
-        'Resolved Type: `%unique PointSet`',
+        'Signature: `takeFromPoolTest(seed: int): Unique<PointSet>`',
+        'Resolved Type: `Unique<PointSet>`',
         'Access: `public`',
         'Source: `project source`',
     ]);

@@ -78,7 +78,7 @@ static void debug_agent_attach_scheduler_contract(SZrFunction *function) {
 
 static SZrFunction *compile_debug_agent_fixture(SZrState *state, const char *sourceLabel) {
     const char *source =
-            "func addOne(value: int): int {\n"
+            "fn addOne(value: int): int {\n"
             "    var base = value + 1;\n"
             "    return base;\n"
             "}\n"
@@ -396,7 +396,7 @@ static void test_debug_agent_initialize_reports_extended_capabilities(void) {
 static void test_debug_agent_pause_request_over_tcp_stops_at_next_safepoint(void) {
     const char *sourcePath = "debug_agent_protocol_pause_fixture.zr";
     const char *source =
-            "func spin(limit: int): int {\n"
+            "fn spin(limit: int): int {\n"
             "    var total = 0;\n"
             "    var index = 0;\n"
             "    while (index < limit) {\n"
@@ -605,7 +605,7 @@ static void test_debug_agent_raw_socket_close_while_paused_resumes_target(void) 
 static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(void) {
     const char *sourcePath = "debug_agent_running_reconnect_fixture.zr";
     const char *source =
-            "func spin(limit: int): int {\n"
+            "fn spin(limit: int): int {\n"
             "    var total = 0;\n"
             "    var index = 0;\n"
             "    while (index < limit) {\n"

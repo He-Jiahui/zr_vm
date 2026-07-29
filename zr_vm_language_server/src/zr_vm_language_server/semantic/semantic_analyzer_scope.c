@@ -19,7 +19,6 @@ static TZrBool semantic_analysis_scope_is_root_type(EZrAstNodeType type) {
         case ZR_AST_STRUCT_METHOD:
         case ZR_AST_STRUCT_META_FUNCTION:
         case ZR_AST_CLASS_META_FUNCTION:
-        case ZR_AST_TEST_DECLARATION:
         case ZR_AST_LAMBDA_EXPRESSION:
         case ZR_AST_PROPERTY_GET:
         case ZR_AST_PROPERTY_SET:
@@ -68,7 +67,6 @@ static SZrAstNode *semantic_analysis_scope_find(
         case ZR_AST_STRUCT_METHOD:
         case ZR_AST_STRUCT_META_FUNCTION:
         case ZR_AST_CLASS_META_FUNCTION:
-        case ZR_AST_TEST_DECLARATION:
         case ZR_AST_LAMBDA_EXPRESSION:
         case ZR_AST_PROPERTY_GET:
         case ZR_AST_PROPERTY_SET:

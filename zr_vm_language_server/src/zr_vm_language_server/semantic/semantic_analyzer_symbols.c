@@ -539,7 +539,6 @@ static TZrBool collect_callable_return_types(SZrState *state,
         case ZR_AST_CLASS_DECLARATION:
         case ZR_AST_STRUCT_DECLARATION:
         case ZR_AST_INTERFACE_DECLARATION:
-        case ZR_AST_TEST_DECLARATION:
             return ZR_TRUE;
 
         default:
@@ -2137,68 +2136,6 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                             ZR_NULL);
                 semantic_pop_compiler_context(analyzer, &contextSnapshot);
             }
-            return;
-        }
-
-        case ZR_AST_TEST_DECLARATION: {
-            SZrTestDeclaration *testDecl = &node->data.testDeclaration;
-            SZrSymbol *symbol = ZR_NULL;
-            SZrString *name = testDecl->name != ZR_NULL ? testDecl->name->name : ZR_NULL;
-            SZrInferredType *returnType = ZR_NULL;
-
-            /*
-             * A test body with local declarations needs the compiler's complete
-             * statement dataflow before a return-expression inference can
-             * publish definite-assignment facts.  The LSP's lightweight symbol
-             * pass deliberately does not compile that flow.  Keep the historic
-             * no-diagnostic behavior for such tests, while still allowing a
-             * declaration-free test to publish exact member/property facts.
-             */
-            if (!callable_body_has_direct_local_declaration(testDecl->body)) {
-                SZrSemanticCompilerContextSnapshot contextSnapshot;
-
-                semantic_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
-                returnType = create_type_info_for_callable_return(
-                        state,
-                        analyzer,
-                        ZR_NULL,
-                        testDecl->params,
-                        testDecl->body,
-                        node,
-                        node->location);
-                semantic_pop_compiler_context(analyzer, &contextSnapshot);
-            }
-
-            if (name != ZR_NULL) {
-                ZrLanguageServer_SymbolTable_AddSymbolEx(state,
-                                                         analyzer->symbolTable,
-                                                         ZR_SYMBOL_FUNCTION,
-                                                         name,
-                                                         node->location,
-                                                         returnType,
-                                                         ZR_ACCESS_PRIVATE,
-                                                         node,
-                                                         &symbol);
-                ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
-                                                                          symbol,
-                                                                          ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
-                                                                          returnType,
-                                                                          ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
-                ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
-            }
-
-            collect_function_like_scope(state,
-                                        analyzer,
-                                        node,
-                                        node,
-                                        testDecl->params,
-                                        testDecl->body,
-                                        ZR_NULL,
-                                        ZR_TRUE,
-                                        ZR_FALSE,
-                                          ZR_FALSE,
-                                          ZR_NULL,
-                                          ZR_NULL);
             return;
         }
 

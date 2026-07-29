@@ -1,7 +1,7 @@
-%module "reference_calls";
-sum(a: int, b: int, c: int): int {
+module reference.calls.positional.after.named;
+fn sum(a: int, b: int, c: int): int {
     return a + b + c;
 }
-%test("positional after named") {
+fn __fixture(): int {
     return sum(a: 1, 2, c: 3);
 }

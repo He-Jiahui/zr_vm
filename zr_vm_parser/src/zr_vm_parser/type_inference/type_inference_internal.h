@@ -185,6 +185,7 @@ ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInfe
 ZR_PARSER_API const TZrChar *ZrParser_ReflectionDescriptorTypeName(
         EZrReflectionTypeCategory category);
 TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
+                                        SZrAstNode *primaryNode,
                                         const SZrInferredType *baseType,
                                         SZrAstNodeArray *members,
                                         TZrSize startIndex,

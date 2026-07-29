@@ -435,7 +435,7 @@ static void virtual_documents_append_module_header(SZrLspVirtualBuilder *builder
         return;
     }
 
-    virtual_builder_append_text(builder, "%extern(\"");
+    virtual_builder_append_text(builder, "native extern(\"");
     virtual_builder_record_name(builder,
                                 ZR_LSP_VIRTUAL_DECLARATION_MODULE,
                                 ZR_NULL,

@@ -133,11 +133,8 @@ static void execute_reference_test_fixture_expect_int(const char* relativePath, 
     char* source = ZR_NULL;
     SZrState* state = ZR_NULL;
     SZrString* sourceName = ZR_NULL;
-    SZrAstNode* ast = ZR_NULL;
-    SZrCompileResult compileResult;
+    SZrFunction* function = ZR_NULL;
     TZrInt64 actualValue = 0;
-
-    memset(&compileResult, 0, sizeof(compileResult));
 
     state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
@@ -148,16 +145,12 @@ static void execute_reference_test_fixture_expect_int(const char* relativePath, 
     sourceName = ZrCore_String_Create(state, (TZrNativeString)relativePath, (TZrSize)strlen(relativePath));
     TEST_ASSERT_NOT_NULL(sourceName);
 
-    ast = ZrParser_Parse(state, source, fileSize, sourceName);
-    TEST_ASSERT_NOT_NULL(ast);
-    TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
-    TEST_ASSERT_TRUE(compileResult.testFunctionCount >= 1);
-    TEST_ASSERT_NOT_NULL(compileResult.testFunctions[0]);
-    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, compileResult.testFunctions[0], &actualValue));
+    function = ZrParser_Source_Compile(state, source, fileSize, sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &actualValue));
     TEST_ASSERT_EQUAL_INT64(expectedValue, actualValue);
 
-    ZrParser_CompileResult_Free(state, &compileResult);
-    ZrParser_Ast_Free(state, ast);
+    ZrCore_Function_Free(state, function);
     free(source);
     destroy_test_state(state);
 }

@@ -25,7 +25,7 @@ async function main() {
         output += chunk.toString();
     });
 
-    child.stdin.write('func pick(value: int): int {\n');
+    child.stdin.write('fn pick(value: int): int {\n');
     child.stdin.write('    return value;\n');
     child.stdin.write('}\n');
     child.stdin.write('\n');

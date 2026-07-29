@@ -293,11 +293,6 @@ static const SZrType *semantic_find_type_node_at_position(SZrAstNode *node, SZrF
                            ? semantic_find_type_node_at_position(node->data.functionDeclaration.body, position)
                            : ZR_NULL;
 
-        case ZR_AST_TEST_DECLARATION:
-            return node->data.testDeclaration.body != ZR_NULL
-                           ? semantic_find_type_node_at_position(node->data.testDeclaration.body, position)
-                           : ZR_NULL;
-
         case ZR_AST_COMPILE_TIME_DECLARATION:
             return node->data.compileTimeDeclaration.declaration != ZR_NULL
                            ? semantic_find_type_node_at_position(node->data.compileTimeDeclaration.declaration, position)
@@ -807,12 +802,16 @@ static const TZrChar *semantic_access_modifier_text(EZrAccessModifier accessModi
     }
 }
 
-static const TZrChar *semantic_parameter_passing_mode_text(EZrParameterPassingMode passingMode) {
-    switch (passingMode) {
-        case ZR_PARAMETER_PASSING_MODE_IN: return "%in";
-        case ZR_PARAMETER_PASSING_MODE_OUT: return "%out";
-        case ZR_PARAMETER_PASSING_MODE_REF: return "%ref";
-        case ZR_PARAMETER_PASSING_MODE_VALUE:
+static const TZrChar *semantic_parameter_source_form_text(
+        EZrParameterSourcePassingForm sourceForm) {
+    switch (sourceForm) {
+        case ZR_PARAMETER_SOURCE_IN: return "in";
+        case ZR_PARAMETER_SOURCE_OUT: return "out";
+        case ZR_PARAMETER_SOURCE_REF: return "ref";
+        case ZR_PARAMETER_SOURCE_REF_READONLY: return "ref readonly";
+        case ZR_PARAMETER_SOURCE_SCOPED_REF: return "scoped ref";
+        case ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY: return "scoped ref readonly";
+        case ZR_PARAMETER_SOURCE_VALUE:
         default:
             return ZR_NULL;
     }
@@ -856,18 +855,24 @@ static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
 static const TZrChar *semantic_ast_ownership_prefix(EZrOwnershipQualifier ownershipQualifier) {
     switch (ownershipQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return "%unique ";
+            return "Unique<";
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return "%shared ";
+            return "Shared<";
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "%weak ";
+            return "Weak<";
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return "%borrowed ";
+            return "ref readonly ";
         case ZR_OWNERSHIP_QUALIFIER_LOANED:
-            return "%loaned ";
+            return "ref ";
         default:
             return "";
     }
+}
+
+static TZrBool semantic_ast_ownership_is_type_wrapper(EZrOwnershipQualifier ownershipQualifier) {
+    return ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+           ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+           ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
 }
 
 static TZrBool semantic_ast_type_unwrap_ownership_display(SZrType *typeInfo,
@@ -960,7 +965,9 @@ static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
     TZrSize nextOffset;
     const TZrChar *ownershipPrefix;
     EZrOwnershipQualifier wrappedOwnershipQualifier;
+    EZrOwnershipQualifier ownershipQualifier;
     SZrType *innerTypeInfo;
+    TZrBool ownershipIsTypeWrapper;
 
     if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL || buffer == ZR_NULL || offset == ZR_NULL) {
         return ZR_FALSE;
@@ -968,15 +975,19 @@ static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
 
     nextOffset = *offset;
     if (semantic_ast_type_unwrap_ownership_display(typeInfo, &wrappedOwnershipQualifier, &innerTypeInfo)) {
-        ownershipPrefix = semantic_ast_ownership_prefix(
-                typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE
-                    ? typeInfo->ownershipQualifier
-                    : wrappedOwnershipQualifier);
+        ownershipQualifier = typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE
+                ? typeInfo->ownershipQualifier
+                : wrappedOwnershipQualifier;
+        ownershipPrefix = semantic_ast_ownership_prefix(ownershipQualifier);
+        ownershipIsTypeWrapper = semantic_ast_ownership_is_type_wrapper(ownershipQualifier);
         if (ownershipPrefix[0] != '\0') {
             nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "%s", ownershipPrefix);
         }
         if (!semantic_append_ast_type_decl(innerTypeInfo, buffer, bufferSize, &nextOffset)) {
             return ZR_FALSE;
+        }
+        if (ownershipIsTypeWrapper) {
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ">");
         }
         if (typeInfo->subType != ZR_NULL) {
             nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ".");
@@ -992,7 +1003,9 @@ static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
         return ZR_TRUE;
     }
 
-    ownershipPrefix = semantic_ast_ownership_prefix(typeInfo->ownershipQualifier);
+    ownershipQualifier = typeInfo->ownershipQualifier;
+    ownershipPrefix = semantic_ast_ownership_prefix(ownershipQualifier);
+    ownershipIsTypeWrapper = semantic_ast_ownership_is_type_wrapper(ownershipQualifier);
     if (ownershipPrefix[0] != '\0') {
         nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "%s", ownershipPrefix);
     }
@@ -1067,6 +1080,9 @@ static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
 
     for (TZrInt32 dimension = 0; dimension < typeInfo->dimensions; dimension++) {
         nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "[]");
+    }
+    if (ownershipIsTypeWrapper) {
+        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ">");
     }
 
     *offset = nextOffset;
@@ -1417,7 +1433,7 @@ static TZrSize semantic_append_parameter_list(SZrState *state,
         for (TZrSize index = 0; index < params->count; index++) {
             SZrAstNode *paramNode = params->nodes[index];
             SZrParameter *parameter;
-            const TZrChar *passingModeText;
+            const TZrChar *sourceFormText;
 
             if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
                 continue;
@@ -1428,18 +1444,16 @@ static TZrSize semantic_append_parameter_list(SZrState *state,
                 offset = semantic_buffer_append(buffer, bufferSize, offset, ", ");
             }
 
-            passingModeText = semantic_parameter_passing_mode_text(parameter->passingMode);
-            if (passingModeText != ZR_NULL) {
-                offset = semantic_buffer_append(buffer, bufferSize, offset, "%s ", passingModeText);
-            }
-
             semantic_format_type_from_ast(state, compilerState, parameter->typeInfo, typeBuffer, sizeof(typeBuffer));
+            sourceFormText = semantic_parameter_source_form_text(parameter->sourcePassingForm);
             offset = semantic_buffer_append(buffer,
                                             bufferSize,
                                             offset,
-                                            "%s: %s",
+                                            "%s: %s%s",
                                             semantic_string_native(parameter->name != ZR_NULL ? parameter->name->name : ZR_NULL),
-                                            typeBuffer);
+                                            sourceFormText != ZR_NULL ? sourceFormText : "",
+                                            sourceFormText != ZR_NULL ? " " : "");
+            offset = semantic_buffer_append(buffer, bufferSize, offset, "%s", typeBuffer);
         }
     }
 
@@ -2044,10 +2058,6 @@ static void semantic_append_imported_module_completions(SZrState *state,
 
         case ZR_AST_FUNCTION_DECLARATION:
             semantic_append_imported_module_completions(state, analyzer, node->data.functionDeclaration.body, result);
-            return;
-
-        case ZR_AST_TEST_DECLARATION:
-            semantic_append_imported_module_completions(state, analyzer, node->data.testDeclaration.body, result);
             return;
 
         case ZR_AST_VARIABLE_DECLARATION:

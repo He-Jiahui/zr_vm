@@ -197,11 +197,11 @@ static void test_line_and_count_hooks_are_independent_and_line_events_are_dedupl
 
 static void test_getstack_and_getinfo_resolve_nested_frames_and_respect_type_mask(void) {
     const char *source =
-            "func inner(value: int): int {\n"
+            "fn inner(value: int): int {\n"
             "    var local = value + 1;\n"
             "    return local;\n"
             "}\n"
-            "func outer(value: int): int {\n"
+            "fn outer(value: int): int {\n"
             "    var result = inner(value);\n"
             "    return result;\n"
             "}\n"

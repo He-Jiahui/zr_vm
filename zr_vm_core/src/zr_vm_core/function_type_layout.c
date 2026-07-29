@@ -246,8 +246,7 @@ static TZrBool function_type_layout_member_is_field(const SZrCompiledMemberInfo 
 
 static TZrBool function_type_layout_member_requires_value_lifecycle(const SZrCompiledMemberInfo *member) {
     return (TZrBool)(function_type_layout_member_is_field(member) &&
-                     (member->isUsingManaged != 0u ||
-                      member->ownershipQualifier != 0u ||
+                     (member->ownershipQualifier != 0u ||
                       member->callsClose != 0u ||
                       member->callsDestructor != 0u));
 }

@@ -169,7 +169,7 @@ static TZrBool run_assignment_range_case_at(SZrState *state,
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -208,7 +208,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_net_zer
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_additive_zero_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -247,7 +247,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_additiv
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -286,7 +286,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_express
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commuted_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -325,7 +325,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commute
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_associative_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -364,7 +364,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_associa
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_folded_integer_sum_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -403,7 +403,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_folded_
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_signed_additive_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -442,7 +442,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_signed_
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_same_side_term_cancellation_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -482,7 +482,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_same_si
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_unary_negative_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -521,7 +521,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_unary_n
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_unary_positive_expression_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -560,7 +560,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_unary_p
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_residual_net_negative_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -599,7 +599,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_residua
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_multi_residual_net_positive_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -640,7 +640,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_multi_r
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_multi_residual_prefix_range(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 100;\n"
         "    var step: int = seed - 128;\n"
@@ -681,7 +681,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_multi_r
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_literal_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -720,7 +720,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_literal
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_folded_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -759,7 +759,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_folded_
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_multiplicative_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"
@@ -798,7 +798,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_multipl
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_negative_literal_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = seed - 128;\n"

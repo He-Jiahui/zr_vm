@@ -172,10 +172,10 @@ static TZrBool prepare_utf16_project(TZrChar *mainPath,
         "  \"entry\": \"main\"\n"
         "}\n";
     static const TZrChar *mainContent =
-        "/* \xCE\xBB */ var greetModule = %import(\"greet\");\n"
+        "/* \xCE\xBB */ var greetModule = import(\"greet\");\n"
         "/* \xCE\xBB */ return greetModule.greet();\n";
     static const TZrChar *moduleContent =
-        "pub var greet = () => {\n"
+        "pub var greet = fn() => {\n"
         "    return \"hello\";\n"
         "};\n";
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -271,10 +271,10 @@ static TZrBool prepare_binary_metadata_utf16_project(SZrState *state,
         "  \"entry\": \"main\"\n"
         "}\n";
     static const TZrChar *mainContent =
-        "var binaryStage = %import(\"binary_utf16_stage\");\n"
+        "var binaryStage = import(\"binary_utf16_stage\");\n"
         "return binaryStage.binarySeed();\n";
     static const TZrChar *binarySource =
-        "/* \xCE\xBB */ pub var binarySeed = () => {\n"
+        "/* \xCE\xBB */ pub var binarySeed = fn() => {\n"
         "    return 40;\n"
         "};\n";
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
@@ -312,7 +312,7 @@ static TZrBool prepare_binary_metadata_utf16_project(SZrState *state,
 
 static TZrBool test_module_entry_references_after_utf8_prefix_use_utf16_columns(SZrState *state) {
     static const TZrChar *mainContent =
-        "/* \xCE\xBB */ var greetModule = %import(\"greet\");\n"
+        "/* \xCE\xBB */ var greetModule = import(\"greet\");\n"
         "/* \xCE\xBB */ return greetModule.greet();\n";
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
@@ -368,7 +368,7 @@ static TZrBool test_module_entry_references_after_utf8_prefix_use_utf16_columns(
 
 static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     static const TZrChar *binarySource =
-        "/* \xCE\xBB */ pub var binarySeed = () => {\n"
+        "/* \xCE\xBB */ pub var binarySeed = fn() => {\n"
         "    return 40;\n"
         "};\n";
     TZrChar projectPath[ZR_TESTS_PATH_MAX];

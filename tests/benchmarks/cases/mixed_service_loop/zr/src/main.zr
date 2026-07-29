@@ -1,5 +1,5 @@
-var benchConfig = %import("bench_config");
-var {Array} = %import("zr.container");
+let benchConfig = import("bench_config");
+let {Array} = import("zr.container");
 
 class Service {
     pub var weight: int;
@@ -19,7 +19,7 @@ class Service {
     }
 }
 
-func route(service: Service, value: int, ticket: int): int {
+fn route(service: Service, value: int, ticket: int): int {
     return service.handle(value, ticket);
 }
 

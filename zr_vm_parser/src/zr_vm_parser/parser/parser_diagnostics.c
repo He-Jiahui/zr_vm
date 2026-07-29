@@ -263,7 +263,7 @@ void report_import_path_not_constant(SZrParserState *ps,
                                                                &diagnostic,
                                                                location,
                                                                directiveName)) {
-        report_error_with_token(ps, "%import(...) requires a string literal module path", ps->lexer->t.token);
+        report_error_with_token(ps, "import(...) requires a string literal module path", ps->lexer->t.token);
         return;
     }
 

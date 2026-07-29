@@ -1,7 +1,7 @@
-%module "reference_calls";
-sum(a: int, b: int, c: int): int {
+module reference.calls.unexpected;
+fn sum(a: int, b: int, c: int): int {
     return a + b + c;
 }
-%test("unexpected named") {
+fn __fixture(): int {
     return sum(1, d: 2, c: 3);
 }

@@ -1,4 +1,4 @@
-var benchConfig = %import("bench_config");
+let benchConfig = import("bench_config");
 
 class PolyAdder {
     pri var base: int;
@@ -36,30 +36,30 @@ class PolyXor {
     }
 }
 
-func callLeaf(value: int, salt: int): int {
+fn callLeaf(value: int, salt: int): int {
     return (value * 17 + salt * 13 + 19) % 100003;
 }
 
-func callChainA(value: int, salt: int): int {
+fn callChainA(value: int, salt: int): int {
     return callLeaf(value + 3, salt + 1);
 }
 
-func callChainB(value: int, salt: int): int {
+fn callChainB(value: int, salt: int): int {
     return callLeaf(callChainA(value + salt % 5, salt + 7), salt + 11);
 }
 
-func callChainC(value: int, salt: int): int {
+fn callChainC(value: int, salt: int): int {
     return callLeaf(callChainB(value ^ salt, salt + 13), salt + 17);
 }
 
-func tailAccumulate(steps: int, acc: int): int {
+fn tailAccumulate(steps: int, acc: int): int {
     if (steps == 0) {
         return acc;
     }
     return tailAccumulate(steps - 1, (acc * 3 + steps + 5) % 100003);
 }
 
-func dispatch(callable, value: int, delta: int): int {
+fn dispatch(callable, value: int, delta: int): int {
     return callable(value, delta);
 }
 

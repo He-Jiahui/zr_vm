@@ -104,7 +104,6 @@ TZrBool ZrParser_DataflowOwnership_FactInStatement(
                     statement->data.usingStatement.resource,
                     fact);
         case ZR_AST_FUNCTION_DECLARATION:
-        case ZR_AST_TEST_DECLARATION:
         case ZR_AST_STRUCT_DECLARATION:
         case ZR_AST_CLASS_DECLARATION:
         case ZR_AST_INTERFACE_DECLARATION:

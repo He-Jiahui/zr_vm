@@ -2138,8 +2138,8 @@ void test_lambda_create_closure_targets_are_reachable_from_child_function_graph(
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Lambda Create Closure Targets Are Reachable From Child Function Graph";
     const char *source =
-            "var build = () => {\n"
-            "    var emit = () => { return 1; };\n"
+            "var build = fn() => {\n"
+            "    var emit = fn() => { return 1; };\n"
             "    return emit();\n"
             "};\n"
             "return build();";
@@ -2220,7 +2220,7 @@ void test_native_network_optional_argument_import_compiles_without_unknown_param
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Native Network Optional Argument Import Compiles Without Unknown Parameter Blowup";
     const char *source =
-            "var network = %import(\"zr.network\");\n"
+            "let network = import(\"zr.network\");\n"
             "network.tcp.connect(\"127.0.0.1\", 1);\n";
     SZrState *state;
     SZrString *sourceName;
@@ -2299,13 +2299,13 @@ void test_qualified_container_types_compile_through_function_predeclaration_path
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Qualified Container Types Compile Through Function Predeclaration Paths";
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "forward(value: container.Array<int>): container.Array<int> {\n"
             "    var local: container.Array<int> = value;\n"
             "    return local;\n"
             "}\n"
             "host(): int {\n"
-            "    var scoped = %import(\"zr.container\");\n"
+            "    let scoped = import(\"zr.container\");\n"
             "    nested(value: scoped.Array<int>): scoped.Array<int> {\n"
             "        var local: scoped.Array<int> = value;\n"
             "        return local;\n"
@@ -2349,7 +2349,7 @@ void test_native_network_loopback_runtime_returns_expected_payload(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Native Network Loopback Runtime Returns Expected Payload";
     const char *source =
-            "var network = %import(\"zr.network\");\n"
+            "let network = import(\"zr.network\");\n"
             "var tcp = network.tcp;\n"
             "var udp = network.udp;\n"
             "var listener = tcp.listen(\"127.0.0.1\", 0);\n"
@@ -3584,7 +3584,7 @@ void test_known_native_member_calls_quicken_to_dedicated_member_call_opcode(void
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Known Native Member Calls Quicken To Dedicated Member Call Opcode";
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var seen = new container.Set<int>();\n"
             "var score = 0;\n"
             "if (seen.add(7)) { score = score + 10; }\n"
@@ -3631,8 +3631,8 @@ void test_static_native_box_member_call_executes_without_receiver_frame_rewrite(
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Static Native Box Member Call Executes Without Receiver Frame Rewrite";
     const char *source =
-            "var builtin = %import(\"zr.builtin\");\n"
-            "var {TypeInfo} = %import(\"zr.builtin\");\n"
+            "let builtin = import(\"zr.builtin\");\n"
+            "let {TypeInfo} = import(\"zr.builtin\");\n"
             "var left = builtin.Object.box(7);\n"
             "var right = TypeInfo.box(7);\n"
             "return left.hashCode() == right.hashCode();\n";
@@ -3958,13 +3958,13 @@ void test_nested_argument_calls_do_not_reuse_tail_call_lowering(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Nested Argument Calls Do Not Reuse Tail Call Lowering";
     const char *source =
-            "func callLeaf(value: int, salt: int): int {\n"
+            "fn callLeaf(value: int, salt: int): int {\n"
             "    return (value * 17 + salt * 13 + 19) % 100003;\n"
             "}\n"
-            "func callChainA(value: int, salt: int): int {\n"
+            "fn callChainA(value: int, salt: int): int {\n"
             "    return callLeaf(value + 3, salt + 1);\n"
             "}\n"
-            "func callChainB(value: int, salt: int): int {\n"
+            "fn callChainB(value: int, salt: int): int {\n"
             "    return callLeaf(callChainA(value + salt % 5, salt + 7), salt + 11);\n"
             "}\n"
             "return callChainB(445, 10);\n";
@@ -5163,8 +5163,8 @@ void test_repeated_constructor_string_arguments_survive_quickening_across_calls(
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Repeated Constructor String Arguments Survive Quickening Across Calls";
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Pair} = import(\"zr.container\");\n"
             "var xs = new container.Array<Pair<int, string>>();\n"
             "xs.add(new container.Pair<int, string>(2, \"even\"));\n"
             "xs.add(new container.Pair<int, string>(4, \"even\"));\n"
@@ -5305,7 +5305,7 @@ void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(void) {
     const TZrChar *testSummary = "Logical Short Circuit Runtime Preserves Side Effect Boundaries";
     const char *source =
             "var counter = 0;\n"
-            "var touch = () => {\n"
+            "var touch = fn() => {\n"
             "    counter = counter + 1;\n"
             "    return true;\n"
             "};\n"

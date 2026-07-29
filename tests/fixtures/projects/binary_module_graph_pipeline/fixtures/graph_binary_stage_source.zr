@@ -1,3 +1,1 @@
-pub var binarySeed = () => {
-    return 40;
-};
+pub var binarySeed = fn(): int => 40;

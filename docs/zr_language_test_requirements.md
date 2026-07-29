@@ -78,14 +78,14 @@ var b: bool = <bool> 1;
 **状态**: 待实现
 
 ```zr
-%module "math";
+module math;
 struct Vector3 {
     pub var x: float;
     pub var y: float;
     pub var z: float;
 }
 
-var m = %import("math");
+var m = import("math");
 var obj = {x: 1.0, y: 2.0, z: 3.0};
 var v = <m.Vector3> obj;
 ```
@@ -98,12 +98,12 @@ var v = <m.Vector3> obj;
 **状态**: 待实现
 
 ```zr
-%module "PersonInfo";
+module PersonInfo;
 class Person {
     pub var id: string;
 }
 
-var k = %import("PersonInfo");
+var k = import("PersonInfo");
 var p = {id: "123"};
 var person = <k.Person> p;
 ```
@@ -123,7 +123,7 @@ struct Pair<TLeft, TRight> { pub left: TLeft; pub right: TRight; }
 class Matrix<T, const N: int> { pub rows: Array<T>[N]; }
 
 new Box<int>();
-$Pair<int, string>();
+init Pair<int, string>();
 new Matrix<int, 2 + 2>();
 ```
 
@@ -140,11 +140,11 @@ new Matrix<int, 2 + 2>();
 **状态**: 已实现并持续扩展
 
 ```zr
-func identity<T>(value: T): T { return value; }
+fn identity<T>(value: T): T { return value; }
 
 class Box<T> {
-    func echo<U>(input: U): U { return input; }
-    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }
+    fn echo<U>(input: U): U { return input; }
+    fn shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }
 }
 
 identity(1);
@@ -190,15 +190,15 @@ class Derived<T> : Base<T> where T: class, new() { }
 **状态**: 已实现并持续扩展
 
 ```zr
-func readOnly<T>(%in value: T): void { }
-func tryGet<T>(key: string, %out value: T): bool { value = null; return true; }
-func swap<T>(%ref left: T, %ref right: T): void { }
+fn readOnly<T>(value: in T): void { }
+fn tryGet<T>(key: string, value: out T): bool { value = null; return true; }
+fn swap<T>(left: ref T, right: ref T): void { }
 ```
 
 **覆盖点**:
-- `%in` 只读限制
-- `%out` / `%ref` 实参必须为可赋值左值
-- `%out` definite assignment
+- `in` 只读限制
+- `out` / `ref` 实参必须为可赋值左值
+- `out` definite assignment
 - native / source / generic call 路径的 passing mode 一致性
 
 **测试文件**: `tests/parser/test_type_inference.c`
@@ -211,12 +211,12 @@ func swap<T>(%ref left: T, %ref right: T): void { }
 ```zr
 interface Producer<out T> { next(): T; }
 class Derived<T, const N: int> : Producer<T> where T: class, new() { }
-func swap<T>(%ref value: T): T { return value; }
+fn swap<T>(value: ref T): T { return value; }
 ```
 
 **覆盖点**:
 - hover / completion 展示 generic declaration
-- const 泛型参数、`where` 约束、继承列表、方差与 `%in/%out/%ref`
+- const 泛型参数、`where` 约束、继承列表、方差与 `in`/`out`/`ref`
 - open definition 与 declaration signature 区分
 
 **测试文件**: `tests/language_server/test_semantic_analyzer.c`
@@ -227,7 +227,7 @@ func swap<T>(%ref value: T): T { return value; }
 **状态**: 已实现首轮深度矩阵，后续按回归继续扩展
 
 ```zr
-var container = %import("zr.container");
+var container = import("zr.container");
 
 var fixed: int[4] = [1, 2, 3, 4];
 var xs: Array<int> = new container.Array<int>();
@@ -309,19 +309,16 @@ for (var item in values) {
   - `.zri`、AOT C、AOT LLVM 三类产物都必须保留这些 opcode 名称，而不是退化成普通 `FUNCTION_TAIL_CALL`
   - `DYN_CALL` / `DYN_TAIL_CALL` / `META_CALL` / `META_TAIL_CALL` / `META_GET` / `META_SET` 必须统一携带 shared `FUNCTION_PRECALL` runtime contract 或等价 runtime contract 与 deopt metadata
   - 深尾递归必须证明 `callInfo` 链保持有界，而不是只验证结果值正确
-  - 带活动异常处理器或 `%using` cleanup 的 frame 必须允许显式回退到非复用路径，不能为了 TCO 破坏现有展开语义
+  - 带活动异常处理器或 `using` cleanup 的 frame 必须允许显式回退到非复用路径，不能为了 TCO 破坏现有展开语义
 - ownership lifecycle artifact: `tests/parser/test_parser.c` + `tests/parser/test_compiler_features.c` + `tests/parser/test_execbc_aot_pipeline.c`
-  - parser 必须把 `%borrow(expr)` / `%loan(expr)` / `%upgrade(expr)` / `%release(expr)` / `%detach(expr)` 解析成 dedicated ownership builtin，而不是继续复用普通 helper-call 形态
-  - parser 必须拒绝 legacy ownership expression `%using(expr)` / `%using new ...`，并把 `%using` 收敛回 statement 或 block 级 lifetime fence
-  - ExecBC 必须显式保留 `OWN_BORROW` / `OWN_LOAN` / `OWN_UPGRADE` / `OWN_RELEASE` / `OWN_DETACH`
-  - `SemIR`、`.zri`、AOT C、AOT LLVM 必须显式保留这些 `OWN_*` ownership opcode，不能继续出现 legacy `OWN_USING`
-  - statement `%using` 必须继续走 `MARK_TO_BE_CLOSED` / `CLOSE_SCOPE`，不能重新混回 ownership builtin surface
-  - AOT artifact 必须声明 `ZrCore_Ownership_UpgradeValue` / `ZrCore_Ownership_ReleaseValue` / `ZrCore_Ownership_DetachValue` 等对应 runtime contract 或等价 contract
-  - `%weak` 只能从 `%shared` 创建，`%upgrade` 只能接 `%weak`
-  - `%detach(shared)` 至少必须限制为单 owner shared；multi-owner shared 不能假装正确地退回 plain GC
-  - `%upgrade(weak)` 在仍有 shared owner 时必须返回非空 shared；最后一个 shared owner 消失后再次升级必须返回 `null`
-  - `%release` 当前若尚未引入 place-aware ownership effect，至少必须限制为 local identifier binding，不能假装正确支持 member/index/closure-place release
-  - borrowed / loaned binding 不可跨 `await`
+  - parser 必须把 `ref` / `ref readonly` 参数与 `ref place` 实参解析为显式 ownership/reference contract，而不是退回普通 helper-call 形态
+  - statement `using` 必须继续走 `MARK_TO_BE_CLOSED` / `CLOSE_SCOPE`，不能重新混回 ownership builtin surface
+  - ExecBC、SemIR、`.zri`、AOT C 与 AOT LLVM 必须保留当前 ownership/reference effect，不生成旧 ownership builtin opcode
+  - AOT artifact 必须声明 `Weak<T>.upgrade()`、`Shared<T>.weak()` 与 `drop(...)` 对应的 runtime contract 或等价 contract
+  - `Weak<T>` 只能从 `Shared<T>` 经 `.weak()` 创建；`.upgrade()` 只能接收 `Weak<T>`
+  - `.upgrade()` 在仍有 shared owner 时必须返回非空 shared；最后一个 shared owner 消失后再次升级必须返回 `null`
+  - `drop(...)` 必须按当前 place-aware ownership effect 验证 local、member、index 与 closure-place 的生命周期边界
+  - `ref` / `ref readonly` binding 不可跨 `await`
 - runtime contracts: `tests/instructions/test_instructions.c`
   - member descriptor、index contract、iterable contract、iterator contract 全部走显式 contract dispatch
   - `META_GET` / `META_SET` 必须直接调用 hidden accessor runtime path，而不是先退回普通成员取值再走 helper call
@@ -510,7 +507,7 @@ var k = while(true) {
 **状态**: 部分实现
 
 ```zr
-var builtin = %import("zr.builtin");
+var builtin = import("zr.builtin");
 var k = {{
     if (builtin.Object.type(j) == "array") {
         out j.toArray();
@@ -575,7 +572,7 @@ interface B: A {
 
 ```zr
 interface I {
-    pub get set value: int;
+    pub property value: int { get; set; }
 }
 ```
 
@@ -740,7 +737,7 @@ tests/parser/
 
 ## 测试运行
 
-每个测试文件应该包含 `%test("test_name")` 声明，测试框架应该能够：
+每个测试文件应该包含 `#zr.testing.test# fn testName(): void` 声明，测试框架应该能够：
 
 1. 解析测试文件
 2. 执行测试函数

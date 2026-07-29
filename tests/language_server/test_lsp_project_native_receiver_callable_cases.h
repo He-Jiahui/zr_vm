@@ -6,7 +6,7 @@
 static void test_lsp_native_receiver_callable_query_hover_and_signature_share_closed_contract(
         SZrState *state) {
     static const TZrChar *content =
-            "var {LinkedList} = %import(\"zr.container\");\n"
+            "var {LinkedList} = import(\"zr.container\");\n"
             "var list: LinkedList<int> = null;\n"
             "var node = list.addLast(1);\n"
             "return node;\n";
@@ -133,7 +133,7 @@ cleanup:
 static void test_lsp_descriptor_plugin_receiver_callable_tracks_provider_generation(
         SZrState *state) {
     static const TZrChar *content =
-            "var plugin = %import(\"zr.pluginprobe\");\n"
+            "var plugin = import(\"zr.pluginprobe\");\n"
             "var point = plugin.makePoint();\n"
             "var total = point.total();\n"
             "var echoed = point.echo(1);\n"

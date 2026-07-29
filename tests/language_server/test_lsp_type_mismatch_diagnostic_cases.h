@@ -6,7 +6,7 @@ static void test_lsp_diagnostics_publish_detailed_initializer_type_mismatch(
     const TZrChar *summary = "LSP Diagnostics Publish Detailed Initializer Type Mismatch";
     TZrChar uriText[] = "file:///initializer_type_mismatch.zr";
     const TZrChar *content =
-            "func main(): int {\n"
+            "fn main(): int {\n"
             "    var amount: int = 3.75;\n"
             "    return 0;\n"
             "}\n";
@@ -174,10 +174,10 @@ static void test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mis
     const TZrChar *summary = "LSP Diagnostics Publish Detailed Assignment And Return Type Mismatch";
     TZrChar uriText[] = "file:///assignment_return_type_mismatch.zr";
     const TZrChar *content =
-            "func bad(): int {\n"
+            "fn bad(): int {\n"
             "    return 2.5;\n"
             "}\n"
-            "func main(): int {\n"
+            "fn main(): int {\n"
             "    var amount: int = 0;\n"
             "    amount = 3.75;\n"
             "    return 0;\n"

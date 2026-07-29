@@ -353,7 +353,7 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
                                 ZR_CANONICAL_RECEIVER_READONLY
                         ? ZR_TRUE
                         : ZR_FALSE;
-        compiledMember->isUsingManaged = memberInfo->isUsingManaged ? ZR_TRUE : ZR_FALSE;
+        compiledMember->reservedRemovedUsingManaged = 0u;
         compiledMember->ownershipQualifier = (TZrUInt32)memberInfo->ownershipQualifier;
         compiledMember->callsClose = memberInfo->callsClose ? ZR_TRUE : ZR_FALSE;
         compiledMember->callsDestructor = memberInfo->callsDestructor ? ZR_TRUE : ZR_FALSE;
@@ -456,50 +456,6 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     return ZR_TRUE;
 }
 
-static void compiler_compile_compile_time_runtime_support(SZrCompilerState *cs, SZrAstNode *statement) {
-    SZrAstNode *declaration;
-    TZrBool oldSupportFlag;
-
-    if (cs == ZR_NULL || statement == ZR_NULL || statement->type != ZR_AST_COMPILE_TIME_DECLARATION || cs->hasError) {
-        return;
-    }
-
-    if (cs->state == ZR_NULL ||
-        cs->state->global == ZR_NULL ||
-        !cs->state->global->emitCompileTimeRuntimeSupport) {
-        return;
-    }
-
-    if (statement->data.compileTimeDeclaration.isCurrentSyntax) {
-        return;
-    }
-
-    declaration = statement->data.compileTimeDeclaration.declaration;
-    if (declaration == ZR_NULL) {
-        return;
-    }
-
-    oldSupportFlag = cs->isCompilingCompileTimeRuntimeSupport;
-    cs->isCompilingCompileTimeRuntimeSupport = ZR_TRUE;
-
-    switch (declaration->type) {
-        case ZR_AST_VARIABLE_DECLARATION: {
-            EZrAccessModifier oldAccessModifier = declaration->data.variableDeclaration.accessModifier;
-            declaration->data.variableDeclaration.accessModifier = ZR_ACCESS_PROTECTED;
-            ZrParser_Statement_Compile(cs, declaration);
-            declaration->data.variableDeclaration.accessModifier = oldAccessModifier;
-            break;
-        }
-        case ZR_AST_FUNCTION_DECLARATION:
-            compile_function_declaration(cs, declaration);
-            break;
-        default:
-            break;
-    }
-
-    cs->isCompilingCompileTimeRuntimeSupport = oldSupportFlag;
-}
-
 static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNode *statement) {
     if (cs == ZR_NULL || statement == ZR_NULL || cs->hasError) {
         return;
@@ -525,7 +481,6 @@ static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNod
             }
             return;
         }
-        compiler_compile_compile_time_runtime_support(cs, statement);
         return;
     }
 
@@ -546,9 +501,6 @@ static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNod
         case ZR_AST_FOR_LOOP:
         case ZR_AST_FOREACH_LOOP:
             ZrParser_Statement_Compile(cs, statement);
-            break;
-        case ZR_AST_TEST_DECLARATION:
-            compile_test_declaration(cs, statement);
             break;
         case ZR_AST_STRUCT_DECLARATION:
             compile_struct_declaration(cs, statement);
@@ -619,33 +571,6 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     // 2. 首先收集并执行所有编译期声明
     if (script->statements != ZR_NULL) {
         enter_scope(cs);
-
-        // 第一遍只保留 legacy 编译期执行。当前 comptime fn 已在 Signature
-        // 前的 BuildFacts 中注册，当前 comptime block 延迟到 LateCheck。
-        for (TZrSize i = 0; i < script->statements->count; i++) {
-            SZrAstNode *stmt = script->statements->nodes[i];
-            if (stmt != ZR_NULL && stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
-                if (stmt->data.compileTimeDeclaration.isCurrentSyntax) {
-                    continue;
-                }
-                // 执行编译期声明
-                ZrParser_CompileTimeDeclaration_Execute(cs, stmt);
-                
-                // 如果遇到致命错误，停止编译
-                if (cs->hasFatalError) {
-                    ZrCore_Log_Diagnosticf(cs->state,
-                                           ZR_LOG_LEVEL_ERROR,
-                                           ZR_OUTPUT_CHANNEL_STDERR,
-                                           "  Fatal compile-time error encountered, stopping compilation\n");
-                    return;
-                }
-            }
-        }
-
-        if (cs->hasCompileTimeError) {
-            cs->hasError = ZR_TRUE;
-            return;
-        }
 
         cs->compilePhase = ZR_PARSER_COMPILE_PHASE_SIGNATURE;
         ZrParser_Compiler_PredeclareExternBindings(cs, script->statements);

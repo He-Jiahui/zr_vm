@@ -546,17 +546,17 @@ EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuilt
 static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
-            return "'%shared' requires a %unique owner";
+            return "share() requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
-            return "'%weak' requires a %shared owner";
+            return "weak() requires a Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
-            return "'%loan' requires a %unique owner";
+            return "A mutable reference requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
-            return "'%upgrade' requires a %weak owner";
+            return "upgrade() requires a Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
-            return "'%release' requires a %unique or %shared owner";
+            return "drop() requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-            return "'%detach' requires a %unique or %shared owner";
+            return "intoGc() requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return "intoGc() requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
@@ -659,8 +659,8 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         if (constructExpr->target == ZR_NULL || constructExpr->target->type != ZR_AST_IDENTIFIER_LITERAL) {
             ZrParser_Compiler_Error(cs,
                                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
-                                            ? "'%release' currently requires a local identifier binding"
-                                            : "'%detach' currently requires a local identifier binding",
+                                            ? "drop() currently requires a local identifier binding"
+                                            : "intoGc() currently requires a local identifier binding",
                                     location);
             return ZR_FALSE;
         }
@@ -669,8 +669,8 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         if (sourceSlot == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs,
                                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
-                                            ? "'%release' currently only supports local identifier bindings"
-                                            : "'%detach' currently only supports local identifier bindings",
+                                            ? "drop() currently only supports local identifier bindings"
+                                            : "intoGc() currently only supports local identifier bindings",
                                     location);
             return ZR_FALSE;
         }
@@ -1009,15 +1009,15 @@ TZrBool receiver_ownership_can_call_member_local(EZrOwnershipQualifier receiverQ
 const TZrChar *receiver_ownership_call_error_local(EZrOwnershipQualifier receiverQualifier) {
     switch (receiverQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "Weak-owned receivers must be upgraded before calling non-%weak methods";
+            return "Weak-owned receivers must be upgraded before calling methods that require a strong owner";
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return "Shared-owned receivers can only call %shared or %borrowed methods";
+            return "Shared-owned receivers can only call shared or readonly-reference methods";
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return "Unique-owned receivers can only call %borrowed methods";
+            return "Unique-owned receivers can only call readonly-reference methods through this path";
         case ZR_OWNERSHIP_QUALIFIER_LOANED:
-            return "Loaned receivers can only call %loaned or %borrowed methods";
+            return "Mutable-reference receivers can only call reference-compatible methods";
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return "Borrowed receivers can only call %borrowed methods";
+            return "Readonly-reference receivers can only call readonly-reference methods";
         case ZR_OWNERSHIP_QUALIFIER_NONE:
         default:
             return "Receiver ownership qualifier is not compatible with this method";

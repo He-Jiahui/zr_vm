@@ -5,22 +5,20 @@ SZrAstNode *parse_module_declaration(SZrParserState *ps) {
     SZrAstNode *name;
     SZrAstNode *node;
 
-    if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        ZrParser_Lexer_Next(ps->lexer);
-        if (ps->lexer->t.token == ZR_TK_MODULE) {
-            ZrParser_Lexer_Next(ps->lexer);
-        } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "module")) {
-            ZrParser_Lexer_Next(ps->lexer);
-        } else {
-            report_error(ps, "Expected 'module' after '%'");
-            return ZR_NULL;
-        }
-    } else {
-        expect_token(ps, ZR_TK_MODULE);
-        ZrParser_Lexer_Next(ps->lexer);
+    expect_token(ps, ZR_TK_MODULE);
+    if (!consume_token(ps, ZR_TK_MODULE)) {
+        return ZR_NULL;
     }
 
-    name = parse_normalized_module_path(ps, "module");
+    if (ps->lexer->t.token == ZR_TK_STRING || ps->lexer->t.token == ZR_TK_LPAREN) {
+        report_removed_legacy_syntax(
+                ps,
+                "string module path",
+                "Write module names as identifier paths, for example `module app.main;`.");
+        return ZR_NULL;
+    }
+
+    name = parse_normalized_dotted_module_path(ps, "module");
     if (name == ZR_NULL) {
         return ZR_NULL;
     }
@@ -56,10 +54,12 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
     }
     ZrParser_Lexer_Next(ps->lexer);
 
-    // Legacy `var const` remains accepted as immutable input.
     if (!isConst && ps->lexer->t.token == ZR_TK_CONST) {
-        isConst = ZR_TRUE;
-        ZrParser_Lexer_Next(ps->lexer);
+        report_removed_legacy_syntax(
+                ps,
+                "var const declaration",
+                "Use `let name = value;` for an immutable binding.");
+        return ZR_NULL;
     }
 
     // 解析模式（标识符或解构）
@@ -148,7 +148,6 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange fnKeywordLoc;
     SZrFileRange returnDelimiterLoc;
-    TZrBool usesFnKeyword = ZR_FALSE;
 
     memset(&fnKeywordLoc, 0, sizeof(fnKeywordLoc));
     memset(&returnDelimiterLoc, 0, sizeof(returnDelimiterLoc));
@@ -168,13 +167,19 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         parse_access_modifier(ps);
     }
 
-    if (ps->lexer->t.token == ZR_TK_FN) {
-        usesFnKeyword = ZR_TRUE;
-        fnKeywordLoc = get_current_token_location(ps);
-        ZrParser_Lexer_Next(ps->lexer);
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
-        ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_FN) {
+        if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+            report_removed_legacy_syntax(ps, "func declaration", "Write `fn name(...): ReturnType { ... }`.");
+        } else {
+            report_removed_legacy_syntax(ps,
+                                         "keywordless function declaration",
+                                         "Prefix the declaration with `fn` and keep `:` before its return TypeRef.");
+        }
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
     }
+    fnKeywordLoc = get_current_token_location(ps);
+    ZrParser_Lexer_Next(ps->lexer);
 
     // 解析函数名（不需要function关键字，直接是标识符）
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -253,7 +258,9 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         consume_token(ps, ZR_TK_COLON);
         returnType = parse_type(ps);
     } else if (ps->lexer->t.token == ZR_TK_THIN_ARROW || ps->lexer->t.token == ZR_TK_FAT_ARROW) {
-        report_error(ps, "Function declarations use ':' before the return type");
+        report_removed_legacy_syntax(ps,
+                                     "function definition arrow",
+                                     "Use `:` before the declared return TypeRef; reserve `=>` for anonymous expression bodies.");
         free_identifier_node_from_ptr(ps->state, name);
         free_generic_declaration(ps->state, generic);
         free_ast_node_array_with_elements(ps->state, params);
@@ -311,9 +318,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     node->data.functionDeclaration.decorators = decorators;
     node->data.functionDeclaration.fnKeywordLocation = fnKeywordLoc;
     node->data.functionDeclaration.returnDelimiterLocation = returnDelimiterLoc;
-    node->data.functionDeclaration.usesFnKeyword = usesFnKeyword;
     node->data.functionDeclaration.isAsync = ZR_FALSE;
-    node->data.functionDeclaration.isLegacyAsyncSyntax = ZR_FALSE;
     return node;
 }
 

@@ -285,7 +285,7 @@ static TZrBool run_branch_segment_range_case(SZrState *state,
 
 static TZrBool test_local_expression_query_refines_true_branch_less_than_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed < 10) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -303,7 +303,7 @@ static TZrBool test_local_expression_query_refines_true_branch_less_than_range(S
 
 static TZrBool test_local_expression_query_refines_true_branch_equal_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed == 10) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -321,7 +321,7 @@ static TZrBool test_local_expression_query_refines_true_branch_equal_range(SZrSt
 
 static TZrBool test_local_expression_query_refines_true_branch_edge_not_equal_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed != 0) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -339,7 +339,7 @@ static TZrBool test_local_expression_query_refines_true_branch_edge_not_equal_ra
 
 static TZrBool test_local_expression_query_refines_true_branch_logical_and_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed > 2 && seed < 10) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -357,7 +357,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_and_range
 
 static TZrBool test_local_expression_query_refines_true_branch_logical_or_same_direction_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed < 10 || seed < 20) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -375,7 +375,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_same_d
 
 static TZrBool test_local_expression_query_refines_true_branch_logical_or_disjoint_segment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed < 10 || seed > 20) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -398,7 +398,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_disjoi
 
 static TZrBool test_local_expression_query_refines_true_branch_logical_or_nested_and_segment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if ((seed > 2 && seed < 10) || seed == 20) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -426,7 +426,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_three_
         {22, 256},
     };
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed < 5 || seed == 10 || seed > 20) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -447,7 +447,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_three_
 
 static TZrBool test_local_expression_query_refines_true_branch_unary_not_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (!(seed < 10)) {\n"
         "        return seed + 1;\n"
         "    }\n"
@@ -465,7 +465,7 @@ static TZrBool test_local_expression_query_refines_true_branch_unary_not_range(S
 
 static TZrBool test_local_expression_query_refines_else_if_inner_true_branch_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed < 10) {\n"
         "        return seed + 100;\n"
         "    } else if (seed < 20) {\n"
@@ -486,7 +486,7 @@ static TZrBool test_local_expression_query_refines_else_if_inner_true_branch_ran
 
 static TZrBool test_local_expression_query_refines_false_branch_less_than_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed < 10) {\n"
         "        return seed + 1;\n"
         "    } else {\n"
@@ -505,7 +505,7 @@ static TZrBool test_local_expression_query_refines_false_branch_less_than_range(
 
 static TZrBool test_local_expression_query_refines_false_branch_edge_equal_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed == 0) {\n"
         "        return seed + 100;\n"
         "    } else {\n"
@@ -524,7 +524,7 @@ static TZrBool test_local_expression_query_refines_false_branch_edge_equal_range
 
 static TZrBool test_local_expression_query_refines_false_branch_not_equal_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed != 10) {\n"
         "        return seed + 100;\n"
         "    } else {\n"
@@ -543,7 +543,7 @@ static TZrBool test_local_expression_query_refines_false_branch_not_equal_range(
 
 static TZrBool test_local_expression_query_refines_false_branch_logical_or_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed <= 2 || seed >= 10) {\n"
         "        return seed + 100;\n"
         "    } else {\n"
@@ -562,7 +562,7 @@ static TZrBool test_local_expression_query_refines_false_branch_logical_or_range
 
 static TZrBool test_local_expression_query_refines_false_branch_logical_and_same_direction_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed < 10 && seed < 20) {\n"
         "        return seed + 100;\n"
         "    } else {\n"
@@ -581,7 +581,7 @@ static TZrBool test_local_expression_query_refines_false_branch_logical_and_same
 
 static TZrBool test_local_expression_query_refines_false_branch_logical_and_disjoint_segment_range(SZrState *state) {
     const TZrChar *content =
-        "func calc(seed: u8): uint {\n"
+        "fn calc(seed: u8): uint {\n"
         "    if (seed > 10 && seed < 20) {\n"
         "        return seed + 100;\n"
         "    } else {\n"

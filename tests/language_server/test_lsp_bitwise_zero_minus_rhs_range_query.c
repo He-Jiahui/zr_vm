@@ -44,7 +44,7 @@ static TZrBool run_bitwise_zero_minus_rhs_range_query_at(SZrState *state,
     written = snprintf(
             content,
             sizeof(content),
-            "func calc(seed: u8): int {\n"
+            "fn calc(seed: u8): int {\n"
             "    var unit: int = (seed %% 2) + 2;\n"
             "    var zero: int = 0;\n"
             "    var allOnes: int = 0 - 1;\n"

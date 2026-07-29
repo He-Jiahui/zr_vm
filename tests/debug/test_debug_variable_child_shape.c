@@ -503,7 +503,7 @@ static void test_debug_protocol_expands_union_variant_payloads(void) {
             "    Circle(radius: int);\n"
             "    Rect { width: int; height: int; }\n"
             "}\n"
-            "func pauseHere() {\n"
+            "fn pauseHere() {\n"
             "    var circle: Shape = Shape.Circle(7);\n"
             "    var rect: Shape = Shape.Rect { width: 3, height: 4 };\n"
             "    return 1;\n"
@@ -703,9 +703,9 @@ static void test_debug_protocol_expands_union_variant_payloads(void) {
 static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
     const char *sourcePath = "debug_closure_capture_semantic_summary_fixture.zr";
     const char *source =
-            "func makeRunner() {\n"
+            "fn makeRunner() {\n"
             "    var seed = 4;\n"
-            "    return () => {\n"
+            "    return () -> {\n"
             "        return seed + 1;\n"
             "    };\n"
             "}\n"
@@ -799,7 +799,7 @@ static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
 static void test_debug_evaluate_index_window_reports_base_reference_summary(void) {
     const char *sourcePath = "debug_index_window_reference_fixture.zr";
     const char *source =
-            "func pauseHere() {\n"
+            "fn pauseHere() {\n"
             "    return 1;\n"
             "}\n"
             "var marker = pauseHere();\n"

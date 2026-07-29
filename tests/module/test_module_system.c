@@ -834,6 +834,37 @@ static const ZrLibModuleDescriptor kProbeFutureAbiModuleDescriptor = {
         ZR_NULL,
 };
 
+static const ZrLibModuleDescriptor kProbeLegacyPluginAbiModuleDescriptor = {
+        .abiVersion = 1u,
+        .moduleName = "probe.legacy_plugin_abi",
+        .documentation = "Native module built against the retired parameter descriptor layout.",
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = 1u,
+};
+
+static const ZrLibParameterDescriptor kProbeInvalidPassingModeParameters[] = {
+        {"value", "int", "Parameter with a corrupt passing mode.", (EZrLibParameterPassingMode)99},
+};
+
+static const ZrLibFunctionDescriptor kProbeInvalidPassingModeFunctions[] = {
+        {.name = "probe",
+         .minArgumentCount = 1u,
+         .maxArgumentCount = 1u,
+         .returnTypeName = "null",
+         .parameters = kProbeInvalidPassingModeParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kProbeInvalidPassingModeParameters)},
+};
+
+static const ZrLibModuleDescriptor kProbeInvalidPassingModeModuleDescriptor = {
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "probe.invalid_passing_mode",
+        .functions = kProbeInvalidPassingModeFunctions,
+        .functionCount = ZR_ARRAY_COUNT(kProbeInvalidPassingModeFunctions),
+        .documentation = "Native module with corrupt callable metadata.",
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+};
+
 static const ZrLibModuleDescriptor kProbeUnsupportedCapabilityModuleDescriptor = {
         ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         "probe.unsupported_capability",
@@ -1841,7 +1872,7 @@ static void test_complete_module_loading_flow(void) {
               "Testing complete flow: compile source -> collect exports -> create module -> cache");
 
     // 编译包含导出的源代码
-    const char *source = "%module \"test_module\";\npub var pubVar = 100;\npro var proVar = 200;";
+    const char *source = "module \"test_module\";\npub var pubVar = 100;\npro var proVar = 200;";
     SZrString *sourceName = ZrCore_String_Create(state, "test_module.zr", 14);
     SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(func);
@@ -1915,9 +1946,9 @@ static void test_module_restores_owned_field_prototype_metadata(void) {
 
     {
         const char *source =
-            "%module \"field_meta\";\n"
-            "pub struct HandleBox { var handle: %unique Resource; var count: int; }\n"
-            "pub class Holder { var resource: %shared Resource; var version: int; }";
+            "module \"field_meta\";\n"
+            "pub struct HandleBox { var handle: Unique<Resource>; var count: int; }\n"
+            "pub class Holder { var resource: Shared<Resource>; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_meta.zr", 13);
         SZrFunction *entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         SZrObjectModule *module;
@@ -1997,7 +2028,7 @@ static void test_module_restores_advanced_oop_runtime_descriptor_metadata(void) 
     {
         SZrState *state = create_test_state();
         const char *source =
-                "%module \"advanced_oop_runtime\";\n"
+                "module \"advanced_oop_runtime\";\n"
                 "pub abstract class Base {\n"
                 "    pub abstract ping(): int;\n"
                 "    pub abstract property score: int { get; }\n"
@@ -2300,7 +2331,7 @@ static void test_imported_function_alias_with_parameters_preserves_call_signatur
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var dep = %import(\"dep\");\n"
+                "let dep = import(\"dep\");\n"
                 "return dep.sum(3, 4);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2357,15 +2388,15 @@ static void test_module_init_summary_cache_growth_keeps_current_source_summary_s
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var dep0 = %import(\"dep0\");\n"
-                "var dep1 = %import(\"dep1\");\n"
-                "var dep2 = %import(\"dep2\");\n"
-                "var dep3 = %import(\"dep3\");\n"
-                "var dep4 = %import(\"dep4\");\n"
-                "var dep5 = %import(\"dep5\");\n"
-                "var dep6 = %import(\"dep6\");\n"
-                "var dep7 = %import(\"dep7\");\n"
-                "var dep8 = %import(\"dep8\");\n"
+                "let dep0 = import(\"dep0\");\n"
+                "let dep1 = import(\"dep1\");\n"
+                "let dep2 = import(\"dep2\");\n"
+                "let dep3 = import(\"dep3\");\n"
+                "let dep4 = import(\"dep4\");\n"
+                "let dep5 = import(\"dep5\");\n"
+                "let dep6 = import(\"dep6\");\n"
+                "let dep7 = import(\"dep7\");\n"
+                "let dep8 = import(\"dep8\");\n"
                 "return dep8.value() + dep0.value();\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2426,7 +2457,7 @@ static void test_cyclic_source_modules_allow_declaration_ready_function_referenc
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var a = %import(\"a\");\n"
+                "let a = import(\"a\");\n"
                 "return a.other() + a.ping();\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2485,7 +2516,7 @@ static void test_cyclic_source_modules_allow_safe_imported_call_during_entry(voi
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var a = %import(\"a\");\n"
+                "let a = import(\"a\");\n"
                 "return a.value;\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2539,7 +2570,7 @@ static void test_cyclic_source_modules_dynamic_entry_read_raises_cycle_init_erro
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var b = %import(\"b\");\n"
+                "let b = import(\"b\");\n"
                 "return 0;\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2556,7 +2587,7 @@ static void test_cyclic_source_modules_dynamic_entry_read_raises_cycle_init_erro
         TEST_ASSERT_NOT_NULL(sourceName);
 
         source =
-                "var a = %import(\"a\");\n"
+                "let a = import(\"a\");\n"
                 "return 0;\n";
         entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(entryFunction);
@@ -2592,8 +2623,8 @@ static void test_binary_roundtrip_preserves_module_init_callable_metadata(void) 
     SZrTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Module Init Callable Metadata";
     const TZrChar *moduleSource =
-            "%module \"reference.binary_meta_init\";\n"
-            "var peer = %import(\"reference.binary_peer\");\n"
+            "module \"reference.binary_meta_init\";\n"
+            "let peer = import(\"reference.binary_peer\");\n"
             "pub callPeer(): int {\n"
             "    return peer.fb();\n"
             "}\n"
@@ -2888,7 +2919,7 @@ static void test_system_vm_call_module_export_executes_nested_native_export(void
         SZrTypeValue directArgument;
         SZrTypeValue directResult;
         const TZrChar *source =
-                "var system = %import(\"zr.system\");\n"
+                "let system = import(\"zr.system\");\n"
                 "return system.vm.callModuleExport(\"zr.math\", \"sqrt\", [4.0]);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2928,7 +2959,7 @@ static void test_native_vector3_constructor_binds_all_numeric_arguments_at_runti
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var math = %import(\"zr.math\");\n"
+                "let math = import(\"zr.math\");\n"
                 "var seed = 2.0;\n"
                 "return $math.Vector3(seed, seed + 1.0, seed + 2.0);\n";
         const TZrChar *sourceNameText = "native_vector3_constructor_runtime_test.zr";
@@ -3646,7 +3677,7 @@ static void test_system_gc_safe_controls_report_runtime_stats(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var system = %import(\"zr.system\");\n"
+                "let system = import(\"zr.system\");\n"
                 "system.gc.enable();\n"
                 "system.gc.set_heap_limit(4096);\n"
                 "system.gc.set_budget(1234);\n"
@@ -3936,8 +3967,8 @@ static void test_source_module_wrapper_metadata_exposes_ffi_wrapper_fields_and_r
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var wrappers = %import(\"reflect_ffi_wrapper_metadata\");\n"
-                "return %type(wrappers.ModeHandle);\n";
+                "let wrappers = import(\"reflect_ffi_wrapper_metadata\");\n"
+                "return typeof(wrappers.ModeHandle);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -4111,7 +4142,7 @@ static void test_native_enum_construction_returns_runtime_enum_instance(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var probe = %import(\"probe.native_shapes\");\n"
+                "let probe = import(\"probe.native_shapes\");\n"
                 "return $probe.NativeMode(1);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -4229,7 +4260,7 @@ static void test_native_binding_inline_label_inspector_keeps_raw_layout_without_
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var probe = %import(\"probe.native_shapes\");\n"
+                "let probe = import(\"probe.native_shapes\");\n"
                 "var device = new probe.NativeDevice();\n"
                 "return device.inspectLabel(\"alpha_label\");\n";
         SZrString *sourceName;
@@ -4709,16 +4740,16 @@ static void test_builtin_wrapper_box_helpers_preserve_runtime_semantics(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var builtin = %import(\"zr.builtin\");\n"
-                "var {TypeInfo} = %import(\"zr.builtin\");\n"
+                "let builtin = import(\"zr.builtin\");\n"
+                "let {TypeInfo} = import(\"zr.builtin\");\n"
                 "var left = builtin.Object.box(7);\n"
                 "var right = TypeInfo.box(7);\n"
                 "var other = builtin.Object.box(9);\n"
                 "return {\n"
                 "    leftType: builtin.Object.type(left),\n"
                 "    rightType: builtin.Object.type(right),\n"
-                "    reflectionName: %type(left).name,\n"
-                "    baseType: %type(left).extendsTypeName,\n"
+                "    reflectionName: typeof(left).name,\n"
+                "    baseType: typeof(left).extendsTypeName,\n"
                 "    equalsRight: left.equals(right),\n"
                 "    compareRight: left.compareTo(right),\n"
                 "    compareOther: left.compareTo(other),\n"
@@ -4803,7 +4834,7 @@ static void test_container_array_runtime_supports_add_and_computed_index_access(
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var container = %import(\"zr.container\");\n"
+                "let container = import(\"zr.container\");\n"
                 "var xs = new container.Array<int>();\n"
                 "xs.add(10);\n"
                 "xs.add(20);\n"
@@ -4881,7 +4912,7 @@ static void test_container_array_runtime_supports_foreach_iteration(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var container = %import(\"zr.container\");\n"
+                "let container = import(\"zr.container\");\n"
                 "var xs = new container.Array<int>();\n"
                 "xs.add(1);\n"
                 "xs.add(2);\n"
@@ -4924,7 +4955,7 @@ static void test_container_map_runtime_supports_computed_key_access(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var container = %import(\"zr.container\");\n"
+                "let container = import(\"zr.container\");\n"
                 "var map = new container.Map<string,int>();\n"
                 "map[\"answer\"] = 42;\n"
                 "map[\"answer\"] = 43;\n"
@@ -4962,7 +4993,7 @@ static void test_container_set_runtime_enforces_uniqueness(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var container = %import(\"zr.container\");\n"
+                "let container = import(\"zr.container\");\n"
                 "var values = new container.Set<int>();\n"
                 "values.add(1);\n"
                 "values.add(1);\n"
@@ -5001,7 +5032,7 @@ static void test_container_linked_list_runtime_updates_head_and_tail(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var container = %import(\"zr.container\");\n"
+                "let container = import(\"zr.container\");\n"
                 "var list = new container.LinkedList<int>();\n"
                 "list.addLast(10);\n"
                 "list.addLast(20);\n"
@@ -5039,8 +5070,8 @@ static void test_percent_type_module_reflection_exposes_expected_fields(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var probe = %import(\"probe.native_shapes\");\n"
-                "return %type(probe);\n";
+                "let probe = import(\"probe.native_shapes\");\n"
+                "return typeof(probe);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5150,7 +5181,7 @@ static void test_percent_type_instance_reflection_uses_runtime_prototype(void) {
         const TZrChar *source =
                 "class Vector2 { var x: int = 0; var y: int = 0; }\n"
                 "var v = new Vector2();\n"
-                "return %type(v);\n";
+                "return typeof(v);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5247,8 +5278,8 @@ static void test_percent_type_source_module_reflection_uses_ordered_script_metad
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var math = %import(\"reflect_math\");\n"
-                "return %type(math);\n";
+                "let math = import(\"reflect_math\");\n"
+                "return typeof(math);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5377,8 +5408,8 @@ static void test_percent_type_source_type_reflection_exposes_parameters_layout_a
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var math = %import(\"reflect_math\");\n"
-                "return %type(math.Vector2);\n";
+                "let math = import(\"reflect_math\");\n"
+                "return typeof(math.Vector2);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5538,8 +5569,8 @@ static void test_percent_type_source_function_reflection_exposes_parameter_metad
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var math = %import(\"reflect_math\");\n"
-                "return %type(math.normalize);\n";
+                "let math = import(\"reflect_math\");\n"
+                "return typeof(math.normalize);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5640,10 +5671,10 @@ static void test_function_type_literal_runtime_materializes_callable_reflection(
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var literal = %func(int)->int;\n"
+                "var literal = fn(int)->int;\n"
                 "return {\n"
                 "    direct: literal,\n"
-                "    query: %type(literal)\n"
+                "    query: typeof(literal)\n"
                 "};\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -5884,7 +5915,7 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
 
     {
         SZrState *state = create_test_state();
-        const TZrChar *source = "return %type(%func(%ref value:int)->zr.task.Task<int>);\n";
+        const TZrChar *source = "return typeof(fn(value: ref int)->zr.task.Task<int>);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -6030,8 +6061,8 @@ static void test_percent_type_source_module_reflection_exposes_compile_time_and_
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var meta = %import(\"reflect_meta\");\n"
-                "return %type(meta);\n";
+                "let meta = import(\"reflect_meta\");\n"
+                "return typeof(meta);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -6164,8 +6195,8 @@ static void test_percent_type_binary_module_reflection_restores_compile_time_and
     {
         SZrState *state = create_test_state();
         static const TZrChar *kModuleSource =
-                "%compileTime var MAX_SCALE: int = 8;\n"
-                "%compileTime buildBias(seed: int): int {\n"
+                "comptime var MAX_SCALE: int = 8;\n"
+                "comptime buildBias(seed: int): int {\n"
                 "    return seed + MAX_SCALE;\n"
                 "}\n"
                 "\n"
@@ -6175,8 +6206,8 @@ static void test_percent_type_binary_module_reflection_restores_compile_time_and
                 "    return runtimeValue;\n"
                 "}\n";
         const TZrChar *source =
-                "var meta = %import(\"reflect_meta_binary\");\n"
-                "return %type(meta);\n";
+                "let meta = import(\"reflect_meta_binary\");\n"
+                "return typeof(meta);\n";
         TZrByte *binaryBytes = ZR_NULL;
         TZrSize binaryLength = 0;
         const TZrChar *binaryPath = "test_reflect_meta_binary_fixture.zro";
@@ -6284,8 +6315,8 @@ static void test_percent_type_source_type_reflection_exposes_decorator_metadata(
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var decorated = %import(\"reflect_decorators\");\n"
-                "return %type(decorated.User);\n";
+                "let decorated = import(\"reflect_decorators\");\n"
+                "return typeof(decorated.User);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -6386,8 +6417,8 @@ static void test_percent_type_source_type_reflection_exposes_runtime_class_decor
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_class_decorators\");\n"
-                "return %type(decorated.User);\n";
+                "let decorated = import(\"reflect_runtime_class_decorators\");\n"
+                "return typeof(decorated.User);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -6479,8 +6510,8 @@ static void test_percent_type_source_function_reflection_exposes_runtime_functio
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_function_decorators\");\n"
-                "return %type(decorated.exportedLoad);\n";
+                "let decorated = import(\"reflect_runtime_function_decorators\");\n"
+                "return typeof(decorated.exportedLoad);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -6570,7 +6601,7 @@ static void test_source_runtime_decorated_pub_function_is_directly_callable_from
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var decorated = %import(\"call_runtime_function_decorators\");\n"
+                "let decorated = import(\"call_runtime_function_decorators\");\n"
                 "return decorated.load(41);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -6844,7 +6875,7 @@ static void test_source_module_runtime_registers_enum_members_and_imported_acces
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var sample = %import(\"source_enum_runtime\");\n"
+                "let sample = import(\"source_enum_runtime\");\n"
                 "return sample.score();\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -7142,7 +7173,7 @@ static void test_source_module_struct_method_call_writebacks_receiver_state(void
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var sample = %import(\"source_struct_runtime_method\");\n"
+                "let sample = import(\"source_struct_runtime_method\");\n"
                 "return sample.score();\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -7204,7 +7235,7 @@ static void test_source_module_struct_value_construction_preserves_field_access(
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var sample = %import(\"source_struct_runtime\");\n"
+                "let sample = import(\"source_struct_runtime\");\n"
                 "return sample.score();\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -7274,7 +7305,7 @@ static void test_source_module_class_boxed_construction_preserves_field_access(v
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var sample = %import(\"source_class_runtime\");\n"
+                "let sample = import(\"source_class_runtime\");\n"
                 "var box = new sample.Box(7);\n"
                 "return box.value;\n";
         SZrString *sourceName;
@@ -7610,13 +7641,13 @@ static void test_percent_type_source_reflection_exposes_advanced_oop_metadata(vo
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var oop = %import(\"reflect_advanced_oop\");\n"
+                "let oop = import(\"reflect_advanced_oop\");\n"
                 "return {\n"
-                "    base: %type(oop.Base),\n"
-                "    derived: %type(oop.Derived),\n"
-                "    ping: %type(oop.Derived).members.ping[0],\n"
-                "    score: %type(oop.Derived).members.score[0],\n"
-                "    read: %type(oop.Device).members.read[0]\n"
+                "    base: typeof(oop.Base),\n"
+                "    derived: typeof(oop.Derived),\n"
+                "    ping: typeof(oop.Derived).members.ping[0],\n"
+                "    score: typeof(oop.Derived).members.score[0],\n"
+                "    read: typeof(oop.Device).members.read[0]\n"
                 "};\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -7766,7 +7797,7 @@ static void test_percent_type_source_reflection_exposes_advanced_oop_metadata(vo
 static void test_percent_type_binary_type_reflection_exposes_runtime_class_decorator_metadata(void) {
     static const TZrChar *kModuleSource =
             "class RuntimeSerializable {\n"
-            "    @decorate(target: %type Class): void {\n"
+            "    @decorate(target: typeof Class): void {\n"
             "        target.metadata.runtimeSerializable = true;\n"
             "    }\n"
             "}\n"
@@ -7790,8 +7821,8 @@ static void test_percent_type_binary_type_reflection_exposes_runtime_class_decor
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_class_decorators_binary\");\n"
-                "return %type(decorated.User);\n";
+                "let decorated = import(\"reflect_runtime_class_decorators_binary\");\n"
+                "return typeof(decorated.User);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -7871,7 +7902,7 @@ static void test_percent_type_binary_type_reflection_exposes_runtime_class_decor
 
 static void test_percent_type_binary_function_reflection_exposes_runtime_function_decorator_metadata(void) {
     static const TZrChar *kModuleSource =
-            "func markRuntime(target: %type Function): void {\n"
+            "fn markRuntime(target: typeof Function): void {\n"
             "    target.metadata.instrumented = true;\n"
             "}\n"
             "\n"
@@ -7896,8 +7927,8 @@ static void test_percent_type_binary_function_reflection_exposes_runtime_functio
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_function_decorators_binary\");\n"
-                "return %type(decorated.exportedLoad);\n";
+                "let decorated = import(\"reflect_runtime_function_decorators_binary\");\n"
+                "return typeof(decorated.exportedLoad);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -7976,13 +8007,13 @@ static void test_percent_type_binary_function_reflection_exposes_runtime_functio
 
 static void test_binary_runtime_decorated_pub_function_is_directly_callable_from_imported_module(void) {
     static const TZrChar *kModuleSource =
-            "func markRuntime(target: %type Function): void {\n"
+            "fn markRuntime(target: typeof Function): void {\n"
             "    target.metadata.instrumented = true;\n"
             "}\n"
             "\n"
             "#markRuntime#\n"
             "pub load(id: int): int {\n"
-            "    var meta = %type(load).metadata;\n"
+            "    var meta = typeof(load).metadata;\n"
             "    return meta.instrumented ? id + 1 : id;\n"
             "}\n";
     SZrTestTimer timer;
@@ -8000,7 +8031,7 @@ static void test_binary_runtime_decorated_pub_function_is_directly_callable_from
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var decorated = %import(\"call_runtime_function_decorators_binary\");\n"
+                "let decorated = import(\"call_runtime_function_decorators_binary\");\n"
                 "return decorated.load(41);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -8159,13 +8190,13 @@ static void test_percent_type_binary_reflection_restores_advanced_oop_metadata(v
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var oop = %import(\"reflect_advanced_oop_binary\");\n"
+                "let oop = import(\"reflect_advanced_oop_binary\");\n"
                 "return {\n"
-                "    base: %type(oop.Base),\n"
-                "    derived: %type(oop.Derived),\n"
-                "    ping: %type(oop.Derived).members.ping[0],\n"
-                "    score: %type(oop.Derived).members.score[0],\n"
-                "    read: %type(oop.Device).members.read[0]\n"
+                "    base: typeof(oop.Base),\n"
+                "    derived: typeof(oop.Derived),\n"
+                "    ping: typeof(oop.Derived).members.ping[0],\n"
+                "    score: typeof(oop.Derived).members.score[0],\n"
+                "    read: typeof(oop.Device).members.read[0]\n"
                 "};\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -8312,10 +8343,10 @@ static void test_percent_type_source_module_reflection_preserves_compile_time_me
 
     {
         SZrState *state = create_test_state();
-        const TZrChar *loadSource = "return %import(\"reflect_meta_gc\");\n";
+        const TZrChar *loadSource = "return import(\"reflect_meta_gc\");\n";
         const TZrChar *reflectSource =
-                "var meta = %import(\"reflect_meta_gc\");\n"
-                "return %type(meta);\n";
+                "let meta = import(\"reflect_meta_gc\");\n"
+                "return typeof(meta);\n";
         SZrString *loadSourceName;
         SZrString *reflectSourceName;
         SZrFunction *loadFunction = ZR_NULL;
@@ -8422,6 +8453,70 @@ static void test_native_registry_rejects_future_runtime_abi(void) {
         TEST_ASSERT_NOT_NULL(strstr(errorMessage, "probe.future_abi"));
         TEST_ASSERT_NOT_NULL(strstr(errorMessage, "requires runtime ABI"));
         TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(state->global, "probe.future_abi"));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_native_registry_rejects_legacy_plugin_abi(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Registry Rejects Legacy Plugin ABI";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *errorMessage;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_RegisterModule(
+                state->global, &kProbeLegacyPluginAbiModuleDescriptor));
+        TEST_ASSERT_EQUAL_INT(
+                ZR_LIB_NATIVE_REGISTRY_ERROR_ABI_MISMATCH,
+                ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+        errorMessage = ZrLibrary_NativeRegistry_GetLastErrorMessage(state->global);
+        TEST_ASSERT_NOT_NULL(errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "probe.legacy_plugin_abi"));
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "uses ABI 1"));
+        TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(
+                state->global, "probe.legacy_plugin_abi"));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_native_registry_rejects_invalid_parameter_passing_mode(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Registry Rejects Invalid Parameter Passing Mode";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *errorMessage;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_RegisterModule(
+                state->global, &kProbeInvalidPassingModeModuleDescriptor));
+        TEST_ASSERT_EQUAL_INT(
+                ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+        errorMessage = ZrLibrary_NativeRegistry_GetLastErrorMessage(state->global);
+        TEST_ASSERT_NOT_NULL(errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "probe.invalid_passing_mode"));
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "passing mode 99"));
+        TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(
+                state->global, "probe.invalid_passing_mode"));
 
         destroy_test_state(state);
     }
@@ -8804,7 +8899,7 @@ static void test_reference_hidden_internal_import_api_fixture_is_rejected(void) 
                                                  &diagnostic);
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_TRUE(diagnostic.reported);
-    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Legacy import() syntax is not supported; use %import"));
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Internal module helper 'zr.import' is not available"));
     TEST_ASSERT_EQUAL_INT(3, diagnostic.location.start.line);
 
     ZrParser_Ast_Free(state, ast);
@@ -9341,6 +9436,12 @@ int main(void) {
 
     // 35. native registry 拒绝未来 ABI 版本
     RUN_TEST(test_native_registry_rejects_future_runtime_abi);
+
+    // 35a. native registry 拒绝旧插件 descriptor ABI
+    RUN_TEST(test_native_registry_rejects_legacy_plugin_abi);
+
+    // 35b. native registry 拒绝损坏的参数传递模式
+    RUN_TEST(test_native_registry_rejects_invalid_parameter_passing_mode);
 
     // 36. native registry 拒绝未支持 capability
     RUN_TEST(test_native_registry_rejects_unsupported_capabilities);

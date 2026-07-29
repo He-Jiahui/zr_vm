@@ -1,5 +1,6 @@
 #include "lsp_editor_features_internal.h"
 
+#include <ctype.h>
 #include <string.h>
 
 typedef struct SZrLspLineTrim {
@@ -91,12 +92,60 @@ static TZrBool lsp_editor_line_starts_with(const TZrChar *content,
            memcmp(content + trim->start, prefix, prefixLength) == 0;
 }
 
+typedef TZrBool (*TZrLspLineRunMatcher)(const TZrChar *content, const SZrLspLineTrim *trim);
+
+static TZrBool lsp_editor_line_is_import_declaration(const TZrChar *content, const SZrLspLineTrim *trim) {
+    TZrSize cursor;
+    static const TZrChar importToken[] = "import";
+
+    if (content == ZR_NULL || trim == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    cursor = trim->start;
+    if (lsp_editor_line_starts_with(content, trim, "let", 3) ||
+        lsp_editor_line_starts_with(content, trim, "var", 3)) {
+        cursor += 3;
+    } else {
+        return ZR_FALSE;
+    }
+    if (cursor >= trim->end || (content[cursor] != ' ' && content[cursor] != '\t')) {
+        return ZR_FALSE;
+    }
+    while (cursor < trim->end && (content[cursor] == ' ' || content[cursor] == '\t')) {
+        cursor++;
+    }
+    if (cursor >= trim->end ||
+        !(isalpha((unsigned char)content[cursor]) || content[cursor] == '_')) {
+        return ZR_FALSE;
+    }
+    while (cursor < trim->end &&
+           (isalnum((unsigned char)content[cursor]) || content[cursor] == '_')) {
+        cursor++;
+    }
+    while (cursor < trim->end && (content[cursor] == ' ' || content[cursor] == '\t')) {
+        cursor++;
+    }
+    if (cursor >= trim->end || content[cursor++] != '=') {
+        return ZR_FALSE;
+    }
+    while (cursor < trim->end && (content[cursor] == ' ' || content[cursor] == '\t')) {
+        cursor++;
+    }
+
+    return cursor + sizeof(importToken) - 1 < trim->end &&
+           memcmp(content + cursor, importToken, sizeof(importToken) - 1) == 0 &&
+           content[cursor + sizeof(importToken) - 1] == '(';
+}
+
+static TZrBool lsp_editor_line_is_comment(const TZrChar *content, const SZrLspLineTrim *trim) {
+    return lsp_editor_line_starts_with(content, trim, "//", 2);
+}
+
 static TZrBool lsp_editor_append_line_run_folding_ranges(SZrState *state,
                                                          SZrArray *result,
                                                          const TZrChar *content,
                                                          TZrSize contentLength,
-                                                         const TZrChar *prefix,
-                                                         TZrSize prefixLength,
+                                                         TZrLspLineRunMatcher matcher,
                                                          const TZrChar *kind) {
     TZrSize cursor = 0;
     TZrInt32 line = 0;
@@ -117,9 +166,9 @@ static TZrBool lsp_editor_append_line_run_folding_ranges(SZrState *state,
             lineEnd++;
         }
 
-        matches = hasLine &&
+        matches = hasLine && matcher != ZR_NULL &&
                   lsp_editor_trim_line(content, lineStart, lineEnd, &trim) &&
-                  lsp_editor_line_starts_with(content, &trim, prefix, prefixLength);
+                  matcher(content, &trim);
         if (matches) {
             if (!inBlock) {
                 inBlock = ZR_TRUE;
@@ -302,8 +351,7 @@ TZrBool ZrLanguageServer_Lsp_GetFoldingRanges(SZrState *state,
                                                    result,
                                                    snapshot.content,
                                                    snapshot.contentLength,
-                                                   "%import",
-                                                   7,
+                                                   lsp_editor_line_is_import_declaration,
                                                    ZR_LSP_FOLDING_RANGE_KIND_IMPORTS)) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
@@ -312,8 +360,7 @@ TZrBool ZrLanguageServer_Lsp_GetFoldingRanges(SZrState *state,
                                                    result,
                                                    snapshot.content,
                                                    snapshot.contentLength,
-                                                   "//",
-                                                   2,
+                                                   lsp_editor_line_is_comment,
                                                    ZR_LSP_FOLDING_RANGE_KIND_COMMENT)) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;

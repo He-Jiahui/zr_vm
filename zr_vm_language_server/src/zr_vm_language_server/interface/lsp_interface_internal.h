@@ -114,7 +114,6 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
                                                               TZrSize contentLength,
                                                               TZrSize cursorOffset,
                                                               SZrArray *result);
-TZrBool ZrLanguageServer_Lsp_IsKnownDirectiveToken(const TZrChar *text, TZrSize length);
 TZrBool ZrLanguageServer_Lsp_IsKnownMetaMethodToken(const TZrChar *text, TZrSize length);
 SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer,
                                                               SZrFileRange position);
@@ -138,8 +137,6 @@ TZrBool ZrLanguageServer_Lsp_TryFilePositionFromBinaryMetadataCoordinates(SZrLsp
                                                                           SZrString *uri,
                                                                           SZrLspPosition position,
                                                                           SZrFilePosition *outPosition);
-TZrBool ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(SZrFileRange range,
-                                                                       SZrLspRange *outRange);
 
 typedef struct SZrLspProjectFileRecord {
     SZrString *uri;

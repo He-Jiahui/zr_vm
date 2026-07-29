@@ -1,5 +1,5 @@
 //
-// `%type` runtime reflection implementation.
+// Runtime type reflection implementation.
 //
 
 #include "zr_vm_core/reflection.h"
@@ -2004,7 +2004,7 @@ static void reflection_populate_module_compile_time_metadata(SZrState *state,
 
         snprintf(qualifiedName,
                  sizeof(qualifiedName),
-                 "%s.%%compileTime.%s",
+                 "%s.comptime.%s",
                  moduleQualifiedName != ZR_NULL ? moduleQualifiedName : "",
                  name != ZR_NULL ? name : "compileTimeVar");
         infoObject = reflection_build_member_info(state,
@@ -2044,7 +2044,7 @@ static void reflection_populate_module_compile_time_metadata(SZrState *state,
 
         snprintf(qualifiedName,
                  sizeof(qualifiedName),
-                 "%s.%%compileTime.%s",
+                 "%s.comptime.%s",
                  moduleQualifiedName != ZR_NULL ? moduleQualifiedName : "",
                  name != ZR_NULL ? name : "compileTimeFn");
         infoObject = reflection_build_callable_reflection(state,
@@ -2101,7 +2101,7 @@ static void reflection_populate_module_tests_metadata(SZrState *state,
 
         snprintf(qualifiedName,
                  sizeof(qualifiedName),
-                 "%s.%%test.%s",
+                 "%s.test.%s",
                  moduleQualifiedName != ZR_NULL ? moduleQualifiedName : "",
                  name != ZR_NULL ? name : "test");
         testObject = reflection_build_callable_reflection(state,
@@ -4766,7 +4766,7 @@ SZrString *ZrCore_Reflection_FormatObject(SZrState *state, SZrObject *object) {
             buffer[offset] = '\0';
         }
     } else {
-        reflection_append(buffer, sizeof(buffer), &offset, "%%type %s", name);
+        reflection_append(buffer, sizeof(buffer), &offset, "typeof %s", name);
     }
 
     return ZrCore_String_Create(state, buffer, offset);

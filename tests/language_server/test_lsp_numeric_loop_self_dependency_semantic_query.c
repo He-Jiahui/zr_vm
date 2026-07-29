@@ -186,7 +186,7 @@ static TZrBool run_assignment_range_case(SZrState *state,
 static TZrBool test_local_expression_query_widens_while_self_dependent_positive_expression_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = seed + 1;\n"
         "    while (flag) {\n"
@@ -207,7 +207,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_positive_
 static TZrBool test_local_expression_query_widens_while_self_dependent_zero_inclusive_positive_range_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = seed;\n"
         "    while (flag) {\n"
@@ -228,7 +228,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_zero_incl
 static TZrBool test_local_expression_query_widens_while_self_dependent_zero_inclusive_negative_range_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = 0 - seed;\n"
         "    while (flag) {\n"
@@ -249,7 +249,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_zero_incl
 static TZrBool test_local_expression_query_widens_while_self_dependent_sign_crossing_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool, seed: u8): int {\n"
+        "fn calc(flag: bool, seed: u8): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = seed - 128;\n"
         "    while (flag) {\n"
@@ -270,7 +270,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_sign_cros
 static TZrBool test_local_expression_query_widens_while_self_dependent_same_loop_written_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = 0;\n"
         "    while (flag) {\n"
@@ -292,7 +292,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_same_loop
 static TZrBool test_local_expression_query_widens_sequence_with_same_loop_written_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = 0;\n"
         "    while (flag) {\n"
@@ -315,7 +315,7 @@ static TZrBool test_local_expression_query_widens_sequence_with_same_loop_writte
 static TZrBool test_local_expression_query_widens_multiple_same_loop_written_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = 0;\n"
         "    while (flag) {\n"
@@ -338,7 +338,7 @@ static TZrBool test_local_expression_query_widens_multiple_same_loop_written_del
 static TZrBool test_local_expression_query_widens_while_self_dependent_same_loop_written_expression_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var step: int = 0;\n"
         "    while (flag) {\n"
@@ -360,7 +360,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_same_loop
 static TZrBool test_local_expression_query_keeps_other_assignment_with_zero_only_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    while (flag) {\n"
@@ -384,7 +384,7 @@ static TZrBool test_local_expression_query_keeps_other_assignment_with_zero_only
 static TZrBool test_local_expression_query_widens_zero_only_then_positive_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        narrowed = narrowed + 0;\n"
@@ -405,7 +405,7 @@ static TZrBool test_local_expression_query_widens_zero_only_then_positive_delta(
 static TZrBool test_local_expression_query_keeps_positive_then_negative_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    while (flag) {\n"
         "        narrowed = narrowed + 1;\n"
@@ -426,7 +426,7 @@ static TZrBool test_local_expression_query_keeps_positive_then_negative_net_zero
 static TZrBool test_local_expression_query_keeps_interleaved_positive_then_negative_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    while (flag) {\n"
@@ -449,7 +449,7 @@ static TZrBool test_local_expression_query_keeps_interleaved_positive_then_negat
 static TZrBool test_local_expression_query_keeps_target_reading_interleaved_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    while (flag) {\n"
@@ -487,7 +487,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_interleaved_net_
 static TZrBool test_local_expression_query_keeps_target_reading_replay_resolved_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = 0;\n"
@@ -527,7 +527,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_replay_resolved_
 static TZrBool test_local_expression_query_widens_target_reading_replay_resolved_net_negative_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = 0;\n"
@@ -567,7 +567,7 @@ static TZrBool test_local_expression_query_widens_target_reading_replay_resolved
 static TZrBool test_local_expression_query_widens_target_reading_replay_resolved_net_positive_delta(
         SZrState *state) {
     const TZrChar *content =
-        "func calc(flag: bool): int {\n"
+        "fn calc(flag: bool): int {\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"
         "    var step: int = 0;\n"

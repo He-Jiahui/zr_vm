@@ -136,6 +136,22 @@ typedef struct ZrDebugEvaluateResult {
     TZrChar reference_summary[ZR_DEBUG_TEXT_CAPACITY];
 } ZrDebugEvaluateResult;
 
+typedef enum EZrDebugEvaluationEffect {
+    ZR_DEBUG_EVALUATION_EFFECT_NONE = 0u,
+    ZR_DEBUG_EVALUATION_EFFECT_PROPERTY_GETTER = 1u << 0u,
+    ZR_DEBUG_EVALUATION_EFFECT_ALLOCATION = 1u << 1u,
+    ZR_DEBUG_EVALUATION_EFFECT_CALL = 1u << 2u,
+    ZR_DEBUG_EVALUATION_EFFECT_NATIVE_CALL = 1u << 3u,
+    ZR_DEBUG_EVALUATION_EFFECT_MUTATION = 1u << 4u,
+    ZR_DEBUG_EVALUATION_EFFECT_OWNER_MUTATION = 1u << 5u
+} EZrDebugEvaluationEffect;
+
+typedef struct ZrDebugEvaluationEffectPolicy {
+    TZrUInt32 effectFlags;
+    TZrBool isPure;
+    TZrBool hasCanonicalFacts;
+} ZrDebugEvaluationEffectPolicy;
+
 ZR_DEBUG_API TZrBool ZrDebug_AgentStart(SZrState *state, struct SZrFunction *entryFunction, const TZrChar *moduleName,
                                         const ZrDebugAgentConfig *config, ZrDebugAgent **outAgent, TZrChar *errorBuffer,
                                         TZrSize errorBufferSize);
@@ -175,6 +191,15 @@ ZR_DEBUG_API TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
                                       ZrDebugEvaluateResult *outResult,
                                       TZrChar *errorBuffer,
                                       TZrSize errorBufferSize);
+ZR_DEBUG_API TZrBool ZrDebug_ClassifyEvaluationEffect(ZrDebugAgent *agent,
+                                                       TZrUInt32 frameId,
+                                                       const TZrChar *expression,
+                                                       ZrDebugEvaluationEffectPolicy *outPolicy,
+                                                       TZrChar *errorBuffer,
+                                                       TZrSize errorBufferSize);
+ZR_DEBUG_API TZrBool ZrDebug_EvaluationEffectPolicy_Allows(
+        const ZrDebugEvaluationEffectPolicy *policy,
+        TZrUInt32 allowedEffectFlags);
 
 ZR_DEBUG_API void ZrDebug_Free(void *pointer);
 

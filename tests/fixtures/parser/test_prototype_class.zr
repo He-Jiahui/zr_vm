@@ -1,18 +1,18 @@
 // 测试 class prototype 生成
-%module "test_class";
+module test_class;
 
 // 基本 class 声明
 class Animal {
     pub var name: string;
     
-    pub speak() {
+    pub fn speak(): string {
         return "Some sound";
     }
 }
 
 // 带继承的 class
 class Dog : Animal {
-    pub speak() {
+    pub fn speak(): string {
         return "Woof";
     }
 }

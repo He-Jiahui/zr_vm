@@ -1,5 +1,3 @@
-%module "reference.expressions.missing_conditional_branch";
-
-%test("missing_conditional_branch") {
+fn __fixture(): int {
     return true ? 10 : ;
 }

@@ -1,3 +1,5 @@
+let console = import("zr.system.console");
+let math = import("zr.math");
 class PropertyBox {
     pri let _seed: int;
     pri var _value: int = 0;
@@ -20,6 +22,10 @@ class PropertyBox {
         this.value += delta;
         return this.value;
     }
+
+    pub static @add(left: PropertyBox, right: PropertyBox): PropertyBox {
+        return new PropertyBox(left.value + right.value);
+    }
 }
 
 class PropertyStatics {
@@ -34,5 +40,6 @@ class PropertyStatics {
 var box = new PropertyBox(10);
 box.value += 7;
 PropertyStatics.count += box.bump(3);
-
+console.print("box add test: " + (box + box).value + "\n");
+console.print("inf test: " + (math.INF + 1) + "\n");
 return PropertyStatics.count + box.value;

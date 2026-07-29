@@ -1,5 +1,5 @@
-var benchConfig = %import("bench_config");
-var container = %import("zr.container");
+let benchConfig = import("bench_config");
+let container = import("zr.container");
 
 fragmentFor(slot: int): string {
     var normalized = slot % 6;

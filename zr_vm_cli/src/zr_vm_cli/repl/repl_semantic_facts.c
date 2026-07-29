@@ -72,15 +72,15 @@ static const TZrChar *repl_ownership_fact_kind_text(EZrSemanticOwnershipFactKind
 static const TZrChar *repl_ownership_qualifier_text(EZrOwnershipQualifier qualifier) {
     switch (qualifier) {
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return "%unique";
+            return "Unique";
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return "%shared";
+            return "Shared";
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "%weak";
+            return "Weak";
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return "%borrowed";
+            return "ref readonly";
         case ZR_OWNERSHIP_QUALIFIER_LOANED:
-            return "%loaned";
+            return "ref";
         case ZR_OWNERSHIP_QUALIFIER_NONE:
         default:
             return "plain";

@@ -108,12 +108,12 @@ static void test_legacy_migration_plan_classifies_token_aware_candidates(void) {
     unknownItem = migration_find_item(&plan, "unrecognizedPercentDirective");
 
     TEST_ASSERT_NOT_NULL(moduleItem);
-    TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, moduleItem->applicability);
-    TEST_ASSERT_FALSE(moduleItem->hasFix);
+    TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, moduleItem->applicability);
+    TEST_ASSERT_TRUE(moduleItem->hasFix);
     TEST_ASSERT_EQUAL_UINT64(
             migration_offset_of(source, "%module"),
             moduleItem->range.start.offset);
-    TEST_ASSERT_EQUAL_STRING("06B", migration_string_text(moduleItem->targetPlanId));
+    TEST_ASSERT_EQUAL_STRING("06A", migration_string_text(moduleItem->targetPlanId));
 
     TEST_ASSERT_NOT_NULL(ownedItem);
     TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, ownedItem->applicability);
@@ -125,8 +125,8 @@ static void test_legacy_migration_plan_classifies_token_aware_candidates(void) {
     TEST_ASSERT_FALSE(upgradeItem->hasFix);
 
     TEST_ASSERT_NOT_NULL(asyncItem);
-    TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, asyncItem->applicability);
-    TEST_ASSERT_FALSE(asyncItem->hasFix);
+    TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, asyncItem->applicability);
+    TEST_ASSERT_TRUE(asyncItem->hasFix);
     TEST_ASSERT_EQUAL_STRING("12", migration_string_text(asyncItem->targetPlanId));
 
     TEST_ASSERT_NOT_NULL(unknownItem);
@@ -174,6 +174,24 @@ static void test_legacy_migration_plan_is_repeatable_and_ignores_non_code(void) 
 
     ZrParser_LegacyMigration_PlanFree(g_state, &second);
     ZrParser_LegacyMigration_PlanFree(g_state, &first);
+}
+
+static void test_legacy_migration_ignores_current_callable_arrows(void) {
+    const TZrChar *source =
+            "let callback: fn(in int, out int, ref int) -> int;\n"
+            "let increment = fn(value: int): int => value + 1;\n";
+    SZrString *sourceName = ZrCore_String_Create(
+            g_state,
+            "legacy_migration_current_callable_arrows.zr",
+            strlen("legacy_migration_current_callable_arrows.zr"));
+    SZrLegacyMigrationPlan plan = {0};
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, source, strlen(source), sourceName, &plan));
+    TEST_ASSERT_NULL(migration_find_item(&plan, "legacyDefinitionArrow"));
+    TEST_ASSERT_NULL(migration_find_item(&plan, "legacyFunctionTypeArrow"));
+    ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
 static void test_legacy_migration_owned_requires_a_class_declaration_shell(void) {
@@ -225,14 +243,14 @@ static void test_legacy_migration_consumes_paired_property_producer_fix(void) {
 
 static void test_legacy_migration_plan_covers_inventory_classification_contract(void) {
     static const TZrMigrationExpectation expectations[] = {
-        {"percentModule", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "06B", ZR_FALSE},
+        {"percentModule", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "06A", ZR_TRUE},
         {"percentImport", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
-        {"percentAsync", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "12", ZR_FALSE},
-        {"percentAwait", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "12", ZR_FALSE},
-        {"percentExtern", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "10", ZR_FALSE},
-        {"percentTest", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "14", ZR_FALSE},
-        {"percentCompileTime", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "11", ZR_FALSE},
-        {"percentFunc", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
+        {"percentAsync", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "12", ZR_TRUE},
+        {"percentAwait", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "12", ZR_TRUE},
+        {"percentExtern", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "10", ZR_TRUE},
+        {"percentTest", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "14", ZR_FALSE},
+        {"percentCompileTime", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "11", ZR_TRUE},
+        {"percentFunc", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "06A", ZR_TRUE},
         {"percentOwned", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},
         {"percentRelease", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
         {"percentUpgrade", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
@@ -337,7 +355,7 @@ static void test_legacy_migration_apply_machine_edits_is_idempotent(void) {
             "%owned class Handle {}\n"
             "let upgraded = %upgrade(weakHandle);\n";
     const TZrChar *expected =
-            "%module app.current\n"
+            "module app.current;\n"
             "resource class Handle {}\n"
             "let upgraded = %upgrade(weakHandle);\n";
     SZrString *sourceName = ZrCore_String_Create(
@@ -372,9 +390,8 @@ static void test_legacy_migration_apply_machine_edits_is_idempotent(void) {
             migratedLength,
             sourceName,
             &second));
-    TEST_ASSERT_EQUAL_UINT32(2U, second.items.length);
+    TEST_ASSERT_EQUAL_UINT32(1U, second.items.length);
     TEST_ASSERT_FALSE(((const SZrLegacyMigrationItem *)ZrCore_Array_Get(&second.items, 0U))->hasFix);
-    TEST_ASSERT_FALSE(((const SZrLegacyMigrationItem *)ZrCore_Array_Get(&second.items, 1U))->hasFix);
 
     ZrCore_Memory_RawFree(g_state->global, migrated, migratedLength + 1U);
     ZrParser_LegacyMigration_PlanFree(g_state, &second);
@@ -521,6 +538,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_legacy_migration_plan_classifies_token_aware_candidates);
     RUN_TEST(test_legacy_migration_plan_is_repeatable_and_ignores_non_code);
+    RUN_TEST(test_legacy_migration_ignores_current_callable_arrows);
     RUN_TEST(test_legacy_migration_owned_requires_a_class_declaration_shell);
     RUN_TEST(test_legacy_migration_consumes_paired_property_producer_fix);
     RUN_TEST(test_legacy_migration_plan_covers_inventory_classification_contract);

@@ -150,8 +150,8 @@ TZrBool compiler_validate_call_argument_passing_contract(
             ZrParser_Compiler_Error(
                     cs,
                     mode == ZR_PARAMETER_PASSING_MODE_OUT
-                            ? "%out argument must be an assignable storage location (writable Place)"
-                            : "%ref argument must be an assignable storage location (writable Place)",
+                            ? "out argument must be an assignable storage location (writable Place)"
+                            : "ref argument must be an assignable storage location (writable Place)",
                     argument != ZR_NULL ? argument->location : (SZrFileRange){0});
             return ZR_FALSE;
         }
@@ -159,7 +159,7 @@ TZrBool compiler_validate_call_argument_passing_contract(
             marker != ZR_CALL_ARGUMENT_MARKER_OUT) {
             ZrParser_Compiler_Error(
                     cs,
-                    "%out parameter requires the 'out' argument marker",
+                    "out parameter requires the 'out' argument marker",
                     argument != ZR_NULL ? argument->location : (SZrFileRange){0});
             return ZR_FALSE;
         }
@@ -167,7 +167,7 @@ TZrBool compiler_validate_call_argument_passing_contract(
             marker != ZR_CALL_ARGUMENT_MARKER_REF) {
             ZrParser_Compiler_Error(
                     cs,
-                    "%ref parameter requires the 'ref' argument marker",
+                    "ref parameter requires the 'ref' argument marker",
                     argument != ZR_NULL ? argument->location : (SZrFileRange){0});
             return ZR_FALSE;
         }

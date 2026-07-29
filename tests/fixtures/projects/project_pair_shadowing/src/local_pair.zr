@@ -1,4 +1,4 @@
-%module "local_pair";
+module "local_pair";
 
 pub struct Pair {
     pub var left: int;

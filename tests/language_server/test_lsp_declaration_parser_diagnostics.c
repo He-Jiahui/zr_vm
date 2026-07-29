@@ -183,7 +183,7 @@ static void test_lsp_missing_declaration_body_open_parser_diagnostics(SZrState *
                                          &timer,
                                          summary,
                                          "file:///parser_missing_function_body_open.zr",
-                                         "func pick(): int\n",
+                                         "fn pick(): int\n",
                                          "missing_declaration_body_open",
                                          "Missing '{' to start function declaration body",
                                          "Insert '{' after the function declaration header",
@@ -207,23 +207,11 @@ static void test_lsp_missing_declaration_body_open_parser_diagnostics(SZrState *
                                          &timer,
                                          summary,
                                          "file:///parser_missing_extern_block_body_open.zr",
-                                         "%extern(\"fixture\")\n",
+                                         "native extern(\"fixture\")\n",
                                          "missing_declaration_body_open",
                                          "Missing '{' to start extern block body",
                                          "Insert '{' after the extern block header",
                                          "expected extern block missing-body-open diagnostic to carry code, problem text, and suggestion")) {
-        return;
-    }
-
-    if (!run_declaration_diagnostic_case(state,
-                                         &timer,
-                                         summary,
-                                         "file:///parser_missing_test_declaration_body_open.zr",
-                                         "%test(\"smoke\")\n",
-                                         "missing_declaration_body_open",
-                                         "Missing '{' to start test declaration body",
-                                         "Insert '{' after the test declaration header",
-                                         "expected test declaration missing-body-open diagnostic to carry code, problem text, and suggestion")) {
         return;
     }
 
@@ -240,32 +228,11 @@ static void test_lsp_missing_extern_spec_close_parser_diagnostic(SZrState *state
                                          &timer,
                                          summary,
                                          "file:///parser_missing_extern_spec_close.zr",
-                                         "%extern(\"fixture\" { NativeAdd(value: int): int; }\n",
+                                         "native extern(\"fixture\" { NativeAdd(value: int): int; }\n",
                                          "missing_extern_spec_close",
                                          "Missing closing ')' in extern block spec",
                                          "Insert ')' after the extern block spec before the extern block body",
                                          "expected extern spec missing-close diagnostic to carry code, problem text, and suggestion")) {
-        return;
-    }
-
-    TEST_PASS(timer, summary);
-}
-
-static void test_lsp_missing_test_name_close_parser_diagnostic(SZrState *state) {
-    SZrTestTimer timer;
-    const TZrChar *summary = "LSP Missing Test Name Close Parser Diagnostic";
-
-    TEST_START(summary);
-
-    if (!run_declaration_diagnostic_case(state,
-                                         &timer,
-                                         summary,
-                                         "file:///parser_missing_test_name_close.zr",
-                                         "%test(\"smoke\" { return 1; }\n",
-                                         "missing_test_name_close",
-                                         "Missing closing ')' in test declaration name",
-                                         "Insert ')' after the test declaration name before the test body",
-                                         "expected test declaration name missing-close diagnostic to carry code, problem text, and suggestion")) {
         return;
     }
 
@@ -321,7 +288,7 @@ static void test_lsp_missing_declaration_body_close_parser_diagnostics(SZrState 
                                          &timer,
                                          summary,
                                          "file:///parser_missing_extern_block_body_close.zr",
-                                         "%extern(\"fixture\") {\n"
+                                         "native extern(\"fixture\") {\n"
                                          "    NativeAdd(value: int): int;\n",
                                          "missing_declaration_body_close",
                                          "Missing closing '}' for extern block body",
@@ -334,25 +301,12 @@ static void test_lsp_missing_declaration_body_close_parser_diagnostics(SZrState 
                                          &timer,
                                          summary,
                                          "file:///parser_missing_function_body_close.zr",
-                                         "func pick(): int {\n"
+                                         "fn pick(): int {\n"
                                          "    return 1;\n",
                                          "missing_declaration_body_close",
                                          "Missing closing '}' for function declaration body",
                                          "Insert '}' to close the function declaration body",
                                          "expected function declaration missing-body-close diagnostic to carry code, problem text, and suggestion")) {
-        return;
-    }
-
-    if (!run_declaration_diagnostic_case(state,
-                                         &timer,
-                                         summary,
-                                         "file:///parser_missing_test_declaration_body_close.zr",
-                                         "%test(\"smoke\") {\n"
-                                         "    return 1;\n",
-                                         "missing_declaration_body_close",
-                                         "Missing closing '}' for test declaration body",
-                                         "Insert '}' to close the test declaration body",
-                                         "expected test declaration missing-body-close diagnostic to carry code, problem text, and suggestion")) {
         return;
     }
 
@@ -377,7 +331,6 @@ int main(void) {
 
     test_lsp_missing_declaration_body_open_parser_diagnostics(state);
     test_lsp_missing_extern_spec_close_parser_diagnostic(state);
-    test_lsp_missing_test_name_close_parser_diagnostic(state);
     test_lsp_missing_declaration_body_close_parser_diagnostics(state);
 
     ZrCore_GlobalState_Free(global);

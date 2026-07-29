@@ -1,6 +1,7 @@
 #include "lsp_editor_features_internal.h"
 #include "lsp_virtual_documents.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -24,6 +25,30 @@ static const TZrChar *lsp_document_links_string_text(SZrString *value) {
     return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
                ? ZrCore_String_GetNativeStringShort(value)
                : ZrCore_String_GetNativeString(value);
+}
+
+static TZrBool lsp_document_links_import_call_at(const TZrChar *content,
+                                                 TZrSize contentLength,
+                                                 TZrSize offset) {
+    TZrSize scan;
+
+    if (content == ZR_NULL || offset + strlen("import") > contentLength ||
+        memcmp(content + offset, "import", strlen("import")) != 0) {
+        return ZR_FALSE;
+    }
+    if ((offset > 0 &&
+         (isalnum((unsigned char)content[offset - 1]) || content[offset - 1] == '_' || content[offset - 1] == '.')) ||
+        (offset + strlen("import") < contentLength &&
+         (isalnum((unsigned char)content[offset + strlen("import")]) ||
+          content[offset + strlen("import")] == '_'))) {
+        return ZR_FALSE;
+    }
+
+    scan = offset + strlen("import");
+    while (scan < contentLength && isspace((unsigned char)content[scan])) {
+        scan++;
+    }
+    return scan < contentLength && content[scan] == '(';
 }
 
 static TZrBool lsp_document_links_append(SZrState *state,
@@ -584,8 +609,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
         goto cleanup;
     }
 
-    while (cursor + 8 < contentLength) {
-        const TZrChar *match = strstr(content + cursor, "%import");
+    while (cursor + strlen("import") < contentLength) {
         TZrSize matchOffset;
         TZrSize quoteOffset;
         TZrSize closeOffset;
@@ -594,12 +618,16 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
         SZrLspPosition queryPosition;
         TZrBool appendedDefinition = ZR_FALSE;
 
-        if (match == ZR_NULL) {
+        while (cursor + strlen("import") <= contentLength &&
+               !lsp_document_links_import_call_at(content, contentLength, cursor)) {
+            cursor++;
+        }
+        if (cursor + strlen("import") > contentLength) {
             break;
         }
-        matchOffset = (TZrSize)(match - content);
+        matchOffset = cursor;
         if (!lsp_editor_offset_is_code(content, contentLength, matchOffset)) {
-            cursor = matchOffset + 7;
+            cursor = matchOffset + strlen("import");
             continue;
         }
         quoteOffset = matchOffset;
@@ -607,7 +635,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
             quoteOffset++;
         }
         if (quoteOffset >= contentLength) {
-            cursor = matchOffset + 7;
+            cursor = matchOffset + strlen("import");
             continue;
         }
         closeOffset = quoteOffset + 1;

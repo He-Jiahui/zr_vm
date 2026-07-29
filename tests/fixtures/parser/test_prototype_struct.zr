@@ -1,5 +1,5 @@
 // 测试 struct prototype 生成
-%module "test_struct";
+module test_struct;
 
 // 基本 struct 声明
 struct Vector3 {
@@ -30,7 +30,7 @@ struct Point3D {
 struct Counter {
     pub var count: int;
     
-    pub increment() {
+    pub fn increment(): void {
         count = count + 1;
     }
 }
@@ -44,4 +44,4 @@ struct TestStruct {
     }
 }
 
-var v = $Vector3(1,2,3);
+var v = init Vector3(1,2,3);

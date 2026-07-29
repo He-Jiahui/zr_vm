@@ -101,7 +101,6 @@ static void test_named_and_nested_function_type_syntax_preserves_delimiters(void
 
     TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, declaration->type);
     function = &declaration->data.functionDeclaration;
-    TEST_ASSERT_TRUE(function->usesFnKeyword);
     TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)function->params->count);
     TEST_ASSERT_GREATER_THAN_UINT32(0u, (TZrUInt32)function->returnDelimiterLocation.end.offset);
 

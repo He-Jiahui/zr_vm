@@ -1,4 +1,4 @@
-var audit = %import("audit");
+let audit = import("audit");
 
 pub twist(seed: int, factor: int = 2, bonus: int = 1): int {
     return seed * factor + audit.bump(bonus);

@@ -74,12 +74,60 @@ const SZrSemanticReferenceFact *ZrParser_DataflowOwnership_ConstructTargetRead(
                                            ZR_SEMANTIC_REFERENCE_READ);
 }
 
+static TZrBool ownership_region_current_member_projection(
+        SZrAstNode *node,
+        EZrOwnershipBuiltinKind *outBuiltinKind,
+        SZrAstNode **outTarget) {
+    SZrAstNodeArray *members;
+
+    if (outBuiltinKind != ZR_NULL) {
+        *outBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    }
+    if (outTarget != ZR_NULL) {
+        *outTarget = ZR_NULL;
+    }
+    if (node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION ||
+        node->data.primaryExpression.property == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    members = node->data.primaryExpression.members;
+    for (TZrSize index = 0U; members != ZR_NULL && index + 1U < members->count; index++) {
+        SZrAstNode *member = members->nodes[index];
+        SZrAstNode *call = members->nodes[index + 1U];
+        EZrOwnershipBuiltinKind builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+
+        if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
+            member->data.memberExpression.computed ||
+            member->data.memberExpression.property == ZR_NULL ||
+            member->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
+            call == ZR_NULL || call->type != ZR_AST_FUNCTION_CALL ||
+            (call->data.functionCall.args != ZR_NULL && call->data.functionCall.args->count != 0U) ||
+            !ZrParser_OwnershipMemberNameToBuiltinKind(
+                    member->data.memberExpression.property->data.identifier.name,
+                    &builtinKind) ||
+            builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_WEAK) {
+            continue;
+        }
+
+        if (outBuiltinKind != ZR_NULL) {
+            *outBuiltinKind = builtinKind;
+        }
+        if (outTarget != ZR_NULL) {
+            *outTarget = node->data.primaryExpression.property;
+        }
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
 TZrBool ZrParser_DataflowOwnership_StatementRegionBinding(
         const SZrSemanticContext *context,
         SZrAstNode *statement,
         SZrDataflowOwnershipRegionBinding *outBinding) {
     SZrAstNode *constructNode;
     SZrAstNode *aliasNode;
+    SZrAstNode *ownerNode = ZR_NULL;
     EZrSemanticReferenceKind aliasReferenceKind;
     EZrOwnershipBuiltinKind builtinKind;
 
@@ -111,10 +159,18 @@ TZrBool ZrParser_DataflowOwnership_StatementRegionBinding(
     } else {
         return ZR_FALSE;
     }
-    if (constructNode == ZR_NULL || constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+    if (constructNode == ZR_NULL) {
         return ZR_FALSE;
     }
-    builtinKind = constructNode->data.constructExpression.builtinKind;
+    if (constructNode->type == ZR_AST_CONSTRUCT_EXPRESSION) {
+        builtinKind = constructNode->data.constructExpression.builtinKind;
+        ownerNode = constructNode->data.constructExpression.target;
+    } else if (!ownership_region_current_member_projection(
+                       constructNode,
+                       &builtinKind,
+                       &ownerNode)) {
+        return ZR_FALSE;
+    }
     if (builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_BORROW &&
         builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_LOAN &&
         builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_WEAK) {
@@ -125,9 +181,10 @@ TZrBool ZrParser_DataflowOwnership_StatementRegionBinding(
             context,
             aliasNode,
             aliasReferenceKind);
-    outBinding->ownerReference = ZrParser_DataflowOwnership_ConstructTargetRead(
+    outBinding->ownerReference = ownership_region_find_reference(
             context,
-            constructNode);
+            ownerNode,
+            ZR_SEMANTIC_REFERENCE_READ);
     if (outBinding->aliasReference == ZR_NULL || outBinding->ownerReference == ZR_NULL) {
         memset(outBinding, 0, sizeof(*outBinding));
         return ZR_FALSE;

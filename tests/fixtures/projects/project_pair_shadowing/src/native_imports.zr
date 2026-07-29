@@ -1,6 +1,6 @@
-%module "native_imports";
+module "native_imports";
 
-var container = %import("zr.container");
+let container = import("zr.container");
 
 pub touch(): int {
     return 0;

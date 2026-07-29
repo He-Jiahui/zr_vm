@@ -345,13 +345,13 @@ static void test_rust_binding_bare_runtime_run_reports_unsupported_error_info(vo
 static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable(void) {
     static const TZrChar *projectName = "incremental_toggle_project";
     static const TZrChar *mainSource =
-            "var decorated = %import(\"decorated_user\");\n"
+            "let decorated = import(\"decorated_user\");\n"
             "\n"
             "return decorated.verifyDecorators() + decorated.decoratedBonus();\n";
     static const TZrChar *decoratedUserSource =
-            "%module \"decorated_user\";\n"
+            "module \"decorated_user\";\n"
             "\n"
-            "var decorators = %import(\"decorators\");\n"
+            "let decorators = import(\"decorators\");\n"
             "var markClass = decorators.markClass;\n"
             "var markField = decorators.markField;\n"
             "var markMethod = decorators.markMethod;\n"
@@ -378,16 +378,16 @@ static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_k
             "\n"
             "#markFunction#\n"
             "pub decoratedBonus(): int {\n"
-            "    var meta = %type(decoratedBonus).metadata;\n"
+            "    var meta = typeof(decoratedBonus).metadata;\n"
             "    return meta.instrumented ? 16 : 0;\n"
             "}\n"
             "\n"
-            "pub var verifyDecorators = () => {\n"
+            "pub var verifyDecorators = fn() => {\n"
             "    var seed = 0;\n"
-            "    var typeMeta = %type(User).metadata;\n"
-            "    var fieldMeta = %type(User).members.id[0].metadata;\n"
-            "    var methodMeta = %type(User).members.load[0].metadata;\n"
-            "    var propertyMeta = %type(User).members.value[0].metadata;\n"
+            "    var typeMeta = typeof(User).metadata;\n"
+            "    var fieldMeta = typeof(User).members.id[0].metadata;\n"
+            "    var methodMeta = typeof(User).members.load[0].metadata;\n"
+            "    var propertyMeta = typeof(User).members.value[0].metadata;\n"
             "\n"
             "    if (typeMeta.runtimeSerializable) {\n"
             "        seed = seed + 1;\n"
@@ -405,25 +405,25 @@ static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_k
             "    return seed;\n"
             "};\n";
     static const TZrChar *decoratorsSource =
-            "%module \"decorators\";\n"
+            "module \"decorators\";\n"
             "\n"
-            "pub markClass(target: %type Class): void {\n"
+            "pub markClass(target: typeof Class): void {\n"
             "    target.metadata.runtimeSerializable = true;\n"
             "}\n"
             "\n"
-            "pub markFunction(target: %type Function): void {\n"
+            "pub markFunction(target: typeof Function): void {\n"
             "    target.metadata.instrumented = true;\n"
             "}\n"
             "\n"
-            "pub markField(target: %type Field): void {\n"
+            "pub markField(target: typeof Field): void {\n"
             "    target.metadata.isRuntimeField = true;\n"
             "}\n"
             "\n"
-            "pub markMethod(target: %type Method): void {\n"
+            "pub markMethod(target: typeof Method): void {\n"
             "    target.metadata.isRuntimeMethod = true;\n"
             "}\n"
             "\n"
-            "pub markProperty(target: %type Property): void {\n"
+            "pub markProperty(target: typeof Property): void {\n"
             "    target.metadata.isRuntimeProperty = true;\n"
             "}\n";
     TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
@@ -646,7 +646,7 @@ static void test_rust_binding_run_named_module_preserves_module_name_and_program
     static const TZrChar *projectName = "module_run_project";
     static const TZrChar *mainSource = "return 17;\n";
     static const TZrChar *moduleSource =
-            "var system = %import(\"zr.system\");\n"
+            "let system = import(\"zr.system\");\n"
             "\n"
             "fingerprint(): int {\n"
             "    var count = 0;\n"
@@ -1155,7 +1155,7 @@ static ZrRustBindingStatus native_host_mul_callback(ZrRustBindingNativeCallConte
 static void test_rust_binding_native_module_registration_roundtrip(void) {
     static const TZrChar *projectName = "native_module_project";
     static const TZrChar *mainSource =
-            "var host = %import(\"host_demo\");\n"
+            "let host = import(\"host_demo\");\n"
             "return host.answer + host.bump(2, 3) + host.Counter.mul(4, 5);\n";
     static const TZrChar *parameterTypeNames[] = {"int", "int"};
     static const TZrChar *parameterNames[] = {"left", "right"};
@@ -1356,7 +1356,7 @@ static void test_rust_binding_native_module_registration_roundtrip(void) {
 static void test_rust_binding_native_module_registration_release_allows_re_registration(void) {
     static const TZrChar *projectName = "native_module_reregister_project";
     static const TZrChar *mainSource =
-            "var host = %import(\"host_demo\");\n"
+            "let host = import(\"host_demo\");\n"
             "return host.answer;\n";
     TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];

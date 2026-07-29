@@ -88,7 +88,7 @@ static SZrFunction *compile_debug_metadata_fixture(SZrState *state, const char *
     const char *source =
             "class Box {\n"
             "    pub var raw: int;\n"
-            "    pub func read(): int {\n"
+            "    pub fn read(): int {\n"
             "        return this.raw;\n"
             "    }\n"
             "}\n"

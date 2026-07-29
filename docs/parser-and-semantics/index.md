@@ -262,7 +262,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - `YIELD_VALUE` / `YIELD_SUSPEND` / `YIELD_RESUME` / `ITERATOR_COMPLETE`
     pre-SemIR facts without an iterator runtime frame
 - `ffi-extern-declarations.md`
-  - `%extern("lib") decl` 与 `%extern("lib") { decls }` 源级 FFI 语法
+  - `native extern("lib") decl` 与 `native extern("lib") { decls }` 源级 FFI 语法
   - extern function / struct / enum / delegate 的 declaration metadata 和 lowering 规则
   - `compileTimeTypeEnv` 与真正 compile-time callable 的边界
 - `dynamic-iteration-semir-execbc-aot.md`
@@ -272,7 +272,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 - `dynamic-meta-tail-call-semir-execbc-aot.md`
   - `META_CALL`、`DYN_TAIL_CALL`、`META_TAIL_CALL` 的稳定语义边界
   - tail-call site 上 dynamic/meta dispatch 不再退化成普通 `FUNCTION_TAIL_CALL`
-  - 安全条件下的真实 `callInfo` frame reuse 与异常 / `%using` 回退边界
+  - 安全条件下的真实 `callInfo` frame reuse 与异常 / `using` 回退边界
   - AOT backend 继续只依赖共享的 `FUNCTION_PRECALL` runtime contract
 - `call-site-quickening-meta-access-semir-aot.md`
   - 零参数 call-site superinstruction、cached `META_CALL/DYN_CALL`、以及 cached tail-call 的 ExecBC quickening 边界
@@ -281,9 +281,9 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - child function 的 `.zri`/AOT metadata 会递归输出，constant function/closure 会重绑到 quickened child function tree
   - quickened ExecBC 与稳定语义层继续解耦
 - `ownership-builtins-semir-aot.md`
-  - `%borrow/%loan/%upgrade/%release/%detach` 的 parser、ExecBC、SemIR、AOT 契约
-  - ownership expression 与 statement `%using` 的边界
-  - legacy ownership using helper 的 artifact 收口
+  - `ref` / `ref readonly`、`Weak<T>.upgrade()` 与 `drop(...)` 的 parser、ExecBC、SemIR、AOT 契约
+  - ownership expression 与 statement `using` 的边界
+  - 旧 ownership helper 不进入现行 artifact surface
 - `csharp-value-type-semir-aot.md`
   - C#-style `struct` value-place SemIR contract
   - inline struct field address/load/store and by-value copy metadata
@@ -293,9 +293,9 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - script wrapper / top-level function declaration 共用同一套 final assembly 逻辑
   - `CREATE_CLOSURE -> childFunctions` child graph 不变量在装配期统一校验
 - `owned-field-lifecycle.md`
-  - direct `%unique/%shared` field 的字段生命周期语义
-  - legacy field-scoped `%using` 的迁移边界
-  - owner 值跨入 plain GC world 必须显式 `%detach` 或 bridge
+  - direct `Unique<T>` / `Shared<T>` field 的字段生命周期语义
+  - field-scoped `using` 的生命周期边界
+  - owner 值跨入 plain GC world 必须显式 `intoGc()` 或 bridge
 - `resource-unique-drop.md`
   - `resource class`、`own T(...)`、`drop(owner)` 的 type-directed 生命周期合同
   - direct `Unique<T>` 无 control block 的 move、partial construction 与逆序 Drop
@@ -304,7 +304,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - process-local non-atomic `Shared<T>` / stable `Weak<T>` control lifetime
   - last-strong Drop、implicit weak、drop-time upgrade failure 与 cleanup mirror 同步
   - structured `resource_shared_strong_cycle` lint，以及 final Option surface 的明确边界
-  - `%weak` 使用目标前必须显式 `%upgrade`/check，不能直接流入 `%borrowed`
+  - `Weak<T>` 使用目标前必须显式 `.upgrade()`/check，不能直接流入 `ref readonly T`
   - cleanup plan 与 prototype metadata 的传播路径
 - `resource-owner-borrow-receiver.md`
   - `Unique<T>` mutable/shared 与 `Shared<T>` readonly receiver capability
@@ -353,10 +353,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - compiler frontend 已在 `compile_script` 成功完成语句编译和 typed metadata 后发布 semantic query diagnostics 到 `SZrSemanticContext.queryDiagnostics` cache，warning 级 query diagnostics 不会置位编译错误状态，并已覆盖 CFG-backed 分支汇合 `possibly_uninitialized_read`；外部/二进制诊断序列化仍待后续切片
   - module/node scope 过滤边界，以及后续局部重算和更完整诊断来源
 - `lsp-semantic-resolution-and-native-imports.md`
-  - `this` / `super` / `%compileTime` / `%test` / lambda 的局部符号命中规则
+  - `this` / `super` / `comptime` / `#zr.testing.test#` / lambda 的局部符号命中规则
   - reference tracker 的“最窄范围优先”策略
-  - `%import("zr.math")` 如何在语义分析阶段预热 native metadata，支撑 `$math.Vector3(...).y`
-  - imported type 只允许 `module.Type` 或 `var {Type} = %import(...)` 两种显式绑定路径
+  - `import("zr.math")` 如何在语义分析阶段预热 native metadata，支撑 `init math.Vector3(...).y`
+  - imported type 只允许 `module.Type` 或 `var {Type} = import(...)` 两种显式绑定路径
   - nested native module lookup 与 compile-only imported stub 如何避免递归和 runtime prototype 污染
 - `lsp-binary-metadata-coordinate-projection.md`
   - binary typed-export 的 one-based byte line/column 与 LSP UTF-16 range 之间的窄转换合同
@@ -374,18 +374,21 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - Syntax 06A 的只读 legacy syntax inventory、确定性 report schema 和显式 exclusion 边界
   - `machineApplicable`、`maybeIncorrect`、`requiresReview`、`blocked` 与 `targetNotPromoted`
     的分类合同，以及下游计划的 promotion gate
+- `current-syntax-convergence.md`
+  - `README.md` 作为现行语言表面的唯一规范，以及 parser/LSP 对 `module`、`import(...)`、`ref` 的已实现边界
+  - `ref T` 与 `ref readonly T` 通过目标 TypeRef 决定可写性，ownership fact 收敛仍待下游语义层完成
 - `legacy-syntax-migration-frontend.md`
   - parser-owned migration plan、词法屏蔽边界和 source-hash/overlap 防御
-  - 当前 parser/compiler 已证明的 `%owned -> resource` machine edit 与其余 review/gate 边界
+  - 当前 parser/compiler 已证明的 `resource class` machine edit 与其余 review/gate 边界
   - property producer ownership、06A LSP handoff 和 06B formal diagnostic 责任划分
 
 ## 阅读顺序
 
-1. 先看 `ffi-extern-declarations.md`，了解 `%extern` 语法、descriptor schema 和 `zr.ffi` lowering 路径。
+1. 先看 `ffi-extern-declarations.md`，了解 `native extern` 语法、descriptor schema 和 `zr.ffi` lowering 路径。
 2. 再看 `dynamic-iteration-semir-execbc-aot.md`，了解动态迭代在 SemIR、ExecBC quickening 与 AOT 契约之间的边界。
 3. 然后看 `dynamic-meta-tail-call-semir-execbc-aot.md`，了解 dynamic/meta 调用在 tail-site 上的稳定语义契约。
 4. 再看 `call-site-quickening-meta-access-semir-aot.md`，了解 zero-arg/cached call-site quickening、meta access PIC、以及 child artifact 对齐规则。
-5. 再看 `ownership-builtins-semir-aot.md`，了解 ownership builtin 与 statement `%using` 的稳定语义边界。
+5. 再看 `ownership-builtins-semir-aot.md`，了解 ownership contract 与 statement `using` 的稳定语义边界。
 6. 再看 `csharp-value-type-semir-aot.md`，了解 C#-style struct value-place SemIR 和 AOT 边界。
 7. 再看 `compiler-final-function-assembly.md`，了解 parser orchestration 与 final function assembly 的边界。
 8. 再看 `owned-field-lifecycle.md`，了解 direct owner field 的生命周期语义。
@@ -410,6 +413,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
     和 suspension 静态边界。
 25. 再看 `syntax-migration-inventory.md`，了解 Syntax 06A 对 legacy source、fixture 和文档 snippet
    的只读盘点边界，以及 M2/M3 前的 target promotion gate。
-26. 再看 `legacy-syntax-migration-frontend.md`，了解 M2 parser plan、可发布 edit 和 formal cutover
+26. 再看 `current-syntax-convergence.md`，了解 README 标准语法已进入 parser/LSP 的边界以及尚未完成的 ownership 收敛。
+27. 再看 `legacy-syntax-migration-frontend.md`，了解 M2 parser plan、可发布 edit 和 formal cutover
    前的 LSP 边界。
-27. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+28. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

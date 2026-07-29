@@ -27,7 +27,7 @@ static void test_semantic_analyzer_expression_metadata_records_exact_types(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Expression Facts Record Exact Types";
     const TZrChar *testCode =
-            "compute(left: int, right: int) {\n"
+            "fn compute(left: int, right: int) {\n"
             "    var sum: int = left + right;\n"
             "    var widened: float = left + 0.0;\n"
             "    return widened;\n"

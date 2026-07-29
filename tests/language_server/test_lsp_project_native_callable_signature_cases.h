@@ -50,7 +50,7 @@ static const TZrChar *native_callable_parameter_documentation(
 static void test_lsp_descriptor_plugin_callable_query_hover_and_signature_share_contract(
         SZrState *state) {
     static const TZrChar *mainContent =
-            "var plugin = %import(\"zr.pluginprobe\");\n"
+            "var plugin = import(\"zr.pluginprobe\");\n"
             "var total = plugin.combine(1, 2);\n"
             "plugin.incomplete_callable();\n"
             "return total;\n";

@@ -2226,7 +2226,7 @@ static void test_execute_using_statement_passthrough(void) {
               "Testing that using syntax passes through the frontend and preserves normal control flow");
 
     {
-        const char *source = "var resource = \"x\"; %using (resource) { var inner = 1; } return 7;";
+        const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
         SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *function;
@@ -2285,7 +2285,7 @@ static void test_execute_using_statement_invokes_close_meta(void) {
         attach_close_meta_to_string_prototype(state);
 
         {
-            const char *source = "%using (\"x\") { var inner = 1; } return 7;";
+            const char *source = "using (\"x\") { var inner = 1; } return 7;";
             SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
             SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
             SZrFunction *function;
@@ -2360,7 +2360,7 @@ static void test_execute_using_declaration_invokes_close_meta(void) {
         attach_close_meta_to_string_prototype(state);
 
         {
-            const char *source = "var resource = \"x\"; %using resource; return 7;";
+            const char *source = "var resource = \"x\"; using resource; return 7;";
             SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
             SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
             SZrFunction *function;
@@ -2421,7 +2421,7 @@ static void test_execute_nested_using_return_invokes_all_close_meta(void) {
     attach_close_meta_to_string_prototype(state);
 
     {
-        const char *source = "%using (\"outer\") { %using (\"inner\") { return 9; } } return 0;";
+        const char *source = "using (\"outer\") { using (\"inner\") { return 9; } } return 0;";
         SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *function = ZR_NULL;
@@ -2472,7 +2472,7 @@ static void test_execute_get_member_materializes_global_prototype_with_aliased_d
     SZrTestTimer timer;
     const char *testSummary = "GET_MEMBER Materializes Global Prototype With Aliased Destination";
     const char *source =
-        "%module \"static_retry\";\n"
+        "module \"static_retry\";\n"
         "class StaticHolder {\n"
         "    pub static var value: int = 42;\n"
         "}\n"
@@ -2576,7 +2576,7 @@ static void test_execute_source_import_typed_call_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Source Import Typed Call Runtime Result";
     const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";
-    const char *source = "var math = %import(\"math\"); return math.add(1, 2.5);";
+    const char *source = "let math = import(\"math\"); return math.add(1, 2.5);";
     SZrTypeValue result;
 
     TEST_START(testSummary);
@@ -2622,7 +2622,7 @@ static void test_execute_binary_import_typed_call_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Binary Import Typed Call Runtime Result";
     const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";
-    const char *source = "var math = %import(\"math\"); return math.add(1, 2.5);";
+    const char *source = "let math = import(\"math\"); return math.add(1, 2.5);";
     const char *binaryPath = "instruction_import_runtime_fixture.zro";
     SZrTypeValue result;
 
@@ -2672,7 +2672,7 @@ static void test_execute_binary_import_member_opcode_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Binary Import Member Opcode Runtime Result";
     const char *moduleSource = "touchGlobalMember(): int { var err = zr.Error; return 7; }";
-    const char *source = "var math = %import(\"math\"); return math.touchGlobalMember();";
+    const char *source = "let math = import(\"math\"); return math.touchGlobalMember();";
     const char *binaryPath = "instruction_import_member_runtime_fixture.zro";
     SZrTypeValue result;
 

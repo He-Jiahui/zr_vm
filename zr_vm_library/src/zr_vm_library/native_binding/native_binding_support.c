@@ -496,6 +496,124 @@ const ZrLibRegisteredModuleRecord *native_registry_find_record_by_descriptor(
     return ZR_NULL;
 }
 
+static TZrBool native_registry_validate_parameter_descriptors(
+        ZrLibrary_NativeRegistryState *registry,
+        const ZrLibModuleDescriptor *module,
+        const TZrChar *callableName,
+        const ZrLibParameterDescriptor *parameters,
+        TZrSize parameterCount) {
+    if (parameterCount > 0u && parameters == ZR_NULL) {
+        native_registry_set_error(
+                registry,
+                ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                "module '%s' callable '%s' declares %llu parameters without descriptors",
+                module->moduleName != ZR_NULL ? module->moduleName : "<null>",
+                callableName != ZR_NULL ? callableName : "<unnamed>",
+                (unsigned long long)parameterCount);
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0u; index < parameterCount; index++) {
+        if (parameters[index].passingMode < ZR_LIB_PARAMETER_PASSING_MODE_VALUE ||
+            parameters[index].passingMode > ZR_LIB_PARAMETER_PASSING_MODE_REF) {
+            native_registry_set_error(
+                    registry,
+                    ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                    "module '%s' callable '%s' parameter %llu uses invalid passing mode %d",
+                    module->moduleName != ZR_NULL ? module->moduleName : "<null>",
+                    callableName != ZR_NULL ? callableName : "<unnamed>",
+                    (unsigned long long)index,
+                    (int)parameters[index].passingMode);
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool native_registry_validate_parameter_passing_modes(
+        ZrLibrary_NativeRegistryState *registry,
+        const ZrLibModuleDescriptor *descriptor) {
+    if (descriptor->functionCount > 0u && descriptor->functions == ZR_NULL) {
+        native_registry_set_error(
+                registry,
+                ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                "module '%s' declares functions without descriptors",
+                descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>");
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0u; index < descriptor->functionCount; index++) {
+        const ZrLibFunctionDescriptor *function = &descriptor->functions[index];
+
+        if (!native_registry_validate_parameter_descriptors(
+                    registry,
+                    descriptor,
+                    function->name,
+                    function->parameters,
+                    function->parameterCount)) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (descriptor->typeCount > 0u && descriptor->types == ZR_NULL) {
+        native_registry_set_error(
+                registry,
+                ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                "module '%s' declares types without descriptors",
+                descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>");
+        return ZR_FALSE;
+    }
+    for (TZrSize typeIndex = 0u; typeIndex < descriptor->typeCount; typeIndex++) {
+        const ZrLibTypeDescriptor *type = &descriptor->types[typeIndex];
+
+        if (type->methodCount > 0u && type->methods == ZR_NULL) {
+            native_registry_set_error(
+                    registry,
+                    ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                    "module '%s' type '%s' declares methods without descriptors",
+                    descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
+                    type->name != ZR_NULL ? type->name : "<unnamed>");
+            return ZR_FALSE;
+        }
+        for (TZrSize methodIndex = 0u; methodIndex < type->methodCount; methodIndex++) {
+            const ZrLibMethodDescriptor *method = &type->methods[methodIndex];
+
+            if (!native_registry_validate_parameter_descriptors(
+                        registry,
+                        descriptor,
+                        method->name,
+                        method->parameters,
+                        method->parameterCount)) {
+                return ZR_FALSE;
+            }
+        }
+
+        if (type->metaMethodCount > 0u && type->metaMethods == ZR_NULL) {
+            native_registry_set_error(
+                    registry,
+                    ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                    "module '%s' type '%s' declares meta methods without descriptors",
+                    descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
+                    type->name != ZR_NULL ? type->name : "<unnamed>");
+            return ZR_FALSE;
+        }
+        for (TZrSize methodIndex = 0u; methodIndex < type->metaMethodCount; methodIndex++) {
+            const ZrLibMetaMethodDescriptor *method = &type->metaMethods[methodIndex];
+
+            if (!native_registry_validate_parameter_descriptors(
+                        registry,
+                        descriptor,
+                        "<meta-method>",
+                        method->parameters,
+                        method->parameterCount)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegistryState *registry,
                                                                  const ZrLibModuleDescriptor *descriptor) {
     TZrUInt32 minimumRuntimeAbi;
@@ -504,6 +622,17 @@ TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegist
         native_registry_set_error(registry,
                                   ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
                                   "native descriptor is null");
+        return ZR_FALSE;
+    }
+
+    if (descriptor->abiVersion != ZR_VM_NATIVE_PLUGIN_ABI_VERSION) {
+        native_registry_set_error(
+                registry,
+                ZR_LIB_NATIVE_REGISTRY_ERROR_ABI_MISMATCH,
+                "module '%s' uses ABI %u but runtime expects %u",
+                descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
+                descriptor->abiVersion,
+                ZR_VM_NATIVE_PLUGIN_ABI_VERSION);
         return ZR_FALSE;
     }
 
@@ -524,6 +653,10 @@ TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegist
                                   "module '%s' requires unsupported capabilities 0x%llx",
                                   descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
                                   (unsigned long long)(descriptor->requiredCapabilities & ~ZR_VM_NATIVE_RUNTIME_CAPABILITIES));
+        return ZR_FALSE;
+    }
+
+    if (!native_registry_validate_parameter_passing_modes(registry, descriptor)) {
         return ZR_FALSE;
     }
 

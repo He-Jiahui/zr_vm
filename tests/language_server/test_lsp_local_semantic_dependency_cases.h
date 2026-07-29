@@ -92,40 +92,40 @@ static void test_generic_signature_edit_invalidates_only_changed_and_direct_call
             "identity<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
-            "caller(): int {\n"
+            "fn caller(): int {\n"
             "    return identity<int>(1);\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *firstSignatureContent =
             "identity<U>(value: U): U {\n"
             "    return value;\n"
             "}\n"
-            "caller(): int {\n"
+            "fn caller(): int {\n"
             "    return identity<int>(1);\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *secondSignatureContent =
             "identity<V>(value: V): V {\n"
             "    return value;\n"
             "}\n"
-            "caller(): int {\n"
+            "fn caller(): int {\n"
             "    return identity<int>(1);\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *thirdSignatureContent =
             "identity<W>(value: W): W {\n"
             "    return value;\n"
             "}\n"
-            "caller(): int {\n"
+            "fn caller(): int {\n"
             "    return identity<int>(1);\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;
@@ -347,7 +347,7 @@ static void test_inferred_signature_body_edit_invalidates_direct_caller_scope(
             "caller() {\n"
             "    return inferred();\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *changedTypeContent =
@@ -357,7 +357,7 @@ static void test_inferred_signature_body_edit_invalidates_direct_caller_scope(
             "caller() {\n"
             "    return inferred();\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *stableTypeContent =
@@ -367,7 +367,7 @@ static void test_inferred_signature_body_edit_invalidates_direct_caller_scope(
             "caller() {\n"
             "    return inferred();\n"
             "}\n"
-            "unrelated(): int {\n"
+            "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     SZrTestTimer timer;
@@ -525,17 +525,17 @@ static void test_explicit_signature_body_edit_preserves_direct_caller_scope(
             "Explicit Signature Body Edit Preserves Direct Caller Scope";
     const TZrChar *uriText = "file:///explicit_signature_direct_caller_cache.zr";
     const TZrChar *initialContent =
-            "answer(): int {\n"
+            "fn answer(): int {\n"
             "    return 1;\n"
             "}\n"
-            "caller(): int {\n"
+            "fn caller(): int {\n"
             "    return answer();\n"
             "}\n";
     const TZrChar *updatedContent =
-            "answer(): int {\n"
+            "fn answer(): int {\n"
             "    return 2;\n"
             "}\n"
-            "caller(): int {\n"
+            "fn caller(): int {\n"
             "    return answer();\n"
             "}\n";
     SZrTestTimer timer;
@@ -772,14 +772,14 @@ static void test_poisoned_scope_invalidates_conservatively_on_signature_edit(
             "identity<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
-            "poisoned(): int {\n"
+            "fn poisoned(): int {\n"
             "    return missing();\n"
             "}\n";
     const TZrChar *updatedContent =
             "identity<U>(value: U): U {\n"
             "    return value;\n"
             "}\n"
-            "poisoned(): int {\n"
+            "fn poisoned(): int {\n"
             "    return missing();\n"
             "}\n";
     SZrTestTimer timer;

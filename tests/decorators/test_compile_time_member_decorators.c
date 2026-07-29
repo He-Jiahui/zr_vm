@@ -180,20 +180,20 @@ static void assert_parameter_reflection(SZrState *state,
 }
 
 static const TZrChar *kCompileTimeMemberDecoratorModuleSource =
-        "%compileTime class MarkField {\n"
-        "    @decorate(target: %type Field): zr.DecoratorPatch {\n"
+        "comptime class MarkField {\n"
+        "    @decorate(target: typeof Field): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeField: true } };\n"
         "    }\n"
         "}\n"
         "\n"
-        "%compileTime class MarkMethod {\n"
-        "    @decorate(target: %type Method): zr.DecoratorPatch {\n"
+        "comptime class MarkMethod {\n"
+        "    @decorate(target: typeof Method): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeMethod: true } };\n"
         "    }\n"
         "}\n"
         "\n"
-        "%compileTime class MarkProperty {\n"
-        "    @decorate(target: %type Property): zr.DecoratorPatch {\n"
+        "comptime class MarkProperty {\n"
+        "    @decorate(target: typeof Property): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeProperty: true } };\n"
         "    }\n"
         "}\n"
@@ -221,17 +221,17 @@ static const TZrChar *kCompileTimeMemberDecoratorModuleSource =
         "}\n";
 
 static const TZrChar *kCompileTimeMemberDecoratorImportSource =
-        "var decorated = %import(\"compile_time_member_decorators\");\n"
+        "let decorated = import(\"compile_time_member_decorators\");\n"
         "return {\n"
-        "    field: %type(decorated.User).members.id[0],\n"
-        "    method: %type(decorated.User).members.load[0],\n"
-        "    property: %type(decorated.User).members.value[0],\n"
-        "    members: %type(decorated.User).members\n"
+        "    field: typeof(decorated.User).members.id[0],\n"
+        "    method: typeof(decorated.User).members.load[0],\n"
+        "    property: typeof(decorated.User).members.value[0],\n"
+        "    members: typeof(decorated.User).members\n"
         "};\n";
 
 static const TZrChar *kCompileTimeParameterDecoratorModuleSource =
-        "%compileTime class MarkParameter {\n"
-        "    @decorate(target: %type Parameter): zr.DecoratorPatch {\n"
+        "comptime class MarkParameter {\n"
+        "    @decorate(target: typeof Parameter): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeParameter: true } };\n"
         "    }\n"
         "}\n"
@@ -241,8 +241,8 @@ static const TZrChar *kCompileTimeParameterDecoratorModuleSource =
         "}\n";
 
 static const TZrChar *kCompileTimeParameterDecoratorImportSource =
-        "var decorated = %import(\"compile_time_parameter_decorators\");\n"
-        "return %type(decorated.load).parameters[0];\n";
+        "let decorated = import(\"compile_time_parameter_decorators\");\n"
+        "return typeof(decorated.load).parameters[0];\n";
 
 void setUp(void) {
 }

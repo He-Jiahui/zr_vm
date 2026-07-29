@@ -283,12 +283,12 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
 
 static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
     const char *source =
-            "func target(input: int): int {\n"
+            "fn target(input: int): int {\n"
             "    var mutable = input + 1;\n"
             "    var result = mutable + 1;\n"
             "    return result;\n"
             "}\n"
-            "func outer(seed: int): int {\n"
+            "fn outer(seed: int): int {\n"
             "    var base = seed;\n"
             "    var first = target(base);\n"
             "    var after = target(first);\n"

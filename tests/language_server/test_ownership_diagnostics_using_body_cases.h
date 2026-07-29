@@ -5,14 +5,14 @@ static void test_semantic_analyzer_tracks_borrow_rebind_in_using_body(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Tracks Borrow Rebind In Using Body";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "use(first: %shared Resource, second: %shared Resource): int {\n"
-        "    var alias = %borrow(first);\n"
+        "fn use(first: Shared<Resource>, second: Shared<Resource>): int {\n"
+        "    var alias = ref first;\n"
         "    using (first) {\n"
-        "        alias = %borrow(second);\n"
+        "        alias = ref second;\n"
         "    }\n"
-        "    var released = %release(second);\n"
+        "    drop(second);\n"
         "    alias;\n"
         "    return 0;\n"
         "}\n";
@@ -70,10 +70,10 @@ static void test_semantic_analyzer_tracks_unique_move_in_using_body(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Tracks Unique Move In Using Body";
     const TZrChar *testCode =
-        "class Resource {\n"
+        "resource class Resource {\n"
         "}\n"
-        "consume(value: %unique Resource): int { return 0; }\n"
-        "use(resource: %shared Resource, value: %unique Resource): int {\n"
+        "fn consume(value: Unique<Resource>): int { return 0; }\n"
+        "fn use(resource: Shared<Resource>, value: Unique<Resource>): int {\n"
         "    using (resource) {\n"
         "        consume(value);\n"
         "        value;\n"

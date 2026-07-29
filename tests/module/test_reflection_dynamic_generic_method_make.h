@@ -175,6 +175,28 @@ static void prepare_make_generic_method_native_entry(
     state->stackTop.valuePointer = functionBase + argumentCount + 1u;
 }
 
+static void prepare_resolve_type_id_native_entry(
+        SZrState *state,
+        TZrStackValuePointer functionBase,
+        SZrClosureNative *closure,
+        SZrObject *typeIdObject) {
+    ZrCore_Value_InitAsRawObject(
+            state,
+            ZrCore_Stack_GetValue(functionBase),
+            ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    ZrCore_Stack_GetValue(functionBase)->type = ZR_VALUE_TYPE_CLOSURE;
+    ZrCore_Value_InitAsRawObject(
+            state,
+            ZrCore_Stack_GetValue(functionBase + 1),
+            ZR_CAST_RAW_OBJECT_AS_SUPER(typeIdObject));
+    state->baseCallInfo.functionBase.valuePointer = functionBase;
+    state->baseCallInfo.callStatus = ZR_CALL_STATUS_NATIVE_CALL;
+    state->baseCallInfo.previous = ZR_NULL;
+    state->baseCallInfo.next = ZR_NULL;
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = functionBase + 2;
+}
+
 static TZrInt64 invoke_make_generic_method_native_entry(
         SZrState *state,
         TZrStackValuePointer functionBase,
@@ -323,10 +345,24 @@ static void test_reflection_runtime_module_exports_bound_make_generic_method(voi
     SZrObject *definitionObject;
     SZrObject *contextObject;
     SZrObject *argumentsArray;
+    SZrObject *typeIdObject;
+    SZrObject *resolvedDescriptor;
+    SZrObject *constructedInstance;
+    SZrObjectPrototype *constructiblePrototype;
+    SZrReflectionTypeIdentity typeIdentity = {
+            .canonicalTypeId = 7u,
+            .typeToken = TEST_TYPE_DEF_TOKEN,
+            .signatureHash = 0x91a2b3c4u,
+            .metadataGeneration = 1u,
+            .category = ZR_REFLECTION_TYPE_CATEGORY_CLASS,
+    };
     SZrString *exportName;
+    SZrString *typeName;
+    SZrString *constructionName;
     const SZrTypeValue *exportValue;
     SZrClosureNative *closure;
     SZrTypeValue *result;
+    SZrTypeValue descriptorValue;
     TZrStackValuePointer initialStackTop;
     TZrStackValuePointer rootBase;
     TZrStackValuePointer functionBase;
@@ -366,7 +402,7 @@ static void test_reflection_runtime_module_exports_bound_make_generic_method(voi
             ZrCore_Stack_GetValue(rootBase),
             ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionModule));
     state->stackTop.valuePointer = rootBase + 1;
-    rootBase = ZrCore_Function_CheckStackAndGc(state, 4u, rootBase);
+    rootBase = ZrCore_Function_CheckStackAndGc(state, 6u, rootBase);
     reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
     TEST_ASSERT_NOT_NULL(reflectionModule->moduleName);
     TEST_ASSERT_NOT_NULL(reflectionModule->fullPath);
@@ -377,7 +413,144 @@ static void test_reflection_runtime_module_exports_bound_make_generic_method(voi
             reflectionModule->pathHash);
     TEST_ASSERT_EQUAL_UINT32(ZR_MODULE_INIT_STATE_READY, reflectionModule->initState);
     TEST_ASSERT_FALSE(reflectionModule->hasMetadataRuntime);
-    TEST_ASSERT_EQUAL_UINT64(1u, reflectionModule->super.nodeMap.elementCount);
+    TEST_ASSERT_EQUAL_UINT64(4u, reflectionModule->super.nodeMap.elementCount);
+    {
+        static const TZrChar *constructionExports[] = {
+                "requireConstructible", "createInstance"};
+
+        for (TZrUInt32 index = 0u;
+             index < ZR_ARRAY_COUNT(constructionExports);
+             index++) {
+            exportName = ZrCore_String_CreateFromNative(
+                    state, (TZrNativeString)constructionExports[index]);
+            TEST_ASSERT_NOT_NULL(exportName);
+            reflectionModule = (SZrObjectModule *)
+                    ZrCore_Stack_GetValue(rootBase)->value.object;
+            exportValue = ZrCore_Module_GetPubExport(
+                    state, reflectionModule, exportName);
+            TEST_ASSERT_NOT_NULL(exportValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, exportValue->type);
+            TEST_ASSERT_TRUE(exportValue->isNative);
+            TEST_ASSERT_NOT_NULL(exportValue->value.object);
+            closure = ZR_CAST_NATIVE_CLOSURE(
+                    state, exportValue->value.object);
+            TEST_ASSERT_NOT_NULL(closure->nativeFunction);
+            TEST_ASSERT_EQUAL_UINT64(1u, closure->closureValueCount);
+        }
+    }
+
+    exportName = ZrCore_String_CreateFromNative(state, "resolve");
+    TEST_ASSERT_NOT_NULL(exportName);
+    reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    exportValue = ZrCore_Module_GetPubExport(state, reflectionModule, exportName);
+    TEST_ASSERT_NOT_NULL(exportValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, exportValue->type);
+    TEST_ASSERT_TRUE(exportValue->isNative);
+    TEST_ASSERT_NOT_NULL(exportValue->value.object);
+    closure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
+    TEST_ASSERT_NOT_NULL(closure->nativeFunction);
+    TEST_ASSERT_EQUAL_UINT64(1u, closure->closureValueCount);
+
+    typeName = ZrCore_String_CreateFromNative(state, "test.ReflectionTarget");
+    TEST_ASSERT_NOT_NULL(typeName);
+    typeIdObject = ZrCore_Reflection_BuildTypeIdObject(state, typeName, &typeIdentity);
+    TEST_ASSERT_NOT_NULL(typeIdObject);
+    functionBase = rootBase + 1;
+    prepare_resolve_type_id_native_entry(state, functionBase, closure, typeIdObject);
+    state->global->garbageCollector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    closure = ZR_CAST_NATIVE_CLOSURE(
+            state, ZrCore_Stack_GetValue(functionBase)->value.object);
+    typeIdObject = ZR_CAST_OBJECT(
+            state, ZrCore_Stack_GetValue(functionBase + 1)->value.object);
+    TEST_ASSERT_EQUAL_INT64(1, closure->nativeFunction(state));
+    result = ZrCore_Stack_GetValue(functionBase);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result->type);
+    resolvedDescriptor = ZR_CAST_OBJECT(state, result->value.object);
+    TEST_ASSERT_EQUAL_PTR(
+            resolvedDescriptor,
+            ZrCore_Reflection_ResolveTypeIdObject(state, typeIdObject));
+    TEST_ASSERT_EQUAL_PTR(
+            typeIdObject,
+            assert_object_object_field(
+                    state, resolvedDescriptor, "id", ZR_VALUE_TYPE_OBJECT));
+
+    constructionName = ZrCore_String_CreateFromNative(
+            state, "test.NativeConstructible");
+    TEST_ASSERT_NOT_NULL(constructionName);
+    ZrCore_Value_InitAsRawObject(
+            state,
+            ZrCore_Stack_GetValue(rootBase + 1),
+            ZR_CAST_RAW_OBJECT_AS_SUPER(constructionName));
+    state->stackTop.valuePointer = rootBase + 2;
+    constructiblePrototype = (SZrObjectPrototype *)ZrCore_StructPrototype_New(
+            state,
+            ZR_CAST_STRING(
+                    state,
+                    ZrCore_Stack_GetValue(rootBase + 1)->value.object));
+    TEST_ASSERT_NOT_NULL(constructiblePrototype);
+    ZrCore_Value_InitAsRawObject(
+            state,
+            ZrCore_Stack_GetValue(rootBase + 2),
+            ZR_CAST_RAW_OBJECT_AS_SUPER(constructiblePrototype));
+    ZrCore_Stack_GetValue(rootBase + 2)->type = ZR_VALUE_TYPE_OBJECT;
+    state->stackTop.valuePointer = rootBase + 3;
+    ZrCore_Value_ResetAsNull(&descriptorValue);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_TypeOfValue(
+            state,
+            ZrCore_Stack_GetValue(rootBase + 2),
+            &descriptorValue));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, descriptorValue.type);
+    *ZrCore_Stack_GetValue(rootBase + 1) = descriptorValue;
+
+    exportName = ZrCore_String_CreateFromNative(state, "requireConstructible");
+    TEST_ASSERT_NOT_NULL(exportName);
+    reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    exportValue = ZrCore_Module_GetPubExport(state, reflectionModule, exportName);
+    TEST_ASSERT_NOT_NULL(exportValue);
+    closure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
+    functionBase = rootBase + 3;
+    prepare_resolve_type_id_native_entry(
+            state,
+            functionBase,
+            closure,
+            ZR_CAST_OBJECT(
+                    state,
+                    ZrCore_Stack_GetValue(rootBase + 1)->value.object));
+    state->global->garbageCollector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    closure = ZR_CAST_NATIVE_CLOSURE(
+            state, ZrCore_Stack_GetValue(functionBase)->value.object);
+    TEST_ASSERT_EQUAL_INT64(1, closure->nativeFunction(state));
+    TEST_ASSERT_EQUAL_PTR(
+            ZrCore_Stack_GetValue(rootBase + 1)->value.object,
+            ZrCore_Stack_GetValue(functionBase)->value.object);
+
+    exportName = ZrCore_String_CreateFromNative(state, "createInstance");
+    TEST_ASSERT_NOT_NULL(exportName);
+    reflectionModule = (SZrObjectModule *)ZrCore_Stack_GetValue(rootBase)->value.object;
+    exportValue = ZrCore_Module_GetPubExport(state, reflectionModule, exportName);
+    TEST_ASSERT_NOT_NULL(exportValue);
+    closure = ZR_CAST_NATIVE_CLOSURE(state, exportValue->value.object);
+    prepare_resolve_type_id_native_entry(
+            state,
+            functionBase,
+            closure,
+            ZR_CAST_OBJECT(
+                    state,
+                    ZrCore_Stack_GetValue(rootBase + 1)->value.object));
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    closure = ZR_CAST_NATIVE_CLOSURE(
+            state, ZrCore_Stack_GetValue(functionBase)->value.object);
+    TEST_ASSERT_EQUAL_INT64(1, closure->nativeFunction(state));
+    result = ZrCore_Stack_GetValue(functionBase);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result->type);
+    constructedInstance = ZR_CAST_OBJECT(state, result->value.object);
+    constructiblePrototype = (SZrObjectPrototype *)
+            ZrCore_Stack_GetValue(rootBase + 2)->value.object;
+    TEST_ASSERT_EQUAL_PTR(constructiblePrototype, constructedInstance->prototype);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OBJECT_INTERNAL_TYPE_STRUCT, constructedInstance->internalType);
 
     exportName = ZrCore_String_CreateFromNative(state, "MakeGenericMethod");
     TEST_ASSERT_NOT_NULL(exportName);
