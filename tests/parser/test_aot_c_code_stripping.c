@@ -400,6 +400,30 @@ static void attach_inline_struct_layout_slot(SZrState *state,
     function->frameSlotLayouts = slotLayout;
 }
 
+static void attach_value_layout_slot(SZrState *state, SZrFunction *function) {
+    SZrFunctionFrameSlotLayout *slotLayout;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    slotLayout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(slotLayout);
+    memset(slotLayout, 0, sizeof(*slotLayout));
+    slotLayout->stackSlot = 0u;
+    slotLayout->byteOffset = 0u;
+    slotLayout->byteSize = 8u;
+    slotLayout->byteAlign = 8u;
+    slotLayout->typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    slotLayout->slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    function->frameByteSize = 8u;
+    function->frameByteAlign = 8u;
+    function->frameSlotLayoutLength = 1u;
+    function->frameSlotLayouts = slotLayout;
+}
+
 static void install_static_callable_trim_type_layout_cache(SZrState *state, SZrFunction *root) {
     const TZrUInt32 prototypeCount = 3u;
 
@@ -1194,6 +1218,7 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
     TEST_ASSERT_NOT_NULL(state);
     function = create_static_callable_trim_fixture(state);
     TEST_ASSERT_NOT_NULL(function);
+    attach_value_layout_slot(state, function);
 
     memset(&options, 0, sizeof(options));
     options.moduleName = "aot_c_code_stripping";
@@ -1218,6 +1243,9 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
     assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
     assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
     assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsBefore = 3 */");
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsAfter = 2 */");
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsRemoved = 1 */");
     assert_code_stripping_type_layout_stats(generatedCText, 2u, 1u, 1u);
     assert_code_stripping_type_layout_byte_stats(generatedCText, 16u, 8u, 8u);
     assert_code_stripping_type_layout_generated_byte_stats(generatedCText, ZR_TRUE);
@@ -1234,6 +1262,21 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
     assert_text_contains(generatedCText,
                          "/* reachability.functionManifest.node[1] = reason=edge.direct_call predecessor=0 */");
     assert_text_does_not_contain(generatedCText, "reachability.functionManifest.node[2]");
+    assert_text_contains(generatedCText, "/* reachability.frameLayoutManifest.version = 1 */");
+    assert_text_contains(generatedCText, "/* reachability.frameLayoutManifest.count = 2 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.frameLayoutManifest.node[0] = reason=edge.frame_layout "
+            "predecessorFunction=0 ownerFunction=0 slotLayout=0 stackSlot=0 byteOffset=0 "
+            "byteSize=8 byteAlign=8 typeLayoutId=4294967295 slotKind=value isParameter=0 "
+            "flags=0x0000 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.frameLayoutManifest.node[1] = reason=edge.frame_layout "
+            "predecessorFunction=1 ownerFunction=1 slotLayout=0 stackSlot=0 byteOffset=0 "
+            "byteSize=8 byteAlign=8 typeLayoutId=1 slotKind=inline_struct isParameter=0 "
+            "flags=0x0000 */");
+    assert_text_does_not_contain(generatedCText, "reachability.frameLayoutManifest.node[2]");
     assert_text_contains(generatedCText, "/* reachability.typeLayoutManifest.version = 1 */");
     assert_text_contains(generatedCText, "/* reachability.typeLayoutManifest.count = 1 */");
     assert_text_contains(
@@ -1294,6 +1337,206 @@ static void test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_lay
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunctionFrameSlotLayout *unreachableLayout;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    unreachableLayout = &function->childFunctionList[1].frameSlotLayouts[0];
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_malformed_unreachable_frame_layout";
+    options.sourceHash = "aot-c-code-stripping-malformed-unreachable-frame-layout";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-malformed-unreachable-frame-layout";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    unreachableLayout->byteAlign = 3u;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "malformed_unreachable_frame_alignment",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    unreachableLayout->byteAlign = 8u;
+    unreachableLayout->byteOffset = 8u;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "malformed_unreachable_frame_span",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_preserves_legal_frame_alias_layouts(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *retained;
+    SZrFunctionFrameSlotLayout *layouts;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_legal_frame_alias_layouts";
+    options.sourceHash = "aot-c-code-stripping-legal-frame-alias-layouts";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-legal-frame-alias-layouts";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    attach_value_layout_slot(state, function);
+    retained = &function->childFunctionList[0];
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  retained->frameSlotLayouts,
+                                  sizeof(SZrFunctionFrameSlotLayout),
+                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layouts);
+    memset(layouts, 0, sizeof(SZrFunctionFrameSlotLayout) * 2u);
+    layouts[0].stackSlot = 0u;
+    layouts[0].byteSize = 16u;
+    layouts[0].byteAlign = 16u;
+    layouts[0].typeLayoutId = 1u;
+    layouts[0].slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layouts[1] = layouts[0];
+    layouts[1].stackSlot = 1u;
+    layouts[1].reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS;
+    retained->stackSize = 2u;
+    retained->frameByteSize = 16u;
+    retained->frameByteAlign = 16u;
+    retained->frameSlotLayoutLength = 2u;
+    retained->frameSlotLayouts = layouts;
+    function->prototypeFrameTypeLayouts[1].byteSize = 16u;
+    function->prototypeFrameTypeLayouts[1].byteAlign = 16u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "legal_overlapping_frame_aliases",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsBefore = 4 */");
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsAfter = 3 */");
+    assert_text_contains(generatedCText, "/* reachability.frameLayoutManifest.count = 3 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.frameLayoutManifest.node[0] = reason=edge.frame_layout "
+            "predecessorFunction=0 ownerFunction=0 slotLayout=0 stackSlot=0 byteOffset=0 "
+            "byteSize=8 byteAlign=8 typeLayoutId=4294967295 slotKind=value isParameter=0 "
+            "flags=0x0000 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.frameLayoutManifest.node[1] = reason=edge.frame_layout "
+            "predecessorFunction=1 ownerFunction=1 slotLayout=0 stackSlot=0 byteOffset=0 "
+            "byteSize=16 byteAlign=16 typeLayoutId=1 slotKind=inline_struct isParameter=0 "
+            "flags=0x0000 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.frameLayoutManifest.node[2] = reason=edge.frame_layout "
+            "predecessorFunction=1 ownerFunction=1 slotLayout=1 stackSlot=1 byteOffset=0 "
+            "byteSize=16 byteAlign=16 typeLayoutId=1 slotKind=inline_struct isParameter=0 "
+            "flags=0x0001 */");
+    assert_text_does_not_contain(generatedCText, "reachability.frameLayoutManifest.node[3]");
+    free(generatedCText);
+
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    retained = &function->childFunctionList[0];
+    layouts = retained->frameSlotLayouts;
+    layouts[0].byteSize = 16u;
+    layouts[0].byteAlign = 16u;
+    layouts[0].reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                           ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS;
+    retained->frameByteSize = (TZrUInt32)sizeof(SZrFunctionFrameIndirectAliasBinding);
+    retained->frameByteAlign = (TZrUInt32)_Alignof(SZrFunctionFrameIndirectAliasBinding);
+    function->prototypeFrameTypeLayouts[1].byteSize = 16u;
+    function->prototypeFrameTypeLayouts[1].byteAlign = 16u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "legal_indirect_frame_alias",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    assert_text_contains(generatedCText,
+                         "byteSize=16 byteAlign=16 typeLayoutId=1 slotKind=inline_struct "
+                         "isParameter=0 flags=0x0003 */");
+    free(generatedCText);
+
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    retained = &function->childFunctionList[0];
+    layouts = retained->frameSlotLayouts;
+    layouts[0].byteSize = 16u;
+    layouts[0].byteAlign = 16u;
+    layouts[0].isParameter = 1u;
+    layouts[0].reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                           ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                           ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    retained->parameterCount = 1u;
+    retained->frameByteSize = (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding);
+    retained->frameByteAlign = (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
+    function->prototypeFrameTypeLayouts[1].byteSize = 16u;
+    function->prototypeFrameTypeLayouts[1].byteAlign = 16u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "legal_borrowed_frame_alias",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    assert_text_contains(generatedCText,
+                         "byteSize=16 byteAlign=16 typeLayoutId=1 slotKind=inline_struct "
+                         "isParameter=1 flags=0x0013 */");
+    free(generatedCText);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_code_stripping_preserves_property_accessor_root(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1333,6 +1576,11 @@ static void test_aot_c_code_stripping_preserves_property_accessor_root(void) {
     assert_text_contains(
             generatedCText,
             "/* reachability.functionManifest.node[1] = reason=root.property_accessor predecessor=none */");
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsBefore = 0 */");
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsAfter = 0 */");
+    assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsRemoved = 0 */");
+    assert_text_contains(generatedCText, "/* reachability.frameLayoutManifest.count = 0 */");
+    assert_text_does_not_contain(generatedCText, "reachability.frameLayoutManifest.node[0]");
 
     free(generatedCText);
     ZrTests_Runtime_State_Destroy(state);
@@ -2806,6 +3054,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_code_stripping_option_filters_unreachable_static_callable);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_layout);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout);
+    RUN_TEST(test_aot_c_code_stripping_preserves_legal_frame_alias_layouts);
     RUN_TEST(test_aot_c_code_stripping_preserves_property_accessor_root);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_property_accessor_root);
     RUN_TEST(test_aot_c_code_stripping_preserves_resource_drop_root);

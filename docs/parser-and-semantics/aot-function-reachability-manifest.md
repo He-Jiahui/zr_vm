@@ -9,6 +9,9 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.h
@@ -17,9 +20,12 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
+  - docs/plans/aot/07-codegen-register-model-and-environment-isolation.md
   - docs/plans/aot/08-generic-sharing.md
   - docs/plans/aot/11-metadata.md
   - docs/plans/aot/12-code-stripping.md
@@ -36,6 +42,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-12-native-callback-materialization-edge.md
   - tests/acceptance/2026-07-30-aot-08-12-canonical-generic-dictionary-reachability.md
   - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
+  - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
 doc_type: module-detail
 ---
 
@@ -48,7 +55,8 @@ every retained function. It separates language-level retention from linker dead 
 nodes are reachable, records why each node survived, publishes the result, and only then filters the generated function
 table.
 
-This slice owns function nodes and the first owner-linked generic dictionary and native import contract nodes. The first type/layout
+This slice owns function nodes and the first owner-linked frame-layout slot, generic dictionary, and native import
+contract nodes. The first type/layout
 reason-manifest slice is documented separately in `aot-type-layout-reachability-manifest.md`; canonical shared-body
 definition identity, constraint witnesses, explicit native callback descriptor roots, module initializer, reflection
 metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on the broader graph
@@ -196,6 +204,20 @@ The native import contract manifest follows the same owner/predecessor rule:
 `code_stripping.nativeImportsBefore`, `nativeImportsAfter`, and `nativeImportsRemoved` report contract-node trimming
 independently from function and generic dictionary counts.
 
+The retained frame-layout manifest is generated from verified ExecIR rather than the mutable source function table:
+
+```text
+/* reachability.frameLayoutManifest.version = 1 */
+/* reachability.frameLayoutManifest.count = 1 */
+/* reachability.frameLayoutManifest.node[0] = reason=edge.frame_layout predecessorFunction=1 ownerFunction=1 slotLayout=0 stackSlot=0 byteOffset=0 byteSize=8 byteAlign=8 typeLayoutId=1 slotKind=inline_struct isParameter=0 flags=0x0000 */
+```
+
+Rows are ordered by ascending flat owner and then source slot-layout index. `frameLayoutSlotsBefore`,
+`frameLayoutSlotsAfter`, and `frameLayoutSlotsRemoved` measure sidecar rows independently from function and referenced
+TypeLayout counts. Every row names its owner as predecessor because frame storage cannot survive without that retained
+function. The earlier type-layout manifest remains a separate graph: it deduplicates referenced TypeLayout identities,
+whereas this manifest preserves every retained owner/slot ABI row.
+
 ## Test Coverage
 
 `test_aot_reachability.c` covers transitive marking, disconnected nodes, first-root reason preservation, invalid graph
@@ -233,6 +255,13 @@ and its unreachable entry point is absent from generated C. The suite checks can
 the exact owner range table, an index-space/capacity bound, and malformed unreachable contract metadata failing before
 ExecIR with no artifact. Reason-schema coverage also proves `NATIVE_IMPORT` has a stable name but is rejected by the
 function-to-function graph.
+
+Frame-layout coverage proves three original owner slots become two retained rows in stable owner order and a second
+four-to-three fixture preserves two same-offset owner slots in source layout order. It accepts direct overlap plus
+high-alignment payloads stored through lower-alignment indirect and borrowed bindings, publishes a zero-row manifest
+for an all-empty fixture, and rejects non-power-of-two alignment plus an out-of-frame storage span on an unreachable
+function before filtering. The malformed writer paths leave no generated artifact. The adjacent generic-sharing
+suite also keeps its nonempty/null frame-table rejection gate.
 
 The acceptance records run the focused reachability, stripping, and generic-sharing targets on WSL GCC, WSL Clang,
 and Windows MSVC. Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

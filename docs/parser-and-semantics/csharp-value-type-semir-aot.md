@@ -115,6 +115,8 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.h
@@ -390,6 +392,7 @@ tests:
   - tests/library/test_project_import_resolver.c
   - tests/parser/test_aot_c_descriptor_diagnostics.c
   - tests/parser/test_aot_c_code_stripping.c
+  - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
   - tests/acceptance/2026-07-03-aot-11-s7zsx-12-s7zzzq-zrp-sidecar-definition-table-validation.md
@@ -866,6 +869,16 @@ The archived AotExecIR frame layout now mirrors inline frame byte metadata:
 - `SZrAotExecIrFrameLayout.slotLayouts`
 
 Each `SZrAotExecIrFrameSlotLayout` copies stack slot, byte offset, byte size, byte align, type layout id, slot kind, and parameter marker from `SZrFunctionFrameSlotLayout`. This gives future generated C lowering a direct route from `FIELD_ADDR` / `LOAD_VALUE` / `STORE_VALUE` / `COPY_VALUE` to frame byte spans without reverse-engineering layout from flat stack counts.
+
+The AOT 07 frame ABI gate now validates the complete source function tree while ExecIR is built, before code
+stripping can remove an invalid owner. Empty layouts require an empty byte-frame declaration; nonempty layouts require
+a bounded table, power-of-two frame and slot alignments, valid `VALUE`/`INLINE_STRUCT` kind-to-TypeLayout identity,
+known flag combinations, unique in-range stack slots, binary parameter markers, and storage spans contained by
+`frameByteSize`. Indirect and borrowed aliases are checked against their runtime binding size/alignment rather than the
+referenced payload span, so legal alias overlap remains valid. Generated C reports frame-layout slot counts before and
+after function filtering and publishes retained rows in ascending flat-owner/slot order through the version 1
+`frameLayoutManifest`. This is a verifier/reporting prerequisite for A7.2; it does not yet derive receiver,
+`in/ref/out`, return, spill, or address-taken slots from `CallableContract`.
 
 The archived `aot_c` writer now has a first value-place lowering surface in `backend_aot_c_value_semir.*` plus the focused field module `backend_aot_c_value_semir_fields.*`. `backend_aot_write_c_value_semir_for_function()` receives `SZrState`, walks each function's AotExecIR SemIR rows, finds frame-slot byte layout with `backend_aot_c_find_frame_slot_layout()`, and dispatches field address/load/store rows to the field module. The field module resolves struct field metadata with `ZrCore_Function_ResolvePrototypeFrameFieldLayout()` and emits value-place lowering annotations for:
 

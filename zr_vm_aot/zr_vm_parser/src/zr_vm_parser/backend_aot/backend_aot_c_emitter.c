@@ -1,6 +1,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_function_body.h"
 #include "backend_aot_c_annotation_warnings.h"
+#include "backend_aot_c_frame_layout_manifest.h"
 #include "backend_aot_c_typed_bool_thunks.h"
 #include "backend_aot_c_typed_f64_thunks.h"
 #include "backend_aot_c_typed_i64_thunks.h"
@@ -736,6 +737,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     TZrUInt32 functionCountBeforeStripping;
     TZrUInt32 functionCountAfterStripping;
     TZrUInt32 functionCountRemovedByStripping;
+    TZrUInt32 frameLayoutSlotCountBeforeStripping;
+    TZrUInt32 frameLayoutSlotCountAfterStripping;
+    TZrUInt32 frameLayoutSlotCountRemovedByStripping;
     TZrUInt32 genericDictionaryCountBeforeStripping;
     TZrUInt32 genericDictionaryCountAfterStripping;
     TZrUInt32 genericDictionaryCountRemovedByStripping;
@@ -822,6 +826,14 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     suppressedRuntimeFallbackWarningReasonMask =
             backend_aot_option_runtime_fallback_warning_suppression_mask(options);
     functionCountBeforeStripping = functionTable.count;
+    if (!backend_aot_c_frame_layout_count_slots(
+                &module, &functionTable, &frameLayoutSlotCountBeforeStripping)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     if (!backend_aot_c_generic_sharing_count_dictionaries(
                 &functionTable, &genericDictionaryCountBeforeStripping)) {
         fclose(file);
@@ -929,6 +941,35 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
             functionCountBeforeStripping >= functionCountAfterStripping
                     ? functionCountBeforeStripping - functionCountAfterStripping
                     : 0u;
+    if (!backend_aot_c_frame_layout_count_slots(
+                &module, &functionTable, &frameLayoutSlotCountAfterStripping)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    frameLayoutSlotCountRemovedByStripping =
+            frameLayoutSlotCountBeforeStripping >= frameLayoutSlotCountAfterStripping
+                    ? frameLayoutSlotCountBeforeStripping - frameLayoutSlotCountAfterStripping
+                    : 0u;
+    if (enableCodeStripping &&
+        !backend_aot_c_frame_layout_write_reachability_manifest(
+                file, &module, &functionTable)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
     if (!backend_aot_c_generic_sharing_count_dictionaries(
                 &functionTable, &genericDictionaryCountAfterStripping)) {
         fclose(file);
@@ -1167,6 +1208,15 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "/* code_stripping.functionsBefore = %u */\n", (unsigned)functionCountBeforeStripping);
     fprintf(file, "/* code_stripping.functionsAfter = %u */\n", (unsigned)functionCountAfterStripping);
     fprintf(file, "/* code_stripping.functionsRemoved = %u */\n", (unsigned)functionCountRemovedByStripping);
+    fprintf(file,
+            "/* code_stripping.frameLayoutSlotsBefore = %u */\n",
+            (unsigned)frameLayoutSlotCountBeforeStripping);
+    fprintf(file,
+            "/* code_stripping.frameLayoutSlotsAfter = %u */\n",
+            (unsigned)frameLayoutSlotCountAfterStripping);
+    fprintf(file,
+            "/* code_stripping.frameLayoutSlotsRemoved = %u */\n",
+            (unsigned)frameLayoutSlotCountRemovedByStripping);
     fprintf(file,
             "/* code_stripping.genericDictionariesBefore = %u */\n",
             (unsigned)genericDictionaryCountBeforeStripping);

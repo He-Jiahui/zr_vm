@@ -43,6 +43,10 @@ FrameLayout {
 
 [2026-07-19 typed register/codegen baseline](./07-codegen/2026-07-19-typed-register-codegen-baseline.md) 记录已存在的typed scalar/loop能力；aggregate、ref、environment与新artifact contract仍是open work。
 
+[2026-07-30 ExecIR frame ABI verifier](./07-codegen/2026-07-30-execir-frame-abi-verifier.md) 完成 A7.2 的
+fail-closed frame sidecar 校验与 retained-frame manifest/count 前置切片；CallableContract 派生的 receiver、
+`in/ref/out`、return、spill 和 address-taken ABI 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。
