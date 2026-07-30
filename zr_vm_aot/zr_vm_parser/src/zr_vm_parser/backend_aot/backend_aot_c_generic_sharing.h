@@ -7,6 +7,17 @@
 
 void backend_aot_write_c_generic_dictionary_macros(FILE *file);
 
+TZrBool backend_aot_c_generic_sharing_validate_function_tree(
+        const SZrFunction *function);
+
+TZrBool backend_aot_c_generic_sharing_count_dictionaries(
+        const SZrAotFunctionTable *table,
+        TZrUInt32 *outCount);
+
+TZrBool backend_aot_c_generic_sharing_write_reachability_manifest(
+        FILE *file,
+        const SZrAotFunctionTable *table);
+
 void backend_aot_write_c_generic_sharing_entries(FILE *file,
                                                  const SZrAotFunctionTable *table,
                                                  TZrBool stripGeneratedSymbols);

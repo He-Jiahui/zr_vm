@@ -4,18 +4,23 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
+  - docs/plans/aot/08-generic-sharing.md
   - docs/plans/aot/12-code-stripping.md
 tests:
   - tests/parser/test_aot_reachability.c
   - tests/parser/test_aot_c_code_stripping.c
+  - tests/parser/test_aot_c_generic_reference_sharing.c
   - tests/acceptance/2026-07-30-aot-12-s1b-s2f-s6a-function-reachability-manifest.md
   - tests/acceptance/2026-07-30-aot-12-property-accessor-required-root.md
   - tests/acceptance/2026-07-30-aot-12-resource-drop-required-root.md
@@ -23,6 +28,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-12-reflection-constructor-required-root.md
   - tests/acceptance/2026-07-30-aot-12-package-method-export-required-root.md
   - tests/acceptance/2026-07-30-aot-12-native-callback-materialization-edge.md
+  - tests/acceptance/2026-07-30-aot-08-12-canonical-generic-dictionary-reachability.md
 doc_type: module-detail
 ---
 
@@ -35,10 +41,11 @@ every retained function. It separates language-level retention from linker dead 
 nodes are reachable, records why each node survived, publishes the result, and only then filters the generated function
 table.
 
-This slice owns function nodes. The first type/layout reason-manifest slice is documented separately in
-`aot-type-layout-reachability-manifest.md`; generic dictionary, explicit native callback descriptor roots, module
-initializer, reflection metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on
-the broader graph required by AOT plan 12.
+This slice owns function nodes and the first owner-linked generic dictionary nodes. The first type/layout
+reason-manifest slice is documented separately in `aot-type-layout-reachability-manifest.md`; canonical shared-body
+definition identity, constraint witnesses, explicit native callback descriptor roots, module initializer, reflection
+metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on the broader graph
+required by AOT plan 12.
 The function graph never scans source or generated strings to guess reflection or native reachability.
 
 ## Graph Contract
@@ -112,6 +119,15 @@ the callable. Canonical cross-module `ModuleIdentity` plus `MemberRef` resolutio
 fails graph construction and public writer output. This edge retains callbacks created from a reachable function and
 does not replace the future explicit descriptor root needed for externally registered or cross-module callbacks.
 
+Reference-generic dictionary nodes use the compiler-owned typed-local `typeId` as their instance identity. Different
+display names with the same nonzero `typeId` share one dictionary, while equal display names with different TypeIds
+remain distinct. Every retained owner resolves back to that canonical dictionary ID. The version 1 dictionary manifest
+publishes the canonical TypeId, stable owner function index, `edge.generic_instance`, and the owner as predecessor;
+before/after/removed counts prove that dictionaries owned only by trimmed functions disappear. A pre-ExecIR tree check
+rejects nonempty/null typed-local, frame-layout, and child-function tables; a reference-generic candidate without
+TypeId or conflicting layout IDs for one TypeId also fails writer output. Type text remains discovery/debug input in
+this baseline, not dictionary instance identity.
+
 ## Marking And Reason Chains
 
 The engine performs breadth-first marking with caller-owned mark and queue buffers. Roots are enqueued in caller order;
@@ -141,6 +157,14 @@ every retained function a finite chain to an explicit root.
 The manifest is diagnostic evidence embedded in generated C; it is not parsed back as graph input and does not replace
 the compiled function table or metadata token remap.
 
+The owner-linked dictionary manifest follows the same diagnostic rule:
+
+```text
+/* reachability.genericDictionaryManifest.version = 1 */
+/* reachability.genericDictionaryManifest.count = 1 */
+/* reachability.genericDictionaryManifest.node[0] = typeId=41 ownerFunction=0 reason=edge.generic_instance predecessor=0 */
+```
+
 ## Test Coverage
 
 `test_aot_reachability.c` covers transitive marking, disconnected nodes, first-root reason preservation, invalid graph
@@ -167,5 +191,10 @@ Native callback coverage proves all three callable materialization opcodes use `
 native escape binding, ordinary materialization remains `edge.direct_call`, malformed escape metadata fails closed,
 and the public writer publishes the callback predecessor chain while removing failed output.
 
-The acceptance record runs the focused reachability and stripping targets on WSL GCC, WSL Clang, and Windows MSVC.
-Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.
+Generic dictionary coverage proves canonical TypeId dedup despite differing display names, distinct identity despite
+equal display names, canonical dictionary reuse by two retained owners, 2-to-1 unreachable-node trimming, stable
+manifest/stat publication, and fail-closed missing TypeId, null binding table, and conflicting layout schema cases.
+The null-table matrix includes frame-layout metadata and proves rejection occurs before ExecIR construction.
+
+The acceptance records run the focused reachability, stripping, and generic-sharing targets on WSL GCC, WSL Clang,
+and Windows MSVC. Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

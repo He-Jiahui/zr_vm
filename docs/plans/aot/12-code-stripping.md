@@ -61,6 +61,10 @@ binding fail-closed 子切片；S1/S2/S3/S6 仍为部分完成。
 structured native escape binding 到三类 callable materialization 的 `edge.native_callback`、普通 direct edge
 分离与 malformed metadata fail-closed 子切片；S1/S3/S6 仍为部分完成，S2 descriptor root 仍开放。
 
+[2026-07-30 canonical generic dictionary reachability](./12-stripping/2026-07-30-canonical-generic-dictionary-reachability.md) 完成
+typed `TypeId` dictionary identity、owner `edge.generic_instance` manifest、2→1 trim stats 与 malformed schema
+fail-closed 子切片；S1/S3/S6 及 AOT 08 G6 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

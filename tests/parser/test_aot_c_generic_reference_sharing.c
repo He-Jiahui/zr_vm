@@ -7,11 +7,13 @@
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/aot_runtime.h"
+#include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 
@@ -92,6 +94,105 @@ static unsigned count_substring(const char *text, const char *needle) {
         cursor += strlen(needle);
     }
     return count;
+}
+
+static TZrInstruction create_instruction_2(EZrInstructionCode opcode,
+                                           TZrUInt16 operandExtra,
+                                           TZrUInt16 operandA,
+                                           TZrUInt16 operandB) {
+    TZrInstruction instruction;
+
+    instruction.value = 0u;
+    instruction.instruction.operationCode = (TZrUInt16)opcode;
+    instruction.instruction.operandExtra = operandExtra;
+    instruction.instruction.operand.operand1[0] = operandA;
+    instruction.instruction.operand.operand1[1] = operandB;
+    return instruction;
+}
+
+static void add_reference_generic_binding(SZrState *state,
+                                          SZrFunction *function,
+                                          const TZrChar *typeName,
+                                          TZrUInt32 typeId) {
+    SZrFunctionTypedLocalBinding *binding;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(typeName);
+
+    binding = (SZrFunctionTypedLocalBinding *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedLocalBinding),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(binding);
+    memset(binding, 0, sizeof(*binding));
+    binding->stackSlot = 0u;
+    binding->type.baseType = ZR_VALUE_TYPE_OBJECT;
+    binding->type.typeName = ZrCore_String_Create(state,
+                                                  (TZrNativeString)typeName,
+                                                  strlen(typeName));
+    binding->typeId = typeId;
+    TEST_ASSERT_NOT_NULL(binding->type.typeName);
+    function->typedLocalBindings = binding;
+    function->typedLocalBindingLength = 1u;
+}
+
+static void add_generic_binding_layout(SZrState *state,
+                                       SZrFunction *function,
+                                       TZrUInt32 typeLayoutId) {
+    SZrFunctionFrameSlotLayout *slotLayout;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    slotLayout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(slotLayout);
+    memset(slotLayout, 0, sizeof(*slotLayout));
+    slotLayout->stackSlot = 0u;
+    slotLayout->typeLayoutId = typeLayoutId;
+    function->frameSlotLayouts = slotLayout;
+    function->frameSlotLayoutLength = 1u;
+}
+
+static SZrFunction *create_generic_dictionary_trim_fixture(SZrState *state) {
+    SZrFunction *root;
+
+    TEST_ASSERT_NOT_NULL(state);
+    root = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(root);
+    root->stackSize = 1u;
+    root->lineInSourceStart = 1u;
+    root->lineInSourceEnd = 1u;
+
+    root->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->instructionsList);
+    root->instructionsList[0] = create_instruction_2(
+            ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION), 0u, 0u, 0u);
+    root->instructionsLength = 1u;
+
+    root->childFunctionList = (SZrFunction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunction) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->childFunctionList);
+    memset(root->childFunctionList, 0, sizeof(SZrFunction) * 2u);
+    root->childFunctionLength = 2u;
+    for (TZrUInt32 childIndex = 0u; childIndex < 2u; childIndex++) {
+        root->childFunctionList[childIndex].ownerFunction = root;
+        root->childFunctionList[childIndex].stackSize = 1u;
+        root->childFunctionList[childIndex].lineInSourceStart = 10u + childIndex * 10u;
+        root->childFunctionList[childIndex].lineInSourceEnd = 10u + childIndex * 10u;
+    }
+
+    add_reference_generic_binding(state, root, "Box<RefA>", 41u);
+    add_reference_generic_binding(state, &root->childFunctionList[0], "AliasBox<RefA>", 41u);
+    add_reference_generic_binding(state, &root->childFunctionList[1], "Box<RefA>", 42u);
+    return root;
 }
 
 static void test_aot_runtime_generic_dictionary_lazily_resolves_type_layout_and_sizeof(void) {
@@ -252,6 +353,148 @@ static void test_aot_runtime_generic_dictionary_type_layout_does_not_fallback_to
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_uses_canonical_generic_dictionary_identity(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_dictionary_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_generic_dictionary_reachability";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "canonical-generic-dictionary-reachability";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_generic_reference_sharing",
+                                                       "generated",
+                                                       "canonical_dictionary_reachability",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* code_stripping.genericDictionariesBefore = 2 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* code_stripping.genericDictionariesAfter = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* code_stripping.genericDictionariesRemoved = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "/* reachability.genericDictionaryManifest.version = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "/* reachability.genericDictionaryManifest.count = 1 */"));
+    TEST_ASSERT_NOT_NULL(strstr(
+            generatedCText,
+            "/* reachability.genericDictionaryManifest.node[0] = typeId=41 ownerFunction=0 reason=edge.generic_instance predecessor=0 */"));
+    TEST_ASSERT_EQUAL_UINT(1u, count_substring(generatedCText, "dictionary=zr_aot_generic_dict_"));
+    TEST_ASSERT_EQUAL_UINT(2u,
+                           count_substring(generatedCText,
+                                           ".genericDictionary = &zr_aot_generic_dict_1,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "typeId=41"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "typeId=42"));
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void assert_generic_dictionary_writer_rejects(SZrState *state,
+                                                     SZrFunction *function,
+                                                     const TZrChar *artifactStem) {
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(artifactStem);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = artifactStem;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = artifactStem;
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_generic_reference_sharing",
+                                                       "generated",
+                                                       artifactStem,
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+}
+
+static void test_aot_c_rejects_retained_generic_dictionary_without_canonical_type_id(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_dictionary_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->typedLocalBindings[0].typeId = 0u;
+
+    assert_generic_dictionary_writer_rejects(
+            state, function, "missing_canonical_type_id");
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_rejects_nonempty_null_generic_binding_table(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_dictionary_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->typedLocalBindings = ZR_NULL;
+
+    assert_generic_dictionary_writer_rejects(
+            state, function, "nonempty_null_generic_binding_table");
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_rejects_nonempty_null_generic_frame_layout_table(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_dictionary_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->frameSlotLayoutLength = 1u;
+
+    assert_generic_dictionary_writer_rejects(
+            state, function, "nonempty_null_generic_frame_layout_table");
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_rejects_conflicting_canonical_generic_dictionary_schema(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_generic_dictionary_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    add_generic_binding_layout(state, function, 7u);
+    add_generic_binding_layout(state, &function->childFunctionList[0], 8u);
+
+    assert_generic_dictionary_writer_rejects(
+            state, function, "conflicting_canonical_dictionary_schema");
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_reference_generic_instances_share_dictionary_backed_code(void) {
     const char *source =
             "class RefA { }\n"
@@ -342,6 +585,11 @@ int main(void) {
     RUN_TEST(test_aot_runtime_generic_dictionary_lazily_resolves_type_layout_and_sizeof);
     RUN_TEST(test_aot_runtime_generic_dictionary_resolves_type_layout_from_metadata_runtime);
     RUN_TEST(test_aot_runtime_generic_dictionary_type_layout_does_not_fallback_to_prototype_cache);
+    RUN_TEST(test_aot_c_code_stripping_uses_canonical_generic_dictionary_identity);
+    RUN_TEST(test_aot_c_rejects_retained_generic_dictionary_without_canonical_type_id);
+    RUN_TEST(test_aot_c_rejects_nonempty_null_generic_binding_table);
+    RUN_TEST(test_aot_c_rejects_nonempty_null_generic_frame_layout_table);
+    RUN_TEST(test_aot_c_rejects_conflicting_canonical_generic_dictionary_schema);
     RUN_TEST(test_aot_c_reference_generic_instances_share_dictionary_backed_code);
     return UNITY_END();
 }

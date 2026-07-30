@@ -11,6 +11,7 @@ typedef struct SZrAotCGenericSharingCandidate {
     const SZrFunction *function;
     TZrUInt32 entryIndex;
     TZrUInt32 bindingIndex;
+    TZrUInt32 typeId;
     const TZrChar *typeName;
     TZrUInt32 typeLayoutId;
     TZrChar symbolBase[96];
@@ -205,6 +206,7 @@ static TZrBool backend_aot_c_generic_sharing_candidate_from_binding(
     outCandidate->function = function;
     outCandidate->entryIndex = entryIndex;
     outCandidate->bindingIndex = bindingIndex;
+    outCandidate->typeId = binding->typeId;
     outCandidate->typeName = typeName;
     outCandidate->typeLayoutId =
             slotLayout != ZR_NULL ? slotLayout->typeLayoutId : ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
@@ -217,8 +219,8 @@ static TZrBool backend_aot_c_generic_sharing_candidate_from_binding(
 static TZrBool backend_aot_c_generic_sharing_type_seen_before(const SZrAotFunctionTable *table,
                                                               TZrUInt32 entryIndex,
                                                               TZrUInt32 bindingIndex,
-                                                              const TZrChar *typeName) {
-    if (table == ZR_NULL || typeName == ZR_NULL) {
+                                                              TZrUInt32 typeId) {
+    if (table == ZR_NULL || typeId == 0u) {
         return ZR_FALSE;
     }
 
@@ -237,13 +239,168 @@ static TZrBool backend_aot_c_generic_sharing_type_seen_before(const SZrAotFuncti
                                                                      previousEntryIndex,
                                                                      previousBindingIndex,
                                                                      &previous) &&
-                strcmp(previous.typeName, typeName) == 0) {
+                previous.typeId == typeId) {
                 return ZR_TRUE;
             }
         }
     }
 
     return ZR_FALSE;
+}
+
+TZrBool backend_aot_c_generic_sharing_validate_function_tree(
+        const SZrFunction *function) {
+    if (function == ZR_NULL ||
+        (function->typedLocalBindingLength > 0u && function->typedLocalBindings == ZR_NULL) ||
+        (function->frameSlotLayoutLength > 0u && function->frameSlotLayouts == ZR_NULL) ||
+        (function->childFunctionLength > 0u && function->childFunctionList == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 childIndex = 0u;
+         childIndex < function->childFunctionLength;
+         childIndex++) {
+        if (!backend_aot_c_generic_sharing_validate_function_tree(
+                    &function->childFunctionList[childIndex])) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_c_generic_sharing_validate(const SZrAotFunctionTable *table) {
+    if (table == ZR_NULL || table->entries == ZR_NULL || table->count > table->capacity) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrFunction *function = table->entries[entryIndex].function;
+
+        if (function == ZR_NULL ||
+            (function->typedLocalBindingLength > 0u && function->typedLocalBindings == ZR_NULL) ||
+            (function->frameSlotLayoutLength > 0u && function->frameSlotLayouts == ZR_NULL)) {
+            return ZR_FALSE;
+        }
+
+        for (TZrUInt32 bindingIndex = 0u;
+             bindingIndex < function->typedLocalBindingLength;
+             bindingIndex++) {
+            SZrAotCGenericSharingCandidate candidate;
+
+            if (!backend_aot_c_generic_sharing_candidate_from_binding(
+                        table, entryIndex, bindingIndex, &candidate)) {
+                continue;
+            }
+            if (candidate.typeId == 0u) {
+                return ZR_FALSE;
+            }
+
+            for (TZrUInt32 previousEntryIndex = 0u;
+                 previousEntryIndex <= entryIndex;
+                 previousEntryIndex++) {
+                const SZrFunction *previousFunction = table->entries[previousEntryIndex].function;
+                TZrUInt32 previousBindingLimit = previousEntryIndex == entryIndex
+                        ? bindingIndex
+                        : previousFunction->typedLocalBindingLength;
+
+                for (TZrUInt32 previousBindingIndex = 0u;
+                     previousBindingIndex < previousBindingLimit;
+                     previousBindingIndex++) {
+                    SZrAotCGenericSharingCandidate previous;
+
+                    if (backend_aot_c_generic_sharing_candidate_from_binding(
+                                table,
+                                previousEntryIndex,
+                                previousBindingIndex,
+                                &previous) &&
+                        previous.typeId == candidate.typeId &&
+                        previous.typeLayoutId != candidate.typeLayoutId) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_generic_sharing_count_dictionaries(
+        const SZrAotFunctionTable *table,
+        TZrUInt32 *outCount) {
+    TZrUInt32 count = 0u;
+
+    if (outCount != ZR_NULL) {
+        *outCount = 0u;
+    }
+    if (outCount == ZR_NULL || !backend_aot_c_generic_sharing_validate(table)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrFunction *function = table->entries[entryIndex].function;
+
+        for (TZrUInt32 bindingIndex = 0u;
+             bindingIndex < function->typedLocalBindingLength;
+             bindingIndex++) {
+            SZrAotCGenericSharingCandidate candidate;
+
+            if (backend_aot_c_generic_sharing_candidate_from_binding(
+                        table, entryIndex, bindingIndex, &candidate) &&
+                !backend_aot_c_generic_sharing_type_seen_before(
+                        table, entryIndex, bindingIndex, candidate.typeId)) {
+                count++;
+            }
+        }
+    }
+
+    *outCount = count;
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_generic_sharing_write_reachability_manifest(
+        FILE *file,
+        const SZrAotFunctionTable *table) {
+    TZrUInt32 count = 0u;
+    TZrUInt32 nodeIndex = 0u;
+
+    if (file == ZR_NULL ||
+        !backend_aot_c_generic_sharing_count_dictionaries(table, &count)) {
+        return ZR_FALSE;
+    }
+
+    fprintf(file, "/* reachability.genericDictionaryManifest.version = 1 */\n");
+    fprintf(file,
+            "/* reachability.genericDictionaryManifest.count = %u */\n",
+            (unsigned)count);
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrAotFunctionEntry *entry = &table->entries[entryIndex];
+        const SZrFunction *function = entry->function;
+
+        for (TZrUInt32 bindingIndex = 0u;
+             bindingIndex < function->typedLocalBindingLength;
+             bindingIndex++) {
+            SZrAotCGenericSharingCandidate candidate;
+
+            if (!backend_aot_c_generic_sharing_candidate_from_binding(
+                        table, entryIndex, bindingIndex, &candidate) ||
+                backend_aot_c_generic_sharing_type_seen_before(
+                        table, entryIndex, bindingIndex, candidate.typeId)) {
+                continue;
+            }
+
+            fprintf(file,
+                    "/* reachability.genericDictionaryManifest.node[%u] = typeId=%u ownerFunction=%u reason=edge.generic_instance predecessor=%u */\n",
+                    (unsigned)nodeIndex,
+                    (unsigned)candidate.typeId,
+                    (unsigned)entry->flatIndex,
+                    (unsigned)entry->flatIndex);
+            nodeIndex++;
+        }
+    }
+
+    return nodeIndex == count;
 }
 
 static TZrBool backend_aot_c_generic_sharing_base_seen_before(const SZrAotFunctionTable *table,
@@ -402,7 +559,7 @@ void backend_aot_write_c_generic_sharing_entries(FILE *file,
                 backend_aot_c_generic_sharing_type_seen_before(table,
                                                                entryIndex,
                                                                bindingIndex,
-                                                               candidate.typeName)) {
+                                                               candidate.typeId)) {
                 continue;
             }
 
@@ -425,13 +582,14 @@ void backend_aot_write_c_generic_sharing_entries(FILE *file,
                 fprintf(file,
                         "/* instance=%u typeId=%u share=shared dictionary=zr_aot_generic_dict_%u target=zr_fn_%s__shared */\n",
                         (unsigned)nextDictionaryId,
-                        (unsigned)nextDictionaryId,
+                        (unsigned)candidate.typeId,
                         (unsigned)nextDictionaryId,
                         symbolBase);
             } else {
                 fprintf(file,
-                        "/* instance=%u type=%s share=shared dictionary=zr_aot_generic_dict_%u target=zr_fn_%s__shared */\n",
+                        "/* instance=%u typeId=%u type=%s share=shared dictionary=zr_aot_generic_dict_%u target=zr_fn_%s__shared */\n",
                         (unsigned)nextDictionaryId,
+                        (unsigned)candidate.typeId,
                         candidate.typeName,
                         (unsigned)nextDictionaryId,
                         symbolBase);
@@ -527,11 +685,12 @@ void backend_aot_write_c_generic_sharing_entries(FILE *file,
     }
 }
 
-TZrUInt32 backend_aot_c_generic_sharing_dictionary_id_for_function(const SZrAotFunctionTable *table,
-                                                                   const SZrFunction *function) {
+static TZrUInt32 backend_aot_c_generic_sharing_dictionary_id_for_type(
+        const SZrAotFunctionTable *table,
+        TZrUInt32 typeId) {
     TZrUInt32 nextDictionaryId = 1u;
 
-    if (table == ZR_NULL || table->entries == ZR_NULL || function == ZR_NULL) {
+    if (table == ZR_NULL || table->entries == ZR_NULL || typeId == 0u) {
         return 0u;
     }
 
@@ -552,14 +711,43 @@ TZrUInt32 backend_aot_c_generic_sharing_dictionary_id_for_function(const SZrAotF
                 backend_aot_c_generic_sharing_type_seen_before(table,
                                                                entryIndex,
                                                                bindingIndex,
-                                                               candidate.typeName)) {
+                                                               candidate.typeId)) {
                 continue;
             }
 
-            if (entryFunction == function) {
+            if (candidate.typeId == typeId) {
                 return nextDictionaryId;
             }
             nextDictionaryId++;
+        }
+    }
+
+    return 0u;
+}
+
+TZrUInt32 backend_aot_c_generic_sharing_dictionary_id_for_function(const SZrAotFunctionTable *table,
+                                                                   const SZrFunction *function) {
+    if (table == ZR_NULL || table->entries == ZR_NULL || function == ZR_NULL) {
+        return 0u;
+    }
+
+    for (TZrUInt32 entryIndex = 0u; entryIndex < table->count; entryIndex++) {
+        const SZrFunction *entryFunction = table->entries[entryIndex].function;
+
+        if (entryFunction != function || entryFunction->typedLocalBindings == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrUInt32 bindingIndex = 0u;
+             bindingIndex < entryFunction->typedLocalBindingLength;
+             bindingIndex++) {
+            SZrAotCGenericSharingCandidate candidate;
+
+            if (backend_aot_c_generic_sharing_candidate_from_binding(
+                        table, entryIndex, bindingIndex, &candidate)) {
+                return backend_aot_c_generic_sharing_dictionary_id_for_type(
+                        table, candidate.typeId);
+            }
         }
     }
 

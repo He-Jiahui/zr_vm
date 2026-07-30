@@ -57,5 +57,6 @@ GenericInstanceKey = DefinitionToken + CanonicalTypeId[] + target-relevant layou
 - [Native entry](./08-generics/2026-07-19-generic-method-native-entry.md)
 - [Runtime-bound reflection module](./08-generics/2026-07-19-runtime-bound-reflection-module.md)
 - [Target-owned reflection module cache](./08-generics/2026-07-19-target-owned-reflection-module-cache.md)
+- [Canonical generic dictionary reachability](./12-stripping/2026-07-30-canonical-generic-dictionary-reachability.md)
 
 这些记录证明本地attached runtime的部分generic reflection链路；跨模块binding、Invoke、Canonical TypeRef闭环和full-AOT closure仍为open。
