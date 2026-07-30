@@ -2129,6 +2129,106 @@ static void test_aot_c_code_stripping_rejects_unresolved_generic_methodspec_root
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_preserves_package_method_export_root(void) {
+    const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 11u);
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotManifestExportDeclaration declaration;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    add_typed_second_child_method_token(state, function, methodToken);
+
+    memset(&declaration, 0, sizeof(declaration));
+    declaration.kind = ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD;
+    declaration.target = "Factory.make";
+    declaration.hasMemberTokenBinding = ZR_TRUE;
+    declaration.memberToken = methodToken;
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_package_method_export_root";
+    options.sourceHash = "aot-c-code-stripping-package-method-export-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-package-method-export-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    options.manifestExportDeclarations = &declaration;
+    options.manifestExportDeclarationCount = 1u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "package_method_export_root",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_code_stripping_stats(generatedCText, 3u, 3u, 0u);
+    assert_text_contains(generatedCText, "/* manifest.exports = 1 */");
+    assert_text_contains(generatedCText, "/* manifest.export[0].memberToken = 0x0300000b */");
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 3 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.functionManifest.node[2] = reason=root.package_export predecessor=none */");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_unresolved_package_method_export_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotManifestExportDeclaration declaration;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&declaration, 0, sizeof(declaration));
+    declaration.kind = ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD;
+    declaration.target = "Factory.missing";
+    declaration.hasMemberTokenBinding = ZR_TRUE;
+    declaration.memberToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 99u);
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_unresolved_package_method_export_root";
+    options.sourceHash = "aot-c-code-stripping-unresolved-package-method-export-root";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-unresolved-package-method-export-root";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    options.manifestExportDeclarations = &declaration;
+    options.manifestExportDeclarationCount = 1u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "unresolved_package_method_export_root",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -2417,6 +2517,8 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_option_preserves_manifest_function_root);
     RUN_TEST(test_aot_c_code_stripping_preserves_generic_methodspec_root);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_generic_methodspec_root);
+    RUN_TEST(test_aot_c_code_stripping_preserves_package_method_export_root);
+    RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_package_method_export_root);
     RUN_TEST(test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats);
     RUN_TEST(test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functions);
     return UNITY_END();

@@ -21,6 +21,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-12-resource-drop-required-root.md
   - tests/acceptance/2026-07-30-aot-12-generic-methodspec-required-root.md
   - tests/acceptance/2026-07-30-aot-12-reflection-constructor-required-root.md
+  - tests/acceptance/2026-07-30-aot-12-package-method-export-required-root.md
 doc_type: module-detail
 ---
 
@@ -52,6 +53,7 @@ and the predecessor index that supplied that edge. Root reasons are:
 - `RESOURCE_DROP`
 - `GENERIC_METHODSPEC`
 - `REFLECTION_CONSTRUCTOR`
+- `PACKAGE_EXPORT`
 
 Dependency-edge reasons are:
 
@@ -93,6 +95,13 @@ and stable function-table entry. A missing, non-`MemberDef`, ambiguous, or unmap
 and removes partial writer output. Generic roots that carry only TypeSpec/type-instantiation identity do not retain a
 function in this collector. Cross-module `MemberRef`, generic dictionaries, and constraint witnesses remain separate
 graph work.
+
+`PACKAGE_EXPORT` roots connect package manifest method declarations to executable code stripping. A declaration of
+kind `METHOD` must carry a current-module `MemberDef` binding that resolves through exactly one typed callable symbol
+to a stable function-table entry. Missing bindings, non-`MemberDef` tokens, missing or ambiguous symbols, unmappable
+children, and unknown declaration kinds fail graph construction and remove partial writer output. Type and field
+declarations remain metadata-only in the function collector. The declaration target string is never scanned to infer
+the callable. Canonical cross-module `ModuleIdentity` plus `MemberRef` resolution remains a later graph slice.
 
 ## Marking And Reason Chains
 
@@ -140,6 +149,10 @@ the generated-C reason row, and public-writer partial-file cleanup.
 Reflection constructor coverage includes class and struct roots, unresolved required callables, and a negative filter
 matrix for abstract/resource/interface/non-public/abstract-member/non-meta/non-constructor cases. The writer suite
 proves `root.reflection_constructor` publication, unrelated-function trimming, and failed-output cleanup.
+
+Package export coverage proves a non-source-exported method survives as `root.package_export`; null declaration
+arrays, missing/non-`MemberDef`/unresolved/ambiguous method bindings, and unknown kinds fail closed. Type and field
+declarations do not retain functions, while the public writer publishes the bound token and removes failed output.
 
 The acceptance record runs the focused reachability and stripping targets on WSL GCC, WSL Clang, and Windows MSVC.
 Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

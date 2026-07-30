@@ -391,7 +391,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
     };
     static const EZrAotReachabilityReason unknownRootReasons[] = {
-            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_REFLECTION_CONSTRUCTOR + 1),
+            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_PACKAGE_EXPORT + 1),
     };
     static const SZrAotReachabilityEdge rootReasonEdges[] = {
             {0u, 1u, ZR_AOT_REACHABILITY_REASON_ROOT_EXPORT},
@@ -399,7 +399,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
     static const SZrAotReachabilityEdge unknownReasonEdges[] = {
             {0u,
              1u,
-             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_REFLECTION_CONSTRUCTOR + 1)},
+             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_PACKAGE_EXPORT + 1)},
     };
     SZrAotReachabilityMark marks[2];
     TZrUInt32 queue[2];
@@ -2041,6 +2041,166 @@ static void test_static_callable_reachability_rejects_invalid_generic_methodspec
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_static_callable_reachability_keeps_package_method_export_root(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 9u);
+    SZrFunction functions[3];
+    SZrFunctionTypedExportSymbol methodSymbol;
+    SZrAotFunctionEntry entries[3] = {
+            {&functions[0], 0u},
+            {&functions[1], 1u},
+            {&functions[2], 2u},
+    };
+    SZrAotFunctionTable table = {
+            entries,
+            3u,
+            3u,
+            3u,
+    };
+    SZrAotManifestExportDeclaration declaration;
+    TZrUInt32 roots[3];
+    EZrAotReachabilityReason rootReasons[3];
+    SZrAotReachabilityMark marks[3];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 queue[3];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(functions, 0, sizeof(functions));
+    memset(&declaration, 0, sizeof(declaration));
+    functions[0].childFunctionList = &functions[1];
+    functions[0].childFunctionLength = 2u;
+    functions[0].lineInSourceStart = 1u;
+    functions[0].lineInSourceEnd = 1u;
+    functions[2].lineInSourceStart = 20u;
+    functions[2].lineInSourceEnd = 20u;
+    attach_typed_method_token(&functions[0],
+                              &methodSymbol,
+                              1u,
+                              methodToken,
+                              ZR_MODULE_EXPORT_KIND_VALUE);
+    declaration.kind = ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD;
+    declaration.target = "Factory.make";
+    declaration.hasMemberTokenBinding = ZR_TRUE;
+    declaration.memberToken = methodToken;
+
+    TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state,
+            &table,
+            ZR_NULL,
+            0u,
+            ZR_NULL,
+            0u,
+            ZR_NULL,
+            0u,
+            &declaration,
+            1u,
+            roots,
+            rootReasons,
+            3u,
+            marks,
+            3u,
+            edges,
+            1u,
+            queue,
+            3u,
+            &markedCount,
+            &edgeCount));
+    TEST_ASSERT_EQUAL_UINT32(2u, markedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, edgeCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[1].state);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_PROCESSED, marks[2].state);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_PACKAGE_EXPORT, marks[2].reason);
+    TEST_ASSERT_EQUAL_UINT32(ZR_AOT_REACHABILITY_NO_NODE, marks[2].predecessor);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_static_callable_reachability_enforces_package_method_export_bindings(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 10u);
+    SZrFunction functions[3];
+    SZrFunctionTypedExportSymbol methodSymbols[2];
+    SZrAotFunctionEntry entries[3] = {
+            {&functions[0], 0u},
+            {&functions[1], 1u},
+            {&functions[2], 2u},
+    };
+    SZrAotFunctionTable table = {
+            entries,
+            3u,
+            3u,
+            3u,
+    };
+    SZrAotManifestExportDeclaration declarations[2];
+    TZrUInt32 roots[3];
+    EZrAotReachabilityReason rootReasons[3];
+    SZrAotReachabilityMark marks[3];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 queue[3];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    memset(functions, 0, sizeof(functions));
+    memset(methodSymbols, 0, sizeof(methodSymbols));
+    memset(declarations, 0, sizeof(declarations));
+    functions[0].childFunctionList = &functions[1];
+    functions[0].childFunctionLength = 2u;
+    functions[0].lineInSourceStart = 1u;
+    functions[0].lineInSourceEnd = 1u;
+    declarations[0].kind = ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD;
+    declarations[0].target = "Factory.make";
+
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 0u, declarations, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    declarations[0].hasMemberTokenBinding = ZR_TRUE;
+    declarations[0].memberToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_REF, 10u);
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 0u, declarations, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    declarations[0].memberToken = methodToken;
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 0u, declarations, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    methodSymbols[0].symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+    methodSymbols[0].callableChildIndex = 0u;
+    methodSymbols[0].metadataToken = methodToken;
+    methodSymbols[1] = methodSymbols[0];
+    methodSymbols[1].callableChildIndex = 1u;
+    functions[0].typedExportedSymbols = methodSymbols;
+    functions[0].typedExportedSymbolLength = 2u;
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 0u, declarations, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    memset(declarations, 0, sizeof(declarations));
+    functions[0].typedExportedSymbolLength = 0u;
+    declarations[0].kind = ZR_AOT_MANIFEST_EXPORT_DECLARATION_TYPE;
+    declarations[1].kind = ZR_AOT_MANIFEST_EXPORT_DECLARATION_FIELD;
+    TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 0u, declarations, 2u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+    TEST_ASSERT_EQUAL_UINT32(1u, markedCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[1].state);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[2].state);
+
+    declarations[0].kind = (EZrAotManifestExportDeclarationKind)99;
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability_with_preserve_roots(
+            state, &table, ZR_NULL, 0u, ZR_NULL, 0u, ZR_NULL, 0u, declarations, 1u,
+            roots, rootReasons, 3u, marks, 3u, edges, 1u, queue, 3u, &markedCount, &edgeCount));
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reachability_marks_roots_and_direct_dependencies);
@@ -2071,5 +2231,7 @@ int main(void) {
     RUN_TEST(test_static_callable_reachability_enforces_reflection_constructor_policy);
     RUN_TEST(test_static_callable_reachability_keeps_generic_methodspec_root);
     RUN_TEST(test_static_callable_reachability_rejects_invalid_generic_methodspec_roots);
+    RUN_TEST(test_static_callable_reachability_keeps_package_method_export_root);
+    RUN_TEST(test_static_callable_reachability_enforces_package_method_export_bindings);
     return UNITY_END();
 }

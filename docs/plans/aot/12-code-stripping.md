@@ -53,6 +53,10 @@ missing/ambiguous binding fail-closed 子切片；S1/S2/S3/S6 仍为部分完成
 concrete class/struct public constructor 的保守必需函数根、`root.reflection_constructor` 报告与 unresolved
 constructor fail-closed 子切片；S1/S2/S3/S6 仍为部分完成。
 
+[2026-07-30 package method export required root](./12-stripping/2026-07-30-package-method-export-required-root.md) 完成
+current-module `MemberDef` package method export 的必需函数根、`root.package_export` 报告与 invalid/ambiguous
+binding fail-closed 子切片；S1/S2/S3/S6 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

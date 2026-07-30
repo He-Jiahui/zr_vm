@@ -593,10 +593,12 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
     EZrAotReachabilityReason *rootReasons = ZR_NULL;
     const TZrUInt32 *manifestRoots = ZR_NULL;
     const SZrAotManifestGenericRoot *genericRoots = ZR_NULL;
+    const SZrAotManifestExportDeclaration *manifestExports = ZR_NULL;
     TZrUInt32 indexSpace;
     TZrUInt32 edgeCapacity = 0u;
     TZrUInt32 manifestRootCount = 0u;
     TZrUInt32 genericRootCount = 0u;
+    TZrUInt32 manifestExportCount = 0u;
     TZrUInt32 markedCount = 0u;
     TZrUInt32 edgeCount = 0u;
     TZrBool success = ZR_FALSE;
@@ -614,6 +616,8 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
         manifestRootCount = options->manifestPreserveFunctionFlatIndexCount;
         genericRoots = options->manifestPreserveGenericRoots;
         genericRootCount = options->manifestPreserveGenericRootCount;
+        manifestExports = options->manifestExportDeclarations;
+        manifestExportCount = options->manifestExportDeclarationCount;
     }
 
     for (TZrUInt32 entryIndex = 0u; entryIndex < functionTable->count; entryIndex++) {
@@ -649,7 +653,7 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 
     if (marks != ZR_NULL && queue != ZR_NULL && roots != ZR_NULL && rootReasons != ZR_NULL && edges != ZR_NULL &&
-        backend_aot_compute_static_callable_reachability_with_generic_roots(
+        backend_aot_compute_static_callable_reachability_with_preserve_roots(
                 state,
                 functionTable,
                 annotationRoots,
@@ -658,6 +662,8 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
                 manifestRootCount,
                 genericRoots,
                 genericRootCount,
+                manifestExports,
+                manifestExportCount,
                 roots,
                 rootReasons,
                 indexSpace,
