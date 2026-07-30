@@ -819,8 +819,11 @@ static TZrBool backend_aot_static_reachability_append_edge(SZrAotReachabilityEdg
                                                            TZrUInt32 *edgeCount,
                                                            TZrUInt32 source,
                                                            TZrUInt32 target,
+                                                           EZrAotReachabilityReason reason,
                                                            TZrUInt32 markCount) {
-    if (edgeCount == ZR_NULL || source >= markCount || target >= markCount) {
+    if (edgeCount == ZR_NULL || source >= markCount || target >= markCount ||
+        (reason != ZR_AOT_REACHABILITY_REASON_DIRECT_CALL &&
+         reason != ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK)) {
         return ZR_FALSE;
     }
     if (*edgeCount >= edgeCapacity || edges == ZR_NULL) {
@@ -829,9 +832,31 @@ static TZrBool backend_aot_static_reachability_append_edge(SZrAotReachabilityEdg
 
     edges[*edgeCount].source = source;
     edges[*edgeCount].target = target;
-    edges[*edgeCount].reason = ZR_AOT_REACHABILITY_REASON_DIRECT_CALL;
+    edges[*edgeCount].reason = reason;
     (*edgeCount)++;
     return ZR_TRUE;
+}
+
+static EZrAotReachabilityReason backend_aot_static_reachability_callable_materialization_reason(
+        const SZrFunction *function,
+        const TZrInstruction *instruction) {
+    if (function == ZR_NULL || instruction == ZR_NULL || function->escapeBindings == ZR_NULL) {
+        return ZR_AOT_REACHABILITY_REASON_DIRECT_CALL;
+    }
+
+    for (TZrUInt32 bindingIndex = 0u;
+         bindingIndex < function->escapeBindingLength;
+         bindingIndex++) {
+        const SZrFunctionEscapeBinding *binding = &function->escapeBindings[bindingIndex];
+
+        if (binding->bindingKind == ZR_FUNCTION_ESCAPE_BINDING_KIND_NATIVE_BINDING &&
+            binding->slotOrIndex == instruction->instruction.operandExtra &&
+            (binding->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE) != 0u) {
+            return ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK;
+        }
+    }
+
+    return ZR_AOT_REACHABILITY_REASON_DIRECT_CALL;
 }
 
 static TZrBool backend_aot_static_reachability_scan_instruction(SZrState *state,
@@ -844,6 +869,8 @@ static TZrBool backend_aot_static_reachability_scan_instruction(SZrState *state,
                                                                 TZrUInt32 *edgeCount,
                                                                 TZrUInt32 markCount) {
     TZrUInt32 targetIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
+    EZrAotReachabilityReason reason =
+            backend_aot_static_reachability_callable_materialization_reason(function, instruction);
 
     switch (instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
@@ -857,6 +884,7 @@ static TZrBool backend_aot_static_reachability_scan_instruction(SZrState *state,
                                                                    edgeCount,
                                                                    sourceIndex,
                                                                    targetIndex,
+                                                                   reason,
                                                                    markCount);
             }
             return ZR_TRUE;
@@ -872,6 +900,7 @@ static TZrBool backend_aot_static_reachability_scan_instruction(SZrState *state,
                                                                    edgeCount,
                                                                    sourceIndex,
                                                                    targetIndex,
+                                                                   reason,
                                                                    markCount);
             }
             return ZR_TRUE;
@@ -887,6 +916,7 @@ static TZrBool backend_aot_static_reachability_scan_instruction(SZrState *state,
                                                                        edgeCount,
                                                                        sourceIndex,
                                                                        targetIndex,
+                                                                       reason,
                                                                        markCount);
                 }
             }
@@ -908,7 +938,8 @@ static TZrBool backend_aot_static_reachability_collect_edges(SZrState *state,
         const SZrAotFunctionEntry *entry = &table->entries[entryIndex];
         const SZrFunction *function = entry->function;
 
-        if (function == ZR_NULL || entry->flatIndex >= markCount) {
+        if (function == ZR_NULL || entry->flatIndex >= markCount ||
+            (function->escapeBindingLength > 0u && function->escapeBindings == ZR_NULL)) {
             return ZR_FALSE;
         }
         if (function->instructionsLength > 0u && function->instructionsList == ZR_NULL) {

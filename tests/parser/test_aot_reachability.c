@@ -391,7 +391,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
     };
     static const EZrAotReachabilityReason unknownRootReasons[] = {
-            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_PACKAGE_EXPORT + 1),
+            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK + 1),
     };
     static const SZrAotReachabilityEdge rootReasonEdges[] = {
             {0u, 1u, ZR_AOT_REACHABILITY_REASON_ROOT_EXPORT},
@@ -399,7 +399,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
     static const SZrAotReachabilityEdge unknownReasonEdges[] = {
             {0u,
              1u,
-             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_PACKAGE_EXPORT + 1)},
+             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK + 1)},
     };
     SZrAotReachabilityMark marks[2];
     TZrUInt32 queue[2];
@@ -673,6 +673,212 @@ static void test_static_callable_reachability_marks_get_sub_function_target(void
                                                                        0u,
                                                                        queue,
                                                                        3u,
+                                                                       &markedCount,
+                                                                       &edgeCount));
+}
+
+static void test_static_callable_reachability_marks_native_callback_get_sub_function_edge(void) {
+    TZrInstruction rootInstruction;
+    SZrFunction functions[2];
+    SZrFunctionEscapeBinding nativeBinding;
+    SZrAotFunctionEntry entries[2] = {
+            {&functions[0], 0u},
+            {&functions[1], 1u},
+    };
+    SZrAotFunctionTable table = {
+            entries,
+            2u,
+            2u,
+            2u,
+    };
+    SZrAotReachabilityMark marks[2];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 roots[2];
+    EZrAotReachabilityReason rootReasons[2];
+    TZrUInt32 queue[2];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    memset(functions, 0, sizeof(functions));
+    memset(&nativeBinding, 0, sizeof(nativeBinding));
+    rootInstruction = test_create_instruction_2(ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION), 4u, 0u, 0u);
+    nativeBinding.slotOrIndex = 4u;
+    nativeBinding.escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE;
+    nativeBinding.bindingKind = ZR_FUNCTION_ESCAPE_BINDING_KIND_NATIVE_BINDING;
+    functions[0].instructionsList = &rootInstruction;
+    functions[0].instructionsLength = 1u;
+    functions[0].childFunctionList = &functions[1];
+    functions[0].childFunctionLength = 1u;
+    functions[0].escapeBindings = &nativeBinding;
+    functions[0].escapeBindingLength = 1u;
+
+    TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability(ZR_NULL,
+                                                                      &table,
+                                                                      ZR_NULL,
+                                                                      0u,
+                                                                      ZR_NULL,
+                                                                      0u,
+                                                                      roots,
+                                                                      rootReasons,
+                                                                      2u,
+                                                                      marks,
+                                                                      2u,
+                                                                      edges,
+                                                                      1u,
+                                                                      queue,
+                                                                      2u,
+                                                                      &markedCount,
+                                                                      &edgeCount));
+    TEST_ASSERT_EQUAL_UINT32(1u, edgeCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK, edges[0].reason);
+    TEST_ASSERT_EQUAL_UINT32(2u, markedCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK, marks[1].reason);
+    TEST_ASSERT_EQUAL_UINT32(0u, marks[1].predecessor);
+}
+
+static void assert_native_callback_constant_materialization_edge(EZrInstructionCode opcode) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *root;
+    SZrFunction *target;
+    SZrFunction *trimmed;
+    SZrAotFunctionEntry entries[3];
+    SZrAotFunctionTable table;
+    SZrAotReachabilityMark marks[3];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 roots[3];
+    EZrAotReachabilityReason rootReasons[3];
+    TZrUInt32 queue[3];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(state);
+    root = ZrCore_Function_New(state);
+    target = ZrCore_Function_New(state);
+    trimmed = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_NOT_NULL(target);
+    TEST_ASSERT_NOT_NULL(trimmed);
+    root->lineInSourceStart = 1u;
+    root->lineInSourceEnd = 1u;
+    target->lineInSourceStart = 10u;
+    target->lineInSourceEnd = 10u;
+    trimmed->lineInSourceStart = 20u;
+    trimmed->lineInSourceEnd = 20u;
+
+    root->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    root->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    root->escapeBindings = (SZrFunctionEscapeBinding *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionEscapeBinding),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->instructionsList);
+    TEST_ASSERT_NOT_NULL(root->constantValueList);
+    TEST_ASSERT_NOT_NULL(root->escapeBindings);
+    root->instructionsList[0] = test_create_instruction_2(opcode, 6u, 0u, 0u);
+    root->instructionsLength = 1u;
+    ZrCore_Value_InitAsRawObject(state,
+                                 &root->constantValueList[0],
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(target));
+    root->constantValueList[0].type = ZR_VALUE_TYPE_FUNCTION;
+    root->constantValueLength = 1u;
+    memset(root->escapeBindings, 0, sizeof(SZrFunctionEscapeBinding));
+    root->escapeBindings[0].slotOrIndex = 6u;
+    root->escapeBindings[0].escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE;
+    root->escapeBindings[0].bindingKind = ZR_FUNCTION_ESCAPE_BINDING_KIND_NATIVE_BINDING;
+    root->escapeBindingLength = 1u;
+
+    entries[0].function = root;
+    entries[0].flatIndex = 0u;
+    entries[1].function = target;
+    entries[1].flatIndex = 1u;
+    entries[2].function = trimmed;
+    entries[2].flatIndex = 2u;
+    table.entries = entries;
+    table.count = 3u;
+    table.capacity = 3u;
+    table.indexSpace = 3u;
+
+    TEST_ASSERT_TRUE(backend_aot_compute_static_callable_reachability(state,
+                                                                      &table,
+                                                                      ZR_NULL,
+                                                                      0u,
+                                                                      ZR_NULL,
+                                                                      0u,
+                                                                      roots,
+                                                                      rootReasons,
+                                                                      3u,
+                                                                      marks,
+                                                                      3u,
+                                                                      edges,
+                                                                      1u,
+                                                                      queue,
+                                                                      3u,
+                                                                      &markedCount,
+                                                                      &edgeCount));
+    TEST_ASSERT_EQUAL_UINT32(1u, edgeCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK, edges[0].reason);
+    TEST_ASSERT_EQUAL_UINT32(2u, markedCount);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK, marks[1].reason);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_REACHABILITY_STATE_UNMARKED, marks[2].state);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_static_callable_reachability_marks_native_callback_constant_materialization_edges(void) {
+    assert_native_callback_constant_materialization_edge(ZR_INSTRUCTION_ENUM(GET_CONSTANT));
+    assert_native_callback_constant_materialization_edge(ZR_INSTRUCTION_ENUM(CREATE_CLOSURE));
+}
+
+static void test_static_callable_reachability_rejects_malformed_native_callback_escape_metadata(void) {
+    TZrInstruction rootInstruction;
+    SZrFunction functions[2];
+    SZrAotFunctionEntry entries[2] = {
+            {&functions[0], 0u},
+            {&functions[1], 1u},
+    };
+    SZrAotFunctionTable table = {
+            entries,
+            2u,
+            2u,
+            2u,
+    };
+    SZrAotReachabilityMark marks[2];
+    SZrAotReachabilityEdge edges[1];
+    TZrUInt32 roots[2];
+    EZrAotReachabilityReason rootReasons[2];
+    TZrUInt32 queue[2];
+    TZrUInt32 markedCount = 0u;
+    TZrUInt32 edgeCount = 0u;
+
+    memset(functions, 0, sizeof(functions));
+    rootInstruction = test_create_instruction_2(ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION), 4u, 0u, 0u);
+    functions[0].instructionsList = &rootInstruction;
+    functions[0].instructionsLength = 1u;
+    functions[0].childFunctionList = &functions[1];
+    functions[0].childFunctionLength = 1u;
+    functions[0].escapeBindingLength = 1u;
+
+    TEST_ASSERT_FALSE(backend_aot_compute_static_callable_reachability(ZR_NULL,
+                                                                       &table,
+                                                                       ZR_NULL,
+                                                                       0u,
+                                                                       ZR_NULL,
+                                                                       0u,
+                                                                       roots,
+                                                                       rootReasons,
+                                                                       2u,
+                                                                       marks,
+                                                                       2u,
+                                                                       edges,
+                                                                       1u,
+                                                                       queue,
+                                                                       2u,
                                                                        &markedCount,
                                                                        &edgeCount));
 }
@@ -2210,6 +2416,9 @@ int main(void) {
     RUN_TEST(test_reachability_function_manifest_rejects_malformed_reason_chains);
     RUN_TEST(test_function_table_filter_keeps_reachable_entries_without_renumbering);
     RUN_TEST(test_static_callable_reachability_marks_get_sub_function_target);
+    RUN_TEST(test_static_callable_reachability_marks_native_callback_get_sub_function_edge);
+    RUN_TEST(test_static_callable_reachability_marks_native_callback_constant_materialization_edges);
+    RUN_TEST(test_static_callable_reachability_rejects_malformed_native_callback_escape_metadata);
     RUN_TEST(test_static_callable_reachability_keeps_exported_child_roots);
     RUN_TEST(test_static_callable_reachability_keeps_reflection_annotation_roots);
     RUN_TEST(test_collect_reflection_annotation_roots_keeps_dynamic_dependency_function_index);

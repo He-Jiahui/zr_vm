@@ -22,6 +22,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-12-generic-methodspec-required-root.md
   - tests/acceptance/2026-07-30-aot-12-reflection-constructor-required-root.md
   - tests/acceptance/2026-07-30-aot-12-package-method-export-required-root.md
+  - tests/acceptance/2026-07-30-aot-12-native-callback-materialization-edge.md
 doc_type: module-detail
 ---
 
@@ -35,9 +36,9 @@ nodes are reachable, records why each node survived, publishes the result, and o
 table.
 
 This slice owns function nodes. The first type/layout reason-manifest slice is documented separately in
-`aot-type-layout-reachability-manifest.md`; generic dictionary, native callback, module initializer, reflection
-metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on the broader graph
-required by AOT plan 12.
+`aot-type-layout-reachability-manifest.md`; generic dictionary, explicit native callback descriptor roots, module
+initializer, reflection metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on
+the broader graph required by AOT plan 12.
 The function graph never scans source or generated strings to guess reflection or native reachability.
 
 ## Graph Contract
@@ -62,6 +63,7 @@ Dependency-edge reasons are:
 - `VIRTUAL_CALL`
 - `REFLECTION`
 - `GENERIC_INSTANCE`
+- `NATIVE_CALLBACK`
 
 The two classes are intentionally disjoint. `backend_aot_reachability_compute()` rejects an edge reason in the root
 array, a root reason on an edge, `NONE`, and unknown enum values before initializing or publishing marks. It also
@@ -102,6 +104,13 @@ to a stable function-table entry. Missing bindings, non-`MemberDef` tokens, miss
 children, and unknown declaration kinds fail graph construction and remove partial writer output. Type and field
 declarations remain metadata-only in the function collector. The declaration target string is never scanned to infer
 the callable. Canonical cross-module `ModuleIdentity` plus `MemberRef` resolution remains a later graph slice.
+
+`NATIVE_CALLBACK` edges identify callable materialization whose destination slot has a structured
+`NATIVE_BINDING` escape row carrying `NATIVE_HANDLE`. The collector applies this reason to resolved
+`GET_SUB_FUNCTION`, callable `GET_CONSTANT`, and `CREATE_CLOSURE` targets; the same instructions remain
+`DIRECT_CALL` edges when that exact slot contract is absent. A nonempty escape-binding table with a null row pointer
+fails graph construction and public writer output. This edge retains callbacks created from a reachable function and
+does not replace the future explicit descriptor root needed for externally registered or cross-module callbacks.
 
 ## Marking And Reason Chains
 
@@ -153,6 +162,10 @@ proves `root.reflection_constructor` publication, unrelated-function trimming, a
 Package export coverage proves a non-source-exported method survives as `root.package_export`; null declaration
 arrays, missing/non-`MemberDef`/unresolved/ambiguous method bindings, and unknown kinds fail closed. Type and field
 declarations do not retain functions, while the public writer publishes the bound token and removes failed output.
+
+Native callback coverage proves all three callable materialization opcodes use `edge.native_callback` for an exact
+native escape binding, ordinary materialization remains `edge.direct_call`, malformed escape metadata fails closed,
+and the public writer publishes the callback predecessor chain while removing failed output.
 
 The acceptance record runs the focused reachability and stripping targets on WSL GCC, WSL Clang, and Windows MSVC.
 Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

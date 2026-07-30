@@ -1087,6 +1087,27 @@ static void add_typed_second_child_method_token(SZrState *state,
     root->typedExportedSymbolLength = 1u;
 }
 
+static void add_native_callback_escape_binding(SZrState *state,
+                                               SZrFunction *root,
+                                               TZrUInt32 stackSlot) {
+    SZrFunctionEscapeBinding *binding;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(root);
+
+    binding = (SZrFunctionEscapeBinding *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionEscapeBinding),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(binding);
+    memset(binding, 0, sizeof(*binding));
+    binding->slotOrIndex = stackSlot;
+    binding->escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE;
+    binding->bindingKind = ZR_FUNCTION_ESCAPE_BINDING_KIND_NATIVE_BINDING;
+    root->escapeBindings = binding;
+    root->escapeBindingLength = 1u;
+}
+
 static void test_aot_c_code_stripping_option_filters_unreachable_static_callable(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -2229,6 +2250,88 @@ static void test_aot_c_code_stripping_rejects_unresolved_package_method_export_r
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_reports_native_callback_materialization_edge(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    add_native_callback_escape_binding(state, function, 0u);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_native_callback_edge";
+    options.sourceHash = "aot-c-code-stripping-native-callback-edge";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-native-callback-edge";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "native_callback_edge",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_0(struct SZrState *state)");
+    assert_text_contains(generatedCText, "static TZrInt64 zr_aot_fn_1(struct SZrState *state)");
+    assert_text_does_not_contain(generatedCText, "static TZrInt64 zr_aot_fn_2(struct SZrState *state)");
+    assert_code_stripping_stats(generatedCText, 3u, 2u, 1u);
+    assert_text_contains(generatedCText, "/* reachability.functionManifest.count = 2 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.functionManifest.node[1] = reason=edge.native_callback predecessor=0 */");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_malformed_native_callback_escape_metadata(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->escapeBindingLength = 1u;
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_malformed_native_callback_escape_metadata";
+    options.sourceHash = "aot-c-code-stripping-malformed-native-callback-escape-metadata";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-malformed-native-callback-escape-metadata";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "malformed_native_callback_escape_metadata",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -2519,6 +2622,8 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_generic_methodspec_root);
     RUN_TEST(test_aot_c_code_stripping_preserves_package_method_export_root);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_package_method_export_root);
+    RUN_TEST(test_aot_c_code_stripping_reports_native_callback_materialization_edge);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_native_callback_escape_metadata);
     RUN_TEST(test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats);
     RUN_TEST(test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functions);
     return UNITY_END();

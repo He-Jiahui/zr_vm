@@ -24,6 +24,7 @@ static TZrBool backend_aot_reachability_reason_is_edge(EZrAotReachabilityReason 
         case ZR_AOT_REACHABILITY_REASON_VIRTUAL_CALL:
         case ZR_AOT_REACHABILITY_REASON_REFLECTION:
         case ZR_AOT_REACHABILITY_REASON_GENERIC_INSTANCE:
+        case ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK:
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -48,6 +49,8 @@ static const TZrChar *backend_aot_reachability_reason_name(EZrAotReachabilityRea
             return "edge.reflection";
         case ZR_AOT_REACHABILITY_REASON_GENERIC_INSTANCE:
             return "edge.generic_instance";
+        case ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK:
+            return "edge.native_callback";
         case ZR_AOT_REACHABILITY_REASON_REFLECTION_ANNOTATION:
             return "root.reflection_annotation";
         case ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR:
