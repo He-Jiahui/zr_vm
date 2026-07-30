@@ -78,6 +78,10 @@ versioned DebugMap section 仍开放。
 frame/type-layout reachability 输入在裁剪前的 canonical closure gate：不可达 owner 的 unresolved、invalid、
 identity/kind/shape 漂移不再被静默删除；沿用既有 manifest，S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-07-30 complete-frame parameter identity verifier](./07-codegen/2026-07-30-complete-frame-parameter-identity-verifier.md)
+完成 retained frame manifest 输入的裁剪前 parameter marker gate：不可达完整表的缺失或等数错位 marker
+均 fail closed；zero/sparse frame 优化保持合法，S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

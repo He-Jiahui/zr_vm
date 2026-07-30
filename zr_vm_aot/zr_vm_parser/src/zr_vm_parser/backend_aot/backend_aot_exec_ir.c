@@ -458,6 +458,37 @@ static TZrBool backend_aot_exec_ir_frame_storage_contains(TZrUInt32 frameByteSiz
                      storageSize <= frameByteSize - byteOffset);
 }
 
+static TZrBool backend_aot_exec_ir_complete_frame_slot_is_parameter(
+        const SZrFunction *function,
+        TZrUInt32 stackSlot) {
+    TZrUInt32 parameterBindingCount = 0u;
+
+    if (function == ZR_NULL || function->parameterCount == 0u) {
+        return ZR_FALSE;
+    }
+    if (function->typedLocalBindings == ZR_NULL ||
+        function->typedLocalBindingLength == 0u) {
+        return (TZrBool)(stackSlot < function->parameterCount);
+    }
+
+    for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+
+        if (binding->name == ZR_NULL) {
+            continue;
+        }
+        if (parameterBindingCount >= function->parameterCount) {
+            break;
+        }
+        if (binding->stackSlot == stackSlot) {
+            return ZR_TRUE;
+        }
+        parameterBindingCount++;
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
                                                          const SZrFunction *function) {
     const TZrUInt16 knownFlags =
@@ -466,6 +497,7 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
             ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP |
             ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
             ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    TZrBool hasCompleteSlotTable;
     TZrUInt32 parameterLayoutCount = 0u;
 
     if (state == ZR_NULL || function == ZR_NULL ||
@@ -484,6 +516,8 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
         !backend_aot_exec_ir_is_power_of_two(function->frameByteAlign)) {
         return ZR_FALSE;
     }
+    hasCompleteSlotTable = (TZrBool)(
+            function->frameSlotLayoutLength == function->stackSize);
 
     for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
         const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
@@ -502,6 +536,12 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
              layout->typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) ||
             (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
              layout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE)) {
+            return ZR_FALSE;
+        }
+        if (hasCompleteSlotTable &&
+            layout->isParameter !=
+                    backend_aot_exec_ir_complete_frame_slot_is_parameter(
+                            function, layout->stackSlot)) {
             return ZR_FALSE;
         }
         if (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
@@ -580,7 +620,8 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
         }
     }
 
-    return ZR_TRUE;
+    return (TZrBool)(!hasCompleteSlotTable ||
+                     parameterLayoutCount == function->parameterCount);
 }
 
 static TZrBool backend_aot_exec_ir_build_frame_layout(SZrState *state,

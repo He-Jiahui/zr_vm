@@ -1598,6 +1598,81 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_type_l
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_rejects_unreachable_materialized_parameter_undercount(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *unreachable;
+    SZrFunctionFrameSlotLayout *layouts;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_materialized_parameter_cardinality";
+    options.sourceHash = "aot-c-code-stripping-materialized-parameter-cardinality";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-materialized-parameter-cardinality";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "materialized_parameter_cardinality",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+
+    function->parameterCount = 1u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    function->parameterCount = 0u;
+    function->childFunctionList[0].parameterCount = 1u;
+    function->childFunctionList[0].stackSize = 2u;
+    function->childFunctionList[0].frameSlotLayouts[0].stackSlot = 1u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    unreachable = &function->childFunctionList[1];
+    unreachable->parameterCount = 1u;
+    TEST_ASSERT_EQUAL_UINT32(1u, unreachable->frameSlotLayoutLength);
+    TEST_ASSERT_EQUAL_UINT8(0u, unreachable->frameSlotLayouts[0].isParameter);
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  unreachable->frameSlotLayouts,
+                                  sizeof(SZrFunctionFrameSlotLayout),
+                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layouts);
+    memset(layouts, 0, sizeof(SZrFunctionFrameSlotLayout) * 2u);
+    for (TZrUInt32 index = 0u; index < 2u; index++) {
+        layouts[index].stackSlot = index;
+        layouts[index].byteOffset = index * 8u;
+        layouts[index].byteSize = 8u;
+        layouts[index].byteAlign = 8u;
+        layouts[index].typeLayoutId = 2u;
+        layouts[index].slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    }
+    layouts[1].isParameter = 1u;
+    unreachable->stackSize = 2u;
+    unreachable->frameByteSize = 16u;
+    unreachable->frameByteAlign = 8u;
+    unreachable->frameSlotLayoutLength = 2u;
+    unreachable->frameSlotLayouts = layouts;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3319,6 +3394,7 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_debug_sidecar);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_layout);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_type_layout);
+    RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_materialized_parameter_undercount);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout);
     RUN_TEST(test_aot_c_code_stripping_preserves_legal_frame_alias_layouts);
     RUN_TEST(test_aot_c_code_stripping_preserves_property_accessor_root);

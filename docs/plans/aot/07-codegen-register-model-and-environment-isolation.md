@@ -51,6 +51,10 @@ fail-closed frame sidecar 校验与 retained-frame manifest/count 前置切片�
 A7.2B 的 canonical aggregate TypeLayout 解析、schema/hash、类型身份与 payload shape 全树闭包校验；不新增
 manifest schema，CallableContract slot 派生与完整 A7.2 仍开放。
 
+[2026-07-30 complete-frame parameter identity verifier](./07-codegen/2026-07-30-complete-frame-parameter-identity-verifier.md)
+完成 A7.2C 的完整 frame table parameter marker 数量与 canonical slot identity 校验，同时保留 zero-frame 与
+sparse typed-register hybrid；parameter direction/type、receiver/return/spill 派生与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

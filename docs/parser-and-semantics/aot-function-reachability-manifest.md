@@ -50,6 +50,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
+  - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
 doc_type: module-detail
 ---
@@ -240,6 +241,12 @@ the canonical prototype-frame TypeLayout cache. ExecIR rejects unresolved identi
 trimmed. Alias payload identity is checked separately from the existing physical binding size/alignment rules, retaining
 legal direct overlap and indirect/borrowed storage shapes.
 
+For a complete frame table, retained `isParameter` values are also verified graph inputs rather than unchecked
+diagnostics. ExecIR derives the canonical parameter slots from the same typed-binding rule as the producer, or from the
+stack-slot prefix when typed bindings are absent, and rejects missing or swapped markers before filtering. Zero-row and
+sparse hybrid tables deliberately remain legal so register-only scalar parameters need not be materialized merely to
+satisfy the frame manifest.
+
 The retained debug sidecar manifest is generated from the validated source-location rows and matched ExecIR owners:
 
 ```text
@@ -302,6 +309,12 @@ suite also keeps its nonempty/null frame-table rejection gate.
 The TypeLayout closure matrix uses canonical union layouts for legal direct, indirect, and borrowed rows, then isolates
 six unreachable-owner failures: unresolved identity, nonzero hash mismatch, `cTypeId` mismatch, valid non-aggregate
 VALUE kind, payload-size drift, and payload-alignment drift. Each public-writer failure leaves no generated artifact.
+
+Complete-frame parameter coverage first accepts a zero-frame function with one scalar parameter and a sparse hybrid
+function that materializes only local slot 1 while parameter slot 0 remains register-only. It then rejects an
+unreachable complete table with one missing parameter marker and a two-slot complete table whose marker count is
+correct but swapped from canonical parameter slot 0 to local slot 1. Failed output is removed in both cases; the
+existing borrowed receiver fixture remains the complete-table alias positive.
 
 Debug sidecar coverage proves four original location rows become three retained rows after owner-function trimming.
 The retained manifest orders flat owner 0 before owner 1 and preserves two source rows for owner 1 by location index;

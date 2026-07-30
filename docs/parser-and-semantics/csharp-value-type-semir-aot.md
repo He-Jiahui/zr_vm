@@ -400,6 +400,7 @@ tests:
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
+  - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -894,6 +895,14 @@ be `STRUCT` or `UNION`, and payload size/alignment must exactly match the slot r
 from the existing physical-storage check, so direct overlap and indirect/borrowed alias bindings remain legal while a
 malformed unreachable owner cannot be hidden by filtering. The existing frame and type-layout manifests remain the
 reporting surfaces; this closure gate introduces no duplicate schema.
+
+A complete materialized frame table, where `slotLayoutCount == stackSlotCount`, now also proves parameter identity.
+Without typed-local bindings, the canonical parameter set is the stack-slot prefix below `parameterCount`; with typed
+bindings, it is the first `parameterCount` named bindings, matching the producer and runtime parameter-index rule.
+Every complete-table row must carry the matching `isParameter` marker and the final marker count must be exact. Empty
+frames remain legal for fully register-carried scalar parameters, and sparse hybrid tables may omit register-only
+parameters while materializing an inline local. This A7.2C verifier does not derive direction, receiver role, return,
+spill, or address-taken ABI.
 
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,
