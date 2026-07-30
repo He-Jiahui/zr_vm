@@ -65,6 +65,10 @@ structured native escape binding 到三类 callable materialization 的 `edge.na
 typed `TypeId` dictionary identity、owner `edge.generic_instance` manifest、2→1 trim stats 与 malformed schema
 fail-closed 子切片；S1/S3/S6 及 AOT 08 G6 仍为部分完成。
 
+[2026-07-30 native import contract reachability](./12-stripping/2026-07-30-native-import-contract-reachability.md) 完成
+canonical contract 全树预检、retained owner `edge.native_import` manifest、4→3 trim stats 与 unreachable malformed
+contract fail-closed 子切片；S1/S3/S6 及 AOT 11 A11.2 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

@@ -214,7 +214,8 @@ TZrBool backend_aot_filter_function_table_by_reachability(SZrAotFunctionTable *t
 TZrUInt32 backend_aot_function_table_index_space(const SZrAotFunctionTable *table) {
     TZrUInt32 indexSpace = 0u;
 
-    if (table == ZR_NULL || table->entries == ZR_NULL || table->count > table->capacity) {
+    if (table == ZR_NULL || table->entries == ZR_NULL ||
+        table->count > table->capacity || table->indexSpace > table->capacity) {
         return ZR_AOT_COUNT_NONE;
     }
 
@@ -230,7 +231,8 @@ TZrUInt32 backend_aot_function_table_index_space(const SZrAotFunctionTable *tabl
 
     for (TZrUInt32 index = 0u; index < table->count; index++) {
         const SZrAotFunctionEntry *entry = &table->entries[index];
-        if (entry->flatIndex == ZR_AOT_INVALID_FUNCTION_INDEX) {
+        if (entry->flatIndex == ZR_AOT_INVALID_FUNCTION_INDEX ||
+            entry->flatIndex >= table->capacity) {
             return ZR_AOT_COUNT_NONE;
         }
         if (entry->flatIndex >= indexSpace) {

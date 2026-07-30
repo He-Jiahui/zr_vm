@@ -731,6 +731,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     TZrUInt32 typeLayoutIndexSpace;
     TZrUInt32 gcDescriptorIndexSpace;
     TZrUInt32 nativeImportContractCount;
+    TZrUInt32 nativeImportContractCountBeforeStripping;
+    TZrUInt32 nativeImportContractCountRemovedByStripping;
     TZrUInt32 functionCountBeforeStripping;
     TZrUInt32 functionCountAfterStripping;
     TZrUInt32 functionCountRemovedByStripping;
@@ -781,7 +783,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     if (!backend_aot_manifest_generic_roots_closed_for_full_aot(options)) {
         return ZR_FALSE;
     }
-    if (!backend_aot_c_generic_sharing_validate_function_tree(function)) {
+    if (!backend_aot_c_generic_sharing_validate_function_tree(function) ||
+        !backend_aot_c_native_import_validate_function_tree(function)) {
         return ZR_FALSE;
     }
 
@@ -821,6 +824,14 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     functionCountBeforeStripping = functionTable.count;
     if (!backend_aot_c_generic_sharing_count_dictionaries(
                 &functionTable, &genericDictionaryCountBeforeStripping)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_native_import_count(
+                &functionTable, &nativeImportContractCountBeforeStripping)) {
         fclose(file);
         remove(filename);
         backend_aot_release_function_table(state, &functionTable);
@@ -948,6 +959,23 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     }
     if (!backend_aot_c_native_import_count(
                 &functionTable, &nativeImportContractCount)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    nativeImportContractCountRemovedByStripping =
+            nativeImportContractCountBeforeStripping >= nativeImportContractCount
+                    ? nativeImportContractCountBeforeStripping - nativeImportContractCount
+                    : 0u;
+    if (enableCodeStripping &&
+        !backend_aot_c_native_import_write_reachability_manifest(
+                file, &functionTable)) {
         fclose(file);
         remove(filename);
         backend_aot_release_annotation_roots(state,
@@ -1148,6 +1176,15 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file,
             "/* code_stripping.genericDictionariesRemoved = %u */\n",
             (unsigned)genericDictionaryCountRemovedByStripping);
+    fprintf(file,
+            "/* code_stripping.nativeImportsBefore = %u */\n",
+            (unsigned)nativeImportContractCountBeforeStripping);
+    fprintf(file,
+            "/* code_stripping.nativeImportsAfter = %u */\n",
+            (unsigned)nativeImportContractCount);
+    fprintf(file,
+            "/* code_stripping.nativeImportsRemoved = %u */\n",
+            (unsigned)nativeImportContractCountRemovedByStripping);
     fprintf(file, "/* code_stripping.typeLayoutsBefore = %u */\n", (unsigned)typeLayoutCountBeforeStripping);
     fprintf(file, "/* code_stripping.typeLayoutsAfter = %u */\n", (unsigned)typeLayoutCountAfterStripping);
     fprintf(file, "/* code_stripping.typeLayoutsRemoved = %u */\n", (unsigned)typeLayoutCountRemovedByStripping);

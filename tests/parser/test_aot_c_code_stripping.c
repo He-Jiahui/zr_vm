@@ -7,6 +7,7 @@
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_common/zr_ffi_contract.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
@@ -1106,6 +1107,80 @@ static void add_native_callback_escape_binding(SZrState *state,
     binding->bindingKind = ZR_FUNCTION_ESCAPE_BINDING_KIND_NATIVE_BINDING;
     root->escapeBindings = binding;
     root->escapeBindingLength = 1u;
+}
+
+static void add_native_import_contract(SZrState *state,
+                                       SZrFunction *function,
+                                       TZrUInt64 symbolId,
+                                       const TZrChar *entryPoint) {
+    SZrNativeImportContract *previousContracts;
+    SZrNativeImportContract *contracts;
+    SZrNativeImportContract *contract;
+    TZrUInt32 previousLength;
+    TZrUInt32 newLength;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(entryPoint);
+    previousContracts = function->nativeImportContracts;
+    previousLength = function->nativeImportContractLength;
+    TEST_ASSERT_LESS_THAN_UINT32(
+            ZR_FFI_CONTRACT_MAX_IMPORTS_PER_FUNCTION, previousLength);
+    newLength = previousLength + 1u;
+    contracts = (SZrNativeImportContract *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrNativeImportContract) * newLength,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(contracts);
+    if (previousLength > 0u) {
+        TEST_ASSERT_NOT_NULL(previousContracts);
+        memcpy(contracts,
+               previousContracts,
+               sizeof(SZrNativeImportContract) * previousLength);
+    }
+    contract = &contracts[previousLength];
+    memset(contract, 0, sizeof(*contract));
+    contract->schemaVersion = ZR_FFI_CONTRACT_SCHEMA_VERSION;
+    strcpy(contract->libraryLocator, "fixture");
+    strcpy(contract->entryPoint, entryPoint);
+    strcpy(contract->sourceMapping.document, "native_import_reachability.zr");
+    contract->symbolId = symbolId;
+    contract->declaringModuleId = 0xabcdu;
+    contract->availability = ZR_FFI_CONTRACT_AVAILABILITY_ALL;
+    contract->requiredCapabilities = ZR_FFI_CONTRACT_CAPABILITY_FFI_RUNTIME;
+    contract->sourceMapping.startLine = 1;
+    contract->sourceMapping.startColumn = 1;
+    contract->sourceMapping.endLine = 1;
+    contract->sourceMapping.endColumn = 1;
+    contract->signature.abi = ZR_FFI_CONTRACT_ABI_C;
+    contract->signature.targetPointerSize = (TZrUInt32)sizeof(TZrPtr);
+    contract->signature.targetEndianness = ZR_FFI_CONTRACT_ENDIAN_LITTLE;
+    strcpy(contract->signature.targetTriple, ZrCommon_FfiContract_GetHostTargetTriple());
+    contract->signature.targetAbiHash = ZrCommon_FfiContract_ComputeTargetAbiHash(
+            contract->signature.abi,
+            contract->signature.targetPointerSize,
+            contract->signature.targetEndianness,
+            contract->signature.targetTriple);
+    contract->signature.charset = ZR_FFI_CONTRACT_CHARSET_NONE;
+    contract->signature.errorPolicy = ZR_FFI_CONTRACT_ERROR_NONE;
+    contract->signature.cleanupPolicy = ZR_FFI_CONTRACT_CLEANUP_NONE;
+    contract->signature.callbackLifetime = ZR_FFI_CONTRACT_CALLBACK_LIFETIME_NONE;
+    contract->signature.callbackThreadPolicy = ZR_FFI_CONTRACT_CALLBACK_THREAD_NONE;
+    contract->signature.callbackExceptionPolicy = ZR_FFI_CONTRACT_CALLBACK_EXCEPTION_NONE;
+    contract->signature.returnType.typeKind = ZR_FFI_CONTRACT_TYPE_VOID;
+    contract->signature.signatureHash =
+            ZrCommon_FfiSignatureContract_ComputeHash(&contract->signature);
+    contract->callableContractHash = contract->signature.signatureHash;
+    TEST_ASSERT_TRUE(ZrCommon_NativeImportContract_Validate(contract));
+    if (previousContracts != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(
+                state->global,
+                previousContracts,
+                sizeof(SZrNativeImportContract) * previousLength,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    function->nativeImportContracts = contracts;
+    function->nativeImportContractLength = newLength;
 }
 
 static void test_aot_c_code_stripping_option_filters_unreachable_static_callable(void) {
@@ -2332,6 +2407,135 @@ static void test_aot_c_code_stripping_rejects_malformed_native_callback_escape_m
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_reports_native_import_contract_reachability(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrSize generatedLength = 0u;
+    char *generatedCText;
+    const char *manifestNode0;
+    const char *manifestNode1;
+    const char *manifestNode2;
+    const char *retainedEntryA;
+    const char *retainedEntryB;
+    const char *retainedSparseEntry;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->instructionsList[0].instruction.operand.operand1[0] = 1u;
+    add_native_import_contract(state, function, 0x101u, "retained_native_a");
+    add_native_import_contract(state, function, 0x102u, "retained_native_b");
+    add_native_import_contract(state,
+                               &function->childFunctionList[0],
+                               0x202u,
+                               "trimmed_native");
+    add_native_import_contract(state,
+                               &function->childFunctionList[1],
+                               0x301u,
+                               "retained_sparse_native");
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_native_import_contract_reachability";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "native-import-contract-reachability";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "native_import_contract_reachability",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedCText = ZrTests_ReadTextFile(generatedCPath, &generatedLength);
+    TEST_ASSERT_NOT_NULL(generatedCText);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, generatedLength);
+    assert_text_contains(generatedCText, "/* code_stripping.nativeImportsBefore = 4 */");
+    assert_text_contains(generatedCText, "/* code_stripping.nativeImportsAfter = 3 */");
+    assert_text_contains(generatedCText, "/* code_stripping.nativeImportsRemoved = 1 */");
+    assert_text_contains(generatedCText, "/* reachability.nativeImportManifest.version = 1 */");
+    assert_text_contains(generatedCText, "/* reachability.nativeImportManifest.count = 3 */");
+    manifestNode0 = strstr(
+            generatedCText,
+            "/* reachability.nativeImportManifest.node[0] = ownerFunction=0 contractIndex=0 symbolId=0x0000000000000101 callableContractHash=");
+    manifestNode1 = strstr(
+            generatedCText,
+            "/* reachability.nativeImportManifest.node[1] = ownerFunction=0 contractIndex=1 symbolId=0x0000000000000102 callableContractHash=");
+    manifestNode2 = strstr(
+            generatedCText,
+            "/* reachability.nativeImportManifest.node[2] = ownerFunction=2 contractIndex=0 symbolId=0x0000000000000301 callableContractHash=");
+    TEST_ASSERT_NOT_NULL(manifestNode0);
+    TEST_ASSERT_NOT_NULL(manifestNode1);
+    TEST_ASSERT_NOT_NULL(manifestNode2);
+    TEST_ASSERT_TRUE(manifestNode0 < manifestNode1);
+    TEST_ASSERT_TRUE(manifestNode1 < manifestNode2);
+    assert_text_contains(generatedCText, "reason=edge.native_import predecessor=0 */");
+    assert_text_contains(generatedCText, "reason=edge.native_import predecessor=2 */");
+    assert_text_contains(
+            generatedCText,
+            "static const SZrAotNativeImportRange zr_aot_native_import_ranges[] = {\n"
+            "    { .contractStart = 0u, .contractCount = 2u },\n"
+            "    { .contractStart = 2u, .contractCount = 0u },\n"
+            "    { .contractStart = 2u, .contractCount = 1u },\n"
+            "};");
+    retainedEntryA = strstr(generatedCText, ".entryPoint = \"retained_native_a\"");
+    retainedEntryB = strstr(generatedCText, ".entryPoint = \"retained_native_b\"");
+    retainedSparseEntry = strstr(
+            generatedCText, ".entryPoint = \"retained_sparse_native\"");
+    TEST_ASSERT_NOT_NULL(retainedEntryA);
+    TEST_ASSERT_NOT_NULL(retainedEntryB);
+    TEST_ASSERT_NOT_NULL(retainedSparseEntry);
+    TEST_ASSERT_TRUE(retainedEntryA < retainedEntryB);
+    TEST_ASSERT_TRUE(retainedEntryB < retainedSparseEntry);
+    assert_text_does_not_contain(generatedCText, "trimmed_native");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_malformed_unreachable_native_import_contract(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    add_native_import_contract(state,
+                               &function->childFunctionList[1],
+                               0x202u,
+                               "malformed_trimmed_native");
+    function->childFunctionList[1].nativeImportContracts[0].schemaVersion = 0u;
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_malformed_unreachable_native_import";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "malformed-unreachable-native-import";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "malformed_unreachable_native_import",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats(void) {
     TZrByte metadataBlob[512];
     TZrSize metadataBytes;
@@ -2624,6 +2828,8 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_package_method_export_root);
     RUN_TEST(test_aot_c_code_stripping_reports_native_callback_materialization_edge);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_native_callback_escape_metadata);
+    RUN_TEST(test_aot_c_code_stripping_reports_native_import_contract_reachability);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_native_import_contract);
     RUN_TEST(test_aot_c_reports_zrp_metadata_section_table_pool_byte_stats);
     RUN_TEST(test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functions);
     return UNITY_END();

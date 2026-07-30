@@ -54,5 +54,8 @@ import literal先按[syntax 10](../syntax/2026-07-19-10-native-ffi-module-packag
 - [Runtime-bound native callable](./11-metadata/2026-07-19-generic-method-native-entry.md)
 - [Runtime-bound reflection service](./11-metadata/2026-07-19-runtime-bound-reflection-module.md)
 - [Target-owned service identity](./11-metadata/2026-07-19-target-owned-reflection-module-cache.md)
+- [Native import contract reachability](./12-stripping/2026-07-30-native-import-contract-reachability.md)
 
-这些记录未改变`.zro/.zrp`schema；Canonical TypeNode、ModuleIdentity、FfiSignature、DebugMap与schema migration仍为open。
+最新 native import 子切片使 AOT C 在裁剪前校验 canonical FfiSignature contract，并按稳定 owner 发布 retained
+contract manifest 与计数；它未改变 `.zro/.zrp` schema。Canonical TypeNode、ModuleIdentity、FfiSignature
+artifact schema/provider parity、DebugMap 与 schema migration 仍为 open。

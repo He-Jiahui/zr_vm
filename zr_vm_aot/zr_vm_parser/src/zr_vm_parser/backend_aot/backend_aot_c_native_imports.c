@@ -1,5 +1,7 @@
 #include "backend_aot_c_native_imports.h"
 
+#include "backend_aot_reachability.h"
+
 #include "zr_vm_common/zr_ffi_contract.h"
 
 #include <limits.h>
@@ -175,6 +177,44 @@ static const SZrAotFunctionEntry *backend_aot_c_native_import_find_function(
     return ZR_NULL;
 }
 
+static TZrBool backend_aot_c_native_import_validate_function(
+        const SZrFunction *function) {
+    if (function == ZR_NULL ||
+        function->nativeImportContractLength >
+                ZR_FFI_CONTRACT_MAX_IMPORTS_PER_FUNCTION ||
+        (function->nativeImportContractLength > 0u &&
+         function->nativeImportContracts == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 contractIndex = 0u;
+         contractIndex < function->nativeImportContractLength;
+         contractIndex++) {
+        if (!ZrCommon_NativeImportContract_Validate(
+                    &function->nativeImportContracts[contractIndex])) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_native_import_validate_function_tree(
+        const SZrFunction *function) {
+    if (!backend_aot_c_native_import_validate_function(function) ||
+        (function->childFunctionLength > 0u &&
+         function->childFunctionList == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 childIndex = 0u;
+         childIndex < function->childFunctionLength;
+         childIndex++) {
+        if (!backend_aot_c_native_import_validate_function_tree(
+                    &function->childFunctionList[childIndex])) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 TZrBool backend_aot_c_native_import_count(
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 *outCount) {
@@ -183,7 +223,10 @@ TZrBool backend_aot_c_native_import_count(
     if (outCount != ZR_NULL) {
         *outCount = 0u;
     }
-    if (functionTable == ZR_NULL || outCount == ZR_NULL) {
+    if (functionTable == ZR_NULL || outCount == ZR_NULL ||
+        functionTable->count > functionTable->capacity ||
+        functionTable->indexSpace > functionTable->capacity ||
+        (functionTable->count > 0u && functionTable->entries == ZR_NULL)) {
         return ZR_FALSE;
     }
     for (TZrUInt32 functionIndex = 0u;
@@ -191,19 +234,8 @@ TZrBool backend_aot_c_native_import_count(
          functionIndex++) {
         const SZrFunction *function = functionTable->entries[functionIndex].function;
 
-        if (function == ZR_NULL ||
-            function->nativeImportContractLength >
-                    ZR_FFI_CONTRACT_MAX_IMPORTS_PER_FUNCTION) {
+        if (!backend_aot_c_native_import_validate_function(function)) {
             return ZR_FALSE;
-        }
-        for (TZrUInt32 contractIndex = 0u;
-             contractIndex < function->nativeImportContractLength;
-             contractIndex++) {
-            if (function->nativeImportContracts == ZR_NULL ||
-                !ZrCommon_NativeImportContract_Validate(
-                        &function->nativeImportContracts[contractIndex])) {
-                return ZR_FALSE;
-            }
         }
         count += function->nativeImportContractLength;
         if (count > UINT32_MAX) {
@@ -212,6 +244,64 @@ TZrBool backend_aot_c_native_import_count(
     }
     *outCount = (TZrUInt32)count;
     return ZR_TRUE;
+}
+
+TZrBool backend_aot_c_native_import_write_reachability_manifest(
+        FILE *file,
+        const SZrAotFunctionTable *functionTable) {
+    const TZrChar *reasonName = backend_aot_reachability_reason_name(
+            ZR_AOT_REACHABILITY_REASON_NATIVE_IMPORT);
+    TZrUInt32 count = 0u;
+    TZrUInt32 nodeIndex = 0u;
+    TZrUInt32 functionIndexSpace;
+
+    if (file == ZR_NULL || reasonName == ZR_NULL ||
+        !backend_aot_c_native_import_count(functionTable, &count)) {
+        return ZR_FALSE;
+    }
+    if (fprintf(file,
+                "/* reachability.nativeImportManifest.version = 1 */\n") < 0 ||
+        fprintf(file,
+                "/* reachability.nativeImportManifest.count = %u */\n",
+                (unsigned)count) < 0) {
+        return ZR_FALSE;
+    }
+
+    functionIndexSpace = backend_aot_function_table_index_space(functionTable);
+    for (TZrUInt32 functionIndex = 0u;
+         functionIndex < functionIndexSpace;
+         functionIndex++) {
+        const SZrAotFunctionEntry *entry =
+                backend_aot_c_native_import_find_function(
+                        functionTable, functionIndex);
+        const SZrFunction *function = entry != ZR_NULL ? entry->function : ZR_NULL;
+
+        for (TZrUInt32 contractIndex = 0u;
+             function != ZR_NULL &&
+             contractIndex < function->nativeImportContractLength;
+             contractIndex++) {
+            const SZrNativeImportContract *contract =
+                    &function->nativeImportContracts[contractIndex];
+
+            if (fprintf(file,
+                        "/* reachability.nativeImportManifest.node[%u] = "
+                        "ownerFunction=%u contractIndex=%u "
+                        "symbolId=0x%016llx callableContractHash=0x%016llx "
+                        "reason=%s predecessor=%u */\n",
+                        (unsigned)nodeIndex,
+                        (unsigned)entry->flatIndex,
+                        (unsigned)contractIndex,
+                        (unsigned long long)contract->symbolId,
+                        (unsigned long long)contract->callableContractHash,
+                        reasonName,
+                        (unsigned)entry->flatIndex) < 0) {
+                return ZR_FALSE;
+            }
+            nodeIndex++;
+        }
+    }
+
+    return (TZrBool)(nodeIndex == count && ferror(file) == 0);
 }
 
 void backend_aot_c_write_native_import_table(

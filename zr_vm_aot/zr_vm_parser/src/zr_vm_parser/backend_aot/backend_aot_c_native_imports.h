@@ -3,9 +3,16 @@
 
 #include "backend_aot_function_table.h"
 
+TZrBool backend_aot_c_native_import_validate_function_tree(
+        const SZrFunction *function);
+
 TZrBool backend_aot_c_native_import_count(
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 *outCount);
+
+TZrBool backend_aot_c_native_import_write_reachability_manifest(
+        FILE *file,
+        const SZrAotFunctionTable *functionTable);
 
 void backend_aot_c_write_native_import_table(
         FILE *file,

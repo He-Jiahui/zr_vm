@@ -31,7 +31,7 @@ static TZrBool backend_aot_reachability_reason_is_edge(EZrAotReachabilityReason 
     }
 }
 
-static const TZrChar *backend_aot_reachability_reason_name(EZrAotReachabilityReason reason) {
+const TZrChar *backend_aot_reachability_reason_name(EZrAotReachabilityReason reason) {
     switch (reason) {
         case ZR_AOT_REACHABILITY_REASON_ROOT_ENTRY:
             return "root.entry";
@@ -51,6 +51,8 @@ static const TZrChar *backend_aot_reachability_reason_name(EZrAotReachabilityRea
             return "edge.generic_instance";
         case ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK:
             return "edge.native_callback";
+        case ZR_AOT_REACHABILITY_REASON_NATIVE_IMPORT:
+            return "edge.native_import";
         case ZR_AOT_REACHABILITY_REASON_REFLECTION_ANNOTATION:
             return "root.reflection_annotation";
         case ZR_AOT_REACHABILITY_REASON_PROPERTY_ACCESSOR:

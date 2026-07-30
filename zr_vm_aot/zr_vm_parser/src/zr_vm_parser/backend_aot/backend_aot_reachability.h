@@ -29,7 +29,8 @@ typedef enum EZrAotReachabilityReason {
     ZR_AOT_REACHABILITY_REASON_GENERIC_METHODSPEC = 12,
     ZR_AOT_REACHABILITY_REASON_REFLECTION_CONSTRUCTOR = 13,
     ZR_AOT_REACHABILITY_REASON_PACKAGE_EXPORT = 14,
-    ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK = 15
+    ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK = 15,
+    ZR_AOT_REACHABILITY_REASON_NATIVE_IMPORT = 16
 } EZrAotReachabilityReason;
 
 typedef struct SZrAotReachabilityEdge {
@@ -43,6 +44,9 @@ typedef struct SZrAotReachabilityMark {
     EZrAotReachabilityReason reason;
     TZrUInt32 predecessor;
 } SZrAotReachabilityMark;
+
+const TZrChar *backend_aot_reachability_reason_name(
+        EZrAotReachabilityReason reason);
 
 TZrBool backend_aot_reachability_compute(SZrAotReachabilityMark *marks,
                                           TZrUInt32 markCount,

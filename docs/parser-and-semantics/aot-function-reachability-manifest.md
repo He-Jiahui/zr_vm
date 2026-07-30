@@ -4,18 +4,24 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
   - docs/plans/aot/08-generic-sharing.md
+  - docs/plans/aot/11-metadata.md
   - docs/plans/aot/12-code-stripping.md
 tests:
   - tests/parser/test_aot_reachability.c
@@ -29,6 +35,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-12-package-method-export-required-root.md
   - tests/acceptance/2026-07-30-aot-12-native-callback-materialization-edge.md
   - tests/acceptance/2026-07-30-aot-08-12-canonical-generic-dictionary-reachability.md
+  - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
 doc_type: module-detail
 ---
 
@@ -41,7 +48,7 @@ every retained function. It separates language-level retention from linker dead 
 nodes are reachable, records why each node survived, publishes the result, and only then filters the generated function
 table.
 
-This slice owns function nodes and the first owner-linked generic dictionary nodes. The first type/layout
+This slice owns function nodes and the first owner-linked generic dictionary and native import contract nodes. The first type/layout
 reason-manifest slice is documented separately in `aot-type-layout-reachability-manifest.md`; canonical shared-body
 definition identity, constraint witnesses, explicit native callback descriptor roots, module initializer, reflection
 metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on the broader graph
@@ -71,6 +78,10 @@ Dependency-edge reasons are:
 - `REFLECTION`
 - `GENERIC_INSTANCE`
 - `NATIVE_CALLBACK`
+
+The separate canonical-contract node schema also defines `NATIVE_IMPORT`. It is valid only for a retained function's
+owner edge to one of its `SZrNativeImportContract` rows. The function reachability engine rejects it as a
+function-to-function edge, so contract ownership cannot accidentally retain an unrelated function.
 
 The two classes are intentionally disjoint. `backend_aot_reachability_compute()` rejects an edge reason in the root
 array, a root reason on an edge, `NONE`, and unknown enum values before initializing or publishing marks. It also
@@ -128,6 +139,15 @@ rejects nonempty/null typed-local, frame-layout, and child-function tables; a re
 TypeId or conflicting layout IDs for one TypeId also fails writer output. Type text remains discovery/debug input in
 this baseline, not dictionary instance identity.
 
+Native import contract nodes use canonical contract fields already produced by binding: `symbolId`,
+`callableContractHash`, and the complete validated `FfiSignature`. The C writer validates every row in the original
+function tree before ExecIR construction, including contracts on functions that code stripping would later remove.
+A nonempty/null table, per-function count overflow, function-table index space larger than capacity,
+schema/hash/ABI corruption, or invalid policy therefore fails closed instead of disappearing with an unreachable
+owner. After function filtering, the retained contract manifest walks sparse flat function indices and contract
+indices in ascending order. Entry-point and library strings remain payload, not reachability identity or
+graph-discovery input.
+
 ## Marking And Reason Chains
 
 The engine performs breadth-first marking with caller-owned mark and queue buffers. Roots are enqueued in caller order;
@@ -165,6 +185,17 @@ The owner-linked dictionary manifest follows the same diagnostic rule:
 /* reachability.genericDictionaryManifest.node[0] = typeId=41 ownerFunction=0 reason=edge.generic_instance predecessor=0 */
 ```
 
+The native import contract manifest follows the same owner/predecessor rule:
+
+```text
+/* reachability.nativeImportManifest.version = 1 */
+/* reachability.nativeImportManifest.count = 1 */
+/* reachability.nativeImportManifest.node[0] = ownerFunction=0 contractIndex=0 symbolId=0x0000000000000101 callableContractHash=0x4478327a8def8f8b reason=edge.native_import predecessor=0 */
+```
+
+`code_stripping.nativeImportsBefore`, `nativeImportsAfter`, and `nativeImportsRemoved` report contract-node trimming
+independently from function and generic dictionary counts.
+
 ## Test Coverage
 
 `test_aot_reachability.c` covers transitive marking, disconnected nodes, first-root reason preservation, invalid graph
@@ -195,6 +226,13 @@ Generic dictionary coverage proves canonical TypeId dedup despite differing disp
 equal display names, canonical dictionary reuse by two retained owners, 2-to-1 unreachable-node trimming, stable
 manifest/stat publication, and fail-closed missing TypeId, null binding table, and conflicting layout schema cases.
 The null-table matrix includes frame-layout metadata and proves rejection occurs before ExecIR construction.
+
+Native import coverage proves four original contracts become three retained contracts. Two contracts on flat owner 0
+and one contract on sparse flat owner 2 are published in owner/contract-index order, while owner 1 has an empty range
+and its unreachable entry point is absent from generated C. The suite checks canonical hashes, descriptor-table order,
+the exact owner range table, an index-space/capacity bound, and malformed unreachable contract metadata failing before
+ExecIR with no artifact. Reason-schema coverage also proves `NATIVE_IMPORT` has a stable name but is rejected by the
+function-to-function graph.
 
 The acceptance records run the focused reachability, stripping, and generic-sharing targets on WSL GCC, WSL Clang,
 and Windows MSVC. Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

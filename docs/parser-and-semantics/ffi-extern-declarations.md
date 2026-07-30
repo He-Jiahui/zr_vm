@@ -20,7 +20,10 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_ffi_contract.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
@@ -48,6 +51,8 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
@@ -59,6 +64,8 @@ plan_sources:
   - user: 2026-03-29 extern 语法用于注册外部 ffi
   - user: 2026-04-06 struct 值类型与 native wrapper 分层方案
   - user: 2026-04-06 新的 source-level wrapper decorator surface 和具体 handle_id lowering runtime 完善
+  - docs/plans/aot/11-metadata.md
+  - docs/plans/aot/12-code-stripping.md
 tests:
   - tests/parser/test_parser.c
   - tests/parser/test_type_inference.c
@@ -67,6 +74,8 @@ tests:
   - tests/ffi/ffi_fixture.c
   - tests/module/test_module_system.c
   - tests/language_server/test_semantic_analyzer.c
+  - tests/parser/test_aot_c_code_stripping.c
+  - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
 doc_type: module-detail
 ---
 
@@ -287,6 +296,11 @@ common 层对契约和值域执行统一校验并计算稳定 little-endian FNV 
 挂到 `SZrFunction.nativeImportContracts`；`.zro` 按显式字段序列化，不依赖宿主结构体布局。
 AOT C 生成不可变契约表，并通过 ABI 14 的 module/code registration 同时发布表指针和
 数量；loader 拒绝两侧不一致或损坏的表。
+
+启用 AOT code stripping 时，writer 在 ExecIR 之前校验完整 function tree 上的每个 canonical contract，
+不可达 owner 上的损坏 row 也会使输出 fail closed。裁剪后只发布 retained owner 的 contract table，并输出
+`nativeImportsBefore/After/Removed` 以及版本化 `nativeImportManifest`。清单 identity 使用 `symbolId` 和
+`callableContractHash`，owner/predecessor 使用 stable flat function index；library/entry 字符串不参与可达性推断。
 
 静态调用执行到 `LibraryHandle.getContractSymbol(contractIndex)`。runtime 从当前调用链定位
 声明函数持有的 canonical contract，校验 library/availability/capability/target ABI，直接

@@ -391,7 +391,7 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
             ZR_AOT_REACHABILITY_REASON_DIRECT_CALL,
     };
     static const EZrAotReachabilityReason unknownRootReasons[] = {
-            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK + 1),
+            (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_NATIVE_IMPORT + 1),
     };
     static const SZrAotReachabilityEdge rootReasonEdges[] = {
             {0u, 1u, ZR_AOT_REACHABILITY_REASON_ROOT_EXPORT},
@@ -399,7 +399,10 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
     static const SZrAotReachabilityEdge unknownReasonEdges[] = {
             {0u,
              1u,
-             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_NATIVE_CALLBACK + 1)},
+             (EZrAotReachabilityReason)(ZR_AOT_REACHABILITY_REASON_NATIVE_IMPORT + 1)},
+    };
+    static const SZrAotReachabilityEdge nativeImportReasonEdges[] = {
+            {0u, 1u, ZR_AOT_REACHABILITY_REASON_NATIVE_IMPORT},
     };
     SZrAotReachabilityMark marks[2];
     TZrUInt32 queue[2];
@@ -442,6 +445,20 @@ static void test_reachability_rejects_invalid_reason_schema(void) {
                                                        validRootReasons,
                                                        1u,
                                                        unknownReasonEdges,
+                                                       1u,
+                                                       queue,
+                                                       2u,
+                                                       &markedCount));
+    TEST_ASSERT_EQUAL_STRING(
+            "edge.native_import",
+            backend_aot_reachability_reason_name(
+                    ZR_AOT_REACHABILITY_REASON_NATIVE_IMPORT));
+    TEST_ASSERT_FALSE(backend_aot_reachability_compute(marks,
+                                                       2u,
+                                                       roots,
+                                                       validRootReasons,
+                                                       1u,
+                                                       nativeImportReasonEdges,
                                                        1u,
                                                        queue,
                                                        2u,
@@ -598,6 +615,30 @@ static void test_function_table_filter_keeps_reachable_entries_without_renumberi
     TEST_ASSERT_EQUAL_UINT32(3u, invalidTable.count);
     TEST_ASSERT_EQUAL_PTR(&functions[0], invalidTable.entries[0].function);
     TEST_ASSERT_EQUAL_UINT32(0u, invalidTable.entries[0].flatIndex);
+}
+
+static void test_function_table_index_space_rejects_value_larger_than_capacity(void) {
+    SZrFunction function;
+    SZrAotFunctionEntry entries[1];
+    SZrAotFunctionTable table;
+
+    memset(&function, 0, sizeof(function));
+    entries[0].function = &function;
+    entries[0].flatIndex = 0u;
+    table.entries = entries;
+    table.count = 1u;
+    table.capacity = 1u;
+    table.indexSpace = 2u;
+
+    TEST_ASSERT_EQUAL_UINT32(
+            0u,
+            backend_aot_function_table_index_space(&table));
+
+    entries[0].flatIndex = 1u;
+    table.indexSpace = 0u;
+    TEST_ASSERT_EQUAL_UINT32(
+            0u,
+            backend_aot_function_table_index_space(&table));
 }
 
 static void test_static_callable_reachability_marks_get_sub_function_target(void) {
@@ -2415,6 +2456,7 @@ int main(void) {
     RUN_TEST(test_reachability_function_manifest_is_stable_and_preserves_reason_chain);
     RUN_TEST(test_reachability_function_manifest_rejects_malformed_reason_chains);
     RUN_TEST(test_function_table_filter_keeps_reachable_entries_without_renumbering);
+    RUN_TEST(test_function_table_index_space_rejects_value_larger_than_capacity);
     RUN_TEST(test_static_callable_reachability_marks_get_sub_function_target);
     RUN_TEST(test_static_callable_reachability_marks_native_callback_get_sub_function_edge);
     RUN_TEST(test_static_callable_reachability_marks_native_callback_constant_materialization_edges);
