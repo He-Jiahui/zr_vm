@@ -7,6 +7,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/type_layout.h"
 
 #include <stdint.h>
 
@@ -22,7 +23,8 @@ static TZrBool backend_aot_exec_ir_instruction_ends_block(TZrUInt16 opcode);
 static TZrBool backend_aot_exec_ir_branch_target(const SZrFunction *function,
                                                  TZrUInt32 instructionIndex,
                                                  TZrUInt32 *outTargetIndex);
-static TZrBool backend_aot_exec_ir_validate_frame_layout(const SZrFunction *function);
+static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
+                                                         const SZrFunction *function);
 static TZrBool backend_aot_exec_ir_build_frame_layout(SZrState *state,
                                                       const SZrFunction *function,
                                                       SZrAotExecIrFrameLayout *outFrameLayout);
@@ -456,7 +458,8 @@ static TZrBool backend_aot_exec_ir_frame_storage_contains(TZrUInt32 frameByteSiz
                      storageSize <= frameByteSize - byteOffset);
 }
 
-static TZrBool backend_aot_exec_ir_validate_frame_layout(const SZrFunction *function) {
+static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
+                                                         const SZrFunction *function) {
     const TZrUInt16 knownFlags =
             ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
             ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
@@ -465,7 +468,8 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(const SZrFunction *func
             ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
     TZrUInt32 parameterLayoutCount = 0u;
 
-    if (function == ZR_NULL || function->parameterCount > function->stackSize) {
+    if (state == ZR_NULL || function == ZR_NULL ||
+        function->parameterCount > function->stackSize) {
         return ZR_FALSE;
     }
     if (function->frameSlotLayoutLength == 0u) {
@@ -483,6 +487,7 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(const SZrFunction *func
 
     for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
         const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        const SZrTypeLayout *typeLayout = ZR_NULL;
         const TZrUInt16 flags = layout->reserved0;
         TZrUInt32 storageSize = layout->byteSize;
         TZrUInt32 storageAlign = layout->byteAlign;
@@ -498,6 +503,19 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(const SZrFunction *func
             (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
              layout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE)) {
             return ZR_FALSE;
+        }
+        if (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(
+                    function, layout->typeLayoutId, state);
+            if (typeLayout == ZR_NULL ||
+                !ZrCore_TypeLayout_Validate(typeLayout) ||
+                typeLayout->cTypeId != layout->typeLayoutId ||
+                (typeLayout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT &&
+                 typeLayout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION) ||
+                typeLayout->byteSize != layout->byteSize ||
+                typeLayout->byteAlign != layout->byteAlign) {
+                return ZR_FALSE;
+            }
         }
         if (layout->isParameter != 0u) {
             parameterLayoutCount++;
@@ -571,7 +589,7 @@ static TZrBool backend_aot_exec_ir_build_frame_layout(SZrState *state,
     if (state == ZR_NULL || state->global == ZR_NULL || function == ZR_NULL || outFrameLayout == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (!backend_aot_exec_ir_validate_frame_layout(function)) {
+    if (!backend_aot_exec_ir_validate_frame_layout(state, function)) {
         return ZR_FALSE;
     }
 

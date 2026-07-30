@@ -49,6 +49,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-08-12-canonical-generic-dictionary-reachability.md
   - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
+  - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
 doc_type: module-detail
 ---
@@ -233,6 +234,12 @@ TypeLayout counts. Every row names its owner as predecessor because frame storag
 function. The earlier type-layout manifest remains a separate graph: it deduplicates referenced TypeLayout identities,
 whereas this manifest preserves every retained owner/slot ABI row.
 
+Before either manifest is derived, every inline-struct frame row in the complete source function tree resolves through
+the canonical prototype-frame TypeLayout cache. ExecIR rejects unresolved identities, invalid schema/hash state,
+`cTypeId` identity drift, non-aggregate kinds, and payload size/alignment drift even when the owner would later be
+trimmed. Alias payload identity is checked separately from the existing physical binding size/alignment rules, retaining
+legal direct overlap and indirect/borrowed storage shapes.
+
 The retained debug sidecar manifest is generated from the validated source-location rows and matched ExecIR owners:
 
 ```text
@@ -291,6 +298,10 @@ high-alignment payloads stored through lower-alignment indirect and borrowed bin
 for an all-empty fixture, and rejects non-power-of-two alignment plus an out-of-frame storage span on an unreachable
 function before filtering. The malformed writer paths leave no generated artifact. The adjacent generic-sharing
 suite also keeps its nonempty/null frame-table rejection gate.
+
+The TypeLayout closure matrix uses canonical union layouts for legal direct, indirect, and borrowed rows, then isolates
+six unreachable-owner failures: unresolved identity, nonzero hash mismatch, `cTypeId` mismatch, valid non-aggregate
+VALUE kind, payload-size drift, and payload-alignment drift. Each public-writer failure leaves no generated artifact.
 
 Debug sidecar coverage proves four original location rows become three retained rows after owner-function trimming.
 The retained manifest orders flat owner 0 before owner 1 and preserves two source rows for owner 1 by location index;

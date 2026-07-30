@@ -74,6 +74,10 @@ canonical execution-location 全树预检、retained owner `edge.debug_sidecar` 
 unreachable malformed row fail-closed 子切片；S1/S3/S6 仍为部分完成，safepoint variable map 与 AOT 11
 versioned DebugMap section 仍开放。
 
+[2026-07-30 frame TypeLayout closure verifier](./07-codegen/2026-07-30-frame-type-layout-closure-verifier.md) 完成
+frame/type-layout reachability 输入在裁剪前的 canonical closure gate：不可达 owner 的 unresolved、invalid、
+identity/kind/shape 漂移不再被静默删除；沿用既有 manifest，S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

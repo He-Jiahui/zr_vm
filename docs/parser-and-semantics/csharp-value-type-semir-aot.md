@@ -399,6 +399,7 @@ tests:
   - tests/parser/test_aot_c_descriptor_diagnostics.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
+  - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -886,6 +887,13 @@ referenced payload span, so legal alias overlap remains valid. Generated C repor
 after function filtering and publishes retained rows in ascending flat-owner/slot order through the version 1
 `frameLayoutManifest`. This is a verifier/reporting prerequisite for A7.2; it does not yet derive receiver,
 `in/ref/out`, return, spill, or address-taken slots from `CallableContract`.
+
+Every inline-struct row now also closes over its canonical prototype-frame TypeLayout before stripping. Resolution must
+succeed, the READY layout must pass schema/hash validation, `cTypeId` must equal the frame `typeLayoutId`, the kind must
+be `STRUCT` or `UNION`, and payload size/alignment must exactly match the slot row. This payload check is independent
+from the existing physical-storage check, so direct overlap and indirect/borrowed alias bindings remain legal while a
+malformed unreachable owner cannot be hidden by filtering. The existing frame and type-layout manifests remain the
+reporting surfaces; this closure gate introduces no duplicate schema.
 
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,
