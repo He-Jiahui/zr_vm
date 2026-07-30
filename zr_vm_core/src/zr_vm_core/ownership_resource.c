@@ -21,8 +21,9 @@ static void ownership_resource_reset_value(SZrTypeValue *value) {
     value->ownershipWeakRef = ZR_NULL;
 }
 
-static void ownership_resource_set_direct_unique(SZrTypeValue *value,
-                                                  SZrRawObject *object) {
+static void ownership_resource_set_direct_value(SZrTypeValue *value,
+                                                 SZrRawObject *object,
+                                                 EZrOwnershipValueKind ownershipKind) {
     if (value == ZR_NULL || object == ZR_NULL) {
         return;
     }
@@ -31,9 +32,15 @@ static void ownership_resource_set_direct_unique(SZrTypeValue *value,
     value->value.object = object;
     value->isGarbageCollectable = ZR_TRUE;
     value->isNative = object->isNative;
-    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_UNIQUE;
+    value->ownershipKind = ownershipKind;
     value->ownershipControl = ZR_NULL;
     value->ownershipWeakRef = ZR_NULL;
+}
+
+static void ownership_resource_set_direct_unique(SZrTypeValue *value,
+                                                  SZrRawObject *object) {
+    ownership_resource_set_direct_value(
+            value, object, ZR_OWNERSHIP_VALUE_KIND_UNIQUE);
 }
 
 TZrBool ZrCore_OwnershipResource_IsObject(const SZrRawObject *object) {
@@ -52,6 +59,15 @@ TZrBool ZrCore_OwnershipResource_IsDirectUniqueValue(const SZrTypeValue *value) 
            value->isGarbageCollectable &&
            !ZR_VALUE_IS_TYPE_NULL(value->type) &&
            value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE &&
+           value->ownershipControl == ZR_NULL &&
+           ZrCore_OwnershipResource_IsObject(value->value.object);
+}
+
+TZrBool ZrCore_OwnershipResource_IsDirectLoanedValue(const SZrTypeValue *value) {
+    return value != ZR_NULL &&
+           value->isGarbageCollectable &&
+           !ZR_VALUE_IS_TYPE_NULL(value->type) &&
+           value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED &&
            value->ownershipControl == ZR_NULL &&
            ZrCore_OwnershipResource_IsObject(value->value.object);
 }
@@ -87,6 +103,41 @@ TZrBool ZrCore_OwnershipResource_MoveUnique(SZrState *state,
     if (object->resourceLifecycleState == ZR_RESOURCE_LIFECYCLE_CONSTRUCTING) {
         object->resourceLifecycleState = ZR_RESOURCE_LIFECYCLE_ALIVE;
     }
+    ownership_resource_reset_value(source);
+    ownership_resource_set_direct_unique(destination, object);
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_OwnershipResource_LoanUnique(SZrState *state,
+                                            SZrTypeValue *destination,
+                                            SZrTypeValue *source) {
+    SZrRawObject *object;
+
+    if (state == ZR_NULL || destination == ZR_NULL ||
+        !ZrCore_OwnershipResource_IsDirectUniqueValue(source)) {
+        return ZR_FALSE;
+    }
+
+    object = source->value.object;
+    ownership_resource_reset_value(source);
+    ownership_resource_set_direct_value(
+            destination, object, ZR_OWNERSHIP_VALUE_KIND_LOANED);
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_OwnershipResource_ReturnLoan(SZrState *state,
+                                            SZrTypeValue *destination,
+                                            SZrTypeValue *source) {
+    SZrRawObject *object;
+
+    if (state == ZR_NULL || destination == ZR_NULL ||
+        !ZrCore_OwnershipResource_IsDirectLoanedValue(source)) {
+        return ZR_FALSE;
+    }
+
+    object = source->value.object;
     ownership_resource_reset_value(source);
     ownership_resource_set_direct_unique(destination, object);
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);

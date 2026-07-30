@@ -1,4 +1,4 @@
-module "classes";
+module classes;
 
 // 基类
 class BaseClass {
@@ -8,7 +8,7 @@ class BaseClass {
         this.baseValue = 10;
     }
     
-    pub getValue(): int {
+    pub fn getValue(): int {
         return this.baseValue;
     }
 }
@@ -21,7 +21,7 @@ class DerivedClass: BaseClass {
         this.derivedValue = 20;
     }
     
-    pub getDerivedValue(): int {
+    pub fn getDerivedValue(): int {
         return this.derivedValue;
     }
 }
@@ -34,12 +34,12 @@ class MethodTest {
         this.value = v;
     }
     
-    pub add(x: int): int {
+    pub fn add(x: int): int {
         this.value = this.value + x;
         return this.value;
     }
     
-    pub multiply(x: int): int {
+    pub fn multiply(x: int): int {
         this.value = this.value * x;
         return this.value;
     }
@@ -59,7 +59,7 @@ class PropertyTest {
 class StaticTest {
     pub static var staticValue: int = 100;
     
-    pub static getStaticValue(): int {
+    pub static fn getStaticValue(): int {
         return StaticTest.staticValue;
     }
 }
@@ -69,18 +69,24 @@ class AccessModifierTest {
     pub var publicVar: int = 1;
     pri var privateVar: int = 2;
     pro var protectedVar: int = 3;
+
+    pub @constructor() {
+        this.publicVar = 1;
+        this.privateVar = 2;
+        this.protectedVar = 3;
+    }
     
-    pub getPrivateVar(): int {
+    pub fn getPrivateVar(): int {
         return this.privateVar;
     }
     
-    pub getProtectedVar(): int {
+    pub fn getProtectedVar(): int {
         return this.protectedVar;
     }
 }
 
 // 测试用例
-%test("classesTest"){
+fn classesTest(): int {
     var result = 0;
     
     // 测试类继承
@@ -110,3 +116,5 @@ class AccessModifierTest {
     
     return result;
 }
+
+return classesTest();

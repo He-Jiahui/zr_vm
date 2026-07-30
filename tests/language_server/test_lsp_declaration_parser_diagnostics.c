@@ -261,9 +261,9 @@ static void test_lsp_missing_declaration_body_close_parser_diagnostics(SZrState 
     if (!run_declaration_diagnostic_case(state,
                                          &timer,
                                          summary,
-                                         "file:///parser_missing_interface_body_close.zr",
-                                         "interface Sized {\n"
-                                         "    get length: int;\n",
+                                          "file:///parser_missing_interface_body_close.zr",
+                                          "interface Sized {\n"
+                                          "    fn length(): int;\n",
                                          "missing_declaration_body_close",
                                          "Missing closing '}' for interface declaration body",
                                          "Insert '}' to close the interface declaration body",
@@ -287,9 +287,9 @@ static void test_lsp_missing_declaration_body_close_parser_diagnostics(SZrState 
     if (!run_declaration_diagnostic_case(state,
                                          &timer,
                                          summary,
-                                         "file:///parser_missing_extern_block_body_close.zr",
-                                         "native extern(\"fixture\") {\n"
-                                         "    NativeAdd(value: int): int;\n",
+                                          "file:///parser_missing_extern_block_body_close.zr",
+                                          "native extern(\"fixture\") {\n"
+                                          "    pub fn nativeAdd(value: int): int;\n",
                                          "missing_declaration_body_close",
                                          "Missing closing '}' for extern block body",
                                          "Insert '}' to close the extern block body",

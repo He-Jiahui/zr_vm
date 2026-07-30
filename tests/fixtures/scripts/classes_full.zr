@@ -1,4 +1,4 @@
-module "classes_full";
+module classes_full;
 
 class BaseHero {
     pri var _hp: int = 0;
@@ -12,7 +12,7 @@ class BaseHero {
         set { this._hp = value; }
     }
 
-    pub heal(amount: int): int {
+    pub fn heal(amount: int): int {
         this.hp = this.hp + amount;
         return this.hp;
     }
@@ -34,14 +34,16 @@ class BossHero: BaseHero {
         BossHero.created = BossHero.created + 1;
     }
 
-    pub total(): int {
+    pub fn total(): int {
         return this.hp + ScoreBoard.bonus + BossHero.created;
     }
 }
 
-%test("classesFullProjectShape") {
+fn classesFullProjectShape(): int {
     var boss = new BossHero(30);
     boss.hp = boss.hp + 7;
     ScoreBoard.bonus = boss.heal(5);
     return boss.total() + ScoreBoard.bonus;
 }
+
+return classesFullProjectShape();

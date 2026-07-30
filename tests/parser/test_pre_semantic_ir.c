@@ -1030,10 +1030,10 @@ static void test_joined_mutable_loans_end_after_conservative_path_conflict(void)
 
 static void test_compiler_ownership_lowering_records_explicit_semantic_operation(void) {
     static const TZrChar source[] =
-            "var value: int = 1;\n"
-            "var owner = %unique(value);\n"
-            "var borrowed = %borrow(owner);\n"
-            "var memberBorrowed = owner.borrow();\n";
+            "resource class Value {}\n"
+            "var owner = own Value();\n"
+            "var borrowed: ref readonly Value = ref owner;\n"
+            "var memberBorrowed: ref readonly Value = ref owner;\n";
     SZrString *sourceName =
             ZrCore_String_Create(g_state, "pre_semantic_ownership.zr", 25U);
     SZrAstNode *ast = ZrParser_Parse(

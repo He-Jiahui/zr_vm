@@ -199,6 +199,7 @@ static const TZrChar *find_collection_files_block(const TZrChar *manifest,
                                                    const TZrChar *collection,
                                                    const TZrChar **outEnd) {
     TZrChar marker[128];
+    TZrChar crlfMarker[128];
     const TZrChar *start;
     const TZrChar *end;
 
@@ -207,6 +208,13 @@ static const TZrChar *find_collection_files_block(const TZrChar *manifest,
                               "\"collection\": \"%s\",\n      \"files\": [",
                               collection) > 0);
     start = strstr(manifest, marker);
+    if (start == ZR_NULL) {
+        TEST_ASSERT_TRUE(snprintf(crlfMarker,
+                                  sizeof(crlfMarker),
+                                  "\"collection\": \"%s\",\r\n      \"files\": [",
+                                  collection) > 0);
+        start = strstr(manifest, crlfMarker);
+    }
     TEST_ASSERT_NOT_NULL_MESSAGE(start, collection);
     end = strstr(start, "\n      ]");
     TEST_ASSERT_NOT_NULL_MESSAGE(end, collection);
@@ -477,12 +485,13 @@ static void test_syntax_reference_v1_separates_current_negative_and_pending_coll
 
     TEST_ASSERT_NOT_NULL(manifest);
     TEST_ASSERT_TRUE(manifestLength > 0u);
-    TEST_ASSERT_EQUAL_UINT64(1u, ZrTests_Reference_CountOccurrences(
-                                       manifest, "\"collection\": \"current\",\n      \"files\": ["));
-    TEST_ASSERT_EQUAL_UINT64(1u, ZrTests_Reference_CountOccurrences(
-                                       manifest, "\"collection\": \"negative\",\n      \"files\": ["));
-    TEST_ASSERT_EQUAL_UINT64(1u, ZrTests_Reference_CountOccurrences(
-                                       manifest, "\"collection\": \"design-pending\",\n      \"files\": ["));
+    {
+        const TZrChar *collectionEnd;
+
+        TEST_ASSERT_NOT_NULL(find_collection_files_block(manifest, "current", &collectionEnd));
+        TEST_ASSERT_NOT_NULL(find_collection_files_block(manifest, "negative", &collectionEnd));
+        TEST_ASSERT_NOT_NULL(find_collection_files_block(manifest, "design-pending", &collectionEnd));
+    }
     TEST_ASSERT_TRUE(ZrTests_Reference_CountJsonStringFieldValueOccurrences(
                              manifest, "status", "current") >= 1u);
     TEST_ASSERT_TRUE(ZrTests_Reference_CountJsonStringFieldValueOccurrences(

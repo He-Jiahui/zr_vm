@@ -38,10 +38,10 @@ async function main() {
     });
 
     assert(exitCode === 0, `REPL exited with code ${exitCode}\n${output}`);
-    const intLambdaTypeCount = (output.match(/Type: %func\(\)->int/g) || []).length;
+    const intLambdaTypeCount = (output.match(/Type: fn\(\) -> int/g) || []).length;
     assert(intLambdaTypeCount >= 2,
         `:type should infer numeric lambda function types through direct and control-flow returns\n${output}`);
-    assert(output.includes('Type: %func()->bool'),
+    assert(output.includes('Type: fn() -> bool'),
         `:type should infer the logical lambda function type\n${output}`);
     assert(output.includes('Expression: lambda exact'),
         `:type should print the lambda expression fact\n${output}`);

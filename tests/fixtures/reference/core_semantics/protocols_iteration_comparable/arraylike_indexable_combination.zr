@@ -1,5 +1,5 @@
-var builtin = %import("zr.builtin");
-var iteration = %import("zr.iteration");
+var builtin = import("zr.builtin");
+var iteration = import("zr.iteration");
 
 class NeedsArrayLike<T> where T: builtin.IArrayLike<int> { var value: T; }
 class NeedsIterable<T> where T: iteration.Iterable<int> { var value: T; }

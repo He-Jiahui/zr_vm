@@ -42,6 +42,9 @@ void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node);
+TZrUInt32 compile_ownership_construct_expression_into_slot(SZrCompilerState *cs,
+                                                            SZrAstNode *node,
+                                                            TZrUInt32 targetSlot);
 void compile_struct_init_expression(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 compile_struct_init_expression_into_slot(
         SZrCompilerState *cs,
@@ -63,9 +66,11 @@ TZrBool construct_expression_is_ownership_builtin(const SZrConstructExpression *
 EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuiltinKind builtinKind);
 TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
                                              SZrConstructExpression *constructExpr,
+                                             TZrUInt32 targetSlot,
                                              SZrFileRange location);
 TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                                        SZrConstructExpression *constructExpr,
+                                                       TZrUInt32 targetSlot,
                                                        SZrFileRange location);
 EZrOwnershipQualifier infer_expression_ownership_qualifier_local(SZrCompilerState *cs, SZrAstNode *node);
 TZrBool compiler_is_super_identifier_node(SZrAstNode *node);

@@ -361,7 +361,7 @@ static void test_intermediate_writer_emits_semir_sections(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "class Box {}\n"
+                "resource class Box {}\n"
                 "var owner = own Box();\n"
                 "var alias = owner.share();\n"
                 "var watcher = alias.weak();";
@@ -413,7 +413,7 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "class Box {}\n"
+                "resource class Box {}\n"
                 "var owner = own Box();\n"
                 "var alias = owner.share();\n"
                 "var watcher = alias.weak();";
@@ -461,7 +461,7 @@ static void test_struct_value_type_places_emit_semir_metadata(void) {
                 "        this.y = y;\n"
                 "    }\n"
                 "}\n"
-                "var p: Point = $Point(1, 2);\n"
+                "var p: Point = init Point(1, 2);\n"
                 "var q: Point = p;\n"
                 "q.x = 3;\n"
                 "var sum = q.x + q.y;";
@@ -513,7 +513,7 @@ static void test_struct_value_type_store_semir_uses_stable_member_entry(void) {
                 "        this.text = text;\n"
                 "    }\n"
                 "}\n"
-                "var original: Label = $Label(\"left\");\n"
+                "var original: Label = init Label(\"left\");\n"
                 "var copied: Label = original;\n"
                 "copied.text = \"right\";";
         SZrString *sourceName;
@@ -569,11 +569,11 @@ static void test_struct_value_type_repeated_store_semir_uses_stable_member_entry
                 "        this.text = text;\n"
                 "    }\n"
                 "}\n"
-                "pub makeLabel(text: string): Label {\n"
-                "    var local: Label = $Label(text);\n"
+                "pub fn makeLabel(text: string): Label {\n"
+                "    var local: Label = init Label(text);\n"
                 "    return local;\n"
                 "}\n"
-                "var original: Label = $Label(\"left\");\n"
+                "var original: Label = init Label(\"left\");\n"
                 "var copied: Label = original;\n"
                 "copied.text = \"right\";\n"
                 "var returned: Label = makeLabel(copied.text);\n"
@@ -635,7 +635,7 @@ static void test_struct_value_type_constructor_semir_emits_inline_field_store(vo
                 "        this.text = text;\n"
                 "    }\n"
                 "}\n"
-                "var original: Label = $Label(\"left\");\n"
+                "var original: Label = init Label(\"left\");\n"
                 "return original.text;";
         SZrString *sourceName;
         SZrFunction *func;
@@ -712,7 +712,7 @@ static void test_struct_value_type_constructor_resolves_field_layout_from_owner_
                 "        this.text = text;\n"
                 "    }\n"
                 "}\n"
-                "var original: Label = $Label(\"left\");\n"
+                "var original: Label = init Label(\"left\");\n"
                 "return original.text;";
         SZrString *sourceName;
         SZrFunction *func;
@@ -784,8 +784,8 @@ static void test_struct_value_type_call_and_return_emit_semir_metadata(void) {
                 "        this.y = y;\n"
                 "    }\n"
                 "}\n"
-                "pub makePoint(seed: int): Point {\n"
-                "    var local: Point = $Point(seed, seed + 1);\n"
+                "pub fn makePoint(seed: int): Point {\n"
+                "    var local: Point = init Point(seed, seed + 1);\n"
                 "    return local;\n"
                 "}\n"
                 "var returned: Point = makePoint(3);\n"
@@ -870,7 +870,7 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
     {
         SZrState *state = create_test_state();
         const char *source =
-                "class Box {}\n"
+                "resource class Box {}\n"
                 "var owner = own Box();\n"
                 "var alias = owner.share();\n"
                 "var watcher = alias.weak();";

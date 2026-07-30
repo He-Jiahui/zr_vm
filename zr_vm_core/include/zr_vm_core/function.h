@@ -960,6 +960,11 @@ ZR_CORE_API TZrBool ZrCore_Function_DropInlineFrameValues(struct SZrState *state
                                                            TZrStackValuePointer frameBase,
                                                            FZrFunctionFrameTypeLayoutResolver resolver,
                                                            TZrPtr resolverUserData);
+ZR_CORE_API TZrBool ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 *outBitmapByteOffset,
+        TZrUInt32 *outInitializedFieldWordCount);
 ZR_CORE_API TZrBool ZrCore_Function_GetInlineConstructorInitializedFieldBitmap(
         struct SZrState *state,
         const SZrFunction *function,

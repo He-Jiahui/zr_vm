@@ -1,6 +1,6 @@
 let system = import("zr.system");
 
-persistReportImpl(summary) {
+fn persistReportImpl(summary) {
     var outDir = "tests/fixtures/projects/native_numeric_pipeline/bin/out";
     system.fs.createDirectories(outDir);
     var path = outDir + "/report.txt";

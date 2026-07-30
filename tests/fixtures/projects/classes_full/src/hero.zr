@@ -10,7 +10,7 @@ class BaseHero {
         set { this._hp = value; }
     }
 
-    pub heal(amount: int): int {
+    pub fn heal(amount: int): int {
         this.hp = this.hp + amount;
         return this.hp;
     }
@@ -32,22 +32,22 @@ pub class BossHero: BaseHero {
         BossHero.created = BossHero.created + 1;
     }
 
-    pub total(): int {
+    pub fn total(): int {
         return this.hp + ScoreBoard.bonus + BossHero.created;
     }
 
-    pub prepare(amount: int): int {
+    pub fn prepare(amount: int): int {
         this.hp = this.hp + amount;
         return this.hp;
     }
 
-    pub afterBattle(amount: int): int {
+    pub fn afterBattle(amount: int): int {
         ScoreBoard.bonus = this.heal(amount);
         return this.total();
     }
 }
 
-runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {
+fn runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {
     var boss = new BossHero(seed);
     boss.prepare(prepareAmount);
     return boss.afterBattle(battleAmount) + boss.heal(0);

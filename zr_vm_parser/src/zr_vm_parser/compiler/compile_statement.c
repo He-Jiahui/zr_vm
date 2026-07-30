@@ -4,6 +4,7 @@
 
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
+#include "compiler_attribute_binding.h"
 #include "compile_expression_internal.h"
 #include "compile_time_binding_metadata.h"
 #include "compile_time_executor_internal.h"
@@ -1446,6 +1447,19 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
     return module;
 }
 
+SZrCompileTimeFunction *resolve_imported_compile_time_function(
+        SZrCompilerState *cs,
+        SZrString *moduleName,
+        SZrString *functionName) {
+    SZrImportedCompileTimeModule *module;
+
+    if (cs == ZR_NULL || moduleName == ZR_NULL || functionName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    module = compile_statement_load_imported_compile_time_module(cs, moduleName);
+    return compile_statement_find_imported_compile_time_function(module, functionName);
+}
+
 static TZrBool compile_statement_try_register_imported_compile_time_module_alias(SZrCompilerState *cs,
                                                                                  SZrAstNode *node) {
     SZrVariableDeclaration *decl;
@@ -1950,114 +1964,6 @@ static TZrBool register_plugin_guard_scoped_owner_cleanup(SZrCompilerState *cs,
                                          ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
                                          ZR_PARSER_SLOT_NONE);
     return !cs->hasError;
-}
-
-static TZrBool using_loan_member_resource_has_no_args(SZrAstNode *callNode) {
-    return callNode != ZR_NULL &&
-           callNode->type == ZR_AST_FUNCTION_CALL &&
-           (callNode->data.functionCall.args == ZR_NULL ||
-            callNode->data.functionCall.args->count == 0u);
-}
-
-static TZrBool using_loan_member_resource_is_loan_name(SZrAstNode *memberNode) {
-    SZrAstNode *property;
-    TZrNativeString nativeName;
-
-    if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
-        return ZR_FALSE;
-    }
-
-    property = memberNode->data.memberExpression.property;
-    if (memberNode->data.memberExpression.computed ||
-        property == ZR_NULL ||
-        property->type != ZR_AST_IDENTIFIER_LITERAL ||
-        property->data.identifier.name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nativeName = ZrCore_String_GetNativeString(property->data.identifier.name);
-    return (TZrBool)(nativeName != ZR_NULL && strcmp(nativeName, "loan") == 0);
-}
-
-static TZrUInt32 resolve_using_loan_member_source_slot(SZrCompilerState *cs, SZrAstNode *resource) {
-    SZrPrimaryExpression *primary;
-    SZrString *sourceName;
-    TZrUInt32 sourceSlot;
-
-    if (cs == ZR_NULL || resource == ZR_NULL || resource->type != ZR_AST_PRIMARY_EXPRESSION) {
-        return ZR_PARSER_SLOT_NONE;
-    }
-
-    primary = &resource->data.primaryExpression;
-    if (primary->property == ZR_NULL ||
-        primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
-        primary->property->data.identifier.name == ZR_NULL ||
-        primary->members == ZR_NULL ||
-        primary->members->count != 2u ||
-        !using_loan_member_resource_is_loan_name(primary->members->nodes[0]) ||
-        !using_loan_member_resource_has_no_args(primary->members->nodes[1])) {
-        return ZR_PARSER_SLOT_NONE;
-    }
-
-    sourceName = primary->property->data.identifier.name;
-    sourceSlot = find_local_var(cs, sourceName);
-    if (sourceSlot == ZR_PARSER_SLOT_NONE) {
-        ZrParser_Compiler_Error(cs,
-                                "Loan using cleanup source owner must be a local binding",
-                                primary->property->location);
-    }
-    return sourceSlot;
-}
-
-static TZrUInt32 resolve_using_loan_source_slot(SZrCompilerState *cs,
-                                                SZrAstNode *resource,
-                                                EZrOwnershipBuiltinKind cleanupBuiltinKind) {
-    SZrConstructExpression *constructExpr;
-
-    if (cleanupBuiltinKind != ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN) {
-        return ZR_PARSER_SLOT_NONE;
-    }
-
-    if (cs == ZR_NULL || resource == ZR_NULL) {
-        return ZR_PARSER_SLOT_NONE;
-    }
-
-    if (resource->type == ZR_AST_PRIMARY_EXPRESSION) {
-        TZrUInt32 memberSourceSlot = resolve_using_loan_member_source_slot(cs, resource);
-        if (memberSourceSlot != ZR_PARSER_SLOT_NONE || cs->hasError) {
-            return memberSourceSlot;
-        }
-    }
-
-    if (resource->type != ZR_AST_CONSTRUCT_EXPRESSION) {
-        if (cs != ZR_NULL && resource != ZR_NULL) {
-            ZrParser_Compiler_Error(cs,
-                                    "Loan using cleanup requires a direct Loan<T>(localOwner) or localOwner.loan() resource",
-                                    resource->location);
-        }
-        return ZR_PARSER_SLOT_NONE;
-    }
-
-    constructExpr = &resource->data.constructExpression;
-    if (constructExpr->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_LOAN ||
-        constructExpr->target == ZR_NULL ||
-        constructExpr->target->type != ZR_AST_IDENTIFIER_LITERAL ||
-        constructExpr->target->data.identifier.name == ZR_NULL) {
-        ZrParser_Compiler_Error(cs,
-                                "Loan using cleanup requires a direct Loan<T>(localOwner) or localOwner.loan() resource",
-                                resource->location);
-        return ZR_PARSER_SLOT_NONE;
-    }
-
-    {
-        TZrUInt32 sourceSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
-        if (sourceSlot == ZR_PARSER_SLOT_NONE) {
-            ZrParser_Compiler_Error(cs,
-                                    "Loan using cleanup source owner must be a local binding",
-                                    constructExpr->target->location);
-        }
-        return sourceSlot;
-    }
 }
 
 static TZrBool compile_using_union_pattern_compare(SZrCompilerState *cs,
@@ -2775,6 +2681,31 @@ static TZrBool compile_variable_register_semantic_local(
     return success;
 }
 
+static TZrUInt32 compile_variable_mutable_reference_source_slot(
+        SZrCompilerState *cs,
+        SZrAstNode *initializer,
+        const SZrInferredType *initializerType) {
+    SZrConstructExpression *construct;
+
+    if (cs == ZR_NULL || initializer == ZR_NULL || initializerType == ZR_NULL ||
+        initializerType->referenceAccess != ZR_REFERENCE_ACCESS_WRITABLE ||
+        initializerType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_LOANED) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+    if (initializer->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    construct = &initializer->data.constructExpression;
+    if (construct->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_LOAN ||
+        construct->target == ZR_NULL ||
+        construct->target->type != ZR_AST_IDENTIFIER_LITERAL ||
+        construct->target->data.identifier.name == ZR_NULL) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+    return find_local_var(cs, construct->target->data.identifier.name);
+}
+
 static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -3090,6 +3021,18 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compiler_register_owner_cleanup_slot(
                     cs, varIndex, resolvedType.ownershipQualifier);
         }
+        if (initializerTypeInitialized && decl->value != ZR_NULL) {
+            TZrUInt32 mutableReferenceSourceSlot =
+                    compile_variable_mutable_reference_source_slot(
+                            cs, decl->value, &initializerType);
+            if (mutableReferenceSourceSlot != ZR_PARSER_SLOT_NONE) {
+                compiler_register_scope_cleanup_slot(
+                        cs,
+                        varIndex,
+                        ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN,
+                        mutableReferenceSourceSlot);
+            }
+        }
 
         if (!compile_statement_try_register_imported_compile_time_module_alias(cs, node) ||
             !compile_statement_try_register_imported_compile_time_member_alias(cs, node)) {
@@ -3179,6 +3122,7 @@ static TZrBool compile_expression_statement_discards_task(SZrCompilerState *cs, 
 // 编译表达式语句
 static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize previousStackCount;
+    TZrBool conditionalCallElided = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -3192,6 +3136,13 @@ static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node)
     SZrExpressionStatement *stmt = &node->data.expressionStatement;
     previousStackCount = cs->stackSlotCount;
     if (stmt->expr != ZR_NULL) {
+        if (!ZrParser_Metadata_TryElideConditionalCall(
+                    cs, stmt->expr, &conditionalCallElided)) {
+            return;
+        }
+        if (conditionalCallElided) {
+            return;
+        }
         if (compile_expression_statement_discards_task(cs, stmt->expr)) {
             ZrParser_Compiler_Error(cs,
                                     "Task values must be awaited, returned, or stored",
@@ -3572,7 +3523,6 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrLifetimeRegionId regionId = ZR_SEMANTIC_ID_INVALID;
     TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
     TZrUInt32 resourceSlot = 0;
-    TZrUInt32 cleanupSourceSlot = ZR_PARSER_SLOT_NONE;
     EZrOwnershipQualifier cleanupOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     EZrOwnershipBuiltinKind cleanupBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
 
@@ -3635,15 +3585,18 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     if (stmt->resource != ZR_NULL) {
-        cleanupSourceSlot = resolve_using_loan_source_slot(cs, stmt->resource, cleanupBuiltinKind);
-        if (cs->hasError) {
+        if (cleanupBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "using does not accept a mutable ref resource; introduce `var view: ref T = ref owner` inside a lexical block",
+                    stmt->resource->location);
             return;
         }
         if (!compile_using_resource_slot(cs, stmt->resource, ZR_NULL, &resourceSlot)) {
             return;
         }
         compiler_register_scope_cleanup_slot(
-                cs, resourceSlot, cleanupBuiltinKind, cleanupSourceSlot);
+                cs, resourceSlot, cleanupBuiltinKind, ZR_PARSER_SLOT_NONE);
     }
 
     if (stmt->body != ZR_NULL) {

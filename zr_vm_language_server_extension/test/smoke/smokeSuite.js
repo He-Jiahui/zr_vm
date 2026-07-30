@@ -14,17 +14,13 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     'class BaseHero {',
     '    pri var _hp: int = 0;',
     '',
-    '    pub @constructor(seed: int) {',
-    '        this._hp = seed;',
-    '    }',
-    '',
     '    // Current hero hit points.',
     '    pub property hp: int {',
     '        get { return this._hp; }',
     '        set { this._hp = value; }',
     '    }',
     '',
-    '    pub heal(amount: int): int {',
+    '    pub fn heal(amount: int): int {',
     '        this.hp = this.hp + amount;',
     '        return this.hp;',
     '    }',
@@ -43,19 +39,15 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     'class BossHero: BaseHero {',
     '    pub static var created: int = 0;',
     '',
-    '    pub @constructor(seed: int) super(seed) {',
-    '        BossHero.created = BossHero.created + 1;',
-    '    }',
-    '',
     '    // Calculates the boss total score.',
-    '    pub total(): int {',
+    '    pub fn total(): int {',
     '        return this.hp + ScoreBoard.bonus + BossHero.created;',
     '    }',
     '}',
     '',
     '#zr.testing.test#',
-    'fn classesFullProjectShape(): int {',
-    '    let boss: BossHero = new BossHero(30);',
+'fn classesFullProjectShape(): int {',
+    '    let boss: BossHero = new BossHero();',
     '    boss.hp = boss.hp + 7;',
     '    ScoreBoard.bonus = boss.heal(5);',
     '    return boss.total() + ScoreBoard.bonus;',
@@ -67,7 +59,7 @@ const PROJECT_INFERENCE_SMOKE_SOURCE = [
     'let greetModule = import("greet");',
     '',
     'resource class Hero {',
-    '    pub total(): int {',
+    '    pub fn total(): int {',
     '        return 1;',
     '    }',
     '}',
@@ -86,7 +78,7 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
     'let system = import("zr.system");',
     '',
     'class StructureHero {',
-    '    pub total(): int {',
+    '    pub fn total(): int {',
     '        return helper.value();',
     '    }',
     '}',
@@ -949,7 +941,7 @@ async function verifyProjectInferenceAndSemanticTokens(workspaceRoot) {
     );
 
     const document = await openDocument(smokeUri);
-    const takeUsagePosition = findPositionBySubstring(document, 'take(): Unique<Hero>', 0, 1);
+    const takeUsagePosition = findPositionBySubstring(document, 'take();', 0, 1);
 
     const takeHover = await withRetry(
         async () => vscode.commands.executeCommand(
@@ -1008,7 +1000,7 @@ async function verifyStructureViews(workspaceRoot) {
     await vscode.workspace.fs.writeFile(cycleUri, new TextEncoder().encode(STRUCTURE_SMOKE_CYCLE_SOURCE));
     try {
         const mainDocument = await openDocument(mainUri);
-        const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub total(): int {', 0, 4);
+    const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub fn total(): int {', 0, 7);
         const nativeImportPosition = findPositionBySubstring(
             mainDocument,
             '"zr.system"',
@@ -1307,7 +1299,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     );
 
     const document = await openDocument(smokeUri);
-    const bossHeroUsage = findPositionBySubstring(document, `${bossHeroName}(30)`, 0);
+    const bossHeroUsage = findPositionBySubstring(document, `${bossHeroName}()`, 0);
     const bossCompletionPosition = findPositionBySubstring(document, 'boss.hp =', 0, 5);
     const scoreBoardCompletionPosition = findPositionBySubstring(document, `${scoreBoardName}.bonus =`, 0, scoreBoardName.length);
     const scoreBoardCompletionAfterDotPosition =
@@ -1316,7 +1308,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     const totalUsagePositions = [5, 6, 7, 8, 9]
         .map((offset) => findPositionBySubstring(document, `boss.total() + ${scoreBoardName}.bonus`, 0, offset));
     const bossHeroDefinitionPosition = findPositionBySubstring(document, `class ${bossHeroName}: ${baseHeroName}`, 0, 6);
-    const totalDefinitionPosition = findPositionBySubstring(document, 'pub total(): int {', 0, 4);
+    const totalDefinitionPosition = findPositionBySubstring(document, 'pub fn total(): int {', 0, 7);
 
     const bossHeroDefinition = await withRetry(
         async () => executeDefinitions(document.uri, bossHeroUsage),

@@ -4,11 +4,11 @@ let lin = import("lin_alg");
 let signal = import("signal");
 let tensor = import("tensor_pipeline");
 
-scaleValue(input: float) {
+fn scaleValue(input: float) {
     return input * 2.0;
 }
 
-runProbeImpl() {
+fn runProbeImpl() {
     system.console.printLine("probe:begin");
     var vectorInfo = lin.projectVectors(2.0);
     system.console.printLine("probe:lin");
@@ -36,7 +36,7 @@ runProbeImpl() {
     return checksum;
 }
 
-summarizeProbeImpl(value: float) {
+fn summarizeProbeImpl(value: float) {
     return value + 7.0;
 }
 

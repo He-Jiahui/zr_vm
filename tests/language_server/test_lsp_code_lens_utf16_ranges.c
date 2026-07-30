@@ -114,9 +114,9 @@ static TZrBool test_code_lens_reference_count_after_utf8_prefix_uses_utf16_colum
         return ZR_FALSE;
     }
 
-    passed = test_lens_matches(&lenses, "2 references", 0, 13);
+    passed = test_lens_matches(&lenses, "2 references", 0, 11);
     if (!passed) {
-        printf("FAIL: CodeLens reference count expected UTF-16 range/position start 0:13 but got count=%llu",
+        printf("FAIL: CodeLens reference count expected UTF-16 range/position start 0:11 but got count=%llu",
                (unsigned long long)lenses.length);
         describe_first_lens(&lenses);
         printf("\n");

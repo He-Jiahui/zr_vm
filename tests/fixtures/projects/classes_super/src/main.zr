@@ -1,7 +1,7 @@
 class BaseCounter {
     pub var baseValue: int;
 
-    pub virtual bump(): int {
+    pub virtual fn bump(): int {
         return this.baseValue + 1;
     }
 
@@ -15,7 +15,7 @@ class BaseCounter {
 }
 
 class DerivedCounter: BaseCounter {
-    pub override bump(): int {
+    pub override fn bump(): int {
         return super.bump() + 1;
     }
 
@@ -27,7 +27,7 @@ class DerivedCounter: BaseCounter {
         return super.call() + 5;
     }
 
-    pub total(): int {
+    pub fn total(): int {
         return this.bump() + this.score + this();
     }
 }

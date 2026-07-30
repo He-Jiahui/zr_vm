@@ -4,6 +4,7 @@
 
 #include "compiler_internal.h"
 #include "compile_time_executor_internal.h"
+#include "compiler_attribute_binding.h"
 
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -19,6 +20,9 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool functionContainsYield = compiler_iterator_function_contains_yield(
             funcDecl->body);
 
+    if (!ZrParser_Metadata_ValidateFunctionAttributes(cs, node)) {
+        return;
+    }
     if (!ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(cs, node, node->location)) {
         return;
     }
@@ -639,7 +643,10 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if (!ZrParser_CompileTime_ApplyFunctionDecorators(cs, funcDecl->decorators, newFunc, node->location)) {
+    if (!ZrParser_CompileTime_ApplyFunctionDecorators(
+                cs, funcDecl->decorators, newFunc, node->location) ||
+        !ZrParser_Metadata_ApplyFunctionAttributes(
+                cs, funcDecl->decorators, newFunc, node->location)) {
         if (newFunc != ZR_NULL) {
             ZrCore_Function_Free(cs->state, newFunc);
         }
@@ -798,14 +805,6 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                      (TZrUInt16)functionVarIndex,
                                      (TZrInt32)closureSlot));
-
-        if (!emit_runtime_decorator_applications(cs,
-                                                 funcDecl->decorators,
-                                                 functionVarIndex,
-                                                 ZR_TRUE,
-                                                 node->location)) {
-            return;
-        }
 
         if (cs->isScriptLevel) {
             SZrExportedVariable exportedVar;

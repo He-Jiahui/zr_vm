@@ -1,0 +1,46 @@
+#ifndef ZR_VM_PARSER_COMPILER_ATTRIBUTE_BINDING_H
+#define ZR_VM_PARSER_COMPILER_ATTRIBUTE_BINDING_H
+
+#include "compiler_internal.h"
+
+TZrBool ZrParser_Metadata_ValidateFunctionAttributes(
+        SZrCompilerState *cs,
+        SZrAstNode *functionNode);
+TZrBool ZrParser_Metadata_RegisterAttributeSchema(
+        SZrCompilerState *cs,
+        SZrAstNode *typeNode);
+TZrBool ZrParser_Metadata_ApplyTypeAttributes(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *decorators,
+        SZrTypePrototypeInfo *typeInfo,
+        SZrFileRange location);
+TZrBool ZrParser_Metadata_ApplyMemberAttributes(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *decorators,
+        EZrParserAttributeTarget target,
+        SZrTypeMemberInfo *memberInfo,
+        SZrFileRange location);
+TZrBool ZrParser_Metadata_ApplyFunctionAttributes(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *decorators,
+        SZrFunction *function,
+        SZrFileRange location);
+TZrBool ZrParser_Metadata_ApplyParameterAttributes(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *decorators,
+        SZrFunctionMetadataParameter *parameter,
+        SZrFileRange location);
+TZrBool ZrParser_Metadata_TryElideConditionalCall(
+        SZrCompilerState *cs,
+        SZrAstNode *expression,
+        TZrBool *handled);
+TZrBool ZrParser_Metadata_IsRegisteredAttribute(
+        SZrCompilerState *cs,
+        SZrAstNode *decoratorNode);
+TZrBool ZrParser_Metadata_FunctionHasRole(
+        SZrCompilerState *cs,
+        SZrAstNode *functionNode,
+        EZrParserAttributeRole role,
+        TZrBool *hasRole);
+
+#endif // ZR_VM_PARSER_COMPILER_ATTRIBUTE_BINDING_H

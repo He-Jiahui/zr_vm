@@ -12,6 +12,7 @@ typedef char ZrCompilerRefFieldModifierMustMatchCore[
                 ? 1
                 : -1];
 #include "compile_time_executor_internal.h"
+#include "compiler_attribute_binding.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
 TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs, SZrString *typeName);
@@ -131,7 +132,9 @@ static void compiler_struct_collect_parameter_metadata(
 static SZrCanonicalParameterContract compiler_struct_parameter_contract(
         SZrCompilerState *cs,
         const SZrTypeMemberInfo *memberInfo,
-        TZrSize index) {
+        TZrSize index,
+        const SZrCanonicalGenericBinding *genericBindings,
+        TZrSize genericBindingCount) {
     SZrCanonicalParameterContract contract;
     const SZrInferredType *type = ZR_NULL;
     const EZrParameterPassingMode *passingMode = ZR_NULL;
@@ -146,8 +149,11 @@ static SZrCanonicalParameterContract compiler_struct_parameter_contract(
                 (SZrArray *)&memberInfo->parameterPassingModes, index);
     }
     contract.typeId = type != ZR_NULL
-                              ? ZrParser_CanonicalType_FromInferred(
-                                        cs->semanticContext, type)
+                              ? ZrParser_CanonicalType_FromInferredWithGenericBindings(
+                                        cs->semanticContext,
+                                        type,
+                                        genericBindings,
+                                        genericBindingCount)
                               : ZR_SEMANTIC_ID_INVALID;
     contract.escapeUpperBound = ZR_CANONICAL_ESCAPE_FUNCTION;
     contract.entryInitialization = ZR_CANONICAL_ENTRY_INITIALIZED;
@@ -174,6 +180,7 @@ static TZrBool compiler_struct_register_canonical_definition(
         SZrString *typeName,
         SZrTypePrototypeInfo *info) {
     const SZrSemanticSymbolRecord *typeSymbol;
+    SZrArray genericBindings;
     SZrArray genericParameterKinds;
     TZrBool definitionRegistered;
     TZrTypeId typeId;
@@ -184,6 +191,7 @@ static TZrBool compiler_struct_register_canonical_definition(
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || typeName == ZR_NULL) {
         return ZR_FALSE;
     }
+    ZrCore_Array_Construct(&genericBindings);
     typeId = ZrParser_CanonicalType_FromName(cs->semanticContext, typeName);
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
@@ -237,6 +245,42 @@ static TZrBool compiler_struct_register_canonical_definition(
                 capabilityFlags,
                 ZR_CANONICAL_GC_SCAN_FREE);
         ZrCore_Array_Free(cs->state, &genericParameterKinds);
+
+        ZrCore_Array_Init(
+                cs->state,
+                &genericBindings,
+                sizeof(SZrCanonicalGenericBinding),
+                info->genericParameters.length);
+        for (TZrSize index = 0U; index < info->genericParameters.length; index++) {
+            const SZrTypeGenericParameterInfo *parameter =
+                    (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get(
+                            &info->genericParameters,
+                            index);
+            SZrCanonicalGenericBinding binding;
+
+            if (parameter == ZR_NULL || parameter->name == ZR_NULL) {
+                ZrCore_Array_Free(cs->state, &genericBindings);
+                return ZR_FALSE;
+            }
+            binding.name = parameter->name;
+            binding.kind = parameter->genericKind == ZR_GENERIC_PARAMETER_TYPE
+                                   ? ZR_CANONICAL_GENERIC_ARGUMENT_TYPE
+                                   : ZR_CANONICAL_GENERIC_ARGUMENT_CONST_PARAMETER;
+            binding.ownerSymbolId = typeSymbol->id;
+            binding.ordinal = (TZrUInt32)index;
+            binding.typeId = parameter->genericKind == ZR_GENERIC_PARAMETER_TYPE
+                                     ? ZrParser_CanonicalType_InternGenericParameter(
+                                               cs->semanticContext,
+                                               typeSymbol->id,
+                                               (TZrUInt32)index)
+                                     : ZR_SEMANTIC_ID_INVALID;
+            if (parameter->genericKind == ZR_GENERIC_PARAMETER_TYPE &&
+                binding.typeId == ZR_SEMANTIC_ID_INVALID) {
+                ZrCore_Array_Free(cs->state, &genericBindings);
+                return ZR_FALSE;
+            }
+            ZrCore_Array_Push(cs->state, &genericBindings, &binding);
+        }
     } else {
         definitionRegistered = ZrParser_CanonicalType_RegisterDefinition(
                 cs->semanticContext,
@@ -245,9 +289,15 @@ static TZrBool compiler_struct_register_canonical_definition(
                 ZR_CANONICAL_GC_SCAN_FREE);
     }
     if (!definitionRegistered) {
+        if (genericBindings.isValid) {
+            ZrCore_Array_Free(cs->state, &genericBindings);
+        }
         return ZR_FALSE;
     }
     if (info == ZR_NULL) {
+        if (genericBindings.isValid) {
+            ZrCore_Array_Free(cs->state, &genericBindings);
+        }
         return ZR_TRUE;
     }
     for (TZrSize memberIndex = 0U; memberIndex < info->members.length; memberIndex++) {
@@ -261,18 +311,23 @@ static TZrBool compiler_struct_register_canonical_definition(
             member->metaType != ZR_META_CONSTRUCTOR || member->name == ZR_NULL) {
             continue;
         }
-        member->symbolId = ZrParser_Semantic_RegisterSymbol(
-                cs->semanticContext,
-                member->name,
-                ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
-                typeId,
-                ZR_SEMANTIC_ID_INVALID,
-                member->declarationNode,
-                member->declarationNode != ZR_NULL
-                        ? member->declarationNode->location
-                        : (SZrFileRange){0});
         if (member->symbolId == ZR_SEMANTIC_ID_INVALID) {
-            return ZR_FALSE;
+            member->symbolId = ZrParser_Semantic_RegisterSymbol(
+                    cs->semanticContext,
+                    member->name,
+                    ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                    typeId,
+                    ZR_SEMANTIC_ID_INVALID,
+                    member->declarationNode,
+                    member->declarationNode != ZR_NULL
+                            ? member->declarationNode->location
+                            : (SZrFileRange){0});
+            if (member->symbolId == ZR_SEMANTIC_ID_INVALID) {
+                if (genericBindings.isValid) {
+                    ZrCore_Array_Free(cs->state, &genericBindings);
+                }
+                return ZR_FALSE;
+            }
         }
         parameterCount = member->parameterCount;
         if (parameterCount > 0U) {
@@ -281,6 +336,9 @@ static TZrBool compiler_struct_register_canonical_definition(
                     sizeof(SZrCanonicalConstructorParameter) * parameterCount,
                     ZR_MEMORY_NATIVE_TYPE_ARRAY);
             if (parameters == ZR_NULL) {
+                if (genericBindings.isValid) {
+                    ZrCore_Array_Free(cs->state, &genericBindings);
+                }
                 return ZR_FALSE;
             }
             memset(parameters, 0, sizeof(SZrCanonicalConstructorParameter) * parameterCount);
@@ -296,7 +354,14 @@ static TZrBool compiler_struct_register_canonical_definition(
                                               : ZR_NULL;
                 parameters[index].name = name != ZR_NULL ? *name : ZR_NULL;
                 parameters[index].contract =
-                        compiler_struct_parameter_contract(cs, member, index);
+                        compiler_struct_parameter_contract(
+                                cs,
+                                member,
+                                index,
+                                genericBindings.isValid
+                                        ? (const SZrCanonicalGenericBinding *)genericBindings.head
+                                        : ZR_NULL,
+                                genericBindings.isValid ? genericBindings.length : 0U);
                 parameters[index].hasDefaultValue =
                         hasDefault != ZR_NULL ? *hasDefault : ZR_FALSE;
                 if (parameters[index].contract.typeId == ZR_SEMANTIC_ID_INVALID) {
@@ -305,6 +370,9 @@ static TZrBool compiler_struct_register_canonical_definition(
                             parameters,
                             sizeof(SZrCanonicalConstructorParameter) * parameterCount,
                             ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                    if (genericBindings.isValid) {
+                        ZrCore_Array_Free(cs->state, &genericBindings);
+                    }
                     return ZR_FALSE;
                 }
             }
@@ -324,8 +392,14 @@ static TZrBool compiler_struct_register_canonical_definition(
                     ZR_MEMORY_NATIVE_TYPE_ARRAY);
         }
         if (!registered) {
+            if (genericBindings.isValid) {
+                ZrCore_Array_Free(cs->state, &genericBindings);
+            }
             return ZR_FALSE;
         }
+    }
+    if (genericBindings.isValid) {
+        ZrCore_Array_Free(cs->state, &genericBindings);
     }
     return ZR_TRUE;
 }
@@ -1176,6 +1250,21 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.layoutByteAlign = 0;
     ZrCore_Value_ResetAsNull(&info.decoratorMetadataValue);
 
+    if (cs->typeEnv != ZR_NULL &&
+        !ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName)) {
+        ZrParser_Compiler_Error(cs, "Failed to register struct symbol before expansion", node->location);
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
+
+    if (!ZrParser_Metadata_RegisterAttributeSchema(cs, node)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
     if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
@@ -1214,6 +1303,15 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 初始化成员数组
     ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     cs->currentTypePrototypeInfo = &info;
+
+    if (!compiler_struct_register_canonical_definition(cs, typeName, &info)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to pre-register canonical struct definition", node->location);
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
     
     // 处理成员信息
     if (structDecl->members != ZR_NULL && structDecl->members->count > 0) {
@@ -1516,14 +1614,57 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 cs->currentTypeNode = oldTypeNode;
                 return;
             }
+            if ((member->type == ZR_AST_STRUCT_FIELD || member->type == ZR_AST_STRUCT_METHOD) &&
+                !ZrParser_Metadata_ApplyMemberAttributes(
+                        cs,
+                        member->type == ZR_AST_STRUCT_FIELD
+                                ? member->data.structField.decorators
+                                : member->data.structMethod.decorators,
+                        member->type == ZR_AST_STRUCT_FIELD
+                                ? ZR_PARSER_ATTRIBUTE_TARGET_FIELD
+                                : ZR_PARSER_ATTRIBUTE_TARGET_METHOD,
+                        &memberInfo,
+                        member->location)) {
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
 
             if (memberInfo.name != ZR_NULL) {
                 ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
+                if (memberInfo.isMetaMethod &&
+                    memberInfo.metaType == ZR_META_CONSTRUCTOR &&
+                    !compiler_struct_register_canonical_definition(
+                            cs, typeName, &info)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to pre-register canonical struct constructor",
+                            member->location);
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
             }
         }
         }
     }
     compiler_type_members_restore_declaration_order(&info.members);
+
+    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, structDecl->decorators, &info)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
+    if (!ZrParser_Metadata_ApplyTypeAttributes(
+                cs, structDecl->decorators, &info, node->location)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
     
     // 计算struct字段偏移量（仅对非静态字段）
     TZrUInt32 currentOffset = 0;
@@ -1562,20 +1703,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.layoutByteAlign = maxAlign > 0u ? maxAlign : 1u;
     info.layoutByteSize = maxAlign > 0u ? align_offset(currentOffset, maxAlign) : 1u;
     
-    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, structDecl->decorators, &info)) {
-        cs->currentTypeName = oldTypeName;
-        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-        cs->currentTypeNode = oldTypeNode;
-        return;
-    }
-
     // 将 prototype 信息添加到数组
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
-    
-    // 注册类型名称到类型环境
-    if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
-    }
     if (!compiler_struct_register_canonical_definition(cs, typeName, &info)) {
         ZrParser_Compiler_Error(
                 cs, "Failed to register canonical struct definition", node->location);

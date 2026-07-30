@@ -508,7 +508,7 @@ int ZrStdioInlineValue_IsExpressionStatementStart(const char *content,
 
     return !ZrStdioInlineValue_IsKeywordAt(content, lineStart, lineEnd, offset, "var") &&
            !ZrStdioInlineValue_IsKeywordAt(content, lineStart, lineEnd, offset, "return") &&
-           !ZrStdioInlineValue_IsKeywordAt(content, lineStart, lineEnd, offset, "func") &&
+           !ZrStdioInlineValue_IsKeywordAt(content, lineStart, lineEnd, offset, "fn") &&
            !ZrStdioInlineValue_IsKeywordAt(content, lineStart, lineEnd, offset, "if") &&
            !ZrStdioInlineValue_IsKeywordAt(content, lineStart, lineEnd, offset, "while") &&
            !ZrStdioInlineValue_IsKeywordAt(content, lineStart, lineEnd, offset, "for") &&

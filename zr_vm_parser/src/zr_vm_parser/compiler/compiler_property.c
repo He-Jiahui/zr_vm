@@ -1,5 +1,6 @@
 #include "compiler_internal.h"
 #include "compiler_property.h"
+#include "compiler_attribute_binding.h"
 
 typedef struct SZrCompilerPropertyAccessors {
     SZrAstNode *getter;
@@ -649,6 +650,14 @@ TZrBool compiler_property_bind(
                 propertyNode,
                 property->decorators,
                 &visible)) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_Metadata_ApplyMemberAttributes(
+                cs,
+                property->decorators,
+                ZR_PARSER_ATTRIBUTE_TARGET_PROPERTY,
+                &visible,
+                propertyNode->location)) {
         return ZR_FALSE;
     }
 

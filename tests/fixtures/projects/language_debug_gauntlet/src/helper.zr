@@ -1,18 +1,18 @@
 let audit = import("audit");
 
-pub twist(seed: int, factor: int = 2, bonus: int = 1): int {
+pub fn twist(seed: int, factor: int = 2, bonus: int = 1): int {
     return seed * factor + audit.bump(bonus);
 }
 
-pub banner(): string {
+pub fn banner(): string {
     return audit.bannerPrefix() + "_OK";
 }
 
-pub matches(actual: int, expected: int): bool {
+pub fn matches(actual: int, expected: int): bool {
     return actual == expected;
 }
 
-pub edgeScore(fixedOk: bool, dynamicOk: bool, dynamicBad: bool): int {
+pub fn edgeScore(fixedOk: bool, dynamicOk: bool, dynamicBad: bool): int {
     var total = audit.baseScore();
     if (fixedOk) { total = total + 1000; } else { total = total - 5000; }
     if (dynamicOk) { total = total + 100; } else { total = total - 500; }

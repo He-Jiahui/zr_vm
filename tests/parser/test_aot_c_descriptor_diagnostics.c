@@ -205,6 +205,7 @@ static void write_member_token_remap_descriptor_library(const TZrChar *descripto
             "};\n"
             "static const FZrAotEntryThunk kThunks[] = { bad_entry };\n"
             "static const FZrAotReflectionInvoker kInvokers[] = { bad_invoker };\n"
+            "static const SZrAotNativeImportRange kNativeImportRanges[] = { { 0u, 0u } };\n"
             "static const SZrAotMemberTokenRemap kRemaps[] = {\n";
     const char *descriptorSourceRegistrationSuffix =
             "};\n"
@@ -227,6 +228,10 @@ static void write_member_token_remap_descriptor_library(const TZrChar *descripto
             "    .typeLayoutTokenCount = 0u,\n"
             "    .gcDescriptors = ZR_NULL,\n"
             "    .gcDescriptorCount = 0u,\n"
+            "    .nativeImportContracts = ZR_NULL,\n"
+            "    .nativeImportContractCount = 0u,\n"
+            "    .nativeImportRanges = kNativeImportRanges,\n"
+            "    .nativeImportRangeCount = 1u,\n"
             "};\n"
             "static const ZrAotCompiledModule kModule = {\n"
             "    .abiVersion = ZR_VM_AOT_ABI_VERSION,\n"
@@ -254,6 +259,10 @@ static void write_member_token_remap_descriptor_library(const TZrChar *descripto
             "    .typeLayoutTokenCount = 0u,\n"
             "    .gcDescriptors = ZR_NULL,\n"
             "    .gcDescriptorCount = 0u,\n"
+            "    .nativeImportContracts = ZR_NULL,\n"
+            "    .nativeImportContractCount = 0u,\n"
+            "    .nativeImportRanges = kNativeImportRanges,\n"
+            "    .nativeImportRangeCount = 1u,\n"
             "    .codeRegistration = &kCodeRegistration,\n"
             "};\n"
             "ZR_VM_AOT_EXPORT const ZrAotCompiledModule *ZrVm_GetAotCompiledModule(void) {\n"
@@ -424,15 +433,15 @@ static void assert_member_token_remap_descriptor_rejected(const char *artifactDi
     lastError = ZrLibrary_AotRuntime_GetLastError(state->global);
     TEST_ASSERT_NOT_NULL(lastError);
     TEST_ASSERT_NOT_NULL(strstr(lastError, "AOT descriptor validation failed for module 'main'"));
-    TEST_ASSERT_NOT_NULL(strstr(lastError, expectedDiagnostic));
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(lastError, expectedDiagnostic), lastError);
     if (expectedDetail0 != ZR_NULL) {
-        TEST_ASSERT_NOT_NULL(strstr(lastError, expectedDetail0));
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(lastError, expectedDetail0), lastError);
     }
     if (expectedDetail1 != ZR_NULL) {
-        TEST_ASSERT_NOT_NULL(strstr(lastError, expectedDetail1));
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(lastError, expectedDetail1), lastError);
     }
     if (expectedDetail2 != ZR_NULL) {
-        TEST_ASSERT_NOT_NULL(strstr(lastError, expectedDetail2));
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(lastError, expectedDetail2), lastError);
     }
 
     state->global->userData = ZR_NULL;

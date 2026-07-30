@@ -229,7 +229,7 @@ static void test_aot_c_provider_import_loads_project_library_from_provider_bin(v
             "\"entry\":\"index\""
             "}";
     const char *providerSource =
-            "pub func add(value: int): int {\n"
+            "pub fn add(value: int): int {\n"
             "    return value + 5;\n"
             "}\n"
             "pub var seed: int = 37;\n"

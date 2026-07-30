@@ -215,25 +215,25 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_boun
     TEST_IGNORE_MESSAGE("AOT C generic truthiness shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "pub var zero = () => {\n"
+            "pub var zero = fn() => {\n"
             "    return 0;\n"
             "};\n"
-            "pub var one = () => {\n"
+            "pub var one = fn() => {\n"
             "    return 1;\n"
             "};\n"
-            "func unsignedZero(): uint {\n"
+            "fn unsignedZero(): uint {\n"
             "    var value: uint = 0;\n"
             "    return value;\n"
             "}\n"
-            "func unsignedOne(): uint {\n"
+            "fn unsignedOne(): uint {\n"
             "    var value: uint = 1;\n"
             "    return value;\n"
             "}\n"
-            "func floatZero(): float {\n"
+            "fn floatZero(): float {\n"
             "    var value: float = 0.0;\n"
             "    return value;\n"
             "}\n"
-            "func floatOne(): float {\n"
+            "fn floatOne(): float {\n"
             "    var value: float = 1.5;\n"
             "    return value;\n"
             "}\n"
@@ -411,6 +411,8 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_boun
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -429,7 +431,6 @@ static void test_aot_c_generated_shared_library_executes_generic_truthiness_boun
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -439,7 +440,7 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
     TEST_IGNORE_MESSAGE("AOT C generic primitive equality shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "pub var choose = (flag) => {\n"
+            "pub var choose = fn(flag) => {\n"
             "    if (flag) {\n"
             "        return 3;\n"
             "    }\n"
@@ -576,6 +577,8 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -594,7 +597,6 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -604,10 +606,10 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
     TEST_IGNORE_MESSAGE("AOT C bool short-circuit logical shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "pub var yes = () => {\n"
+            "pub var yes = fn() => {\n"
             "    return true;\n"
             "};\n"
-            "pub var no = () => {\n"
+            "pub var no = fn() => {\n"
             "    return false;\n"
             "};\n"
             "var both = yes() && yes();\n"
@@ -765,6 +767,8 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -783,7 +787,6 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -908,6 +911,8 @@ static void test_aot_c_generated_shared_library_elides_frame_for_bool_local_logi
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -926,7 +931,6 @@ static void test_aot_c_generated_shared_library_elides_frame_for_bool_local_logi
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -1050,6 +1054,8 @@ static void test_aot_c_generated_shared_library_executes_generic_logical_not_boo
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -1068,7 +1074,6 @@ static void test_aot_c_generated_shared_library_executes_generic_logical_not_boo
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }
@@ -1205,6 +1210,8 @@ static void test_aot_c_generated_shared_library_executes_string_equality_direct_
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -1223,7 +1230,6 @@ static void test_aot_c_generated_shared_library_executes_string_equality_direct_
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }

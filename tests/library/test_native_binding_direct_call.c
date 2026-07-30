@@ -304,7 +304,7 @@ static void test_direct_module_export_preserves_imported_native_module_captures(
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "captured_native_import",
-                    "var host = %import(\"host_demo\");\n"
+                    "var host = import(\"host_demo\");\n"
                     "\n"
                     "pub replay(): int {\n"
                     "    return host.answer + host.bump(2, 3);\n"
@@ -349,7 +349,7 @@ static void test_native_descriptor_modes_enter_exact_domain_scope(void) {
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "native_mode_probe",
-                    "var host = %import(\"host_demo\");\n"
+                    "var host = import(\"host_demo\");\n"
                     "\n"
                     "pub probe(): int {\n"
                     "    return host.gcAware() + host.blockingDetached() + host.noSafepointCritical();\n"

@@ -1,4 +1,4 @@
-var system = %import("zr.system");
+let system = import("zr.system");
 
 class Loop {
     pub @call(n: int, acc: int): int {
@@ -9,14 +9,14 @@ class Loop {
     }
 }
 
-func direct(n: int, acc: int): int {
+fn direct(n: int, acc: int): int {
     if (n == 0) {
         return acc;
     }
     return direct(n - 1, acc + 1);
 }
 
-func guarded(flag: int): int {
+fn guarded(flag: int): int {
     var marker = 0;
     try {
         try {
@@ -32,21 +32,21 @@ func guarded(flag: int): int {
     }
 }
 
-class Box {}
+resource class Box {}
 
-var ownerSeed = %unique new Box();
-var owner = %shared(ownerSeed);
-var weak = %weak(owner);
-var alias = %upgrade(weak);
+var ownerSeed = own Box();
+var owner = ownerSeed.share();
+var weak = owner.weak();
+var alias = weak.upgrade();
 
 var loop = new Loop();
 var directValue = direct(12, 0);
 var metaValue = loop(10, 0);
 var guardedValue = guarded(1);
 
-var releasedOwner = %release(owner);
-var releasedAlias = %release(alias);
-var after = %upgrade(weak);
+var releasedOwner = drop(owner);
+var releasedAlias = drop(alias);
+var after = weak.upgrade();
 
 var spin = 0;
 while (spin < 1000) {

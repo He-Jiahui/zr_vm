@@ -48,8 +48,9 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
 
     startLoc = get_current_token_location(ps);
-    TZrBool isConst = ps->lexer->t.token == ZR_TK_LET;
-    if (ps->lexer->t.token != ZR_TK_VAR && ps->lexer->t.token != ZR_TK_LET) {
+    TZrBool isConst = ps->lexer->t.token == ZR_TK_LET || ps->lexer->t.token == ZR_TK_CONST;
+    if (ps->lexer->t.token != ZR_TK_VAR && ps->lexer->t.token != ZR_TK_LET &&
+        ps->lexer->t.token != ZR_TK_CONST) {
         expect_token(ps, ZR_TK_VAR);
     }
     ZrParser_Lexer_Next(ps->lexer);

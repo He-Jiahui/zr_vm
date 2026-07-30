@@ -1,7 +1,7 @@
-var system = %import("zr.system");
-var stageA = %import("graph_stage_a");
-var stageB = %import("graph_stage_b");
-var binaryStage = %import("graph_binary_stage");
+let system = import("zr.system");
+let stageA = import("graph_stage_a");
+let stageB = import("graph_stage_b");
+let binaryStage = import("graph_binary_stage");
 
 var left = <int> stageA.seed();
 var right = <int> binaryStage.binarySeed();

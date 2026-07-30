@@ -1,11 +1,11 @@
-pub bump(value: int = 1): int {
+pub fn bump(value: int = 1): int {
     return value + 2;
 }
 
-pub bannerPrefix(): string {
+pub fn bannerPrefix(): string {
     return "GAUNTLET";
 }
 
-pub baseScore(): int {
+pub fn baseScore(): int {
     return 17;
 }

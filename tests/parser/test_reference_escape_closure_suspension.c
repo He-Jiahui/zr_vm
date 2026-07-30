@@ -434,17 +434,14 @@ static void test_await_checks_last_use_and_binding_epoch(void) {
 
 static void test_generator_yield_checks_reference_liveness(void) {
     assert_escape_validation(
-            "fn invalid(value: ref int): int {\n"
-            "  var sequence = {{\n"
-            "    out 1;\n"
-            "    out value;\n"
-            "  }};\n"
-            "  return 0;\n"
+            "fn invalid(value: ref int): zr.iteration.Iterator<int> {\n"
+            "  yield 1;\n"
+            "  yield value;\n"
             "}\n",
             ZR_FALSE,
             "cannot cross a yield suspension",
             1,
-            3);
+            2);
 }
 
 static void test_reference_escape_follows_active_comptime_branch(void) {

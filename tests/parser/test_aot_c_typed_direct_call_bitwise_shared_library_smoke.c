@@ -11,7 +11,7 @@
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitwise_or_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
-            "func join(left: int, right: int): int {\n"
+            "fn join(left: int, right: int): int {\n"
             "    return left | right;\n"
             "}\n"
             "var left: int = 34;\n"
@@ -40,7 +40,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitw
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitwise_xor_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
-            "func toggle(left: int, right: int): int {\n"
+            "fn toggle(left: int, right: int): int {\n"
             "    return left ^ right;\n"
             "}\n"
             "var left: int = 58;\n"
@@ -69,7 +69,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitw
 
 static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitwise_not_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
-            "func invert(value: int): int {\n"
+            "fn invert(value: int): int {\n"
             "    return ~value;\n"
             "}\n"
             "var seed: int = 0;\n"
@@ -97,7 +97,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
 
 static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitwise_and_const_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
-            "func maskBy(value: int): int {\n"
+            "fn maskBy(value: int): int {\n"
             "    return value & 47;\n"
             "}\n"
             "var seed: int = 58;\n"
@@ -125,7 +125,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
 
 static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitwise_or_const_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
-            "func flags(value: int): int {\n"
+            "fn flags(value: int): int {\n"
             "    return value | 10;\n"
             "}\n"
             "var seed: int = 32;\n"
@@ -153,7 +153,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
 
 static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitwise_xor_const_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
-            "func flip(value: int): int {\n"
+            "fn flip(value: int): int {\n"
             "    return value ^ 6;\n"
             "}\n"
             "var seed: int = 44;\n"

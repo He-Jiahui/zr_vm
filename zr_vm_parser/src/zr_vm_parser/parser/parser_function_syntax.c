@@ -82,8 +82,12 @@ SZrAstNode *parse_fn_expression(SZrParserState *ps) {
         bodyDelimiterLoc = get_current_token_location(ps);
         isExpressionBody = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
-        expression = parse_expression(ps);
-        body = create_expression_body_block(ps, expression);
+        if (ps->lexer->t.token == ZR_TK_LBRACE) {
+            body = parse_block(ps);
+        } else {
+            expression = parse_expression(ps);
+            body = create_expression_body_block(ps, expression);
+        }
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         bodyDelimiterLoc = get_current_token_location(ps);
         body = parse_block(ps);

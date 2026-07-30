@@ -1598,51 +1598,6 @@ static TZrBool semantic_tokens_contain(SZrArray *data,
     return ZR_FALSE;
 }
 
-static TZrBool semantic_tokens_contain_with_modifiers(SZrArray *data,
-                                                      TZrInt32 line,
-                                                      TZrInt32 character,
-                                                      TZrInt32 length,
-                                                      const TZrChar *typeName,
-                                                      TZrUInt32 modifiers) {
-    TZrUInt32 currentLine = 0;
-    TZrUInt32 currentCharacter = 0;
-    TZrInt32 typeIndex = semantic_token_type_index(typeName);
-
-    if (data == ZR_NULL || typeIndex < 0) {
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index + 4 < data->length; index += 5) {
-        TZrUInt32 *deltaLinePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index);
-        TZrUInt32 *deltaStartPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 1);
-        TZrUInt32 *lengthPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 2);
-        TZrUInt32 *typePtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 3);
-        TZrUInt32 *modifiersPtr = (TZrUInt32 *)ZrCore_Array_Get(data, index + 4);
-
-        if (deltaLinePtr == ZR_NULL || deltaStartPtr == ZR_NULL || lengthPtr == ZR_NULL ||
-            typePtr == ZR_NULL || modifiersPtr == ZR_NULL) {
-            continue;
-        }
-
-        currentLine += *deltaLinePtr;
-        if (*deltaLinePtr == 0) {
-            currentCharacter += *deltaStartPtr;
-        } else {
-            currentCharacter = *deltaStartPtr;
-        }
-
-        if ((TZrInt32)currentLine == line &&
-            (TZrInt32)currentCharacter == character &&
-            (TZrInt32)(*lengthPtr) == length &&
-            (TZrInt32)(*typePtr) == typeIndex &&
-            *modifiersPtr == modifiers) {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
 static void test_lsp_auto_discovers_project_from_source_file(SZrState *state);
 static void test_lsp_imported_type_members_do_not_leak_into_module_completion(SZrState *state);
 static void test_lsp_imported_constructor_and_meta_call_infer_through_module_type(SZrState *state);
@@ -1674,7 +1629,7 @@ static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_ke
 static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(SZrState *state);
 static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents(SZrState *state);
 static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state);
-static void test_lsp_semantic_tokens_mark_percent_syntax_deprecated(SZrState *state);
+static void test_lsp_semantic_tokens_ignore_removed_prefix_syntax(SZrState *state);
 static void test_lsp_semantic_tokens_cover_external_metadata_members(SZrState *state);
 static void test_lsp_semantic_tokens_cover_native_value_constructor_members(SZrState *state);
 
@@ -6646,17 +6601,18 @@ static void test_lsp_semantic_tokens_cover_keywords_and_symbols(SZrState *state)
     TEST_PASS(timer, "LSP Semantic Tokens Cover Keywords And Symbols");
 }
 
-static void test_lsp_semantic_tokens_mark_percent_syntax_deprecated(SZrState *state) {
+static void test_lsp_semantic_tokens_ignore_removed_prefix_syntax(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
     const TZrChar *content =
-        "import(\"zr.system\");\n"
-        "let remainder = rate % divisor;\n";
+        "%import(\"zr.system\");\n"
+        "let remainder = rate % divisor;\n"
+        "using (resource) { }\n";
     SZrString *uri;
     SZrArray tokens;
 
-    TEST_START("LSP Semantic Tokens Mark Percent Syntax Deprecated");
-    TEST_INFO("Semantic Tokens", "Legacy percent directives should carry the LSP deprecated modifier without classifying modulo expressions");
+    TEST_START("LSP Semantic Tokens Ignore Removed Prefix Syntax");
+    TEST_INFO("Semantic Tokens", "Removed percent and dollar syntax must be diagnosed without receiving semantic token classification");
 
     context = ZrLanguageServer_LspContext_New(state);
     uri = ZrCore_String_Create(state,
@@ -6666,26 +6622,28 @@ static void test_lsp_semantic_tokens_mark_percent_syntax_deprecated(SZrState *st
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
-                  "LSP Semantic Tokens Mark Percent Syntax Deprecated",
-                  "Failed to prepare legacy percent semantic token source");
+                  "LSP Semantic Tokens Ignore Removed Prefix Syntax",
+                  "Failed to prepare removed syntax semantic token source");
         return;
     }
 
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 16);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
-        !semantic_tokens_contain_with_modifiers(&tokens, 0, 0, 7, "keyword", 1u) ||
-        semantic_tokens_contain(&tokens, 1, 21, 1, "keyword")) {
+        semantic_tokens_contain(&tokens, 0, 0, 7, "keyword") ||
+        semantic_tokens_contain(&tokens, 0, 1, 6, "keyword") ||
+        semantic_tokens_contain(&tokens, 1, 21, 1, "keyword") ||
+        semantic_tokens_contain(&tokens, 2, 0, 5, "keyword")) {
         ZrCore_Array_Free(state, &tokens);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
-                  "LSP Semantic Tokens Mark Percent Syntax Deprecated",
-                  "Expected import to be deprecated and modulo to remain unclassified");
+                  "LSP Semantic Tokens Ignore Removed Prefix Syntax",
+                  "Removed syntax or modulo expression received a semantic token");
         return;
     }
 
     ZrCore_Array_Free(state, &tokens);
     ZrLanguageServer_LspContext_Free(state, context);
-    TEST_PASS(timer, "LSP Semantic Tokens Mark Percent Syntax Deprecated");
+    TEST_PASS(timer, "LSP Semantic Tokens Ignore Removed Prefix Syntax");
 }
 
 static void test_lsp_semantic_tokens_cover_decorators_and_meta_methods(SZrState *state) {
@@ -7932,7 +7890,7 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_keywords_and_symbols(state);
-    test_lsp_semantic_tokens_mark_percent_syntax_deprecated(state);
+    test_lsp_semantic_tokens_ignore_removed_prefix_syntax(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_decorators_and_meta_methods(state);

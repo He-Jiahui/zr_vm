@@ -172,7 +172,7 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         "/* \xCE\xBB */ #singleton#\n"
         "/* \xCE\xBB */ class SingletonClass {\n"
         "    /* \xCE\xBB */ #trace#\n"
-        "    /* \xCE\xBB */ pub run(): int {\n"
+        "    /* \xCE\xBB */ pub fn run(): int {\n"
         "        return 1;\n"
         "    }\n"
         "}\n";
@@ -207,7 +207,7 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         !test_lsp_position_for_substring(content, "SingletonClass", 0, &classNamePosition) ||
         !test_lsp_position_for_substring(content, "run(): int", 0, &methodNamePosition) ||
         !test_lsp_position_for_substring(content, "race#", 0, &decoratorAstRangeStart) ||
-        !test_lsp_position_for_substring(content, "run(): int", 0, &decoratorAstRangeEnd)) {
+        !test_lsp_position_for_substring(content, "fn run(): int", 0, &decoratorAstRangeEnd)) {
         printf("FAIL: Decorator UTF-16 ranges could not compute expected fixture positions\n");
         ZrLanguageServer_LspContext_Free(state, context);
         g_failures++;

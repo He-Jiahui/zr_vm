@@ -62,15 +62,6 @@ TZrBool ZrParser_OwnershipGenericNameToQualifier(SZrString *name, EZrOwnershipQu
         *qualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
         return ZR_TRUE;
     }
-    if (zr_parser_string_equals_cstr(name, "Borrow")) {
-        *qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
-        return ZR_TRUE;
-    }
-    if (zr_parser_string_equals_cstr(name, "Loan")) {
-        *qualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
-        return ZR_TRUE;
-    }
-
     return ZR_FALSE;
 }
 
@@ -189,24 +180,8 @@ TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
         *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
         return ZR_TRUE;
     }
-    if (zr_parser_string_equals_cstr(name, "borrow")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_BORROW;
-        return ZR_TRUE;
-    }
-    if (zr_parser_string_equals_cstr(name, "loan")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_LOAN;
-        return ZR_TRUE;
-    }
     if (zr_parser_string_equals_cstr(name, "upgrade")) {
         *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE;
-        return ZR_TRUE;
-    }
-    if (zr_parser_string_equals_cstr(name, "release")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_RELEASE;
-        return ZR_TRUE;
-    }
-    if (zr_parser_string_equals_cstr(name, "detach")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_DETACH;
         return ZR_TRUE;
     }
     if (zr_parser_string_equals_cstr(name, "intoGc")) {
@@ -215,6 +190,25 @@ TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
     }
 
     return ZR_FALSE;
+}
+
+const TZrChar *ZrParser_OwnershipRemovedCompatibilityMemberMessage(SZrString *name) {
+    if (name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (zr_parser_string_equals_cstr(name, "borrow")) {
+        return "Ownership compatibility member borrow() is removed; use a ref readonly binding";
+    }
+    if (zr_parser_string_equals_cstr(name, "loan")) {
+        return "Ownership compatibility member loan() is removed; use a scoped ref binding";
+    }
+    if (zr_parser_string_equals_cstr(name, "release")) {
+        return "Ownership compatibility member release() is removed; use drop(value)";
+    }
+    if (zr_parser_string_equals_cstr(name, "detach")) {
+        return "Ownership compatibility member detach() is removed; use Unique<T>.intoGc()";
+    }
+    return ZR_NULL;
 }
 
 TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind builtinKind,
@@ -697,6 +691,46 @@ static TZrBool ownership_qualifier_is_compatible(EZrOwnershipQualifier fromQuali
     return ZR_FALSE;
 }
 
+static EZrOwnershipQualifier inferred_type_effective_reference_qualifier(
+        const SZrInferredType *type) {
+    if (type == ZR_NULL || type->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return type != ZR_NULL ? type->ownershipQualifier : ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+    if (type->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) {
+        return ZR_OWNERSHIP_QUALIFIER_BORROWED;
+    }
+    if (type->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE) {
+        return ZR_OWNERSHIP_QUALIFIER_LOANED;
+    }
+    return ZR_OWNERSHIP_QUALIFIER_NONE;
+}
+
+static TZrBool inferred_type_reference_access_is_compatible(const SZrInferredType *fromType,
+                                                             const SZrInferredType *toType) {
+    EZrReferenceAccess fromAccess;
+
+    if (fromType == ZR_NULL || toType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (toType->referenceAccess == ZR_REFERENCE_ACCESS_NONE) {
+        return ZR_TRUE;
+    }
+
+    fromAccess = fromType->referenceAccess;
+    if (fromAccess == ZR_REFERENCE_ACCESS_NONE) {
+        if (fromType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
+            fromAccess = ZR_REFERENCE_ACCESS_READONLY;
+        } else if (fromType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
+            fromAccess = ZR_REFERENCE_ACCESS_WRITABLE;
+        }
+    }
+    if (fromAccess == ZR_REFERENCE_ACCESS_NONE) {
+        return ZR_FALSE;
+    }
+    return toType->referenceAccess == ZR_REFERENCE_ACCESS_READONLY ||
+           fromAccess == ZR_REFERENCE_ACCESS_WRITABLE;
+}
+
 static TZrBool inferred_type_element_types_are_compatible(const SZrInferredType *fromType,
                                                           const SZrInferredType *toType) {
     if (fromType == ZR_NULL || toType == ZR_NULL) {
@@ -1005,8 +1039,10 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
         }
     }
 
-    if (!ownership_qualifier_is_compatible(fromType->ownershipQualifier,
-                                           toType->ownershipQualifier)) {
+    if (!inferred_type_reference_access_is_compatible(fromType, toType) ||
+        !ownership_qualifier_is_compatible(
+                inferred_type_effective_reference_qualifier(fromType),
+                inferred_type_effective_reference_qualifier(toType))) {
         return ZR_FALSE;
     }
 

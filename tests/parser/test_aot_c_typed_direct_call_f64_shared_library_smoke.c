@@ -2,7 +2,7 @@
 
 static void test_aot_c_generated_shared_library_executes_static_f64_no_arg_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func answer(): float {\n"
+            "fn answer(): float {\n"
             "    return 5.0;\n"
             "}\n"
             "var value: float = answer();\n"
@@ -24,7 +24,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_no_arg_typed
 
 static void test_aot_c_generated_shared_library_returns_static_f64_no_arg_result_through_f64_boundary(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func answer(): float {\n"
+            "fn answer(): float {\n"
             "    var result: float = 42.0;\n"
             "    return result;\n"
             "}\n"
@@ -50,7 +50,7 @@ static void test_aot_c_generated_shared_library_returns_static_f64_no_arg_result
 
 static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func pass(value: float): float {\n"
+            "fn pass(value: float): float {\n"
             "    return value;\n"
             "}\n"
             "var seed: float = 5.0;\n"
@@ -73,7 +73,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_type
 
 static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_negate_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func negate(value: float): float {\n"
+            "fn negate(value: float): float {\n"
             "    return -value;\n"
             "}\n"
             "var seed: float = -42.0;\n"
@@ -96,7 +96,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_nega
 
 static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_add_const_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func inc(value: float): float {\n"
+            "fn inc(value: float): float {\n"
             "    return value + 37.0;\n"
             "}\n"
             "var seed: float = 5.0;\n"
@@ -119,7 +119,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_add_
 
 static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_subtract_const_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func dec(value: float): float {\n"
+            "fn dec(value: float): float {\n"
             "    return value - 8.0;\n"
             "}\n"
             "var seed: float = 50.0;\n"
@@ -142,7 +142,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_subt
 
 static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_multiply_const_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func scale(value: float): float {\n"
+            "fn scale(value: float): float {\n"
             "    return value * 21.0;\n"
             "}\n"
             "var seed: float = 2.0;\n"
@@ -165,7 +165,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_mult
 
 static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_divide_const_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func halve(value: float): float {\n"
+            "fn halve(value: float): float {\n"
             "    return value / 2.0;\n"
             "}\n"
             "var seed: float = 84.0;\n"
@@ -188,7 +188,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_divi
 
 static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_modulo_const_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func remainder(value: float): float {\n"
+            "fn remainder(value: float): float {\n"
             "    return value % 50.0;\n"
             "}\n"
             "var seed: float = 92.0;\n"
@@ -211,7 +211,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_one_arg_modu
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_add_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func sum(left: float, right: float): float {\n"
+            "fn sum(left: float, right: float): float {\n"
             "    return left + right;\n"
             "}\n"
             "var first: float = 19.0;\n"
@@ -235,7 +235,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_add_
 
 static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_add_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func sum3(left: float, middle: float, right: float): float {\n"
+            "fn sum3(left: float, middle: float, right: float): float {\n"
             "    return left + middle + right;\n"
             "}\n"
             "var first: float = 12.0;\n"
@@ -260,7 +260,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_ad
 
 static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_multiply_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func product3(left: float, middle: float, right: float): float {\n"
+            "fn product3(left: float, middle: float, right: float): float {\n"
             "    return left * middle * right;\n"
             "}\n"
             "var first: float = 3.0;\n"
@@ -285,7 +285,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_mu
 
 static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_subtract_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func diff3(left: float, middle: float, right: float): float {\n"
+            "fn diff3(left: float, middle: float, right: float): float {\n"
             "    return left - middle - right;\n"
             "}\n"
             "var first: float = 60.0;\n"
@@ -310,7 +310,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_su
 
 static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_divide_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func ratio3(left: float, middle: float, right: float): float {\n"
+            "fn ratio3(left: float, middle: float, right: float): float {\n"
             "    return left / middle / right;\n"
             "}\n"
             "var first: float = 168.0;\n"
@@ -335,7 +335,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_di
 
 static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_modulo_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func remainder3(left: float, middle: float, right: float): float {\n"
+            "fn remainder3(left: float, middle: float, right: float): float {\n"
             "    return left % middle % right;\n"
             "}\n"
             "var first: float = 92.0;\n"
@@ -360,7 +360,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_three_arg_mo
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_subtract_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func diff(left: float, right: float): float {\n"
+            "fn diff(left: float, right: float): float {\n"
             "    return left - right;\n"
             "}\n"
             "var first: float = 50.0;\n"
@@ -384,7 +384,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_subt
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_multiply_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func product(left: float, right: float): float {\n"
+            "fn product(left: float, right: float): float {\n"
             "    return left * right;\n"
             "}\n"
             "var first: float = 6.0;\n"
@@ -408,7 +408,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_mult
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_divide_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func ratio(left: float, right: float): float {\n"
+            "fn ratio(left: float, right: float): float {\n"
             "    return left / right;\n"
             "}\n"
             "var first: float = 84.0;\n"
@@ -432,7 +432,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_divi
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_modulo_typed_thunk(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
-            "func remainder(left: float, right: float): float {\n"
+            "fn remainder(left: float, right: float): float {\n"
             "    return left % right;\n"
             "}\n"
             "var first: float = 93.0;\n"

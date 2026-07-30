@@ -48,7 +48,7 @@ test('ZR grammar highlights union declarations, lowercase primitives, and varian
     assert(keywordRule, 'Expected keyword.other.zr rule');
     const keywordRegex = new RegExp(keywordRule.match);
     assert(keywordRegex.test('union'));
-    assert(keywordRegex.test('using'));
+    assert(!keywordRegex.test('using'));
     assert(keywordRegex.test('module'));
     assert(keywordRegex.test('delegate'));
     assert(!keywordRegex.test('func'));
@@ -103,12 +103,6 @@ test('ZR grammar highlights redesigned declarations, references, construction, a
         .find((rule) => rule.name === 'keyword.operator.construct.zr');
     const intrinsicRule = keywordPatterns
         .find((rule) => rule.name === 'support.function.intrinsic.zr');
-    const legacyPatterns = repositoryPatterns(grammar, 'legacy-percent-syntax');
-    const legacyPercentRule = legacyPatterns
-        .find((rule) => rule.name === 'invalid.deprecated.percent-syntax.zr');
-    const legacyConstructionPatterns = repositoryPatterns(grammar, 'legacy-dollar-construction-syntax');
-    const legacyConstructionRule = legacyConstructionPatterns
-        .find((rule) => rule.name === 'invalid.deprecated.dollar-construction-syntax.zr');
     const decoratorRule = decoratorPatterns
         .find((rule) => rule.name === 'meta.attribute.zr');
 
@@ -141,19 +135,13 @@ test('ZR grammar highlights redesigned declarations, references, construction, a
     assert(new RegExp(intrinsicRule.match).test('typeof(value)'));
     assert(new RegExp(intrinsicRule.match).test('typeid(Point)'));
 
-    assert(legacyPercentRule, 'Expected deprecated percent syntax rule');
-    const legacyPercentRegex = new RegExp(legacyPercentRule.match);
-    assert(legacyPercentRegex.test('%import("zr.math")'));
-    assert(legacyPercentRegex.test('%compileTime fn build(): void {}'));
-    assert(legacyPercentRegex.test('%unknownLegacyDirective'));
-    assert(!legacyPercentRegex.test('rate % divisor'));
-
-    assert(legacyConstructionRule, 'Expected deprecated dollar construction syntax rule');
-    const legacyConstructionRegex = new RegExp(legacyConstructionRule.match);
-    assert(legacyConstructionRegex.test('$Point(1, 2)'));
-    assert(legacyConstructionRegex.test('$(factory)(1, 2)'));
-    assert(!legacyConstructionRegex.test('new Point(1, 2)'));
-    assert(!legacyConstructionRegex.test('value $ divisor'));
+    assert(!grammar.patterns.some((rule) =>
+        rule.include === '#legacy-percent-syntax' || rule.include === '#legacy-dollar-construction-syntax'),
+    'Current grammar must not retain deprecated percent or dollar syntax includes');
+    assert.equal(grammar.repository?.['legacy-percent-syntax'], undefined,
+        'Current grammar must not retain the deprecated percent syntax repository');
+    assert.equal(grammar.repository?.['legacy-dollar-construction-syntax'], undefined,
+        'Current grammar must not retain the deprecated dollar construction repository');
 
     assert(decoratorRule, 'Expected #zr.*# attribute rule');
     assert.equal(decoratorRule.begin, '(#)(?=[A-Za-z_])');

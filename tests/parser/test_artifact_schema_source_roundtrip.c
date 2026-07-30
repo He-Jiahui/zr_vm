@@ -188,8 +188,8 @@ static SZrFunction *compile_scheduler_artifact_source(SZrState *state,
 
 void test_real_source_scheduler_call_publishes_canonical_source_fact(void) {
     static const TZrChar source[] =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "var task = import(\"zr.task\");\n"
+            "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
             "var job = init task.Job<int>(() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
@@ -224,8 +224,8 @@ void test_real_source_scheduler_call_publishes_canonical_source_fact(void) {
 
 void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void) {
     static const TZrChar source[] =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "var task = import(\"zr.task\");\n"
+            "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
             "var firstJob = init task.Job<int>(() => { return 7; });\n"
             "var secondJob = init task.Job<int>(() => { return 8; });\n"
@@ -251,7 +251,7 @@ void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void) {
 
 void test_source_without_scheduler_call_publishes_no_scheduler_fact(void) {
     static const TZrChar source[] =
-            "var thread = %import(\"zr.thread\");\n"
+            "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
             "return scheduler;\n";
     SZrState *state = create_scheduler_artifact_test_state();
@@ -273,8 +273,8 @@ void test_source_without_scheduler_call_publishes_no_scheduler_fact(void) {
 
 void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void) {
     static const TZrChar source[] =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "var task = import(\"zr.task\");\n"
+            "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
             "var job = init task.Job<int>(() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
@@ -423,7 +423,7 @@ void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void)
 
 void test_source_without_scheduler_call_rejects_artifact_write(void) {
     static const TZrChar source[] =
-            "var thread = %import(\"zr.thread\");\n"
+            "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
             "return scheduler;\n";
     SZrState *state = create_scheduler_artifact_test_state();
@@ -453,8 +453,8 @@ void test_source_without_scheduler_call_rejects_artifact_write(void) {
 
 void test_scheduler_artifact_writer_rejects_unavailable_provider(void) {
     static const TZrChar source[] =
-            "var task = %import(\"zr.task\");\n"
-            "var thread = %import(\"zr.thread\");\n"
+            "var task = import(\"zr.task\");\n"
+            "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
             "var job = init task.Job<int>(() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"

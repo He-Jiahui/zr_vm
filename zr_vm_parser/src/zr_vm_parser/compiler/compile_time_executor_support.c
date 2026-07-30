@@ -4,6 +4,7 @@
 
 #include "zr_vm_parser/compiler.h"
 #include "compile_time_executor_internal.h"
+#include "comptime_runtime_contract.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/type_inference.h"
 
@@ -213,6 +214,18 @@ TZrBool ct_frame_set(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrString
         }
     }
     SZrCompileTimeBinding binding;
+    if (!ZrParser_ComptimeRuntime_Consume(
+                cs,
+                ZR_PARSER_COMPTIME_BUDGET_HEAP_BYTES,
+                sizeof(binding),
+                (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL}) ||
+        !ZrParser_ComptimeRuntime_Consume(
+                cs,
+                ZR_PARSER_COMPTIME_BUDGET_AGGREGATE_COUNT,
+                1U,
+                (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL})) {
+        return ZR_FALSE;
+    }
     binding.name = name;
     binding.value = *value;
     ZrCore_Array_Push(cs->state, &frame->bindings, &binding);
@@ -282,6 +295,7 @@ static void ct_compile_time_function_reset_signature(SZrCompilerState *cs, SZrCo
     func->runtimeProjectionModuleName = ZR_NULL;
     func->runtimeProjectionExportName = ZR_NULL;
     func->isRuntimeProjection = ZR_FALSE;
+    func->isDeclarationTransform = ZR_FALSE;
 }
 
 static TZrBool ct_compile_time_function_append_parameter(SZrCompilerState *cs,

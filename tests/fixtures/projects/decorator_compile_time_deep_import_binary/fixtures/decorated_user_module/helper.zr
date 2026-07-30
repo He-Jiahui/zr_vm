@@ -1,9 +1,5 @@
-module "helper";
+module helper;
 
-pub var toolkit = {
-    math: {
-        greet: fn() => {
-            return 42;
-        }
-    }
-};
+pub fn greet(): int {
+    return 42;
+}

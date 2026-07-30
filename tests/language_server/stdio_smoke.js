@@ -229,7 +229,7 @@ function createWatchedProjectFixture() {
         entry: 'main',
     }, null, 2));
     fs.writeFileSync(mainPath, [
-        'module "main";',
+        'module main;',
         '',
         'pub fn watched_before_refresh(): int {',
         '    return 1;',
@@ -750,8 +750,6 @@ async function main() {
     const docsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr';
     const propertyContractUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-property-contract.zr';
-    const legacyPropertyUri =
-        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-legacy-property.zr';
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
     const nativeCallableUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-native-callable.zr';
@@ -856,6 +854,7 @@ async function main() {
     const legacySemanticText = [
         '%import("zr.system");',
         'let remainder = rate % divisor;',
+        'using (resource) { }',
         '',
     ].join('\n');
     const propertyContractText = [
@@ -867,14 +866,6 @@ async function main() {
         '    }',
         '}',
         'fn read(meter: Meter): int { return meter.value; }',
-        '',
-    ].join('\n');
-    const legacyPropertyText = [
-        'class Meter {',
-        '    pri var stored: int = 7;',
-        '    pub get value: int { return this.stored; }',
-        '    pub set value(input: int) { this.stored = input; }',
-        '}',
         '',
     ].join('\n');
     const genericText = [
@@ -943,7 +934,7 @@ async function main() {
         '',
     ].join('\n');
     const moduleImportsText = [
-        'module "stdio";',
+        'module stdio;',
         '',
         'let system = import("zr.system");',
         'let math = import("zr.math");',
@@ -1010,8 +1001,8 @@ async function main() {
         semanticTokenTypes.includes('keyword'),
         'semantic token legend must include keyword');
     assert(Array.isArray(semanticTokenModifiers) &&
-        semanticTokenModifiers.includes('deprecated'),
-        'semantic token legend must include deprecated');
+        !semanticTokenModifiers.includes('deprecated'),
+        'semantic token legend must not retain removed syntax modifiers');
     assert(initializeResult.capabilities.inlayHintProvider &&
         initializeResult.capabilities.inlayHintProvider.resolveProvider === true,
         'inlayHintProvider resolveProvider must be enabled');
@@ -1410,6 +1401,24 @@ async function main() {
     const inlineCompletionDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(inlineCompletionDiagnostics.uri === inlineCompletionUri,
         'inline completion didOpen diagnostics uri mismatch');
+    const functionInlineCompletions = await client.request('textDocument/inlineCompletion', {
+        textDocument: { uri: inlineCompletionUri },
+        position: { line: 0, character: 2 },
+        context: {
+            triggerKind: 1,
+            selectedCompletionInfo: null,
+        },
+    });
+    assert(Array.isArray(functionInlineCompletions) &&
+        functionInlineCompletions.some((item) =>
+            item &&
+            item.insertText === 'fn ' &&
+            item.filterText === 'fn' &&
+            item.range &&
+            item.range.start.line === 0 &&
+            item.range.start.character === 0 &&
+            item.range.end.character === 2),
+    'textDocument/inlineCompletion must suggest the current fn declaration keyword');
     const inlineCompletions = await client.request('textDocument/inlineCompletion', {
         textDocument: { uri: inlineCompletionUri },
         position: { line: 1, character: 7 },
@@ -1786,38 +1795,6 @@ async function main() {
         propertyPrepareRename.range.end.line === 7 &&
         propertyPrepareRename.range.end.character === 47,
     'unified property prepareRename must preserve the usage selection range');
-
-    client.notify('textDocument/didOpen', {
-        textDocument: {
-            uri: legacyPropertyUri,
-            languageId: 'zr',
-            version: 1,
-            text: legacyPropertyText,
-        },
-    });
-    const legacyPropertyDiagnostics =
-        await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(legacyPropertyDiagnostics.uri === legacyPropertyUri &&
-        Array.isArray(legacyPropertyDiagnostics.diagnostics),
-    'legacy property fixture diagnostics uri mismatch');
-    const legacyPropertyDiagnostic = legacyPropertyDiagnostics.diagnostics.find((diagnostic) =>
-        diagnostic && diagnostic.code === 'legacy_property_syntax');
-    assert(legacyPropertyDiagnostic,
-        'legacy property source must publish the stable legacy_property_syntax diagnostic');
-    const legacyPropertyActions = await client.request('textDocument/codeAction', {
-        textDocument: { uri: legacyPropertyUri },
-        range: legacyPropertyDiagnostic.range,
-        context: { diagnostics: [legacyPropertyDiagnostic], only: ['quickfix'] },
-    });
-    assert(Array.isArray(legacyPropertyActions) && legacyPropertyActions.some((action) =>
-        action && typeof action.title === 'string' &&
-        action.title.includes('Migrate legacy property') && action.edit &&
-        workspaceEditTextEdits(action.edit, legacyPropertyUri).some((edit) =>
-            edit && typeof edit.newText === 'string' &&
-            edit.newText.includes('property value: int') &&
-            edit.newText.includes('get') && edit.newText.includes('set') &&
-            !edit.newText.includes('__get_') && !edit.newText.includes('__set_'))),
-    'legacy property quickfix must serialize the parser-owned structured migration edit');
 
     const docsCodeLens = await client.request('textDocument/codeLens', {
         textDocument: { uri: docsUri },
@@ -3195,7 +3172,7 @@ async function main() {
     const watchedOpenedPath = path.join(watchedFixture.rootPath, 'src', 'opened_after_project.zr');
     const watchedOpenedUri = pathToFileURL(watchedOpenedPath).toString();
     const watchedOpenedText = [
-        'module "opened_after_project";',
+        'module opened_after_project;',
         '',
         'fn opened_project_helper(value: int): int {',
         '    return value;',
@@ -3320,7 +3297,7 @@ async function main() {
     'document symbols must resolve encoded Windows document URIs through their native file path');
 
     fs.writeFileSync(watchedFixture.mainPath, [
-        'module "main";',
+        'module main;',
         '',
         'pub fn watched_after_refresh(): int {',
         '    return 2;',
@@ -3561,7 +3538,6 @@ async function main() {
     assertSemanticTokensDoNotOverlap(decodedSemanticTokens,
         'semanticTokens/full must not return overlapping spans');
     const keywordTokenType = semanticTokenTypes.indexOf('keyword');
-    const deprecatedModifier = 1 << semanticTokenModifiers.indexOf('deprecated');
     assert(hasSemanticToken(decodedSemanticTokens,
         findPosition(documentationText, 'module'),
         'module'.length,
@@ -3601,18 +3577,30 @@ async function main() {
         textDocument: { uri: legacySemanticUri },
     });
     const decodedLegacySemanticTokens = decodeSemanticTokens(legacySemanticTokens.data);
-    assert(hasSemanticToken(decodedLegacySemanticTokens,
+    assert(!hasSemanticToken(decodedLegacySemanticTokens,
         findPosition(legacySemanticText, '%import'),
         '%import'.length,
         keywordTokenType,
-        deprecatedModifier),
-    'semanticTokens/full must classify removed percent syntax as deprecated');
+        0),
+    'semanticTokens/full must not classify the removed percent prefix as a keyword');
+    assert(!hasSemanticToken(decodedLegacySemanticTokens,
+        findPosition(legacySemanticText, 'import'),
+        'import'.length,
+        keywordTokenType,
+        0),
+    'semanticTokens/full must not classify a keyword embedded in removed prefix syntax');
     assert(!hasSemanticToken(decodedLegacySemanticTokens,
         findPosition(legacySemanticText, '%', 1),
         '%'.length,
         keywordTokenType,
-        deprecatedModifier),
+        0),
     'semanticTokens/full must not classify modulo as removed syntax');
+    assert(!hasSemanticToken(decodedLegacySemanticTokens,
+        findPosition(legacySemanticText, 'using'),
+        'using'.length,
+        keywordTokenType,
+        0),
+    'semanticTokens/full must not classify a removed using form as a current keyword');
     const staleSemanticResultId = `zr-semantic:${semanticTokens.data.length}:stale`;
     const semanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
         textDocument: { uri: docsUri },
@@ -3715,11 +3703,6 @@ async function main() {
     });
     client.notify('textDocument/didClose', {
         textDocument: {
-            uri: legacyPropertyUri,
-        },
-    });
-    client.notify('textDocument/didClose', {
-        textDocument: {
             uri: parserDiagnosticUri,
         },
     });
@@ -3777,7 +3760,6 @@ async function main() {
         documentUri,
         docsUri,
         propertyContractUri,
-        legacyPropertyUri,
         colorUri,
         inlineCompletionUri,
         importDiagnosticsFixture.mainUri,

@@ -18,7 +18,7 @@ class PropertyBox {
         set { this._value = value; }
     }
 
-    pub bump(delta: int): int {
+    pub fn bump(delta: int): int {
         this.value += delta;
         return this.value;
     }

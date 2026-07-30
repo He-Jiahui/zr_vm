@@ -454,8 +454,8 @@ static void test_pooling_and_pinned_pointer_descriptors_publish_structured_contr
 
 static void test_pool_lease_returns_once_and_reuses_backing_after_view_nll(void) {
     static const char kSource[] =
-            "var {Span} = %import(\"zr.container\");\n"
-            "var {BufferPool} = %import(\"zr.pooling\");\n"
+            "var {Span} = import(\"zr.container\");\n"
+            "var {BufferPool} = import(\"zr.pooling\");\n"
             "var pool = new BufferPool();\n"
             "var lease = pool.rent<int>(2);\n"
             "var firstGeneration = lease.generation;\n"
@@ -488,8 +488,8 @@ static void test_pool_lease_returns_once_and_reuses_backing_after_view_nll(void)
 
 static void test_pool_lease_close_is_rejected_while_view_remains_live(void) {
     static const char kSource[] =
-            "var {Span} = %import(\"zr.container\");\n"
-            "var {BufferPool} = %import(\"zr.pooling\");\n"
+            "var {Span} = import(\"zr.container\");\n"
+            "var {BufferPool} = import(\"zr.pooling\");\n"
             "var pool = new BufferPool();\n"
             "var lease = pool.rent<int>(2);\n"
             "var view: Span<int> = lease.span();\n"
@@ -507,8 +507,8 @@ static void test_pool_lease_close_is_rejected_while_view_remains_live(void) {
 
 static void test_pool_lease_reuse_survives_full_gc_stress(void) {
     static const char kSource[] =
-            "var {Span} = %import(\"zr.container\");\n"
-            "var {BufferPool} = %import(\"zr.pooling\");\n"
+            "var {Span} = import(\"zr.container\");\n"
+            "var {BufferPool} = import(\"zr.pooling\");\n"
             "var pool = new BufferPool();\n"
             "var sum = 0;\n"
             "for (var i = 0; i < 32; i = i + 1) {\n"
@@ -540,11 +540,11 @@ static void test_pool_lease_reuse_survives_full_gc_stress(void) {
 
 static void test_pool_lease_using_cleanup_returns_backing_on_throw(void) {
     static const char kSource[] =
-            "var {BufferPool} = %import(\"zr.pooling\");\n"
+            "var {BufferPool} = import(\"zr.pooling\");\n"
             "var pool = new BufferPool();\n"
             "var lease = pool.rent<int>(3);\n"
             "try {\n"
-            "    %using (lease) {\n"
+            "    using (lease) {\n"
             "        throw \"boom\";\n"
             "    }\n"
             "} catch (error) { }\n"
@@ -568,8 +568,8 @@ static void test_pool_lease_using_cleanup_returns_backing_on_throw(void) {
 
 static void test_explicit_pinned_pointer_span_stays_valid_across_gc_and_owner_close(void) {
     static const char kSource[] =
-            "var {Span} = %import(\"zr.container\");\n"
-            "var ffi = %import(\"zr.ffi\");\n"
+            "var {Span} = import(\"zr.container\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var buffer = ffi.BufferHandle.allocate(4);\n"
             "buffer.write(0, [11, 12, 13, 14]);\n"
             "var pin = buffer.pin();\n"
@@ -599,8 +599,8 @@ static void test_explicit_pinned_pointer_span_stays_valid_across_gc_and_owner_cl
 
 static void test_pinned_pointer_close_is_rejected_while_view_remains_live(void) {
     static const char kSource[] =
-            "var {Span} = %import(\"zr.container\");\n"
-            "var ffi = %import(\"zr.ffi\");\n"
+            "var {Span} = import(\"zr.container\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var buffer = ffi.BufferHandle.allocate(2);\n"
             "var pin = buffer.pin();\n"
             "var view: Span<u8> = pin.span();\n"

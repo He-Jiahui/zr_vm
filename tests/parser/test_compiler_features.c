@@ -2131,10 +2131,10 @@ void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
 
     {
         const char *source =
-                "class Box {}\n"
-                "var seed = Unique<Box>(new Box());\n"
-                "var owner = Shared<Box>(seed);\n"
-                "using (Borrow<Box>(owner)) { var inner = 1; }\n"
+                "resource class Box {}\n"
+                "var seed = own Box();\n"
+                "var owner = seed.share();\n"
+                "{ var borrowed: ref readonly Box = ref owner; var inner = 1; }\n"
                 "return 1;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "using_borrow_generic_cleanup.zr",
@@ -2149,7 +2149,6 @@ void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2178,10 +2177,11 @@ void test_using_borrow_generic_end_borrow_runs_before_return(void) {
 
     {
         const char *source =
-                "class Box {}\n"
-                "var seed = Unique<Box>(new Box());\n"
-                "var owner = Shared<Box>(seed);\n"
-                "using (Borrow<Box>(owner)) {\n"
+                "resource class Box {}\n"
+                "var seed = own Box();\n"
+                "var owner = seed.share();\n"
+                "{\n"
+                "    var borrowed: ref readonly Box = ref owner;\n"
                 "    return 1;\n"
                 "}\n"
                 "return 0;\n";
@@ -2200,7 +2200,6 @@ void test_using_borrow_generic_end_borrow_runs_before_return(void) {
         TEST_ASSERT_TRUE(function_opcode_appears_before(func,
                                                         ZR_INSTRUCTION_ENUM(OWN_RELEASE),
                                                         ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2229,8 +2228,9 @@ void test_using_loan_generic_returns_loan_to_source_on_scope_exit(void) {
 
     {
         const char *source =
-                "var owner = Unique<string>(\"loan-scope\");\n"
-                "using (Loan<string>(owner)) { var inner = 1; }\n"
+                "resource class Cache {}\n"
+                "var owner = own Cache();\n"
+                "{ var loaned: ref Cache = ref owner; var inner = 1; }\n"
                 "if (owner != null) { return 1; }\n"
                 "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -2247,7 +2247,6 @@ void test_using_loan_generic_returns_loan_to_source_on_scope_exit(void) {
         TZrInt64 result = 0;
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute using loan generic cleanup source");
@@ -2284,9 +2283,10 @@ void test_using_loan_generic_returns_loan_before_break(void) {
 
     {
         const char *source =
-                "var owner = Unique<string>(\"loan-break\");\n"
+                "resource class Cache {}\n"
+                "var owner = own Cache();\n"
                 "while (true) {\n"
-                "    using (Loan<string>(owner)) { break; }\n"
+                "    { var loaned: ref Cache = ref owner; break; }\n"
                 "}\n"
                 "if (owner != null) { return 1; }\n"
                 "return 0;\n";
@@ -2304,7 +2304,6 @@ void test_using_loan_generic_returns_loan_before_break(void) {
         TZrInt64 result = 0;
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute using loan generic break cleanup source");
@@ -2611,7 +2610,7 @@ void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void
             "        this.text = text;\n"
             "    }\n"
             "}\n"
-            "var original: Label = $Label(\"left\");\n"
+            "var original: Label = init Label(\"left\");\n"
             "var copied: Label = original;\n"
             "copied.text = \"right\";\n"
             "return original.text + \":\" + copied.text;\n";
@@ -2921,8 +2920,8 @@ void test_owned_field_metadata_serializes_into_prototype_data(void) {
 
     {
         const char *source =
-            "pub struct HandleBox { var handle: %unique Resource; var count: int; }\n"
-            "pub class Holder { var resource: %shared Resource; var version: int; }";
+            "pub struct HandleBox { var handle: Unique<Resource>; var count: int; }\n"
+            "pub class Holder { var resource: Shared<Resource>; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "owned_field_meta.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -3642,7 +3641,7 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership builtin expression lowering",
-              "Testing that %shared(owner) compiles from a %unique owner into OWN_SHARE without serialized native helper constants");
+              "Testing that owner.share() compiles from a %unique owner into OWN_SHARE without serialized native helper constants");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3681,14 +3680,14 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes(void) {
+void test_current_ownership_surface_emits_dedicated_opcodes(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Intrinsic Ownership Generic Constructors Emit Dedicated Opcodes";
+    const char *testSummary = "Current Ownership Surface Emits Dedicated Opcodes";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership generic constructor lowering",
-              "Testing that Unique<T>(value), Shared<T>(value), Borrow<T>(value), and Loan<T>(value) compile through the dedicated ownership opcodes");
+    ZR_TEST_INFO("Current ownership lowering",
+              "Testing that own, share, ref readonly, and ref compile through the dedicated ownership opcodes");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3699,21 +3698,21 @@ void test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes(void) 
 
     {
         const char *source =
-            "class Box {}\n"
-            "var owner = Unique<Box>(new Box());\n"
-            "var alias = Shared<Box>(owner);\n"
-            "var borrowed = Borrow<Box>(alias);\n"
-            "var loanSource = Unique<Box>(new Box());\n"
-            "var loaned = Loan<Box>(loanSource);";
+            "resource class Box {}\n"
+            "var owner = own Box();\n"
+            "var alias = owner.share();\n"
+            "var borrowed: ref readonly Box = ref alias;\n"
+            "var loanSource = own Box();\n"
+            "var loaned: ref Box = ref loanSource;";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_generic_constructors.zr",
-                                                     strlen("ownership_generic_constructors.zr"));
+                                                     "current_ownership_surface.zr",
+                                                     strlen("current_ownership_surface.zr"));
         SZrFunction *func;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile intrinsic ownership generic constructor source");
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile current ownership surface source");
             destroy_test_state(state);
             return;
         }
@@ -3739,8 +3738,8 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership generic member method lowering",
-              "Testing that owner.share()/weak()/borrow()/loan()/detach()/upgrade()/release() lower through ownership opcodes");
+    ZR_TEST_INFO("Ownership surface lowering",
+              "Testing that own/share/weak/ref/intoGc/upgrade/drop lower through ownership opcodes");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3751,30 +3750,32 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
 
     {
         const char *source =
-            "class Session {}\n"
-            "runMemberLifecycle(): int {\n"
-            "var sessionSeed = Unique<Session>(new Session());\n"
+            "resource class Session {}\n"
+            "resource class Cache {}\n"
+            "fn runMemberLifecycle(): int {\n"
+            "var sessionSeed = own Session();\n"
             "var sharedSession = sessionSeed.share();\n"
             "var watcher = sharedSession.weak();\n"
             "var mask = 0;\n"
-            "using (sharedSession.borrow()) {\n"
-            "    if (sharedSession != null) { mask = mask + 1; }\n"
+            "{\n"
+            "    var borrowed: ref readonly Session = ref sharedSession;\n"
+            "    if (borrowed != null) { mask = mask + 1; }\n"
             "}\n"
-            "var cacheSeed = Unique<string>(\"session-cache\");\n"
-            "using (cacheSeed.loan()) {\n"
-            "    if (cacheSeed == null) { mask = mask + 2; }\n"
+            "var cacheSeed = own Cache();\n"
+            "{\n"
+            "    var loaned: ref Cache = ref cacheSeed;\n"
+            "    if (loaned != null) { mask = mask + 2; }\n"
             "}\n"
             "if (cacheSeed != null) { mask = mask + 4; }\n"
-            "var detachedSeed = Unique<Session>(new Session());\n"
-            "var rawSession = detachedSeed.detach();\n"
-            "if (detachedSeed == null && rawSession != null) { mask = mask + 8; }\n"
+            "var detachedSeed = own Session();\n"
+            "var rawSession = detachedSeed.intoGc();\n"
+            "if (rawSession != null) { mask = mask + 8; }\n"
             "var upgradedSession = watcher.upgrade();\n"
             "if (upgradedSession != null) { mask = mask + 16; }\n"
-            "var releasedShared = sharedSession.release();\n"
-            "var releasedUpgrade = upgradedSession.release();\n"
+            "var releasedShared = drop(sharedSession);\n"
+            "var releasedUpgrade = drop(upgradedSession);\n"
             "var expiredSession = watcher.upgrade();\n"
-            "if (releasedShared == null && releasedUpgrade == null &&\n"
-            "    sharedSession == null && upgradedSession == null && expiredSession == null) {\n"
+            "if (releasedShared == null && releasedUpgrade == null && expiredSession == null) {\n"
             "    mask = mask + 32;\n"
             "}\n"
             "return mask;\n"
@@ -3802,7 +3803,7 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
         TEST_ASSERT_FALSE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
@@ -3820,12 +3821,12 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
 
 void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Borrow Loan And Detach Emit Dedicated Opcodes";
+    const char *testSummary = "Ownership Reference Views And GC Bridge Emit Dedicated Opcodes";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership view/return-to-GC lowering",
-              "Testing that %borrow/%loan/%detach emit canonical view/return opcodes without legacy borrow/loan/detach opcodes");
+              "Testing that ref/ref readonly/intoGc emit canonical view/return opcodes without legacy borrow/loan/detach opcodes");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3836,10 +3837,10 @@ void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
 
     {
         const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var owner = own Box();\n"
             "var shared = owner.share();\n"
-            "var borrowed = ref readonly shared;\n"
+            "var borrowed: ref readonly Box = ref shared;\n"
             "var loanSource = own Box();\n"
             "var loaned = ref loanSource;\n"
             "var detachSource = own Box();\n"
@@ -3860,7 +3861,7 @@ void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
         TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
         TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
         TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
@@ -3881,7 +3882,7 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership runtime unique->shared move",
-              "Testing that %shared(owner) consumes a %unique owner during execution and leaves the source variable null");
+              "Testing that owner.share() consumes a Unique owner and yields a live Shared value");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3892,10 +3893,10 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
 
     {
         const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var owner = own Box();\n"
             "var alias = owner.share();\n"
-            "if (owner == null && alias != null) {\n"
+            "if (alias != null) {\n"
             "    return 1;\n"
             "}\n"
             "return 0;\n";
@@ -3927,12 +3928,12 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
 
 void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Borrow Loan And Detach Runtime Follow Surface Contract";
+    const char *testSummary = "Ownership Reference Views And GC Bridge Runtime Follow Surface Contract";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership runtime borrow/loan/detach",
-              "Testing that %shared(owner) + %borrow(shared) keep a live borrowed alias, %loan(owner) nulls the unique source, and %detach(unique) returns a plain GC value while clearing the source");
+    ZR_TEST_INFO("Ownership runtime reference views and GC bridge",
+              "Testing lexical ref/ref readonly views and intoGc without reading moved-from owners");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3943,28 +3944,33 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
 
     {
         const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
+            "fn runReferenceLifecycle(): int {\n"
             "var owner = own Box();\n"
             "var shared = owner.share();\n"
-            "var borrowed = ref readonly shared;\n"
-            "var borrowedAlive = borrowed != null;\n"
+            "var mask = 0;\n"
+            "{\n"
+            "    var borrowed: ref readonly Box = ref shared;\n"
+            "    if (borrowed != null) { mask = mask + 1; }\n"
+            "}\n"
+            "if (shared != null) { mask = mask + 2; }\n"
             "var loanSource = own Box();\n"
-            "var loaned = ref loanSource;\n"
+            "{\n"
+            "    var loaned: ref Box = ref loanSource;\n"
+            "    if (loaned != null) { mask = mask + 4; }\n"
+            "}\n"
+            "if (loanSource != null) { mask = mask + 8; }\n"
             "var detachSource = own Box();\n"
             "var detached = detachSource.intoGc();\n"
-            "var mask = 0;\n"
-            "if (owner == null) { mask = mask + 1; }\n"
-            "if (shared != null) { mask = mask + 2; }\n"
-            "if (loanSource == null) { mask = mask + 4; }\n"
-            "if (loaned != null) { mask = mask + 8; }\n"
-            "if (borrowedAlive) { mask = mask + 16; }\n"
-            "if (detachSource == null) { mask = mask + 32; }\n"
-            "if (detached != null) { mask = mask + 64; }\n"
-            "return mask;\n";
+            "if (detached != null) { mask = mask + 16; }\n"
+            "return mask;\n"
+            "}\n"
+            "return runReferenceLifecycle();\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_borrow_loan_detach_runtime.zr",
                                                      strlen("ownership_borrow_loan_detach_runtime.zr"));
         SZrFunction *func;
+        SZrFunction *lifecycleFunc;
         TZrInt64 result = 0;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
@@ -3975,12 +3981,16 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
-        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        lifecycleFunc = find_single_function_constant_with_opcode(
+                state, func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE));
+        TEST_ASSERT_NOT_NULL(lifecycleFunc);
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
+        TEST_ASSERT_FALSE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
-        TEST_ASSERT_EQUAL_INT64(127, result);
+        TEST_ASSERT_EQUAL_INT64(31, result);
 
         ZrCore_Function_Free(state, func);
     }
@@ -3998,7 +4008,7 @@ void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership generic fixture lifecycle",
-              "Testing that a repository .zr fixture exercises Unique<T>, Shared<T>, Borrow<T>, Loan<T>, Weak<T>, detach, release, and upgrade together");
+              "Testing that a repository .zr fixture exercises resource ownership, Shared<T>, Weak<T>, lexical references, intoGc, drop, and upgrade together");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4045,7 +4055,7 @@ void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
         TEST_ASSERT_FALSE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
@@ -4542,33 +4552,33 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         {
             "weak-from-unique",
             "class Box {}\n"
-            "var owner = %unique new Box();\n"
-            "var watcher = %weak(owner);\n",
+            "var owner = own Box();\n"
+            "var watcher = owner.weak();\n",
             "ownership_invalid_weak_unique_compile.zr",
         },
         {
             "upgrade-from-shared",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var alias = %upgrade(owner);\n",
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var alias = owner.upgrade();\n",
             "ownership_invalid_upgrade_shared_compile.zr",
         },
         {
             "loan-from-shared",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var alias = %loan(owner);\n",
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var alias = ref owner;\n",
             "ownership_invalid_loan_shared_compile.zr",
         },
         {
             "release-borrowed",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var borrowed = %borrow(owner);\n"
-            "var released = %release(borrowed);\n",
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var borrowed: ref readonly Box = ref owner;\n"
+            "var released = drop(borrowed);\n",
             "ownership_invalid_release_borrowed_compile.zr",
         },
         {
@@ -4582,103 +4592,103 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "var owner = Shared<Box>(seed);\n"
             "var resource: Resource = Resource.Open(owner);\n"
             "using (var [handle]: Resource.Open = resource) {\n"
-            "    var released = %release(handle);\n"
+            "    var released = drop(handle);\n"
             "} else {\n"
             "    var fallback = 0;\n"
             "}\n",
             "ownership_invalid_union_default_owner_payload_borrow_release_compile.zr",
         },
         {
-            "detach-weak",
-            "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var watcher = %weak(owner);\n"
-            "var detached = %detach(watcher);\n",
-            "ownership_invalid_detach_weak_compile.zr",
+            "into-gc-weak",
+            "resource class Box {}\n"
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var watcher = owner.weak();\n"
+            "var detached = watcher.intoGc();\n",
+            "ownership_invalid_into_gc_weak_compile.zr",
         },
         {
             "share-shared",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var alias = %shared(owner);\n",
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var alias = owner.share();\n",
             "ownership_invalid_share_shared_compile.zr",
         },
         {
             "borrow-return-escape",
             "class Box {}\n"
-            "leak(owner: %shared Box): %borrowed Box {\n"
-            "    return %borrow(owner);\n"
+            "leak(owner: Shared<Box>): ref readonly Box {\n"
+            "    return ref owner;\n"
             "}\n",
             "ownership_invalid_borrow_return_compile.zr",
         },
         {
             "borrow-global-escape",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "pub var escaped: Borrow<Box> = %borrow(owner);\n",
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "pub var escaped: ref readonly Box = ref owner;\n",
             "ownership_invalid_borrow_global_compile.zr",
         },
         {
             "loan-global-escape",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "pub var escaped: Loan<Box> = %loan(seed);\n",
+            "var seed = own Box();\n"
+            "pub var escaped: ref Box = ref seed;\n",
             "ownership_invalid_loan_global_compile.zr",
         },
         {
             "nested-borrow-global-escape",
             "class Box {}\n"
             "class Holder<T> {}\n"
-            "pub var escaped: Holder<Borrow<Box>>;\n",
+            "pub var escaped: Holder<ref readonly Box>;\n",
             "ownership_invalid_nested_borrow_global_compile.zr",
         },
         {
             "nested-loan-global-escape",
             "class Box {}\n"
             "class Holder<T> {}\n"
-            "pub var escaped: Holder<Loan<Box>>;\n",
+            "pub var escaped: Holder<ref Box>;\n",
             "ownership_invalid_nested_loan_global_compile.zr",
         },
         {
             "borrow-closure-escape",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var owner = %shared(seed);\n"
-            "var borrowed = %borrow(owner);\n"
-            "var f = () => { borrowed; return 1; };\n",
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
+            "var borrowed: ref readonly Box = ref owner;\n"
+            "var f = fn() => { borrowed; return 1; };\n",
             "ownership_invalid_borrow_closure_compile.zr",
         },
         {
             "loan-closure-escape",
             "class Box {}\n"
-            "var seed = %unique new Box();\n"
-            "var loaned = %loan(seed);\n"
-            "var f = () => { loaned; return 1; };\n",
+            "var seed = own Box();\n"
+            "var loaned = ref seed;\n"
+            "var f = fn() => { loaned; return 1; };\n",
             "ownership_invalid_loan_closure_compile.zr",
         },
         {
             "nested-borrow-closure-escape",
             "class Box {}\n"
             "class Holder<T> {}\n"
-            "var nested: Holder<Borrow<Box>>;\n"
-            "var f = () => { nested; return 1; };\n",
+            "var nested: Holder<ref readonly Box>;\n"
+            "var f = fn() => { nested; return 1; };\n",
             "ownership_invalid_nested_borrow_closure_compile.zr",
         },
         {
             "nested-loan-closure-escape",
             "class Box {}\n"
             "class Holder<T> {}\n"
-            "var nested: Holder<Loan<Box>>;\n"
-            "var f = () => { nested; return 1; };\n",
+            "var nested: Holder<ref Box>;\n"
+            "var f = fn() => { nested; return 1; };\n",
             "ownership_invalid_nested_loan_closure_compile.zr",
         },
         {
             "plugin-guard-return-escape",
-            "leak() {\n"
-            "    using (var math = %import(\"zr.math\")) {\n"
+            "fn leak() {\n"
+            "    using (var math = import(\"zr.math\")) {\n"
             "        return math;\n"
             "    } else {\n"
             "        return null;\n"
@@ -4688,8 +4698,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-member-return-escape",
-            "leak() {\n"
-            "    using (var math = %import(\"zr.math\")) {\n"
+            "fn leak() {\n"
+            "    using (var math = import(\"zr.math\")) {\n"
             "        return math.abs;\n"
             "    } else {\n"
             "        return null;\n"
@@ -4699,8 +4709,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-closure-escape",
-            "using (var math = %import(\"zr.math\")) {\n"
-            "    var f = () => { math; return 1; };\n"
+            "using (var math = import(\"zr.math\")) {\n"
+            "    var f = fn() => { math; return 1; };\n"
             "} else {\n"
             "    var fallback = 0;\n"
             "}\n",
@@ -4708,9 +4718,9 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-nested-function-alias-return-escape",
-            "leak() {\n"
-            "    using (var math = %import(\"zr.math\")) {\n"
-            "        func nested() {\n"
+            "fn leak() {\n"
+            "    using (var math = import(\"zr.math\")) {\n"
+            "fn nested() {\n"
             "            var alias = math;\n"
             "            return alias;\n"
             "        }\n"
@@ -4724,7 +4734,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         {
             "plugin-guard-call-argument-escape",
             "sink(value) { return 0; }\n"
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    sink(math);\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4738,7 +4748,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "        var observed = value;\n"
             "    }\n"
             "}\n"
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    var box = new Sink(math);\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4748,7 +4758,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         {
             "plugin-guard-if-call-argument-escape",
             "sink(value) { return 1; }\n"
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    if (sink(math)) {\n"
             "        var observed = 1;\n"
             "    }\n"
@@ -4760,7 +4770,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         {
             "plugin-guard-switch-case-call-argument-escape",
             "sink(value) { return 1; }\n"
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    switch (1) {\n"
             "        (sink(math)) {\n"
             "            var observed = 1;\n"
@@ -4773,7 +4783,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-object-field-escape",
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    var box = { handle: math };\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4782,7 +4792,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-array-element-escape",
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    var handles = [math];\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4791,7 +4801,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-template-interpolation-escape",
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    var text = `module ${math}`;\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4800,7 +4810,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-generator-out-escape",
-            "using (var math = %import(\"zr.math\")) {\n"
+            "using (var math = import(\"zr.math\")) {\n"
             "    var gen = {{ out math; }};\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4813,8 +4823,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "leak() {\n"
-            "    using (var [m]: DynamicModule<Plugins> = %import(\"zr.plugins\")) {\n"
+            "fn leak() {\n"
+            "    using (var [m]: DynamicModule<Plugins> = import(\"zr.plugins\")) {\n"
             "        return m;\n"
             "    } else {\n"
             "        return null;\n"
@@ -4828,8 +4838,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "leak() {\n"
-            "    using (var [m] = %import(\"zr.plugins\")) {\n"
+            "fn leak() {\n"
+            "    using (var [m] = import(\"zr.plugins\")) {\n"
             "        return m;\n"
             "    } else {\n"
             "        return null;\n"
@@ -4843,8 +4853,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "using (var [m] = %import(\"zr.plugins\")) {\n"
-            "    var f = () => { m; return 1; };\n"
+            "using (var [m] = import(\"zr.plugins\")) {\n"
+            "    var f = fn() => { m; return 1; };\n"
             "} else {\n"
             "    var fallback = 0;\n"
             "}\n",
@@ -4857,7 +4867,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    @Available(m: Module);\n"
             "}\n"
             "sink(value) { return 0; }\n"
-            "using (var [m] = %import(\"zr.plugins\")) {\n"
+            "using (var [m] = import(\"zr.plugins\")) {\n"
             "    sink(m);\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4870,7 +4880,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "using (var [m] = %import(\"zr.plugins\")) {\n"
+            "using (var [m] = import(\"zr.plugins\")) {\n"
             "    var box = { handle: m };\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4883,7 +4893,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "using (var [m] = %import(\"zr.plugins\")) {\n"
+            "using (var [m] = import(\"zr.plugins\")) {\n"
             "    var handles = [m];\n"
             "} else {\n"
             "    var fallback = 0;\n"
@@ -4897,7 +4907,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    @Available(m: Module);\n"
             "}\n"
             "leak(flag) {\n"
-            "    using (var [m] = %import(\"zr.plugins\")) {\n"
+            "    using (var [m] = import(\"zr.plugins\")) {\n"
             "        var alias;\n"
             "        if (flag) {\n"
             "            alias = m;\n"
@@ -4911,8 +4921,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-condition-assignment-return-escape",
-            "leak() {\n"
-            "    using (var math = %import(\"zr.math\")) {\n"
+            "fn leak() {\n"
+            "    using (var math = import(\"zr.math\")) {\n"
             "        var alias;\n"
             "        if (alias = math) {\n"
             "            var observed = 1;\n"
@@ -4926,8 +4936,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-initializer-assignment-return-escape",
-            "leak() {\n"
-            "    using (var math = %import(\"zr.math\")) {\n"
+            "fn leak() {\n"
+            "    using (var math = import(\"zr.math\")) {\n"
             "        var alias;\n"
             "        var ok = (alias = math);\n"
             "        return alias;\n"
@@ -4939,8 +4949,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-try-return-escape",
-            "leak() {\n"
-            "    using (var math = %import(\"zr.math\")) {\n"
+            "fn leak() {\n"
+            "    using (var math = import(\"zr.math\")) {\n"
             "        try {\n"
             "            return math;\n"
             "        } catch (e) {\n"
@@ -4954,8 +4964,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-throw-escape",
-            "leak() {\n"
-            "    using (var math = %import(\"zr.math\")) {\n"
+            "fn leak() {\n"
+            "    using (var math = import(\"zr.math\")) {\n"
             "        throw math;\n"
             "    } else {\n"
             "        return null;\n"
@@ -5068,9 +5078,9 @@ void test_plugin_guard_member_assignment_reports_escape_boundary(void) {
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Member Assignment Reports Escape Boundary";
     const char *source =
-        "leak() {\n"
+        "fn leak() {\n"
         "    var box = {};\n"
-        "    using (var math = %import(\"zr.math\")) {\n"
+        "    using (var math = import(\"zr.math\")) {\n"
         "        box.handle = math;\n"
         "        return box;\n"
         "    } else {\n"
@@ -5146,9 +5156,9 @@ void test_plugin_guard_type_query_reports_escape_boundary(void) {
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Type Query Reports Escape Boundary";
     const char *source =
-        "leak() {\n"
-        "    using (var math = %import(\"zr.math\")) {\n"
-        "        return %type(math);\n"
+        "fn leak() {\n"
+        "    using (var math = import(\"zr.math\")) {\n"
+        "        return typeof(math);\n"
         "    } else {\n"
         "        return null;\n"
         "    }\n"
@@ -5161,7 +5171,7 @@ void test_plugin_guard_type_query_reports_escape_boundary(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Plugin guard type query diagnostics",
-              "Testing that %type(...) cannot wrap a guard-scoped module handle and return it past the guard boundary");
+              "Testing that typeof(...) cannot wrap a guard-scoped module handle and return it past the guard boundary");
 
     state = create_test_state();
     if (state == ZR_NULL) {
@@ -5527,8 +5537,8 @@ void test_plugin_guard_generic_call_argument_reports_escape_boundary(void) {
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Generic Call Argument Reports Escape Boundary";
     const char *source =
-        "leak() {\n"
-        "    using (var math = %import(\"zr.math\")) {\n"
+        "fn leak() {\n"
+        "    using (var math = import(\"zr.math\")) {\n"
         "        return sink<math.Vector>();\n"
         "    } else {\n"
         "        return null;\n"
@@ -5603,9 +5613,9 @@ void test_plugin_guard_nested_function_shadowed_parameter_allows_local_value(voi
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Nested Function Shadowed Parameter Allows Local Value";
     const char *source =
-        "valid() {\n"
-        "    using (var math = %import(\"zr.math\")) {\n"
-        "        func nested(math) {\n"
+        "fn valid() {\n"
+        "    using (var math = import(\"zr.math\")) {\n"
+        "        fn nested(math) {\n"
         "            return math;\n"
         "        }\n"
         "        return nested(null);\n"
@@ -5649,17 +5659,17 @@ void test_plugin_guard_nested_function_destructured_shadow_allows_local_value(vo
     SZrTestTimer timer;
     const char *testSummary = "Plugin Guard Nested Function Destructured Shadow Allows Local Value";
     const char *source =
-        "valid() {\n"
-        "    using (var math = %import(\"zr.math\")) {\n"
-        "        func nestedObject() {\n"
+        "fn valid() {\n"
+        "    using (var math = import(\"zr.math\")) {\n"
+        "        fn nestedObject() {\n"
         "            var {math} = {math: null};\n"
         "            return math;\n"
         "        }\n"
-        "        func nestedArray() {\n"
+        "        fn nestedArray() {\n"
         "            var [math] = [null];\n"
         "            return math;\n"
         "        }\n"
-        "        func nestedAlias() {\n"
+        "        fn nestedAlias() {\n"
         "            var {math: value} = {value: null};\n"
         "            return math;\n"
         "        }\n"
@@ -5875,14 +5885,14 @@ void test_intermediate_writer_emits_type_metadata_section(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_intermediate_writer_emits_compile_time_and_test_metadata(void) {
+void test_intermediate_writer_omits_removed_legacy_test_metadata(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Intermediate Writer Emits Compile Time And Test Metadata";
+    const char *testSummary = "Intermediate Writer Omits Removed Legacy Test Metadata";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Intermediate writer metadata closure",
-              "Testing that .zri output includes compile-time declarations and %test metadata");
+              "Testing that .zri output includes compile-time declarations without legacy test metadata");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -5895,7 +5905,7 @@ void test_intermediate_writer_emits_compile_time_and_test_metadata(void) {
         const char *source =
                 "comptime var MAX_SCALE: int = 8;\n"
                 "comptime buildBias(seed: int): int { return seed + MAX_SCALE; }\n"
-                "%test(\"vector_meta\") { return MAX_SCALE; }\n"
+                "fn vector_meta(): int { return MAX_SCALE; }\n"
                 "return MAX_SCALE;";
         const char *intermediatePath = "compiletime_metadata_intermediate_test.zri";
         SZrString *sourceName = ZrCore_String_Create(state, "compiletime_metadata_intermediate_test.zr", 41);
@@ -5926,8 +5936,7 @@ void test_intermediate_writer_emits_compile_time_and_test_metadata(void) {
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "MAX_SCALE: int"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_FUNCTIONS (1):"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "fn buildBias(seed: int): int"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "TESTS (1):"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "test vector_meta()"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "TESTS ("));
 
         free(intermediateText);
         remove(intermediatePath);

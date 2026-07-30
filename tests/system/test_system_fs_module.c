@@ -383,7 +383,7 @@ static void test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fi
 
 static void test_system_fs_source_runtime_supports_path_objects_and_directory_operations(void) {
     static const TZrChar *kSourceTemplate =
-            "var fs = %%import(\"zr.system.fs\");\n"
+            "var fs = import(\"zr.system.fs\");\n"
             "var root = new fs.Folder(\"%s\");\n"
             "var nested = new fs.Folder(\"%s\");\n"
             "var file = new fs.File(\"%s\");\n"
@@ -507,7 +507,7 @@ static void test_system_fs_source_runtime_supports_path_objects_and_directory_op
 
 static void test_system_fs_copy_result_supports_exists_and_read_text_separately(void) {
     static const TZrChar *kSourceTemplate =
-            "var fs = %%import(\"zr.system.fs\");\n"
+            "var fs = import(\"zr.system.fs\");\n"
             "var root = new fs.Folder(\"%s\");\n"
             "var source = new fs.File(\"%s\");\n"
             "var copyTarget = \"%s\";\n"
@@ -562,20 +562,20 @@ static void test_system_fs_copy_result_supports_exists_and_read_text_separately(
 
 static void test_system_fs_source_runtime_supports_stream_modes_and_using(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
-            "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# tellFd(fd:i32): i32;\n"
+            "native extern(\"%s\") {\n"
+            "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# fn tellFd(fd:i32): i32;\n"
             "}\n"
-            "var fs = %%import(\"zr.system.fs\");\n"
-            "var exception = %%import(\"zr.system.exception\");\n"
-            "func takeReader(reader: fs.IStreamReader): string {\n"
+            "var fs = import(\"zr.system.fs\");\n"
+            "var exception = import(\"zr.system.exception\");\n"
+            "fn takeReader(reader: fs.IStreamReader): string {\n"
             "  return reader.readText(1);\n"
             "}\n"
-            "func takeWriter(writer: fs.IStreamWriter): int {\n"
+            "fn takeWriter(writer: fs.IStreamWriter): int {\n"
             "  return writer.writeText(\"!\");\n"
             "}\n"
-            "func readWithUsing(target: fs.File): string {\n"
+            "fn readWithUsing(target: fs.File): string {\n"
             "  var usingStream = target.open(\"r\");\n"
-            "  %%using usingStream;\n"
+            "  using usingStream;\n"
             "  return usingStream.readText(-1);\n"
             "}\n"
             "var file = new fs.File(\"%s\");\n"
@@ -662,8 +662,8 @@ static void test_system_fs_source_runtime_supports_stream_modes_and_using(void) 
 
 static void test_system_fs_source_runtime_raises_io_exception_for_missing_file(void) {
     static const TZrChar *kSourceTemplate =
-            "var fs = %%import(\"zr.system.fs\");\n"
-            "var exception = %%import(\"zr.system.exception\");\n"
+            "var fs = import(\"zr.system.fs\");\n"
+            "var exception = import(\"zr.system.exception\");\n"
             "try {\n"
             "  new fs.File(\"%s\").open(\"r\");\n"
             "  return 0;\n"
@@ -704,10 +704,10 @@ static void test_system_fs_source_runtime_raises_io_exception_for_missing_file(v
 
 static void test_system_fs_handle_id_lowering_rejects_closed_stream(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
-            "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# tellFd(fd:i32): i32;\n"
+            "native extern(\"%s\") {\n"
+            "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# fn tellFd(fd:i32): i32;\n"
             "}\n"
-            "var fs = %%import(\"zr.system.fs\");\n"
+            "var fs = import(\"zr.system.fs\");\n"
             "var file = new fs.File(\"%s\");\n"
             "file.parent.create(true);\n"
             "var stream = file.open(\"w+\");\n"
@@ -748,8 +748,8 @@ static void test_system_fs_handle_id_lowering_rejects_closed_stream(void) {
 
 static void test_system_fs_handle_id_lowering_does_not_apply_to_ordinary_calls(void) {
     static const TZrChar *kSourceTemplate =
-            "var fs = %%import(\"zr.system.fs\");\n"
-            "func acceptFd(fd:i32): i32 {\n"
+            "var fs = import(\"zr.system.fs\");\n"
+            "fn acceptFd(fd:i32): i32 {\n"
             "  return fd;\n"
             "}\n"
             "var file = new fs.File(\"%s\");\n"
@@ -793,20 +793,20 @@ static void test_system_fs_handle_id_lowering_does_not_apply_to_ordinary_calls(v
  */
 static void test_tellfd_stream_call_bytecode_and_symbol_handle_meta_probe(void) {
     static const TZrChar *kProbeTemplate =
-            "%%extern(\"%s\") {\n"
-            "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# tellFd(fd:i32): i32;\n"
+            "native extern(\"%s\") {\n"
+            "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# fn tellFd(fd:i32): i32;\n"
             "}\n"
-            "var fs = %%import(\"zr.system.fs\");\n"
-            "var exception = %%import(\"zr.system.exception\");\n"
-            "func takeReader(reader: fs.IStreamReader): string {\n"
+            "var fs = import(\"zr.system.fs\");\n"
+            "var exception = import(\"zr.system.exception\");\n"
+            "fn takeReader(reader: fs.IStreamReader): string {\n"
             "  return reader.readText(1);\n"
             "}\n"
-            "func takeWriter(writer: fs.IStreamWriter): int {\n"
+            "fn takeWriter(writer: fs.IStreamWriter): int {\n"
             "  return writer.writeText(\"!\");\n"
             "}\n"
-            "func readWithUsing(target: fs.File): string {\n"
+            "fn readWithUsing(target: fs.File): string {\n"
             "  var usingStream = target.open(\"r\");\n"
-            "  %%using usingStream;\n"
+            "  using usingStream;\n"
             "  return usingStream.readText(-1);\n"
             "}\n"
             "var file = new fs.File(\"%s\");\n"

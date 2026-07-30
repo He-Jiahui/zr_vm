@@ -971,9 +971,9 @@ static int test_cli_unhandled_error_prints_traceback(void) {
     command[0] = cliPath;
     command[1] = "-e";
     command[2] =
-            "func leaf(): int { throw \"boom\"; return 0; } "
-            "func middle(): int { var value = leaf(); return value; } "
-            "func root(): int { var value = middle(); return value; } "
+            "fn leaf(): int { throw \"boom\"; return 0; } "
+            "fn middle(): int { var value = leaf(); return value; } "
+            "fn root(): int { var value = middle(); return value; } "
             "return root();";
     command[3] = NULL;
 
@@ -1586,7 +1586,7 @@ static int test_debug_wait_hits_decorator_import_breakpoint(void) {
         goto cleanup;
     }
     cJSON_AddStringToObject(params, "sourceFile", sourcePath);
-    cJSON_AddNumberToObject(breakpoint, "line", 12);
+    cJSON_AddNumberToObject(breakpoint, "line", 10);
     cJSON_AddItemToArray(breakpoints, breakpoint);
     breakpoint = NULL;
     cJSON_AddItemToObject(params, "breakpoints", breakpoints);
@@ -1606,9 +1606,9 @@ static int test_debug_wait_hits_decorator_import_breakpoint(void) {
         goto cleanup;
     }
     breakpointInitiallyResolved = cli_debug_json_bool(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved");
-    if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12) {
+    if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 10) {
         cli_process_terminate(&process);
-        status = cli_fail(testName, "expected resolved breakpoint line 12");
+        status = cli_fail(testName, "expected resolved breakpoint line 10");
         goto cleanup;
     }
     cJSON_Delete(message);
@@ -1627,9 +1627,9 @@ static int test_debug_wait_hits_decorator_import_breakpoint(void) {
         status = cli_fail(testName, "setBreakpoints response did not return a decorated breakpoint result");
         goto cleanup;
     }
-    if (cli_debug_json_int(firstBreakpoint, "line") != 12) {
+    if (cli_debug_json_int(firstBreakpoint, "line") != 10) {
         cli_process_terminate(&process);
-        status = cli_fail(testName, "setBreakpoints response did not preserve line 12");
+        status = cli_fail(testName, "setBreakpoints response did not preserve line 10");
         goto cleanup;
     }
     cJSON_Delete(message);
@@ -1680,9 +1680,9 @@ static int test_debug_wait_hits_decorator_import_breakpoint(void) {
                               cli_process_output(&process));
             goto cleanup;
         }
-        if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12) {
+        if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 10) {
             cli_process_terminate(&process);
-            status = cli_fail(testName, "expected deferred decorated breakpoint to resolve line 12");
+            status = cli_fail(testName, "expected deferred decorated breakpoint to resolve line 10");
             goto cleanup;
         }
         cJSON_Delete(message);
@@ -1705,9 +1705,9 @@ static int test_debug_wait_hits_decorator_import_breakpoint(void) {
         status = cli_fail(testName, "expected decorated breakpoint to stop in decoratedBonus");
         goto cleanup;
     }
-    if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12) {
+    if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 10) {
         cli_process_terminate(&process);
-        status = cli_fail(testName, "expected decorated breakpoint stop on line 12");
+        status = cli_fail(testName, "expected decorated breakpoint stop on line 10");
         goto cleanup;
     }
     cJSON_Delete(message);
@@ -2047,11 +2047,11 @@ static int test_debug_wait_steps_into_decorator_import_call_chain(void) {
     }
     stepSource = cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile");
     if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "step") != 0 ||
-        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 17 ||
+        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 14 ||
         strstr(stepSource, "decorated_user") == NULL) {
         cli_process_terminate(&process);
         status = cli_fail(testName,
-                          "expected first stepIn to enter verifyDecorators lambda at decorated_user:17\n"
+                          "expected first stepIn to enter verifyDecorators lambda at decorated_user:14\n"
                           "Observed source: %s\n"
                           "Observed line: %d\n"
                           "Observed function: %s\n"
@@ -2139,12 +2139,12 @@ static int test_debug_wait_steps_into_decorator_import_call_chain(void) {
     }
     stepSource = cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile");
     if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "step") != 0 ||
-        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12 ||
+        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 10 ||
         strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"), "decoratedBonus") != 0 ||
         strstr(stepSource, "decorated_user") == NULL) {
         cli_process_terminate(&process);
         status = cli_fail(testName,
-                          "expected second stepIn to enter decoratedBonus at decorated_user:12\n"
+                          "expected second stepIn to enter decoratedBonus at decorated_user:10\n"
                           "Observed source: %s\n"
                           "Observed line: %d\n"
                           "Observed function: %s\n"

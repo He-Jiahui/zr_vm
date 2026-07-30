@@ -300,7 +300,7 @@ static void test_span_runtime_prototypes_preserve_contiguous_view_protocols(void
 
 static void test_span_compiler_prototypes_project_ref_like_member_contracts(void) {
     static const char kSource[] =
-            "var {Span, ReadOnlySpan} = %import(\"zr.container\");\n";
+            "var {Span, ReadOnlySpan} = import(\"zr.container\");\n";
     SZrState *state = ZrContainerTests_CreateState();
     SZrCompilerState *compiler;
     SZrAstNode *script;
@@ -352,7 +352,7 @@ static void test_span_compiler_prototypes_project_ref_like_member_contracts(void
 
 static void test_span_array_runtime_mutation_slice_and_readonly_view_share_storage(void) {
     static const char kSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(10);\n"
             "xs.add(20);\n"
@@ -380,8 +380,8 @@ static void test_span_array_runtime_mutation_slice_and_readonly_view_share_stora
 
 static void test_span_default_and_empty_slice_are_legal(void) {
     static const char kSource[] =
-            "var container = %import(\"zr.container\");\n"
-            "var {Span, ReadOnlySpan} = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
+            "var {Span, ReadOnlySpan} = import(\"zr.container\");\n"
             "var empty: Span<int> = init Span<int>();\n"
             "var readOnlyEmpty: ReadOnlySpan<int> = init ReadOnlySpan<int>();\n"
             "return empty.length * 100 + empty.slice(0, 0).length * 10 + "
@@ -403,12 +403,12 @@ static void test_span_default_and_empty_slice_are_legal(void) {
 
 static void test_span_index_and_slice_reject_out_of_range_access(void) {
     static const char kIndexSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(7);\n"
             "return xs.span()[1];\n";
     static const char kSliceSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(7);\n"
             "return xs.span().slice(1, 1).length;\n";
@@ -439,7 +439,7 @@ static void test_span_index_and_slice_reject_out_of_range_access(void) {
 
 static void test_readonly_span_rejects_index_assignment(void) {
     static const char kSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(1);\n"
             "var view = xs.span().asReadOnly();\n"
@@ -456,8 +456,8 @@ static void test_readonly_span_rejects_index_assignment(void) {
 
 static void test_span_implicitly_weakens_to_readonly_span_with_same_element_type(void) {
     static const char kSource[] =
-            "var container = %import(\"zr.container\");\n"
-            "var {ReadOnlySpan} = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
+            "var {ReadOnlySpan} = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(17);\n"
             "var view: ReadOnlySpan<int> = xs.span();\n"
@@ -478,14 +478,14 @@ static void test_span_implicitly_weakens_to_readonly_span_with_same_element_type
 
 static void test_span_rejects_capability_strengthening_and_element_type_change(void) {
     static const char kStrengtheningSource[] =
-            "var container = %import(\"zr.container\");\n"
-            "var {Span} = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
+            "var {Span} = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "var readOnly = xs.span().asReadOnly();\n"
             "var mutable: Span<int> = readOnly;\n";
     static const char kElementMismatchSource[] =
-            "var container = %import(\"zr.container\");\n"
-            "var {ReadOnlySpan} = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
+            "var {ReadOnlySpan} = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "var wrong: ReadOnlySpan<string> = xs.span();\n";
     SZrState *state = ZrContainerTests_CreateState();
@@ -507,7 +507,7 @@ static void test_span_rejects_capability_strengthening_and_element_type_change(v
 
 static void test_span_exact_overload_wins_over_readonly_weakening(void) {
     static const char kImportSource[] =
-            "var {Span, ReadOnlySpan} = %import(\"zr.container\");\n";
+            "var {Span, ReadOnlySpan} = import(\"zr.container\");\n";
     static const char kCallSource[] = "var result = pick(view);";
     SZrState *state = ZrContainerTests_CreateState();
     SZrCompilerState *compiler;
@@ -612,7 +612,7 @@ static void test_span_exact_overload_wins_over_readonly_weakening(void) {
 
 static void test_span_slice_lowers_inline_without_native_callback_or_wrapper(void) {
     static const char kSource[] =
-            "var {Span} = %import(\"zr.container\");\n"
+            "var {Span} = import(\"zr.container\");\n"
             "var empty: Span<int> = init Span<int>();\n"
             "var sliced = empty.slice(0, 0);\n"
             "return sliced.length;\n";
@@ -647,7 +647,7 @@ static void test_span_slice_lowers_inline_without_native_callback_or_wrapper(voi
 
 static void test_span_constant_slice_index_elides_only_proven_bounds_checks(void) {
     static const char kConstantIndexSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(11);\n"
             "xs.add(22);\n"
@@ -655,7 +655,7 @@ static void test_span_constant_slice_index_elides_only_proven_bounds_checks(void
             "var sliced = view.slice(0, 2);\n"
             "return sliced[1];\n";
     static const char kDynamicIndexSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(11);\n"
             "xs.add(22);\n"
@@ -706,7 +706,7 @@ static void test_span_constant_slice_index_elides_only_proven_bounds_checks(void
 
 static void test_span_compiler_publishes_structured_view_and_bounds_facts(void) {
     static const char kSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(11);\n"
             "xs.add(22);\n"

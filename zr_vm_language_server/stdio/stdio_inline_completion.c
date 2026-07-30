@@ -7,7 +7,7 @@ typedef struct SZrInlineCompletionKeyword {
 
 static const SZrInlineCompletionKeyword ZR_INLINE_COMPLETION_KEYWORDS[] = {
     {"return", "return "},
-    {"func", "func "},
+    {"fn", "fn "},
     {"class", "class "},
     {"pub", "pub "},
     {"pri", "pri "},

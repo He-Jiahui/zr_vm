@@ -206,6 +206,44 @@ static void test_resource_unique_uses_direct_owner_without_control_block(void) {
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(owner.type));
 }
 
+static void test_resource_unique_direct_loan_restores_owner_without_control_block(void) {
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, "DirectLoanResource");
+    SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(
+            g_state, name, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    SZrObject *object;
+    SZrTypeValue owner;
+    SZrTypeValue loan;
+
+    TEST_ASSERT_NOT_NULL(prototype);
+    prototype->modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
+    object = ZrCore_Object_New(g_state, prototype);
+    TEST_ASSERT_NOT_NULL(object);
+    ZrCore_Object_Init(g_state, object);
+    ZrCore_Value_ResetAsNull(&owner);
+    ZrCore_Value_ResetAsNull(&loan);
+
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            g_state, &owner, ZR_CAST_RAW_OBJECT_AS_SUPER(object)));
+    TEST_ASSERT_FALSE(ZrCore_Ownership_LoanValue(g_state, &owner, &owner));
+    TEST_ASSERT_EQUAL_PTR(object, owner.value.object);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_UNIQUE, owner.ownershipKind);
+
+    TEST_ASSERT_TRUE(ZrCore_Ownership_LoanValue(g_state, &loan, &owner));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(owner.type));
+    TEST_ASSERT_EQUAL_PTR(object, loan.value.object);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_LOANED, loan.ownershipKind);
+    TEST_ASSERT_NULL(loan.ownershipControl);
+
+    TEST_ASSERT_TRUE(ZrCore_Ownership_ReturnLoanValue(g_state, &owner, &loan));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(loan.type));
+    TEST_ASSERT_EQUAL_PTR(object, owner.value.object);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_UNIQUE, owner.ownershipKind);
+    TEST_ASSERT_NULL(owner.ownershipControl);
+
+    ZrCore_Ownership_ReleaseValue(g_state, &owner);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(owner.type));
+}
+
 static void test_resource_unique_into_gc_box_consumes_owner_and_defers_drop(void) {
     SZrString *name = ZrCore_String_CreateFromNative(g_state, "GcBoxResource");
     SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(
@@ -634,6 +672,7 @@ int main(void) {
     RUN_TEST(test_resource_construction_world_is_type_directed);
     RUN_TEST(test_resource_contextual_tokens_preserve_identifier_calls);
     RUN_TEST(test_resource_unique_uses_direct_owner_without_control_block);
+    RUN_TEST(test_resource_unique_direct_loan_restores_owner_without_control_block);
     RUN_TEST(test_resource_unique_into_gc_box_consumes_owner_and_defers_drop);
     RUN_TEST(test_aot_own_detach_consumes_resource_unique_into_gc_box);
     RUN_TEST(test_gc_bridge_types_preserve_canonical_identity);

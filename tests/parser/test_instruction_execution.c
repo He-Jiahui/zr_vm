@@ -2575,7 +2575,7 @@ static void test_execute_get_member_materializes_global_prototype_with_aliased_d
 static void test_execute_source_import_typed_call_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Source Import Typed Call Runtime Result";
-    const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";
+    const char *moduleSource = "fn add(lhs: float, rhs: float): float { return lhs + rhs; }";
     const char *source = "let math = import(\"math\"); return math.add(1, 2.5);";
     SZrTypeValue result;
 
@@ -2621,7 +2621,7 @@ static void test_execute_source_import_typed_call_runtime_result(void) {
 static void test_execute_binary_import_typed_call_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Binary Import Typed Call Runtime Result";
-    const char *moduleSource = "add(lhs: float, rhs: float): float { return lhs + rhs; }";
+    const char *moduleSource = "fn add(lhs: float, rhs: float): float { return lhs + rhs; }";
     const char *source = "let math = import(\"math\"); return math.add(1, 2.5);";
     const char *binaryPath = "instruction_import_runtime_fixture.zro";
     SZrTypeValue result;
@@ -2671,7 +2671,7 @@ static void test_execute_binary_import_typed_call_runtime_result(void) {
 static void test_execute_binary_import_member_opcode_runtime_result(void) {
     SZrTestTimer timer;
     const char *testSummary = "Binary Import Member Opcode Runtime Result";
-    const char *moduleSource = "touchGlobalMember(): int { var err = zr.Error; return 7; }";
+    const char *moduleSource = "fn touchGlobalMember(): int { var err = zr.Error; return 7; }";
     const char *source = "let math = import(\"math\"); return math.touchGlobalMember();";
     const char *binaryPath = "instruction_import_member_runtime_fixture.zro";
     SZrTypeValue result;

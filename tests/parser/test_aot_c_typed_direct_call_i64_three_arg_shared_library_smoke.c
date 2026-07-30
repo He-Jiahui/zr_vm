@@ -15,7 +15,7 @@
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_add_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func sum3(left: int, middle: int, right: int): int {\n"
+            "fn sum3(left: int, middle: int, right: int): int {\n"
             "    return left + middle + right;\n"
             "}\n"
             "var first: int = 12;\n"
@@ -45,7 +45,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_ad
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_multiply_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func product3(left: int, middle: int, right: int): int {\n"
+            "fn product3(left: int, middle: int, right: int): int {\n"
             "    return left * middle * right;\n"
             "}\n"
             "var first: int = 2;\n"
@@ -75,7 +75,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_mu
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_subtract_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func diff3(left: int, middle: int, right: int): int {\n"
+            "fn diff3(left: int, middle: int, right: int): int {\n"
             "    return left - middle - right;\n"
             "}\n"
             "var first: int = 50;\n"
@@ -105,7 +105,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_su
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_divide_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func quotient3(left: int, middle: int, right: int): int {\n"
+            "fn quotient3(left: int, middle: int, right: int): int {\n"
             "    return left / middle / right;\n"
             "}\n"
             "var first: int = 64;\n"
@@ -135,7 +135,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_di
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_modulo_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func remainder3(left: int, middle: int, right: int): int {\n"
+            "fn remainder3(left: int, middle: int, right: int): int {\n"
             "    return left % middle % right;\n"
             "}\n"
             "var first: int = 92;\n"
@@ -165,7 +165,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_mo
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bitwise_and_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func mask3(left: int, middle: int, right: int): int {\n"
+            "fn mask3(left: int, middle: int, right: int): int {\n"
             "    return left & middle & right;\n"
             "}\n"
             "var first: int = 58;\n"
@@ -195,7 +195,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bi
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bitwise_or_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func flags3(left: int, middle: int, right: int): int {\n"
+            "fn flags3(left: int, middle: int, right: int): int {\n"
             "    return left | middle | right;\n"
             "}\n"
             "var first: int = 40;\n"
@@ -225,7 +225,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bi
 
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bitwise_xor_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
-            "func toggle3(left: int, middle: int, right: int): int {\n"
+            "fn toggle3(left: int, middle: int, right: int): int {\n"
             "    return left ^ middle ^ right;\n"
             "}\n"
             "var first: int = 63;\n"

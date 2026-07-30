@@ -19,6 +19,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_lib_container/include/zr_vm_lib_container/generational_pool.h
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
@@ -42,6 +44,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
@@ -50,6 +53,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
+  - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
 tests:
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -62,6 +66,7 @@ tests:
   - tests/parser/test_property_consumer_stripping_cases.h
   - tests/core/test_type_layout_metadata_contracts.c
   - tests/core/test_resource_cross_domain_transfer.c
+  - tests/container/test_generational_pool_artifact.c
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
   - tests/acceptance/2026-07-20-syntax-02-m6-artifact-lsp-consumers.md
   - tests/acceptance/2026-07-22-syntax-04-m7-concurrent-major-artifact-aot-lsp.md
@@ -192,6 +197,12 @@ consume an explicit marshaller contract before crossing that boundary.
 
 `ZrParser_ArtifactType_BuildPublicIdentity` derives stable TypeRef, TypeSpec, and signature hashes from the serialized structure, then combines them with the independently supplied layout, callable-contract, and module identities. The real-source acceptance test compiles a typed function, obtains its canonical function type through the compiler type projection, imports the resulting binary signature, and proves equal `TypeId`, signature bytes, and public identity.
 
+`ZrParser_ArtifactLayout_ApplyNativeCapabilities` projects a native type's
+StableSlotSource protocol and its module-owned contract constant into a layout
+row. It rejects a protocol without a hash, a hash without the protocol, and a
+preexisting mismatched hash. The helper consumes the protocol bit and explicit
+owner constant; it never compares the provider or source type name.
+
 `ZrCore_Artifact_ReadCallableSignatureSummary` validates a complete function signature before
 projecting receiver effect, ref-export effect, effect flags, parameter count, and whether any
 `ref`/`ref readonly` parameter has a function-scoped escape bound. The core canonical consumer
@@ -248,3 +259,9 @@ Syntax 05 M5 additionally verifies the 48-byte PropertyDef layout and initialize
 visible/accessor identity across source and `.zro` reload, reflection token stability, ordinary
 legacy-looking methods as a negative boundary, 128-property stress, binary LSP hover/completion/
 definition, and AOT metadata stripping with accessor roots retained only through structured links.
+
+Syntax 09 pooling coverage additionally executes the source-visible
+StableSlotSource constant, compares it with the native descriptor constant,
+roundtrips it through a binary LayoutRow, and resolves the same value through
+the canonical reflection consumer. Zero hashes and unknown capability bits are
+rejected before publication.

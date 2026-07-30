@@ -1,4 +1,4 @@
-var container = %import("zr.container");
+var container = import("zr.container");
 var xs = new container.Array<int>(2);
 var map = new container.Map<string, int>();
 var obj = {};

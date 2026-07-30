@@ -319,7 +319,7 @@ static void test_inline_struct_local_field_get_set_executes_from_frame_layout(vo
             "        this.y = y;\n"
             "    }\n"
             "}\n"
-            "var p: Point = $Point(1, 2);\n"
+            "var p: Point = init Point(1, 2);\n"
             "var q: Point = p;\n"
             "q.x = 7;\n"
             "return (p.x * 100) + (q.x * 10) + q.y;";
@@ -349,7 +349,7 @@ static void test_inline_struct_local_field_get_set_updates_frame_bytes(void) {
             "        this.y = y;\n"
             "    }\n"
             "}\n"
-            "var p: Point = $Point(1, 2);\n"
+            "var p: Point = init Point(1, 2);\n"
             "var q: Point = p;\n"
             "q.x = 7;\n"
             "return zr.__probeInlinePointFrame();";
@@ -380,11 +380,11 @@ static void test_inline_struct_parameter_mutation_is_by_value(void) {
             "        this.y = y;\n"
             "    }\n"
             "}\n"
-            "pub mutate(point: Point): int {\n"
+            "pub fn mutate(point: Point): int {\n"
             "    point.x = 9;\n"
             "    return (point.x * 10) + point.y;\n"
             "}\n"
-            "var p: Point = $Point(1, 2);\n"
+            "var p: Point = init Point(1, 2);\n"
             "var mutated = mutate(p);\n"
             "return (p.x * 1000) + mutated;";
     SZrFunction *function;
@@ -413,11 +413,11 @@ static void test_inline_struct_return_mutation_is_by_value(void) {
             "        this.y = y;\n"
             "    }\n"
             "}\n"
-            "pub makePoint(seed: int): Point {\n"
-            "    var local: Point = $Point(seed, seed + 1);\n"
+            "pub fn makePoint(seed: int): Point {\n"
+            "    var local: Point = init Point(seed, seed + 1);\n"
             "    return local;\n"
             "}\n"
-            "var original: Point = $Point(1, 2);\n"
+            "var original: Point = init Point(1, 2);\n"
             "var returned: Point = makePoint(3);\n"
             "returned.x = 8;\n"
             "return (original.x * 1000) + (original.y * 100) + (returned.x * 10) + returned.y;";
@@ -463,7 +463,7 @@ static void test_inline_large_pod_struct_constructor_initializes_frame_fields(vo
             "        this.j = j;\n"
             "    }\n"
             "}\n"
-            "var point: WidePoint = $WidePoint(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);\n"
+            "var point: WidePoint = init WidePoint(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);\n"
             "return (point.a * 1000000) + (point.e * 10000) + point.j;";
     SZrFunction *function;
     TZrInt64 result = 0;
@@ -507,11 +507,11 @@ static void test_inline_large_pod_struct_return_is_by_value(void) {
             "        this.j = j;\n"
             "    }\n"
             "}\n"
-            "pub makeWide(seed: int): WidePoint {\n"
-            "    var local: WidePoint = $WidePoint(seed, seed + 1, seed + 2, seed + 3, seed + 4, seed + 5, seed + 6, seed + 7, seed + 8, seed + 9);\n"
+            "pub fn makeWide(seed: int): WidePoint {\n"
+            "    var local: WidePoint = init WidePoint(seed, seed + 1, seed + 2, seed + 3, seed + 4, seed + 5, seed + 6, seed + 7, seed + 8, seed + 9);\n"
             "    return local;\n"
             "}\n"
-            "var original: WidePoint = $WidePoint(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);\n"
+            "var original: WidePoint = init WidePoint(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);\n"
             "var returned: WidePoint = makeWide(20);\n"
             "returned.e = 70;\n"
             "return (original.a * 1000000) + (original.j * 10000) + (returned.a * 100) + returned.e;";
@@ -539,7 +539,7 @@ static void test_inline_struct_string_field_copy_and_mutation_are_by_value(void)
             "        this.text = text;\n"
             "    }\n"
             "}\n"
-            "var original: Label = $Label(\"left\");\n"
+            "var original: Label = init Label(\"left\");\n"
             "var copied: Label = original;\n"
             "copied.text = \"right\";\n"
             "return original.text + \":\" + copied.text;";
@@ -570,7 +570,7 @@ static void test_inline_struct_string_field_updates_frame_bytes(void) {
             "        this.text = text;\n"
             "    }\n"
             "}\n"
-            "var original: Label = $Label(\"left\");\n"
+            "var original: Label = init Label(\"left\");\n"
             "var copied: Label = original;\n"
             "copied.text = \"right\";\n"
             "return zr.__probeInlineLabelFrame();";
@@ -599,7 +599,7 @@ static void test_inline_struct_string_field_survives_gc_frame_scan(void) {
             "        this.text = text;\n"
             "    }\n"
             "}\n"
-            "var original: Label = $Label(\"left\");\n"
+            "var original: Label = init Label(\"left\");\n"
             "var copied: Label = original;\n"
             "copied.text = \"right\";\n"
             "return zr.__forceGcAndProbeInlineLabelFrame();";
@@ -664,11 +664,11 @@ static void test_inline_struct_string_field_parameter_is_by_value(void) {
             "        this.text = text;\n"
             "    }\n"
             "}\n"
-            "pub mutate(label: Label): string {\n"
+            "pub fn mutate(label: Label): string {\n"
             "    label.text = \"right\";\n"
             "    return label.text;\n"
             "}\n"
-            "var original: Label = $Label(\"left\");\n"
+            "var original: Label = init Label(\"left\");\n"
             "var mutated = mutate(original);\n"
             "return original.text + \":\" + mutated;";
     SZrFunction *function;
@@ -698,11 +698,11 @@ static void test_inline_struct_string_field_return_is_by_value(void) {
             "        this.text = text;\n"
             "    }\n"
             "}\n"
-            "pub makeLabel(text: string): Label {\n"
-            "    var local: Label = $Label(text);\n"
+            "pub fn makeLabel(text: string): Label {\n"
+            "    var local: Label = init Label(text);\n"
             "    return local;\n"
             "}\n"
-            "var original: Label = $Label(\"left\");\n"
+            "var original: Label = init Label(\"left\");\n"
             "var returned: Label = makeLabel(\"right\");\n"
             "returned.text = \"done\";\n"
             "return original.text + \":\" + returned.text;";
@@ -741,8 +741,8 @@ static void test_inline_struct_constructor_copies_inline_struct_field_argument(v
             "        this.point = point;\n"
             "    }\n"
             "}\n"
-            "var p: Point = $Point(1, 2);\n"
-            "var box: Box = $Box(p);\n"
+            "var p: Point = init Point(1, 2);\n"
+            "var box: Box = init Box(p);\n"
             "return (box.point.x * 10) + box.point.y;";
     SZrFunction *function;
     TZrInt64 result = 0;
@@ -776,8 +776,8 @@ static void test_inline_nested_struct_field_copy_and_mutation_are_by_value(void)
             "        this.point = point;\n"
             "    }\n"
             "}\n"
-            "var p: Point = $Point(1, 2);\n"
-            "var left: Box = $Box(p);\n"
+            "var p: Point = init Point(1, 2);\n"
+            "var left: Box = init Box(p);\n"
             "var right: Box = left;\n"
             "right.point.x = 7;\n"
             "return (left.point.x * 1000) + (left.point.y * 100) + (right.point.x * 10) + right.point.y;";
@@ -791,6 +791,38 @@ static void test_inline_nested_struct_field_copy_and_mutation_are_by_value(void)
 
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
     TEST_ASSERT_EQUAL_INT64(1272, result);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_inline_struct_operator_constructor_result_uses_inline_frame_layout(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const char *source =
+            "struct Vector2 {\n"
+            "    pub var x: int;\n"
+            "    pub var y: int;\n"
+            "    pub @constructor(x: int, y: int) {\n"
+            "        this.x = x;\n"
+            "        this.y = y;\n"
+            "    }\n"
+            "    pub static @add(left: Vector2, right: Vector2): Vector2 {\n"
+            "        return init Vector2(left.x + right.x, left.y + right.y);\n"
+            "    }\n"
+            "}\n"
+            "var left = init Vector2(1, 2);\n"
+            "var right = init Vector2(3, 4);\n"
+            "var sum = left + right;\n"
+            "return (sum.x * 10) + sum.y;";
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, source, "value_type_runtime_operator_constructor.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(46, result);
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
@@ -866,6 +898,7 @@ int main(void) {
     RUN_TEST(test_inline_struct_string_field_return_is_by_value);
     RUN_TEST(test_inline_struct_constructor_copies_inline_struct_field_argument);
     RUN_TEST(test_inline_nested_struct_field_copy_and_mutation_are_by_value);
+    RUN_TEST(test_inline_struct_operator_constructor_result_uses_inline_frame_layout);
     RUN_TEST(test_type_layout_visit_gc_values_uses_metadata_offsets_when_available);
     return UNITY_END();
 }

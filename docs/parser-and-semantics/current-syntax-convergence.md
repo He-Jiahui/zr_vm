@@ -5,6 +5,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expressions.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_function_syntax.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
+  - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
 implementation_files:
@@ -12,18 +17,28 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expressions.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_function_syntax.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
+  - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
 plan_sources:
   - user: 2026-07-29 README.md is the current standard syntax
+  - user: 2026-07-30 strictly perform a one-shot breaking syntax cutover
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
   - docs/plans/syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md
 tests:
   - tests/parser/test_parser.c
+  - tests/parser/test_percent_syntax_cutover.c
+  - tests/parser/test_legacy_migration.c
+  - tests/cli/test_cli_syntax_migration.c
   - tests/parser/test_property_ref_return.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_ownership_diagnostics.c
   - tests/language_server/stdio_diagnostic_fix_smoke.js
   - tests/language_server/stdio_smoke.js
+  - tests/acceptance/2026-07-26-syntax-55-status-records-review.md
 doc_type: module-detail
 ---
 
@@ -32,9 +47,9 @@ doc_type: module-detail
 ## Authority
 
 `README.md` is the sole current-language source for examples and editor-facing
-syntax. Historical percent forms belong to migration diagnostics, inventory, or
-negative fixtures; they are not the target spelling for parser, LSP, extension,
-or test updates.
+syntax. Historical percent forms belong only to migration diagnostics,
+inventory, negative fixtures, or historical design documents. The production
+parser does not accept them as a compatibility surface.
 
 The relevant current forms are:
 
@@ -48,6 +63,30 @@ fn update(value: ref Data): void { value.reset(); }
 var data = init Data();
 update(ref data);
 ```
+
+## One-Shot Cutover Boundary
+
+The current frontend has one production grammar. In particular, it does not
+accept `%module`, `%import`, `%extern`, `%compileTime`, `%test`, `%owned`,
+`%borrow`, `%loan`, `%unique`, `%shared`, `%weak`, `%func`, `%in`, `%out`,
+`%ref`, or `%using` as language keywords. Their replacements are ordinary
+tokens and typed contracts:
+
+- module declarations use `module path;`;
+- static imports use `import("path")`;
+- native declarations use `native extern("library") ...`;
+- build-time execution uses `comptime` and `zr.compile` typed descriptors;
+- ownership uses `Unique<T>`, `Shared<T>`, `Weak<T>`, `ref`, direct owner
+  operations, and statement/block `using`;
+- definitions use `fn(args): ReturnType`, while callable types use
+  `fn(Args) -> ReturnType`.
+
+There is no parser fallback from a rejected percent form to an old AST or
+compiler lowering path. The explicit migration frontend may still recognize
+legacy input to produce diagnostics and edits, but it never turns that input
+into a production compilation unit. Ordinary `%` remains the modulo operator.
+An unknown `%identifier` is an ordinary syntax error rather than an implicit
+migration directive.
 
 ## Implemented Frontend Surface
 
@@ -64,25 +103,23 @@ update(ref data);
   compiler already consumes; it must not be lowered indiscriminately into an
   ordinary reference expression.
 
-## Ownership Boundary Still Open
-
 The parser preserves the declared target TypeRef: `ref readonly T` is read-only
-and `ref T` is writable. The initial `ref place` expression currently enters
-the ownership pipeline as a borrow construct, however, so a writable target
-annotation has not yet been used to normalize that construct into a loan fact.
-That is why the remaining work belongs in ownership/dataflow and escape
-analysis, rather than in a second `ref` spelling or a return-parser rewrite.
-
-The next semantic slice must derive the ownership fact from the enclosing
-binding or return TypeRef, cover reborrows, and retain the dedicated
-`return ref` provenance. It must then prove borrow/loan conflict and escape
-diagnostics with the canonical forms above.
+and `ref T` is writable. Borrow/loan, escape, suspension, owner receiver, and
+artifact consumers are covered by their dedicated lower-layer suites. Future
+work must extend those typed contracts; it must not restore a second source
+spelling.
 
 ## Validation Status
 
-`tests/parser/test_parser.c` covers current module syntax and the README
-reference declaration forms. `tests/language_server/test_semantic_analyzer.c`
-covers current parameter signature rendering, and the focused stdio diagnostic
-smoke passes. The full stdio smoke is currently blocked before LSP analysis by
-the shared native-registry builtin-registration failure; a VSIX built from that
-dependency closure is therefore not an acceptance artifact.
+The breaking switch is directly covered by `percent_syntax_cutover`,
+`cli_syntax_migration`, and `legacy_migration`: old source is rejected by the
+production path while migration diagnostics and edits remain available. A
+static scan of the production parser has zero occurrences of the listed legacy
+keyword literals. The 2026-07-30 WSL GCC isolated matrix builds the full tree
+and passes all 123 registered CTest tests, including `language_pipeline`,
+projects, language-server stdio, VM/AOT, debug, and migration consumers.
+
+This closes the dual-parser compatibility question, not the complete Syntax
+redesign. Gate 11 still lacks the full declaration Patch shape and all required
+consumers, Gate 14 remains unimplemented, and the root promotion ledger stays
+open until those owner gates have direct coverage.

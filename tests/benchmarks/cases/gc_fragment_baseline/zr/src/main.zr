@@ -2,11 +2,11 @@ let benchConfig = import("bench_config");
 let system = import("zr.system");
 let container = import("zr.container");
 
-toText(value: int): string {
+fn toText(value: int): string {
     return <string> value;
 }
 
-fragment(slot: int): string {
+fn fragment(slot: int): string {
     var normalized = slot % 8;
     if (normalized == 0) {
         return "amber";
@@ -32,14 +32,14 @@ fragment(slot: int): string {
     return "harbor";
 }
 
-payload(seed: int, cycle: int, slot: int): string {
+fn payload(seed: int, cycle: int, slot: int): string {
     var head = fragment(seed + cycle);
     var middle = fragment(seed / 3 + slot * 5);
     var tail = fragment(seed + cycle * 7 + slot * 11);
     return head + "-" + middle + "-" + tail + ":" + toText(seed) + ":" + toText(cycle) + ":" + toText(slot);
 }
 
-publishArchivedGlobal(slot: int, value: string) {
+fn publishArchivedGlobal(slot: int, value: string) {
     var bucket = slot % 8;
     var archiveBox = { value: value, slot: slot };
     if (bucket == 0) {

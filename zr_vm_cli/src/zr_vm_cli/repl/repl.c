@@ -183,6 +183,46 @@ static TZrChar *zr_cli_repl_build_return_wrapper(const TZrChar *code) {
     return wrapper;
 }
 
+static TZrChar *zr_cli_repl_build_type_query_source(const TZrChar *code) {
+    static const TZrChar prefix[] = "var __zr_repl_type_query = ";
+    const TZrChar *begin;
+    const TZrChar *end;
+    TZrSize expressionLength;
+    TZrSize prefixLength = sizeof(prefix) - 1u;
+    TZrChar *source;
+
+    begin = ZrCli_ReplInput_SkipSpace(code);
+    if (begin == ZR_NULL || *begin == '\0') {
+        return ZR_NULL;
+    }
+
+    end = begin + strlen(begin);
+    while (end > begin && ZrCli_ReplInput_IsSpace(end[-1])) {
+        --end;
+    }
+    if (end > begin && end[-1] == ';') {
+        --end;
+        while (end > begin && ZrCli_ReplInput_IsSpace(end[-1])) {
+            --end;
+        }
+    }
+    if (end == begin) {
+        return ZR_NULL;
+    }
+
+    expressionLength = (TZrSize)(end - begin);
+    source = (TZrChar *)malloc(prefixLength + expressionLength + 2u);
+    if (source == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memcpy(source, prefix, prefixLength);
+    memcpy(source + prefixLength, begin, expressionLength);
+    source[prefixLength + expressionLength] = ';';
+    source[prefixLength + expressionLength + 1u] = '\0';
+    return source;
+}
+
 static TZrChar *zr_cli_repl_build_prefixed_source(const TZrChar *prefix, const TZrChar *code) {
     TZrSize prefixLength;
     TZrSize codeLength;
@@ -225,8 +265,8 @@ static SZrAstNode *zr_cli_repl_type_query_expression(SZrAstNode *ast) {
 
     for (TZrSize index = ast->data.script.statements->count; index > 0; --index) {
         SZrAstNode *statement = ast->data.script.statements->nodes[index - 1u];
-        if (statement != ZR_NULL && statement->type == ZR_AST_RETURN_STATEMENT) {
-            return statement->data.returnStatement.expr;
+        if (statement != ZR_NULL && statement->type == ZR_AST_VARIABLE_DECLARATION) {
+            return statement->data.variableDeclaration.value;
         }
     }
 
@@ -601,7 +641,7 @@ static int zr_cli_repl_type_query(const TZrChar *sessionSource, const TZrChar *e
         return 1;
     }
 
-    source = zr_cli_repl_build_return_wrapper(expression);
+    source = zr_cli_repl_build_type_query_source(expression);
     if (source == ZR_NULL) {
         ZrCore_Log_Error(ZR_NULL, "failed to prepare REPL type query\n");
         return 1;

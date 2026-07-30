@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "comptime_runtime_contract.h"
 #include "zr_vm_parser/parser.h"
 
 static void compiler_free_type_environment_chain(SZrState *state, SZrTypeEnvironment *env) {
@@ -179,7 +180,12 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->compileToolBindings,
                       sizeof(SZrCompileToolBinding),
                       ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(state,
+                      &cs->attributeSchemas,
+                      sizeof(SZrCompilerAttributeSchemaBinding),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
     cs->compilePhase = ZR_PARSER_COMPILE_PHASE_BUILD_FACTS;
+    ZrParser_ComptimeRuntime_Init(cs);
     cs->isInCompileTimeContext = ZR_FALSE;
     cs->isCompilingCompileTimeRuntimeSupport = ZR_FALSE;
     
@@ -579,6 +585,19 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         cs->compileToolBindings.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->compileToolBindings);
     }
+    if (cs->attributeSchemas.isValid && cs->attributeSchemas.head != ZR_NULL) {
+        for (TZrSize index = 0; index < cs->attributeSchemas.length; index++) {
+            SZrCompilerAttributeSchemaBinding *schema =
+                    (SZrCompilerAttributeSchemaBinding *)ZrCore_Array_Get(
+                            &cs->attributeSchemas, index);
+            if (schema != ZR_NULL && schema->fields.isValid &&
+                schema->fields.head != ZR_NULL) {
+                ZrCore_Array_Free(state, &schema->fields);
+            }
+        }
+        ZrCore_Array_Free(state, &cs->attributeSchemas);
+    }
+    ZrParser_ComptimeRuntime_Free(cs);
 
     if (cs->importedCompileTimeModules.isValid &&
         cs->importedCompileTimeModules.head != ZR_NULL &&

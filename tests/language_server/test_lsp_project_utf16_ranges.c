@@ -346,11 +346,11 @@ static TZrBool test_module_entry_references_after_utf8_prefix_use_utf16_columns(
                                                    &references);
     if (!resolved ||
         !location_array_contains_uri_and_range(&references, moduleUri, 0, 0, 0, 0) ||
-        !location_array_contains_uri_and_range(&references, mainUri, 0, 35, 0, 40) ||
+         !location_array_contains_uri_and_range(&references, mainUri, 0, 34, 0, 39) ||
         !location_array_contains_uri_and_range(&references, mainUri, 0, 12, 0, 23) ||
         !location_array_contains_uri_and_range(&references, mainUri, 1, 15, 1, 26) ||
         !location_array_contains_uri_and_range(&references, mainUri, 1, 27, 1, 32)) {
-        printf("FAIL: Project UTF-16 module entry references expected import/member ranges 0:35-0:40, 0:12-0:23, 1:15-1:26, 1:27-1:32 but got resolved=%d count=%llu",
+        printf("FAIL: Project UTF-16 module entry references expected import/member ranges 0:34-0:39, 0:12-0:23, 1:15-1:26, 1:27-1:32 but got resolved=%d count=%llu",
                (int)resolved,
                (unsigned long long)references.length);
         describe_first_location(&references);

@@ -6,6 +6,7 @@
 #include "type_inference_internal.h"
 #include "compile_time_executor_internal.h"
 #include "compile_time_binding_metadata.h"
+#include "compiler_attribute_binding.h"
 #include "zr_vm_core/stack.h"
 
 static void typed_type_ref_init_unknown(SZrFunctionTypedTypeRef *typeRef) {
@@ -660,6 +661,14 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
         }
 
         if (!ZrParser_CompileTime_ApplyParameterDecorators(cs, paramNode, index, &parameters[index])) {
+            free_metadata_parameters(cs->state, parameters, parameterCount);
+            return ZR_FALSE;
+        }
+        if (!ZrParser_Metadata_ApplyParameterAttributes(
+                    cs,
+                    paramNode->data.parameter.decorators,
+                    &parameters[index],
+                    paramNode->location)) {
             free_metadata_parameters(cs->state, parameters, parameterCount);
             return ZR_FALSE;
         }
@@ -1852,7 +1861,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
             return compiler_instruction_extra_matches_slot(instruction, slot) ||
                    compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
-        case ZR_INSTRUCTION_ENUM(ADD):
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
@@ -1979,7 +1987,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
             return compiler_instruction_extra_matches_slot(instruction, slot) ||
                    compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
-        case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
         case ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN):
             return compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
         default:

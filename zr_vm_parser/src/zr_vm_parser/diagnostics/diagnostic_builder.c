@@ -340,17 +340,15 @@ TZrBool ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(SZrState *state,
 
     snprintf(message,
              sizeof(message),
-             "%%%s(...) requires a string literal module path",
+             "%s(...) requires a string literal module path",
              name);
     snprintf(cause,
              sizeof(cause),
-             "The module path inside %%%s(...) must be known at parse time; variables and expressions cannot participate in module signature binding.",
+             "The module path inside %s(...) must be known at parse time; variables and expressions cannot participate in module signature binding.",
              name);
     snprintf(suggestion,
              sizeof(suggestion),
-             "Use `%%%s(\"zr.module\")`, `%%%s \"zr.module\"`, or `%%%s zr.module` with a compile-time module path.",
-             name,
-             name,
+             "Use `%s(\"zr.module\")`; static import paths must be string literals in parentheses.",
              name);
 
     return ZrParser_DiagnosticBuilder_Build(

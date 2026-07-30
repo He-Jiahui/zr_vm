@@ -364,7 +364,7 @@ static TZrBool prepare_dependency_path_fixture(TZrChar *projectRoot,
     snprintf(mathProjectPath, sizeof(mathProjectPath), "%s/deps/math/math.zrp", projectRoot);
 
     return write_text_file(projectPath, projectContent) &&
-           write_text_file(mainPath, "pub func run(): i32 { return 0; }\n") &&
+           write_text_file(mainPath, "pub fn run(): i32 { return 0; }\n") &&
            write_text_file(mathProjectPath, mathProjectContent);
 }
 
@@ -811,8 +811,8 @@ static void test_cli_incremental_decorator_import_rename_reuses_clean_dependenci
 
     TEST_ASSERT_EQUAL_INT(0, rename(oldModuleSourcePath, newModuleSourcePath));
     TEST_ASSERT_TRUE(rewrite_text_file_replacing_once(newModuleSourcePath,
-                                                      "%module \"decorated_user\";",
-                                                      "%module \"decorated_user_v2\";"));
+                "module decorated_user;",
+                "module decorated_user_v2;"));
     TEST_ASSERT_TRUE(rewrite_text_file_replacing_once(mainSourcePath,
                                                        "let decorated = import(\"decorated_user\")",
                                                        "let decorated = import(\"decorated_user_v2\")"));
@@ -1077,7 +1077,7 @@ static void test_cli_project_aot_mode_applies_full_aot_writer_option(void) {
     TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/aot_mode_full.zrp", projectPath, sizeof(projectPath)));
     TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/src/main.zr", mainPath, sizeof(mainPath)));
     TEST_ASSERT_TRUE(write_text_file(projectPath, projectContent));
-    TEST_ASSERT_TRUE(write_text_file(mainPath, "pub func run(): i32 { return 0; }\n"));
+    TEST_ASSERT_TRUE(write_text_file(mainPath, "pub fn run(): i32 { return 0; }\n"));
 
     options.requireExecutableLowering = ZR_TRUE;
     options.enableCodeStripping = ZR_TRUE;
@@ -1115,7 +1115,7 @@ static void test_cli_project_aot_mode_keeps_hybrid_writer_option_default(void) {
     TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/aot_mode_hybrid.zrp", projectPath, sizeof(projectPath)));
     TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/src/main.zr", mainPath, sizeof(mainPath)));
     TEST_ASSERT_TRUE(write_text_file(projectPath, projectContent));
-    TEST_ASSERT_TRUE(write_text_file(mainPath, "pub func run(): i32 { return 0; }\n"));
+    TEST_ASSERT_TRUE(write_text_file(mainPath, "pub fn run(): i32 { return 0; }\n"));
 
     options.requireFullAot = ZR_TRUE;
     options.stripGeneratedSymbols = ZR_TRUE;
@@ -1144,7 +1144,7 @@ static void test_cli_compile_emit_aot_c_writes_full_aot_project_c_source(void) {
             "}\n"
             "class RefA { }\n"
             "fn stamp<T>(value: T): Stamp where T: class {\n"
-            "    var local: Stamp = $Stamp(42);\n"
+            "    var local: Stamp = init Stamp(42);\n"
             "    return local;\n"
             "}\n"
             "var input: RefA;\n"

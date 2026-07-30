@@ -329,7 +329,7 @@ static void test_container_fixed_array_runtime_preserves_numeric_items_across_he
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
     const char *source =
-            "labelFor(value: int) {\n"
+            "fn labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
             "    }\n"
@@ -1374,7 +1374,7 @@ static void test_container_map_runtime_four_key_concat_cycle_preserves_values(vo
     TZrInt64 result = 0;
     const char *source =
             "let container = import(\"zr.container\");\n"
-            "labelFor(slot: int): string {\n"
+            "fn labelFor(slot: int): string {\n"
             "    var normalized = slot % 4;\n"
             "    if (normalized == 0) { return \"aa\"; }\n"
             "    if (normalized == 1) { return \"bb\"; }\n"
@@ -1422,7 +1422,7 @@ static void test_container_map_runtime_stable_concat_keys_avoid_entry_slot_valid
     ZrVmLibContainerDebugHotMapLookupStats stats;
     const char *source =
             "let container = import(\"zr.container\");\n"
-            "labelFor(slot: int): string {\n"
+            "fn labelFor(slot: int): string {\n"
             "    var normalized = slot % 4;\n"
             "    if (normalized == 0) { return \"aa\"; }\n"
             "    if (normalized == 1) { return \"bb\"; }\n"
@@ -1819,10 +1819,10 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     const char *source =
             "let container = import(\"zr.container\");\n"
             "let {Pair} = import(\"zr.container\");\n"
-            "labelThrough(value) {\n"
+            "fn labelThrough(value) {\n"
             "    return value;\n"
             "}\n"
-            "numberThrough(value) {\n"
+            "fn numberThrough(value) {\n"
             "    return value;\n"
             "}\n"
             "var queue = new container.LinkedList<Pair<string, int>>();\n"
@@ -1977,7 +1977,7 @@ static void test_container_linked_set_map_runtime_preserves_native_call_argument
     const char *source =
             "let container = import(\"zr.container\");\n"
             "let {Array, Pair} = import(\"zr.container\");\n"
-            "labelFor(value: int) {\n"
+            "fn labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
             "    }\n"

@@ -1,7 +1,7 @@
 let benchConfig = import("bench_config");
 let container = import("zr.container");
 
-fragmentFor(slot: int): string {
+fn fragmentFor(slot: int): string {
     var normalized = slot % 6;
     if (normalized == 0) {
         return "al";

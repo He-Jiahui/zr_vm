@@ -1798,7 +1798,9 @@ static TZrBool native_module_info_register_canonical_constructor_contracts(
     TZrTypeId typeId;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || info == ZR_NULL ||
-        info->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS || info->name == ZR_NULL) {
+        (info->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS &&
+         info->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) ||
+        info->name == ZR_NULL) {
         return ZR_TRUE;
     }
     if (!native_module_info_has_public_constructor(info)) {
@@ -3761,6 +3763,16 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     currentType.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
                     memberLookupName != ZR_NULL) {
                     EZrOwnershipBuiltinKind ownershipMemberKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+                    const TZrChar *removedCompatibilityMessage =
+                            ZrParser_OwnershipRemovedCompatibilityMemberMessage(memberLookupName);
+
+                    if (removedCompatibilityMessage != ZR_NULL) {
+                        ZrParser_Compiler_Error(cs,
+                                                removedCompatibilityMessage,
+                                                memberNode->location);
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        return ZR_FALSE;
+                    }
 
                     if (ZrParser_OwnershipMemberNameToBuiltinKind(memberLookupName, &ownershipMemberKind)) {
                         if (!type_inference_function_call_has_no_arguments(members->nodes[i + 1])) {

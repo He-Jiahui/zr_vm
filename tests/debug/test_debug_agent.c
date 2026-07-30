@@ -1410,7 +1410,7 @@ static void test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate(void)
             "        BossHero.created = BossHero.created + 1;\n"
             "    }\n"
             "\n"
-            "    pub total(delta: int): int {\n"
+            "    pub fn total(delta: int): int {\n"
             "        var profile = { name: \"alice\", nested: { enabled: true } };\n"
             "        var total = this._hp + delta;\n"
             "        return total + BossHero.created;\n"
@@ -1687,7 +1687,7 @@ static void test_debug_agent_separates_instance_metadata_and_supports_index_wind
     const char *sourcePath = "debug_agent_index_window_fixture.zr";
     const char *source =
             "class Holder {\n"
-            "    pub inspect(): int {\n"
+            "    pub fn inspect(): int {\n"
             "        var fixed = [1, 2, 3, 4, 5, 6];\n"
             "        var snapshot = { label: \"demo\", count: 1 };\n"
             "        var holderType = Holder;\n"
@@ -2874,11 +2874,11 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
     TEST_ASSERT_NOT_NULL(params);
     cJSON_AddStringToObject(params, "moduleName", moduleName);
     cJSON_AddStringToObject(params, "sourceFile", sourcePath);
-    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray((const int[]){9}, 1));
+    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray((const int[]){10}, 1));
     debug_client_send_request(&client, 2, "setBreakpoints", params);
     message = debug_client_expect_event(&client, "breakpointResolved");
     TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
-    TEST_ASSERT_EQUAL_INT(9, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    TEST_ASSERT_EQUAL_INT(10, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
     cJSON_Delete(message);
     message = debug_client_expect_response(&client, 2);
     cJSON_Delete(message);
@@ -2889,7 +2889,7 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
     message = debug_client_expect_event(&client, "continued");
     cJSON_Delete(message);
     message = debug_client_expect_event(&client, "stopped");
-    debug_assert_stopped_location(message, "breakpoint", sourcePath, "spin", 9, 9, ZR_NULL);
+    debug_assert_stopped_location(message, "breakpoint", sourcePath, "spin", 10, 10, ZR_NULL);
     cJSON_Delete(message);
 
     params = cJSON_CreateObject();
@@ -2909,7 +2909,7 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
 
     ZrDebug_Pause(agent);
     message = debug_client_expect_event(&client, "stopped");
-    debug_assert_stopped_location(message, "pause", sourcePath, "spin", 7, 13, &pausedLine);
+    debug_assert_stopped_location(message, "pause", sourcePath, "spin", 8, 14, &pausedLine);
     cJSON_Delete(message);
 
     debug_client_send_request(&client, 6, "stackTrace", ZR_NULL);
@@ -2921,8 +2921,8 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
     callerFrame = cJSON_GetArrayItem(frames, 1);
     TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(topFrame, "functionName"));
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(topFrame, "sourceFile"));
-    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 7);
-    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 13);
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 8);
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 14);
     TEST_ASSERT_EQUAL_STRING("runGauntlet", debug_json_string(callerFrame, "functionName"));
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(callerFrame, "sourceFile"));
     topFrameId = debug_json_int(topFrame, "frameId");
@@ -2959,7 +2959,7 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
     TEST_ASSERT_TRUE(debug_json_string(totalItem, "value")[0] != '\0');
     TEST_ASSERT_TRUE(debug_json_string(indexItem, "value")[0] != '\0');
     if (burstItem == ZR_NULL) {
-        TEST_ASSERT_TRUE(pausedLine == 7 || pausedLine == 8);
+        TEST_ASSERT_TRUE(pausedLine == 8 || pausedLine == 9);
     } else {
         TEST_ASSERT_TRUE(debug_json_string(burstItem, "value")[0] != '\0');
     }

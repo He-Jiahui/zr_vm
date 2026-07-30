@@ -882,7 +882,7 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
     SZrAstNode *node;
 
     if (consume_token(ps, ZR_TK_LPAREN)) {
-        if (consume_token(ps, ZR_TK_VAR)) {
+        if (consume_token(ps, ZR_TK_LET) || consume_token(ps, ZR_TK_VAR)) {
             guardKind = ZR_USING_GUARD_PATTERN;
             pattern = parse_using_binding_pattern(ps);
             if (pattern == ZR_NULL) {
@@ -1015,7 +1015,9 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
         isBlockScoped = ZR_TRUE;
     } else if (using_no_block_pattern_starts_here(ps)) {
         guardKind = ZR_USING_GUARD_PATTERN;
-        consume_token(ps, ZR_TK_VAR);
+        if (!consume_token(ps, ZR_TK_LET)) {
+            consume_token(ps, ZR_TK_VAR);
+        }
         pattern = parse_using_binding_pattern(ps);
         if (pattern == ZR_NULL) {
             report_using_binder_invalid(ps, get_current_token_location(ps));
@@ -1144,7 +1146,9 @@ static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps) {
     ps->hasError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
 
-    consume_token(ps, ZR_TK_VAR);
+    if (!consume_token(ps, ZR_TK_LET)) {
+        consume_token(ps, ZR_TK_VAR);
+    }
     if (ps->lexer->t.token == ZR_TK_LBRACKET || ps->lexer->t.token == ZR_TK_LBRACE) {
         pattern = parse_using_binding_pattern(ps);
         if (pattern != ZR_NULL && using_pattern_has_guard_shape(pattern)) {
@@ -1464,6 +1468,7 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
         switch (nextToken) {
             case ZR_TK_VAR:
             case ZR_TK_LET:
+            case ZR_TK_CONST:
                 return parse_variable_declaration(ps);
             case ZR_TK_STRUCT:
                 return parse_struct_declaration(ps);
@@ -1495,6 +1500,7 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 
         case ZR_TK_VAR:
         case ZR_TK_LET:
+        case ZR_TK_CONST:
             return parse_variable_declaration(ps);
 
         case ZR_TK_USING:
@@ -1707,6 +1713,11 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
     if (decorators == ZR_NULL) {
         return ZR_NULL;
     }
+    if (ps->lexer->t.token == ZR_TK_PUB ||
+        ps->lexer->t.token == ZR_TK_PRI ||
+        ps->lexer->t.token == ZR_TK_PRO) {
+        (void)parse_access_modifier(ps);
+    }
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "comptime")) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         restore_parser_cursor(ps, &cursor);
@@ -1816,6 +1827,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         switch (nextToken) {
             case ZR_TK_VAR:
             case ZR_TK_LET:
+            case ZR_TK_CONST:
                 return parse_variable_declaration(ps);
             case ZR_TK_STRUCT:
                 return parse_struct_declaration(ps);
@@ -1840,6 +1852,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
 
         case ZR_TK_VAR:
         case ZR_TK_LET:
+        case ZR_TK_CONST:
             return parse_variable_declaration(ps);
 
         case ZR_TK_USING:

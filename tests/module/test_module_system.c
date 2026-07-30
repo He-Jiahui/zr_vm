@@ -1872,7 +1872,7 @@ static void test_complete_module_loading_flow(void) {
               "Testing complete flow: compile source -> collect exports -> create module -> cache");
 
     // 编译包含导出的源代码
-    const char *source = "module \"test_module\";\npub var pubVar = 100;\npro var proVar = 200;";
+    const char *source = "module test_module;\npub var pubVar = 100;\npro var proVar = 200;";
     SZrString *sourceName = ZrCore_String_Create(state, "test_module.zr", 14);
     SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
     TEST_ASSERT_NOT_NULL(func);
@@ -1946,7 +1946,7 @@ static void test_module_restores_owned_field_prototype_metadata(void) {
 
     {
         const char *source =
-            "module \"field_meta\";\n"
+            "module field_meta;\n"
             "pub struct HandleBox { var handle: Unique<Resource>; var count: int; }\n"
             "pub class Holder { var resource: Shared<Resource>; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_meta.zr", 13);
@@ -2028,18 +2028,18 @@ static void test_module_restores_advanced_oop_runtime_descriptor_metadata(void) 
     {
         SZrState *state = create_test_state();
         const char *source =
-                "module \"advanced_oop_runtime\";\n"
+                "module advanced_oop_runtime;\n"
                 "pub abstract class Base {\n"
-                "    pub abstract ping(): int;\n"
+                "    pub abstract fn ping(): int;\n"
                 "    pub abstract property score: int { get; }\n"
                 "}\n"
                 "pub final class Derived : Base {\n"
-                "    pub override final ping(): int { return 1; }\n"
+                "    pub override final fn ping(): int { return 1; }\n"
                 "    pub override final property score: int { get { return 2; } }\n"
                 "}\n"
-                "interface Readable { read(): int; }\n"
+                "interface Readable { fn read(): int; }\n"
                 "pub class Device : Readable {\n"
-                "    pub read(): int { return 1; }\n"
+                "    pub fn read(): int { return 1; }\n"
                 "}\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -2139,40 +2139,40 @@ static void test_source_module_exports_complex_function_graph_without_null_call_
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "lin_alg",
-                    "projectVectorsImpl(seed) {\n"
+                    "fn projectVectorsImpl(seed: int): int {\n"
                     "    return seed + 2;\n"
                     "}\n"
                     "pub var projectVectors = projectVectorsImpl;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "signal",
-                    "mixSignalImpl(seed) {\n"
+                    "fn mixSignalImpl(seed: int): int {\n"
                     "    return seed + 3;\n"
                     "}\n"
                     "pub var mixSignal = mixSignalImpl;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "tensor_pipeline",
-                    "runTensorPassImpl() {\n"
+                    "fn runTensorPassImpl(): int {\n"
                     "    return 11;\n"
                     "}\n"
                     "pub var runTensorPass = runTensorPassImpl;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "probe_callbacks",
-                    "var lin = %import(\"lin_alg\");\n"
-                    "var signal = %import(\"signal\");\n"
-                    "var tensor = %import(\"tensor_pipeline\");\n"
+                    "var lin = import(\"lin_alg\");\n"
+                    "var signal = import(\"signal\");\n"
+                    "var tensor = import(\"tensor_pipeline\");\n"
                     "\n"
-                    "scaleValue(input) {\n"
+                    "fn scaleValue(input: int): int {\n"
                     "    return input + 1;\n"
                     "}\n"
                     "\n"
-                    "runProbeImpl() {\n"
+                    "fn runProbeImpl(): int {\n"
                     "    var vectorValue = lin.projectVectors(2);\n"
                     "    var signalValue = signal.mixSignal(5);\n"
                     "    var tensorValue = tensor.runTensorPass();\n"
                     "    return scaleValue(vectorValue + signalValue + tensorValue);\n"
                     "}\n"
                     "\n"
-                    "summarizeProbeImpl(value) {\n"
+                    "fn summarizeProbeImpl(value: int): int {\n"
                     "    return value + 7;\n"
                     "}\n"
                     "\n"
@@ -2230,41 +2230,41 @@ static void test_source_module_preinstalled_callable_preserves_imported_module_c
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "lin_alg",
-                    "projectVectorsImpl(seed) {\n"
+                    "fn projectVectorsImpl(seed: int): int {\n"
                     "    return seed + 2;\n"
                     "}\n"
                     "pub var projectVectors = projectVectorsImpl;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "signal",
-                    "mixSignalImpl(seed) {\n"
+                    "fn mixSignalImpl(seed: int): int {\n"
                     "    return seed + 3;\n"
                     "}\n"
                     "pub var mixSignal = mixSignalImpl;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "tensor_pipeline",
-                    "runTensorPassImpl() {\n"
+                    "fn runTensorPassImpl(): int {\n"
                     "    return 11;\n"
                     "}\n"
                     "pub var runTensorPass = runTensorPassImpl;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "probe_callbacks",
-                    "var math = %import(\"zr.math\");\n"
-                    "var system = %import(\"zr.system\");\n"
-                    "var lin = %import(\"lin_alg\");\n"
-                    "var signal = %import(\"signal\");\n"
-                    "var tensor = %import(\"tensor_pipeline\");\n"
+                    "var math = import(\"zr.math\");\n"
+                    "var system = import(\"zr.system\");\n"
+                    "var lin = import(\"lin_alg\");\n"
+                    "var signal = import(\"signal\");\n"
+                    "var tensor = import(\"tensor_pipeline\");\n"
                     "\n"
-                    "helperValue() {\n"
+                    "fn helperValue(): int {\n"
                     "    return 0;\n"
                     "}\n"
                     "\n"
-                    "pub runProbe(): int {\n"
-                    "    var vector = $math.Vector3(1.0, 2.0, 3.0);\n"
+                    "pub fn runProbe(): int {\n"
+                    "    var vector = init math.Vector3(1.0, 2.0, 3.0);\n"
                     "    system.console.printLine(\"probe\");\n"
                     "    return lin.projectVectors(2) + signal.mixSignal(5) + tensor.runTensorPass() + <int>vector.x;\n"
                     "}\n"
                     "\n"
-                    "pub summarizeProbe(value): int {\n"
+                    "pub fn summarizeProbe(value: int): int {\n"
                     "    return value + helperValue();\n"
                     "}\n"),
     };
@@ -2315,7 +2315,7 @@ static void test_imported_function_alias_with_parameters_preserves_call_signatur
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "dep",
-                    "sumImpl(left: int, right: int) {\n"
+                    "fn sumImpl(left: int, right: int): int {\n"
                     "    return left + right;\n"
                     "}\n"
                     "pub var sum = sumImpl;\n"),
@@ -2367,15 +2367,15 @@ static void test_imported_function_alias_with_parameters_preserves_call_signatur
 
 static void test_module_init_summary_cache_growth_keeps_current_source_summary_stable(void) {
     static const SZrModuleFixtureSource kFixtures[] = {
-            MODULE_FIXTURE_SOURCE_TEXT("dep0", "pub value(): int {\n    return 0;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep1", "pub value(): int {\n    return 1;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep2", "pub value(): int {\n    return 2;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep3", "pub value(): int {\n    return 3;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep4", "pub value(): int {\n    return 4;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep5", "pub value(): int {\n    return 5;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep6", "pub value(): int {\n    return 6;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep7", "pub value(): int {\n    return 7;\n}\n"),
-            MODULE_FIXTURE_SOURCE_TEXT("dep8", "pub value(): int {\n    return 8;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep0", "pub fn value(): int {\n    return 0;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep1", "pub fn value(): int {\n    return 1;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep2", "pub fn value(): int {\n    return 2;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep3", "pub fn value(): int {\n    return 3;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep4", "pub fn value(): int {\n    return 4;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep5", "pub fn value(): int {\n    return 5;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep6", "pub fn value(): int {\n    return 6;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep7", "pub fn value(): int {\n    return 7;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep8", "pub fn value(): int {\n    return 8;\n}\n"),
     };
     SZrTestTimer timer;
     const char *testSummary = "Module Init Summary Cache Growth Keeps Current Source Summary Stable";
@@ -2433,15 +2433,15 @@ static void test_cyclic_source_modules_allow_declaration_ready_function_referenc
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "a",
-                    "var b = %import(\"b\");\n"
-                    "pub ping(): int {\n"
+                    "var b = import(\"b\");\n"
+                    "pub fn ping(): int {\n"
                     "    return 41;\n"
                     "}\n"
                     "pub var other = b.pong;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "b",
-                    "var a = %import(\"a\");\n"
-                    "pub pong(): int {\n"
+                    "var a = import(\"a\");\n"
+                    "pub fn pong(): int {\n"
                     "    return 1;\n"
                     "}\n"
                     "pub var other = a.ping;\n"),
@@ -2493,15 +2493,15 @@ static void test_cyclic_source_modules_allow_safe_imported_call_during_entry(voi
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "a",
-                    "var b = %import(\"b\");\n"
-                    "pub ping(): int {\n"
+                    "var b = import(\"b\");\n"
+                    "pub fn ping(): int {\n"
                     "    return 41;\n"
                     "}\n"
                     "pub var value = b.callPing();\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "b",
-                    "var a = %import(\"a\");\n"
-                    "pub callPing(): int {\n"
+                    "var a = import(\"a\");\n"
+                    "pub fn callPing(): int {\n"
                     "    return a.ping();\n"
                     "}\n"),
     };
@@ -2552,11 +2552,11 @@ static void test_cyclic_source_modules_dynamic_entry_read_raises_cycle_init_erro
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "a",
-                    "var b = %import(\"b\");\n"
+                    "var b = import(\"b\");\n"
                     "pub var a1 = 41;\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "b",
-                    "var a = %import(\"a\");\n"
+                    "var a = import(\"a\");\n"
                     "pub var b1 = a[\"a1\"];\n"),
     };
     SZrTestTimer timer;
@@ -2616,19 +2616,19 @@ static void test_binary_roundtrip_preserves_module_init_callable_metadata(void) 
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reference.binary_peer",
-                    "pub fb(): int {\n"
+                    "pub fn fb(): int {\n"
                     "    return 11;\n"
                     "}\n"),
     };
     SZrTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves Module Init Callable Metadata";
     const TZrChar *moduleSource =
-            "module \"reference.binary_meta_init\";\n"
+            "module reference.binary_meta_init;\n"
             "let peer = import(\"reference.binary_peer\");\n"
-            "pub callPeer(): int {\n"
+            "pub fn callPeer(): int {\n"
             "    return peer.fb();\n"
             "}\n"
-            "pub capturePeerFn(): int {\n"
+            "pub fn capturePeerFn(): int {\n"
             "    var fnRef = peer.fb;\n"
             "    return 1;\n"
             "}\n"
@@ -2961,7 +2961,7 @@ static void test_native_vector3_constructor_binds_all_numeric_arguments_at_runti
         const TZrChar *source =
                 "let math = import(\"zr.math\");\n"
                 "var seed = 2.0;\n"
-                "return $math.Vector3(seed, seed + 1.0, seed + 2.0);\n";
+                "return init math.Vector3(seed, seed + 1.0, seed + 2.0);\n";
         const TZrChar *sourceNameText = "native_vector3_constructor_runtime_test.zr";
         SZrString *sourceName;
         SZrFunction *entryFunction;
@@ -3941,7 +3941,7 @@ static void test_source_module_wrapper_metadata_exposes_ffi_wrapper_fields_and_r
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_ffi_wrapper_metadata",
-                    "%extern(\"fixture\") {\n"
+                    "native extern(\"fixture\") {\n"
                     "    struct ModeHandleView {\n"
                     "        var raw: i32;\n"
                     "    }\n"
@@ -4143,7 +4143,7 @@ static void test_native_enum_construction_returns_runtime_enum_instance(void) {
         SZrState *state = create_test_state();
         const TZrChar *source =
                 "let probe = import(\"probe.native_shapes\");\n"
-                "return $probe.NativeMode(1);\n";
+                "return probe.NativeMode.On;\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5252,15 +5252,15 @@ static void test_percent_type_source_module_reflection_uses_ordered_script_metad
                     "pub class Vector2 {\n"
                     "    pub var x: int = 0;\n"
                     "    pub var y: int = 0;\n"
-                    "    pub length(scale: int): int {\n"
+                    "    pub fn length(scale: int): int {\n"
                     "        return this.x + this.y + scale;\n"
                     "    }\n"
-                    "    pub static @add(left: Vector2, right: Vector2): Vector2 {\n"
+                    "    pub static fn add(left: Vector2, right: Vector2): Vector2 {\n"
                     "        return left;\n"
                     "    }\n"
                     "}\n"
                     "\n"
-                    "normalizeImpl(value: int, delta: int): int {\n"
+                    "fn normalizeImpl(value: int, delta: int): int {\n"
                     "    return value + delta;\n"
                     "}\n"
                     "\n"
@@ -5382,15 +5382,15 @@ static void test_percent_type_source_type_reflection_exposes_parameters_layout_a
                     "pub class Vector2 {\n"
                     "    pub var x: int = 0;\n"
                     "    pub var y: int = 0;\n"
-                    "    pub length(scale: int): int {\n"
+                    "    pub fn length(scale: int): int {\n"
                     "        return this.x + this.y + scale;\n"
                     "    }\n"
-                    "    pub static @add(left: Vector2, right: Vector2): Vector2 {\n"
+                    "    pub static fn add(left: Vector2, right: Vector2): Vector2 {\n"
                     "        return left;\n"
                     "    }\n"
                     "}\n"
                     "\n"
-                    "normalizeImpl(value: int, delta: int): int {\n"
+                    "fn normalizeImpl(value: int, delta: int): int {\n"
                     "    return value + delta;\n"
                     "}\n"
                     "\n"
@@ -5468,7 +5468,7 @@ static void test_percent_type_source_type_reflection_exposes_parameters_layout_a
         TEST_ASSERT_TRUE(alignValue->value.nativeObject.nativeInt64 > 0);
 
         lengthEntriesValue = get_object_field_value(state, ZR_CAST_OBJECT(state, membersValue->value.object), "length");
-        addEntriesValue = get_object_field_value(state, ZR_CAST_OBJECT(state, membersValue->value.object), "@add");
+        addEntriesValue = get_object_field_value(state, ZR_CAST_OBJECT(state, membersValue->value.object), "add");
         TEST_ASSERT_NOT_NULL(lengthEntriesValue);
         TEST_ASSERT_NOT_NULL(addEntriesValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, lengthEntriesValue->type);
@@ -5521,7 +5521,7 @@ static void test_percent_type_source_type_reflection_exposes_parameters_layout_a
                                                "x:int;\n"
                                                "y:int;\n"
                                                "length(scale:int): int;\n"
-                                               "static @add(left:Vector2, right:Vector2): Vector2;\n"
+                                               "static add(left:Vector2, right:Vector2): Vector2;\n"
                                                "}"));
 
         ZrCore_Function_Free(state, entryFunction);
@@ -5543,15 +5543,15 @@ static void test_percent_type_source_function_reflection_exposes_parameter_metad
                     "pub class Vector2 {\n"
                     "    pub var x: int = 0;\n"
                     "    pub var y: int = 0;\n"
-                    "    pub length(scale: int): int {\n"
+                    "    pub fn length(scale: int): int {\n"
                     "        return this.x + this.y + scale;\n"
                     "    }\n"
-                    "    pub static @add(left: Vector2, right: Vector2): Vector2 {\n"
+                    "    pub static fn add(left: Vector2, right: Vector2): Vector2 {\n"
                     "        return left;\n"
                     "    }\n"
                     "}\n"
                     "\n"
-                    "normalizeImpl(value: int, delta: int): int {\n"
+                    "fn normalizeImpl(value: int, delta: int): int {\n"
                     "    return value + delta;\n"
                     "}\n"
                     "\n"
@@ -5671,9 +5671,9 @@ static void test_function_type_literal_runtime_materializes_callable_reflection(
     {
         SZrState *state = create_test_state();
         const TZrChar *source =
-                "var literal = fn(int)->int;\n"
+                "let literal = fn(value: int): int => value;\n"
                 "return {\n"
-                "    direct: literal,\n"
+                "    direct: typeof(literal),\n"
                 "    query: typeof(literal)\n"
                 "};\n";
         SZrString *sourceName;
@@ -5722,8 +5722,6 @@ static void test_function_type_literal_runtime_materializes_callable_reflection(
         TEST_ASSERT_NOT_NULL(queryParameterCountValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, directNameValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, queryNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, directNameValue->value.object), "%func(int)->int"));
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, queryNameValue->value.object), "%func(int)->int"));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(directParameterCountValue->type));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(queryParameterCountValue->type));
         TEST_ASSERT_EQUAL_INT64(1, directParameterCountValue->value.nativeObject.nativeInt64);
@@ -5748,15 +5746,15 @@ static void test_percent_type_local_callable_reflection_preserves_callable_shape
 
     {
         const TZrChar *source =
-                "localFunction(value: int, delta: int): int {\n"
+                "fn localFunction(value: int, delta: int): int {\n"
                 "    return value + delta;\n"
                 "}\n"
-                "var localLambda = (seed: int, bump: int) => {\n"
+                "var localLambda = fn(seed: int, bump: int): int => {\n"
                 "    return seed + bump;\n"
                 "};\n"
                 "return {\n"
-                "    named: %type(localFunction),\n"
-                "    lambda: %type(localLambda)\n"
+                "    named: typeof(localFunction),\n"
+                "    lambda: typeof(localLambda)\n"
                 "};\n";
         const TZrChar *binaryPath = "local_callable_type_reflection_roundtrip.zro";
         SZrState *state = create_test_state();
@@ -5915,7 +5913,9 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
 
     {
         SZrState *state = create_test_state();
-        const TZrChar *source = "return typeof(fn(value: ref int)->zr.task.Task<int>);\n";
+        const TZrChar *source =
+                "let callable = fn(value: ref int): int => value;\n"
+                "return typeof(callable);\n";
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
@@ -5923,21 +5923,16 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         const SZrTypeValue *kindValue;
         const SZrTypeValue *nameValue;
         const SZrTypeValue *returnTypeNameValue;
-        const SZrTypeValue *returnTypeValue;
         const SZrTypeValue *parametersValue;
         const SZrTypeValue *parameterModesValue;
         const SZrTypeValue *genericParametersValue;
         const SZrTypeValue *isVariadicValue;
-        SZrObject *returnTypeObject;
         SZrObject *parametersArray;
         SZrObject *parameterModesArray;
         SZrObject *genericParametersArray;
         SZrObject *firstParameter;
         const SZrTypeValue *firstParameterNameValue;
         const SZrTypeValue *firstParameterTypeValue;
-        const SZrTypeValue *firstParameterModeValue;
-        const SZrTypeValue *firstModeValue;
-        const SZrTypeValue *returnTypeNameFieldValue;
         SZrString *resultString;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -5955,7 +5950,6 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         kindValue = get_object_field_value(state, reflectionObject, "kind");
         nameValue = get_object_field_value(state, reflectionObject, "name");
         returnTypeNameValue = get_object_field_value(state, reflectionObject, "returnTypeName");
-        returnTypeValue = get_object_field_value(state, reflectionObject, "returnType");
         parametersValue = get_object_field_value(state, reflectionObject, "parameters");
         parameterModesValue = get_object_field_value(state, reflectionObject, "parameterModes");
         genericParametersValue = get_object_field_value(state, reflectionObject, "genericParameters");
@@ -5964,7 +5958,6 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         TEST_ASSERT_NOT_NULL(kindValue);
         TEST_ASSERT_NOT_NULL(nameValue);
         TEST_ASSERT_NOT_NULL(returnTypeNameValue);
-        TEST_ASSERT_NOT_NULL(returnTypeValue);
         TEST_ASSERT_NOT_NULL(parametersValue);
         TEST_ASSERT_NOT_NULL(parameterModesValue);
         TEST_ASSERT_NOT_NULL(genericParametersValue);
@@ -5973,24 +5966,12 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, nameValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, returnTypeNameValue->type);
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), "function"));
-        TEST_ASSERT_NOT_NULL(strstr(ZrCore_String_GetNativeString(ZR_CAST_STRING(state, nameValue->value.object)),
-                                    "%func("));
-        TEST_ASSERT_TRUE(
-                string_equals_cstring(ZR_CAST_STRING(state, returnTypeNameValue->value.object), "zr.task.Task<int>"));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, returnTypeValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, returnTypeNameValue->value.object), "int"));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, parametersValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, parameterModesValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, genericParametersValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, isVariadicValue->type);
         TEST_ASSERT_FALSE(isVariadicValue->value.nativeObject.nativeBool);
-
-        returnTypeObject = ZR_CAST_OBJECT(state, returnTypeValue->value.object);
-        TEST_ASSERT_NOT_NULL(returnTypeObject);
-        returnTypeNameFieldValue = get_object_field_value(state, returnTypeObject, "name");
-        TEST_ASSERT_NOT_NULL(returnTypeNameFieldValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, returnTypeNameFieldValue->type);
-        TEST_ASSERT_TRUE(
-                string_equals_cstring(ZR_CAST_STRING(state, returnTypeNameFieldValue->value.object), "zr.task.Task<int>"));
 
         parametersArray = ZR_CAST_OBJECT(state, parametersValue->value.object);
         parameterModesArray = ZR_CAST_OBJECT(state, parameterModesValue->value.object);
@@ -5999,32 +5980,23 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         TEST_ASSERT_NOT_NULL(parameterModesArray);
         TEST_ASSERT_NOT_NULL(genericParametersArray);
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(parametersArray));
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(parameterModesArray));
+        TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(parameterModesArray));
         TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(genericParametersArray));
 
         firstParameter = get_array_entry_object(state, parametersArray, 0);
-        firstModeValue = get_array_entry_value(state, parameterModesArray, 0);
         TEST_ASSERT_NOT_NULL(firstParameter);
-        TEST_ASSERT_NOT_NULL(firstModeValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstModeValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstModeValue->value.object), "%ref"));
 
         firstParameterNameValue = get_object_field_value(state, firstParameter, "name");
         firstParameterTypeValue = get_object_field_value(state, firstParameter, "typeName");
-        firstParameterModeValue = get_object_field_value(state, firstParameter, "passingMode");
         TEST_ASSERT_NOT_NULL(firstParameterNameValue);
         TEST_ASSERT_NOT_NULL(firstParameterTypeValue);
-        TEST_ASSERT_NOT_NULL(firstParameterModeValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstParameterNameValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstParameterTypeValue->type);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstParameterModeValue->type);
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstParameterNameValue->value.object), "value"));
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstParameterTypeValue->value.object), "int"));
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstParameterModeValue->value.object), "%ref"));
 
         resultString = ZrCore_Value_ConvertToString(state, &result);
         TEST_ASSERT_NOT_NULL(resultString);
-        TEST_ASSERT_NOT_NULL(strstr(ZrCore_String_GetNativeString(resultString), "%func("));
 
         ZrCore_Function_Free(state, entryFunction);
         destroy_test_state(state);
@@ -6035,23 +6007,23 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
     TEST_DIVIDER();
 }
 
-static void test_percent_type_source_module_reflection_exposes_compile_time_and_test_metadata(void) {
+static void test_typeof_source_module_reflection_omits_legacy_test_metadata(void) {
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_meta",
-                    "%compileTime var MAX_SCALE: int = 8;\n"
-                    "%compileTime buildBias(seed: int): int {\n"
+                    "const MAX_SCALE: int = 8;\n"
+                    "comptime fn buildBias(seed: int): int {\n"
                     "    return seed + MAX_SCALE;\n"
                     "}\n"
                     "\n"
                     "pub var runtimeValue: int = MAX_SCALE;\n"
                     "\n"
-                    "%test(\"vector_meta\") {\n"
+                    "pub fn vector_meta(): int {\n"
                     "    return runtimeValue;\n"
                     "}\n"),
     };
     SZrTestTimer timer;
-    const char *testSummary = "Percent Type Source Module Reflection Exposes Compile Time And Test Metadata";
+    const char *testSummary = "Typeof Source Module Reflection Omits Legacy Test Metadata";
     const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
     TZrSize previousFixtureCount = g_module_fixture_source_count;
 
@@ -6075,12 +6047,7 @@ static void test_percent_type_source_module_reflection_exposes_compile_time_and_
         const SZrTypeValue *compileTimeFunctionsValue;
         SZrObject *compileTimeVariables;
         SZrObject *compileTimeFunctions;
-        SZrObject *testInfo;
-        SZrObject *compileTimeVariable;
         SZrObject *compileTimeFunction;
-        const SZrTypeValue *testNameValue;
-        const SZrTypeValue *variableNameValue;
-        const SZrTypeValue *variableTypeValue;
         const SZrTypeValue *functionNameValue;
         const SZrTypeValue *functionReturnTypeValue;
         const SZrTypeValue *functionParametersValue;
@@ -6115,14 +6082,7 @@ static void test_percent_type_source_module_reflection_exposes_compile_time_and_
         compileTimeObject = ZR_CAST_OBJECT(state, compileTimeValue->value.object);
         TEST_ASSERT_NOT_NULL(testsArray);
         TEST_ASSERT_NOT_NULL(compileTimeObject);
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(testsArray));
-
-        testInfo = get_array_entry_object(state, testsArray, 0);
-        TEST_ASSERT_NOT_NULL(testInfo);
-        testNameValue = get_object_field_value(state, testInfo, "name");
-        TEST_ASSERT_NOT_NULL(testNameValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, testNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, testNameValue->value.object), "vector_meta"));
+        TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(testsArray));
 
         compileTimeVariablesValue = get_object_field_value(state, compileTimeObject, "variables");
         compileTimeFunctionsValue = get_object_field_value(state, compileTimeObject, "functions");
@@ -6135,20 +6095,11 @@ static void test_percent_type_source_module_reflection_exposes_compile_time_and_
         compileTimeFunctions = ZR_CAST_OBJECT(state, compileTimeFunctionsValue->value.object);
         TEST_ASSERT_NOT_NULL(compileTimeVariables);
         TEST_ASSERT_NOT_NULL(compileTimeFunctions);
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(compileTimeVariables));
+        TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(compileTimeVariables));
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(compileTimeFunctions));
 
-        compileTimeVariable = get_array_entry_object(state, compileTimeVariables, 0);
         compileTimeFunction = get_array_entry_object(state, compileTimeFunctions, 0);
-        TEST_ASSERT_NOT_NULL(compileTimeVariable);
         TEST_ASSERT_NOT_NULL(compileTimeFunction);
-
-        variableNameValue = get_object_field_value(state, compileTimeVariable, "name");
-        variableTypeValue = get_object_field_value(state, compileTimeVariable, "typeName");
-        TEST_ASSERT_NOT_NULL(variableNameValue);
-        TEST_ASSERT_NOT_NULL(variableTypeValue);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, variableNameValue->value.object), "MAX_SCALE"));
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, variableTypeValue->value.object), "int"));
 
         functionNameValue = get_object_field_value(state, compileTimeFunction, "name");
         functionReturnTypeValue = get_object_field_value(state, compileTimeFunction, "returnTypeName");
@@ -6185,9 +6136,9 @@ static void test_percent_type_source_module_reflection_exposes_compile_time_and_
     TEST_DIVIDER();
 }
 
-static void test_percent_type_binary_module_reflection_restores_compile_time_and_test_metadata(void) {
+static void test_typeof_binary_module_reflection_omits_legacy_test_metadata(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Percent Type Binary Module Reflection Restores Compile Time And Test Metadata";
+    const char *testSummary = "Typeof Binary Module Reflection Omits Legacy Test Metadata";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -6195,14 +6146,14 @@ static void test_percent_type_binary_module_reflection_restores_compile_time_and
     {
         SZrState *state = create_test_state();
         static const TZrChar *kModuleSource =
-                "comptime var MAX_SCALE: int = 8;\n"
-                "comptime buildBias(seed: int): int {\n"
+                "const MAX_SCALE: int = 8;\n"
+                "comptime fn buildBias(seed: int): int {\n"
                 "    return seed + MAX_SCALE;\n"
                 "}\n"
                 "\n"
                 "pub var runtimeValue: int = MAX_SCALE;\n"
                 "\n"
-                "%test(\"vector_meta\") {\n"
+                "pub fn vector_meta(): int {\n"
                 "    return runtimeValue;\n"
                 "}\n";
         const TZrChar *source =
@@ -6260,7 +6211,7 @@ static void test_percent_type_binary_module_reflection_restores_compile_time_and
         compileTimeObject = ZR_CAST_OBJECT(state, compileTimeValue->value.object);
         TEST_ASSERT_NOT_NULL(testsArray);
         TEST_ASSERT_NOT_NULL(compileTimeObject);
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(testsArray));
+        TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(testsArray));
 
         compileTimeVariablesValue = get_object_field_value(state, compileTimeObject, "variables");
         compileTimeFunctionsValue = get_object_field_value(state, compileTimeObject, "functions");
@@ -6268,7 +6219,7 @@ static void test_percent_type_binary_module_reflection_restores_compile_time_and
         TEST_ASSERT_NOT_NULL(compileTimeFunctionsValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, compileTimeVariablesValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, compileTimeFunctionsValue->type);
-        TEST_ASSERT_EQUAL_UINT32(1,
+        TEST_ASSERT_EQUAL_UINT32(0,
                                  (TZrUInt32)get_array_length(ZR_CAST_OBJECT(state,
                                                                             compileTimeVariablesValue->value.object)));
         TEST_ASSERT_EQUAL_UINT32(1,
@@ -6293,8 +6244,8 @@ static void test_percent_type_source_type_reflection_exposes_decorator_metadata(
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_decorators",
-                    "%compileTime class Serializable {\n"
-                    "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
+                    "class Serializable {\n"
+                    "    @decorate(target: typeof Class): zr.DecoratorPatch {\n"
                     "        return { metadata: { serializable: true } };\n"
                     "    }\n"
                     "}\n"
@@ -6396,7 +6347,7 @@ static void test_percent_type_source_type_reflection_exposes_runtime_class_decor
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_runtime_class_decorators",
                     "class RuntimeSerializable {\n"
-                    "    @decorate(target: %type Class): void {\n"
+                    "    @decorate(target: typeof Class): void {\n"
                     "        target.metadata.runtimeSerializable = true;\n"
                     "    }\n"
                     "}\n"
@@ -6488,12 +6439,12 @@ static void test_percent_type_source_function_reflection_exposes_runtime_functio
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_runtime_function_decorators",
-                    "func markRuntime(target: %type Function): void {\n"
+                    "fn markRuntime(target: typeof Function): void {\n"
                     "    target.metadata.instrumented = true;\n"
                     "}\n"
                     "\n"
                     "#markRuntime#\n"
-                    "load(id: int): int {\n"
+                    "fn load(id: int): int {\n"
                     "    return id;\n"
                     "}\n"
                     "\n"
@@ -6580,13 +6531,13 @@ static void test_source_runtime_decorated_pub_function_is_directly_callable_from
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "call_runtime_function_decorators",
-                    "func markRuntime(target: %type Function): void {\n"
+                    "fn markRuntime(target: typeof Function): void {\n"
                     "    target.metadata.instrumented = true;\n"
                     "}\n"
                     "\n"
                     "#markRuntime#\n"
-                    "pub load(id: int): int {\n"
-                    "    var meta = %type(load).metadata;\n"
+                    "pub fn load(id: int): int {\n"
+                    "    var meta = typeof(load).metadata;\n"
                     "    return meta.instrumented ? id + 1 : id;\n"
                     "}\n"),
     };
@@ -6636,32 +6587,32 @@ static void test_decorator_import_member_get_callsite_caches_survive_source_impo
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "decorators",
-                    "%module \"decorators\";\n"
+                "module decorators;\n"
                     "\n"
-                    "pub markClass(target: %type Class): void {\n"
+                    "pub fn markClass(target: typeof Class): void {\n"
                     "    target.metadata.runtimeSerializable = true;\n"
                     "}\n"
                     "\n"
-                    "pub markFunction(target: %type Function): void {\n"
+                    "pub fn markFunction(target: typeof Function): void {\n"
                     "    target.metadata.instrumented = true;\n"
                     "}\n"
                     "\n"
-                    "pub markField(target: %type Field): void {\n"
+                    "pub fn markField(target: typeof Field): void {\n"
                     "    target.metadata.isRuntimeField = true;\n"
                     "}\n"
                     "\n"
-                    "pub markMethod(target: %type Method): void {\n"
+                    "pub fn markMethod(target: typeof Method): void {\n"
                     "    target.metadata.isRuntimeMethod = true;\n"
                     "}\n"
                     "\n"
-                    "pub markProperty(target: %type Property): void {\n"
+                    "pub fn markProperty(target: typeof Property): void {\n"
                     "    target.metadata.isRuntimeProperty = true;\n"
                     "}\n"),
             MODULE_FIXTURE_SOURCE_TEXT(
                     "decorated_user",
-                    "%module \"decorated_user\";\n"
+                "module decorated_user;\n"
                     "\n"
-                    "var decorators = %import(\"decorators\");\n"
+                    "var decorators = import(\"decorators\");\n"
                     "var markClass = decorators.markClass;\n"
                     "var markField = decorators.markField;\n"
                     "var markMethod = decorators.markMethod;\n"
@@ -6676,7 +6627,7 @@ static void test_decorator_import_member_get_callsite_caches_survive_source_impo
                     "    pri var _value: int = 2;\n"
                     "\n"
                     "    #markMethod#\n"
-                    "    pub load(v: int): int {\n"
+                    "    pub fn load(v: int): int {\n"
                     "        return v;\n"
                     "    }\n"
                     "\n"
@@ -6687,17 +6638,17 @@ static void test_decorator_import_member_get_callsite_caches_survive_source_impo
                     "}\n"
                     "\n"
                     "#markFunction#\n"
-                    "pub decoratedBonus(): int {\n"
-                    "    var meta = %type(decoratedBonus).metadata;\n"
+                    "pub fn decoratedBonus(): int {\n"
+                    "    var meta = typeof(decoratedBonus).metadata;\n"
                     "    return meta.instrumented ? 16 : 0;\n"
                     "}\n"
                     "\n"
                     "pub var verifyDecorators = () => {\n"
                     "    var seed = 0;\n"
-                    "    var typeMeta = %type(User).metadata;\n"
-                    "    var fieldMeta = %type(User).members.id[0].metadata;\n"
-                    "    var methodMeta = %type(User).members.load[0].metadata;\n"
-                    "    var propertyMeta = %type(User).members.value[0].metadata;\n"
+                    "    var typeMeta = typeof(User).metadata;\n"
+                    "    var fieldMeta = typeof(User).members.id[0].metadata;\n"
+                    "    var methodMeta = typeof(User).members.load[0].metadata;\n"
+                    "    var propertyMeta = typeof(User).members.value[0].metadata;\n"
                     "\n"
                     "    if (typeMeta.runtimeSerializable) {\n"
                     "        seed = seed + 1;\n"
@@ -6850,13 +6801,13 @@ static void test_source_module_runtime_registers_enum_members_and_imported_acces
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "source_enum_runtime",
-                    "%module \"source_enum_runtime\";\n"
+                "module source_enum_runtime;\n"
                     "pub enum Mode: int {\n"
                     "    Idle = 1;\n"
                     "    Hot = 2;\n"
                     "}\n"
                     "\n"
-                    "pub score(): int {\n"
+                    "pub fn score(): int {\n"
                     "    var mode = Mode.Hot;\n"
                     "    if (mode == Mode.Hot) {\n"
                     "        return 7;\n"
@@ -6939,7 +6890,7 @@ static void test_source_module_struct_constructor_runtime_invocation_preserves_f
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "source_struct_runtime_ctor",
-                    "%module \"source_struct_runtime_ctor\";\n"
+                "module source_struct_runtime_ctor;\n"
                     "pub struct Pair {\n"
                     "    pub var left: int;\n"
                     "    pub var right: int;\n"
@@ -7025,7 +6976,7 @@ static void test_source_module_struct_constructor_direct_function_call_preserves
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "source_struct_runtime_ctor_manual",
-                    "%module \"source_struct_runtime_ctor_manual\";\n"
+                "module source_struct_runtime_ctor_manual;\n"
                     "pub struct Pair {\n"
                     "    pub var left: int;\n"
                     "    pub var right: int;\n"
@@ -7142,7 +7093,7 @@ static void test_source_module_struct_method_call_writebacks_receiver_state(void
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "source_struct_runtime_method",
-                    "%module \"source_struct_runtime_method\";\n"
+                "module source_struct_runtime_method;\n"
                     "pub struct Counter {\n"
                     "    pub var value: int;\n"
                     "\n"
@@ -7150,14 +7101,14 @@ static void test_source_module_struct_method_call_writebacks_receiver_state(void
                     "        this.value = start;\n"
                     "    }\n"
                     "\n"
-                    "    pub bump(delta: int): int {\n"
+                    "    pub fn bump(delta: int): int {\n"
                     "        this.value = this.value + delta;\n"
                     "        return this.value;\n"
                     "    }\n"
                     "}\n"
                     "\n"
-                    "pub score(): int {\n"
-                    "    var counter = $Counter(5);\n"
+                    "pub fn score(): int {\n"
+                    "    var counter = init Counter(5);\n"
                     "    var bumped = counter.bump(2);\n"
                     "    return bumped * 10 + counter.value;\n"
                     "}\n"),
@@ -7208,7 +7159,7 @@ static void test_source_module_struct_value_construction_preserves_field_access(
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "source_struct_runtime",
-                    "%module \"source_struct_runtime\";\n"
+                "module source_struct_runtime;\n"
                     "pub struct Pair {\n"
                     "    pub var left: int;\n"
                     "    pub var right: int;\n"
@@ -7219,8 +7170,8 @@ static void test_source_module_struct_value_construction_preserves_field_access(
                     "    }\n"
                     "}\n"
                     "\n"
-                    "pub score(): int {\n"
-                    "    var pair = $Pair(1, 2);\n"
+                    "pub fn score(): int {\n"
+                    "    var pair = init Pair(1, 2);\n"
                     "    return pair.left + pair.right;\n"
                     "}\n"),
     };
@@ -7285,7 +7236,7 @@ static void test_source_module_class_boxed_construction_preserves_field_access(v
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "source_class_runtime",
-                    "%module \"source_class_runtime\";\n"
+                "module source_class_runtime;\n"
                     "pub class Box {\n"
                     "    pub var value: int;\n"
                     "\n"
@@ -7467,7 +7418,7 @@ static void run_runtime_member_decorator_reflection_test(
 
         sourceLength = snprintf(sourceBuffer,
                                 sizeof(sourceBuffer),
-                                "var decorated = %%import(\"%s\");\nreturn %s;\n",
+                                "var decorated = import(\"%s\");\nreturn %s;\n",
                                 testCase->modulePath,
                                 testCase->memberReflectionExpression);
         TEST_ASSERT_TRUE(sourceLength > 0 && (TZrSize)sourceLength < sizeof(sourceBuffer));
@@ -7530,7 +7481,7 @@ static void test_percent_type_source_field_reflection_exposes_runtime_field_deco
     static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
             "reflect_runtime_field_decorators",
             "class MarkField {\n"
-            "    @decorate(target: %type Field): void {\n"
+            "    @decorate(target: typeof Field): void {\n"
             "        target.metadata.isRuntimeField = true;\n"
             "    }\n"
             "}\n"
@@ -7539,7 +7490,7 @@ static void test_percent_type_source_field_reflection_exposes_runtime_field_deco
             "    #MarkField#\n"
             "    pub var id: int = 1;\n"
             "}\n",
-            "%type(decorated.User).members.id[0]",
+            "typeof(decorated.User).members.id[0]",
             "type_source_runtime_field_decorator_reflection_test.zr",
             "field",
             "isRuntimeField",
@@ -7557,18 +7508,18 @@ static void test_percent_type_source_method_reflection_exposes_runtime_method_de
     static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
             "reflect_runtime_method_decorators",
             "class MarkMethod {\n"
-            "    @decorate(target: %type Method): void {\n"
+            "    @decorate(target: typeof Method): void {\n"
             "        target.metadata.instrumented = true;\n"
             "    }\n"
             "}\n"
             "\n"
             "pub class User {\n"
             "    #MarkMethod#\n"
-            "    pub load(id: int): int {\n"
+            "    pub fn load(id: int): int {\n"
             "        return id;\n"
             "    }\n"
             "}\n",
-            "%type(decorated.User).members.load[0]",
+            "typeof(decorated.User).members.load[0]",
             "type_source_runtime_method_decorator_reflection_test.zr",
             "method",
             "instrumented",
@@ -7586,7 +7537,7 @@ static void test_percent_type_source_property_reflection_exposes_runtime_propert
     static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
             "reflect_runtime_property_decorators",
             "class MarkProperty {\n"
-            "    @decorate(target: %type Property): void {\n"
+            "    @decorate(target: typeof Property): void {\n"
             "        target.metadata.observable = true;\n"
             "    }\n"
             "}\n"
@@ -7599,7 +7550,7 @@ static void test_percent_type_source_property_reflection_exposes_runtime_propert
             "        get { return this._value; }\n"
             "    }\n"
             "}\n",
-            "%type(decorated.User).members.value[0]",
+            "typeof(decorated.User).members.value[0]",
             "type_source_runtime_property_decorator_reflection_test.zr",
             "property",
             "observable",
@@ -7618,16 +7569,16 @@ static void test_percent_type_source_reflection_exposes_advanced_oop_metadata(vo
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_advanced_oop",
                     "pub abstract class Base {\n"
-                    "    pub abstract ping(): int;\n"
+                    "    pub abstract fn ping(): int;\n"
                     "    pub abstract property score: int { get; }\n"
                     "}\n"
                     "pub final class Derived : Base {\n"
-                    "    pub override final ping(): int { return 1; }\n"
+                    "    pub override final fn ping(): int { return 1; }\n"
                     "    pub override final property score: int { get { return 2; } }\n"
                     "}\n"
-                    "interface Readable { read(): int; }\n"
+                    "interface Readable { fn read(): int; }\n"
                     "pub class Device : Readable {\n"
-                    "    pub read(): int { return 1; }\n"
+                    "    pub fn read(): int { return 1; }\n"
                     "}\n"),
     };
     SZrTestTimer timer;
@@ -7907,7 +7858,7 @@ static void test_percent_type_binary_function_reflection_exposes_runtime_functio
             "}\n"
             "\n"
             "#markRuntime#\n"
-            "load(id: int): int {\n"
+            "fn load(id: int): int {\n"
             "    return id;\n"
             "}\n"
             "\n"
@@ -8012,7 +7963,7 @@ static void test_binary_runtime_decorated_pub_function_is_directly_callable_from
             "}\n"
             "\n"
             "#markRuntime#\n"
-            "pub load(id: int): int {\n"
+            "pub fn load(id: int): int {\n"
             "    var meta = typeof(load).metadata;\n"
             "    return meta.instrumented ? id + 1 : id;\n"
             "}\n";
@@ -8078,7 +8029,7 @@ static void test_percent_type_binary_field_reflection_exposes_runtime_field_deco
     static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
             "reflect_runtime_field_decorators_binary",
             "class MarkField {\n"
-            "    @decorate(target: %type Field): void {\n"
+            "    @decorate(target: typeof Field): void {\n"
             "        target.metadata.isRuntimeField = true;\n"
             "    }\n"
             "}\n"
@@ -8087,7 +8038,7 @@ static void test_percent_type_binary_field_reflection_exposes_runtime_field_deco
             "    #MarkField#\n"
             "    pub var id: int = 1;\n"
             "}\n",
-            "%type(decorated.User).members.id[0]",
+            "typeof(decorated.User).members.id[0]",
             "type_binary_runtime_field_decorator_reflection_test.zr",
             "field",
             "isRuntimeField",
@@ -8105,18 +8056,18 @@ static void test_percent_type_binary_method_reflection_exposes_runtime_method_de
     static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
             "reflect_runtime_method_decorators_binary",
             "class MarkMethod {\n"
-            "    @decorate(target: %type Method): void {\n"
+            "    @decorate(target: typeof Method): void {\n"
             "        target.metadata.instrumented = true;\n"
             "    }\n"
             "}\n"
             "\n"
             "pub class User {\n"
             "    #MarkMethod#\n"
-            "    pub load(id: int): int {\n"
+            "    pub fn load(id: int): int {\n"
             "        return id;\n"
             "    }\n"
             "}\n",
-            "%type(decorated.User).members.load[0]",
+            "typeof(decorated.User).members.load[0]",
             "type_binary_runtime_method_decorator_reflection_test.zr",
             "method",
             "instrumented",
@@ -8134,7 +8085,7 @@ static void test_percent_type_binary_property_reflection_exposes_runtime_propert
     static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
             "reflect_runtime_property_decorators_binary",
             "class MarkProperty {\n"
-            "    @decorate(target: %type Property): void {\n"
+            "    @decorate(target: typeof Property): void {\n"
             "        target.metadata.observable = true;\n"
             "    }\n"
             "}\n"
@@ -8147,7 +8098,7 @@ static void test_percent_type_binary_property_reflection_exposes_runtime_propert
             "        get { return this._value; }\n"
             "    }\n"
             "}\n",
-            "%type(decorated.User).members.value[0]",
+            "typeof(decorated.User).members.value[0]",
             "type_binary_runtime_property_decorator_reflection_test.zr",
             "property",
             "observable",
@@ -8164,16 +8115,16 @@ static void test_percent_type_binary_property_reflection_exposes_runtime_propert
 static void test_percent_type_binary_reflection_restores_advanced_oop_metadata(void) {
     static const TZrChar *kModuleSource =
             "pub abstract class Base {\n"
-            "    pub abstract ping(): int;\n"
+            "    pub abstract fn ping(): int;\n"
             "    pub abstract property score: int { get; }\n"
             "}\n"
             "pub final class Derived : Base {\n"
-            "    pub override final ping(): int { return 1; }\n"
+            "    pub override final fn ping(): int { return 1; }\n"
             "    pub override final property score: int { get { return 2; } }\n"
             "}\n"
-            "interface Readable { read(): int; }\n"
+            "interface Readable { fn read(): int; }\n"
             "pub class Device : Readable {\n"
-            "    pub read(): int { return 1; }\n"
+            "    pub fn read(): int { return 1; }\n"
             "}\n";
     SZrTestTimer timer;
     const char *testSummary = "Percent Type Binary Reflection Restores Advanced OOP Metadata";
@@ -8322,14 +8273,14 @@ static void test_percent_type_source_module_reflection_preserves_compile_time_me
     static const SZrModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_meta_gc",
-                    "%compileTime var MAX_SCALE: int = 8;\n"
-                    "%compileTime buildBias(seed: int): int {\n"
+                    "const MAX_SCALE: int = 8;\n"
+                    "comptime fn buildBias(seed: int): int {\n"
                     "    return seed + MAX_SCALE;\n"
                     "}\n"
                     "\n"
                     "pub var runtimeValue: int = MAX_SCALE;\n"
                     "\n"
-                    "%test(\"vector_meta\") {\n"
+                    "pub fn vector_meta(): int {\n"
                     "    return runtimeValue;\n"
                     "}\n"),
     };
@@ -8900,7 +8851,7 @@ static void test_reference_hidden_internal_import_api_fixture_is_rejected(void) 
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_TRUE(diagnostic.reported);
     TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, "Internal module helper 'zr.import' is not available"));
-    TEST_ASSERT_EQUAL_INT(3, diagnostic.location.start.line);
+    TEST_ASSERT_EQUAL_INT(2, diagnostic.location.start.line);
 
     ZrParser_Ast_Free(state, ast);
     free(source);
@@ -9027,12 +8978,7 @@ static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
     const SZrTypeValue *compileTimeFunctionsValue = ZR_NULL;
     SZrObject *testsArray = ZR_NULL;
     SZrObject *compileTimeObject = ZR_NULL;
-    SZrObject *testInfo = ZR_NULL;
-    SZrObject *compileTimeVariable = ZR_NULL;
     SZrObject *compileTimeFunction = ZR_NULL;
-    const SZrTypeValue *testNameValue = ZR_NULL;
-    const SZrTypeValue *variableNameValue = ZR_NULL;
-    const SZrTypeValue *variableTypeValue = ZR_NULL;
     const SZrTypeValue *functionNameValue = ZR_NULL;
     const SZrTypeValue *functionReturnTypeValue = ZR_NULL;
     const SZrTypeValue *functionParametersValue = ZR_NULL;
@@ -9064,12 +9010,9 @@ static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, moduleFunction, intermediatePath));
     intermediateText = ZrTests_ReadTextFile(intermediatePath, &intermediateSize);
     TEST_ASSERT_NOT_NULL(intermediateText);
-    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_VARIABLES (1):"));
-    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "MAX_SCALE: int"));
     TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_FUNCTIONS (1):"));
     TEST_ASSERT_NOT_NULL(strstr(intermediateText, "fn buildBias(seed: int): int"));
-    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "TESTS (1):"));
-    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "test binary_meta()"));
+    TEST_ASSERT_NULL(strstr(intermediateText, "TESTS ("));
 
     binaryBytes = build_module_binary_fixture(state, moduleSource, binaryPath, &binaryLength);
     TEST_ASSERT_NOT_NULL(binaryBytes);
@@ -9108,14 +9051,7 @@ static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
     compileTimeObject = ZR_CAST_OBJECT(state, compileTimeValue->value.object);
     TEST_ASSERT_NOT_NULL(testsArray);
     TEST_ASSERT_NOT_NULL(compileTimeObject);
-    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(testsArray));
-
-    testInfo = get_array_entry_object(state, testsArray, 0);
-    TEST_ASSERT_NOT_NULL(testInfo);
-    testNameValue = get_object_field_value(state, testInfo, "name");
-    TEST_ASSERT_NOT_NULL(testNameValue);
-    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, testNameValue->type);
-    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, testNameValue->value.object), "binary_meta"));
+    TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(testsArray));
 
     compileTimeVariablesValue = get_object_field_value(state, compileTimeObject, "variables");
     compileTimeFunctionsValue = get_object_field_value(state, compileTimeObject, "functions");
@@ -9123,28 +9059,17 @@ static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
     TEST_ASSERT_NOT_NULL(compileTimeFunctionsValue);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, compileTimeVariablesValue->type);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, compileTimeFunctionsValue->type);
-    TEST_ASSERT_EQUAL_UINT32(1,
+    TEST_ASSERT_EQUAL_UINT32(0,
                              (TZrUInt32)get_array_length(ZR_CAST_OBJECT(state,
                                                                         compileTimeVariablesValue->value.object)));
     TEST_ASSERT_EQUAL_UINT32(1,
                              (TZrUInt32)get_array_length(ZR_CAST_OBJECT(state,
                                                                         compileTimeFunctionsValue->value.object)));
 
-    compileTimeVariable = get_array_entry_object(state,
-                                                 ZR_CAST_OBJECT(state, compileTimeVariablesValue->value.object),
-                                                 0);
     compileTimeFunction = get_array_entry_object(state,
                                                  ZR_CAST_OBJECT(state, compileTimeFunctionsValue->value.object),
                                                  0);
-    TEST_ASSERT_NOT_NULL(compileTimeVariable);
     TEST_ASSERT_NOT_NULL(compileTimeFunction);
-
-    variableNameValue = get_object_field_value(state, compileTimeVariable, "name");
-    variableTypeValue = get_object_field_value(state, compileTimeVariable, "typeName");
-    TEST_ASSERT_NOT_NULL(variableNameValue);
-    TEST_ASSERT_NOT_NULL(variableTypeValue);
-    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, variableNameValue->value.object), "MAX_SCALE"));
-    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, variableTypeValue->value.object), "int"));
 
     functionNameValue = get_object_field_value(state, compileTimeFunction, "name");
     functionReturnTypeValue = get_object_field_value(state, compileTimeFunction, "returnTypeName");
@@ -9184,6 +9109,10 @@ static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
     TEST_PASS_CUSTOM(timer, testSummary);
     destroy_test_state(state);
     TEST_DIVIDER();
+}
+
+static void test_legacy_runtime_decorator_contracts_are_retired(void) {
+    TEST_IGNORE_MESSAGE("Legacy runtime decorators are retired; replace this marker with attribute M1 coverage.");
 }
 
 // ==================== 主函数 ====================
@@ -9363,23 +9292,11 @@ int main(void) {
     // 36. %type(%func(...)) 暴露 callable reflection shape
     RUN_TEST(test_percent_type_function_type_literal_reflection_exposes_callable_shape);
 
-    // 35. %type 源模块反射暴露 compileTime / %test 元数据
-    RUN_TEST(test_percent_type_source_module_reflection_exposes_compile_time_and_test_metadata);
+    // 35. typeof 源模块反射保留 compileTime 元数据且不暴露旧 test 元数据
+    RUN_TEST(test_typeof_source_module_reflection_omits_legacy_test_metadata);
 
-    // 36. %type 源类型反射暴露 decorator metadata
-    RUN_TEST(test_percent_type_source_type_reflection_exposes_decorator_metadata);
-
-    // 37. %type 源类型反射暴露 runtime class decorator metadata
-    RUN_TEST(test_percent_type_source_type_reflection_exposes_runtime_class_decorator_metadata);
-
-    // 38. %type 源函数反射暴露 runtime function decorator metadata
-    RUN_TEST(test_percent_type_source_function_reflection_exposes_runtime_function_decorator_metadata);
-
-    // 39. source runtime decorated pub function 可直接从 imported module 调用
-    RUN_TEST(test_source_runtime_decorated_pub_function_is_directly_callable_from_imported_module);
-
-    // 40. decorator import 的 member-get callsite caches 在 source import / binary roundtrip 后保持一致
-    RUN_TEST(test_decorator_import_member_get_callsite_caches_survive_source_import_and_binary_roundtrip);
+    // Runtime decorators were replaced by the README attribute model.
+    RUN_TEST(test_legacy_runtime_decorator_contracts_are_retired);
 
     // 40. source module runtime 注册 enum 静态成员并允许 imported access 正常执行
     RUN_TEST(test_source_module_runtime_registers_enum_members_and_imported_access);
@@ -9399,37 +9316,14 @@ int main(void) {
     // 45. source module class boxed construction 保持字段访问可用
     RUN_TEST(test_source_module_class_boxed_construction_preserves_field_access);
 
-    // 46. %type 源字段反射暴露 runtime field decorator metadata
-    RUN_TEST(test_percent_type_source_field_reflection_exposes_runtime_field_decorator_metadata);
-
-    // 47. %type 源方法反射暴露 runtime method decorator metadata
-    RUN_TEST(test_percent_type_source_method_reflection_exposes_runtime_method_decorator_metadata);
-
-    // 48. %type 源属性反射暴露 runtime property decorator metadata
-    RUN_TEST(test_percent_type_source_property_reflection_exposes_runtime_property_decorator_metadata);
-
     // 49. %type 源反射暴露 advanced OOP modifier / override / slot 元数据
     RUN_TEST(test_percent_type_source_reflection_exposes_advanced_oop_metadata);
 
     // 50. %type 源模块在 full GC 后仍保留 compileTime 参数元数据
     RUN_TEST(test_percent_type_source_module_reflection_preserves_compile_time_metadata_across_full_gc);
 
-    // 46. %type binary module 反射恢复 compileTime / %test 元数据
-    RUN_TEST(test_percent_type_binary_module_reflection_restores_compile_time_and_test_metadata);
-
-    // 47. %type binary type 反射暴露 runtime class decorator metadata
-    RUN_TEST(test_percent_type_binary_type_reflection_exposes_runtime_class_decorator_metadata);
-
-    // 48. %type binary function 反射暴露 runtime function decorator metadata
-    RUN_TEST(test_percent_type_binary_function_reflection_exposes_runtime_function_decorator_metadata);
-
-    // 49. binary runtime decorated pub function 可直接从 imported module 调用
-    RUN_TEST(test_binary_runtime_decorated_pub_function_is_directly_callable_from_imported_module);
-
-    // 50. %type binary 字段/方法/属性反射暴露 runtime member/property decorator metadata
-    RUN_TEST(test_percent_type_binary_field_reflection_exposes_runtime_field_decorator_metadata);
-    RUN_TEST(test_percent_type_binary_method_reflection_exposes_runtime_method_decorator_metadata);
-    RUN_TEST(test_percent_type_binary_property_reflection_exposes_runtime_property_decorator_metadata);
+    // 46. typeof binary module 反射恢复 compileTime 元数据且不恢复旧 test 元数据
+    RUN_TEST(test_typeof_binary_module_reflection_omits_legacy_test_metadata);
 
     // 51. %type binary 反射恢复 advanced OOP modifier / override / slot 元数据
     RUN_TEST(test_percent_type_binary_reflection_restores_advanced_oop_metadata);

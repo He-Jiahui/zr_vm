@@ -1,7 +1,7 @@
-module "native_imports";
+module native_imports;
 
 let container = import("zr.container");
 
-pub touch(): int {
+pub fn touch(): int {
     return 0;
 }

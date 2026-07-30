@@ -183,7 +183,7 @@ static inline TZrSize ZrTests_Fixture_SkipWhitespace(const TZrChar *text, TZrSiz
 static inline SZrString *ZrTests_Fixture_CreateSourceNameForModule(SZrState *state,
                                                                    const TZrChar *moduleSource,
                                                                    const TZrChar *fallbackPath) {
-    const TZrChar *moduleKeyword = "%module";
+    const TZrChar *moduleKeyword = "module";
     const TZrChar *moduleMarker;
 
     if (state == ZR_NULL) {
@@ -193,40 +193,34 @@ static inline SZrString *ZrTests_Fixture_CreateSourceNameForModule(SZrState *sta
     moduleMarker = moduleSource != ZR_NULL ? strstr(moduleSource, moduleKeyword) : ZR_NULL;
     if (moduleMarker != ZR_NULL) {
         TZrSize index = (TZrSize)(moduleMarker - moduleSource) + strlen(moduleKeyword);
-        TZrChar quote;
+        TZrSize moduleStart;
+        TZrSize moduleLength;
 
         index = ZrTests_Fixture_SkipWhitespace(moduleSource, index);
-        if (moduleSource[index] == '(') {
+        moduleStart = index;
+        while ((moduleSource[index] >= 'a' && moduleSource[index] <= 'z') ||
+               (moduleSource[index] >= 'A' && moduleSource[index] <= 'Z') ||
+               (moduleSource[index] >= '0' && moduleSource[index] <= '9') ||
+               moduleSource[index] == '_' || moduleSource[index] == '.') {
             index++;
-            index = ZrTests_Fixture_SkipWhitespace(moduleSource, index);
         }
+        moduleLength = index - moduleStart;
+        if (moduleLength > 0U) {
+            TZrSize suffixLength = strlen(".zr");
+            TZrChar *buffer = (TZrChar *)malloc(moduleLength + suffixLength + 1U);
 
-        quote = moduleSource[index];
-        if (quote == '"' || quote == '\'') {
-            TZrSize moduleStart = ++index;
-
-            while (moduleSource[index] != '\0' && moduleSource[index] != quote) {
-                index++;
+            if (buffer == ZR_NULL) {
+                return ZR_NULL;
             }
 
-            if (moduleSource[index] == quote && index > moduleStart) {
-                TZrSize moduleLength = index - moduleStart;
-                TZrSize suffixLength = strlen(".zr");
-                TZrChar *buffer = (TZrChar *)malloc(moduleLength + suffixLength + 1);
+            memcpy(buffer, moduleSource + moduleStart, moduleLength);
+            memcpy(buffer + moduleLength, ".zr", suffixLength + 1U);
 
-                if (buffer == ZR_NULL) {
-                    return ZR_NULL;
-                }
-
-                memcpy(buffer, moduleSource + moduleStart, moduleLength);
-                memcpy(buffer + moduleLength, ".zr", suffixLength + 1);
-
-                {
-                    SZrString *sourceName = ZrCore_String_Create(state, buffer, moduleLength + suffixLength);
-                    free(buffer);
-                    if (sourceName != ZR_NULL) {
-                        return sourceName;
-                    }
+            {
+                SZrString *sourceName = ZrCore_String_Create(state, buffer, moduleLength + suffixLength);
+                free(buffer);
+                if (sourceName != ZR_NULL) {
+                    return sourceName;
                 }
             }
         }

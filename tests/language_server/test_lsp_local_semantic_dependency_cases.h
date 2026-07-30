@@ -89,7 +89,7 @@ static void test_generic_signature_edit_invalidates_only_changed_and_direct_call
             "Generic Signature Edit Invalidates Only Changed And Direct Caller Scopes";
     const TZrChar *uriText = "file:///generic_signature_direct_caller_cache.zr";
     const TZrChar *initialContent =
-            "identity<T>(value: T): T {\n"
+            "fn identity<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
             "fn caller(): int {\n"
@@ -99,7 +99,7 @@ static void test_generic_signature_edit_invalidates_only_changed_and_direct_call
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *firstSignatureContent =
-            "identity<U>(value: U): U {\n"
+            "fn identity<U>(value: U): U {\n"
             "    return value;\n"
             "}\n"
             "fn caller(): int {\n"
@@ -109,7 +109,7 @@ static void test_generic_signature_edit_invalidates_only_changed_and_direct_call
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *secondSignatureContent =
-            "identity<V>(value: V): V {\n"
+            "fn identity<V>(value: V): V {\n"
             "    return value;\n"
             "}\n"
             "fn caller(): int {\n"
@@ -119,7 +119,7 @@ static void test_generic_signature_edit_invalidates_only_changed_and_direct_call
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *thirdSignatureContent =
-            "identity<W>(value: W): W {\n"
+            "fn identity<W>(value: W): W {\n"
             "    return value;\n"
             "}\n"
             "fn caller(): int {\n"
@@ -341,30 +341,30 @@ static void test_inferred_signature_body_edit_invalidates_direct_caller_scope(
             "Inferred Signature Body Edit Invalidates Direct Caller Scope";
     const TZrChar *uriText = "file:///inferred_signature_direct_caller_cache.zr";
     const TZrChar *initialContent =
-            "inferred() {\n"
+            "fn inferred() {\n"
             "    return 1.0;\n"
             "}\n"
-            "caller() {\n"
+            "fn caller() {\n"
             "    return inferred();\n"
             "}\n"
             "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *changedTypeContent =
-            "inferred() {\n"
+            "fn inferred() {\n"
             "    return \"a\";\n"
             "}\n"
-            "caller() {\n"
+            "fn caller() {\n"
             "    return inferred();\n"
             "}\n"
             "fn unrelated(): int {\n"
             "    return 10 + 20;\n"
             "}\n";
     const TZrChar *stableTypeContent =
-            "inferred() {\n"
+            "fn inferred() {\n"
             "    return \"b\";\n"
             "}\n"
-            "caller() {\n"
+            "fn caller() {\n"
             "    return inferred();\n"
             "}\n"
             "fn unrelated(): int {\n"
@@ -650,17 +650,17 @@ static void test_resolved_function_value_dependency_invalidates_directly(
             "Resolved Function Value Dependency Invalidates Directly";
     const TZrChar *uriText = "file:///resolved_function_value_dependency_cache.zr";
     const TZrChar *initialContent =
-            "identity<T>(value: T): T {\n"
+            "fn identity<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
-            "holder() {\n"
+            "fn holder() {\n"
             "    return identity;\n"
             "}\n";
     const TZrChar *updatedContent =
-            "identity<U>(value: U): U {\n"
+            "fn identity<U>(value: U): U {\n"
             "    return value;\n"
             "}\n"
-            "holder() {\n"
+            "fn holder() {\n"
             "    return identity;\n"
             "}\n";
     SZrTestTimer timer;
@@ -769,14 +769,14 @@ static void test_poisoned_scope_invalidates_conservatively_on_signature_edit(
             "Poisoned Scope Invalidates Conservatively On Signature Edit";
     const TZrChar *uriText = "file:///poisoned_signature_dependency_cache.zr";
     const TZrChar *initialContent =
-            "identity<T>(value: T): T {\n"
+            "fn identity<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
             "fn poisoned(): int {\n"
             "    return missing();\n"
             "}\n";
     const TZrChar *updatedContent =
-            "identity<U>(value: U): U {\n"
+            "fn identity<U>(value: U): U {\n"
             "    return value;\n"
             "}\n"
             "fn poisoned(): int {\n"

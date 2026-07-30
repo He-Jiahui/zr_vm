@@ -1,3 +1,7 @@
-pub planSize(seed: int, factor: int = 2, bonus: int = 3): int {
+pub comptime fn staticPlanSize(seed: int, factor: int = 2, bonus: int = 3): int {
+    return seed * factor + bonus;
+}
+
+pub fn planSize(seed: int, factor: int = 2, bonus: int = 3): int {
     return seed * factor + bonus;
 }

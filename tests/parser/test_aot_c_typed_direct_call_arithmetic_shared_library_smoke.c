@@ -59,7 +59,7 @@ static const char *const i64_one_arg_negate_needles[] = {
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_multiply_case = {
-        "func product(left: int, right: int): int {\n"
+        "fn product(left: int, right: int): int {\n"
         "    return left * right;\n"
         "}\n"
         "var left: int = 6;\n"
@@ -80,7 +80,7 @@ static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_multiply_case 
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_divide_case = {
-        "func ratio(left: int, right: int): int {\n"
+        "fn ratio(left: int, right: int): int {\n"
         "    return left / right;\n"
         "}\n"
         "var left: int = 84;\n"
@@ -101,7 +101,7 @@ static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_divide_case = 
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_modulo_case = {
-        "func remainder(left: int, right: int): int {\n"
+        "fn remainder(left: int, right: int): int {\n"
         "    return left % right;\n"
         "}\n"
         "var left: int = 92;\n"
@@ -122,7 +122,7 @@ static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_modulo_case = 
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_bitwise_and_case = {
-        "func mask(left: int, right: int): int {\n"
+        "fn mask(left: int, right: int): int {\n"
         "    return left & right;\n"
         "}\n"
         "var left: int = 58;\n"
@@ -143,7 +143,7 @@ static const SZrAotTypedDirectCallArithmeticSmokeCase i64_two_arg_bitwise_and_ca
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_one_arg_multiply_const_case = {
-        "func scale(value: int): int {\n"
+        "fn scale(value: int): int {\n"
         "    return value * 21;\n"
         "}\n"
         "var seed: int = 2;\n"
@@ -163,7 +163,7 @@ static const SZrAotTypedDirectCallArithmeticSmokeCase i64_one_arg_multiply_const
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_one_arg_subtract_const_case = {
-        "func decBy(value: int): int {\n"
+        "fn decBy(value: int): int {\n"
         "    return value - 8;\n"
         "}\n"
         "var seed: int = 50;\n"
@@ -183,7 +183,7 @@ static const SZrAotTypedDirectCallArithmeticSmokeCase i64_one_arg_subtract_const
 };
 
 static const SZrAotTypedDirectCallArithmeticSmokeCase i64_one_arg_negate_case = {
-        "func negate(value: int): int {\n"
+        "fn negate(value: int): int {\n"
         "    return -value;\n"
         "}\n"
         "var seed: int = -42;\n"

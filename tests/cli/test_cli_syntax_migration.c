@@ -86,7 +86,9 @@ int main(void) {
     }
     if (strstr(report, "\"schemaVersion\":1") == ZR_NULL ||
         strstr(report, "\"oldConstructKind\":\"percentModule\"") == ZR_NULL ||
-        strstr(report, "\"applicability\":\"targetNotPromoted\"") == ZR_NULL ||
+        strstr(report, "\"applicability\":\"machineApplicable\"") == ZR_NULL ||
+        strstr(report, "\"targetConstructKind\":\"moduleDeclaration\"") == ZR_NULL ||
+        strstr(report, "\"hasFix\":true") == ZR_NULL ||
         strstr(report, "\"write\":false") == ZR_NULL ||
         beforeLength != afterLength || memcmp(before, after, beforeLength) != 0) {
         free(before);

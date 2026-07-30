@@ -626,11 +626,13 @@ static TZrBool validate_ownership_builtin_operand_expression(SZrCompilerState *c
 }
 
 TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
-                                                    SZrConstructExpression *constructExpr,
-                                                    SZrFileRange location) {
+                                             SZrConstructExpression *constructExpr,
+                                             TZrUInt32 targetSlot,
+                                             SZrFileRange location) {
     EZrOwnershipBuiltinKind builtinKind;
     TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
+    TZrBool shouldUseDirectIdentifier = ZR_FALSE;
     TZrBool shouldResetConsumedIdentifier = ZR_FALSE;
 
     if (cs == ZR_NULL || constructExpr == ZR_NULL || cs->hasError) {
@@ -650,7 +652,15 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    resultSlot = allocate_stack_slot(cs);
+    resultSlot = targetSlot;
+    if (resultSlot == ZR_PARSER_SLOT_NONE) {
+        resultSlot = allocate_stack_slot(cs);
+    } else if (cs->stackSlotCount <= (TZrSize)resultSlot) {
+        cs->stackSlotCount = (TZrSize)resultSlot + 1u;
+        if (cs->maxStackSlotCount < cs->stackSlotCount) {
+            cs->maxStackSlotCount = cs->stackSlotCount;
+        }
+    }
 
     if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE ||
         builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DETACH) {
@@ -694,12 +704,17 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             constructExpr->target->type == ZR_AST_IDENTIFIER_LITERAL &&
             infer_expression_ownership_qualifier_local(cs, constructExpr->target) ==
                     ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+    shouldUseDirectIdentifier =
+            constructExpr->target != ZR_NULL &&
+            constructExpr->target->type == ZR_AST_IDENTIFIER_LITERAL &&
+            (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW ||
+             shouldResetConsumedIdentifier);
 
-    if (shouldResetConsumedIdentifier) {
+    if (shouldUseDirectIdentifier) {
         argumentSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
         if (argumentSlot == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs,
-                                    "Failed to resolve consumed ownership source binding",
+                                    "Failed to resolve ownership source binding",
                                     location);
             return ZR_FALSE;
         }
@@ -734,9 +749,11 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
 }
 
 TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
-                                                              SZrConstructExpression *constructExpr,
-                                                              SZrFileRange location) {
+                                                       SZrConstructExpression *constructExpr,
+                                                       TZrUInt32 targetSlot,
+                                                       SZrFileRange location) {
     EZrOwnershipBuiltinKind builtinKind;
+    TZrUInt32 constructedSlot;
     TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
 
@@ -751,12 +768,20 @@ TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
-    argumentSlot = allocate_stack_slot(cs);
-    emit_instruction(cs,
-                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
-                                          (TZrUInt16)argumentSlot,
-                                          (TZrInt32)resultSlot));
+    constructedSlot = cs->lastExpressionSlot != ZR_PARSER_SLOT_NONE
+                              ? cs->lastExpressionSlot
+                              : (TZrUInt32)(cs->stackSlotCount - 1);
+    if (targetSlot != ZR_PARSER_SLOT_NONE) {
+        resultSlot = targetSlot;
+        argumentSlot = constructedSlot;
+    } else {
+        resultSlot = constructedSlot;
+        argumentSlot = allocate_stack_slot(cs);
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)argumentSlot,
+                                              (TZrInt32)resultSlot));
+    }
 
     if (!compiler_semantic_ir_lower_ownership(
                 cs, builtinKind, argumentSlot, resultSlot, location)) {
@@ -1798,6 +1823,27 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
 
     oldTailCallContext = cs->isInTailCallContext;
     cs->isInTailCallContext = ZR_FALSE;
+
+    if (node->type == ZR_AST_CONSTRUCT_EXPRESSION &&
+        construct_expression_is_ownership_builtin(&node->data.constructExpression)) {
+        if (!compile_ownership_builtin_expression(
+                    cs, &node->data.constructExpression, targetSlot, node->location)) {
+            cs->isInTailCallContext = oldTailCallContext;
+            return ZR_PARSER_SLOT_NONE;
+        }
+        cs->isInTailCallContext = oldTailCallContext;
+        return cs->lastExpressionSlot;
+    }
+    if (node->type == ZR_AST_CONSTRUCT_EXPRESSION &&
+        node->data.constructExpression.isNew &&
+        (node->data.constructExpression.isUsing ||
+         node->data.constructExpression.isResourceSurface ||
+         node->data.constructExpression.builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+         node->data.constructExpression.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE)) {
+        TZrUInt32 slot = compile_ownership_construct_expression_into_slot(cs, node, targetSlot);
+        cs->isInTailCallContext = oldTailCallContext;
+        return slot;
+    }
 
     if (node->type == ZR_AST_IDENTIFIER_LITERAL &&
         node->data.identifier.name != ZR_NULL) {

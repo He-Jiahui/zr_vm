@@ -2,7 +2,7 @@ class CounterRegistry {
     pub static var seed: int = 40;
     pub static var bonus: int = 2;
 
-    pub static total(): int {
+    pub static fn total(): int {
         return CounterRegistry.seed + CounterRegistry.bonus;
     }
 }

@@ -14,6 +14,10 @@ related_code:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/include/zr_vm_parser/artifact_projection.h
+  - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ref_struct_rules.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
@@ -27,6 +31,9 @@ implementation_files:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ref_struct_rules.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
 plan_sources:
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
@@ -36,6 +43,8 @@ tests:
   - tests/parser/test_span_core.c
   - tests/parser/test_span_semantic_ir_cases.c
   - tests/container/test_generational_pool.c
+  - tests/container/test_generational_pool_gc_stress.c
+  - tests/container/test_generational_pool_artifact.c
 doc_type: module-detail
 ---
 
@@ -88,6 +97,12 @@ preserve it as `EZrParameterPassingMode`, rather than encoding `out` in a type
 name. This descriptor schema is native plugin/runtime ABI v2. Providers built
 against ABI v1 are rejected during registration and must be rebuilt.
 
+Imported `PoolRef<T>` and `PoolReadRef<T>` are ref-like because the compiler
+queries their canonical `REF_LIKE` capability. The storage and escape passes do
+not compare either source spelling. The same rule rejects imported views in
+class/global/array/unconstrained-generic/native-ABI storage, array literals,
+closure captures, and values live across `await` or `yield`.
+
 Read guards may coexist, while a write guard excludes every other guard. A
 retired entity remains readable through guards acquired before retirement; the
 last guard release performs the pending drop and permits reuse with a new
@@ -95,10 +110,28 @@ generation. The runtime keeps fixed-capacity slabs, validates full
 pool/slot/generation identity, permanently exhausts a slot before generation
 wrap, and scans only initialized live or retired elements according to the
 closed element layout's `GcFree`, `GcMapped`, or `GcBarriered` classification.
+`GcBarriered` slabs maintain a dirty bit per initialized slot. Initial
+publication and write-guard acquisition mark the slot; scanning clears a card
+only when no writer is active, so a direct pointer held by a writer cannot lose
+its remembered-set obligation. `GcMapped` scans every initialized live/retired
+slot and `GcFree` reports zero scan bytes.
+
+Failed initialization never publishes a handle. A layout may provide
+`abortInitialize` to release partially initialized fields before the slot is
+zeroed and returned to the free list. Construction-failure, partial-cleanup,
+drop, validation, barrier, dirty-slot, scan-pass, slot and byte counters remain
+separate. The StableSlotSource contract hash is version 2 after adding this
+rollback/barrier contract.
+
+The native module publishes that hash as a descriptor constant. The generic
+artifact projection maps it to the StableSlotSource layout capability by
+protocol id, not provider name. Source import, native metadata, binary artifact,
+canonical consumer and reflection therefore observe one hash; zero, dangling or
+unknown layout capabilities fail closed.
 
 ## Exception Cleanup
 
-`%using (lease)` registers the lease in the VM to-be-closed chain. Every exception
+`using (lease)` registers the lease in the VM to-be-closed chain. Every exception
 handler captures the chain boundary present at entry. Exception unwind closes
 only registrations above that boundary before entering a matching catch/finally
 or popping the handler. The close call builds its error argument in reserved
@@ -143,15 +176,26 @@ marshaller/lowering contract.
 
 `zr_vm_buffer_pool_ffi_test` covers descriptor contracts, exact-generation reuse,
 double close, live-view close rejection, 32 rent/view/full-compact-GC/return
-rounds, `%using` cleanup through throw/catch, pinned byte mutation after owner
+rounds, `using` cleanup through throw/catch, pinned byte mutation after owner
 close and full compact GC, idempotent unpin, and live native-view unpin rejection.
 The same target also validates the cross-module ref-like artifact ABI consumed by
 VM and AOT projections.
 
+`zr_vm_generational_pool_test` covers descriptor roles, canonical import,
+ref-like storage/escape rejection, identity/ABA, read/write conflict, deferred
+reclamation, generation exhaustion, alignment, cross-slab expansion, one
+million handles and concurrent churn. `zr_vm_generational_pool_gc_stress_test`
+separates partial-init rollback, GcFree/GcMapped/GcBarriered scan accounting,
+card retention during a write guard, one million direct-field accesses without
+another generation validation, and 100,000 reuse cycles.
+`zr_vm_generational_pool_artifact_test` executes the source constant and proves
+native/binary/reflection hash parity plus corrupt-layout rejection.
+
 ## Follow-up Boundary
 
 This milestone provides exact-length reusable arrays and pinned byte-buffer views.
-Size-class pooling, concurrent pools, arbitrary typed native slices, custom
-marshallers, and generational slab handles remain separate designs. They must
+Size-class pooling, arbitrary typed native slices, custom marshallers, managed
+moving-slab compaction, and language-level early-exit cleanup for native pool
+guards remain separate work. They must
 extend the structured protocol, TypeLayout, and artifact contracts rather than
 adding provider-name recognition.

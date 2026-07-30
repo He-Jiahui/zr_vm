@@ -1,15 +1,15 @@
 let math = import("zr.math");
 let system = import("zr.system");
 
-scaleValue(input: float) {
+fn scaleValue(input: float) {
     return input * 2.0;
 }
 
-summarizeCallbackImpl(value: float) {
+fn summarizeCallbackImpl(value: float) {
     return value + 7.0;
 }
 
-runCallbacksImpl(lin, signal, tensor) {
+fn runCallbacksImpl(lin, signal, tensor) {
     var vectorInfo = lin.projectVectors(2.0);
     var signalInfo = signal.mixSignal(5.0);
     var tensorInfo = tensor.runTensorPass();

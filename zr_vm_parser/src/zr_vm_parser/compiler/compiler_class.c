@@ -6,6 +6,7 @@
 #include "compile_expression_internal.h"
 #include "compile_time_executor_internal.h"
 #include "cfg_internal.h"
+#include "compiler_attribute_binding.h"
 
 static const TZrChar *compiler_class_builtin_ffi_wrapper_leaf_names[] = {
         "lowering",
@@ -962,6 +963,7 @@ static TZrBool compiler_class_emit_runtime_decorators_excluding_builtin_ffi(SZrC
 
         if (decoratorNode == ZR_NULL ||
             compiler_class_decorator_is_builtin_ffi_wrapper(decoratorNode) ||
+            ZrParser_Metadata_IsRegisteredAttribute(cs, decoratorNode) ||
             ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
             if (cs->hasError) {
                 return ZR_FALSE;
@@ -1144,6 +1146,15 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.layoutByteSize = 0;
     info.layoutByteAlign = 0;
     ZrCore_Value_ResetAsNull(&info.decoratorMetadataValue);
+
+    if (cs->typeEnv != ZR_NULL &&
+        !ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName)) {
+        ZrParser_Compiler_Error(cs, "Failed to register class symbol before expansion", node->location);
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
 
     if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {
         cs->currentTypeName = oldTypeName;
@@ -1515,6 +1526,27 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 cs->currentTypeNode = oldTypeNode;
                 return;
             }
+            if ((member->type == ZR_AST_CLASS_FIELD || member->type == ZR_AST_CLASS_METHOD ||
+                 member->type == ZR_AST_CLASS_PROPERTY) &&
+                !ZrParser_Metadata_ApplyMemberAttributes(
+                        cs,
+                        member->type == ZR_AST_CLASS_FIELD
+                                ? member->data.classField.decorators
+                                : (member->type == ZR_AST_CLASS_METHOD
+                                           ? member->data.classMethod.decorators
+                                           : member->data.classProperty.decorators),
+                        member->type == ZR_AST_CLASS_FIELD
+                                ? ZR_PARSER_ATTRIBUTE_TARGET_FIELD
+                                : (member->type == ZR_AST_CLASS_METHOD
+                                           ? ZR_PARSER_ATTRIBUTE_TARGET_METHOD
+                                           : ZR_PARSER_ATTRIBUTE_TARGET_PROPERTY),
+                        &memberInfo,
+                        member->location)) {
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
 
             if (memberInfo.name != ZR_NULL) {
                 ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
@@ -1523,6 +1555,20 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
     compiler_type_members_restore_declaration_order(&info.members);
+
+    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, classDecl->decorators, &info)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
+    if (!ZrParser_Metadata_ApplyTypeAttributes(
+                cs, classDecl->decorators, &info, node->location)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
 
     if (compiler_class_has_modifier(&info, ZR_DECLARATION_MODIFIER_ABSTRACT)) {
         info.allowValueConstruction = ZR_FALSE;
@@ -1589,13 +1635,6 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, classDecl->decorators, &info)) {
-        cs->currentTypeName = oldTypeName;
-        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-        cs->currentTypeNode = oldTypeNode;
-        return;
-    }
-
     if (!compiler_class_apply_builtin_ffi_wrapper_decorators(cs, classDecl->decorators, &info, node->location)) {
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
@@ -1607,11 +1646,6 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 将 prototype 信息添加到数组
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
-    
-    // 注册类型名称到类型环境
-    if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
-    }
 
     if (classDecl->members != ZR_NULL && classDecl->members->count > 0) {
         for (TZrSize memberIndex = 0; memberIndex < classDecl->members->count; memberIndex++) {

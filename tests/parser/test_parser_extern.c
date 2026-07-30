@@ -396,7 +396,7 @@ void test_compile_time_function_decorator_parsing(void) {
     const char *testSummary = "Declaration Transform Function Decorator Parsing";
     const char *source =
             "#zr.compile.declarationTransform#\n"
-            "comptime fn decorate(target: declaration.Class, version: int = 7): declaration.Patch {\n"
+            "pub comptime fn decorate(target: declaration.Class, version: int = 7): declaration.Patch {\n"
             "    return null;\n"
             "}\n"
             "\n"

@@ -8,12 +8,12 @@ class MultiplyWorker {
         this.state = seed;
     }
 
-    pub step(delta: int): int {
+    pub fn step(delta: int): int {
         this.state = (this.state * 13 + delta + 7) % 10007;
         return this.state;
     }
 
-    pub read(): int {
+    pub fn read(): int {
         return this.state;
     }
 }
@@ -25,12 +25,12 @@ class ScaleWorker {
         this.state = seed;
     }
 
-    pub step(delta: int): int {
+    pub fn step(delta: int): int {
         this.state = (this.state * 17 + delta * 3 + 11) % 10009;
         return this.state;
     }
 
-    pub read(): int {
+    pub fn read(): int {
         return this.state;
     }
 }
@@ -42,12 +42,12 @@ class XorWorker {
         this.state = seed;
     }
 
-    pub step(delta: int): int {
+    pub fn step(delta: int): int {
         this.state = ((this.state ^ (delta + 31)) + delta * 5 + 19) % 10037;
         return this.state;
     }
 
-    pub read(): int {
+    pub fn read(): int {
         return this.state;
     }
 }
@@ -59,12 +59,12 @@ class DriftWorker {
         this.state = seed;
     }
 
-    pub step(delta: int): int {
+    pub fn step(delta: int): int {
         this.state = (this.state + delta * delta + 23) % 10039;
         return this.state;
     }
 
-    pub read(): int {
+    pub fn read(): int {
         return this.state;
     }
 }

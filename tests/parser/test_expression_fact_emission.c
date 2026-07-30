@@ -786,12 +786,12 @@ static void test_lambda_expression_fact_records_callable_type(void) {
 
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, result.baseType);
     TEST_ASSERT_NOT_NULL(result.typeName);
-    TEST_ASSERT_EQUAL_STRING("%func(int)->int", ZrCore_String_GetNativeString(result.typeName));
+    TEST_ASSERT_EQUAL_STRING("fn(int) -> int", ZrCore_String_GetNativeString(result.typeName));
     TEST_ASSERT_NOT_NULL(lambdaFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_LAMBDA, lambdaFact->kind);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, lambdaFact->inferredType.baseType);
     TEST_ASSERT_NOT_NULL(lambdaFact->inferredType.typeName);
-    TEST_ASSERT_EQUAL_STRING("%func(int)->int", ZrCore_String_GetNativeString(lambdaFact->inferredType.typeName));
+    TEST_ASSERT_EQUAL_STRING("fn(int) -> int", ZrCore_String_GetNativeString(lambdaFact->inferredType.typeName));
 
     ZrParser_InferredType_Free(g_state, &result);
     ZrParser_Ast_Free(g_state, ast);
@@ -850,11 +850,11 @@ static void test_lambda_constant_true_loop_return_records_callable_type_and_body
 
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, result.baseType);
     TEST_ASSERT_NOT_NULL(result.typeName);
-    TEST_ASSERT_EQUAL_STRING("%func()->int", ZrCore_String_GetNativeString(result.typeName));
+    TEST_ASSERT_EQUAL_STRING("fn() -> int", ZrCore_String_GetNativeString(result.typeName));
     TEST_ASSERT_NOT_NULL(lambdaFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_LAMBDA, lambdaFact->kind);
     TEST_ASSERT_NOT_NULL(lambdaFact->inferredType.typeName);
-    TEST_ASSERT_EQUAL_STRING("%func()->int", ZrCore_String_GetNativeString(lambdaFact->inferredType.typeName));
+    TEST_ASSERT_EQUAL_STRING("fn() -> int", ZrCore_String_GetNativeString(lambdaFact->inferredType.typeName));
     TEST_ASSERT_NOT_NULL(returnExprFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_BINARY, returnExprFact->kind);
     TEST_ASSERT_TRUE(returnExprFact->hasConstant);
@@ -880,7 +880,7 @@ static void test_ownership_builtin_expression_fact_records_builtin_kind(void) {
     const SZrSemanticExpressionFact *builtinFact;
     const SZrSemanticExpressionFact *targetFact;
     const SZrSemanticOwnershipFact *ownershipFact;
-    const char *source = "ref readonly owner;";
+    const char *source = "ref owner;";
 
     sourceName = ZrCore_String_Create(g_state,
                                       "ownership_builtin_expression_fact_test.zr",
@@ -909,15 +909,15 @@ static void test_ownership_builtin_expression_fact_records_builtin_kind(void) {
     ownershipFact = ZrParser_SemanticFacts_FindOwnershipByNode(cs->semanticContext, expr);
 
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
-    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED, result.ownershipQualifier);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_LOANED, result.ownershipQualifier);
     TEST_ASSERT_NOT_NULL(builtinFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_OWNERSHIP_BUILTIN, builtinFact->kind);
-    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED, builtinFact->inferredType.ownershipQualifier);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_LOANED, builtinFact->inferredType.ownershipQualifier);
     TEST_ASSERT_NOT_NULL(targetFact);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_IDENTIFIER, targetFact->kind);
     TEST_ASSERT_NOT_NULL(ownershipFact);
-    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_OWNERSHIP_FACT_BORROW, ownershipFact->kind);
-    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED, ownershipFact->qualifier);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_OWNERSHIP_FACT_MOVE, ownershipFact->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_LOANED, ownershipFact->qualifier);
 
     ZrParser_InferredType_Free(g_state, &result);
     ZrParser_InferredType_Free(g_state, &ownerType);

@@ -167,24 +167,27 @@ static TZrBool value_construct_emit_explicit_constructor(
         return ZR_FALSE;
     }
     prototype = find_compiler_type_prototype(cs, typeName);
+    if (prototype == ZR_NULL ||
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+        (member->compiledFunction == ZR_NULL && !prototype->isNativeRuntime)) {
+        ZrParser_Compiler_Error(
+                cs, "Resolved struct constructor target is unavailable", node->location);
+        return ZR_FALSE;
+    }
     if (member->compiledFunction == ZR_NULL) {
-        if (prototype == ZR_NULL || !prototype->isNativeRuntime ||
-            prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
-            ZrParser_Compiler_Error(
-                    cs, "Resolved native constructor target is unavailable", node->location);
-            return ZR_FALSE;
-        }
         ZrCore_Value_InitAsRawObject(
                 cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
         typeNameValue.type = ZR_VALUE_TYPE_STRING;
         typeNameConstantIndex = add_constant(cs, &typeNameValue);
         emit_instruction(
                 cs,
-                create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), (TZrUInt16)targetSlot));
+                create_instruction_0(
+                        ZR_INSTRUCTION_ENUM(CREATE_OBJECT),
+                        (TZrUInt16)targetSlot));
         emit_instruction(
                 cs,
                 create_instruction_2(
-                        ZR_INSTRUCTION_ENUM(TO_OBJECT),
+                        ZR_INSTRUCTION_ENUM(TO_STRUCT),
                         (TZrUInt16)targetSlot,
                         (TZrUInt16)targetSlot,
                         (TZrUInt16)typeNameConstantIndex));
@@ -334,6 +337,15 @@ static TZrBool value_construct_emit_explicit_constructor(
                     (TZrUInt16)functionSlot,
                     (TZrUInt16)functionSlot,
                     (TZrUInt16)(parameterCount + 1U)));
+    if (member->compiledFunction == ZR_NULL && prototype != ZR_NULL &&
+        prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(SET_STACK),
+                        (TZrUInt16)targetSlot,
+                        (TZrInt32)functionSlot));
+    }
     collapse_stack_to_slot(cs, targetSlot);
     cs->lastExpressionSlot = targetSlot;
     success = !cs->hasError;

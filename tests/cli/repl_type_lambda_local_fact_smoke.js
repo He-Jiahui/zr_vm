@@ -34,7 +34,7 @@ async function main() {
     });
 
     assert(exitCode === 0, `REPL exited with code ${exitCode}\n${output}`);
-    assert(output.includes('Type: %func()->int'),
+    assert(output.includes('Type: fn() -> int'),
         `:type should infer the lambda return type from the local initializer\n${output}`);
     assert(output.includes('Expression: lambda exact'),
         `:type should print the lambda expression fact\n${output}`);

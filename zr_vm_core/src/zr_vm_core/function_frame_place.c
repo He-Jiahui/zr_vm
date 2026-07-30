@@ -1665,12 +1665,11 @@ static TZrBool function_frame_is_constructor(const SZrFunction *function) {
                      ZrCore_NativeString_Compare(name, "constructor") == 0);
 }
 
-static TZrBool function_frame_get_constructor_initialized_field_bitmap(
+static TZrBool function_frame_get_constructor_initialized_field_bitmap_layout(
         const SZrFunction *function,
-        TZrStackValuePointer frameBase,
         FZrFunctionFrameTypeLayoutResolver resolver,
         TZrPtr resolverUserData,
-        const TZrUInt64 **outInitializedFieldWords,
+        TZrUInt32 *outBitmapByteOffset,
         TZrUInt32 *outInitializedFieldWordCount) {
     const SZrFunctionFrameSlotLayout *receiverLayout;
     const SZrTypeLayout *receiverTypeLayout;
@@ -1678,14 +1677,14 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap(
     TZrUInt32 byteCount;
     TZrUInt32 bitmapOffset;
 
-    if (outInitializedFieldWords != ZR_NULL) {
-        *outInitializedFieldWords = ZR_NULL;
+    if (outBitmapByteOffset != ZR_NULL) {
+        *outBitmapByteOffset = 0u;
     }
     if (outInitializedFieldWordCount != ZR_NULL) {
         *outInitializedFieldWordCount = 0u;
     }
-    if (function == ZR_NULL || frameBase == ZR_NULL || resolver == ZR_NULL ||
-        outInitializedFieldWords == ZR_NULL ||
+    if (function == ZR_NULL || resolver == ZR_NULL ||
+        outBitmapByteOffset == ZR_NULL ||
         outInitializedFieldWordCount == ZR_NULL ||
         !function_frame_is_constructor(function)) {
         return ZR_FALSE;
@@ -1710,19 +1709,78 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap(
         return ZR_FALSE;
     }
     byteCount = wordCount * (TZrUInt32)sizeof(TZrUInt64);
-    if (function->frameByteSize < byteCount) {
+    if (function->frameByteAlign < (TZrUInt32)_Alignof(TZrUInt64) ||
+        function->frameByteSize < byteCount) {
         return ZR_FALSE;
     }
     bitmapOffset = function->frameByteSize - byteCount;
-    if ((bitmapOffset % (TZrUInt32)_Alignof(TZrUInt64)) != 0u ||
-        receiverLayout->byteOffset > bitmapOffset ||
-        receiverLayout->byteSize > bitmapOffset - receiverLayout->byteOffset) {
+    if ((bitmapOffset % (TZrUInt32)_Alignof(TZrUInt64)) != 0u) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
+        TZrUInt32 storageSize = slotLayout->byteSize;
+
+        if ((slotLayout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) != 0u) {
+            storageSize = (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding);
+        } else if ((slotLayout->reserved0 &
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u) {
+            storageSize = (TZrUInt32)sizeof(SZrFunctionFrameIndirectAliasBinding);
+        }
+        if (storageSize == 0u ||
+            slotLayout->byteOffset > bitmapOffset ||
+            storageSize > bitmapOffset - slotLayout->byteOffset) {
+            return ZR_FALSE;
+        }
+    }
+
+    *outBitmapByteOffset = bitmapOffset;
+    *outInitializedFieldWordCount = wordCount;
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 *outBitmapByteOffset,
+        TZrUInt32 *outInitializedFieldWordCount) {
+    return function_frame_get_constructor_initialized_field_bitmap_layout(
+            function,
+            ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+            state,
+            outBitmapByteOffset,
+            outInitializedFieldWordCount);
+}
+
+static TZrBool function_frame_get_constructor_initialized_field_bitmap(
+        const SZrFunction *function,
+        TZrStackValuePointer frameBase,
+        FZrFunctionFrameTypeLayoutResolver resolver,
+        TZrPtr resolverUserData,
+        const TZrUInt64 **outInitializedFieldWords,
+        TZrUInt32 *outInitializedFieldWordCount) {
+    TZrUInt32 bitmapOffset;
+
+    if (outInitializedFieldWords != ZR_NULL) {
+        *outInitializedFieldWords = ZR_NULL;
+    }
+    if (outInitializedFieldWordCount != ZR_NULL) {
+        *outInitializedFieldWordCount = 0u;
+    }
+    if (frameBase == ZR_NULL || outInitializedFieldWords == ZR_NULL ||
+        outInitializedFieldWordCount == ZR_NULL ||
+        !function_frame_get_constructor_initialized_field_bitmap_layout(
+                function,
+                resolver,
+                resolverUserData,
+                &bitmapOffset,
+                outInitializedFieldWordCount)) {
         return ZR_FALSE;
     }
 
     *outInitializedFieldWords =
             (const TZrUInt64 *)((const TZrByte *)frameBase + bitmapOffset);
-    *outInitializedFieldWordCount = wordCount;
     return ZR_TRUE;
 }
 

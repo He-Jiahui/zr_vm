@@ -1261,7 +1261,9 @@ static void import_publish_compiled_property_contracts(
     }
 }
 
-static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, const SZrFunction *function) {
+TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
+        SZrCompilerState *cs,
+        const SZrFunction *function) {
     const TZrByte *currentPos;
     TZrSize remainingDataSize;
     TZrUInt32 prototypeCount;
@@ -1524,7 +1526,7 @@ static TZrBool register_runtime_import_metadata(SZrCompilerState *cs,
     import_metadata_apply_default_builtin_root(cs->state, &modulePrototype, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
     import_metadata_apply_default_builtin_root(cs->state, &modulePrototype, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
     initialTypeCount = cs->typePrototypes.length;
-    if (!register_runtime_prototypes_from_function(cs, function)) {
+    if (!ZrParser_TypeInference_RegisterRuntimePrototypes(cs, function)) {
         return ZR_FALSE;
     }
 
@@ -1884,7 +1886,7 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
                 if (runtimeFunction == ZR_NULL) {
                     result = ZR_FALSE;
                 } else {
-                    result = register_runtime_prototypes_from_function(
+                    result = ZrParser_TypeInference_RegisterRuntimePrototypes(
                             cs,
                             runtimeFunction);
                     ZrCore_Function_Free(cs->state, runtimeFunction);

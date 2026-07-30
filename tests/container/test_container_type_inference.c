@@ -416,7 +416,7 @@ static void test_container_type_inference_typed_function_returns_preserve_native
     const char *source =
             "let container = import(\"zr.container\");\n"
             "let {LinkedList} = import(\"zr.container\");\n"
-            "buildList(): LinkedList<int> {\n"
+            "fn buildList(): LinkedList<int> {\n"
             "    var list: LinkedList<int> = new container.LinkedList<int>();\n"
             "    return list;\n"
             "}\n"

@@ -1,19 +1,11 @@
-module "decorated_user";
+module decorated_user;
 
 let provider = import("provider");
 
-comptime markFunction(target: typeof Function, bonus: int = 0) {
-    return { metadata: { instrumented: bonus } };
+pub fn decoratedBonusDefault(): int {
+    return provider.compute(seed: 10, factor: 3);
 }
 
-#markFunction(bonus: compute(seed: 10, factor: 3))#
-pub decoratedBonusDefault(): int {
-    var meta = typeof(decoratedBonusDefault).metadata;
-    return meta.instrumented;
-}
-
-#markFunction(bonus: compute(10, bonus: 7))#
-pub decoratedBonusNamed(): int {
-    var meta = typeof(decoratedBonusNamed).metadata;
-    return meta.instrumented;
+pub fn decoratedBonusNamed(): int {
+    return provider.compute(10, bonus: 7);
 }

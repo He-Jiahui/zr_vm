@@ -133,6 +133,7 @@ static void ref_struct_collect_type_declarations(
 TZrBool compiler_ref_struct_type_set_init(
         SZrRefStructTypeSet *typeSet,
         SZrState *state,
+        SZrSemanticContext *semanticContext,
         SZrAstNode *root) {
     if (typeSet == ZR_NULL || state == ZR_NULL || root == ZR_NULL) {
         return ZR_FALSE;
@@ -148,6 +149,7 @@ TZrBool compiler_ref_struct_type_set_init(
             &typeSet->interfaceTypeNames,
             sizeof(SZrString *),
             ZR_PARSER_INITIAL_CAPACITY_TINY);
+    typeSet->semanticContext = semanticContext;
     ref_struct_collect_type_declarations(typeSet, state, root);
     return ZR_TRUE;
 }
@@ -186,10 +188,24 @@ TZrBool compiler_ref_struct_type_is_ref_like(
         return ZR_FALSE;
     }
     for (segment = type; segment != ZR_NULL; segment = segment->subType) {
+        SZrString *name = ref_struct_type_segment_name(segment);
+
         if (ref_struct_name_array_contains(
                     &typeSet->refLikeTypeNames,
-                    ref_struct_type_segment_name(segment))) {
+                    name)) {
             return ZR_TRUE;
+        }
+        if (typeSet->semanticContext != ZR_NULL && name != ZR_NULL) {
+            TZrTypeId typeId = ZrParser_CanonicalType_FromName(
+                    typeSet->semanticContext, name);
+
+            if (typeId != ZR_SEMANTIC_ID_INVALID &&
+                ZrParser_CanonicalType_HasCapabilities(
+                        typeSet->semanticContext,
+                        typeId,
+                        ZR_CANONICAL_TYPE_CAPABILITY_REF_LIKE)) {
+                return ZR_TRUE;
+            }
         }
     }
     return ZR_FALSE;
@@ -650,7 +666,10 @@ ZR_PARSER_API TZrBool compiler_validate_ref_struct_rules(
     memset(&context, 0, sizeof(context));
     context.compiler = compiler;
     if (!compiler_ref_struct_type_set_init(
-                &context.typeSet, compiler->state, node)) {
+                &context.typeSet,
+                compiler->state,
+                compiler->semanticContext,
+                node)) {
         return ZR_FALSE;
     }
     success = ref_struct_validate_node(&context, node, ZR_TRUE);

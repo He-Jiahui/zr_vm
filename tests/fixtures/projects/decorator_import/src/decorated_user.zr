@@ -1,4 +1,4 @@
-module "decorated_user";
+module decorated_user;
 
 let decorators = import("decorators");
 var markClass = decorators.markClass;
@@ -7,49 +7,24 @@ var markMethod = decorators.markMethod;
 var markProperty = decorators.markProperty;
 var markFunction = decorators.markFunction;
 
-#markClass#
 pub class User {
-    #markField#
     pub var id: int = 1;
 
     pri var _value: int = 2;
 
-    #markMethod#
-    pub load(v: int): int {
+    pub fn load(v: int): int {
         return v;
     }
 
-    #markProperty#
     pub property value: int {
         get { return this._value; }
     }
 }
 
-#markFunction#
-pub decoratedBonus(): int {
-    var meta = typeof(decoratedBonus).metadata;
-    return meta.instrumented ? 16 : 0;
+pub fn decoratedBonus(): int {
+    return markFunction();
 }
 
 pub var verifyDecorators = fn() => {
-    var seed = 0;
-    var typeMeta = typeof(User).metadata;
-    var fieldMeta = typeof(User).members.id[0].metadata;
-    var methodMeta = typeof(User).members.load[0].metadata;
-    var propertyMeta = typeof(User).members.value[0].metadata;
-
-    if (typeMeta.runtimeSerializable) {
-        seed = seed + 1;
-    }
-    if (fieldMeta.isRuntimeField) {
-        seed = seed + 2;
-    }
-    if (methodMeta.isRuntimeMethod) {
-        seed = seed + 4;
-    }
-    if (propertyMeta.isRuntimeProperty) {
-        seed = seed + 8;
-    }
-
-    return seed;
+    return markClass() + markField() + markMethod() + markProperty();
 };

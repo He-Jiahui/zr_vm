@@ -10,7 +10,7 @@ class SyntaxReferenceCounter {
         return this.stored;
     }
 
-    pub increment(delta: int): int {
+    pub fn increment(delta: int): int {
         this.stored = this.stored + delta;
         return this.stored;
     }

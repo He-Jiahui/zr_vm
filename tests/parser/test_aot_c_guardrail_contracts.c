@@ -352,16 +352,16 @@ static const char *aot_c_guardrail_find_forbidden_token_in_function_body(const c
 }
 
 static const char *aot_c_guardrail_scalar_typed_direct_call_fixture_source(void) {
-    return "func add_i64(left: int, right: int): int {\n"
+    return "fn add_i64(left: int, right: int): int {\n"
            "    return left + right;\n"
            "}\n"
-           "func add_u64(left: uint, right: uint): uint {\n"
+           "fn add_u64(left: uint, right: uint): uint {\n"
            "    return left + right;\n"
            "}\n"
-           "func add_f64(left: float, right: float): float {\n"
+           "fn add_f64(left: float, right: float): float {\n"
            "    return left + right;\n"
            "}\n"
-           "func both(left: bool, right: bool): bool {\n"
+           "fn both(left: bool, right: bool): bool {\n"
            "    return left && right;\n"
            "}\n"
            "var i64Left: int = 19;\n"

@@ -90,14 +90,12 @@ ownership world 里的字段生命周期现在直接写在字段类型上，而�
 
 当前面向用户的规则是：
 
-- 推荐新写法使用 `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>` 所有权泛型
-- 推荐所有权状态转换使用零参数成员方法：`share()` / `weak()` / `borrow()` / `loan()` / `upgrade()` / `release()` / `detach()`
-- `var field: %unique T`
-- `var field: %shared T`
-- `var field: %weak T` 用于打断共享强环
-- 语句或 block 级 `using` 作为 lifetime fence；`%using` 作为兼容写法保留
+- 持有型字段只使用 `Unique<T>` / `Shared<T>` / `Weak<T>`
+- 借用只使用 `ref T` / `ref readonly T`，并以 lexical block 限定 lifetime
+- 所有权转换只使用 `own T(...)`、`share()`、`weak()`、`upgrade()`、`intoGc()` 和 `drop(value)`
+- 语句或 block 级 `using` 只负责可关闭资源的 deterministic cleanup，不再承担 borrow/loan 兼容 lowering
 - 字段级 legacy `%using` 语法已经移出 public surface
-- owner 值跨入 plain GC 类型必须显式 `%detach` 或通过 bridge 完成
+- owner 值跨入 plain GC 类型必须显式 `intoGc()` 或通过 bridge 完成
 
 ## 源级写法
 
@@ -117,7 +115,7 @@ struct HandleBox {
 
 迁移方向很直接：
 
-- `%unique T` / `%shared T` / `%weak T` / `%borrow T` / `%loan T` 过渡期继续可用，并归一到所有权泛型语义
+- `%unique/%shared/%weak/%borrow/%loan` 和 `Borrow<T>/Loan<T>` 均为已删除语法；parser 只产出迁移错误，不构建可编译兼容 AST
 - 旧字段级 lifecycle 标记迁到字段类型本身
 - block cleanup 继续使用语句级 `using`
 - parser 对 legacy field-scoped `%using` 产出迁移诊断，不再把它当有效字段 surface
@@ -130,15 +128,10 @@ parser 现在把字段生命周期分成两个世界：
   - `Unique<T>`
   - `Shared<T>`
   - `Weak<T>`
-  - `Borrow<T>`
-  - `Loan<T>`
-  - `%unique`
-  - `%shared`
-  - `%weak`
-  - `%borrow` / `%borrowed`
-  - `%loan` / `%loaned`
+  - `ref readonly T`（只允许非逃逸引用位置）
+  - `ref T`（只允许非逃逸引用位置）
   - 其他非 owner qualifier 仍只表示类型能力，不自动变成 owner teardown surface
-- 语句级 `using` / `%using`
+- 语句级 `using`
   - 继续表示 block / scope 级 close fence
 
 这意味着字段语义不再依赖“字段上是否额外写了 `%using` 前缀”，而是直接依赖字段类型。
@@ -146,13 +139,13 @@ parser 现在把字段生命周期分成两个世界：
 semantic analyzer 侧当前做两件事：
 
 1. 始终为字段注册正常的 field symbol。
-2. 当字段类型是 `Unique<T>` / `Shared<T>` / `Weak<T>` 或兼容 `%unique T` / `%shared T` / `%weak T` 时，登记 deterministic cleanup metadata。
+2. 当字段类型是 `Unique<T>` / `Shared<T>` / `Weak<T>` 时，登记 deterministic cleanup metadata。
 
 所有权泛型路径不会把 `Unique` / `Shared` 等 wrapper 当普通用户类型存进 prototype metadata。字段 metadata 仍写入 inner type name，例如 `Unique<Resource>` 的字段类型名是 `Resource`，同时通过 `ownershipQualifier` 保存 owner kind。
 
-`Unique<T>(value)`、`Shared<T>(value)`、`Weak<T>(value)`、`Borrow<T>(value)` 和 `Loan<T>(value)` 是内建构造 surface。parser 会把这些显式泛型调用改写为既有 ownership construct expression，compiler 继续发出原有 ownership builtin opcode，不引入新的 runtime owner layout。
+源码使用 `own T(...)` 创建 unique owner，通过 `owner.share()` 建立 shared owner，通过 `shared.weak()` 建立 weak handle。`Unique<T>(value)`、`Shared<T>(value)`、`Weak<T>(value)`、`Borrow<T>(value)` 和 `Loan<T>(value)` 均不再是源码构造 surface。
 
-`owner.share()`、`shared.weak()`、`owner.borrow()`、`owner.loan()`、`weak.upgrade()`、`owner.release()` 和 `owner.detach()` 是同一套所有权泛型的成员式操作 surface。type inference 按 receiver ownership qualifier 校验可用性并返回对应 wrapper 或 plain/null type；compiler 在 member-chain lowering 中直接发出 dedicated `OWN_*` opcode，不把这些名字当普通用户成员查找。
+有效成员式操作仅为 `owner.share()`、`shared.weak()`、`weak.upgrade()` 和 `owner.intoGc()`；显式释放写作 `drop(owner)`。readonly/mutable view 分别写作 `var view: ref readonly T = ref owner` 与 `var view: ref T = ref owner`。`borrow()`、`loan()`、`release()` 和 `detach()` 会在 type inference/compiler 边界直接失败并给出新语法建议，不再降级成 `OWN_*` 操作。
 
 cleanup plan 里仍保留原来的区分：
 
@@ -170,16 +163,16 @@ cleanup plan 里仍保留原来的区分：
 
 `using` 现在只表达 scope cleanup fence，不负责推断 owner，也不在值逃逸时自动把 owner 变成 weak。owner 状态仍由类型和显式操作表达：
 
-- `Unique<T>` 表示唯一 owner，可显式 borrow、loan、share 或 `%detach`
+- `Unique<T>` 表示唯一 owner，可建立 `ref` view、share 或通过 `intoGc()` 返回 GC world
 - `Shared<T>` 表示引用计数 owner，可显式创建 `Weak<T>`
-- `Weak<T>` 只能从允许 weak 的 owner 显式创建；不能隐式传给 `Borrow<T>`，访问目标前必须通过 `%upgrade` 或 nullable check
-- `Borrow<T>` 和 `Loan<T>` 不能逃逸到 return、字段、闭包、全局或跨 async/thread 边界
+- `Weak<T>` 只能从允许 weak 的 owner 显式创建；访问目标前必须通过 `upgrade()` 和 nullable check
+- `ref readonly T` 和 `ref T` 不能逃逸到 return、持有字段、闭包、全局或跨 async/thread 边界
 
-新 surface 下推荐写作 `owner.borrow()`、`owner.loan()`、`owner.share()`、`owner.detach()`、`weak.upgrade()` 和 `owner.release()`；旧 `%borrow/%loan/%shared/%detach/%upgrade/%release` 调用形态只作为迁移/兼容语义继续存在。
+当前 surface 写作 `var view: ref readonly T = ref owner`、`var view: ref T = ref owner`、`owner.share()`、`owner.intoGc()`、`weak.upgrade()` 和 `drop(owner)`。旧百分号调用与旧成员别名只保留定向失败诊断。
 
-旧 `%unique/%shared/%weak/%borrow/%loan T` 类型语法仍作为迁移糖兼容，但 parser 会发出 `legacy_ownership_type_syntax` warning，并建议改写为 `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>`。该 warning 不会阻断 AST 构建或 LSP 语义分析。
+旧 `%unique/%shared/%weak/%borrow/%loan T` 类型语法会发出 `legacy_syntax_removed` error；该错误会阻断生产编译。LSP 可以基于同一诊断提供迁移编辑，但不会把旧源码当成有效程序。
 
-类型系统不再允许 `%unique T` 或 `%shared T` 隐式流入 plain `T`。plain 类型属于普通 GC world；owner 对象跨过去必须显式 `%detach` 或通过运行时 bridge，之后恢复普通 GC tracing/barrier。这样 ownership world 的零 GC 路径是可证明的：owner 对象不会被普通 GC 提前回收，也不会因为一次普通赋值、字段写入或函数调用参数传递悄悄离开 owner graph。赋值/变量初始化、字段赋值表达式和调用参数路径会优先给出 owner-to-plain 专用诊断：`Owned value cannot flow into a plain GC value implicitly`，而不是把它降级成普通类型不匹配或 overload 失败；普通泛型外壳里的 ownership 实参也会递归检查，`Box<Unique<T>>` / `Box<Shared<T>>` 不能仅因外层 canonical name 相同而流入 plain `Box<T>`。
+类型系统不允许 `Unique<T>` 或 `Shared<T>` 隐式流入 plain `T`。plain 类型属于普通 GC world；owner 对象跨过去必须显式 `intoGc()` 或通过运行时 bridge，之后恢复普通 GC tracing/barrier。这样 ownership world 的零 GC 路径是可证明的：owner 对象不会被普通 GC 提前回收，也不会因为一次普通赋值、字段写入或函数调用参数传递悄悄离开 owner graph。赋值/变量初始化、字段赋值表达式和调用参数路径会优先给出 owner-to-plain 专用诊断：`Owned value cannot flow into a plain GC value implicitly`，而不是把它降级成普通类型不匹配或 overload 失败；普通泛型外壳里的 ownership 实参也会递归检查，`Box<Unique<T>>` / `Box<Shared<T>>` 不能仅因外层 canonical name 相同而流入 plain `Box<T>`。
 
 插件 guard 的 `.share()` 是当前明确允许的 plain-to-owner bridge。guard-scoped module handle 本身保持 plain GC object；`p.share()` / `m.share()` 通过 `ZrCore_Ownership_SharePlainValue` 建立 ownership control、把对象加入 GC ignore registry 并返回 `Shared<PluginModule>`，但不会消费或清空原 guard binding。释放该 shared handle 后，强引用计数归零并撤销 GC ignore，plain guard binding 仍只在 guard scope 内有效。该路径用于把插件生命周期显式延长到 guard 外，不能替代普通 owner-to-plain 赋值规则。默认 scoped guard 生命周期也已接到同一 bridge：guard 命中后 compiler 生成隐藏 `Shared` owner，并在 scope cleanup 中发出 `OWN_RELEASE`，可见 guard binding 仍保持 plain module 值。native registry 会通过 core ownership strong-ref observer 追踪这些显式/隐藏 shared owner，并在最后一个 owner 释放后让 `ZrLibrary_NativeRegistry_GetModuleRefCount(global, name)` 回到 0。
 
@@ -254,13 +247,13 @@ rules, cleanup mirrors, and the current nullable-upgrade compatibility boundary.
 
 这轮收敛后的边界是：
 
-- `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>` 是所有权新 surface
-- `share()` / `weak()` / `borrow()` / `loan()` / `upgrade()` / `release()` / `detach()` 成员式所有权 API 已作为新 surface 接入 type inference、compiler lowering 和 runtime 验证
-- direct `%unique/%shared/%weak/%borrow/%loan` type syntax 继续作为兼容 surface
-- 语句级 `using` 是推荐写法，`%using` 继续兼容
+- `Unique<T>` / `Shared<T>` / `Weak<T>` 与 `ref readonly T` / `ref T` 是唯一生产 ownership/reference surface
+- `share()` / `weak()` / `upgrade()` / `intoGc()` 与 `drop(value)` 已接入 type inference、compiler lowering 和 runtime 验证
+- direct `%unique/%shared/%weak/%borrow/%loan` type syntax、`Borrow<T>/Loan<T>` 以及 `.borrow()/.loan()/.release()/.detach()` 均为硬错误
+- 语句级 `using` 是唯一写法，`%using` 只产生 `legacy_syntax_removed` 诊断
 - field-scoped `%using` 只剩迁移诊断，不再是语言设计目标
 - `using` cleanup plan 已记录 owner qualifier 与 release builtin metadata；`Unique<T>` / `Shared<T>` 在正常 scope 退出、`return` 和跨出 using 的 `break` 路径已落到 `OWN_RELEASE`
-- `Borrow<T>` / `Loan<T>` 的直连本地 owner scope-end 已接入；`Borrow<T>` scope 退出结束借用，`Loan<T>(owner)` 和 `owner.loan()` scope 退出都会通过 `OWN_RETURN_LOAN` 把 loaned value 归还 source owner
+- lexical block 内的 `ref readonly` / `ref` binding 在 scope-end 结束 view；`using(ref owner)` 被拒绝，不再进入旧 `Loan<T>` source-slot 归还 lowering
 - `Borrow<T>` / `Loan<T>` 赋值/变量初始化、字段赋值表达式和调用参数逃逸诊断已接入；Borrow 只允许流向 Borrow 目标，Loan 只允许流向 Loan 或 Borrow 目标
 - `Borrow<T>` / `Loan<T>` 脚本级 `pub/pro var` 导出全局逃逸诊断已接入，并会递归拒绝 `Holder<Borrow<T>>` / `Holder<Loan<T>>` 这类嵌套 borrow/loan 泛型实参；private 顶层临时 owner/borrow/loan 仍保留给当前 runtime smoke path
 - `Borrow<T>` / `Loan<T>` 闭包捕获逃逸诊断已接入；闭包和嵌套函数不能保存直接或嵌套在普通泛型实参里的借用/借出值
@@ -284,20 +277,20 @@ rules, cleanup mirrors, and the current nullable-upgrade compatibility boundary.
 - parser
   - 直接 owner field 可解析
   - legacy field-scoped `%using` 报迁移诊断
-  - legacy `%unique/%shared/%weak/%borrow/%loan T` type syntax 报 `legacy_ownership_type_syntax` warning，同时继续构建 AST
+  - legacy `%unique/%shared/%weak/%borrow/%loan T` type syntax 报 `legacy_syntax_removed` error，不进入生产编译
 - compiler / prototype metadata
-  - direct `%unique/%shared` field 写入 ownership metadata
+  - direct `Unique<T>/Shared<T>` field 写入 ownership metadata
   - `Unique<Resource>` / `Shared<Resource>` field 写入 inner type name 与 ownership metadata
-  - `Unique<T>(value)` 等构造调用发出对应 ownership builtin opcode
-  - `share()` / `weak()` / `borrow()` / `loan()` / `upgrade()` / `release()` / `detach()` 成员调用发出 dedicated ownership opcode family
-  - `generic_session_lifecycle_pass.zr` 真实 reference fixture 会组合 `Unique<T>` / `Shared<T>` / `Borrow<T>` / `Loan<T>` / `Weak<T>`、`detach()`、`upgrade()` 和 `release()`，compiler integration 读取该 `.zr` 后检查 ownership opcode family 并执行返回 mask `63`
+  - `own T(...)`、`share()`、`weak()`、`upgrade()`、`intoGc()` 和 `drop(value)` 发出对应 ownership opcode family
+  - `.borrow()/.loan()/.release()/.detach()` 在 lowering 前失败
+  - `generic_session_lifecycle_pass.zr` 真实 reference fixture 会组合 `Unique<T>` / `Shared<T>` / `ref readonly T` / `ref T` / `Weak<T>`、`intoGc()`、`upgrade()` 和 `drop(value)`，compiler integration 读取该 `.zr` 后检查 ownership opcode family 并执行生命周期断言
   - legacy field-scoped `%using` 不再作为新 surface 写入
 - language server semantic metadata
   - direct owner field 会登记 cleanup plan
   - `using` resource cleanup plan 会记录 owner qualifier 与 cleanup builtin kind
   - `using (owner)` owner 泛型路径会在正常 scope 退出、`return` 和跨出 using 的 `break` 路径发出 `OWN_RELEASE`
-  - `using (Borrow<T>(owner))` 会在正常 scope 退出和 direct return 前清理借用
-  - `using (Loan<T>(owner))` 和 `using (owner.loan())` 会在正常 scope 退出和 break 前通过 `OWN_RETURN_LOAN` 归还 source owner
+  - lexical block 内的 `ref readonly` / `ref` binding 会按 region 结束 view
+  - `using(ref owner)`、`using(Loan<T>(owner))` 和 `using(owner.loan())` 均被拒绝，旧 source-slot resolver 已从生产 compiler 删除
   - Borrow/Loan 写入 plain/持有型目标会触发专用逃逸诊断
   - Unique/Shared 写入 plain 目标会触发 owner-to-plain 专用诊断
   - Borrow/Loan 写入 plain 字段会触发专用逃逸诊断

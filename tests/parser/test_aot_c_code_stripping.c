@@ -517,6 +517,25 @@ static void initialize_test_union_layout(SZrTypeLayout *layout,
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(layout));
 }
 
+static void initialize_test_struct_layout(SZrTypeLayout *layout,
+                                          TZrUInt32 byteSize,
+                                          TZrUInt32 byteAlign,
+                                          const SZrTypeLayoutField *fields,
+                                          TZrUInt32 fieldCount,
+                                          TZrUInt32 cTypeId) {
+    TEST_ASSERT_NOT_NULL(layout);
+    ZrCore_TypeLayout_InitStruct(layout,
+                                 byteSize,
+                                 byteAlign,
+                                 ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+                                 ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+                                 fields,
+                                 fieldCount);
+    layout->cTypeId = cTypeId;
+    layout->layoutHash = ZrCore_TypeLayout_ComputeHash(layout);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(layout));
+}
+
 static void install_static_callable_trim_type_layout_cache(SZrState *state, SZrFunction *root) {
     const TZrUInt32 prototypeCount = 3u;
 
@@ -1667,6 +1686,118 @@ static void test_aot_c_code_stripping_rejects_unreachable_materialized_parameter
     unreachable->frameByteAlign = 8u;
     unreachable->frameSlotLayoutLength = 2u;
     unreachable->frameSlotLayouts = layouts;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_bitmap(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *unreachable;
+    SZrFunctionFrameSlotLayout *layouts;
+    SZrTypeLayoutField field;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    unreachable = &function->childFunctionList[1];
+    unreachable->functionName = ZrCore_String_CreateFromNative(state, "constructor");
+    TEST_ASSERT_NOT_NULL(unreachable->functionName);
+    unreachable->parameterCount = 1u;
+    unreachable->frameSlotLayouts[0].isParameter = 1u;
+    unreachable->frameSlotLayouts[0].reserved0 =
+            ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP;
+
+    memset(&field, 0, sizeof(field));
+    field.byteSize = 8u;
+    initialize_test_struct_layout(
+            &function->prototypeFrameTypeLayouts[2], 8u, 8u, &field, 1u, 2u);
+    unreachable->frameByteSize = 16u;
+    unreachable->frameByteAlign = 8u;
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_constructor_bitmap_layout";
+    options.sourceHash = "aot-c-code-stripping-constructor-bitmap-layout";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-constructor-bitmap-layout";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "constructor_bitmap_layout",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    unreachable->frameByteSize = 8u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    unreachable->frameByteSize = 16u;
+    unreachable->functionName = ZrCore_String_CreateFromNative(state, "not_constructor");
+    TEST_ASSERT_NOT_NULL(unreachable->functionName);
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    unreachable->functionName = ZrCore_String_CreateFromNative(state, "constructor");
+    TEST_ASSERT_NOT_NULL(unreachable->functionName);
+    initialize_test_struct_layout(
+            &function->prototypeFrameTypeLayouts[2], 8u, 8u, ZR_NULL, 0u, 2u);
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    field.byteSize = 4u;
+    initialize_test_struct_layout(
+            &function->prototypeFrameTypeLayouts[2], 4u, 4u, &field, 1u, 2u);
+    unreachable->frameSlotLayouts[0].byteSize = 4u;
+    unreachable->frameSlotLayouts[0].byteAlign = 4u;
+    unreachable->frameByteAlign = 4u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    field.byteSize = 8u;
+    initialize_test_struct_layout(
+            &function->prototypeFrameTypeLayouts[2], 8u, 8u, &field, 1u, 2u);
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  unreachable->frameSlotLayouts,
+                                  sizeof(SZrFunctionFrameSlotLayout),
+                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layouts);
+    memset(layouts, 0, sizeof(SZrFunctionFrameSlotLayout) * 2u);
+    layouts[0].stackSlot = 0u;
+    layouts[0].byteSize = 8u;
+    layouts[0].byteAlign = 8u;
+    layouts[0].typeLayoutId = 2u;
+    layouts[0].slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layouts[0].isParameter = 1u;
+    layouts[0].reserved0 =
+            ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP;
+    layouts[1].stackSlot = 1u;
+    layouts[1].byteOffset = 8u;
+    layouts[1].byteSize = 8u;
+    layouts[1].byteAlign = 8u;
+    layouts[1].typeLayoutId = 1u;
+    layouts[1].slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    unreachable->stackSize = 2u;
+    unreachable->frameSlotLayouts = layouts;
+    unreachable->frameSlotLayoutLength = 2u;
+    unreachable->frameByteSize = 24u;
+    unreachable->frameByteAlign = 8u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    unreachable->frameByteSize = 16u;
     assert_aot_c_write_rejected_without_output(
             state, function, generatedCPath, &options);
 
@@ -3395,6 +3526,7 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_layout);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_type_layout);
     RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_materialized_parameter_undercount);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_bitmap);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout);
     RUN_TEST(test_aot_c_code_stripping_preserves_legal_frame_alias_layouts);
     RUN_TEST(test_aot_c_code_stripping_preserves_property_accessor_root);

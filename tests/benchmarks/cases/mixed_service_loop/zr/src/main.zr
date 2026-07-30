@@ -10,7 +10,7 @@ class Service {
         this.bias = bias;
     }
 
-    pub handle(value: int, ticket: int): int {
+    pub fn handle(value: int, ticket: int): int {
         this.bias = (this.bias + ticket + this.weight) % 10007;
         if ((ticket + this.weight) % 2 == 0) {
             return (value * this.weight + this.bias + ticket) % 1000003;

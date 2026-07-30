@@ -1,7 +1,7 @@
 let local = import("local_pair");
 let native = import("native_imports");
 
-run(): int {
+fn run(): int {
     return native.touch() + local.score();
 }
 

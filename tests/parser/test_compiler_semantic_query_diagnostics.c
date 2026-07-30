@@ -170,7 +170,7 @@ static void test_compile_script_publishes_semantic_query_diagnostics_without_err
 
 static void test_compile_script_publishes_interval_logical_unreachable_branch_diagnostic(void) {
     const TZrChar *source =
-            "choose(seed: u8): int {\n"
+            "fn choose(seed: u8): int {\n"
             "    return seed < 300 ? 1 : 2;\n"
             "}\n";
     const SZrStructuredDiagnostic *diagnostic;
@@ -210,7 +210,7 @@ static void test_compile_script_publishes_interval_logical_unreachable_branch_di
 
 static void test_compile_script_publishes_numeric_overflow_diagnostic(void) {
     const TZrChar *source =
-            "overflow(): int {\n"
+            "fn overflow(): int {\n"
             "    return 9223372036854775807 + 1;\n"
             "}\n";
     const SZrStructuredDiagnostic *diagnostic;
@@ -250,7 +250,7 @@ static void test_compile_script_publishes_numeric_overflow_diagnostic(void) {
 
 static void test_compile_script_publishes_array_bounds_diagnostic(void) {
     const TZrChar *source =
-            "pick(): int {\n"
+            "fn pick(): int {\n"
             "    var values = [1, 2];\n"
             "    return values[2];\n"
             "}\n";
@@ -291,7 +291,7 @@ static void test_compile_script_publishes_array_bounds_diagnostic(void) {
 
 static void test_compile_script_publishes_interval_array_bounds_diagnostic(void) {
     const TZrChar *source =
-            "pick(index: u8): int {\n"
+            "fn pick(index: u8): int {\n"
             "    var values = [1, 2];\n"
             "    var maybe = values[index];\n"
             "    return values[index + 2];\n"
@@ -336,7 +336,7 @@ static void test_compile_script_publishes_interval_array_bounds_diagnostic(void)
 
 static void test_compile_script_publishes_possible_interval_array_bounds_warning(void) {
     const TZrChar *source =
-            "pick(index: u8): int {\n"
+            "fn pick(index: u8): int {\n"
             "    var values = [1, 2];\n"
             "    return values[index];\n"
             "}\n";
@@ -382,7 +382,7 @@ static void test_compile_script_publishes_possible_interval_array_bounds_warning
 
 static void test_compile_script_publishes_primitive_integer_array_bounds_warning(void) {
     const TZrChar *source =
-            "pick(index: int): int {\n"
+            "fn pick(index: int): int {\n"
             "    var values = [1, 2];\n"
             "    return values[index];\n"
             "}\n";
@@ -428,11 +428,11 @@ static void test_compile_script_publishes_primitive_integer_array_bounds_warning
 
 static void test_compile_script_publishes_array_min_max_bounds_diagnostics(void) {
     const TZrChar *source =
-            "maybe(index: u8): int {\n"
+            "fn maybe(index: u8): int {\n"
             "    var values: int[1 .. 3] = [1, 2];\n"
             "    return values[index];\n"
             "}\n"
-            "definite(): int {\n"
+            "fn definite(): int {\n"
             "    var values: int[1 .. 3] = [1, 2];\n"
             "    return values[3];\n"
             "}\n";
@@ -482,11 +482,11 @@ static void test_compile_script_publishes_array_min_max_bounds_diagnostics(void)
 
 static void test_compile_script_publishes_min_only_array_negative_interval_warning(void) {
     const TZrChar *source =
-            "maybe(index: int): int {\n"
+            "fn maybe(index: int): int {\n"
             "    var values: int[1 ..] = [1, 2];\n"
             "    return values[index];\n"
             "}\n"
-            "positive(index: u8): int {\n"
+            "fn positive(index: u8): int {\n"
             "    var values: int[1 ..] = [1, 2];\n"
             "    return values[index];\n"
             "}\n";
@@ -537,7 +537,7 @@ static void test_compile_script_publishes_min_only_array_negative_interval_warni
 
 static void test_compile_script_publishes_non_integer_array_index_diagnostic(void) {
     const TZrChar *source =
-            "pick(): int {\n"
+            "fn pick(): int {\n"
             "    var values = [1, 2];\n"
             "    return values[\"name\"];\n"
             "}\n";
@@ -586,7 +586,7 @@ static void test_compile_script_publishes_non_integer_array_index_diagnostic(voi
 
 static void test_compile_script_publishes_branch_join_definite_assignment_diagnostic(void) {
     const TZrChar *source =
-            "choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    var seed: int;\n"
             "    if (flag) {\n"
             "        seed = 1;\n"
@@ -629,7 +629,7 @@ static void test_compile_script_publishes_branch_join_definite_assignment_diagno
 
 static void test_compile_script_publishes_reaching_definition_for_definition_query(void) {
     const TZrChar *source =
-            "choose(): int {\n"
+            "fn choose(): int {\n"
             "    var seed: int = 0;\n"
             "    seed = 3;\n"
             "    return seed;\n"
@@ -688,7 +688,7 @@ static void test_compile_script_publishes_reaching_definition_for_definition_que
 
 static void test_compile_script_cfg_reaching_definitions_rejects_divergent_branch_writes(void) {
     const TZrChar *source =
-            "choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    var seed: int;\n"
             "    if (flag) {\n"
             "        seed = 1;\n"
@@ -769,7 +769,7 @@ static void test_compile_script_cfg_reaching_definitions_rejects_divergent_branc
 
 static void test_compile_script_cfg_reaching_definitions_rejects_loop_carried_write(void) {
     const TZrChar *source =
-            "choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    var seed: int = 0;\n"
             "    while (flag) {\n"
             "        seed;\n"
@@ -864,7 +864,7 @@ static void test_compile_script_cfg_reaching_definitions_rejects_loop_carried_wr
 
 static void test_compile_script_cfg_reaching_definitions_preserves_true_loop_break_write(void) {
     const TZrChar *source =
-            "choose(): int {\n"
+            "fn choose(): int {\n"
             "    var seed: int = 0;\n"
             "    while (true) {\n"
             "        seed = 1;\n"
@@ -946,7 +946,7 @@ static void test_compile_script_cfg_reaching_definitions_preserves_true_loop_bre
 
 static void test_compile_script_suppresses_true_loop_break_definite_assignment_diagnostic(void) {
     const TZrChar *source =
-            "choose(): int {\n"
+            "fn choose(): int {\n"
             "    var seed: int;\n"
             "    while (true) {\n"
             "        seed = 1;\n"
@@ -1015,7 +1015,7 @@ static void test_compiler_error_publishes_persistent_semantic_diagnostic_fact(vo
     TEST_ASSERT_TRUE(cs.hasError);
     TEST_ASSERT_NOT_NULL(cs.errorMessage);
     TEST_ASSERT_NOT_NULL(strstr(
-            cs.errorMessage, "%ref parameter requires the 'ref' argument marker"));
+            cs.errorMessage, "ref parameter requires the 'ref' argument marker"));
     TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
     cs.hasError = ZR_FALSE;
     ZrParser_Compiler_ClearStructuredError(&cs);
@@ -1030,7 +1030,7 @@ static void test_compiler_error_publishes_persistent_semantic_diagnostic_fact(vo
     TEST_ASSERT_NOT_NULL(diagnostic->message);
     TEST_ASSERT_NOT_NULL(strstr(
             ZrCore_String_GetNativeString(diagnostic->message),
-            "%ref parameter requires the 'ref' argument marker"));
+            "ref parameter requires the 'ref' argument marker"));
 
     memset(&diagnostics, 0, sizeof(diagnostics));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(

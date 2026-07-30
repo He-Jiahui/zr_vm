@@ -15,6 +15,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_definite_assignment.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_reaching_definitions.c
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/attribute_contract.h
+  - zr_vm_parser/include/zr_vm_parser/compile_tool.h
+  - zr_vm_parser/include/zr_vm_parser/comptime_contract.h
+  - zr_vm_parser/include/zr_vm_parser/declaration_transform_contract.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
@@ -46,6 +50,13 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
+  - zr_vm_parser/src/zr_vm_parser/attribute_contract.c
+  - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
+  - zr_vm_parser/src/zr_vm_parser/declaration_transform_contract.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_attribute_binding.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_declaration_transform.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
@@ -109,6 +120,13 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
+  - zr_vm_parser/src/zr_vm_parser/attribute_contract.c
+  - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
+  - zr_vm_parser/src/zr_vm_parser/declaration_transform_contract.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_attribute_binding.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_declaration_transform.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c
@@ -167,6 +185,10 @@ tests:
   - tests/language_server/test_lsp_project_utf16_ranges.c
   - tests/language_server/test_lsp_source_contracts.c
   - tests/parser/test_compiler_features.c
+  - tests/compileTime/test_attribute_contract.c
+  - tests/compileTime/test_comptime_contract.c
+  - tests/compileTime/test_comptime_runtime_contract.c
+  - tests/compileTime/test_declaration_transform_contract.c
   - tests/module/test_module_system.c
   - tests/parser/test_union.c
   - tests/acceptance/2026-06-17-union-types.md
@@ -382,7 +404,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
     的分类合同，以及下游计划的 promotion gate
 - `current-syntax-convergence.md`
   - `README.md` 作为现行语言表面的唯一规范，以及 parser/LSP 对 `module`、`import(...)`、`ref` 的已实现边界
-  - `ref T` 与 `ref readonly T` 通过目标 TypeRef 决定可写性，ownership fact 收敛仍待下游语义层完成
+  - 生产 parser 一次性拒绝旧 `%` 关键字，migration frontend 只生成诊断/编辑，普通 `%` 保持取模
+- `compile-time-typed-generation.md`
+  - `zr.compile` typed descriptor、comptime effect/budget、AttributeUsage 与 immutable declaration Patch 契约
+  - 当前 GeneratedField rebind/layout 能力，以及仍阻断 Gate 11 M4/M5 的 typed additions/consumer 缺口
 - `legacy-syntax-migration-frontend.md`
   - parser-owned migration plan、词法屏蔽边界和 source-hash/overlap 防御
   - 当前 parser/compiler 已证明的 `resource class` machine edit 与其余 review/gate 边界
@@ -419,7 +444,8 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
     和 suspension 静态边界。
 25. 再看 `syntax-migration-inventory.md`，了解 Syntax 06A 对 legacy source、fixture 和文档 snippet
    的只读盘点边界，以及 M2/M3 前的 target promotion gate。
-26. 再看 `current-syntax-convergence.md`，了解 README 标准语法已进入 parser/LSP 的边界以及尚未完成的 ownership 收敛。
-27. 再看 `legacy-syntax-migration-frontend.md`，了解 M2 parser plan、可发布 edit 和 formal cutover
+26. 再看 `current-syntax-convergence.md`，了解 README 标准语法、一次性生产切换与 migration-only 边界。
+27. 再看 `compile-time-typed-generation.md`，了解 Gate 11 typed descriptor、attribute、comptime 与 declaration Patch 的当前实现和明确缺口。
+28. 再看 `legacy-syntax-migration-frontend.md`，了解 M2 parser plan、可发布 edit 和 formal cutover
    前的 LSP 边界。
-28. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+29. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

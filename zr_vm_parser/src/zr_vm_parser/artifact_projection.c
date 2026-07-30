@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/semantic.h"
 
 typedef struct SZrArtifactTypeWriter {
@@ -20,6 +21,77 @@ typedef struct SZrArtifactTypeReader {
     TZrSize offset;
     SZrArtifactDiagnostic *diagnostic;
 } SZrArtifactTypeReader;
+
+static EZrArtifactStatus artifact_layout_projection_fail(
+        SZrArtifactDiagnostic *diagnostic,
+        EZrArtifactStatus status,
+        TZrUInt64 expectedHash,
+        TZrUInt64 actualHash) {
+    if (diagnostic != ZR_NULL) {
+        memset(diagnostic, 0, sizeof(*diagnostic));
+        diagnostic->status = status;
+        diagnostic->sectionKind = ZR_ARTIFACT_SECTION_LAYOUT_TABLE;
+        diagnostic->expectedHash = expectedHash;
+        diagnostic->actualHash = actualHash;
+    }
+    return status;
+}
+
+EZrArtifactStatus ZrParser_ArtifactLayout_ApplyNativeCapabilities(
+        const ZrLibTypeDescriptor *typeDescriptor,
+        TZrUInt64 stableSlotContractHash,
+        SZrArtifactLayoutRow *layout,
+        SZrArtifactDiagnostic *diagnostic) {
+    TZrBool stableSlotSource;
+
+    if (typeDescriptor == ZR_NULL || layout == ZR_NULL) {
+        return artifact_layout_projection_fail(
+                diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_ARGUMENT,
+                0u,
+                0u);
+    }
+    stableSlotSource = (TZrBool)(
+            (typeDescriptor->protocolMask &
+             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_STABLE_SLOT_SOURCE)) != 0u);
+    if (!stableSlotSource) {
+        if (stableSlotContractHash != 0u ||
+            (layout->capabilityFlags &
+             ZR_ARTIFACT_LAYOUT_CAPABILITY_STABLE_SLOT_SOURCE) != 0u ||
+            layout->stableSlotContractHash != 0u) {
+            return artifact_layout_projection_fail(
+                    diagnostic,
+                    ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                    0u,
+                    stableSlotContractHash);
+        }
+    } else {
+        if (stableSlotContractHash == 0u) {
+            return artifact_layout_projection_fail(
+                    diagnostic,
+                    ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                    1u,
+                    0u);
+        }
+        if (layout->stableSlotContractHash != 0u &&
+            layout->stableSlotContractHash !=
+                    stableSlotContractHash) {
+            return artifact_layout_projection_fail(
+                    diagnostic,
+                    ZR_ARTIFACT_STATUS_CONTRACT_HASH_MISMATCH,
+                    stableSlotContractHash,
+                    layout->stableSlotContractHash);
+        }
+        layout->capabilityFlags |=
+                ZR_ARTIFACT_LAYOUT_CAPABILITY_STABLE_SLOT_SOURCE;
+        layout->stableSlotContractHash = stableSlotContractHash;
+    }
+    if (diagnostic != ZR_NULL) {
+        memset(diagnostic, 0, sizeof(*diagnostic));
+        diagnostic->status = ZR_ARTIFACT_STATUS_OK;
+    }
+    return ZR_ARTIFACT_STATUS_OK;
+}
 
 static EZrArtifactStatus artifact_projection_fail(SZrArtifactDiagnostic *diagnostic,
                                                   EZrArtifactStatus status,

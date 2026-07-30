@@ -5,6 +5,7 @@
 #include "compiler_internal.h"
 #include "compile_expression_internal.h"
 #include "type_inference_internal.h"
+#include "compiler_attribute_binding.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_parser/compile_tool.h"
@@ -1178,6 +1179,9 @@ TZrBool emit_runtime_decorator_applications(SZrCompilerState *cs,
         if (decoratorNode == ZR_NULL) {
             continue;
         }
+        if (ZrParser_Metadata_IsRegisteredAttribute(cs, decoratorNode)) {
+            continue;
+        }
 
         if (!ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
             if (cs->hasError) {
@@ -1206,6 +1210,9 @@ TZrBool emit_runtime_decorator_applications(SZrCompilerState *cs,
         SZrString *tempName;
 
         if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+        if (ZrParser_Metadata_IsRegisteredAttribute(cs, decoratorNode)) {
             continue;
         }
 
@@ -1345,6 +1352,9 @@ TZrBool emit_runtime_member_decorator_applications(SZrCompilerState *cs,
         if (decoratorNode == ZR_NULL) {
             continue;
         }
+        if (ZrParser_Metadata_IsRegisteredAttribute(cs, decoratorNode)) {
+            continue;
+        }
 
         if (!ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
             if (cs->hasError) {
@@ -1373,6 +1383,9 @@ TZrBool emit_runtime_member_decorator_applications(SZrCompilerState *cs,
         SZrString *tempName;
 
         if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+        if (ZrParser_Metadata_IsRegisteredAttribute(cs, decoratorNode)) {
             continue;
         }
 

@@ -9,6 +9,7 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/compile_tool.h"
+#include "zr_vm_parser/comptime_contract.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_system.h"
@@ -49,6 +50,26 @@ typedef struct SZrCompileToolBinding {
     const SZrParserCompileToolModuleDescriptor *provider;
     EZrCompileToolBindingKind kind;
 } SZrCompileToolBinding;
+
+typedef struct SZrComptimeCacheEntry {
+    TZrUInt64 key;
+    SZrTypeValue value;
+} SZrComptimeCacheEntry;
+
+typedef struct SZrCompilerAttributeFieldBinding {
+    SZrString *name;
+    EZrParserAttributeValueKind valueKind;
+    TZrBool nullable;
+} SZrCompilerAttributeFieldBinding;
+
+typedef struct SZrCompilerAttributeSchemaBinding {
+    SZrString *name;
+    TZrUInt32 attributeId;
+    TZrTypeId typeId;
+    SZrParserAttributeUsage usage;
+    SZrArray fields; // SZrCompilerAttributeFieldBinding
+    SZrFileRange sourceRange;
+} SZrCompilerAttributeSchemaBinding;
 
 typedef struct SZrCompilerState {
     SZrState *state;                    // VM 状态
@@ -158,7 +179,14 @@ typedef struct SZrCompilerState {
     SZrArray importedCompileTimeModuleAliases; // 模块别名表（SZrImportedCompileTimeModuleAlias）
     SZrArray typeValueAliases;                // 类型值别名表（SZrTypeBinding）
     SZrArray compileToolBindings;             // phase-tagged lexical CompileTool bindings
+    SZrArray attributeSchemas;                // bound readonly-struct attribute schemas
     EZrParserCompilePhase compilePhase;
+    SZrParserComptimeBudget comptimeBudget;
+    EZrParserComptimeContext comptimeContext;
+    TZrUInt64 comptimeCacheHitCount;
+    TZrUInt64 comptimeCacheMissCount;
+    TZrUInt32 comptimeCallDepth;
+    SZrArray comptimeCache;                    // SZrComptimeCacheEntry
     TZrBool isInCompileTimeContext;             // 是否在编译期上下文中
     TZrBool isCompilingCompileTimeRuntimeSupport; // 是否正在为 binary import 生成 compile-time runtime support
     
@@ -200,6 +228,7 @@ typedef struct SZrCompileTimeFunction {
     SZrString *runtimeProjectionModuleName; // binary import 时回落到的模块路径
     SZrString *runtimeProjectionExportName; // binary import 时回落到的 pro export 名称
     TZrBool isRuntimeProjection;            // 是否为 runtime callable projection
+    TZrBool isDeclarationTransform;         // declarationTransform role; never a runtime decorator
     SZrFileRange location;                  // 声明位置
 } SZrCompileTimeFunction;
 

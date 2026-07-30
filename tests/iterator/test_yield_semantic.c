@@ -126,7 +126,7 @@ static void destroy_compilation(SZrState *state,
 
 static void test_yield_requires_canonical_iterator_carrier_and_projects_facts(void) {
     static const TZrChar source[] =
-            "var iteration = %import(\"zr.iteration\");\n"
+            "var iteration = import(\"zr.iteration\");\n"
             "fn values(limit: int): zr.iteration.Iterator<int> {\n"
             "    yield limit;\n"
             "}\n";
@@ -180,10 +180,10 @@ static void test_yield_requires_canonical_iterator_carrier_and_projects_facts(vo
 
 static void test_yield_rejects_iterable_carrier_and_incompatible_payload(void) {
     static const TZrChar iterableSource[] =
-            "var iteration = %import(\"zr.iteration\");\n"
+            "var iteration = import(\"zr.iteration\");\n"
             "fn values(limit: int): zr.iteration.Iterable<int> { yield limit; }\n";
     static const TZrChar incompatiblePayloadSource[] =
-            "var iteration = %import(\"zr.iteration\");\n"
+            "var iteration = import(\"zr.iteration\");\n"
             "fn values(): zr.iteration.Iterator<int> { yield \"not an int\"; }\n";
     SZrState *state;
     SZrCompilerState *compiler;
@@ -208,10 +208,10 @@ static void test_yield_rejects_iterable_carrier_and_incompatible_payload(void) {
 
 static void test_yield_function_allows_only_empty_return_completion(void) {
     static const TZrChar emptyReturnSource[] =
-            "var iteration = %import(\"zr.iteration\");\n"
+            "var iteration = import(\"zr.iteration\");\n"
             "fn values(): zr.iteration.Iterator<int> { yield 1; return; }\n";
     static const TZrChar valueReturnSource[] =
-            "var iteration = %import(\"zr.iteration\");\n"
+            "var iteration = import(\"zr.iteration\");\n"
             "fn values(): zr.iteration.Iterator<int> { yield 1; return 2; }\n";
     SZrState *state;
     SZrCompilerState *compiler;
@@ -272,7 +272,7 @@ static void test_yield_rejects_property_accessor_context(void) {
 
 static void test_nested_iterator_yield_does_not_reclassify_the_outer_function(void) {
     static const TZrChar source[] =
-            "var iteration = %import(\"zr.iteration\");\n"
+            "var iteration = import(\"zr.iteration\");\n"
             "fn outer(): void {\n"
             "    fn inner(): zr.iteration.Iterator<int> { yield 1; }\n"
             "}\n";

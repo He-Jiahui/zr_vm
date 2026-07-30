@@ -357,6 +357,23 @@ async function main() {
         assert(diagnostics.uri === uri, 'inline identifier expression diagnostics uri mismatch');
         assert(Array.isArray(diagnostics.diagnostics), 'diagnostics must be an array');
 
+        const declarationValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri },
+            range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 16 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 0, character: 0 },
+                    end: { line: 0, character: 16 },
+                },
+            },
+        });
+        assert(Array.isArray(declarationValues) && declarationValues.length === 0,
+            'textDocument/inlineValue must ignore current fn declarations');
+
         const values = await client.request('textDocument/inlineValue', {
             textDocument: { uri },
             range: {

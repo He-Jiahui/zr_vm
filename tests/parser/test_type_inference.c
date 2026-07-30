@@ -1436,7 +1436,7 @@ static void test_convert_ast_type_registers_generic_instance_semantics(void) {
         state, cs->typeEnv, ZrCore_String_Create(state, "Box", 3)));
 
     {
-        const char *source = "makeBox(value: int): Box<int> { return value; }";
+        const char *source = "fn makeBox(value: int): Box<int> { return value; }";
         SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunctionDeclaration *funcDecl;
@@ -1498,7 +1498,7 @@ static void test_convert_ast_type_preserves_ownership_qualifier(void) {
     TEST_ASSERT_NOT_NULL(cs->semanticContext);
 
     TEST_INFO("Ownership-qualified type conversion",
-              "Testing that %unique/%shared/%borrowed qualifiers survive AST->inferred-type conversion and semantic registration");
+              "Testing that Unique<T>, Shared<T>, and Weak<T> survive AST-to-inferred-type conversion and semantic registration");
 
     TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
         state, cs->typeEnv, ZrCore_String_Create(state, "Resource", 8)));
@@ -1509,8 +1509,7 @@ static void test_convert_ast_type_preserves_ownership_qualifier(void) {
         const char *source =
             "var owned: Unique<Resource>;"
             "var sharedRef: Shared<Box<int>>;"
-            "var weakRef: Weak<Resource>;"
-            "var borrowedRef: ref readonly Resource;";
+            "var weakRef: Weak<Resource>;";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_types_test.zr", 23);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *ownedDecl;
@@ -1520,11 +1519,11 @@ static void test_convert_ast_type_preserves_ownership_qualifier(void) {
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 4);
+        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 3);
 
         ownedDecl = ast->data.script.statements->nodes[0];
         sharedDecl = ast->data.script.statements->nodes[1];
-        borrowedDecl = ast->data.script.statements->nodes[3];
+        borrowedDecl = ast->data.script.statements->nodes[2];
         TEST_ASSERT_NOT_NULL(ownedDecl);
         TEST_ASSERT_NOT_NULL(sharedDecl);
         TEST_ASSERT_NOT_NULL(borrowedDecl);
@@ -1555,14 +1554,6 @@ static void test_convert_ast_type_preserves_ownership_qualifier(void) {
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)convertedType.elementTypes.length);
         ZrParser_InferredType_Free(state, &convertedType);
 
-        ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
-            cs, borrowedDecl->data.variableDeclaration.typeInfo, &convertedType));
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED,
-                              convertedType.ownershipQualifier);
-        TEST_ASSERT_NOT_NULL(convertedType.typeName);
-        TEST_ASSERT_EQUAL_STRING("Resource", ZrCore_String_GetNativeString(convertedType.typeName));
-
         ownedRecord = find_semantic_type_record(cs->semanticContext,
                                              "Resource",
                                              ZR_SEMANTIC_TYPE_KIND_REFERENCE);
@@ -1588,9 +1579,7 @@ static void test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers(v
     const char *source =
         "var owned: Unique<Resource>;"
         "var sharedRef: Shared<Box<int>>;"
-        "var weakRef: Weak<Resource>;"
-        "var borrowedRef: Borrow<Resource>;"
-        "var loanedRef: Loan<Resource>;";
+        "var weakRef: Weak<Resource>;";
     const struct {
         TZrSize statementIndex;
         EZrOwnershipQualifier qualifier;
@@ -1600,8 +1589,6 @@ static void test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers(v
         {0, ZR_OWNERSHIP_QUALIFIER_UNIQUE, "Resource", 0},
         {1, ZR_OWNERSHIP_QUALIFIER_SHARED, "Box<int>", 1},
         {2, ZR_OWNERSHIP_QUALIFIER_WEAK, "Resource", 0},
-        {3, ZR_OWNERSHIP_QUALIFIER_BORROWED, "Resource", 0},
-        {4, ZR_OWNERSHIP_QUALIFIER_LOANED, "Resource", 0},
     };
 
     TEST_START(testSummary);
@@ -1614,7 +1601,7 @@ static void test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers(v
     TEST_ASSERT_NOT_NULL(cs);
 
     TEST_INFO("Intrinsic ownership generic type conversion",
-              "Testing that Unique<T>/Shared<T>/Weak<T>/Borrow<T>/Loan<T> are compiler intrinsic wrappers, not ordinary user-defined generic types");
+               "Testing that Unique<T>, Shared<T>, and Weak<T> are compiler intrinsic wrappers, not ordinary user-defined generic types");
 
     TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
         state, cs->typeEnv, ZrCore_String_Create(state, "Resource", 8)));
@@ -1628,7 +1615,7 @@ static void test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers(v
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_UINT32(5, (TZrUInt32)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_UINT32(3, (TZrUInt32)ast->data.script.statements->count);
 
         for (TZrSize index = 0; index < ZR_ARRAY_COUNT(cases); index++) {
             SZrAstNode *decl = ast->data.script.statements->nodes[cases[index].statementIndex];
@@ -1689,6 +1676,7 @@ static void test_construct_expression_preserves_ownership_qualifier(void) {
         TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
 
         init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        holderInfo.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
         register_test_type_prototype(state, cs, &holderInfo);
 
         uniqueExpr = ast->data.script.statements->nodes[0]->data.variableDeclaration.value;
@@ -1804,6 +1792,7 @@ static void expect_ownership_builtin_type_inference_failure(const char *source,
     TEST_ASSERT_TRUE(ast->data.script.statements->count >= 1);
 
     init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    holderInfo.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
     register_test_type_prototype(state, cs, &holderInfo);
 
     cs->currentFunction = ZrCore_Function_New(state);
@@ -1843,50 +1832,35 @@ static void test_ownership_builtin_type_inference_rejects_invalid_operands(void)
     TEST_START(testSummary);
     timer.startTime = clock();
     TEST_INFO("Ownership builtin operand typing",
-              "Testing that invalid Rust-first ownership builtin operands are rejected during type inference");
+              "Testing that invalid current ownership operations are rejected during type inference");
 
     expect_ownership_builtin_type_inference_failure(
-            "var owner = %unique new Holder();"
-            "%weak(owner);",
+            "var owner = own Holder();"
+            "owner.weak();",
             "ownership_invalid_weak_unique_test.zr",
-            "'%weak' requires a %shared owner");
+            "weak() requires a Shared<T> owner");
 
     expect_ownership_builtin_type_inference_failure(
-            "var seed = %unique new Holder();"
-            "var owner = %shared(seed);"
-            "%upgrade(owner);",
+            "var seed = own Holder();"
+            "var owner = seed.share();"
+            "owner.upgrade();",
             "ownership_invalid_upgrade_shared_test.zr",
-            "'%upgrade' requires a %weak owner");
+            "upgrade() requires a Weak<T> owner");
 
     expect_ownership_builtin_type_inference_failure(
-            "var seed = %unique new Holder();"
-            "var owner = %shared(seed);"
-            "%loan(owner);",
-            "ownership_invalid_loan_shared_test.zr",
-            "'%loan' requires a %unique owner");
+            "var seed = own Holder();"
+            "var owner = seed.share();"
+            "var watcher = owner.weak();"
+            "drop(watcher);",
+            "ownership_invalid_drop_weak_test.zr",
+            "drop() requires a Unique or Shared owner");
 
     expect_ownership_builtin_type_inference_failure(
-            "var owner = %unique new Holder();"
-            "var shared = %shared(owner);"
-            "var borrowed = %borrow(shared);"
-            "%release(borrowed);",
-            "ownership_invalid_release_borrowed_test.zr",
-            "'%release' requires a %unique or %shared owner");
-
-    expect_ownership_builtin_type_inference_failure(
-            "var seed = %unique new Holder();"
-            "var owner = %shared(seed);"
-            "var watcher = %weak(owner);"
-            "%detach(watcher);",
-            "ownership_invalid_detach_weak_test.zr",
-            "'%detach' requires a %unique or %shared owner");
-
-    expect_ownership_builtin_type_inference_failure(
-            "var seed = %unique new Holder();"
-            "var owner = %shared(seed);"
-            "%shared(owner);",
+            "var seed = own Holder();"
+            "var owner = seed.share();"
+            "owner.share();",
             "ownership_invalid_share_shared_test.zr",
-            "'%shared' requires a %unique owner");
+            "share() requires a Unique<T> owner");
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -1922,6 +1896,7 @@ static void test_unique_instance_only_calls_borrowed_methods(void) {
         TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
 
         init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        holderInfo.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
         add_test_method_member(state, &holderInfo, "peek", "int", ZR_OWNERSHIP_QUALIFIER_BORROWED);
         add_test_method_member(state, &holderInfo, "take", "int", ZR_OWNERSHIP_QUALIFIER_UNIQUE);
         register_test_type_prototype(state, cs, &holderInfo);
@@ -1947,7 +1922,8 @@ static void test_unique_instance_only_calls_borrowed_methods(void) {
         TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, uniqueCallExpr, &result));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Unique-owned receivers can only call %borrowed methods"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage,
+                                    "Unique-owned receivers can only call readonly-reference methods through this path"));
         ZrParser_InferredType_Free(state, &result);
 
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -1989,6 +1965,7 @@ static void test_unique_value_is_compatible_with_borrowed_parameter(void) {
         TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
 
         init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        holderInfo.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
         register_test_type_prototype(state, cs, &holderInfo);
         register_test_function_with_one_param(state,
                                               cs,
@@ -2054,6 +2031,7 @@ static void test_weak_value_requires_upgrade_before_borrowed_parameter(void) {
         TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
 
         init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        holderInfo.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
         register_test_type_prototype(state, cs, &holderInfo);
         register_test_function_with_one_param(state,
                                               cs,
@@ -2127,6 +2105,7 @@ static void test_weak_receiver_requires_upgrade_before_borrowed_method(void) {
         TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
 
         init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        holderInfo.modifierFlags |= ZR_DECLARATION_MODIFIER_RESOURCE;
         add_test_method_member(state, &holderInfo, "peek", "int", ZR_OWNERSHIP_QUALIFIER_BORROWED);
         register_test_type_prototype(state, cs, &holderInfo);
 
@@ -2889,7 +2868,6 @@ static void test_parser_supports_ownership_types_and_template_strings(void) {
         "var owned: Unique<Resource>;"
         "var sharedRef: Shared<Box<int>>;"
         "var weakRef: Weak<Resource>;"
-        "var borrowedRef: ref readonly Resource;"
         "var message = `hello ${1}`;";
     SZrString *sourceName = ZrCore_String_Create(state, "ownership_template_test.zr", 26);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2897,39 +2875,32 @@ static void test_parser_supports_ownership_types_and_template_strings(void) {
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 5);
+    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 4);
 
     {
         SZrAstNode *ownedDecl = ast->data.script.statements->nodes[0];
         SZrAstNode *sharedDecl = ast->data.script.statements->nodes[1];
         SZrAstNode *weakDecl = ast->data.script.statements->nodes[2];
-        SZrAstNode *borrowedDecl = ast->data.script.statements->nodes[3];
-        SZrAstNode *messageDecl = ast->data.script.statements->nodes[4];
+        SZrAstNode *messageDecl = ast->data.script.statements->nodes[3];
         SZrAstNode *templateLiteral;
 
         TEST_ASSERT_NOT_NULL(ownedDecl);
         TEST_ASSERT_NOT_NULL(sharedDecl);
         TEST_ASSERT_NOT_NULL(weakDecl);
-        TEST_ASSERT_NOT_NULL(borrowedDecl);
         TEST_ASSERT_NOT_NULL(messageDecl);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ownedDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, sharedDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, weakDecl->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, borrowedDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, messageDecl->type);
         TEST_ASSERT_NOT_NULL(ownedDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_NOT_NULL(sharedDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_NOT_NULL(weakDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_NOT_NULL(borrowedDecl->data.variableDeclaration.typeInfo);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE,
                               ownedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED,
                               sharedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_WEAK,
                               weakDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_BORROWED,
-                              borrowedDecl->data.variableDeclaration.typeInfo->ownershipQualifier);
-
         templateLiteral = messageDecl->data.variableDeclaration.value;
         TEST_ASSERT_NOT_NULL(templateLiteral);
         TEST_ASSERT_EQUAL_INT(ZR_AST_TEMPLATE_STRING_LITERAL, templateLiteral->type);
@@ -3513,7 +3484,7 @@ static void test_type_inference_type_query_returns_reflection_type(void) {
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
         TEST_ASSERT_NOT_NULL(result.typeName);
-        TEST_ASSERT_EQUAL_STRING("zr.builtin.TypeInfo", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_STRING("zr.reflection.Type", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -3530,7 +3501,7 @@ static void test_type_inference_type_query_returns_reflection_type(void) {
 
 static void test_convert_function_ast_type_to_callable_inferred_type(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Convert %func AST Type To Callable";
+    const char *testSummary = "Type Inference - Convert fn AST Type To Callable";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -3538,7 +3509,7 @@ static void test_convert_function_ast_type_to_callable_inferred_type(void) {
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var f: fn(int)->int = null;";
+        const char *source = "var f: fn(int) -> int = null;";
         SZrString *sourceName = ZrCore_String_Create(state, "function_type_convert_test.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *decl;
@@ -3561,7 +3532,7 @@ static void test_convert_function_ast_type_to_callable_inferred_type(void) {
                 ZrParser_AstTypeToInferredType_Convert(cs, decl->data.variableDeclaration.typeInfo, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, result.baseType);
         TEST_ASSERT_NOT_NULL(result.typeName);
-        TEST_ASSERT_EQUAL_STRING("%func(int)->int", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_STRING("fn(int) -> int", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
         ZrParser_Ast_Free(state, ast);
@@ -3576,7 +3547,7 @@ static void test_convert_function_ast_type_to_callable_inferred_type(void) {
 
 static void test_type_inference_function_type_annotation_accepts_lambda_assignment(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - %func Annotation Accepts Lambda Assignment";
+    const char *testSummary = "Type Inference - fn Annotation Accepts Lambda Assignment";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -3584,7 +3555,7 @@ static void test_type_inference_function_type_annotation_accepts_lambda_assignme
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var f: fn(int)->int = fn(x:int)=>{ return x; };";
+        const char *source = "var f: fn(int) -> int = fn(x: int): int => { return x; };";
         SZrString *sourceName = ZrCore_String_Create(state, "function_type_lambda_assign_test.zr", 35);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -3609,9 +3580,9 @@ static void test_type_inference_function_type_annotation_accepts_lambda_assignme
     TEST_DIVIDER();
 }
 
-static void test_type_inference_type_query_function_type_returns_callable_reflection_type(void) {
+static void test_type_inference_type_query_callable_value_returns_reflection_type(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - %type(%func(...)) Returns Callable Reflection Type";
+    const char *testSummary = "Type Inference - typeof Callable Value Returns Reflection Type";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -3619,7 +3590,9 @@ static void test_type_inference_type_query_function_type_returns_callable_reflec
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var reflection = typeof(fn(value: ref int)->int);";
+        const char *source =
+                "var callable: fn(int) -> int = null;"
+                "var reflection = typeof(callable);";
         SZrString *sourceName = ZrCore_String_Create(state, "callable_type_query_test.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr;
@@ -3630,9 +3603,15 @@ static void test_type_inference_type_query_function_type_returns_callable_reflec
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
 
-        expr = ast->data.script.statements->nodes[0]->data.variableDeclaration.value;
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[1]->data.variableDeclaration.value;
         TEST_ASSERT_NOT_NULL(expr);
         TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_QUERY_EXPRESSION, expr->type);
 
@@ -3640,9 +3619,11 @@ static void test_type_inference_type_query_function_type_returns_callable_reflec
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
         TEST_ASSERT_NOT_NULL(result.typeName);
-        TEST_ASSERT_EQUAL_STRING("zr.builtin.TypeInfo", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_STRING("zr.reflection.Type", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
@@ -3701,22 +3682,18 @@ static void test_type_inference_iteration_names_accept_module_qualified_and_dest
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "let builtin = import(\"zr.builtin\");\n"
                 "let iteration = import(\"zr.iteration\");\n"
-                "var iter: iteration.Iterable<int> = null;\n"
-                "let {TypeInfo, Integer} = import(\"zr.builtin\");\n"
-                "var meta: TypeInfo = typeof(int);\n"
-                "var boxed: Integer = null;\n";
+                "var iter: iteration.Iterator<int> = null;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "builtin_names_explicit_import_ok_test.zr", 41);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_NOT_NULL(cs);
         TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
 
         cs->scriptAst = ast;
-        for (TZrSize index = 0; index < 6; index++) {
+        for (TZrSize index = 0; index < 2; index++) {
             compile_test_top_level_statement(cs, ast->data.script.statements->nodes[index]);
             TEST_ASSERT_FALSE(cs->hasError);
         }
@@ -3838,9 +3815,7 @@ static void test_type_inference_legacy_builtin_aliases_fail_with_canonical_diagn
 static void assert_type_inference_function_type_value_alias_case(void) {
     SZrState *state = create_test_state();
     SZrCompilerState *cs = create_test_compiler_state(state);
-    const char *source =
-            "var f = fn(int)->int;\n"
-            "var c:f = fn(x:int)=>{ return x; };";
+    const char *source = "var callback: fn(int) -> int = fn(value: int): int => { return value; };";
     SZrString *sourceName = ZrCore_String_Create(state, "type_value_alias_inference_test.zr", 34);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -3849,12 +3824,10 @@ static void assert_type_inference_function_type_value_alias_case(void) {
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+    TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
 
     cs->scriptAst = ast;
     compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
-    TEST_ASSERT_FALSE(cs->hasError);
-    compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
     TEST_ASSERT_FALSE(cs->hasError);
 
     ZrParser_Ast_Free(state, ast);
@@ -3866,11 +3839,9 @@ static void assert_type_inference_array_type_value_alias_case(void) {
     SZrState *state = create_test_state();
     SZrCompilerState *cs = create_test_compiler_state(state);
     const char *source =
-            "var cubeType = int[][][];\n"
-            "var value:cubeType = null;\n"
+            "var values: int[] = [1, 2, 3];\n"
             "let container = import(\"zr.container\");\n"
-            "var jaggedType = container.Array<int[]>[];\n"
-            "var jagged:jaggedType = null;";
+            "var jagged: container.Array<int[]> = new container.Array<int[]>();";
     SZrString *sourceName = ZrCore_String_Create(state, "array_type_value_alias_inference_test.zr", 40);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -3879,7 +3850,7 @@ static void assert_type_inference_array_type_value_alias_case(void) {
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-    TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+    TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
 
     cs->scriptAst = ast;
     compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
@@ -3888,9 +3859,7 @@ static void assert_type_inference_array_type_value_alias_case(void) {
     TEST_ASSERT_FALSE(cs->hasError);
     compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
     TEST_ASSERT_FALSE(cs->hasError);
-    compile_test_top_level_statement(cs, ast->data.script.statements->nodes[3]);
-    TEST_ASSERT_FALSE(cs->hasError);
-    compile_test_top_level_statement(cs, ast->data.script.statements->nodes[4]);
+    compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
     TEST_ASSERT_FALSE(cs->hasError);
 
     ZrParser_Ast_Free(state, ast);
@@ -3900,7 +3869,7 @@ static void assert_type_inference_array_type_value_alias_case(void) {
 
 static void test_type_inference_type_value_aliases_can_be_used_in_type_position(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Type Value Aliases Can Be Used In Type Position";
+    const char *testSummary = "Type Inference - Current Callable And Collection Type Annotations";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -3925,7 +3894,7 @@ static void test_type_inference_native_prototype_construction_returns_native_typ
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let math = import(\"zr.math\");"
-                "$math.Vector3(1.0, 2.0, 3.0);";
+                "init math.Vector3(1.0, 2.0, 3.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_type_test.zr", 27);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -3977,8 +3946,8 @@ static void test_type_inference_native_constructor_resolves_module_variable_bind
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let math = import(\"zr.math\");\n"
-                "run() {\n"
-                "    var vector = $math.Vector3(1.0, 2.0, 3.0);\n"
+                "fn run() {\n"
+                "    var vector = init math.Vector3(1.0, 2.0, 3.0);\n"
                 "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "native_module_alias_construct_test.zr", 37);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -4052,7 +4021,7 @@ static void test_type_inference_native_generic_iterable_propagates_protocol(void
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let container = import(\"zr.container\");\n"
-                "run() {\n"
+                "fn run() {\n"
                 "    var values = new container.Array<int>();\n"
                 "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "native_generic_iterable_protocol_test.zr", 40);
@@ -4156,7 +4125,7 @@ static void test_type_inference_rejects_ordinary_prototype_call(void) {
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
         TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage,
-                                    "Prototype references are not callable; use $target(...) or new target(...)"));
+                                    "Prototype references are not callable; use init Type(...) for values or new Type(...) for GC classes"));
         ZrParser_InferredType_Free(state, &result);
 
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -4235,7 +4204,7 @@ static void test_type_inference_native_enum_construction_returns_enum_type(void)
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let probe = import(\"probe.native_shapes\");"
-                "$probe.NativeMode(1);";
+                "init probe.NativeMode(1);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_enum_type_test.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
@@ -4448,7 +4417,7 @@ static void test_type_inference_source_extern_function_call_uses_declared_return
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "native extern(\"fixture\") {\n"
-                "  #zr.ffi.entry(\"zr_ffi_add_i32\")# Add(lhs:i32, rhs:i32): i32;\n"
+                "  #zr.ffi.entry(\"zr_ffi_add_i32\")# fn Add(lhs: i32, rhs: i32): i32;\n"
                 "}\n"
                 "return Add(<i32> 2, <i32> 4);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_extern_function_type_test.zr", 35);
@@ -4567,7 +4536,7 @@ static void test_type_inference_source_extern_struct_construction_returns_struct
                 "    var y:i32;\n"
                 "  }\n"
                 "}\n"
-                "$Pair(1, 2);";
+                "init Pair(1, 2);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_extern_struct_construct_type_test.zr", 42);
         SZrAstNode *ast = ZR_NULL;
         SZrAstNode *expr = ZR_NULL;
@@ -5684,7 +5653,7 @@ static void test_type_inference_source_const_generic_method_reports_const_argume
 
 static void test_type_inference_parameter_passing_mode_in_rejects_reassignment(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - %in Parameter Rejects Reassignment";
+    const char *testSummary = "Type Inference - in Parameter Rejects Reassignment";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -5693,7 +5662,7 @@ static void test_type_inference_parameter_passing_mode_in_rejects_reassignment(v
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "fn consume(%in value: int): void {\n"
+                "fn consume(value: in int): void {\n"
                 "    value = 1;\n"
                 "}\n";
         SZrString *sourceName = ZrCore_String_Create(state, "passing_mode_in_reassign_test.zr", 31);
@@ -5724,7 +5693,7 @@ static void test_type_inference_parameter_passing_mode_in_rejects_reassignment(v
 
 static void test_type_inference_parameter_passing_modes_out_and_ref_require_assignable_arguments(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - %out And %ref Require Assignable Arguments";
+    const char *testSummary = "Type Inference - out And ref Require Assignable Arguments";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -5733,13 +5702,13 @@ static void test_type_inference_parameter_passing_modes_out_and_ref_require_assi
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "fn fill(%out value: int): void {\n"
+                "fn fill(value: out int): void {\n"
                 "    value = 1;\n"
                 "}\n"
-                "fn swap(%ref value: int): void {\n"
+                "fn swap(value: ref int): void {\n"
                 "}\n"
-                "fill(1);\n"
-                "swap(1);\n";
+                "fill(out 1);\n"
+                "swap(ref 1);\n";
         SZrString *sourceName = ZrCore_String_Create(state, "passing_mode_lvalue_call_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -5759,14 +5728,14 @@ static void test_type_inference_parameter_passing_modes_out_and_ref_require_assi
         ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[2]);
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "%out argument must be an assignable storage location"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "out argument must be an assignable storage location"));
 
         cs->hasError = ZR_FALSE;
         cs->errorMessage = ZR_NULL;
         ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[3]);
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "%ref argument must be an assignable storage location"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "ref argument must be an assignable storage location"));
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
@@ -5780,7 +5749,7 @@ static void test_type_inference_parameter_passing_modes_out_and_ref_require_assi
 
 static void test_type_inference_out_parameter_requires_definite_assignment_on_all_paths(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - %out Parameter Requires Definite Assignment";
+    const char *testSummary = "Type Inference - out Parameter Requires Definite Assignment";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -5789,7 +5758,7 @@ static void test_type_inference_out_parameter_requires_definite_assignment_on_al
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "fn maybeAssign(%out value: int, flag: bool): void {\n"
+                "fn maybeAssign(value: out int, flag: bool): void {\n"
                 "    if (flag) {\n"
                 "        value = 1;\n"
                 "    }\n"
@@ -5832,7 +5801,7 @@ static void test_type_inference_source_generic_interface_registration_preserves_
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "interface IProducer<out T> { next(): T; }\n"
+                "interface IProducer<out T> { fn next(): T; }\n"
                 "new IProducer<int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_interface_type_test.zr", 37);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -5901,11 +5870,11 @@ static void test_type_inference_source_interface_members_flow_through_inheritanc
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "interface Readable { read(): int; }\n"
-                "interface StreamReadable : Readable { available(): int; }\n"
+                "interface Readable { fn read(): int; }\n"
+                "interface StreamReadable : Readable { fn available(): int; }\n"
                 "class Device : StreamReadable {\n"
-                "    read(): int { return 1; }\n"
-                "    available(): int { return 2; }\n"
+                "    fn read(): int { return 1; }\n"
+                "    fn available(): int { return 2; }\n"
                 "}\n"
                 "var device: Device = null;\n"
                 "device.read();";
@@ -5966,8 +5935,8 @@ static void test_type_inference_source_generic_constraint_accepts_source_interfa
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "interface Readable { read(): int; }\n"
-                "class Device : Readable { read(): int { return 1; } }\n"
+                "interface Readable { fn read(): int; }\n"
+                "class Device : Readable { fn read(): int { return 1; } }\n"
                 "class Box<T> where T: Readable { var value: T; }\n"
                 "new Box<Device>();";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_constraint_accept_test.zr", 40);
@@ -6027,7 +5996,7 @@ static void test_type_inference_source_generic_constraint_mismatch_rejects_non_i
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "interface Readable { read(): int; }\n"
+                "interface Readable { fn read(): int; }\n"
                 "class Box<T> where T: Readable { var value: T; }\n"
                 "new Box<int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_constraint_reject_test.zr", 40);
@@ -6234,7 +6203,7 @@ static void test_type_inference_source_owner_constraint_is_enforced(void) {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "class Resource { }\n"
+                "resource class Resource { }\n"
                 "fn requireOwner<T>(): int where T: owner { return 1; }\n"
                 "requireOwner<Unique<Resource>>();\n"
                 "requireOwner<Resource>();";
@@ -6301,24 +6270,24 @@ static void test_type_inference_source_specific_owner_constraints_are_enforced(v
     const SZrSpecificOwnerConstraintCase cases[] = {
         {
                 "source_unique_constraint_test.zr",
-                "class Resource { }\n"
-                "func requireUnique<T>(): int where T: unique { return 1; }\n"
+                "resource class Resource { }\n"
+                "fn requireUnique<T>(): int where T: unique { return 1; }\n"
                 "requireUnique<Unique<Resource>>();\n"
                 "requireUnique<Shared<Resource>>();",
                 "unique ownership constraint",
         },
         {
                 "source_shared_constraint_test.zr",
-                "class Resource { }\n"
-                "func requireShared<T>(): int where T: shared { return 1; }\n"
+                "resource class Resource { }\n"
+                "fn requireShared<T>(): int where T: shared { return 1; }\n"
                 "requireShared<Shared<Resource>>();\n"
                 "requireShared<Unique<Resource>>();",
                 "shared ownership constraint",
         },
         {
                 "source_weak_constraint_test.zr",
-                "class Resource { }\n"
-                "func requireWeak<T>(): int where T: weak { return 1; }\n"
+                "resource class Resource { }\n"
+                "fn requireWeak<T>(): int where T: weak { return 1; }\n"
                 "requireWeak<Weak<Resource>>();\n"
                 "requireWeak<Shared<Resource>>();",
                 "weak ownership constraint",
@@ -6394,7 +6363,7 @@ static void test_type_inference_source_import_function_call_uses_exported_signat
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *moduleSource = "fn add(lhs: int, rhs: int): int { return lhs + rhs; }";
         const char *source = "let calc = import(\"calc\"); calc.add(1, 2);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_type_test.zr", 36);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -6450,7 +6419,7 @@ static void test_type_inference_source_import_function_member_preserves_metadata
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *moduleSource = "fn add(lhs: int, rhs: int): int { return lhs + rhs; }";
         const char *source = "let calc = import(\"calc\");";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_identity_test.zr", 40);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -6510,8 +6479,8 @@ static void test_type_inference_source_import_keeps_same_name_signature_candidat
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource =
-                "pick(value: int): int { return value; }\n"
-                "pick(value: float): bool { return true; }\n";
+                "fn pick(value: int): int { return value; }\n"
+                "fn pick(value: float): bool { return true; }\n";
         const char *source = "let calc = import(\"calc\"); calc.pick(1.5);";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "source_import_overload_signature_test.zr",
@@ -6574,7 +6543,7 @@ static void test_type_inference_source_import_function_call_rejects_argument_mis
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *moduleSource = "fn add(lhs: int, rhs: int): int { return lhs + rhs; }";
         const char *source = "let calc = import(\"calc\"); calc.add(1, 2.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_fail_test.zr", 36);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -6643,8 +6612,8 @@ static void test_type_inference_source_import_member_chain_uses_returned_prototy
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource =
-                "struct Pair { var left: int; var right: int; }\n"
-                "makePair(): Pair { return $Pair(1, 2); }";
+                "class Pair { var left: int; var right: int; }\n"
+                "fn makePair(): Pair { return new Pair(); }";
         const char *source = "let shapes = import(\"shapes\"); shapes.makePair().left;";
         SZrString *sourceName = ZrCore_String_Create(state, "source_import_member_chain_type_test.zr", 38);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -6703,7 +6672,7 @@ static void test_type_inference_destructured_native_type_import_allows_unqualifi
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let {Pair} = import(\"zr.container\");"
-                "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);"
+                "var pair: Pair<int,float> = new Pair<int,float>(1, 2.0);"
                 "pair.first;";
         SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_import_type_test.zr", 45);
         SZrString *leftName = create_test_string(state, "first");
@@ -6793,7 +6762,7 @@ static void test_type_inference_destructured_native_type_import_registers_closed
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let {Pair} = import(\"zr.container\");"
-                "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);";
+                "var pair: Pair<int,float> = new Pair<int,float>(1, 2.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_import_variable_type_test.zr", 54);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrString *pairName = create_test_string(state, "pair");
@@ -6850,8 +6819,8 @@ static void test_type_inference_qualified_native_type_annotation_accepts_matchin
         const char *source =
                 "let container = import(\"zr.container\");\n"
                 "let {Pair} = import(\"zr.container\");\n"
-                "var pair1: container.Pair<int, float> = $container.Pair<int, float>(1, 2.0);\n"
-                "var pair2: Pair<int, float> = $Pair<int, float>(1, 2.0);\n"
+                "var pair1: container.Pair<int, float> = new container.Pair<int, float>(1, 2.0);\n"
+                "var pair2: Pair<int, float> = new Pair<int, float>(1, 2.0);\n"
                 "return pair1.first + <int> pair2.first;\n";
         SZrString *sourceName =
                 ZrCore_String_Create(state,
@@ -6887,7 +6856,7 @@ static void test_type_inference_native_import_requires_explicit_binding_for_unqu
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let container = import(\"zr.container\");"
-                "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);";
+                "var pair: Pair<int,float> = new Pair<int,float>(1, 2.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "native_pair_requires_explicit_binding_type_test.zr", 51);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -6935,7 +6904,7 @@ static void test_type_inference_native_import_requires_explicit_binding_for_unqu
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let container = import(\"zr.container\");"
-                "$Pair<int,float>(1, 2.0);";
+                "new Pair<int,float>(1, 2.0);";
         SZrString *sourceName =
                 ZrCore_String_Create(state, "native_pair_requires_explicit_binding_construct_test.zr", 56);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -7151,7 +7120,7 @@ static void test_type_inference_binary_import_function_call_uses_exported_signat
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *moduleSource = "fn add(lhs: int, rhs: int): int { return lhs + rhs; }";
         const char *source = "let calc = import(\"calc\"); calc.add(1, 2);";
         const char *binaryPath = "test_type_inference_import_fixture.zro";
         TZrByte *binaryBytes = ZR_NULL;
@@ -7211,7 +7180,7 @@ static void test_type_inference_binary_import_function_member_preserves_metadata
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *moduleSource = "fn add(lhs: int, rhs: int): int { return lhs + rhs; }";
         const char *source = "let calc = import(\"calc\");";
         const char *binaryPath = "test_type_inference_import_signature_identity.zro";
         TZrByte *binaryBytes = ZR_NULL;
@@ -7275,8 +7244,8 @@ static void test_type_inference_binary_import_keeps_same_name_signature_candidat
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *moduleSource =
-                "pick(value: int): int { return value; }\n"
-                "pick(value: float): bool { return true; }\n";
+                "fn pick(value: int): int { return value; }\n"
+                "fn pick(value: float): bool { return true; }\n";
         const char *source = "let calc = import(\"calc\"); calc.pick(1.5);";
         const char *binaryPath = "test_type_inference_import_overload_signature.zro";
         TZrByte *binaryBytes = ZR_NULL;
@@ -7343,7 +7312,7 @@ static void test_type_inference_binary_import_function_call_rejects_argument_mis
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *moduleSource = "fn add(lhs: int, rhs: int): int { return lhs + rhs; }";
         const char *source = "let calc = import(\"calc\"); calc.add(1, 2.0);";
         const char *binaryPath = "test_type_inference_import_fixture_fail.zro";
         TZrByte *binaryBytes = ZR_NULL;
@@ -7571,7 +7540,7 @@ static void test_type_inference_native_instance_method_uses_registered_return_ty
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "let math = import(\"zr.math\");"
-                "var v = $math.Vector3(1.0, 2.0, 3.0);"
+                "var v = init math.Vector3(1.0, 2.0, 3.0);"
                 "v.length();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_vector3_method_type_test.zr", 34);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -8346,18 +8315,18 @@ static void test_type_inference_cyclic_import_entry_value_read_rejects_same_scc(
             {
                     "a",
                     (const TZrByte *)
-                            "var b = %import(\"b\");\n"
+                            "var b = import(\"b\");\n"
                             "pub var a1 = b.b1;\n",
-                    sizeof("var b = %import(\"b\");\n"
+                    sizeof("var b = import(\"b\");\n"
                            "pub var a1 = b.b1;\n") - 1,
                     ZR_FALSE,
             },
             {
                     "b",
                     (const TZrByte *)
-                            "var a = %import(\"a\");\n"
+                            "var a = import(\"a\");\n"
                             "pub var b1 = a.a1;\n",
-                    sizeof("var a = %import(\"a\");\n"
+                    sizeof("var a = import(\"a\");\n"
                            "pub var b1 = a.a1;\n") - 1,
                     ZR_FALSE,
             },
@@ -8394,10 +8363,10 @@ static void test_type_inference_cyclic_import_unsafe_imported_call_rejects_same_
             {
                     "a",
                     (const TZrByte *)
-                            "var b = %import(\"b\");\n"
+                            "var b = import(\"b\");\n"
                             "pub var a1 = 7;\n"
                             "pub var value = b.readA();\n",
-                    sizeof("var b = %import(\"b\");\n"
+                    sizeof("var b = import(\"b\");\n"
                            "pub var a1 = 7;\n"
                            "pub var value = b.readA();\n") - 1,
                     ZR_FALSE,
@@ -8405,12 +8374,12 @@ static void test_type_inference_cyclic_import_unsafe_imported_call_rejects_same_
             {
                     "b",
                     (const TZrByte *)
-                            "var a = %import(\"a\");\n"
-                            "pub readA(): int {\n"
+                            "var a = import(\"a\");\n"
+                            "pub fn readA(): int {\n"
                             "    return a.a1;\n"
                             "}\n",
-                    sizeof("var a = %import(\"a\");\n"
-                           "pub readA(): int {\n"
+                    sizeof("var a = import(\"a\");\n"
+                           "pub fn readA(): int {\n"
                            "    return a.a1;\n"
                            "}\n") - 1,
                     ZR_FALSE,
@@ -8448,18 +8417,18 @@ static void test_type_inference_cyclic_import_local_import_outside_entry_path_pa
             {
                     "a",
                     (const TZrByte *)
-                            "pub later(): int {\n"
-                            "    var b = %import(\"b\");\n"
+                            "pub fn later(): int {\n"
+                            "    var b = import(\"b\");\n"
                             "    return b.value;\n"
                             "}\n"
-                            "pub seed(): int {\n"
+                            "pub fn seed(): int {\n"
                             "    return 5;\n"
                             "}\n",
-                    sizeof("pub later(): int {\n"
-                           "    var b = %import(\"b\");\n"
+                    sizeof("pub fn later(): int {\n"
+                           "    var b = import(\"b\");\n"
                            "    return b.value;\n"
                            "}\n"
-                           "pub seed(): int {\n"
+                           "pub fn seed(): int {\n"
                            "    return 5;\n"
                            "}\n") - 1,
                     ZR_FALSE,
@@ -8467,9 +8436,9 @@ static void test_type_inference_cyclic_import_local_import_outside_entry_path_pa
             {
                     "b",
                     (const TZrByte *)
-                            "var a = %import(\"a\");\n"
+                            "var a = import(\"a\");\n"
                             "pub var value = 9;\n",
-                    sizeof("var a = %import(\"a\");\n"
+                    sizeof("var a = import(\"a\");\n"
                            "pub var value = 9;\n") - 1,
                     ZR_FALSE,
             },
@@ -8554,7 +8523,7 @@ int main(void) {
     RUN_TEST(test_type_inference_type_query_returns_reflection_type);
     RUN_TEST(test_convert_function_ast_type_to_callable_inferred_type);
     RUN_TEST(test_type_inference_function_type_annotation_accepts_lambda_assignment);
-    RUN_TEST(test_type_inference_type_query_function_type_returns_callable_reflection_type);
+    RUN_TEST(test_type_inference_type_query_callable_value_returns_reflection_type);
     RUN_TEST(test_type_inference_iteration_names_require_explicit_import);
     RUN_TEST(test_type_inference_iteration_names_accept_module_qualified_and_destructured_imports);
     RUN_TEST(test_type_inference_builtin_value_helpers_require_explicit_import);

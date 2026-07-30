@@ -1,7 +1,7 @@
 class BaseCounter {
     pub var baseValue: int;
 
-    pub getBaseValue(): int {
+    pub fn getBaseValue(): int {
         return this.baseValue;
     }
 }
@@ -14,7 +14,7 @@ class DerivedCounter: BaseCounter {
         this.derivedValue = 20;
     }
 
-    pub getTotal(): int {
+    pub fn getTotal(): int {
         return this.getBaseValue() + this.derivedValue;
     }
 }
@@ -26,19 +26,19 @@ class MutableCounter {
         this.value = initial;
     }
 
-    pub add(x: int): int {
+    pub fn add(x: int): int {
         this.value = this.value + x;
         return this.value;
     }
 
-    pub multiply(x: int): int {
+    pub fn multiply(x: int): int {
         this.value = this.value * x;
         return this.value;
     }
 }
 
 class Util {
-    pub static magic(): int {
+    pub static fn magic(): int {
         return 7;
     }
 }

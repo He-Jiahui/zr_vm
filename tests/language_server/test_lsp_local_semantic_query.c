@@ -1552,7 +1552,7 @@ static void test_local_expression_query_returns_ownership_violation_fact(SZrStat
     if (context == ZR_NULL ||
         uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !lsp_find_position_for_substring(content, "ref resource", 1, 0, &position)) {
+        !lsp_find_position_for_substring(content, "ref resource", 0, 0, &position)) {
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);
         }

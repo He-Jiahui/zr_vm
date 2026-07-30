@@ -763,6 +763,8 @@ static void test_constructor_field_store_marks_runtime_initialization_bitmap(voi
     TZrStackValuePointer frameBase;
     const TZrUInt64 *initializedFieldWords = ZR_NULL;
     TZrUInt32 initializedFieldWordCount = 0u;
+    TZrUInt32 layoutBitmapOffset = 0u;
+    TZrUInt32 layoutWordCount = 0u;
     TZrUInt32 bitmapOffset;
 
     TEST_ASSERT_NOT_NULL(state);
@@ -811,6 +813,15 @@ static void test_constructor_field_store_marks_runtime_initialization_bitmap(voi
             &member,
             1u);
     function.prototypeCount = 1u;
+
+    TEST_ASSERT_TRUE(ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+            state, &function, &layoutBitmapOffset, &layoutWordCount));
+    TEST_ASSERT_EQUAL_UINT32(bitmapOffset, layoutBitmapOffset);
+    TEST_ASSERT_EQUAL_UINT32(1u, layoutWordCount);
+    function.frameByteSize = bitmapOffset;
+    TEST_ASSERT_FALSE(ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+            state, &function, &layoutBitmapOffset, &layoutWordCount));
+    function.frameByteSize = bitmapOffset + (TZrUInt32)sizeof(TZrUInt64);
 
     frameBase = state->stackBase.valuePointer + 2u;
     memset((TZrByte *)frameBase, 0, function.frameByteSize);

@@ -375,10 +375,10 @@ static void test_lsp_using_binder_invalid_parser_diagnostic(SZrState *state) {
                                        &timer,
                                        summary,
                                        "file:///parser_using_binder_invalid.zr",
-                                       "var resource = \"x\";\nusing (var 1 = resource) { var inner = 1; }\n",
+                                       "var resource = \"x\";\nusing (let 1 = resource) { var inner = 1; }\n",
                                        "using_binder_invalid",
                                        "invalid using guard binder",
-                                       "Use `using (var name = import(...))`",
+                                       "Use `using (let name = import(...))`",
                                        "expected using-binder-invalid diagnostic to carry code, problem text, and suggestion")) {
         return;
     }
@@ -396,7 +396,7 @@ static void test_lsp_import_path_not_constant_parser_diagnostic(SZrState *state)
                                        &timer,
                                        summary,
                                        "file:///parser_import_path_not_constant.zr",
-                                       "var pluginName = \"zr.math\";\nusing (var plugin = import(pluginName)) { var ok = 1; }\n",
+                                       "var pluginName = \"zr.math\";\nusing (let plugin = import(pluginName)) { var ok = 1; }\n",
                                        "import_path_not_constant",
                                        "import(...) requires a string literal module path",
                                        "Use `import(\"zr.module\")`",

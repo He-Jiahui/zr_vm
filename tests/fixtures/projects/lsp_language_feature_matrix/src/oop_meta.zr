@@ -1,10 +1,5 @@
-module "oop_meta";
+module oop_meta;
 
-traceClass(target: typeof Class): void {
-    target.metadata.traceClass = true;
-}
-
-#traceClass#
 pub class SignalBox {
     pri var raw: int = 0;
     pub static var created: int = 0;
@@ -19,11 +14,11 @@ pub class SignalBox {
         set { this.raw = value; }
     }
 
-    pub bump(delta: int): int {
+    pub fn bump(delta: int): int {
         return this.value + delta;
     }
 
-    pub static identity(value: int): int {
+    pub static fn identity(value: int): int {
         return value;
     }
 
@@ -42,13 +37,13 @@ pub struct Vector2 {
     }
 
     pub static @add(left: Vector2, right: Vector2): Vector2 {
-        return $Vector2(left.x + right.x, left.y + right.y);
+        return init Vector2(left.x + right.x, left.y + right.y);
     }
 }
 
-pub combineVectors(): int {
-    var left = $Vector2(1, 2);
-    var right = $Vector2(3, 4);
+pub fn combineVectors(): int {
+    var left = init Vector2(1, 2);
+    var right = init Vector2(3, 4);
     var sum = left + right;
     return SignalBox.identity(sum.x + sum.y);
 }

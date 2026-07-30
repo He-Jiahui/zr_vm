@@ -1,2 +1,2 @@
-var meta = %import("reference.binary_meta");
-return %type(meta);
+var meta = import("reference.binary_meta");
+return typeof(meta);

@@ -1,7 +1,7 @@
 let benchConfig = import("bench_config");
 let {Map} = import("zr.container");
 
-labelFor(slot: int): string {
+fn labelFor(slot: int): string {
     var normalized = slot % 4;
     if (normalized == 0) {
         return "aa";

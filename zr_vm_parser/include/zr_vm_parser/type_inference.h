@@ -29,6 +29,9 @@ typedef struct SZrTypeInferenceBranchScope {
 
 // 从AST节点推断类型（主入口函数）
 ZR_PARSER_API TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result);
+ZR_PARSER_API TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
+        SZrCompilerState *cs,
+        const SZrFunction *function);
 
 ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInferred(
         SZrCompilerState *cs,

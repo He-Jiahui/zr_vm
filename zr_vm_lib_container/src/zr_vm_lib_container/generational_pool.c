@@ -20,6 +20,7 @@ typedef struct SZrPoolSlot {
     TZrBool writerActive;
     TZrBool initialized;
     TZrBool reused;
+    TZrBool dirty;
 } SZrPoolSlot;
 
 typedef struct SZrPoolSlab {
@@ -255,6 +256,31 @@ static void zr_pool_clear_guard(SZrPoolGuard *guard) {
     }
 }
 
+static void zr_pool_mark_slot_dirty(
+        SZrPool *pool,
+        SZrPoolSlot *slot) {
+    if (pool == ZR_NULL || slot == ZR_NULL || !slot->initialized ||
+        pool->layout.gcScanKind != ZR_POOL_GC_SCAN_BARRIERED ||
+        slot->dirty) {
+        return;
+    }
+    slot->dirty = ZR_TRUE;
+    pool->stats.dirtySlotCount++;
+    pool->stats.barrierMarkCount++;
+}
+
+static void zr_pool_clear_slot_dirty(
+        SZrPool *pool,
+        SZrPoolSlot *slot) {
+    if (pool == ZR_NULL || slot == ZR_NULL || !slot->dirty) {
+        return;
+    }
+    slot->dirty = ZR_FALSE;
+    if (pool->stats.dirtySlotCount != 0u) {
+        pool->stats.dirtySlotCount--;
+    }
+}
+
 static EZrPoolStatus zr_pool_validate_handle(
         const SZrPool *pool,
         SZrPoolHandle handle,
@@ -271,6 +297,7 @@ static EZrPoolStatus zr_pool_validate_handle(
     if (pool == ZR_NULL) {
         return ZR_POOL_STATUS_INVALID_ARGUMENT;
     }
+    ((SZrPool *)pool)->stats.handleValidationCount++;
     if (handle.poolId != pool->id) {
         return ZR_POOL_STATUS_WRONG_POOL;
     }
@@ -309,6 +336,7 @@ static void zr_pool_reclaim(
         slot->initialized = ZR_FALSE;
         pool->stats.dropCount++;
     }
+    zr_pool_clear_slot_dirty(pool, slot);
     pool->stats.retiredCount--;
     if (slot->generation >= pool->config.generationLimit) {
         slot->state = ZR_POOL_SLOT_EXHAUSTED;
@@ -468,6 +496,11 @@ static EZrPoolStatus zr_pool_deliver_unlocked(
     memset(value, 0, pool->layout.elementSize);
     if (pool->layout.initialize != ZR_NULL) {
         if (!pool->layout.initialize(value, source, pool->layout.context)) {
+            pool->stats.constructionFailureCount++;
+            if (pool->layout.abortInitialize != ZR_NULL) {
+                pool->layout.abortInitialize(value, pool->layout.context);
+                pool->stats.partialCleanupCount++;
+            }
             memset(value, 0, pool->layout.elementSize);
             slot->nextFree = pool->freeHead;
             pool->freeHead = slotIndex;
@@ -480,6 +513,7 @@ static EZrPoolStatus zr_pool_deliver_unlocked(
     slot->generation++;
     slot->state = ZR_POOL_SLOT_LIVE;
     slot->initialized = ZR_TRUE;
+    zr_pool_mark_slot_dirty(pool, slot);
     if (slot->reused) {
         pool->stats.reuseCount++;
     }
@@ -600,6 +634,7 @@ static EZrPoolStatus zr_pool_acquire(
         }
         slot->writerActive = ZR_TRUE;
         pool->stats.activeWriteCount++;
+        zr_pool_mark_slot_dirty(pool, slot);
     }
     outGuard->pool = pool;
     outGuard->value = zr_pool_slot_value(pool, slab, handle.slotIndex);
@@ -728,6 +763,7 @@ static EZrPoolStatus zr_pool_scan_unlocked(
         return ZR_POOL_STATUS_INVALID_ARGUMENT;
     }
     if (pool->layout.gcScanKind == ZR_POOL_GC_SCAN_FREE) {
+        pool->stats.scanPassCount++;
         return ZR_POOL_STATUS_OK;
     }
     for (TZrSize slabIndex = 0u; slabIndex < pool->slabCount; slabIndex++) {
@@ -743,13 +779,22 @@ static EZrPoolStatus zr_pool_scan_unlocked(
                  slot->state != ZR_POOL_SLOT_RETIRED)) {
                 continue;
             }
+            if (pool->layout.gcScanKind == ZR_POOL_GC_SCAN_BARRIERED &&
+                !slot->dirty) {
+                continue;
+            }
             pool->layout.scan(
                     slab->storage + localIndex * pool->elementStride,
                     pool->layout.context);
             scannedSlots++;
             scannedBytes += pool->layout.elementSize;
+            if (pool->layout.gcScanKind == ZR_POOL_GC_SCAN_BARRIERED &&
+                !slot->writerActive) {
+                zr_pool_clear_slot_dirty(pool, slot);
+            }
         }
     }
+    pool->stats.scanPassCount++;
     pool->stats.scannedSlotCount += scannedSlots;
     pool->stats.scannedByteCount += scannedBytes;
     if (outScannedSlots != ZR_NULL) {

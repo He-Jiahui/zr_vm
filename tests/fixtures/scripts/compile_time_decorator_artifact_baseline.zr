@@ -1,9 +1,9 @@
-module "compile_time_decorator_artifact_baseline";
+module compile_time_decorator_artifact_baseline;
 
 comptime var BASE_BONUS: int = 5;
 comptime var EXTRA_FACTOR: int = 2;
 
-comptime decorateWithScale(target: typeof Function, bonus: int = BASE_BONUS, factor: int = EXTRA_FACTOR): zr.DecoratorPatch {
+comptime fn decorateWithScale(target: typeof Function, bonus: int = BASE_BONUS, factor: int = EXTRA_FACTOR): zr.DecoratorPatch {
     return {
         metadata: {
             compileTimeTagged: true,
@@ -39,7 +39,7 @@ pub class User {
 }
 
 #decoratorRegistry.deep.scale(factor: 3)#
-pub score(seed: int = 4): int {
+pub fn score(seed: int = 4): int {
     var fnMeta = typeof(score).metadata;
     var classMeta = typeof(User).metadata;
     var observed = fnMeta;

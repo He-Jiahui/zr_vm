@@ -2255,16 +2255,12 @@ void test_native_network_optional_argument_import_compiles_without_unknown_param
 
 void test_reserved_type_query_targets_compile_without_explicit_imports(void) {
     SZrRegressionTestTimer timer;
-    const TZrChar *testSummary = "Reserved %type Targets Compile Without Explicit Imports";
+    const TZrChar *testSummary = "Static TypeId Targets Compile Without Explicit Imports";
     const char *source =
-            "markClass(target: %type Class): void { return; }\n"
-            "markStruct(target: %type Struct): void { return; }\n"
-            "markFunction(target: %type Function): void { return; }\n"
-            "markField(target: %type Field): void { return; }\n"
-            "markMethod(target: %type Method): void { return; }\n"
-            "markProperty(target: %type Property): void { return; }\n"
-            "markParameter(target: %type Parameter): void { return; }\n"
-            "markObject(target: %type Object): void { return; }\n"
+            "var intType = typeid(int);\n"
+            "var stringType = typeid(string);\n"
+            "var boolType = typeid(bool);\n"
+            "var objectType = typeid(object);\n"
             "return 0;";
     SZrState *state;
     SZrString *sourceName;
@@ -2273,7 +2269,7 @@ void test_reserved_type_query_targets_compile_without_explicit_imports(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Reserved reflection target pseudo-types",
-                 "Testing that %type Class/Struct/Function/Field/Method/Property/Parameter/Object remain valid reserved targets without reopening imported type globals");
+                 "Testing that typeid(TypeRef) compiles for built-in TypeRefs without reopening imported type globals");
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     if (state == ZR_NULL) {
@@ -2300,13 +2296,13 @@ void test_qualified_container_types_compile_through_function_predeclaration_path
     const TZrChar *testSummary = "Qualified Container Types Compile Through Function Predeclaration Paths";
     const char *source =
             "let container = import(\"zr.container\");\n"
-            "forward(value: container.Array<int>): container.Array<int> {\n"
+            "fn forward(value: container.Array<int>): container.Array<int> {\n"
             "    var local: container.Array<int> = value;\n"
             "    return local;\n"
             "}\n"
-            "host(): int {\n"
+            "fn host(): int {\n"
             "    let scoped = import(\"zr.container\");\n"
-            "    nested(value: scoped.Array<int>): scoped.Array<int> {\n"
+            "    fn nested(value: scoped.Array<int>): scoped.Array<int> {\n"
             "        var local: scoped.Array<int> = value;\n"
             "        return local;\n"
             "    }\n"
@@ -2667,9 +2663,9 @@ void test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captu
     ZR_TEST_DIVIDER();
 }
 
-void test_decorator_import_project_run_returns_expected_total(void) {
+void test_migrated_decorator_import_project_run_returns_expected_total(void) {
     SZrRegressionTestTimer timer;
-    const TZrChar *testSummary = "Decorator Import Project Run Returns Expected Total";
+    const TZrChar *testSummary = "Migrated Decorator Import Project Run Returns Expected Total";
     char projectPath[512];
     SZrGlobalState *global = ZR_NULL;
     SZrState *state = ZR_NULL;
@@ -2679,8 +2675,8 @@ void test_decorator_import_project_run_returns_expected_total(void) {
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Decorator import project runtime",
-                 "Testing that the decorator_import project executes through ZrLibrary_Project_Run and preserves decorator metadata plus imported module call results without crashing.");
+    ZR_TEST_INFO("Migrated decorator project runtime",
+                 "Testing that the former decorator fixture runs through normal modules and explicit calls after removal of the legacy decorator syntax contract.");
 
     snprintf(projectPath,
              sizeof(projectPath),
@@ -3537,25 +3533,22 @@ void test_known_native_calls_quicken_to_dedicated_call_family(void) {
     SZrState *state;
     SZrString *sourceName;
     SZrFunction *function = ZR_NULL;
-    char *source = ZR_NULL;
-    char sourcePath[1024];
+    const TZrChar *source =
+            "let system = import(\"zr.system\");\n"
+            "system.console.printLine(\"KNOWN_NATIVE_CALL_CURRENT_SURFACE\");\n"
+            "return 1;\n";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Known native call quickening",
-                 "Testing that decorator helper call sites lower to KNOWN_NATIVE_CALL instead of falling back to the generic FUNCTION_CALL path.");
+                 "Testing that a current-surface native module call lowers to KNOWN_NATIVE_CALL instead of falling back to the generic FUNCTION_CALL path.");
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(state->global));
 
-    snprintf(sourcePath,
-             sizeof(sourcePath),
-             "%s/fixtures/scripts/decorator_artifact_baseline.zr",
-             ZR_VM_TESTS_SOURCE_DIR);
-    source = read_text_file_owned(sourcePath);
-    TEST_ASSERT_NOT_NULL(source);
-
-    sourceName = ZrCore_String_CreateFromNative(state, "decorator_artifact_baseline.zr");
+    sourceName = ZrCore_String_CreateFromNative(state, "known_native_call_current_surface.zr");
     TEST_ASSERT_NOT_NULL(sourceName);
 
     function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
@@ -3564,16 +3557,15 @@ void test_known_native_calls_quicken_to_dedicated_call_family(void) {
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL), 0),
-            "Decorator helper call sites should quicken to KNOWN_NATIVE_CALL");
+            "Current-surface native module calls should quicken to KNOWN_NATIVE_CALL");
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(
             0u,
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL), 0) +
                     count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS), 0) +
                     count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS), 0),
-            "Decorator fixture should stay on the fixed-arity KNOWN_NATIVE_CALL opcode in this regression");
+            "Current-surface native module call should stay on the fixed-arity KNOWN_NATIVE_CALL opcode in this regression");
 
     ZrCore_Function_Free(state, function);
-    free(source);
     timer.endTime = clock();
     ZR_TEST_PASS(timer, testSummary);
     ZrTests_Runtime_State_Destroy(state);
@@ -3743,11 +3735,11 @@ void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
     const char *source =
             "class Counter {\n"
             "    pub var value: int;\n"
-            "    pub step(delta: int): int {\n"
+            "    pub fn step(delta: int): int {\n"
             "        this.value = this.value + delta;\n"
             "        return this.value;\n"
             "    }\n"
-            "    pub read(): int {\n"
+            "    pub fn read(): int {\n"
             "        return this.value;\n"
             "    }\n"
             "}\n"
@@ -3824,11 +3816,11 @@ void test_typed_member_call_initializers_bind_directly_into_local_slots(void) {
     const char *source =
             "class Counter {\n"
             "    pub var value: int;\n"
-            "    pub step(delta: int): int {\n"
+            "    pub fn step(delta: int): int {\n"
             "        this.value = this.value + delta;\n"
             "        return this.value;\n"
             "    }\n"
-            "    pub read(): int {\n"
+            "    pub fn read(): int {\n"
             "        return this.value;\n"
             "    }\n"
             "}\n"
@@ -3895,7 +3887,7 @@ void test_typed_member_call_binary_operands_bind_directly_into_operand_slots(voi
     const char *source =
             "class Counter {\n"
             "    pub var value: int;\n"
-            "    pub read(): int {\n"
+            "    pub fn read(): int {\n"
             "        return this.value;\n"
             "    }\n"
             "}\n"
@@ -4032,10 +4024,10 @@ void test_known_vm_call_results_keep_typed_arithmetic_specialization(void) {
     const TZrChar *testSummary = "Known VM Call Results Keep Typed Arithmetic Specialization";
     const char *source =
             "class Producer {\n"
-            "    pub step(delta: int): int {\n"
+            "    pub fn step(delta: int): int {\n"
             "        return delta + 1;\n"
             "    }\n"
-            "    pub read(): int {\n"
+            "    pub fn read(): int {\n"
             "        return 5;\n"
             "    }\n"
             "}\n"
@@ -4164,7 +4156,7 @@ void test_direct_child_function_calls_quicken_to_known_vm_call_family(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Direct Child Function Calls Quicken To Known VM Call Family";
     const char *source =
-            "labelFor(slot: int): string {\n"
+            "fn labelFor(slot: int): string {\n"
             "    var normalized = slot % 4;\n"
             "    if (normalized == 0) {\n"
             "        return \"aa\";\n"
@@ -4226,7 +4218,7 @@ void test_loop_child_function_calls_quicken_to_known_vm_call_family(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Loop Child Function Calls Quicken To Known VM Call Family";
     const char *source =
-            "labelFor(slot: int): string {\n"
+            "fn labelFor(slot: int): string {\n"
             "    var normalized = slot % 4;\n"
             "    if (normalized == 0) {\n"
             "        return \"aa\";\n"
@@ -5255,10 +5247,10 @@ void test_noop_primitive_casts_do_not_emit_conversion_opcodes(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "No-op Primitive Casts Do Not Emit Conversion Opcodes";
     const char *source =
-            "id(value: int): int {\n"
+            "fn id(value: int): int {\n"
             "    return <int> value;\n"
             "}\n"
-            "sameFlag(flag: bool): bool {\n"
+            "fn sameFlag(flag: bool): bool {\n"
             "    return <bool> flag;\n"
             "}\n"
             "return id(7) + (sameFlag(true) ? 1 : 0);\n";

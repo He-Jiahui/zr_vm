@@ -20,7 +20,7 @@ extern void test_type_conversion_instructions(void);
 extern void test_function_call_argument_conversion_emits_to_float(void);
 extern void test_type_expression_compiles_to_typeof_opcode(void);
 extern void test_intermediate_writer_emits_type_metadata_section(void);
-extern void test_intermediate_writer_emits_compile_time_and_test_metadata(void);
+extern void test_intermediate_writer_omits_removed_legacy_test_metadata(void);
 extern void test_compiler_optimizer_removes_dead_null_clear_streaks(void);
 extern void test_compiler_optimizer_reuses_temp_slots_in_basic_blocks(void);
 extern void test_member_and_index_access_emit_split_opcodes(void);
@@ -59,7 +59,7 @@ extern void test_interface_plain_member_serializes_interface_contract_slot(void)
 extern void test_name_matched_iterator_members_without_builtin_interface_do_not_bind_contract_roles(void);
 extern void test_interface_missing_member_is_rejected_by_compiler(void);
 extern void test_ownership_builtin_shared_expression_consumes_unique_owner(void);
-extern void test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes(void);
+extern void test_current_ownership_surface_emits_dedicated_opcodes(void);
 extern void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(void);
 extern void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void);
 extern void test_ownership_unique_share_runtime_moves_source_to_null(void);
@@ -95,7 +95,7 @@ extern void test_imported_source_module_type_stubs_do_not_serialize_into_entry_p
 extern void test_project_local_struct_pair_shadows_native_pair_at_runtime(void);
 extern void test_lsp_language_feature_matrix_runtime_returns_expected_total(void);
 extern void test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captures_stable(void);
-extern void test_decorator_import_project_run_returns_expected_total(void);
+extern void test_migrated_decorator_import_project_run_returns_expected_total(void);
 extern void test_language_debug_gauntlet_project_run_returns_expected_banner_and_checksum(void);
 extern void test_benchmark_numeric_loops_project_run_returns_expected_checksum(void);
 extern void test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverage(void);
@@ -172,7 +172,7 @@ int main(void) {
     RUN_TEST(test_function_call_argument_conversion_emits_to_float);
     RUN_TEST(test_type_expression_compiles_to_typeof_opcode);
     RUN_TEST(test_intermediate_writer_emits_type_metadata_section);
-    RUN_TEST(test_intermediate_writer_emits_compile_time_and_test_metadata);
+    RUN_TEST(test_intermediate_writer_omits_removed_legacy_test_metadata);
     RUN_TEST(test_compiler_optimizer_removes_dead_null_clear_streaks);
     RUN_TEST(test_compiler_optimizer_reuses_temp_slots_in_basic_blocks);
     RUN_TEST(test_member_and_index_access_emit_split_opcodes);
@@ -215,7 +215,7 @@ int main(void) {
     RUN_TEST(test_name_matched_iterator_members_without_builtin_interface_do_not_bind_contract_roles);
     RUN_TEST(test_interface_missing_member_is_rejected_by_compiler);
     RUN_TEST(test_ownership_builtin_shared_expression_consumes_unique_owner);
-    RUN_TEST(test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes);
+    RUN_TEST(test_current_ownership_surface_emits_dedicated_opcodes);
     RUN_TEST(test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute);
     RUN_TEST(test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes);
     RUN_TEST(test_ownership_builtin_compile_rejects_invalid_operands);
@@ -258,7 +258,7 @@ int main(void) {
     RUN_TEST(test_project_local_struct_pair_shadows_native_pair_at_runtime);
     RUN_TEST(test_lsp_language_feature_matrix_runtime_returns_expected_total);
     RUN_TEST(test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captures_stable);
-    RUN_TEST(test_decorator_import_project_run_returns_expected_total);
+    RUN_TEST(test_migrated_decorator_import_project_run_returns_expected_total);
     RUN_TEST(test_language_debug_gauntlet_project_run_returns_expected_banner_and_checksum);
     RUN_TEST(test_benchmark_numeric_loops_project_run_returns_expected_checksum);
     RUN_TEST(test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverage);

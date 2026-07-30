@@ -1,4 +1,4 @@
 let math = import("zr.math");
 let ops = import("ops");
 
-return $math.Vector3(1.0, 2.0, 3.0).x + ops.run();
+return init math.Vector3(1.0, 2.0, 3.0).x + ops.run();

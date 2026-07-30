@@ -2,7 +2,7 @@ let system = import("zr.system");
 let container = import("zr.container");
 let {Array, Map, Set, LinkedList, Pair} = import("zr.container");
 
-labelFor(value: int) {
+fn labelFor(value: int) {
     if (value % 2 == 0) {
         return "even";
     }

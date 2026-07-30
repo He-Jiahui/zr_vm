@@ -1,20 +1,23 @@
-class Session {}
+resource class Session {}
+resource class Cache {}
 
-runSessionLifecycle(): int {
-    var sessionSeed = Unique<Session>(new Session());
+fn runSessionLifecycle(): int {
+    var sessionSeed = own Session();
     var sharedSession = sessionSeed.share();
     var watcher = sharedSession.weak();
     var mask = 0;
 
-    using (sharedSession.borrow()) {
-        if (sharedSession != null) {
+    {
+        var borrowed: ref readonly Session = ref sharedSession;
+        if (borrowed != null) {
             mask = mask + 1;
         }
     }
 
-    var cacheSeed = Unique<string>("session-cache");
-    using (cacheSeed.loan()) {
-        if (cacheSeed == null) {
+    var cacheSeed = own Cache();
+    {
+        var loaned: ref Cache = ref cacheSeed;
+        if (loaned != null) {
             mask = mask + 2;
         }
     }
@@ -22,9 +25,9 @@ runSessionLifecycle(): int {
         mask = mask + 4;
     }
 
-    var detachedSeed = Unique<Session>(new Session());
-    var rawSession = detachedSeed.detach();
-    if (detachedSeed == null && rawSession != null) {
+    var detachedSeed = own Session();
+    var rawSession = detachedSeed.intoGc();
+    if (rawSession != null) {
         mask = mask + 8;
     }
 
@@ -33,13 +36,11 @@ runSessionLifecycle(): int {
         mask = mask + 16;
     }
 
-    var releasedShared = sharedSession.release();
-    var releasedUpgrade = upgradedSession.release();
+    var releasedShared = drop(sharedSession);
+    var releasedUpgrade = drop(upgradedSession);
     var expiredSession = watcher.upgrade();
     if (releasedShared == null &&
         releasedUpgrade == null &&
-        sharedSession == null &&
-        upgradedSession == null &&
         expiredSession == null) {
         mask = mask + 32;
     }

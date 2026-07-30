@@ -580,10 +580,23 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
         }
         if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP) != 0u &&
             (layout->isParameter == 0u ||
+             layout->stackSlot != 0u ||
              (flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
                        ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
                        ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) != 0u)) {
             return ZR_FALSE;
+        }
+        if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP) != 0u) {
+            TZrUInt32 bitmapByteOffset;
+            TZrUInt32 initializedFieldWordCount;
+
+            if (!ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+                        state,
+                        function,
+                        &bitmapByteOffset,
+                        &initializedFieldWordCount)) {
+                return ZR_FALSE;
+            }
         }
         if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT) != 0u &&
             (flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |

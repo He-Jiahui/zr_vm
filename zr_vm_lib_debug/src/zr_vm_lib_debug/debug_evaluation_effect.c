@@ -167,7 +167,37 @@ static TZrBool zr_debug_evaluation_effect_identifiers_are_resolved(
             if (!zr_debug_evaluation_effect_identifiers_are_resolved(
                         context,
                         node->data.primaryExpression.property)) {
-                return ZR_FALSE;
+                TZrBool hasResolvedMember = ZR_FALSE;
+
+                if (node->data.primaryExpression.property == ZR_NULL ||
+                    node->data.primaryExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
+                    node->data.primaryExpression.members == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                for (index = 0u; index < node->data.primaryExpression.members->count; ++index) {
+                    const SZrAstNode *member = node->data.primaryExpression.members->nodes[index];
+                    const SZrAstNode *property =
+                            member != ZR_NULL && member->type == ZR_AST_MEMBER_EXPRESSION
+                                    ? member->data.memberExpression.property
+                                    : ZR_NULL;
+                    const SZrSemanticReferenceFact *reference =
+                            property != ZR_NULL
+                                    ? ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                                              context,
+                                              property,
+                                              ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS)
+                                    : ZR_NULL;
+
+                    if (reference != ZR_NULL && reference->isResolved &&
+                        reference->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                        reference->typeId != ZR_SEMANTIC_ID_INVALID) {
+                        hasResolvedMember = ZR_TRUE;
+                        break;
+                    }
+                }
+                if (!hasResolvedMember) {
+                    return ZR_FALSE;
+                }
             }
             if (node->data.primaryExpression.members != ZR_NULL) {
                 for (index = 0u; index < node->data.primaryExpression.members->count; ++index) {

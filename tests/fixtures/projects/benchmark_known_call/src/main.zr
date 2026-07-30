@@ -1,10 +1,10 @@
 let benchConfig = import("bench_config");
 
-answer(): int {
+fn answer(): int {
     return 11;
 }
 
-bonus(): int {
+fn bonus(): int {
     return 17;
 }
 

@@ -7,7 +7,7 @@ class Accumulator {
         this.value = seed;
     }
 
-    pub step(delta: int): int {
+    pub fn step(delta: int): int {
         this.value = (this.value * 13 + delta) % 1009;
         return this.value;
     }

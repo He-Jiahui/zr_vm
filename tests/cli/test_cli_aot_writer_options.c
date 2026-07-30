@@ -643,8 +643,8 @@ static void assert_generated_reports_manifest_export_declarations(SZrState *stat
     assert_text_contains(generatedCText, "/* manifest.exportTableEntries = 3 */");
     assert_text_contains(generatedCText, "static const SZrAotManifestExportEntry zr_aot_manifest_exports[]");
     assert_text_contains(generatedCText,
-                         "{ .kind = 2u, .flags = 0u, .target = \"Widget.kept\", "
-                         ".typeToken = 0x00000000u, .memberToken = 0x00000000u },");
+                         "{ .kind = 2u, .flags = 2u, .target = \"Widget.kept\", "
+                         ".typeToken = 0x00000000u, .memberToken = 0x03000001u },");
     assert_text_contains(generatedCText,
                          "{ .kind = 1u, .flags = 0u, .target = \"Widget\", "
                          ".typeToken = 0x00000000u, .memberToken = 0x00000000u },");
@@ -1156,6 +1156,10 @@ static void test_cli_aot_writer_options_bridges_manifest_export_declarations(voi
 
     TEST_ASSERT_NOT_NULL(state);
     function = create_preserve_method_fixture(state, "Widget.used", "Widget.kept");
+    attach_generic_method_spec_metadata(state, function);
+    function->typedExportedSymbols[0].name = ZrCore_String_CreateFromNative(state, "Widget.kept");
+    function->typedExportedSymbols[0].callableChildIndex = 1u;
+    TEST_ASSERT_NOT_NULL(function->typedExportedSymbols[0].name);
 
     memset(&libraryProject, 0, sizeof(libraryProject));
     memset(exportDeclarations, 0, sizeof(exportDeclarations));
@@ -1196,6 +1200,9 @@ static void test_cli_aot_writer_options_bridges_manifest_export_declarations(voi
     TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_AOT_MANIFEST_EXPORT_DECLARATION_METHOD,
                              (TZrUInt32)options.manifestExportDeclarations[0].kind);
     TEST_ASSERT_EQUAL_STRING("Widget.kept", options.manifestExportDeclarations[0].target);
+    TEST_ASSERT_TRUE(options.manifestExportDeclarations[0].hasMemberTokenBinding);
+    TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 1u),
+                             options.manifestExportDeclarations[0].memberToken);
     TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ZR_AOT_MANIFEST_EXPORT_DECLARATION_TYPE,
                              (TZrUInt32)options.manifestExportDeclarations[1].kind);
     TEST_ASSERT_EQUAL_STRING("Widget", options.manifestExportDeclarations[1].target);

@@ -555,7 +555,7 @@ static TZrBool test_local_hover_surfaces_constant_boolean_branch_cause(SZrState 
     const TZrChar *uriText = "file:///local_constant_boolean_branch_hover.zr";
     const TZrChar *content =
         "fn flow(): int {\n"
-        "    var const flag = false;\n"
+        "    let flag = false;\n"
         "    if (flag) {\n"
         "        var deadThen = 2;\n"
         "    } else {\n"
@@ -625,7 +625,7 @@ static TZrBool test_local_hover_surfaces_constant_false_loop_body_cause(SZrState
     const TZrChar *uriText = "file:///local_constant_false_loop_hover.zr";
     const TZrChar *content =
         "fn flow(): int {\n"
-        "    var const keepGoing = false;\n"
+        "    let keepGoing = false;\n"
         "    while (keepGoing) {\n"
         "        var deadLoop = 2;\n"
         "    }\n"
@@ -694,7 +694,7 @@ static TZrBool test_local_hover_surfaces_constant_true_branch_exit_cause(SZrStat
     const TZrChar *uriText = "file:///local_constant_true_branch_exit_hover.zr";
     const TZrChar *content =
         "fn flow(): int {\n"
-        "    var const flag = true;\n"
+        "    let flag = true;\n"
         "    if (flag) {\n"
         "        return 1;\n"
         "    }\n"
@@ -931,7 +931,7 @@ static TZrBool test_local_hover_surfaces_ownership_violation_message(SZrState *s
     if (context == ZR_NULL ||
         uri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !find_position_for_substring(content, "ref resource", 1, &position)) {
+        !find_position_for_substring(content, "ref resource", 0, &position)) {
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);
         }

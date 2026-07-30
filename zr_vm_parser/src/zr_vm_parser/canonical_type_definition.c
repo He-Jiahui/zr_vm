@@ -426,6 +426,35 @@ static TZrBool canonical_constructor_parameter_is_valid(
     return parameter->contract.callSiteMarker == expectedMarker;
 }
 
+static TZrBool canonical_parameter_contract_equal(
+        const SZrCanonicalParameterContract *left,
+        const SZrCanonicalParameterContract *right) {
+    return left != ZR_NULL && right != ZR_NULL &&
+           left->typeId == right->typeId &&
+           left->passingForm == right->passingForm &&
+           left->escapeUpperBound == right->escapeUpperBound &&
+           left->entryInitialization == right->entryInitialization &&
+           left->exitInitialization == right->exitInitialization &&
+           left->acceptsTemporary == right->acceptsTemporary &&
+           left->callSiteMarker == right->callSiteMarker;
+}
+
+static TZrBool canonical_constructor_parameter_equal(
+        const SZrCanonicalConstructorParameter *left,
+        const SZrCanonicalConstructorParameter *right) {
+    TZrBool namesEqual;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    namesEqual = left->name == ZR_NULL || right->name == ZR_NULL
+                         ? (TZrBool)(left->name == right->name)
+                         : ZrCore_String_Equal(left->name, right->name);
+    return namesEqual &&
+           left->hasDefaultValue == right->hasDefaultValue &&
+           canonical_parameter_contract_equal(&left->contract, &right->contract);
+}
+
 TZrBool ZrParser_CanonicalType_RegisterConstructorContract(
         SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -462,6 +491,31 @@ TZrBool ZrParser_CanonicalType_RegisterConstructorContract(
                 return ZR_FALSE;
             }
         }
+    }
+
+    for (index = 0U; index < definition->constructors.length; index++) {
+        const SZrCanonicalConstructorRecord *existing =
+                (const SZrCanonicalConstructorRecord *)ZrCore_Array_Get(
+                        &definition->constructors,
+                        index);
+        TZrSize parameterIndex;
+
+        if (existing == ZR_NULL || existing->symbolId != constructorSymbolId) {
+            continue;
+        }
+        if (existing->isPublic != isPublic || existing->parameters.length != parameterCount) {
+            return ZR_FALSE;
+        }
+        for (parameterIndex = 0U; parameterIndex < parameterCount; parameterIndex++) {
+            const SZrCanonicalConstructorParameter *stored =
+                    (const SZrCanonicalConstructorParameter *)ZrCore_Array_Get(
+                            (SZrArray *)&existing->parameters,
+                            parameterIndex);
+            if (!canonical_constructor_parameter_equal(stored, &parameters[parameterIndex])) {
+                return ZR_FALSE;
+            }
+        }
+        return ZR_TRUE;
     }
 
     memset(&constructor, 0, sizeof(constructor));

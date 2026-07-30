@@ -174,7 +174,7 @@ static void escape_for_zr_string_literal(char *destination, size_t destinationSi
 
 int main(int argc, char **argv) {
     static const char *kLibraryTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var beforeClose = lib.isClosed();\n"
             "lib.close();\n"
@@ -183,7 +183,7 @@ int main(int argc, char **argv) {
             "var afterSecondClose = lib.isClosed();\n"
             "return (!beforeClose && afterFirstClose && afterSecondClose) ? 1 : 0;\n";
     static const char *kLibraryBoolTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var beforeClose = lib.isClosed();\n"
             "lib.close();\n"
@@ -192,7 +192,7 @@ int main(int argc, char **argv) {
             "var afterSecondClose = lib.isClosed();\n"
             "return !beforeClose && afterFirstClose && afterSecondClose;\n";
     static const char *kPrimitiveTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var add = lib.getSymbol(\"zr_ffi_add_i32\", {\n"
             "  returnType: \"i32\",\n"
@@ -208,7 +208,7 @@ int main(int argc, char **argv) {
             "});\n"
             "return add.call([7, 5]) + mul.call([2.0, 4.0]) + strlenUtf8.call([\"hello\"]);\n";
     static const char *kPrimitiveAddTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var add = lib.getSymbol(\"zr_ffi_add_i32\", {\n"
             "  returnType: \"i32\",\n"
@@ -216,7 +216,7 @@ int main(int argc, char **argv) {
             "});\n"
             "return add.call([7, 5]);\n";
     static const char *kPrimitiveMulTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var mul = lib.getSymbol(\"zr_ffi_mul_f64\", {\n"
             "  returnType: \"f64\",\n"
@@ -224,7 +224,7 @@ int main(int argc, char **argv) {
             "});\n"
             "return mul.call([2.0, 4.0]);\n";
     static const char *kPrimitiveStrlenTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var strlenUtf8 = lib.getSymbol(\"zr_ffi_strlen_utf8\", {\n"
             "  returnType: \"u64\",\n"
@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
             "});\n"
             "return strlenUtf8.call([\"hello\"]);\n";
     static const char *kPrimitiveStdcallTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var add = lib.getSymbol(\"zr_ffi_stdcall_add_i32\", {\n"
             "  returnType: \"i32\",\n"
@@ -249,7 +249,7 @@ int main(int argc, char **argv) {
             "ffi.loadLibrary(\"__zr_ffi_missing_fixture__\");\n"
             "return 0;\n";
     static const char *kAllTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var beforeClose = lib.isClosed();\n"
             "lib.close();\n"

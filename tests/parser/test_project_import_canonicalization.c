@@ -1964,8 +1964,8 @@ static void test_project_compile_records_using_import_guard_dependencies(void) {
     const SZrFunctionCallableSummary *runSummary;
     SZrString *sourceName;
     static const TZrChar *source =
-            "pub func run(): i32 {\n"
-            "    using (var helper = %import(\".helper.math\")) {\n"
+            "pub fn run(): i32 {\n"
+            "    using (var helper = import(\".helper.math\")) {\n"
             "        return helper.answer;\n"
             "    } else {\n"
             "        return 0;\n"
@@ -2028,15 +2028,15 @@ static void test_project_compile_records_using_import_guard_method_signature(voi
     SZrFunction *function;
     SZrString *sourceName;
     static const TZrChar *source =
-            "pub func run(): i32 {\n"
-            "    using (var helper = %import(\".helper.math\")) {\n"
+            "pub fn run(): i32 {\n"
+            "    using (var helper = import(\".helper.math\")) {\n"
             "        return helper.add(1, 2);\n"
             "    } else {\n"
             "        return 0;\n"
             "    }\n"
             "}\n";
     static const TZrChar *helperContent =
-            "pub func add(left: i32, right: i32): i32 {\n"
+            "pub fn add(left: i32, right: i32): i32 {\n"
             "    return left + right;\n"
             "}\n";
 
@@ -2360,10 +2360,10 @@ static void test_required_import_runtime_resolves_same_name_signature_candidate(
             "let helper = import(\".helper.math\");\n"
             "return helper.pick(true);\n";
     static const TZrChar *helperContent =
-            "pub func pick(value: int): int {\n"
+            "pub fn pick(value: int): int {\n"
             "    return value;\n"
             "}\n"
-            "pub func pick(value: bool): int {\n"
+            "pub fn pick(value: bool): int {\n"
             "    return 42;\n"
             "}\n";
 
@@ -2805,8 +2805,8 @@ static void test_using_import_guard_runtime_checks_nested_caller_signature_hash(
     SZrString *sourceName;
     TZrInt64 result = 0;
     static const TZrChar *source =
-            "pub func run(): i32 {\n"
-            "    using (var helper = %import(\".helper.math\")) {\n"
+            "pub fn run(): i32 {\n"
+            "    using (var helper = import(\".helper.math\")) {\n"
             "        return helper.answer;\n"
             "    } else {\n"
             "        return 77;\n"

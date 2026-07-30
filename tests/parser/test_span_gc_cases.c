@@ -96,7 +96,7 @@ static void install_span_gc_probe(SZrState *state) {
 
 void test_span_array_source_survives_gc_compaction_while_view_is_live(void) {
     static const char kSource[] =
-            "var container = %import(\"zr.container\");\n"
+            "var container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(41);\n"
             "var view = xs.span();\n"

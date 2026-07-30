@@ -1,4 +1,2 @@
-%module "reference_hidden_import";
-%test("hidden import api") {
-    return zr.import("zr.system");
-}
+module reference_hidden_import;
+return zr.import("zr.system");

@@ -559,7 +559,7 @@ static void test_resolved_function_call_records_call_reference_fact(void) {
     const SZrSemanticReferenceFact *callFact;
     const SZrSemanticReferenceFact *declarationFact;
     const char *source =
-            "pick(value: int): int { return value; }\n"
+            "fn pick(value: int): int { return value; }\n"
             "pick(42);";
 
     sourceName = ZrCore_String_Create(g_state, "reference_fact_call_test.zr", 27);

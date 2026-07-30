@@ -443,7 +443,7 @@ static void test_semantic_facts_resolve_linear_definite_assignment_from_referenc
 
 static void test_cfg_definite_assignment_marks_self_initializer_read_uninit(void) {
     const TZrChar *source =
-            "choose(): int {\n"
+            "fn choose(): int {\n"
             "    var seed: int = seed;\n"
             "    return seed;\n"
             "}\n";
@@ -514,7 +514,7 @@ static void test_cfg_definite_assignment_marks_self_initializer_read_uninit(void
 
 static void test_cfg_definite_assignment_joins_finally_read_from_normal_and_return_paths(void) {
     const TZrChar *source =
-            "choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    var seed: int;\n"
             "    try {\n"
             "        if (flag) {\n"
@@ -603,7 +603,7 @@ static void test_cfg_definite_assignment_joins_finally_read_from_normal_and_retu
 
 static void test_cfg_definite_assignment_preserves_true_loop_break_write(void) {
     const TZrChar *source =
-            "choose(): int {\n"
+            "fn choose(): int {\n"
             "    var seed: int;\n"
             "    while (true) {\n"
             "        seed = 1;\n"
@@ -689,7 +689,7 @@ static void test_cfg_definite_assignment_preserves_true_loop_break_write(void) {
 
 static void test_cfg_reaching_definitions_clears_finally_read_from_normal_and_return_paths(void) {
     const TZrChar *source =
-            "choose(flag: bool): int {\n"
+            "fn choose(flag: bool): int {\n"
             "    var seed: int;\n"
             "    try {\n"
             "        if (flag) {\n"

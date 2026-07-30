@@ -300,9 +300,9 @@ static void test_lsp_code_action_inserts_missing_parameter_list_close(
         if (fix != ZR_NULL &&
             fix->applicability == ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE &&
             fix->editRange.start.line == 0 &&
-            fix->editRange.start.character == 20 &&
+            fix->editRange.start.character == 18 &&
             fix->editRange.end.line == 0 &&
-            fix->editRange.end.character == 20 &&
+            fix->editRange.end.character == 18 &&
             strcmp(test_string_text(fix->title),
                    "Insert missing ')'") == 0 &&
             strcmp(test_string_text(fix->editText), ")") == 0 &&

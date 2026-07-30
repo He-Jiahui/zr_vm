@@ -82,7 +82,7 @@ static SZrAstNode *first_catch_statement(SZrAstNode *tryNode) {
 static void test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife(void) {
     const char *source =
             "try {\n"
-            "    ((value: int) -> { return value + 1; })(1);\n"
+            "    (fn(value: int): int { return value + 1; })(1);\n"
             "} catch (e) {\n"
             "    \"caught\";\n"
             "}\n";
@@ -112,7 +112,7 @@ static void test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife(void) {
 static void test_cfg_uses_lambda_iife_throw_profile_for_typed_catch_matching(void) {
     const char *source =
             "try {\n"
-            "    (() -> { throw \"boom\"; })();\n"
+            "    (fn(): void { throw \"boom\"; })();\n"
             "} catch (e: int) {\n"
             "    \"int\";\n"
             "} catch (e: string) {\n"

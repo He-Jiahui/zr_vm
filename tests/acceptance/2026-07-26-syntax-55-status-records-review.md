@@ -134,6 +134,39 @@ metadata 迁移及依赖它们的 project/module roundtrip；这两组结果是�
 `uint64`，避免 32 位宿主按 `size_t` 读取导致后续字段错位；并确保 migration-only split
 property parser 在 collection append 失败时释放 AST，不能回落到生产 AST。
 
+## 2026-07-30/31 最终隔离复验
+
+在继续迁移旧 fixture、修复下游 AOT/debug 回归并补齐 Gate 11 typed contract 后，
+上述 compiler integration 44 项失败和 module system 43 项失败已经全部关闭。最终证据
+不是用定向 parser 结果覆盖旧失败，而是重新从当前工作树同步到 WSL ext4 短路径隔离
+源码树，重新配置、构建并串行执行完整注册矩阵：
+
+- Ubuntu 22.04 / GCC 11.4 / Debug 冷构建完成 3176/3176 个 Ninja step；最终源码同步后
+  CMake 重新配置和全目标增量构建退出 0；
+- CTest 单次完整运行 123/123 通过，0 失败，总耗时 573.17 秒；其中
+  `language_pipeline` 在完整运行中再次通过，独立修复后复跑也为 1/1、216.34 秒；
+- 先前全量基线暴露的 7 个失败点全部闭环：CLI AOT writer、AOT descriptor
+  diagnostics、两个 generic AOT、debug truncation、debug variable child shape 和
+  `language_pipeline`；
+- debug 注册组 18/18 通过；Gate 11 compile-time/attribute/comptime runtime/
+  declaration transform 定向合计 52/52 通过；
+- `percent_syntax_cutover`、`cli_syntax_migration`、`legacy_migration` 为 3/3；生产
+  parser 对 16 组已删除 `%` 关键字字面量静态扫描为 0 命中；
+- migration inventory 当前报告为 `machineApplicable=0`、`unknown=0`、
+  `requiresReview=610`、`blocked=3`，878 个文件被扫描，412 个按结构化原因排除。
+  三个 blocked finding 是 `%future`、`%mutex`、`%atomic` 的明确负向覆盖。
+
+复跑过程中额外发现一份 CFG throw-effect 测试仍使用旧 `(...) -> { ... }` lambda。
+该 fixture 改为 `fn(...): ReturnType { ... }` 后，原 CFG 可达性断言 2/2 通过，完整
+`language_pipeline` 随后全绿。旧 decorator 正向测试也已改为生产 parser 拒绝测试，
+不再把 `%` 输入当作成功路径。
+
+最终机械清点仍为 `TOTAL=55 COMPLETE=55 MISSING=0`，目录分布保持
+01=5、02=6、03=5、04=7、05=6、06=2、07=1、10=5、12=15、13=3。该结论只
+确认 55 份历史叶子记录的声明范围。Gate 11 M4/M5 仍缺完整 typed Patch、事务回滚和
+全部 consumer，Gate 14 仍未实现，08/09/10C/06B/07B 的上层 promotion 也未全部关闭；
+因此根 Syntax redesign 继续保持未完成。
+
 ## `%` 语法的当前状态
 
 原报告中“06B 前兼容输入仍由生产 parser 接受”的描述已被本次原子切换取代。当前

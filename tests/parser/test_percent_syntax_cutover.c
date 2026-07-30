@@ -3,8 +3,10 @@
 #include <string.h>
 
 #include "harness/runtime_support.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/parser.h"
 
@@ -233,11 +235,73 @@ static void test_current_surface_and_modulo_remain_parseable(void) {
     ZrParser_State_Free(&parserState);
 }
 
+static void test_removed_ownership_compatibility_members_do_not_lower(void) {
+    static const TZrChar *const sources[] = {
+            "resource class LegacyResource { }\n"
+            "let owner = own LegacyResource();\n"
+            "let value = owner.borrow();\n",
+            "resource class LegacyResource { }\n"
+            "let owner = own LegacyResource();\n"
+            "let value = owner.loan();\n",
+            "resource class LegacyResource { }\n"
+            "let owner = own LegacyResource();\n"
+            "let value = owner.release();\n",
+            "resource class LegacyResource { }\n"
+            "let owner = own LegacyResource();\n"
+            "let value = owner.detach();\n",
+            "resource class LegacyResource { }\n"
+            "let owner = own LegacyResource();\n"
+            "using (ref owner) { }\n",
+    };
+    TZrSize index;
+
+    for (index = 0U; index < sizeof(sources) / sizeof(sources[0]); index++) {
+        SZrString *sourceName = ZrCore_String_Create(
+                g_state,
+                "ownership_compatibility_member_cutover.zr",
+                strlen("ownership_compatibility_member_cutover.zr"));
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(sourceName);
+        function = ZrParser_Source_Compile(
+                g_state, sources[index], strlen(sources[index]), sourceName);
+        if (function != ZR_NULL) {
+            ZrCore_Function_Free(g_state, function);
+        }
+        TEST_ASSERT_NULL_MESSAGE(function, sources[index]);
+    }
+}
+
+static void test_canonical_reference_bindings_compile_without_legacy_ownership_types(void) {
+    const TZrChar *source =
+            "resource class CurrentResource { }\n"
+            "fn lifecycle(): int {\n"
+            "    var uniqueOwner = own CurrentResource();\n"
+            "    { var writable: ref CurrentResource = ref uniqueOwner; }\n"
+            "    var sharedOwner = uniqueOwner.share();\n"
+            "    { var readonlyView: ref readonly CurrentResource = ref sharedOwner; }\n"
+            "    return 1;\n"
+            "}\n"
+            "return lifecycle();\n";
+    SZrString *sourceName = ZrCore_String_Create(
+            g_state,
+            "canonical_reference_bindings.zr",
+            strlen("canonical_reference_bindings.zr"));
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    ZrCore_Function_Free(g_state, function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_known_percent_directives_are_diagnostics_only);
     RUN_TEST(test_non_percent_legacy_forms_are_diagnostics_only);
     RUN_TEST(test_unknown_percent_identifier_is_not_a_migration_rule);
     RUN_TEST(test_current_surface_and_modulo_remain_parseable);
+    RUN_TEST(test_removed_ownership_compatibility_members_do_not_lower);
+    RUN_TEST(test_canonical_reference_bindings_compile_without_legacy_ownership_types);
     return UNITY_END();
 }

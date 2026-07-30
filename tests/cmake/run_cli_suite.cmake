@@ -879,7 +879,7 @@ if (run_compile_run_incremental_binary_parity)
                         "executed_via=binary")
 
     cli_write_file("${compile_run_incremental_dir}/src/greet.zr"
-                   "pub var greet = () => {\n    return \"hello from import v2\";\n};\n")
+                   "pub var greet = fn() => {\n    return \"hello from import v2\";\n};\n")
     cli_run("compile_run_incremental_changed_dependency"
             compile_run_incremental_changed_output
             compile_run_incremental_changed_result

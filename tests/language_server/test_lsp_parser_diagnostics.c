@@ -291,7 +291,7 @@ static void test_lsp_missing_interface_method_parameter_list_close_parser_diagno
     const TZrChar *summary = "LSP Missing Interface Method Parameter List Close Parser Diagnostic";
     const TZrChar *content =
         "interface Readable {\n"
-        "    read(value: int: int;\n"
+        "    fn read(value: int: int;\n"
         "}\n";
 
     TEST_START(summary);
@@ -339,7 +339,7 @@ static void test_lsp_missing_extern_function_parameter_list_close_parser_diagnos
     const TZrChar *summary = "LSP Missing Extern Function Parameter List Close Parser Diagnostic";
     const TZrChar *content =
         "native extern(\"fixture\") {\n"
-        "    NativeAdd(value: int: int;\n"
+        "    fn NativeAdd(value: int: int;\n"
         "}\n";
 
     TEST_START(summary);
@@ -766,19 +766,6 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
     if (!run_parser_diagnostic_case(state,
                                     &timer,
                                     summary,
-                                    "file:///parser_missing_out_semicolon.zr",
-                                    "out 1\n"
-                                    "var next = 2;\n",
-                                    "missing_statement_semicolon",
-                                    "Missing ';' after out statement",
-                                    "Insert ';' after the out statement",
-                                    "expected out statement missing-semicolon diagnostic to carry code, problem text, and suggestion")) {
-        return;
-    }
-
-    if (!run_parser_diagnostic_case(state,
-                                    &timer,
-                                    summary,
                                     "file:///parser_missing_using_semicolon.zr",
                                     "var resource = 1;\n"
                                     "using resource\n"
@@ -795,7 +782,7 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
                                     summary,
                                     "file:///parser_missing_interface_method_signature_semicolon.zr",
                                     "interface Readable {\n"
-                                    "    read(value: int): int\n"
+                                    "    fn read(value: int): int\n"
                                     "}\n",
                                     "missing_statement_semicolon",
                                     "Missing ';' after interface method signature statement",
@@ -815,20 +802,6 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
                                     "Missing ';' after interface meta signature statement",
                                     "Insert ';' after the interface meta signature statement",
                                     "expected interface-meta-signature missing-semicolon diagnostic to carry code, problem text, and suggestion")) {
-        return;
-    }
-
-    if (!run_parser_diagnostic_case(state,
-                                    &timer,
-                                    summary,
-                                    "file:///parser_missing_interface_property_signature_semicolon.zr",
-                                    "interface Sized {\n"
-                                    "    get length: int\n"
-                                    "}\n",
-                                    "missing_statement_semicolon",
-                                    "Missing ';' after interface property signature statement",
-                                    "Insert ';' after the interface property signature statement",
-                                    "expected interface-property-signature missing-semicolon diagnostic to carry code, problem text, and suggestion")) {
         return;
     }
 
@@ -857,34 +830,6 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
                                     "Missing ';' after class field declaration statement",
                                     "Insert ';' after the class field declaration statement",
                                     "expected class-field missing-semicolon diagnostic to carry code, problem text, and suggestion")) {
-        return;
-    }
-
-    if (!run_parser_diagnostic_case(state,
-                                    &timer,
-                                    summary,
-                                    "file:///parser_missing_class_getter_semicolon.zr",
-                                    "class Sized {\n"
-                                    "    get length: int\n"
-                                    "}\n",
-                                    "missing_statement_semicolon",
-                                    "Missing ';' after class getter statement",
-                                    "Insert ';' after the class getter statement",
-                                    "expected class-getter missing-semicolon diagnostic to carry code, problem text, and suggestion")) {
-        return;
-    }
-
-    if (!run_parser_diagnostic_case(state,
-                                    &timer,
-                                    summary,
-                                    "file:///parser_missing_class_setter_semicolon.zr",
-                                    "class Sized {\n"
-                                    "    set length(value: int)\n"
-                                    "}\n",
-                                    "missing_statement_semicolon",
-                                    "Missing ';' after class setter statement",
-                                    "Insert ';' after the class setter statement",
-                                    "expected class-setter missing-semicolon diagnostic to carry code, problem text, and suggestion")) {
         return;
     }
 

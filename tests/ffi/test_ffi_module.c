@@ -347,7 +347,7 @@ static void test_zr_ffi_buffer_handle_allocate_is_callable(void) {
 
 static void test_zr_ffi_can_load_fixture_and_call_primitive_symbols(void) {
     static const TZrChar *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var add = lib.getSymbol(\"zr_ffi_add_i32\", {\n"
             "  returnType: \"i32\",\n"
@@ -400,7 +400,7 @@ static void test_zr_ffi_can_load_fixture_and_call_primitive_symbols(void) {
 
 static void test_zr_ffi_can_roundtrip_struct_symbols(void) {
     static const TZrChar *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var pointType = {\n"
             "  kind: \"struct\",\n"
@@ -491,7 +491,7 @@ static void test_zr_ffi_buffer_and_pointer_methods_work(void) {
 
 static void test_zr_ffi_can_fill_buffer_via_symbol(void) {
     static const TZrChar *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var fillBytes = lib.getSymbol(\"zr_ffi_fill_bytes\", {\n"
             "  returnType: \"i32\",\n"
@@ -539,7 +539,7 @@ static void test_zr_ffi_can_fill_buffer_via_symbol(void) {
 
 static void test_zr_ffi_can_lower_buffer_handle_directly_to_pointer_argument(void) {
     static const TZrChar *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var fillBytes = lib.getSymbol(\"zr_ffi_fill_bytes\", {\n"
             "  returnType: \"i32\",\n"
@@ -617,7 +617,7 @@ static void test_zr_ffi_can_create_callback_handle(void) {
 
 static void test_zr_ffi_can_call_callback_symbol(void) {
     static const TZrChar *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var applyCallback = lib.getSymbol(\"zr_ffi_apply_callback\", {\n"
             "  returnType: \"f64\",\n"
@@ -626,7 +626,7 @@ static void test_zr_ffi_can_call_callback_symbol(void) {
             "    { type: { kind: \"function\", returnType: \"f64\", parameters: [{ type: \"f64\" }] } }\n"
             "  ]\n"
             "});\n"
-            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, (value) => {\n"
+            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, fn(value) => {\n"
             "  return value * 2.0;\n"
             "});\n"
             "return applyCallback.call([5.0, cb]);\n";
@@ -660,7 +660,7 @@ static void test_zr_ffi_can_call_callback_symbol(void) {
 
 static void test_zr_ffi_can_roundtrip_structs_buffers_and_callbacks(void) {
     static const TZrChar *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var pointType = {\n"
             "  kind: \"struct\",\n"
@@ -702,7 +702,7 @@ static void test_zr_ffi_can_roundtrip_structs_buffers_and_callbacks(void) {
             "    { type: { kind: \"function\", returnType: \"f64\", parameters: [{ type: \"f64\" }] } }\n"
             "  ]\n"
             "});\n"
-            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, (value) => {\n"
+            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, fn(value) => {\n"
             "  return value * 2.0;\n"
             "});\n"
             "var point = makePoint.call([3, 9]);\n"
@@ -755,7 +755,7 @@ static void test_zr_ffi_can_roundtrip_structs_buffers_and_callbacks(void) {
 
 static void test_zr_ffi_library_get_version_reads_fixture_symbol(void) {
     static const char *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "return lib.getVersion();\n";
     SZrTestTimer timer;
@@ -791,14 +791,14 @@ static void test_zr_ffi_library_get_version_reads_fixture_symbol(void) {
 
 static void test_zr_ffi_handle_close_methods_are_idempotent(void) {
     static const char *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var beforeClose = lib.isClosed();\n"
             "lib.close();\n"
             "var afterFirstClose = lib.isClosed();\n"
             "lib.close();\n"
             "var afterSecondClose = lib.isClosed();\n"
-            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, (value) => {\n"
+            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, fn(value) => {\n"
             "    return value;\n"
             "});\n"
             "cb.close();\n"
@@ -873,7 +873,7 @@ static void test_zr_ffi_load_library_failure_reports_load_error(void) {
 
 static void test_zr_ffi_get_symbol_failure_reports_symbol_error(void) {
     static const char *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "lib.getSymbol(\"zr_ffi_missing_symbol\", {\n"
             "    returnType: \"i32\",\n"
@@ -913,7 +913,7 @@ static void test_zr_ffi_get_symbol_failure_reports_symbol_error(void) {
 
 static void test_zr_ffi_varargs_symbol_accepts_explicit_signature(void) {
     static const char *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var sumVarargs = lib.getSymbol(\"zr_ffi_sum_varargs_i32\", {\n"
             "    returnType: \"i32\",\n"
@@ -960,7 +960,7 @@ static void test_zr_ffi_varargs_symbol_accepts_explicit_signature(void) {
 
 static void test_zr_ffi_varargs_call_without_matching_signature_reports_marshal_error(void) {
     static const char *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var sumVarargs = lib.getSymbol(\"zr_ffi_sum_varargs_i32\", {\n"
             "    returnType: \"i32\",\n"
@@ -998,7 +998,7 @@ static void test_zr_ffi_varargs_call_without_matching_signature_reports_marshal_
 
 static void test_zr_ffi_stdcall_signature_matches_platform_support(void) {
     static const char *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var add = lib.getSymbol(\"zr_ffi_stdcall_add_i32\", {\n"
             "    returnType: \"i32\",\n"
@@ -1049,7 +1049,7 @@ static void test_zr_ffi_stdcall_signature_matches_platform_support(void) {
 
 static void test_zr_ffi_foreign_thread_callback_reports_error(void) {
     static const TZrChar *kSourceTemplate =
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var lib = ffi.loadLibrary(\"%s\");\n"
             "var applyCallback = lib.getSymbol(\"zr_ffi_apply_callback_foreign_thread\", {\n"
             "  returnType: \"f64\",\n"
@@ -1058,7 +1058,7 @@ static void test_zr_ffi_foreign_thread_callback_reports_error(void) {
             "    { type: { kind: \"function\", returnType: \"f64\", parameters: [{ type: \"f64\" }] } }\n"
             "  ]\n"
             "});\n"
-            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, (value) => {\n"
+            "var cb = ffi.callback({ returnType: \"f64\", parameters: [{ type: \"f64\" }] }, fn(value) => {\n"
             "  return 3.0;\n"
             "});\n"
             "return applyCallback.call([2.0, cb]);\n";
@@ -1090,7 +1090,7 @@ static void test_zr_ffi_foreign_thread_callback_reports_error(void) {
 
 static void test_zr_ffi_source_extern_can_bind_and_call_symbol(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  #zr.ffi.entry(\"zr_ffi_add_i32\")# Add(lhs:i32, rhs:i32): i32;\n"
             "}\n"
             "return Add(7, 5);\n";
@@ -1128,12 +1128,12 @@ static void test_zr_ffi_source_extern_can_bind_and_call_symbol(void) {
 
 static void test_zr_ffi_source_extern_delegate_works_with_callback(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  delegate Unary(value:f64): f64;\n"
             "  #zr.ffi.entry(\"zr_ffi_apply_callback\")# Apply(value:f64, cb:Unary): f64;\n"
             "}\n"
-            "var ffi = %%import(\"zr.ffi\");\n"
-            "var cb = ffi.callback(Unary, (value) => {\n"
+            "var ffi = import(\"zr.ffi\");\n"
+            "var cb = ffi.callback(Unary, fn(value) => {\n"
             "  return value * 2.0;\n"
             "});\n"
             "return Apply(5.0, cb);\n";
@@ -1167,10 +1167,10 @@ static void test_zr_ffi_source_extern_delegate_works_with_callback(void) {
 
 static void test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  #zr.ffi.entry(\"zr_ffi_fill_bytes\")# Fill(buffer: pointer<u8>, length:u64, seed:u8): i32;\n"
             "}\n"
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var buffer = ffi.BufferHandle.allocate(8);\n"
             "var written = Fill(buffer, 4, 10);\n"
             "return written + buffer.read(0, 4)[0];\n";
@@ -1208,14 +1208,14 @@ static void test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle(vo
 
 static void test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  delegate Unary(value:f64): f64;\n"
             "}\n"
-            "var ffi = %%import(\"zr.ffi\");\n"
-            "func ApplyLocal(cb: Unary): f64 {\n"
+            "var ffi = import(\"zr.ffi\");\n"
+            "fn ApplyLocal(cb: Unary): f64 {\n"
             "  return 1.0;\n"
             "}\n"
-            "var cb = ffi.callback(Unary, (value) => {\n"
+            "var cb = ffi.callback(Unary, fn(value) => {\n"
             "  return value * 2.0;\n"
             "});\n"
             "return ApplyLocal(cb);\n";
@@ -1244,7 +1244,7 @@ static void test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls(void) 
 
 static void test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  #zr.ffi.entry(\"zr_ffi_flip_mode\")# Flip(mode:i32): i32;\n"
             "}\n"
             "#zr.ffi.lowering(\"handle_id\")#\n"
@@ -1294,7 +1294,7 @@ static void test_zr_ffi_handle_id_lowering_does_not_apply_to_ordinary_calls(void
             "class ModeHandle {\n"
             "  var handleId:i32;\n"
             "}\n"
-            "func FlipLocal(mode:i32): i32 {\n"
+            "fn FlipLocal(mode:i32): i32 {\n"
             "  return mode;\n"
             "}\n"
             "var mode = new ModeHandle();\n"
@@ -1378,7 +1378,7 @@ static void test_zr_ffi_wrapper_view_type_rejects_non_extern_struct(void) {
 
 static void test_zr_ffi_source_extern_system_callconv_uses_platform_default(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  #zr.ffi.entry(\"zr_ffi_add_i32\")#\n"
             "  #zr.ffi.callconv(\"system\")#\n"
             "  Add(lhs:i32, rhs:i32): i32;\n"
@@ -1418,14 +1418,14 @@ static void test_zr_ffi_source_extern_system_callconv_uses_platform_default(void
 
 static void test_zr_ffi_source_extern_struct_pack_affects_sizeof_and_alignof(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  #zr.ffi.pack(1)#\n"
             "  struct PackedPair {\n"
             "    var tag:u8;\n"
             "    var value:u32;\n"
             "  }\n"
             "}\n"
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "return ffi.sizeof(PackedPair) + ffi.alignof(PackedPair);\n";
     SZrTestTimer timer;
     char source[4096];
@@ -1461,13 +1461,13 @@ static void test_zr_ffi_source_extern_struct_pack_affects_sizeof_and_alignof(voi
 
 static void test_zr_ffi_source_extern_struct_offset_overlay_controls_pointer_read(void) {
     static const TZrChar *kSourceTemplate =
-            "%%extern(\"%s\") {\n"
+            "native extern(\"%s\") {\n"
             "  struct Overlay32 {\n"
             "    #zr.ffi.offset(0)# var raw:u32;\n"
             "    #zr.ffi.offset(0)# var asFloat:f32;\n"
             "  }\n"
             "}\n"
-            "var ffi = %%import(\"zr.ffi\");\n"
+            "var ffi = import(\"zr.ffi\");\n"
             "var buffer = ffi.BufferHandle.allocate(8);\n"
             "buffer.write(0, [0, 0, 128, 63, 0, 0, 0, 0]);\n"
             "var value = buffer.pin().read(Overlay32);\n"

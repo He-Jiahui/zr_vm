@@ -1371,7 +1371,7 @@ static void test_access_lowering_preserves_explicit_member_and_index_ops(void) {
                 "var obj = { count: 41 };\n"
                 "obj.count = obj.count + 1;\n"
                 "obj[\"count\"] = obj[\"count\"] + 1;\n"
-                "var reflection = %type(obj);\n"
+                "var reflection = typeof(obj);\n"
                 "return obj.count + obj[\"count\"];";
         SZrString *sourceName;
         SZrAstNode *ast;
@@ -1423,7 +1423,7 @@ static void test_aot_backends_preserve_runtime_contract_artifacts_under_strict_a
         const char *source =
                 "var obj = { count: 1 };\n"
                 "var next = obj.count + obj[\"count\"] + 2;\n"
-                "var reflection = %type(obj);\n"
+                "var reflection = typeof(obj);\n"
                 "return next;";
         const char *cPath = "execbc_aot_backend_test.c";
         const char *llvmPath = "execbc_aot_backend_test.ll";
@@ -1492,7 +1492,7 @@ static void test_aot_c_backend_emits_child_thunks_for_callable_constants(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "pub var greet = () => {\n"
+                "pub var greet = fn() => {\n"
                 "    return \"hello from import\";\n"
                 "};\n"
                 "return greet();";
@@ -1611,7 +1611,7 @@ static void test_aot_llvm_backend_lowers_static_direct_call_protocol(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var greet = () => {\n"
+                "var greet = fn() => {\n"
                 "    return \"hello from llvm\";\n"
                 "};\n"
                 "return greet();";
@@ -1661,7 +1661,7 @@ static void test_aot_llvm_backend_lowers_closure_capture_access(void) {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
                 "var captured = 15;\n"
-                "var readCapture = () => {\n"
+                "var readCapture = fn() => {\n"
                 "    return captured;\n"
                 "};\n"
                 "return readCapture();";
@@ -2021,10 +2021,10 @@ static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fall
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "pub var left = () => {\n"
+                "pub var left = fn() => {\n"
                 "    return 15;\n"
                 "};\n"
-                "pub var right = () => {\n"
+                "pub var right = fn() => {\n"
                 "    return 16;\n"
                 "};\n"
                 "return left() + right();";
@@ -2159,10 +2159,10 @@ static void test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_f
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "pub var left = () => {\n"
+                "pub var left = fn() => {\n"
                 "    return 15;\n"
                 "};\n"
-                "pub var right = () => {\n"
+                "pub var right = fn() => {\n"
                 "    return 16;\n"
                 "};\n"
                 "return left() + right();";
@@ -2220,7 +2220,7 @@ static void test_aot_c_backend_directly_lowers_local_callable_constants(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "pub var greet = () => {\n"
+                "pub var greet = fn() => {\n"
                 "    return 7;\n"
                 "};\n"
                 "return greet();";
@@ -2312,7 +2312,7 @@ static void test_aot_c_backend_statically_lowers_proven_local_aot_function_calls
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "pub var greet = () => {\n"
+                "pub var greet = fn() => {\n"
                 "    return 7;\n"
                 "};\n"
                 "var local = greet;\n"
@@ -2681,7 +2681,7 @@ static void test_aot_c_backend_lowers_cached_dynamic_tail_calls_with_runtime_pre
                 "        return this.base + delta;\n"
                 "    }\n"
                 "}\n"
-                "func apply(callable, value: int): int {\n"
+                "fn apply(callable, value: int): int {\n"
                 "    return callable(value);\n"
                 "}\n"
                 "var adder = new Adder(4);\n"
@@ -2976,7 +2976,7 @@ static void test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
                 "var items = new container.Array<int>();\n"
                 "items.add(5);\n"
                 "items.add(8);\n"
@@ -3126,7 +3126,7 @@ static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
                 "var lhs = new container.Array<int>();\n"
                 "var rhs = new container.Array<int>();\n"
                 "var dst = new container.Array<int>();\n"
@@ -3226,7 +3226,7 @@ static void test_aot_backends_lower_benchmark_style_generic_mul_paths(void) {
                 "    pub @constructor(seed: int) {\n"
                 "        this.state = seed;\n"
                 "    }\n"
-                "    pub read(): int {\n"
+                "    pub fn read(): int {\n"
                 "        return this.state;\n"
                 "    }\n"
                 "}\n"
@@ -3306,7 +3306,7 @@ static void test_aot_backends_lower_benchmark_style_generic_div_paths(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
                 "var lhs = new container.Array<int>();\n"
                 "lhs.add(21);\n"
                 "return lhs[0] / 3;";
@@ -3392,7 +3392,7 @@ static void test_aot_backends_lower_benchmark_style_bitwise_xor_paths(void) {
                 "    pub @constructor(seed: int) {\n"
                 "        this.state = seed;\n"
                 "    }\n"
-                "    pub step(delta: int): int {\n"
+                "    pub fn step(delta: int): int {\n"
                 "        this.state = ((this.state ^ (delta + 31)) + delta * 5 + 19) % 10037;\n"
                 "        return this.state;\n"
                 "    }\n"
@@ -3746,7 +3746,7 @@ static void test_aot_runtime_super_array_add_int_allows_ignored_destination_slot
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
                 "return new container.Array<int>();\n";
         SZrString *sourceName;
         SZrFunction *factoryFunction;
@@ -3857,7 +3857,7 @@ static void test_aot_runtime_index_helpers_refresh_frame_for_native_binding_path
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
                 "return new container.Map<string, int>();\n";
         SZrString *sourceName;
         SZrFunction *factoryFunction;
@@ -4323,7 +4323,7 @@ static void test_aot_c_backend_lowers_indexed_child_access_even_with_embedded_bl
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var build = () => {\n"
+                "var build = fn() => {\n"
                 "    var items = [9, 8];\n"
                 "    return items[0];\n"
                 "};\n"
@@ -4381,7 +4381,7 @@ static void test_aot_c_backend_lowers_indexed_child_access_without_embedded_blob
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "var build = () => {\n"
+                "var build = fn() => {\n"
                 "    var items = [9, 8];\n"
                 "    return items[0];\n"
                 "};\n"
@@ -5593,7 +5593,7 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         const char *source =
-                "answer(): int {\n"
+                "fn answer(): int {\n"
                 "    return 11;\n"
                 "}\n"
                 "class Counter {\n"
@@ -5793,16 +5793,19 @@ static void test_execbc_true_aot_lowers_known_native_call_family(void) {
         SZrString *sourceName;
         SZrAstNode *ast;
         SZrFunction *function;
-        char *source;
+        const char *source =
+                "let system = import(\"zr.system\");\n"
+                "system.console.printLine(\"KNOWN_NATIVE_CALL_CURRENT_SURFACE\");\n"
+                "return 1;\n";
         char *intermediateText;
         char *cText;
         char *llvmText;
 
         TEST_ASSERT_NOT_NULL(state);
-        source = read_repo_file_owned("tests/fixtures/scripts/decorator_artifact_baseline.zr");
-        TEST_ASSERT_NOT_NULL(source);
+        ZrParser_ToGlobalState_Register(state);
+        TEST_ASSERT_TRUE(ZrVmLibSystem_Register(state->global));
 
-        sourceName = ZR_STRING_LITERAL(state, "decorator_artifact_baseline.zr");
+        sourceName = ZR_STRING_LITERAL(state, "known_native_call_current_surface.zr");
         TEST_ASSERT_NOT_NULL(sourceName);
         ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(ast);
@@ -5841,7 +5844,6 @@ static void test_execbc_true_aot_lowers_known_native_call_family(void) {
         free(intermediateText);
         free(cText);
         free(llvmText);
-        free(source);
         remove(intermediatePath);
         remove(cPath);
         remove(llvmPath);
@@ -6527,11 +6529,11 @@ static SZrFunction *compile_typed_member_known_call_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
             "    pub var value: int;\n"
-            "    pub step(delta: int): int {\n"
+            "    pub fn step(delta: int): int {\n"
             "        this.value = this.value + delta;\n"
             "        return this.value;\n"
             "    }\n"
-            "    pub read(): int {\n"
+            "    pub fn read(): int {\n"
             "        return this.value;\n"
             "    }\n"
             "}\n"
@@ -6629,7 +6631,7 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
     const char *source =
             "class BaseCounter {\n"
             "    pub var baseValue: int;\n"
-            "    pub virtual bump(): int {\n"
+            "    pub virtual fn bump(): int {\n"
             "        return this.baseValue + 1;\n"
             "    }\n"
             "    pub virtual property score: int {\n"
@@ -6640,7 +6642,7 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
             "    }\n"
             "}\n"
             "class DerivedCounter: BaseCounter {\n"
-            "    pub override bump(): int {\n"
+            "    pub override fn bump(): int {\n"
             "        return super.bump() + 1;\n"
             "    }\n"
             "    pub override property score: int {\n"
@@ -6649,7 +6651,7 @@ static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
             "    pub override @call(): int {\n"
             "        return super.call() + 5;\n"
             "    }\n"
-            "    pub total(): int {\n"
+            "    pub fn total(): int {\n"
             "        return this.bump() + this.score + this();\n"
             "    }\n"
             "}\n"
@@ -6730,10 +6732,10 @@ static SZrFunction *compile_reference_fixture(SZrState *state,
 
 static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state) {
     const char *source =
-            "func answer(): int {\n"
+            "fn answer(): int {\n"
             "    return 11;\n"
             "}\n"
-            "func callDirectTail(): int {\n"
+            "fn callDirectTail(): int {\n"
             "    return answer();\n"
             "}\n"
             "class Counter {\n"
@@ -6745,10 +6747,10 @@ static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state) {
             "        return this.base + 1;\n"
             "    }\n"
             "}\n"
-            "func callMetaTail(counter: Counter): int {\n"
+            "fn callMetaTail(counter: Counter): int {\n"
             "    return counter();\n"
             "}\n"
-            "func callDynTail(callable: %func()->int): int {\n"
+            "fn callDynTail(callable: fn() -> int): int {\n"
             "    return callable();\n"
             "}\n"
             "var counter = new Counter(7);\n"
@@ -6769,7 +6771,7 @@ static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state) {
 
 static SZrFunction *compile_exception_control_fixture(SZrState *state) {
     const char *source =
-            "func guarded(flag: int): int {\n"
+            "fn guarded(flag: int): int {\n"
             "    var marker = 0;\n"
             "    try {\n"
             "        try {\n"
@@ -6810,7 +6812,7 @@ static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *s
             "        return this.base + value;\n"
             "    }\n"
             "}\n"
-            "func apply(callable, value: int): int {\n"
+            "fn apply(callable, value: int): int {\n"
             "    var result = callable(value);\n"
             "    return result;\n"
             "}\n"
@@ -6832,26 +6834,34 @@ static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *s
 
 static SZrFunction *compile_ownership_upgrade_release_fixture(SZrState *state) {
     const char *source =
-            "class Box {}\n"
-            "var owner = %unique new Box();\n"
-            "var shared = %shared(owner);\n"
-            "var watcher = %weak(shared);\n"
-            "var borrowed = %borrow(shared);\n"
-            "var borrowedAlive = borrowed != null;\n"
-            "var upgraded = %upgrade(watcher);\n"
-            "var droppedUpgraded = %release(upgraded);\n"
-            "var loanSource = %unique new Box();\n"
-            "var loaned = %loan(loanSource);\n"
-            "var loanedAlive = loaned != null;\n"
-            "var detachSource = %unique new Box();\n"
-            "var detached = %detach(detachSource);\n"
+            "resource class Box {}\n"
+            "fn run(): int {\n"
+            "var owner = own Box();\n"
+            "var shared = owner.share();\n"
+            "var watcher = shared.weak();\n"
+            "{\n"
+            "    var borrowed: ref readonly Box = ref shared;\n"
+            "}\n"
+            "var upgraded = watcher.upgrade();\n"
+            "var loanSource = own Box();\n"
+            "var loanAlive = false;\n"
+            "{\n"
+            "    var loaned: ref Box = ref loanSource;\n"
+            "    loanAlive = loaned != null;\n"
+            "}\n"
+            "var loanSourceRestored = loanSource != null;\n"
+            "var detachSource = own Box();\n"
+            "var detached = detachSource.intoGc();\n"
             "var detachedAlive = detached != null;\n"
-            "var droppedShared = %release(shared);\n"
-            "var after = %upgrade(watcher);\n"
-            "if (borrowedAlive && loanedAlive && detachedAlive && droppedUpgraded == null && droppedShared == null && after == null) {\n"
+            "var droppedShared = drop(shared);\n"
+            "var droppedUpgraded = drop(upgraded);\n"
+            "var after = watcher.upgrade();\n"
+            "if (loanAlive && loanSourceRestored && detachedAlive && droppedUpgraded == null && droppedShared == null && after == null) {\n"
             "    return 1;\n"
             "}\n"
-            "return 0;\n";
+            "return 0;\n"
+            "}\n"
+            "return run();\n";
     SZrString *sourceName;
 
     if (state == ZR_NULL) {
@@ -6874,7 +6884,7 @@ static SZrFunction *compile_resource_unique_drop_fixture(SZrState *state) {
             "    pub @constructor(id: int) { this.id = id; }\n"
             "    pub @destructor() { Tracer.dropLog = Tracer.dropLog * 10 + this.id; }\n"
             "}\n"
-            "run(): int {\n"
+            "fn run(): int {\n"
             "    {\n"
             "        var first: Unique<Tracer> = own Tracer(1);\n"
             "        var moved: Unique<Tracer> = first;\n"
@@ -6900,7 +6910,7 @@ static SZrFunction *compile_resource_unique_drop_fixture(SZrState *state) {
 
 static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state) {
     const char *source =
-            "labelFor(value: int) {\n"
+            "fn labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
             "    }\n"
@@ -6934,9 +6944,9 @@ static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state
 
 static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Map, Set, LinkedList, Pair} = %import(\"zr.container\");\n"
-            "labelFor(value: int) {\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Map, Set, LinkedList, Pair} = import(\"zr.container\");\n"
+            "fn labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
             "    }\n"
@@ -7021,7 +7031,7 @@ static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) 
 
 static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var xs = new container.Array<int>();\n"
             "xs.add(10);\n"
             "xs.add(20);\n"
@@ -7056,7 +7066,7 @@ static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state) 
 
 static SZrFunction *compile_array_int_add_burst_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var a = new container.Array<int>();\n"
             "var b = new container.Array<int>();\n"
             "var c = new container.Array<int>();\n"
@@ -7093,7 +7103,7 @@ static SZrFunction *compile_array_int_add_burst_fixture(SZrState *state) {
 
 static SZrFunction *compile_array_int_fill_loop_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
             "var a = new container.Array<int>();\n"
             "var b = new container.Array<int>();\n"
             "var c = new container.Array<int>();\n"
@@ -7136,8 +7146,8 @@ static SZrFunction *compile_array_int_fill_loop_fixture(SZrState *state) {
 
 static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Map} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Map} = import(\"zr.container\");\n"
             "var buckets = new container.Map<string, Array<int>>();\n"
             "var bucket = new container.Array<int>();\n"
             "bucket.add(1);\n"
@@ -7175,9 +7185,9 @@ static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
 
 static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {LinkedList, Pair} = %import(\"zr.container\");\n"
-            "labelFor(value: int) {\n"
+            "let container = import(\"zr.container\");\n"
+            "let {LinkedList, Pair} = import(\"zr.container\");\n"
+            "fn labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
             "    }\n"
@@ -7222,8 +7232,8 @@ static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state) {
 
 static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Set, Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Set, Pair} = import(\"zr.container\");\n"
             "var seen = new container.Set<Pair<int, string>>();\n"
             "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
             "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
@@ -7258,8 +7268,8 @@ static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state) {
 
 static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state) {
     const char *source =
-            "var container = %import(\"zr.container\");\n"
-            "var {Array, Map, Set, Pair} = %import(\"zr.container\");\n"
+            "let container = import(\"zr.container\");\n"
+            "let {Array, Map, Set, Pair} = import(\"zr.container\");\n"
             "var seen = new container.Set<Pair<int, string>>();\n"
             "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
             "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
@@ -8625,7 +8635,7 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("ownership borrow/loan/detach semantic pipeline",
-                 "Testing that %shared/%weak/%borrow/%loan/%detach/%upgrade/%release keep dedicated ExecBC and SemIR ownership opcodes, and that true AOT C plus AOT LLVM lower them to explicit runtime helpers without shim fallback");
+                 "Testing that share/weak/borrow/loan/detach/upgrade/drop keep dedicated ExecBC and SemIR ownership opcodes, and that true AOT C plus AOT LLVM lower them to explicit runtime helpers without shim fallback");
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -8642,26 +8652,28 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
 
         function = compile_ownership_upgrade_release_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_SHARE));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_WEAK));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_VIEW_SHARED));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_VIEW_MUT));
-        TEST_ASSERT_FALSE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_BORROW));
-        TEST_ASSERT_FALSE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_LOAN));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC));
-        TEST_ASSERT_FALSE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_DETACH));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_UPGRADE));
-        TEST_ASSERT_TRUE(semir_contains_opcode(function, ZR_SEMIR_OPCODE_OWN_RELEASE));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_SHARE, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_WEAK, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_VIEW_SHARED, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_VIEW_MUT, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_RETURN_LOAN, ZR_FALSE));
+        TEST_ASSERT_FALSE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_BORROW, ZR_FALSE));
+        TEST_ASSERT_FALSE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_LOAN, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_INTO_GC_BOX, ZR_FALSE));
+        TEST_ASSERT_FALSE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_DETACH, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_UPGRADE, ZR_FALSE));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_OWN_RELEASE, ZR_FALSE));
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
@@ -8678,9 +8690,10 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_WEAK"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_VIEW_SHARED"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_VIEW_MUT"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_RETURN_LOAN"));
         TEST_ASSERT_NULL(strstr(intermediateText, "OWN_BORROW"));
         TEST_ASSERT_NULL(strstr(intermediateText, "OWN_LOAN"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_RETURN_TO_GC"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_INTO_GC_BOX"));
         TEST_ASSERT_NULL(strstr(intermediateText, "OWN_DETACH"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_UPGRADE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_RELEASE"));
@@ -8688,7 +8701,8 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnWeak"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnBorrow"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnLoan"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnReturnToGc"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnReturnLoan"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnIntoGcBox"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnDetach"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnUpgrade"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_OwnRelease"));
@@ -8697,7 +8711,8 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnWeak("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnBorrow("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnLoan("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnReturnToGc("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnReturnLoan("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnIntoGcBox("));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnDetach("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnUpgrade("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_OwnRelease("));
@@ -8705,7 +8720,8 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
-        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
 

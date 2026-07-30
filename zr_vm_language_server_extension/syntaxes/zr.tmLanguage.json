@@ -9,12 +9,6 @@
       "include": "#decorators"
     },
     {
-      "include": "#legacy-percent-syntax"
-    },
-    {
-      "include": "#legacy-dollar-construction-syntax"
-    },
-    {
       "include": "#union-declarations"
     },
     {
@@ -64,7 +58,7 @@
         },
         {
           "name": "keyword.other.zr",
-          "match": "\\b(module|using|union|struct|class|interface|enum|delegate|super|get|set|property|where)\\b"
+          "match": "\\b(module|union|struct|class|interface|enum|delegate|super|get|set|property|where)\\b"
         },
         {
           "name": "storage.type.function.zr",
@@ -81,22 +75,6 @@
         {
           "name": "constant.language.zr",
           "match": "\\b(true|false|null|Infinity|NegativeInfinity|NaN)\\b"
-        }
-      ]
-    },
-    "legacy-percent-syntax": {
-      "patterns": [
-        {
-          "name": "invalid.deprecated.percent-syntax.zr",
-          "match": "%[A-Za-z_][A-Za-z0-9_]*\\b"
-        }
-      ]
-    },
-    "legacy-dollar-construction-syntax": {
-      "patterns": [
-        {
-          "name": "invalid.deprecated.dollar-construction-syntax.zr",
-          "match": "\\$(?=[A-Za-z_]|\\()"
         }
       ]
     },

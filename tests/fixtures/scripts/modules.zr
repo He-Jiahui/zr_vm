@@ -1,14 +1,14 @@
 module "modules";
 
 // 模块声明测试
-// 模块名已在顶部声明: %module "modules";
+// 模块名已在顶部声明: module modules;
 
 // import 保留语法测试
 var import_test = fn() => {
-    // 注意: %import 是保留语法，这里只验证脚本写法
+    // 这里仅验证静态 import 表达式的脚本写法
     // 实际模块加载需要运行时支持
     let math = import("math");
-    // 假设 %import 返回一个对象
+    // 假设 import 返回一个对象
     return 1;
 };
 

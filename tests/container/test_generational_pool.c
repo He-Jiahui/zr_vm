@@ -18,6 +18,13 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/parser.h"
 
+ZR_PARSER_API TZrBool compiler_validate_ref_struct_rules(
+        SZrCompilerState *compiler,
+        SZrAstNode *node);
+ZR_PARSER_API TZrBool compiler_validate_reference_escapes(
+        SZrCompilerState *compiler,
+        SZrAstNode *node);
+
 typedef struct STestElement {
     int value;
     int marker;
@@ -213,7 +220,7 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
 static void test_native_semantic_import_preserves_ref_like_and_stable_slot_protocols(void) {
     static const TZrChar *source =
             "var {Pool, PoolHandle, PoolRef, PoolReadRef} = "
-            "%import(\"zr.pooling\");\n";
+            "import(\"zr.pooling\");\n";
     SZrState *state = ZrContainerTests_CreateState();
     SZrCompilerState *compiler;
     SZrAstNode *ast;
@@ -306,6 +313,135 @@ static void test_native_semantic_import_preserves_ref_like_and_stable_slot_proto
     ZrParser_Ast_Free(state, ast);
     ZrContainerTests_DestroyCompilerState(compiler);
     ZrContainerTests_DestroyState(state);
+}
+
+static void assert_native_pool_ref_storage_rejected(
+        const TZrChar *source,
+        const TZrChar *expectedMessage) {
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrCompilerState *compiler;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(state);
+    compiler = ZrContainerTests_CreateCompilerState(state);
+    TEST_ASSERT_NOT_NULL(compiler);
+    compiler->suppressErrorOutput = ZR_TRUE;
+    ast = parse_pooling_source(state, source);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_GREATER_THAN_UINT64(1u, ast->data.script.statements->count);
+    compiler->scriptAst = ast;
+    compiler->currentAst = ast;
+    compiler->currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(compiler->currentFunction);
+
+    ZrContainerTests_CompileTopLevelStatement(
+            compiler, ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_FALSE_MESSAGE(compiler->hasError, compiler->errorMessage);
+    TEST_ASSERT_FALSE(compiler_validate_ref_struct_rules(compiler, ast));
+    TEST_ASSERT_TRUE(compiler->hasStructuredError);
+    TEST_ASSERT_NOT_NULL(compiler->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(compiler->errorMessage, expectedMessage));
+
+    ZrCore_Function_Free(state, compiler->currentFunction);
+    compiler->currentFunction = ZR_NULL;
+    ZrParser_Ast_Free(state, ast);
+    ZrContainerTests_DestroyCompilerState(compiler);
+    ZrContainerTests_DestroyState(state);
+}
+
+static void test_native_ref_like_capability_rejects_pool_ref_storage(void) {
+    assert_native_pool_ref_storage_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "class Holder { var view: PoolRef<int>; }\n",
+            "cannot be stored in a class field");
+    assert_native_pool_ref_storage_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "var globalView: PoolRef<int>;\n",
+            "cannot be stored in module/global storage");
+    assert_native_pool_ref_storage_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "fn invalid(): void { var views: PoolRef<int>[1]; }\n",
+            "cannot be an array element");
+    assert_native_pool_ref_storage_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "class Box<T> {}\n"
+            "fn invalid(): void { var boxed: Box<PoolRef<int>>; }\n",
+            "cannot be used as an unconstrained generic argument");
+    assert_native_pool_ref_storage_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "native extern(\"fixture\") {\n"
+            "  fn consume(view: PoolRef<int>): void;\n"
+            "}\n",
+            "cannot cross a native opaque ABI boundary");
+}
+
+static void assert_native_pool_ref_escape_rejected(
+        const TZrChar *source,
+        const TZrChar *expectedMessage) {
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrCompilerState *compiler;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(state);
+    compiler = ZrContainerTests_CreateCompilerState(state);
+    TEST_ASSERT_NOT_NULL(compiler);
+    compiler->suppressErrorOutput = ZR_TRUE;
+    ast = parse_pooling_source(state, source);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_GREATER_THAN_UINT64(1u, ast->data.script.statements->count);
+    compiler->scriptAst = ast;
+    compiler->currentAst = ast;
+    compiler->currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(compiler->currentFunction);
+
+    ZrContainerTests_CompileTopLevelStatement(
+            compiler, ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_FALSE_MESSAGE(compiler->hasError, compiler->errorMessage);
+    TEST_ASSERT_TRUE(compiler_validate_ref_struct_rules(compiler, ast));
+    TEST_ASSERT_FALSE(compiler_validate_reference_escapes(compiler, ast));
+    TEST_ASSERT_TRUE(compiler->hasStructuredError);
+    TEST_ASSERT_NOT_NULL(compiler->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(compiler->errorMessage, expectedMessage));
+
+    ZrCore_Function_Free(state, compiler->currentFunction);
+    compiler->currentFunction = ZR_NULL;
+    ZrParser_Ast_Free(state, ast);
+    ZrContainerTests_DestroyCompilerState(compiler);
+    ZrContainerTests_DestroyState(state);
+}
+
+static void test_native_ref_like_capability_rejects_pool_ref_escape(void) {
+    assert_native_pool_ref_escape_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "fn invalid(view: PoolRef<int>): int {\n"
+            "  var views = [view];\n"
+            "  return 0;\n"
+            "}\n",
+            "cannot be stored in an array");
+    assert_native_pool_ref_escape_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "fn invalid(view: PoolRef<int>): int {\n"
+            "  var read = fn(): int => view.value;\n"
+            "  return 0;\n"
+            "}\n",
+            "cannot be captured by a closure");
+    assert_native_pool_ref_escape_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "async fn invalid(view: PoolRef<int>): Task<int> {\n"
+            "  var task = pause().start();\n"
+            "  await task;\n"
+            "  return view.value;\n"
+            "}\n",
+            "cannot cross an await suspension");
+    assert_native_pool_ref_escape_rejected(
+            "let {PoolRef} = import(\"zr.pooling\");\n"
+            "fn invalid(view: PoolRef<int>): zr.iteration.Iterator<int> {\n"
+            "  yield 1;\n"
+            "  yield view.value;\n"
+            "}\n",
+            "cannot cross a yield suspension");
 }
 
 static void test_identity_recycle_and_retirement_preserve_guarded_value(void) {
@@ -726,6 +862,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_native_descriptor_publishes_stable_slot_contract_by_role);
     RUN_TEST(test_native_semantic_import_preserves_ref_like_and_stable_slot_protocols);
+    RUN_TEST(test_native_ref_like_capability_rejects_pool_ref_storage);
+    RUN_TEST(test_native_ref_like_capability_rejects_pool_ref_escape);
     RUN_TEST(test_identity_recycle_and_retirement_preserve_guarded_value);
     RUN_TEST(test_reader_writer_conflicts_and_guard_release_are_deterministic);
     RUN_TEST(test_pool_destroy_retires_live_slots_and_waits_for_active_guard);

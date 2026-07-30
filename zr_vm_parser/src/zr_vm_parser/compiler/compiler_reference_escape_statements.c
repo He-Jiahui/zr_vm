@@ -446,6 +446,18 @@ TZrBool reference_escape_analyze_node(
                 context->suspensionName = "yield";
             }
             return ZR_TRUE;
+        case ZR_AST_YIELD_STATEMENT:
+            if (!reference_escape_analyze_expression(
+                        context,
+                        node->data.yieldStatement.expr,
+                        ZR_FALSE,
+                        &ignored)) {
+                return ZR_FALSE;
+            }
+            context->suspensionEpoch++;
+            context->suspensionRange = node->location;
+            context->suspensionName = "yield";
+            return ZR_TRUE;
         case ZR_AST_IF_EXPRESSION:
             return reference_escape_analyze_node(
                            context, node->data.ifExpression.condition) &&
@@ -511,6 +523,7 @@ TZrBool compiler_validate_reference_escapes(
     if (!compiler_ref_struct_type_set_init(
                 &context.refStructTypeStorage,
                 compiler->state,
+                compiler->semanticContext,
                 node)) {
         reference_escape_context_free(&context);
         return ZR_FALSE;

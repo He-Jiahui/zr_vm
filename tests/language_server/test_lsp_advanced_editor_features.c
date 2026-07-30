@@ -2088,6 +2088,7 @@ static void test_lsp_advanced_editor_features_return_empty_for_unopened_document
     }
 }
 
+// These static cases depend on the diagnostic helpers declared above.
 #include "test_lsp_diagnostic_safe_fix_cases.h"
 
 int main(void) {

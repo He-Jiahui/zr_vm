@@ -130,7 +130,7 @@ static SZrFunction *compile_static_c_type_fixture(SZrState *state) {
             "var amount: int = 7;\n"
             "var flag: bool = true;\n"
             "var label: string = \"ok\";\n"
-            "var point: Point = $Point(amount);\n"
+            "var point: Point = init Point(amount);\n"
             "return amount;";
     SZrString *sourceName;
 

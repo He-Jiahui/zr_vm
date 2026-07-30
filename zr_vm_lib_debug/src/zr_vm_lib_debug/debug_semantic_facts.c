@@ -801,7 +801,8 @@ void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
     compilerState.currentAst = expr;
     compilerState.scriptAst = expr;
     compilerState.suppressErrorOutput = ZR_TRUE;
-    if (!zr_debug_semantic_register_bindings(agent, frameId, &compilerState)) {
+    if (!zr_debug_semantic_register_summary_bindings(
+                agent, frameId, &compilerState, expr)) {
         goto cleanup;
     }
 

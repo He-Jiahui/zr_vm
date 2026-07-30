@@ -1,4 +1,4 @@
-module "basic_operations";
+module basic_operations;
 
 // 基本运算测试
 var arithmetic_test = fn() => {
@@ -123,20 +123,23 @@ var return_test = fn() => {
 // break/continue测试
 var break_continue_test = fn() => {
     var sum = 0;
-    for (var i = 0; i < 20; i = i + 1) {
-        if (i % 2 == 0) {
+    var i = 0;
+    while (i < 20) {
+        var current = i;
+        i = i + 1;
+        if (current % 2 == 0) {
             continue;
         }
-        if (i > 15) {
+        if (current > 15) {
             break;
         }
-        sum = sum + i;
+        sum = sum + current;
     }
     return sum;
 };
 
 // 测试用例
-%test("basicOperationsTest"){
+fn basicOperationsTest(): int {
     var result = 0;
     result = result + arithmetic_test();
     result = result + logical_test();
@@ -152,3 +155,5 @@ var break_continue_test = fn() => {
     result = result + break_continue_test();
     return result;
 }
+
+return basicOperationsTest();

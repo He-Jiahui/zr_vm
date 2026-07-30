@@ -689,7 +689,7 @@ static void assert_compiled_storage_contract(const SZrFunction *function) {
 
 static void test_explicit_field_property_artifact_and_reflection_roundtrip(void) {
     static const char source[] =
-            "%module \"property_explicit_field_init\";\n"
+            "module property_explicit_field_init;\n"
             "pub struct Storage {\n"
             "  pub let frozen: int;\n"
             "  pub var mutable: int;\n"

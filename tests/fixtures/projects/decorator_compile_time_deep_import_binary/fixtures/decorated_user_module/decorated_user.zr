@@ -1,19 +1,16 @@
-module "decorated_user";
+module decorated_user;
 
 let decorators = import("decorators");
+let helper = import("helper");
 
-#decorators.Serializable#
 pub class User {
     pub var id: int = 1;
 }
 
-#decorators.markFunction(bonus: import("helper").toolkit.math.greet())#
-pub decoratedBonus(): int {
-    var meta = typeof(decoratedBonus).metadata;
-    return meta.instrumented;
+pub fn decoratedBonus(): int {
+    return decorators.markFunction(helper.greet());
 }
 
 pub var verifyDecorators = fn() => {
-    var typeMeta = typeof(User).metadata;
-    return typeMeta.serializable ? 1 : 0;
+    return decorators.markClass();
 };

@@ -324,7 +324,8 @@ TZrBool ZrCore_Ownership_LoanValue(struct SZrState *state,
     SZrOwnershipControl *control;
     SZrRawObject *object;
 
-    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL) {
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL ||
+        destination == source) {
         return ZR_FALSE;
     }
 
@@ -334,6 +335,10 @@ TZrBool ZrCore_Ownership_LoanValue(struct SZrState *state,
 
     if (ZR_VALUE_IS_TYPE_NULL(source->type)) {
         return ZR_TRUE;
+    }
+
+    if (ZrCore_OwnershipResource_IsDirectUniqueValue(source)) {
+        return ZrCore_OwnershipResource_LoanUnique(state, destination, source);
     }
 
     if (!ownership_value_has_object(source) ||
@@ -371,6 +376,10 @@ TZrBool ZrCore_Ownership_ReturnLoanValue(struct SZrState *state,
 
     if (ZR_VALUE_IS_TYPE_NULL(source->type)) {
         return ZR_TRUE;
+    }
+
+    if (ZrCore_OwnershipResource_IsDirectLoanedValue(source)) {
+        return ZrCore_OwnershipResource_ReturnLoan(state, destination, source);
     }
 
     if (!ownership_value_has_object(source) ||

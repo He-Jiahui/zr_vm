@@ -2487,6 +2487,53 @@ static void test_pub_comptime_fn_uses_current_surface_without_runtime_projection
     destroy_test_state(state);
 }
 
+static void test_pub_comptime_fn_projects_through_direct_source_import(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "sizing",
+                    "module sizing;\n"
+                    "pub comptime fn staticPlanSize(seed: int, factor: int): int {\n"
+                    "    return seed * factor + 3;\n"
+                    "}\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
+            },
+    };
+    static const TZrChar *source =
+            "var staged: int[import(\"sizing\").staticPlanSize(seed: 4, factor: 2)] = "
+            "[1,2,3,4,5,6,7,8,9,10,11];\n"
+            "return staged.length;\n";
+    const SZrCompileTimeImportFixture *previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    gCompileTimeImportFixtures = fixtures;
+    gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+    state->global->sourceLoader = compile_time_import_source_loader;
+
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "pub_comptime_direct_source_import.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    state->global->sourceLoader = ZR_NULL;
+    TEST_ASSERT_TRUE(execute_test_function(
+            state,
+            function,
+            11,
+            "public comptime direct source import"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+}
+
 static void test_current_comptime_block_runs_after_signature_collection(void) {
     static const TZrChar *source =
             "comptime {\n"
@@ -2574,6 +2621,250 @@ static void test_comptime_if_reads_declared_project_feature_and_prunes_branch(vo
     state->global->userData = previousUserData;
     ZrLibrary_Project_Free(state, project);
     destroy_test_state(state);
+}
+
+static TZrSize count_call_instructions(const SZrFunction *function) {
+    TZrSize count = 0;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0;
+    }
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        EZrInstructionCode opcode =
+                (EZrInstructionCode)ZR_INSTRUCTION_OPCODE(
+                        function->instructionsList[index]);
+        if (opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(DYN_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(META_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void test_conditional_disabled_direct_void_call_elides_argument_lowering(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"conditional-test\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":false}}";
+    static const TZrChar *source =
+            "fn expensive(): int { return 99; }\n"
+            "#zr.compile.conditional(\"trace\")#\n"
+            "fn trace(value: int): void { }\n"
+            "fn __fixture(): int { trace(expensive()); return 42; }\n"
+            "return __fixture();\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    TZrPtr previousUserData;
+    SZrString *sourceName;
+    SZrFunction *function;
+    SZrFunction *fixture;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(
+            state, (TZrNativeString)projectJson, "E:/tmp/conditional-test.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+    sourceName = ZrCore_String_CreateFromNative(state, "conditional_disabled.zr");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    fixture = find_fixture_function(function);
+    TEST_ASSERT_NOT_NULL(fixture);
+    TEST_ASSERT_EQUAL_UINT64(0, count_call_instructions(fixture));
+    TEST_ASSERT_TRUE(execute_test_function(
+            state, function, 42, "conditional disabled call"));
+
+    ZrCore_Function_Free(state, function);
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_conditional_disabled_call_still_type_checks_arguments(void) {
+    static const TZrChar *projectJson =
+            "{\"name\":\"conditional-negative\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main.zr\","
+            "\"features\":{\"trace\":false}}";
+    static const TZrChar *source =
+            "#zr.compile.conditional(\"trace\")#\n"
+            "fn trace(value: int): void { }\n"
+            "trace(\"not-an-int\");\n";
+    SZrState *state = create_test_state();
+    SZrLibrary_Project *project;
+    TZrPtr previousUserData;
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(
+            state, (TZrNativeString)projectJson, "E:/tmp/conditional-negative.zrp");
+    TEST_ASSERT_NOT_NULL(project);
+    previousUserData = state->global->userData;
+    state->global->userData = project;
+    sourceName = ZrCore_String_CreateFromNative(state, "conditional_type_error.zr");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NULL(function);
+
+    state->global->userData = previousUserData;
+    ZrLibrary_Project_Free(state, project);
+    destroy_test_state(state);
+}
+
+static void test_readonly_struct_attribute_schema_binds_typed_field_metadata(void) {
+    static const TZrChar *source =
+            "#zr.reflection.attributeUsage(\n"
+            "    targets: zr.reflection.AttributeTargets.field,\n"
+            "    retention: zr.reflection.AttributeRetention.runtime,\n"
+            "    repeatable: false, inherited: false)#\n"
+            "pub readonly struct Range { pub let min: int; pub let max: int; }\n"
+            "class Meter {\n"
+            "    #Range(min: 0, max: 100)#\n"
+            "    pub var value: int;\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "typed_attribute_schema.zr");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_attribute_schema_rejects_invalid_shape_and_application(void) {
+    static const TZrChar *sources[] = {
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.artifact, "
+            "repeatable: false, inherited: false)#\n"
+            "pub struct MutableSchema { pub let value: int; }\n"
+            "return 0;\n",
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.artifact, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct PrivateSchema { pri let value: int; }\n"
+            "return 0;\n",
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.artifact, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct Count { pub let value: int; }\n"
+            "class InvalidUse { #Count(value: \"wrong\")# pub var value: int; }\n"
+            "return 0;\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(state, "invalid_attribute_schema.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
+}
+
+static void test_declaration_transform_accepts_typed_empty_patch_once(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn audit(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(target: target.symbolId);\n"
+            "}\n"
+            "#audit#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_empty_patch.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_generated_field_enters_normal_layout(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn deriveMarker(target: declaration.Struct): declaration.Patch {\n"
+            "    let marker = init declaration.GeneratedField(\n"
+            "        name: \"generatedEquality\",\n"
+            "        type: typeid(bool),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let\n"
+            "    );\n"
+            "    return init declaration.Patch(target: target.symbolId, additions: [marker]);\n"
+            "}\n"
+            "#deriveMarker#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "fn __fixture(): int {\n"
+            "    let meter = init Meter();\n"
+            "    return meter.generatedEquality ? 7 : 0;\n"
+            "}\n"
+            "return __fixture();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_generated_field.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(
+            state, function, 0, "declaration transform generated field"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_rejects_invalid_signature_and_patch_shape(void) {
+    static const TZrChar *sources[] = {
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: int): declaration.Patch {\n"
+            "    return init declaration.Patch(target: 1);\n"
+            "}\nreturn 0;\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Struct): declaration.Patch {\n"
+            "    return { metadata: {} };\n"
+            "}\n#invalid#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "declaration_transform_invalid.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
 }
 
 static void test_comptime_if_prunes_static_import_summary_before_module_analysis(void) {
@@ -3494,8 +3785,16 @@ int main(void) {
     RUN_TEST(test_compile_tool_descriptor_is_compile_only_and_contract_stable);
     RUN_TEST(test_comptime_fn_and_block_use_current_surface);
     RUN_TEST(test_pub_comptime_fn_uses_current_surface_without_runtime_projection);
+    RUN_TEST(test_pub_comptime_fn_projects_through_direct_source_import);
     RUN_TEST(test_current_comptime_block_runs_after_signature_collection);
     RUN_TEST(test_comptime_if_reads_declared_project_feature_and_prunes_branch);
+    RUN_TEST(test_conditional_disabled_direct_void_call_elides_argument_lowering);
+    RUN_TEST(test_conditional_disabled_call_still_type_checks_arguments);
+    RUN_TEST(test_readonly_struct_attribute_schema_binds_typed_field_metadata);
+    RUN_TEST(test_attribute_schema_rejects_invalid_shape_and_application);
+    RUN_TEST(test_declaration_transform_accepts_typed_empty_patch_once);
+    RUN_TEST(test_declaration_transform_generated_field_enters_normal_layout);
+    RUN_TEST(test_declaration_transform_rejects_invalid_signature_and_patch_shape);
     RUN_TEST(test_comptime_if_prunes_static_import_summary_before_module_analysis);
     RUN_TEST(test_nested_comptime_if_prunes_build_facts_before_module_analysis);
     RUN_TEST(test_statement_comptime_if_is_selected_during_build_facts);

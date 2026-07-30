@@ -1,4 +1,4 @@
-module "local_pair";
+module local_pair;
 
 pub struct Pair {
     pub var left: int;
@@ -10,7 +10,7 @@ pub struct Pair {
     }
 }
 
-pub score(): int {
-    var pair = $Pair(1, 2);
+pub fn score(): int {
+    var pair = init Pair(1, 2);
     return pair.left + pair.right;
 }

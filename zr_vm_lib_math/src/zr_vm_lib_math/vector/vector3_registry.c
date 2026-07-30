@@ -11,6 +11,11 @@ const ZrLibTypeDescriptor *ZrMath_Vector3Registry_GetType(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("z", "float", ZR_NULL),
     };
+    static const ZrLibParameterDescriptor kConstructorParameters[] = {
+            {"x", "float", "The x coordinate.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"y", "float", "The y coordinate.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+            {"z", "float", "The z coordinate.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+    };
     static const ZrLibMethodDescriptor kMethods[] = {
             ZR_LIB_METHOD_DESCRIPTOR_INIT("length", 0, 0, ZrMath_Vector3_Length, "float", ZR_NULL, ZR_FALSE, ZR_NULL,
                                           0),
@@ -27,7 +32,8 @@ const ZrLibTypeDescriptor *ZrMath_Vector3Registry_GetType(void) {
                                           0),
     };
     static const ZrLibMetaMethodDescriptor kMeta[] = {
-            {ZR_META_CONSTRUCTOR,3,3,ZrMath_Vector3_Construct,"Vector3",ZR_NULL,ZR_NULL,0},
+            {ZR_META_CONSTRUCTOR,3,3,ZrMath_Vector3_Construct,"Vector3",ZR_NULL,
+             kConstructorParameters,ZR_ARRAY_COUNT(kConstructorParameters)},
             {ZR_META_ADD,1,1,ZrMath_Vector3_MetaAdd,"Vector3",ZR_NULL,ZR_NULL,0},
             {ZR_META_SUB,1,1,ZrMath_Vector3_MetaSub,"Vector3",ZR_NULL,ZR_NULL,0},
             {ZR_META_NEG,0,0,ZrMath_Vector3_MetaNeg,"Vector3",ZR_NULL,ZR_NULL,0},

@@ -14,6 +14,14 @@ typedef struct SZrParserArtifactPublicContract {
     TZrUInt64 moduleHash;
 } SZrParserArtifactPublicContract;
 
+struct ZrLibTypeDescriptor;
+
+ZR_PARSER_API EZrArtifactStatus ZrParser_ArtifactLayout_ApplyNativeCapabilities(
+        const struct ZrLibTypeDescriptor *typeDescriptor,
+        TZrUInt64 stableSlotContractHash,
+        SZrArtifactLayoutRow *layout,
+        SZrArtifactDiagnostic *diagnostic);
+
 ZR_PARSER_API EZrArtifactStatus ZrParser_ArtifactType_WriteSignature(
         const struct SZrSemanticContext *context,
         TZrTypeId typeId,

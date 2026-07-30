@@ -476,7 +476,7 @@ static void test_debug_semantic_summary_replays_compiled_top_level_variable_refe
 
 static void test_debug_semantic_summary_replays_compiled_ownership_fact(void) {
     const char *source =
-            "var owner: Unique<int>;\n"
+            "var owner: Shared<int>;\n"
             "return 0;";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -494,11 +494,11 @@ static void test_debug_semantic_summary_replays_compiled_ownership_fact(void) {
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
     summary[0] = '\0';
 
-    zr_debug_append_expression_semantic_facts(&agent, 1, "%borrow(owner)", summary, sizeof(summary));
+    zr_debug_append_expression_semantic_facts(&agent, 1, "ref owner", summary, sizeof(summary));
 
     assert_text_contains(summary, "reference read owner");
     assert_text_contains(summary, "expression ownership exact");
-    assert_text_contains(summary, "ownership borrow %borrowed");
+    assert_text_contains(summary, "ownership borrow ref readonly");
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
@@ -524,7 +524,7 @@ static void test_debug_semantic_summary_walks_type_query_operand_reference(void)
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
     summary[0] = '\0';
 
-    zr_debug_append_expression_semantic_facts(&agent, 1, "%type(owner)", summary, sizeof(summary));
+    zr_debug_append_expression_semantic_facts(&agent, 1, "typeof(owner)", summary, sizeof(summary));
 
     assert_text_contains(summary, "reference read owner");
 
@@ -691,7 +691,7 @@ static void test_debug_semantic_summary_walks_lambda_local_initializer_facts(voi
 
     zr_debug_append_expression_semantic_facts(&agent,
                                               1,
-                                              "() => { var folded = 1 + 2; return folded; }",
+                                              "fn()=>{ var folded = 1 + 2; return folded; }",
                                               summary,
                                               sizeof(summary));
 

@@ -848,7 +848,7 @@ static void test_diagnostic_range_after_utf8_prefix_uses_utf16_columns(void) {
 }
 
 static void test_symbol_ranges_after_utf8_prefix_use_utf16_columns(void) {
-    const TZrChar *content = "/* \xCE\xBB */ target() { return 1; }\nvar next = 2;\n";
+    const TZrChar *content = "/* \xCE\xBB */ fn target() { return 1; }\nvar next = 2;\n";
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
     SZrState *state;
@@ -887,15 +887,15 @@ static void test_symbol_ranges_after_utf8_prefix_use_utf16_columns(void) {
     resolvedWorkspace = ZrLanguageServer_Lsp_GetWorkspaceSymbols(state, context, query, &workspaceSymbols);
     if (!resolvedDocument ||
         !resolvedWorkspace ||
-        !test_symbols_contain_range(&documentSymbols, 0, 8, 0, 30) ||
-        !test_symbols_contain_range(&workspaceSymbols, 0, 8, 0, 30)) {
+        !test_symbols_contain_range(&documentSymbols, 0, 8, 0, 33) ||
+        !test_symbols_contain_range(&workspaceSymbols, 0, 8, 0, 33)) {
         SZrLspSymbolInformation **firstDocumentPtr =
             documentSymbols.length > 0 ? (SZrLspSymbolInformation **)ZrCore_Array_Get(&documentSymbols, 0) : ZR_NULL;
         SZrLspSymbolInformation *firstDocument = firstDocumentPtr != ZR_NULL ? *firstDocumentPtr : ZR_NULL;
         SZrLspSymbolInformation **firstWorkspacePtr =
             workspaceSymbols.length > 0 ? (SZrLspSymbolInformation **)ZrCore_Array_Get(&workspaceSymbols, 0) : ZR_NULL;
         SZrLspSymbolInformation *firstWorkspace = firstWorkspacePtr != ZR_NULL ? *firstWorkspacePtr : ZR_NULL;
-        printf("FAIL: Symbol ranges after UTF-8 prefix expected document/workspace 0:8-0:30 but got document=%d/%llu workspace=%d/%llu",
+        printf("FAIL: Symbol ranges after UTF-8 prefix expected document/workspace 0:8-0:33 but got document=%d/%llu workspace=%d/%llu",
                (int)resolvedDocument,
                (unsigned long long)documentSymbols.length,
                (int)resolvedWorkspace,
@@ -986,7 +986,7 @@ static void test_inlay_hint_after_utf8_prefix_uses_utf16_columns(void) {
 }
 
 static void test_semantic_token_symbol_after_utf8_prefix_uses_utf16_columns(void) {
-    const TZrChar *content = "/* \xCE\xBB */ target() { return 1; }\n";
+    const TZrChar *content = "/* \xCE\xBB */ fn target() { return 1; }\n";
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
     SZrState *state;
@@ -1014,8 +1014,8 @@ static void test_semantic_token_symbol_after_utf8_prefix_uses_utf16_columns(void
 
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 16);
     resolved = ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens);
-    if (!resolved || !test_semantic_tokens_contain(&tokens, 0, 8, 6, "function")) {
-        printf("FAIL: Semantic token after UTF-8 prefix expected function token 0:8 length 6 but got resolved=%d count=%llu\n",
+    if (!resolved || !test_semantic_tokens_contain(&tokens, 0, 11, 6, "function")) {
+        printf("FAIL: Semantic token after UTF-8 prefix expected function token 0:11 length 6 but got resolved=%d count=%llu\n",
                (int)resolved,
                (unsigned long long)tokens.length);
         g_failures++;
@@ -1057,8 +1057,8 @@ static void test_semantic_token_text_scan_after_utf8_prefix_uses_utf16_columns(v
 
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 16);
     resolved = ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens);
-    if (!resolved || !test_semantic_tokens_contain(&tokens, 0, 21, 7, "keyword")) {
-        printf("FAIL: Text-scan semantic token after UTF-8 prefix expected keyword token 0:21 length 7 but got resolved=%d count=%llu\n",
+    if (!resolved || !test_semantic_tokens_contain(&tokens, 0, 21, 6, "keyword")) {
+        printf("FAIL: Text-scan semantic token after UTF-8 prefix expected keyword token 0:21 length 6 but got resolved=%d count=%llu\n",
                (int)resolved,
                (unsigned long long)tokens.length);
         g_failures++;

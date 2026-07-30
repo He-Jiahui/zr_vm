@@ -1,7 +1,7 @@
-var system = %import("zr.system");
-var container = %import("zr.container");
+let system = import("zr.system");
+let container = import("zr.container");
 
-class Meter {
+resource class Meter {
     pri var raw: int = 0;
 
     pub @constructor(start: int) {
@@ -19,8 +19,8 @@ class Meter {
     }
 }
 
-func apply(fn, value: int): int {
-    return fn(value);
+fn apply(callback, value: int): int {
+    return callback(value);
 }
 
 var meter = new Meter(4);
@@ -29,13 +29,13 @@ meter.value = 6;
 var second = meter.value;
 var third = apply(meter, 3);
 
-var owner = %unique new Meter(10);
-var shared = %shared(owner);
-var weak = %weak(shared);
-var alias = %upgrade(weak);
-var releasedShared = %release(shared);
-var releasedAlias = %release(alias);
-var after = %upgrade(weak);
+var owner = own Meter(10);
+var shared = owner.share();
+var weak = shared.weak();
+var alias = weak.upgrade();
+var releasedShared = drop(shared);
+var releasedAlias = drop(alias);
+var after = weak.upgrade();
 
 var pair = new container.Pair<int, int>(first, second);
 var total = pair.first + pair.second + third;

@@ -236,8 +236,8 @@ static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     const char *sourcePath = "debug_variable_child_shape_fixture.zr";
     const char *source =
 #if defined(_MSC_VER)
-            "var system = %import(\"zr.system\");\n"
-            "func pauseHere(inside) {\n"
+            "var system = import(\"zr.system\");\n"
+            "fn pauseHere(inside) {\n"
             "    return 1;\n"
             "}\n"
             "var marker = pauseHere(7);\n"
@@ -246,8 +246,8 @@ static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     const char *expectedReferenceSummary = "argument inside";
     const int breakpointLine = 3;
 #else
-            "var system = %import(\"zr.system\");\n"
-            "func pauseHere() {\n"
+            "var system = import(\"zr.system\");\n"
+            "fn pauseHere() {\n"
             "    var inside = 7;\n"
             "    return 1;\n"
             "}\n"
@@ -705,7 +705,7 @@ static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
     const char *source =
             "fn makeRunner() {\n"
             "    var seed = 4;\n"
-            "    return () -> {\n"
+            "    return fn() => {\n"
             "        return seed + 1;\n"
             "    };\n"
             "}\n"

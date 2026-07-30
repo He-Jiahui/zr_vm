@@ -4863,6 +4863,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
             result->baseType = ZR_VALUE_TYPE_NULL;
             result->isNullable = ZR_FALSE;
             result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+            result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
             result->gcBridgeKind = ZR_GC_BRIDGE_NONE;
             result->typeName = ZR_NULL;
             ZrCore_Array_Construct(&result->elementTypes);
@@ -4881,19 +4882,24 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         switch (builtinKind) {
             case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+                result->referenceAccess = ZR_REFERENCE_ACCESS_READONLY;
                 break;
             case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+                result->referenceAccess = ZR_REFERENCE_ACCESS_WRITABLE;
                 break;
             case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
                 break;
             case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
                 result->gcBridgeKind = ZR_GC_BRIDGE_BOX;
                 break;
             case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+                result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
                 result->isNullable = ZR_TRUE;
                 break;
             default:

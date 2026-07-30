@@ -2655,6 +2655,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 nextIsFunctionCall &&
                 memberName != ZR_NULL) {
                 EZrOwnershipBuiltinKind ownershipMemberKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+                const TZrChar *removedCompatibilityMessage =
+                        ZrParser_OwnershipRemovedCompatibilityMemberMessage(memberName);
+
+                if (removedCompatibilityMessage != ZR_NULL) {
+                    ZrParser_Compiler_Error(cs, removedCompatibilityMessage, member->location);
+                    return;
+                }
 
                 if (ZrParser_OwnershipMemberNameToBuiltinKind(memberName, &ownershipMemberKind)) {
                     TZrUInt32 ownershipResultSlot = ZR_PARSER_SLOT_NONE;

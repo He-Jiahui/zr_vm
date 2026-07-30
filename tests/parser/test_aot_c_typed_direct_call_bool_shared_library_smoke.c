@@ -2,7 +2,7 @@
 
 static void test_aot_c_generated_shared_library_executes_static_bool_no_arg_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func yes(): bool {\n"
+            "fn yes(): bool {\n"
             "    return true;\n"
             "}\n"
             "var flag: bool = yes();\n"
@@ -30,7 +30,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_no_arg_type
 
 static void test_aot_c_generated_shared_library_returns_static_bool_no_arg_result_through_bool_boundary(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func answer(): bool {\n"
+            "fn answer(): bool {\n"
             "    var result: bool = true;\n"
             "    return result;\n"
             "}\n"
@@ -62,7 +62,7 @@ static void test_aot_c_generated_shared_library_returns_static_bool_no_arg_resul
 
 static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func pass(flag: bool): bool {\n"
+            "fn pass(flag: bool): bool {\n"
             "    return flag;\n"
             "}\n"
             "var seed: bool = true;\n"
@@ -91,7 +91,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_typ
 
 static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_logical_not_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func invert(flag: bool): bool {\n"
+            "fn invert(flag: bool): bool {\n"
             "    return !flag;\n"
             "}\n"
             "var seed: bool = false;\n"
@@ -120,7 +120,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_one_arg_log
 
 static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_logical_and_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func both(left: bool, right: bool): bool {\n"
+            "fn both(left: bool, right: bool): bool {\n"
             "    return left && right;\n"
             "}\n"
             "var left: bool = true;\n"
@@ -150,7 +150,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_log
 
 static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_logical_and_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func all(left: bool, middle: bool, right: bool): bool {\n"
+            "fn all(left: bool, middle: bool, right: bool): bool {\n"
             "    return left && middle && right;\n"
             "}\n"
             "var left: bool = true;\n"
@@ -181,7 +181,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_l
 
 static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_logical_or_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func either3(left: bool, middle: bool, right: bool): bool {\n"
+            "fn either3(left: bool, middle: bool, right: bool): bool {\n"
             "    return left || middle || right;\n"
             "}\n"
             "var left: bool = false;\n"
@@ -212,7 +212,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_three_arg_l
 
 static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_logical_or_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func either(left: bool, right: bool): bool {\n"
+            "fn either(left: bool, right: bool): bool {\n"
             "    return left || right;\n"
             "}\n"
             "var left: bool = false;\n"
@@ -242,7 +242,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_log
 
 static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_equal_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func same(left: bool, right: bool): bool {\n"
+            "fn same(left: bool, right: bool): bool {\n"
             "    return left == right;\n"
             "}\n"
             "var left: bool = true;\n"
@@ -272,7 +272,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_equ
 
 static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_not_equal_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func different(left: bool, right: bool): bool {\n"
+            "fn different(left: bool, right: bool): bool {\n"
             "    return left != right;\n"
             "}\n"
             "var left: bool = true;\n"
@@ -302,7 +302,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_two_arg_not
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func smaller(left: int, right: int): bool {\n"
+            "fn smaller(left: int, right: int): bool {\n"
             "    return left < right;\n"
             "}\n"
             "var left: int = 7;\n"
@@ -332,7 +332,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func same(left: int, right: int): bool {\n"
+            "fn same(left: int, right: int): bool {\n"
             "    return left == right;\n"
             "}\n"
             "var left: int = 21;\n"
@@ -362,7 +362,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_equa
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_not_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func different(left: int, right: int): bool {\n"
+            "fn different(left: int, right: int): bool {\n"
             "    return left != right;\n"
             "}\n"
             "var left: int = 21;\n"
@@ -392,7 +392,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_not_
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_greater_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func greater(left: int, right: int): bool {\n"
+            "fn greater(left: int, right: int): bool {\n"
             "    return left > right;\n"
             "}\n"
             "var left: int = 50;\n"
@@ -422,7 +422,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_grea
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func at_most(left: int, right: int): bool {\n"
+            "fn at_most(left: int, right: int): bool {\n"
             "    return left <= right;\n"
             "}\n"
             "var left: int = 8;\n"
@@ -452,7 +452,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_less
 
 static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_greater_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func at_least(left: int, right: int): bool {\n"
+            "fn at_least(left: int, right: int): bool {\n"
             "    return left >= right;\n"
             "}\n"
             "var left: int = 50;\n"
@@ -482,7 +482,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_grea
 
 static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func smaller(left: uint, right: uint): bool {\n"
+            "fn smaller(left: uint, right: uint): bool {\n"
             "    return left < right;\n"
             "}\n"
             "var left: uint = 7;\n"
@@ -512,7 +512,7 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less
 
 static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func same(left: uint, right: uint): bool {\n"
+            "fn same(left: uint, right: uint): bool {\n"
             "    return left == right;\n"
             "}\n"
             "var left: uint = 21;\n"
@@ -542,7 +542,7 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_equa
 
 static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_not_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func different(left: uint, right: uint): bool {\n"
+            "fn different(left: uint, right: uint): bool {\n"
             "    return left != right;\n"
             "}\n"
             "var left: uint = 21;\n"
@@ -572,7 +572,7 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_not_
 
 static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_greater_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func greater(left: uint, right: uint): bool {\n"
+            "fn greater(left: uint, right: uint): bool {\n"
             "    return left > right;\n"
             "}\n"
             "var left: uint = 50;\n"
@@ -602,7 +602,7 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_grea
 
 static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func at_most(left: uint, right: uint): bool {\n"
+            "fn at_most(left: uint, right: uint): bool {\n"
             "    return left <= right;\n"
             "}\n"
             "var left: uint = 8;\n"
@@ -632,7 +632,7 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_less
 
 static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_greater_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func at_least(left: uint, right: uint): bool {\n"
+            "fn at_least(left: uint, right: uint): bool {\n"
             "    return left >= right;\n"
             "}\n"
             "var left: uint = 50;\n"
@@ -662,7 +662,7 @@ static void test_aot_c_generated_shared_library_executes_static_u64_two_arg_grea
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func smaller(left: float, right: float): bool {\n"
+            "fn smaller(left: float, right: float): bool {\n"
             "    return left < right;\n"
             "}\n"
             "var left: float = 20.5;\n"
@@ -692,7 +692,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func at_most(left: float, right: float): bool {\n"
+            "fn at_most(left: float, right: float): bool {\n"
             "    return left <= right;\n"
             "}\n"
             "var left: float = 21.5;\n"
@@ -722,7 +722,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_less
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func same(left: float, right: float): bool {\n"
+            "fn same(left: float, right: float): bool {\n"
             "    return left == right;\n"
             "}\n"
             "var left: float = 21.5;\n"
@@ -752,7 +752,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_equa
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_not_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func different(left: float, right: float): bool {\n"
+            "fn different(left: float, right: float): bool {\n"
             "    return left != right;\n"
             "}\n"
             "var left: float = 21.5;\n"
@@ -782,7 +782,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_not_
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_greater_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func greater(left: float, right: float): bool {\n"
+            "fn greater(left: float, right: float): bool {\n"
             "    return left > right;\n"
             "}\n"
             "var left: float = 50.5;\n"
@@ -812,7 +812,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_grea
 
 static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_greater_equal_bool_typed_thunk(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
-            "func at_least(left: float, right: float): bool {\n"
+            "fn at_least(left: float, right: float): bool {\n"
             "    return left >= right;\n"
             "}\n"
             "var left: float = 21.5;\n"

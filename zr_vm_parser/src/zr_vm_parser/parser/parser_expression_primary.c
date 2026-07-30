@@ -276,7 +276,9 @@ static TZrBool reject_legacy_ownership_generic_call(SZrParserState *ps,
     }
 
     if (ps == ZR_NULL || base == ZR_NULL || base->type != ZR_AST_IDENTIFIER_LITERAL ||
-        !ZrParser_OwnershipGenericNameToQualifier(base->data.identifier.name, &ownershipQualifier)) {
+        (!ZrParser_OwnershipGenericNameToQualifier(base->data.identifier.name, &ownershipQualifier) &&
+         !zr_string_equals_literal(base->data.identifier.name, "Borrow") &&
+         !zr_string_equals_literal(base->data.identifier.name, "Loan"))) {
         return ZR_FALSE;
     }
 
@@ -286,7 +288,7 @@ static TZrBool reject_legacy_ownership_generic_call(SZrParserState *ps,
             fullLoc,
             ps->lexer->t.token,
             "ownership generic constructor",
-            "Use `own Type(...)` to create a resource, then `.share()`, `.borrow()`, or `.loan()` explicitly.");
+            "Use `own Type(...)` to create a resource, then `.share()` or an explicit `ref` binding.");
     if (args != ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, args);
     }
@@ -888,7 +890,9 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
 
 static TZrBool is_member_name_token(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST ||
-           token == ZR_TK_UNION ||
+           token == ZR_TK_UNION || token == ZR_TK_FN || token == ZR_TK_REF ||
+           token == ZR_TK_LET || token == ZR_TK_YIELD ||
+           token == ZR_TK_TYPEID || token == ZR_TK_TYPEOF ||
            (token >= ZR_TK_MODULE && token <= ZR_TK_NAN);
 }
 

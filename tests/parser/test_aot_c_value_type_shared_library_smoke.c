@@ -148,7 +148,7 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
             "        this.text = text;\n"
             "    }\n"
             "}\n"
-            "pub makeLabel(text: string): Label {\n"
+            "pub fn makeLabel(text: string): Label {\n"
             "    var local: Label = init Label(text);\n"
             "    return local;\n"
             "}\n"
@@ -314,7 +314,7 @@ static void test_aot_c_generated_union_type_layout_token_uses_local_type_def(voi
             "    Empty;\n"
             "    Circle(radius: float);\n"
             "}\n"
-            "pub identity(shape: Shape): Shape {\n"
+            "pub fn identity(shape: Shape): Shape {\n"
             "    var local: Shape = shape;\n"
             "    return local;\n"
             "}\n"
@@ -369,7 +369,7 @@ static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_sk
             "        this.count = count;\n"
             "    }\n"
             "}\n"
-            "var label: Label = $Label(\"live\", 3);\n"
+            "var label: Label = init Label(\"live\", 3);\n"
             "return label.text;";
     const char *podSource =
             "struct Point {\n"
@@ -380,7 +380,7 @@ static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_sk
             "        this.y = y;\n"
             "    }\n"
             "}\n"
-            "var point: Point = $Point(1, 2);\n"
+            "var point: Point = init Point(1, 2);\n"
             "return point.x + point.y;";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *refFunction;

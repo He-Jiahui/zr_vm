@@ -4,38 +4,38 @@ module "compile_time_errors";
 // 注意：某些测试用例应该导致编译错误或警告
 
 // 测试1: 编译期FatalError（应该阻止编译）
-// %compileTime {
+// comptime {
 //     FatalError("This should stop compilation");
 // }
 
 // 测试2: 编译期Assert失败（应该阻止编译）
-// %compileTime {
+// comptime {
 //     Assert(false, "This assertion should fail");
 // }
 
 // 测试3: 编译期访问运行时符号的写操作（应该报错）
 var runtimeVar = 100;
 
-// %compileTime {
+// comptime {
 //     runtimeVar = 200; // 应该报错：Compile-time code cannot write to runtime variable
 // }
 
 // 测试4: 编译期访问不存在的编译期标识符（应该报错）
-// %compileTime {
+// comptime {
 //     var value = nonExistentVar; // 应该报错：Unknown compile-time identifier
 // }
 
 // 测试5: 编译期函数调用不存在的函数（应该报错）
-// %compileTime {
+// comptime {
 //     var result = nonExistentFunc(1, 2); // 应该报错：Unknown compile-time function
 // }
 
 // 测试6: 编译期类型错误（应该报错）
-// %compileTime var invalidType: string = 123; // 应该报错：Type mismatch
+// comptime var invalidType: string = 123; // 应该报错：Type mismatch
 
 // 测试7: 编译期数组越界（应该报错）
-// %compileTime var arr: int[10];
-// %compileTime var value = arr[20]; // 应该报错：Array index out of bounds
+// comptime var arr: int[10];
+// comptime var value = arr[20]; // 应该报错：Array index out of bounds
 
 // 注意：这些错误测试在实际编译时会被检测到
 // 由于这些是错误情况，实际的测试应该通过编译失败来验证
@@ -53,7 +53,7 @@ comptime {
 }
 
 // 测试10: 编译期Error级别（应该阻止编译）
-// %compileTime {
+// comptime {
 //     Error("This is an error message");
 //     // 编译应该失败
 // }

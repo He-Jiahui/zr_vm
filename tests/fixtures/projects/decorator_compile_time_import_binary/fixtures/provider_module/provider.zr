@@ -1,7 +1,5 @@
-module "provider";
+module provider;
 
-comptime var BASE = 5;
-
-comptime compute(seed: int, bonus: int = BASE, factor: int = 2): int {
+pub fn compute(seed: int, bonus: int = 5, factor: int = 2): int {
     return seed * factor + bonus;
 }

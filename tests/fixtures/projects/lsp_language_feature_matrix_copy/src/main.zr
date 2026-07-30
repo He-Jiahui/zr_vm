@@ -2,7 +2,7 @@ let core = import("core_semantics");
 let meta = import("oop_meta");
 let native = import("async_native");
 
-runMatrix(): int {
+fn runMatrix(): int {
     var meter = new meta.SignalBox(4);
     var getterValue = meter.value;
     meter.value = getterValue + 1;

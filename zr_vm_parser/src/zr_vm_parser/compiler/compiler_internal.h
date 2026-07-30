@@ -483,6 +483,7 @@ TZrUInt32 find_closure_var(SZrCompilerState *cs, SZrString *name) ;
 TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool inStack) ;
 
 TZrUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) ;
+SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName);
 
 TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUInt32 childFunctionIndex) ;
 
@@ -918,11 +919,13 @@ ZR_PARSER_API TZrBool compiler_validate_ref_struct_rules(
 typedef struct SZrRefStructTypeSet {
     SZrArray refLikeTypeNames; /* SZrString * */
     SZrArray interfaceTypeNames; /* SZrString * */
+    SZrSemanticContext *semanticContext;
 } SZrRefStructTypeSet;
 
 TZrBool compiler_ref_struct_type_set_init(
         SZrRefStructTypeSet *typeSet,
         SZrState *state,
+        SZrSemanticContext *semanticContext,
         SZrAstNode *root);
 void compiler_ref_struct_type_set_free(
         SZrRefStructTypeSet *typeSet,

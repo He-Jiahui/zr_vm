@@ -1,7 +1,7 @@
-module "core_semantics";
+module core_semantics;
 
 pub interface ScoreReadable {
-    read(): int;
+    fn read(): int;
 }
 
 pub class Counter: ScoreReadable {
@@ -11,7 +11,7 @@ pub class Counter: ScoreReadable {
         this.current = start;
     }
 
-    pub read(): int {
+    pub fn read(): int {
         return this.current;
     }
 }
@@ -31,20 +31,20 @@ pub enum Mode: int {
     Hot = 2;
 }
 
-makeEscaping(offset: int) {
+fn makeEscaping(offset: int) {
     var callback = fn(value: int) => {
         return value + offset;
     };
     return callback;
 }
 
-pub lambdaScore(): int {
+pub fn lambdaScore(): int {
     var captured = 4;
     var direct = (fn(delta: int) => {
         return captured + delta;
     })(3);
     var escaped = makeEscaping(5);
-    var pair = $Pair(1, 2);
+    var pair = init Pair(1, 2);
     var mode = Mode.Hot;
     var counter = new Counter(8);
 

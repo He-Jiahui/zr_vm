@@ -178,7 +178,7 @@ static void test_enumerator_binding_uses_protocol_facts_only(void) {
     SZrInferredType elementType;
     SZrString *sourceName;
     SZrAstNode *ast;
-    const char *source = "var iteration = %import(\"zr.iteration\");\n";
+    const char *source = "var iteration = import(\"zr.iteration\");\n";
 
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(compiler);

@@ -26,6 +26,10 @@ TZrBool ct_frame_get(SZrCompileTimeFrame *frame, SZrString *name, SZrTypeValue *
 TZrBool ct_frame_set(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrString *name, const SZrTypeValue *value);
 SZrCompileTimeVariable *find_compile_time_variable(SZrCompilerState *cs, SZrString *name);
 SZrCompileTimeFunction *find_compile_time_function(SZrCompilerState *cs, SZrString *name);
+SZrCompileTimeFunction *resolve_imported_compile_time_function(
+        SZrCompilerState *cs,
+        SZrString *moduleName,
+        SZrString *functionName);
 TZrBool ct_value_from_compile_time_function(SZrCompilerState *cs, SZrCompileTimeFunction *func, SZrTypeValue *result);
 TZrBool ct_value_try_get_compile_time_function(SZrCompilerState *cs,
                                                const SZrTypeValue *value,

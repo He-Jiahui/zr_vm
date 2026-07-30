@@ -1,7 +1,7 @@
 let math = import("zr.math");
 
-runImpl() {
-    return $math.Vector3(4.0, 5.0, 6.0).y;
+fn runImpl() {
+    return init math.Vector3(4.0, 5.0, 6.0).y;
 }
 
 pub var run = runImpl;

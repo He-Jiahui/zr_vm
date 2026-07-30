@@ -1,11 +1,9 @@
-module "decorators";
+module decorators;
 
-comptime class Serializable {
-    @decorate(target: typeof Class): zr.DecoratorPatch {
-        return { metadata: { serializable: true } };
-    }
+pub fn markClass(): int {
+    return 15;
 }
 
-comptime markFunction(target: typeof Function, bonus: int = 16) {
-    return { metadata: { instrumented: bonus } };
+pub fn markFunction(): int {
+    return 16;
 }

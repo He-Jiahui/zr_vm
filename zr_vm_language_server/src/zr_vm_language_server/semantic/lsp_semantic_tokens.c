@@ -11,7 +11,6 @@
 #define ZR_LSP_SEMANTIC_TOKEN_COMPARE_LESS (-1)
 #define ZR_LSP_SEMANTIC_TOKEN_COMPARE_EQUAL 0
 #define ZR_LSP_SEMANTIC_TOKEN_COMPARE_GREATER 1
-#define ZR_LSP_SEMANTIC_TOKEN_MODIFIER_DEPRECATED (1u << 0)
 
 typedef enum EZrLspSemanticTokenType {
     ZR_LSP_SEMANTIC_TOKEN_NAMESPACE = 0,
@@ -81,13 +80,6 @@ static void semantic_token_add(SZrState *state,
                                TZrUInt32 character,
                                TZrUInt32 length,
                                TZrUInt32 typeIndex);
-static void semantic_token_add_with_modifiers(SZrState *state,
-                                              SZrArray *entries,
-                                              TZrUInt32 line,
-                                              TZrUInt32 character,
-                                              TZrUInt32 length,
-                                              TZrUInt32 typeIndex,
-                                              TZrUInt32 modifiers);
 static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              SZrArray *entries,
                                              const TZrChar *content,
@@ -95,14 +87,6 @@ static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              TZrSize startOffset,
                                              TZrSize endOffset,
                                              TZrUInt32 typeIndex);
-static TZrBool semantic_token_add_utf16_span_with_modifiers(SZrState *state,
-                                                            SZrArray *entries,
-                                                            const TZrChar *content,
-                                                            TZrSize contentLength,
-                                                            TZrSize startOffset,
-                                                            TZrSize endOffset,
-                                                            TZrUInt32 typeIndex,
-                                                            TZrUInt32 modifiers);
 static void semantic_token_add_file_range(SZrState *state,
                                           SZrLspContext *context,
                                           SZrArray *entries,
@@ -423,16 +407,6 @@ static void semantic_token_add(SZrState *state,
                                TZrUInt32 character,
                                TZrUInt32 length,
                                TZrUInt32 typeIndex) {
-    semantic_token_add_with_modifiers(state, entries, line, character, length, typeIndex, 0);
-}
-
-static void semantic_token_add_with_modifiers(SZrState *state,
-                                              SZrArray *entries,
-                                              TZrUInt32 line,
-                                              TZrUInt32 character,
-                                              TZrUInt32 length,
-                                              TZrUInt32 typeIndex,
-                                              TZrUInt32 modifiers) {
     SZrLspSemanticTokenEntry entry;
 
     if (state == ZR_NULL || entries == ZR_NULL || length == 0) {
@@ -452,7 +426,6 @@ static void semantic_token_add_with_modifiers(SZrState *state,
             if (semantic_token_type_priority(typeIndex) > semantic_token_type_priority(current->typeIndex)) {
                 current->typeIndex = typeIndex;
             }
-            current->modifiers |= modifiers;
             return;
         }
     }
@@ -461,7 +434,7 @@ static void semantic_token_add_with_modifiers(SZrState *state,
     entry.character = character;
     entry.length = length;
     entry.typeIndex = typeIndex;
-    entry.modifiers = modifiers;
+    entry.modifiers = 0;
     ZrCore_Array_Push(state, entries, &entry);
 }
 
@@ -472,24 +445,6 @@ static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              TZrSize startOffset,
                                              TZrSize endOffset,
                                              TZrUInt32 typeIndex) {
-    return semantic_token_add_utf16_span_with_modifiers(state,
-                                                        entries,
-                                                        content,
-                                                        contentLength,
-                                                        startOffset,
-                                                        endOffset,
-                                                        typeIndex,
-                                                        0);
-}
-
-static TZrBool semantic_token_add_utf16_span_with_modifiers(SZrState *state,
-                                                            SZrArray *entries,
-                                                            const TZrChar *content,
-                                                            TZrSize contentLength,
-                                                            TZrSize startOffset,
-                                                            TZrSize endOffset,
-                                                            TZrUInt32 typeIndex,
-                                                            TZrUInt32 modifiers) {
     SZrLspPosition startPosition;
     SZrLspPosition endPosition;
     TZrInt32 tokenLength;
@@ -514,13 +469,12 @@ static TZrBool semantic_token_add_utf16_span_with_modifiers(SZrState *state,
         return ZR_FALSE;
     }
 
-    semantic_token_add_with_modifiers(state,
-                                      entries,
-                                      (TZrUInt32)startPosition.line,
-                                      (TZrUInt32)startPosition.character,
-                                      (TZrUInt32)tokenLength,
-                                      typeIndex,
-                                      modifiers);
+    semantic_token_add(state,
+                       entries,
+                       (TZrUInt32)startPosition.line,
+                       (TZrUInt32)startPosition.character,
+                       (TZrUInt32)tokenLength,
+                       typeIndex);
     return ZR_TRUE;
 }
 
@@ -834,7 +788,7 @@ static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize lengt
         "comptime",  "yield",     "import",   "typeid",   "typeof",   "loadModule",
         "loadPlugin", "pub",      "pri",      "pro",      "static",   "new",
         "class",
-        "struct",    "interface", "enum",     "union",    "module",   "using",
+        "struct",    "interface", "enum",     "union",    "module",
         "if",        "else",      "switch",   "case",     "default",  "while",
         "for",       "break",     "continue", "return",   "try",      "catch",
         "finally",   "throw",     "super",    "get",      "set",
@@ -972,45 +926,15 @@ static void semantic_token_scan_source(SZrState *state,
             }
             continue;
         }
-        if (current == '%') {
-            TZrSize start = offset;
-
-            offset++;
-            character++;
+        if ((current == '%' || current == '$') &&
+            offset + 1 < contentLength && semantic_token_is_identifier_start(content[offset + 1])) {
+            /* Do not classify a current identifier embedded in invalid removed-prefix syntax. */
+            offset += 2;
+            character += 2;
             while (offset < contentLength && semantic_token_is_identifier_char(content[offset])) {
                 offset++;
                 character++;
             }
-            if (offset > start + 1) {
-                semantic_token_add_utf16_span_with_modifiers(
-                    state,
-                    entries,
-                    content,
-                    contentLength,
-                    start,
-                    offset,
-                    ZR_LSP_SEMANTIC_TOKEN_KEYWORD,
-                    ZR_LSP_SEMANTIC_TOKEN_MODIFIER_DEPRECATED);
-            }
-            continue;
-        }
-        if (current == '$') {
-            TZrSize lookahead = offset + 1;
-
-            if (lookahead < contentLength &&
-                (semantic_token_is_identifier_start(content[lookahead]) || content[lookahead] == '(')) {
-                semantic_token_add_utf16_span_with_modifiers(
-                    state,
-                    entries,
-                    content,
-                    contentLength,
-                    offset,
-                    offset + 1,
-                    ZR_LSP_SEMANTIC_TOKEN_KEYWORD,
-                    ZR_LSP_SEMANTIC_TOKEN_MODIFIER_DEPRECATED);
-            }
-            offset++;
-            character++;
             continue;
         }
         if (current == '#') {

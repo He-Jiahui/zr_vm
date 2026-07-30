@@ -23,6 +23,7 @@
 #include "zr_vm_core/value.h"
 
 typedef struct SZrCompilerState SZrCompilerState;
+typedef struct SZrAstNode SZrAstNode;
 
 #define ZR_DEBUG_WAIT_INFINITE ((TZrUInt32) 0xFFFFFFFFu)
 #define ZR_DEBUG_PROTOCOL_NAME "zrdbg/1"
@@ -290,6 +291,10 @@ ZR_DEBUG_API void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
 ZR_DEBUG_API TZrBool zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
                                                           TZrUInt32 frameId,
                                                           SZrCompilerState *compilerState);
+TZrBool zr_debug_semantic_register_summary_bindings(ZrDebugAgent *agent,
+                                                    TZrUInt32 frameId,
+                                                    SZrCompilerState *compilerState,
+                                                    const SZrAstNode *expression);
 void zr_debug_reference_summary_from_scope(EZrDebugScopeKind scopeKind,
                                            const TZrChar *name,
                                            TZrChar *buffer,

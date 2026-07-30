@@ -138,6 +138,7 @@ static SZrAstNode *property_consumer_parse_with_migration_capture(
             property_consumer_capture_migration_diagnostic;
     outParserState->errorUserData = capture;
     outParserState->suppressErrorOutput = ZR_TRUE;
+    outParserState->enableLegacyMigrationParsing = ZR_TRUE;
     return ZrParser_ParseWithState(outParserState);
 }
 
@@ -693,7 +694,7 @@ static void test_binary_import_merges_property_contract_into_placeholder(void) {
             "  }\n"
             "}\n";
     static const TZrChar consumerSource[] =
-            "var binaryStage = %import(\"graph_binary_stage\");\n"
+            "var binaryStage = import(\"graph_binary_stage\");\n"
             "var answer = binaryStage.Meter.shared;\n"
             "return answer;\n";
     SZrFunction *provider = ZR_NULL;
@@ -837,7 +838,7 @@ static void test_source_reflection_exposes_linked_property_accessors(void) {
             "    get { return this.stored; }\n"
             "    set { this.stored = value; }\n"
             "  }\n"
-            "  pub __get_fake(): int { return 1; }\n"
+            "  pub fn __get_fake(): int { return 1; }\n"
             "}\n"
             "var reflected = typeof(Meter).members.value[0];\n"
             "var decoy = typeof(Meter).members.__get_fake[0];\n"

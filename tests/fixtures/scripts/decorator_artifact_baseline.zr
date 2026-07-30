@@ -1,4 +1,4 @@
-module "decorator_artifact_baseline";
+module decorator_artifact_baseline;
 
 class MarkClass {
     @decorate(target: typeof Class): void {
@@ -36,7 +36,7 @@ pub class User {
     pri var _value: int = 2;
 
     #MarkMethod#
-    pub load(v: int): int {
+    pub fn load(v: int): int {
         return v;
     }
 
@@ -47,7 +47,7 @@ pub class User {
 }
 
 #markFunction#
-pub verifyDecorators(seed: int = 0): int {
+pub fn verifyDecorators(seed: int = 0): int {
     var typeMeta = typeof(User).metadata;
     var fieldMeta = typeof(User).members.id[0].metadata;
     var methodMeta = typeof(User).members.load[0].metadata;

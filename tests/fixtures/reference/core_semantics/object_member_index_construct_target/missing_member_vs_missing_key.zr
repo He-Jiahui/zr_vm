@@ -1,4 +1,4 @@
-probe(obj) {
+fn probe(obj) {
     try {
         var value = obj.missing;
         return -100;

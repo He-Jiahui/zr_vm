@@ -1,4 +1,4 @@
-var probe = %import("probe.native_shapes");
+var probe = import("probe.native_shapes");
 var total = 0;
 
 for (var item in probe.createCounterIterable()) {

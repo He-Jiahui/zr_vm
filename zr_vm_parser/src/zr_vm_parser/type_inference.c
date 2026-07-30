@@ -9,6 +9,7 @@
 #include "type_inference/type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
 #include "type_inference/type_inference_constant_eval.h"
+#include "compiler/compile_tool_binding.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/memory.h"
@@ -150,14 +151,18 @@ static TZrBool ownership_qualifier_is_direct_owner(EZrOwnershipQualifier qualifi
 }
 
 static TZrBool type_inference_assignment_target_accepts_borrow_like(EZrOwnershipQualifier targetQualifier,
-                                                                    EZrOwnershipQualifier sourceQualifier) {
+                                                                     EZrReferenceAccess targetReferenceAccess,
+                                                                     EZrOwnershipQualifier sourceQualifier) {
     if (sourceQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
-        return targetQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        return targetQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+               targetReferenceAccess == ZR_REFERENCE_ACCESS_READONLY;
     }
 
     if (sourceQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
         return targetQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED ||
-               targetQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+               targetQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+               targetReferenceAccess == ZR_REFERENCE_ACCESS_WRITABLE ||
+               targetReferenceAccess == ZR_REFERENCE_ACCESS_READONLY;
     }
 
     return ZR_TRUE;
@@ -165,9 +170,11 @@ static TZrBool type_inference_assignment_target_accepts_borrow_like(EZrOwnership
 
 static const TZrChar *type_inference_direct_ownership_flow_diagnostic_message(
         EZrOwnershipQualifier targetQualifier,
+        EZrReferenceAccess targetReferenceAccess,
         EZrOwnershipQualifier sourceQualifier) {
     if (ownership_qualifier_is_borrow_like(sourceQualifier) &&
         !type_inference_assignment_target_accepts_borrow_like(targetQualifier,
+                                                              targetReferenceAccess,
                                                               sourceQualifier)) {
         if (sourceQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
             return "Loaned value cannot escape its owner";
@@ -235,6 +242,7 @@ const TZrChar *type_inference_ownership_flow_diagnostic_message(const SZrInferre
 
     directMessage = type_inference_direct_ownership_flow_diagnostic_message(
             targetType->ownershipQualifier,
+            targetType->referenceAccess,
             sourceType->ownershipQualifier);
     if (directMessage != ZR_NULL) {
         return directMessage;
@@ -3580,6 +3588,35 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
 
     if (cs == ZR_NULL || astType == ZR_NULL || astType->name == ZR_NULL || astType->subType == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (astType->name->type == ZR_AST_IDENTIFIER_LITERAL &&
+        astType->name->data.identifier.name != ZR_NULL &&
+        astType->subType->name != ZR_NULL &&
+        astType->subType->name->type == ZR_AST_IDENTIFIER_LITERAL &&
+        astType->subType->subType == ZR_NULL) {
+        const SZrCompileToolBinding *compileToolBinding =
+                ZrParser_CompileToolBinding_Resolve(
+                        cs, astType->name->data.identifier.name);
+        const SZrParserCompileToolTypeDescriptor *typeDescriptor =
+                compileToolBinding != ZR_NULL &&
+                                compileToolBinding->kind == ZR_COMPILE_TOOL_BINDING_PROVIDER
+                        ? ZrParser_CompileTool_FindType(
+                                  compileToolBinding->provider,
+                                  ZrCore_String_GetNativeString(
+                                          astType->subType->name->data.identifier.name))
+                        : ZR_NULL;
+        if (typeDescriptor != ZR_NULL) {
+            ZrParser_InferredType_InitFull(
+                    cs->state,
+                    result,
+                    ZR_VALUE_TYPE_OBJECT,
+                    ZR_FALSE,
+                    ZrCore_String_CreateFromNative(
+                            cs->state,
+                            (TZrNativeString)typeDescriptor->qualifiedName));
+            return ZR_TRUE;
+        }
     }
 
     ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);

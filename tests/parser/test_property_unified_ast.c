@@ -830,7 +830,7 @@ static void test_source_hidden_accessor_spelling_does_not_create_property(void) 
 
 static void test_init_accessor_survives_runtime_descriptor_materialization(void) {
     static const char source[] =
-            "%module \"property_init\";\n"
+            "module property_init;\n"
             "pub class Initializable {\n"
             "  pub property value: int { init { return; } }\n"
             "}\n";

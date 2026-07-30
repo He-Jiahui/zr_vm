@@ -9,6 +9,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ref_struct_rules.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
@@ -19,12 +20,18 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ref_struct_rules.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md
   - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
+  - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
+  - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
+  - docs/plans/syntax/2026-07-20-13-iterator-enumerator-yield-design.md
 tests:
   - tests/parser/test_reference_escape_closure_suspension.c
   - tests/parser/test_resource_owner_borrow_receiver.c
+  - tests/parser/test_ref_struct_restrictions.c
+  - tests/container/test_generational_pool.c
   - tests/acceptance/2026-07-20-syntax-02-m5-reference-escape-closure-suspension.md
 doc_type: module-detail
 ---
@@ -78,6 +85,11 @@ The pre-pass rejects:
 - accessing a writable reference while a closure's mutable capture is live;
 - using a reference after an `await` or generator suspension.
 
+Ref-like classification includes both declarations in the current AST and
+imported/native types whose canonical capability contains `REF_LIKE`. This
+keeps `PoolRef<T>` and other providers on the same storage, closure and
+suspension rules without a concrete-name branch.
+
 Every rejection uses a structured diagnostic whose primary range is the escape
 or conflicting use and whose related range is the reference origin. Calls
 consume the callee closure provenance: a call result does not become an alias of
@@ -98,19 +110,25 @@ last use is allowed. Lambdas and local named functions share the same capture
 rules.
 
 Reference bindings record the suspension epoch at declaration. The transformed
-await helper and the current generator suspension node advance the epoch. A
+await helper and the current `YIELD_STATEMENT` advance the epoch. A
 reference used in a later epoch reports the origin and suspension ranges. An
 owned value observed before suspension remains legal because it does not carry
 reference provenance into the coroutine frame.
 
 ## Async and native surface
 
-The parser recognizes target `async fn` without silently wrapping its declared
-return TypeRef; legacy `%async` keeps its compatibility lowering. Target
-`native extern("library")` requires bodyless declarations to start with `fn`,
-while legacy `%extern` remains accepted during migration. Both `async` and
-`native` remain contextual, so ordinary identifiers with those names continue
-to parse outside their declaration shapes.
+The production parser recognizes `async fn` without silently wrapping its
+declared return TypeRef. `native extern("library")` requires bodyless
+declarations to start with `fn`. Removed `%async`, `%await`, and `%extern`
+spellings are recognized only to emit structured migration diagnostics; they
+are not accepted or lowered. Both `async` and `native` remain contextual, so
+ordinary identifiers with those names continue to parse outside declaration
+shapes.
+
+The formal generator surface is an ordinary function with an explicit
+`Iterator<T>` return and `yield`. Old `{{ ... }}` generator expressions and
+generator `out` statements are reject-only migration input and no longer drive
+reference-escape epochs.
 
 A native ref argument has call-local capture by default. Long-lived native
 storage requires a future explicit handle/pin contract; M5 never widens an

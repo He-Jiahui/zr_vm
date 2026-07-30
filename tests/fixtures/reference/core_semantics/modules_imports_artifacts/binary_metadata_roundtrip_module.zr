@@ -1,13 +1,13 @@
-%module "reference.binary_meta";
+module reference.binary_meta;
 
-%compileTime var MAX_SCALE: int = 8;
+const MAX_SCALE: int = 8;
 
-%compileTime buildBias(seed: int): int {
+comptime fn buildBias(seed: int): int {
     return seed + MAX_SCALE;
 }
 
 pub var runtimeValue: int = MAX_SCALE;
 
-%test("binary_meta") {
+pub fn binary_meta(): int {
     return runtimeValue;
 }

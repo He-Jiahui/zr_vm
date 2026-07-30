@@ -1210,6 +1210,7 @@ void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *no
 }
 
 static TZrBool finalize_resource_constructed_result(SZrCompilerState *cs,
+                                                     TZrUInt32 targetSlot,
                                                      SZrFileRange location) {
     TZrUInt32 sourceSlot;
     TZrUInt32 resultSlot;
@@ -1219,7 +1220,7 @@ static TZrBool finalize_resource_constructed_result(SZrCompilerState *cs,
     }
 
     sourceSlot = cs->lastExpressionSlot;
-    resultSlot = allocate_stack_slot(cs);
+    resultSlot = targetSlot != ZR_PARSER_SLOT_NONE ? targetSlot : allocate_stack_slot(cs);
     if (!compiler_semantic_ir_lower_ownership(cs,
                                               ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE,
                                               sourceSlot,
@@ -1233,55 +1234,59 @@ static TZrBool finalize_resource_constructed_result(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
+static TZrUInt32 compile_construct_expression_with_target(SZrCompilerState *cs,
+                                                          SZrAstNode *node,
+                                                          TZrUInt32 targetSlot) {
     SZrConstructExpression *constructExpr;
     EZrObjectPrototypeType prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
     SZrString *typeName;
     const TZrChar *op;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
-        return;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     if (node->type != ZR_AST_CONSTRUCT_EXPRESSION) {
         ZrParser_Compiler_Error(cs, "Expected construct expression", node->location);
-        return;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     constructExpr = &node->data.constructExpression;
     if (construct_expression_is_ownership_builtin(constructExpr)) {
-        if (!compile_ownership_builtin_expression(cs, constructExpr, node->location) && !cs->hasError) {
+        if (!compile_ownership_builtin_expression(
+                    cs, constructExpr, targetSlot, node->location) &&
+            !cs->hasError) {
             ZrParser_Compiler_Error(cs, "Failed to compile ownership builtin expression", node->location);
         }
-        return;
+        return cs->hasError ? ZR_PARSER_SLOT_NONE : cs->lastExpressionSlot;
     }
 
     typeName = resolve_construct_target_type_name(cs, constructExpr->target, &prototypeType);
     if (typeName == ZR_NULL) {
         if (cs->hasError) {
-            return;
+            return ZR_PARSER_SLOT_NONE;
         }
         ZrParser_Compiler_Error(cs,
                                 "Prototype construction target must resolve to a registered prototype",
                                 node->location);
-        return;
+        return cs->hasError ? ZR_PARSER_SLOT_NONE : cs->lastExpressionSlot;
     }
 
     if (prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
         ZrParser_Compiler_Error(cs, "Module values cannot be constructed directly", node->location);
-        return;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     if (prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
         ZrParser_Compiler_Error(cs, "Interface prototypes cannot be constructed", node->location);
-        return;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     op = constructExpr->isNew ? "new" : "$";
     if (emit_shorthand_constructor_instance(cs, op, typeName, constructExpr->args, node->location) == ZR_PARSER_SLOT_NONE &&
         !cs->hasError) {
         ZrParser_Compiler_Error(cs, "Failed to compile construct expression", node->location);
-        return;
+        return ZR_PARSER_SLOT_NONE;
     }
 
     if ((constructExpr->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
@@ -1291,13 +1296,24 @@ void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
         TZrBool wrapped =
                 constructExpr->isResourceSurface &&
                 constructExpr->builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE
-                        ? finalize_resource_constructed_result(cs, node->location)
+                        ? finalize_resource_constructed_result(cs, targetSlot, node->location)
                         : wrap_constructed_result_with_ownership_builtin(
-                                  cs, constructExpr, node->location);
+                                  cs, constructExpr, targetSlot, node->location);
         if (!wrapped && !cs->hasError) {
             ZrParser_Compiler_Error(cs, "Failed to wrap ownership-aware construction result", node->location);
         }
     }
+    return cs->hasError ? ZR_PARSER_SLOT_NONE : cs->lastExpressionSlot;
+}
+
+void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    (void)compile_construct_expression_with_target(cs, node, ZR_PARSER_SLOT_NONE);
+}
+
+TZrUInt32 compile_ownership_construct_expression_into_slot(SZrCompilerState *cs,
+                                                            SZrAstNode *node,
+                                                            TZrUInt32 targetSlot) {
+    return compile_construct_expression_with_target(cs, node, targetSlot);
 }
 
 // 编译数组字面量

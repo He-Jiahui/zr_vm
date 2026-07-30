@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-#define ZR_POOL_STABLE_SLOT_CONTRACT_HASH UINT64_C(0x5a52504f4f4c0001)
+#define ZR_POOL_STABLE_SLOT_CONTRACT_HASH UINT64_C(0x5a52504f4f4c0002)
 
 typedef struct SZrPool SZrPool;
 
@@ -56,6 +56,7 @@ typedef TZrBool (*FZrPoolInitialize)(
         void *destination,
         const void *source,
         void *context);
+typedef void (*FZrPoolAbortInitialize)(void *destination, void *context);
 typedef void (*FZrPoolDrop)(void *element, void *context);
 typedef void (*FZrPoolScan)(void *element, void *context);
 
@@ -64,6 +65,7 @@ typedef struct SZrPoolTypeLayout {
     TZrSize elementAlignment;
     EZrPoolGcScanKind gcScanKind;
     FZrPoolInitialize initialize;
+    FZrPoolAbortInitialize abortInitialize;
     FZrPoolDrop drop;
     FZrPoolScan scan;
     void *context;
@@ -98,6 +100,12 @@ typedef struct SZrPoolStats {
     uint64_t recycleCount;
     uint64_t reuseCount;
     uint64_t dropCount;
+    uint64_t constructionFailureCount;
+    uint64_t partialCleanupCount;
+    uint64_t handleValidationCount;
+    uint64_t barrierMarkCount;
+    TZrSize dirtySlotCount;
+    uint64_t scanPassCount;
     uint64_t scannedSlotCount;
     uint64_t scannedByteCount;
 } SZrPoolStats;

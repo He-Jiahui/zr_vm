@@ -160,7 +160,7 @@ static void assert_ref_struct_escape(
 static void test_ref_struct_surface_preserves_readonly_and_ref_like_flags(void) {
     SZrAstNode *script = parse_source(
             "ref struct View { var value: int; }\n"
-            "readonly ref struct ReadOnlyView { var const value: int; }\n");
+            "readonly ref struct ReadOnlyView { let value: int; }\n");
     const SZrStructDeclaration *view =
             &script_statement(script, 0U)->data.structDeclaration;
     const SZrStructDeclaration *readOnlyView =
@@ -223,7 +223,7 @@ static void test_ref_struct_accepts_legal_storage_and_safe_return_surfaces(void)
             "  var observed: ref readonly T;\n"
             "  var nested: Inner;\n"
             "  var label: string;\n"
-            "  var owner: %unique Resource;\n"
+            "  var owner: Unique<Resource>;\n"
             "}\n"
             "fn use(view: View<int>): View<int> {\n"
             "  var local: View<int> = view;\n"
@@ -246,7 +246,7 @@ static void test_ref_struct_rejects_heap_fields_and_plain_struct_ref_fields(void
             "cannot be stored in a class field");
     assert_ref_struct_rules(
             "ref struct View { var value: int; }\n"
-            "%owned class Holder { var view: View; }\n",
+            "resource class Holder { var view: View; }\n",
             ZR_FALSE,
             "cannot be stored in a resource class field");
     assert_ref_struct_rules(
@@ -376,12 +376,9 @@ static void test_ref_struct_rejects_await_and_yield_suspension(void) {
             "cannot cross an await suspension");
     assert_ref_struct_escape(
             "ref struct View { var value: int; }\n"
-            "fn invalid(view: View): int {\n"
-            "  var sequence = {{\n"
-            "    out 1;\n"
-            "    out view.value;\n"
-            "  }};\n"
-            "  return 0;\n"
+            "fn invalid(view: View): zr.iteration.Iterator<int> {\n"
+            "  yield 1;\n"
+            "  yield view.value;\n"
             "}\n",
             ZR_FALSE,
             "cannot cross a yield suspension");
@@ -389,10 +386,10 @@ static void test_ref_struct_rejects_await_and_yield_suspension(void) {
 
 static void test_ref_struct_frame_layout_preserves_ref_and_owner_maps(void) {
     SZrAstNode *script = parse_source(
-            "%owned class Resource {}\n"
+            "resource class Resource {}\n"
             "ref struct RefOwner {\n"
             "  var borrowed: ref int;\n"
-            "  var owner: %unique Resource;\n"
+            "  var owner: Unique<Resource>;\n"
             "}\n"
             "fn probe(value: ref int): int {\n"
             "  var frame: RefOwner;\n"
