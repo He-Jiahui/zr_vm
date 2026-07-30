@@ -37,6 +37,17 @@ static void assert_text_does_not_contain(const char *text, const char *needle) {
     TEST_ASSERT_NULL(strstr(text, needle));
 }
 
+static void assert_file_does_not_exist(const char *path) {
+    FILE *file;
+
+    TEST_ASSERT_NOT_NULL(path);
+    file = fopen(path, "rb");
+    if (file != ZR_NULL) {
+        fclose(file);
+    }
+    TEST_ASSERT_NULL(file);
+}
+
 static SZrObject *get_or_create_function_metadata_object(SZrState *state, SZrFunction *function) {
     SZrObject *metadataObject;
 
@@ -398,6 +409,58 @@ static void attach_inline_struct_layout_slot(SZrState *state,
     function->frameByteAlign = 8u;
     function->frameSlotLayoutLength = 1u;
     function->frameSlotLayouts = slotLayout;
+}
+
+static void attach_debug_sidecar_rows(SZrState *state,
+                                      SZrFunction *function,
+                                      TZrUInt32 rowCount,
+                                      TZrUInt32 instructionCount,
+                                      TZrUInt32 firstLine) {
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, rowCount);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, instructionCount);
+
+    if (function->instructionsList == ZR_NULL) {
+        function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(TZrInstruction) * instructionCount,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->instructionsList);
+        memset(function->instructionsList, 0, sizeof(TZrInstruction) * instructionCount);
+        function->instructionsLength = instructionCount;
+        for (TZrUInt32 instructionIndex = 0u;
+             instructionIndex < instructionCount;
+             instructionIndex++) {
+            function->instructionsList[instructionIndex] =
+                    test_create_instruction_2(ZR_INSTRUCTION_ENUM(NOP), 0u, 0u, 0u);
+        }
+    } else {
+        TEST_ASSERT_EQUAL_UINT32(instructionCount, function->instructionsLength);
+    }
+    function->executionLocationInfoList =
+            (SZrFunctionExecutionLocationInfo *)ZrCore_Memory_RawMallocWithType(
+                    state->global,
+                    sizeof(SZrFunctionExecutionLocationInfo) * rowCount,
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->executionLocationInfoList);
+    memset(function->executionLocationInfoList,
+           0,
+           sizeof(SZrFunctionExecutionLocationInfo) * rowCount);
+    function->executionLocationInfoLength = rowCount;
+    function->lineInSourceStart = firstLine;
+    function->lineInSourceEnd = firstLine + rowCount - 1u;
+
+    for (TZrUInt32 rowIndex = 0u; rowIndex < rowCount; rowIndex++) {
+        SZrFunctionExecutionLocationInfo *row = &function->executionLocationInfoList[rowIndex];
+
+        row->currentInstructionOffset =
+                (TZrMemoryOffset)(rowIndex < instructionCount ? rowIndex : instructionCount - 1u);
+        row->lineInSource = firstLine + rowIndex;
+        row->columnInSourceStart = 3u + rowIndex;
+        row->lineInSourceEnd = firstLine + rowIndex;
+        row->columnInSourceEnd = 8u + rowIndex;
+    }
 }
 
 static void attach_value_layout_slot(SZrState *state, SZrFunction *function) {
@@ -1219,6 +1282,9 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
     function = create_static_callable_trim_fixture(state);
     TEST_ASSERT_NOT_NULL(function);
     attach_value_layout_slot(state, function);
+    attach_debug_sidecar_rows(state, function, 1u, 1u, 1u);
+    attach_debug_sidecar_rows(state, &function->childFunctionList[0], 2u, 1u, 10u);
+    attach_debug_sidecar_rows(state, &function->childFunctionList[1], 1u, 1u, 20u);
 
     memset(&options, 0, sizeof(options));
     options.moduleName = "aot_c_code_stripping";
@@ -1246,6 +1312,9 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
     assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsBefore = 3 */");
     assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsAfter = 2 */");
     assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsRemoved = 1 */");
+    assert_text_contains(generatedCText, "/* code_stripping.debugLocationsBefore = 4 */");
+    assert_text_contains(generatedCText, "/* code_stripping.debugLocationsAfter = 3 */");
+    assert_text_contains(generatedCText, "/* code_stripping.debugLocationsRemoved = 1 */");
     assert_code_stripping_type_layout_stats(generatedCText, 2u, 1u, 1u);
     assert_code_stripping_type_layout_byte_stats(generatedCText, 16u, 8u, 8u);
     assert_code_stripping_type_layout_generated_byte_stats(generatedCText, ZR_TRUE);
@@ -1277,6 +1346,24 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
             "byteSize=8 byteAlign=8 typeLayoutId=1 slotKind=inline_struct isParameter=0 "
             "flags=0x0000 */");
     assert_text_does_not_contain(generatedCText, "reachability.frameLayoutManifest.node[2]");
+    assert_text_contains(generatedCText, "/* reachability.debugSidecarManifest.version = 1 */");
+    assert_text_contains(generatedCText, "/* reachability.debugSidecarManifest.count = 3 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.debugSidecarManifest.node[0] = reason=edge.debug_sidecar "
+            "predecessorFunction=0 ownerFunction=0 locationIndex=0 instructionOffset=0 "
+            "lineStart=1 columnStart=3 lineEnd=1 columnEnd=8 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.debugSidecarManifest.node[1] = reason=edge.debug_sidecar "
+            "predecessorFunction=1 ownerFunction=1 locationIndex=0 instructionOffset=0 "
+            "lineStart=10 columnStart=3 lineEnd=10 columnEnd=8 */");
+    assert_text_contains(
+            generatedCText,
+            "/* reachability.debugSidecarManifest.node[2] = reason=edge.debug_sidecar "
+            "predecessorFunction=1 ownerFunction=1 locationIndex=1 instructionOffset=0 "
+            "lineStart=11 columnStart=4 lineEnd=11 columnEnd=9 */");
+    assert_text_does_not_contain(generatedCText, "reachability.debugSidecarManifest.node[3]");
     assert_text_contains(generatedCText, "/* reachability.typeLayoutManifest.version = 1 */");
     assert_text_contains(generatedCText, "/* reachability.typeLayoutManifest.count = 1 */");
     assert_text_contains(
@@ -1297,6 +1384,83 @@ static void test_aot_c_code_stripping_option_filters_unreachable_static_callable
                          "};");
 
     free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_code_stripping_rejects_malformed_unreachable_debug_sidecar(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    FILE *generatedFile;
+    SZrFunctionExecutionLocationInfo *locations;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->childFunctionList[1].executionLocationInfoLength = 1u;
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_malformed_unreachable_debug_sidecar";
+    options.sourceHash = "aot-c-code-stripping-malformed-unreachable-debug-sidecar";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-malformed-unreachable-debug-sidecar";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_code_stripping",
+                                                       "generated",
+                                                       "malformed_unreachable_debug_sidecar",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    generatedFile = fopen(generatedCPath, "rb");
+    if (generatedFile != ZR_NULL) {
+        fclose(generatedFile);
+    }
+    TEST_ASSERT_NULL(generatedFile);
+
+    attach_debug_sidecar_rows(state, &function->childFunctionList[1], 2u, 2u, 20u);
+    locations = function->childFunctionList[1].executionLocationInfoList;
+
+    locations[0].currentInstructionOffset = -1;
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    assert_file_does_not_exist(generatedCPath);
+
+    locations[0].currentInstructionOffset = 0;
+    locations[1].currentInstructionOffset = 2;
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    assert_file_does_not_exist(generatedCPath);
+
+    locations[0].currentInstructionOffset = 1;
+    locations[1].currentInstructionOffset = 0;
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    assert_file_does_not_exist(generatedCPath);
+
+    locations[0].currentInstructionOffset = 0;
+    locations[1].currentInstructionOffset = 1;
+    locations[0].lineInSourceEnd = locations[0].lineInSource - 1u;
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    assert_file_does_not_exist(generatedCPath);
+
+    locations[0].lineInSourceEnd = locations[0].lineInSource;
+    locations[0].columnInSourceEnd = locations[0].columnInSourceStart - 1u;
+    (void)remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    assert_file_does_not_exist(generatedCPath);
+
     ZrTests_Runtime_State_Destroy(state);
 }
 
@@ -1581,6 +1745,11 @@ static void test_aot_c_code_stripping_preserves_property_accessor_root(void) {
     assert_text_contains(generatedCText, "/* code_stripping.frameLayoutSlotsRemoved = 0 */");
     assert_text_contains(generatedCText, "/* reachability.frameLayoutManifest.count = 0 */");
     assert_text_does_not_contain(generatedCText, "reachability.frameLayoutManifest.node[0]");
+    assert_text_contains(generatedCText, "/* code_stripping.debugLocationsBefore = 0 */");
+    assert_text_contains(generatedCText, "/* code_stripping.debugLocationsAfter = 0 */");
+    assert_text_contains(generatedCText, "/* code_stripping.debugLocationsRemoved = 0 */");
+    assert_text_contains(generatedCText, "/* reachability.debugSidecarManifest.count = 0 */");
+    assert_text_does_not_contain(generatedCText, "reachability.debugSidecarManifest.node[0]");
 
     free(generatedCText);
     ZrTests_Runtime_State_Destroy(state);
@@ -3053,6 +3222,7 @@ static void test_aot_c_code_stripping_prunes_zrp_method_defs_for_removed_functio
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_code_stripping_option_filters_unreachable_static_callable);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_debug_sidecar);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_retained_frame_type_layout);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout);
     RUN_TEST(test_aot_c_code_stripping_preserves_legal_frame_alias_layouts);

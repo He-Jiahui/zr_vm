@@ -69,6 +69,11 @@ fail-closed 子切片；S1/S3/S6 及 AOT 08 G6 仍为部分完成。
 canonical contract 全树预检、retained owner `edge.native_import` manifest、4→3 trim stats 与 unreachable malformed
 contract fail-closed 子切片；S1/S3/S6 及 AOT 11 A11.2 仍为部分完成。
 
+[2026-07-30 debug sidecar reachability](./12-stripping/2026-07-30-debug-sidecar-reachability.md) 完成
+canonical execution-location 全树预检、retained owner `edge.debug_sidecar` manifest、4→3 trim stats 与
+unreachable malformed row fail-closed 子切片；S1/S3/S6 仍为部分完成，safepoint variable map 与 AOT 11
+versioned DebugMap section 仍开放。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

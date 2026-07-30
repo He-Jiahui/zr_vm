@@ -10,8 +10,12 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.h
@@ -21,7 +25,9 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
@@ -43,6 +49,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-08-12-canonical-generic-dictionary-reachability.md
   - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
+  - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
 doc_type: module-detail
 ---
 
@@ -55,11 +62,11 @@ every retained function. It separates language-level retention from linker dead 
 nodes are reachable, records why each node survived, publishes the result, and only then filters the generated function
 table.
 
-This slice owns function nodes and the first owner-linked frame-layout slot, generic dictionary, and native import
-contract nodes. The first type/layout
+This slice owns function nodes and the first owner-linked frame-layout slot, debug sidecar, generic dictionary, and
+native import contract nodes. The first type/layout
 reason-manifest slice is documented separately in `aot-type-layout-reachability-manifest.md`; canonical shared-body
 definition identity, constraint witnesses, explicit native callback descriptor roots, module initializer, reflection
-metadata, debug sidecar, and constructor type-reachability narrowing still need to converge on the broader graph
+metadata, safepoint variable maps, and constructor type-reachability narrowing still need to converge on the broader graph
 required by AOT plan 12.
 The function graph never scans source or generated strings to guess reflection or native reachability.
 
@@ -156,6 +163,14 @@ owner. After function filtering, the retained contract manifest walks sparse fla
 indices in ascending order. Entry-point and library strings remain payload, not reachability identity or
 graph-discovery input.
 
+Debug sidecar nodes are the canonical `SZrFunctionExecutionLocationInfo` rows already owned by each function. ExecIR
+validates the complete source function tree before any reachability filtering: a nonzero row count requires both the
+row table and instruction table; instruction offsets must be nonnegative, in range, and nondecreasing, and explicit
+line/column end positions cannot precede their starts. Row count may exceed instruction count because quickening can
+coalesce distinct source ranges onto one instruction offset. This preserves valid duplicate offsets while rejecting
+malformed unreachable rows before they can disappear. The sidecar is linked only to its owning function; generated
+text and source strings are never scanned to infer debug reachability.
+
 ## Marking And Reason Chains
 
 The engine performs breadth-first marking with caller-owned mark and queue buffers. Roots are enqueued in caller order;
@@ -218,6 +233,20 @@ TypeLayout counts. Every row names its owner as predecessor because frame storag
 function. The earlier type-layout manifest remains a separate graph: it deduplicates referenced TypeLayout identities,
 whereas this manifest preserves every retained owner/slot ABI row.
 
+The retained debug sidecar manifest is generated from the validated source-location rows and matched ExecIR owners:
+
+```text
+/* reachability.debugSidecarManifest.version = 1 */
+/* reachability.debugSidecarManifest.count = 1 */
+/* reachability.debugSidecarManifest.node[0] = reason=edge.debug_sidecar predecessorFunction=1 ownerFunction=1 locationIndex=0 instructionOffset=0 lineStart=10 columnStart=3 lineEnd=10 columnEnd=8 */
+```
+
+Rows are ordered by ascending flat owner and then source location index. `debugLocationsBefore`,
+`debugLocationsAfter`, and `debugLocationsRemoved` report sidecar-row trimming independently from function, frame,
+and metadata counts. Each row names its retained owner as predecessor. This generated-C diagnostic manifest does not
+define the versioned AOT 11 DebugMap artifact section, source checksums, local-variable scopes, spill rewrites, or
+safepoint variable-location maps.
+
 ## Test Coverage
 
 `test_aot_reachability.c` covers transitive marking, disconnected nodes, first-root reason preservation, invalid graph
@@ -262,6 +291,13 @@ high-alignment payloads stored through lower-alignment indirect and borrowed bin
 for an all-empty fixture, and rejects non-power-of-two alignment plus an out-of-frame storage span on an unreachable
 function before filtering. The malformed writer paths leave no generated artifact. The adjacent generic-sharing
 suite also keeps its nonempty/null frame-table rejection gate.
+
+Debug sidecar coverage proves four original location rows become three retained rows after owner-function trimming.
+The retained manifest orders flat owner 0 before owner 1 and preserves two source rows for owner 1 by location index;
+those two rows legally share one quickening-style instruction offset, so row count may exceed instruction count. An
+all-empty property-accessor fixture publishes zero counts and no node. A malformed unreachable owner is rejected for
+a nonempty/null table, negative and out-of-range offsets, decreasing offsets, inverted line ranges, and inverted
+same-line column ranges. Every failed public-writer call leaves its output path absent.
 
 The acceptance records run the focused reachability, stripping, and generic-sharing targets on WSL GCC, WSL Clang,
 and Windows MSVC. Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.

@@ -115,8 +115,12 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.h
@@ -272,6 +276,8 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.h
@@ -393,6 +399,7 @@ tests:
   - tests/parser/test_aot_c_descriptor_diagnostics.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
+  - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
   - tests/acceptance/2026-07-03-aot-11-s7zsx-12-s7zzzq-zrp-sidecar-definition-table-validation.md
@@ -879,6 +886,15 @@ referenced payload span, so legal alias overlap remains valid. Generated C repor
 after function filtering and publishes retained rows in ascending flat-owner/slot order through the version 1
 `frameLayoutManifest`. This is a verifier/reporting prerequisite for A7.2; it does not yet derive receiver,
 `in/ref/out`, return, spill, or address-taken slots from `CallableContract`.
+
+ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
+`SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,
+nondecreasing order, and explicit line/column ranges are validated before any function can be removed by code
+stripping. Duplicate offsets and more rows than instructions remain legal when quickening coalesces distinct source
+ranges onto one instruction. The C writer reports debug-location rows
+before/after trimming and publishes retained rows in flat-owner/source-row order through version 1
+`debugSidecarManifest`. This is AOT 12 owner-linked reachability evidence only: it does not implement A7.4 safepoint
+variable locations, spill-map rewriting, source checksums, or the AOT 11 versioned DebugMap artifact section.
 
 The archived `aot_c` writer now has a first value-place lowering surface in `backend_aot_c_value_semir.*` plus the focused field module `backend_aot_c_value_semir_fields.*`. `backend_aot_write_c_value_semir_for_function()` receives `SZrState`, walks each function's AotExecIR SemIR rows, finds frame-slot byte layout with `backend_aot_c_find_frame_slot_layout()`, and dispatches field address/load/store rows to the field module. The field module resolves struct field metadata with `ZrCore_Function_ResolvePrototypeFrameFieldLayout()` and emits value-place lowering annotations for:
 

@@ -1,6 +1,7 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_function_body.h"
 #include "backend_aot_c_annotation_warnings.h"
+#include "backend_aot_c_debug_sidecar_manifest.h"
 #include "backend_aot_c_frame_layout_manifest.h"
 #include "backend_aot_c_typed_bool_thunks.h"
 #include "backend_aot_c_typed_f64_thunks.h"
@@ -740,6 +741,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     TZrUInt32 frameLayoutSlotCountBeforeStripping;
     TZrUInt32 frameLayoutSlotCountAfterStripping;
     TZrUInt32 frameLayoutSlotCountRemovedByStripping;
+    TZrUInt32 debugLocationCountBeforeStripping;
+    TZrUInt32 debugLocationCountAfterStripping;
+    TZrUInt32 debugLocationCountRemovedByStripping;
     TZrUInt32 genericDictionaryCountBeforeStripping;
     TZrUInt32 genericDictionaryCountAfterStripping;
     TZrUInt32 genericDictionaryCountRemovedByStripping;
@@ -828,6 +832,14 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     functionCountBeforeStripping = functionTable.count;
     if (!backend_aot_c_frame_layout_count_slots(
                 &module, &functionTable, &frameLayoutSlotCountBeforeStripping)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_debug_sidecar_count_locations(
+                &module, &functionTable, &debugLocationCountBeforeStripping)) {
         fclose(file);
         remove(filename);
         backend_aot_release_function_table(state, &functionTable);
@@ -959,6 +971,35 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                     : 0u;
     if (enableCodeStripping &&
         !backend_aot_c_frame_layout_write_reachability_manifest(
+                file, &module, &functionTable)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_debug_sidecar_count_locations(
+                &module, &functionTable, &debugLocationCountAfterStripping)) {
+        fclose(file);
+        remove(filename);
+        backend_aot_release_annotation_roots(state,
+                                             annotationTypeLayoutRoots,
+                                             annotationTypeLayoutRootCapacity);
+        backend_aot_release_annotation_roots(state, annotationRoots, annotationRootCapacity);
+        backend_aot_release_function_table(state, &functionTable);
+        backend_aot_exec_ir_release_module(state, &module);
+        return ZR_FALSE;
+    }
+    debugLocationCountRemovedByStripping =
+            debugLocationCountBeforeStripping >= debugLocationCountAfterStripping
+                    ? debugLocationCountBeforeStripping - debugLocationCountAfterStripping
+                    : 0u;
+    if (enableCodeStripping &&
+        !backend_aot_c_debug_sidecar_write_reachability_manifest(
                 file, &module, &functionTable)) {
         fclose(file);
         remove(filename);
@@ -1217,6 +1258,15 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file,
             "/* code_stripping.frameLayoutSlotsRemoved = %u */\n",
             (unsigned)frameLayoutSlotCountRemovedByStripping);
+    fprintf(file,
+            "/* code_stripping.debugLocationsBefore = %u */\n",
+            (unsigned)debugLocationCountBeforeStripping);
+    fprintf(file,
+            "/* code_stripping.debugLocationsAfter = %u */\n",
+            (unsigned)debugLocationCountAfterStripping);
+    fprintf(file,
+            "/* code_stripping.debugLocationsRemoved = %u */\n",
+            (unsigned)debugLocationCountRemovedByStripping);
     fprintf(file,
             "/* code_stripping.genericDictionariesBefore = %u */\n",
             (unsigned)genericDictionaryCountBeforeStripping);

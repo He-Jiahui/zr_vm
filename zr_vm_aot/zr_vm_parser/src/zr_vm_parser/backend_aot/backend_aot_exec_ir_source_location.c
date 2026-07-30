@@ -1,5 +1,42 @@
 #include "backend_aot_exec_ir_source_location.h"
 
+TZrBool backend_aot_exec_ir_validate_source_locations(const SZrFunction *function) {
+    TZrMemoryOffset previousInstructionOffset = 0;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (function->executionLocationInfoLength == 0u) {
+        return ZR_TRUE;
+    }
+    if (function->executionLocationInfoList == ZR_NULL ||
+        function->instructionsList == ZR_NULL ||
+        function->instructionsLength == 0u) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->executionLocationInfoLength; index++) {
+        const SZrFunctionExecutionLocationInfo *info =
+                &function->executionLocationInfoList[index];
+
+        if (info->currentInstructionOffset < 0 ||
+            (TZrSize)info->currentInstructionOffset >= function->instructionsLength ||
+            (index > 0u && info->currentInstructionOffset < previousInstructionOffset) ||
+            (info->lineInSource > 0u && info->lineInSourceEnd > 0u &&
+             info->lineInSourceEnd < info->lineInSource) ||
+            (info->lineInSource > 0u &&
+             info->lineInSourceEnd == info->lineInSource &&
+             info->columnInSourceStart > 0u &&
+             info->columnInSourceEnd > 0u &&
+             info->columnInSourceEnd < info->columnInSourceStart)) {
+            return ZR_FALSE;
+        }
+        previousInstructionOffset = info->currentInstructionOffset;
+    }
+
+    return ZR_TRUE;
+}
+
 TZrUInt32 backend_aot_exec_ir_debug_line_for_instruction(const SZrFunction *function,
                                                          TZrUInt32 execInstructionIndex) {
     TZrUInt32 bestLine = 0;

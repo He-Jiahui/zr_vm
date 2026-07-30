@@ -853,6 +853,10 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
         return ZR_FALSE;
     }
 
+    if (!backend_aot_exec_ir_validate_source_locations(entry->function)) {
+        return ZR_FALSE;
+    }
+
     ZrCore_Memory_RawSet(outFunction, 0, sizeof(*outFunction));
     outFunction->function = entry->function;
     outFunction->metadataEntryFunction =

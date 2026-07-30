@@ -3,6 +3,7 @@
 
 #include "zr_vm_core/function.h"
 
+TZrBool backend_aot_exec_ir_validate_source_locations(const SZrFunction *function);
 TZrUInt32 backend_aot_exec_ir_debug_line_for_instruction(const SZrFunction *function,
                                                          TZrUInt32 execInstructionIndex);
 TZrUInt32 backend_aot_exec_ir_debug_line_end_for_instruction(const SZrFunction *function,
