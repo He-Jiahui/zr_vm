@@ -39,6 +39,24 @@ FrameLayout {
 
 覆盖递归、深层loop、spill、address-taken local、nested closure、module reload generation、GC compaction、throw/finally与native callback。performance guardrail分别统计boxing、value construction、spill与thunk命中。
 
+## Syntax 上游追踪
+
+| Syntax 节点 | 本计划消费的稳定输入 | 本计划退出责任 |
+|---|---|---|
+| [01/M3、M5](../syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | validated SemIR value/Place identity 与 canonical consumer projection | register/frame 只承载 ValueId/TypeId/Place，不从 source local 拼写重建 |
+| [02/M1-M6](../syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md) | passing form、receiver effect、region/provenance 与 artifact callable | parameter/receiver/return/address-taken slots 和 debug provenance map |
+| [03/M1、M3-M5](../syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md) | aggregate/ref-like/Span TypeLayout 与 lifetime | aggregate destination、stable address、root/ref map 与 FFI frame ABI |
+| [04/M3-M7](../syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | owner reborrow、domain safepoint 与 artifact maps | owner slots、safepoint roots、handoff/transport frame identity |
+| [05/M3-M4](../syntax/2026-07-18-05-property-unified-ast-design.md) | receiver/access call 与 ref-return Place | property call frame、ref-get address stability 与 region map |
+| [08/M4](../syntax/2026-07-19-08-reflection-library-type-system-design.md) | exact generic/runtime construction context | invoke/constructor thunk frame 与 exact debug generic context |
+| [10F/M3](../syntax/2026-07-19-10-native-ffi-module-package-design.md) | FfiSignature parameter/return/marshaller contract | native/callback frame ABI 与 GC/ref/owner slot map |
+| [11/M4](../syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | generated function 的普通 callable/TypeLayout | generated/source function 使用相同 frame derivation/verifier |
+| [12/M2、M4、M6](../syntax/2026-07-20-12-async-task-job-scheduler-design.md) | Task frame、domain scheduler 与 artifact/debug rows | state/parameter/root/safepoint frame layout 与 generation identity |
+| [13/M2-M4](../syntax/2026-07-20-13-iterator-enumerator-yield-design.md) | iterator state/frame/resume contract | iterator locals、roots、resume/dispose ABI 与 debug locations |
+| [14/M3](../syntax/2026-07-20-14-test-function-harness-design.md) | sync/async test function 与 runner isolation | test call frame 复用普通 ABI，不创建 hidden main/frame model |
+
+逐节点 readiness 与完整退出 evidence 见[追踪矩阵](./syntax-contract-traceability.md)。
+
 ## 完成记录
 
 [2026-07-19 typed register/codegen baseline](./07-codegen/2026-07-19-typed-register-codegen-baseline.md) 记录已存在的typed scalar/loop能力；aggregate、ref、environment与新artifact contract仍是open work。

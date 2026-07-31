@@ -26,6 +26,25 @@
 
 构建前后比较reachable manifest、binary size和行为；负例覆盖missing preserve、dynamic module、generic reflection、property accessor、callback和resource Drop。linker dead-strip只能作为后端优化，不能替代语言级reachability graph。
 
+## Syntax 上游追踪
+
+| Syntax 节点 | 本计划消费的稳定输入 | 本计划退出责任 |
+|---|---|---|
+| [01/M4-M5](../syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | canonical artifact rows 与 consumer identities | reachability graph 只接受 versioned token/TypeId/edge schema |
+| [04/M1、M7](../syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | Resource Drop、ownership/domain roots 与 artifact projection | required Drop/root/safepoint closure，遗漏时 fail closed |
+| [05/M5](../syntax/05-property-unified-ast/m5-property-consumers-reflection-migration.md) | canonical accessor identity 与 reflection visibility | getter/setter/ref-get required roots 与 metadata remap |
+| [06B/M5](../syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md) | legacy cleanup gate | 删除旧 root/edge/string fallback，production allowlist 闭合 |
+| [07B](../syntax/2026-07-19-07-comprehensive-syntax-reference-fixture-design.md) | current reference manifest | trim 前后四执行路径行为、异常和 profile 一致 |
+| [08/M3-M5](../syntax/2026-07-19-08-reflection-library-type-system-design.md) | reflection graph、preserve policy 与 query visibility | constructor/invoker/member roots，trimmed token 稳定不可见 |
+| [09/M4](../syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md) | pool provider/layout/reflection contracts | pool descriptor、thunk 与 required TypeLayout roots |
+| [10R/M1-M2、10C/M4-M5](../syntax/2026-07-19-10-native-ffi-module-package-design.md) | ModuleIdentity、exports/provider roots 与 convergence | package/native export closure、provider drift 与 missing root 拒绝 |
+| [11/M2-M5](../syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | phase-isolated comptime code、metadata roles 与 generated declarations | host-only roots 排除、generated runtime roots 和 conditional edge |
+| [12/M3、M6](../syntax/2026-07-20-12-async-task-job-scheduler-design.md) | Job/Scheduler required roles 与 task/frame artifact | scheduler/task/frame/debug roots、provider and state closure |
+| [13/M4](../syntax/2026-07-20-13-iterator-enumerator-yield-design.md) | iterator frame/resume artifact | resume/dispose thunk、frame TypeLayout 与 debug roots |
+| [14/M1、M4](../syntax/2026-07-20-14-test-function-harness-design.md) | TestManifest 与 test-only debug/migration contract | production artifact 删除 test code/manifest；test artifact 保留精确 roots |
+
+逐节点 root policy 和 evidence 状态见[完整追踪矩阵](./syntax-contract-traceability.md)。
+
 ## 完成记录
 
 [2026-07-03 metadata stripping baseline](./12-stripping/2026-07-03-metadata-stripping-baseline.md) 记录已有metadata stripping能力；新ModuleIdentity/reflection roots/native callback边需纳入统一graph。
