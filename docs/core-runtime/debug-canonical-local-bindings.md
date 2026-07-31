@@ -42,6 +42,7 @@ tests:
   - tests/module/test_reflection_dynamic_generic_method_context.h
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1a-canonical-local-binding-artifact.md
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b1-paused-frame-canonical-bindings.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b3-generation-checked-runtime-root.md
 doc_type: module-detail
 ---
 
@@ -133,6 +134,22 @@ particular, `zr_vm_lib_debug/debug_eval.c` must not use these fields to justify
 its independent expression parser. E2a now provides the formal parser fragment
 entry that E2b must consume.
 
+E2b3 adds the runtime-root carrier needed by formal evaluation without turning
+the global root into a synthetic local. `ZrCore_Debug_EvaluationContext_GetRuntimeRoot`
+accepts the structured `ZR_DEBUG_RUNTIME_ROOT_ZR` role and returns an opaque,
+nonzero token only after the paused activation, frame generation, function,
+and program counter are revalidated. `ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot`
+repeats that validation, requires the exact token for the same context, and
+returns a borrowed debug snapshot of `global->zrObject`. A modified token or a
+retired/reused frame returns `STALE_FRAME`; a missing runtime root returns
+`METADATA_UNAVAILABLE`.
+
+The token is an identity carrier, not an address or semantic name. Consumers
+must select the root by the structured runtime-root kind and must not inspect
+the token, compare `zr` text, access `global->zrObject` directly, or manufacture
+a local Place. Parser fact projection and Debug formal execution remain later
+E2b/E3 consumers of this core boundary.
+
 E2b1 consumes this boundary for Debug semantic inference. The internal binder
 asks `ZrCore_Debug_GetEvaluationContext` for the selected frame, enumerates
 only its active bindings through the generation-validated query, and matches
@@ -159,6 +176,14 @@ for the free-function frame, then uses a test-only role bit on that exact active
 canonical row to exercise receiver projection and frame-value snapshotting. The
 test is not a compiler provenance substitute: the artifact roundtrip test owns
 that coverage.
+
+The introspection test also resolves the structured `ZR` runtime root, compares
+its borrowed snapshot with the core global root, rejects a modified token, and
+rejects the captured token after the frame returns. The E2b3 RED failed to
+compile because the runtime-root contract did not exist. The final MSVC runner
+passes 2/2 with exit 0; GCC and Clang compile the exact core and test objects
+with exit 0. The full E3 acceptance matrix remains responsible for executing
+the consumer integration on all three toolchains.
 
 `test_binary_roundtrip_preserves_canonical_receiver_binding_role` finds the
 receiver row through published `SZrCompiledPrototypeInfo` and

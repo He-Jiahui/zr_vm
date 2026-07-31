@@ -5,6 +5,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
@@ -25,7 +26,10 @@ typedef struct SZrDebugIntrospectionCapture {
     TZrBool sawReusedFrameGenerationRejected;
     TZrBool sawFreeFrameWithoutReceiver;
     TZrBool sawCanonicalReceiver;
+    TZrBool sawRuntimeRoot;
+    TZrBool sawMismatchedRuntimeRootRejected;
     SZrDebugEvaluationContext capturedEvaluationContext;
+    SZrDebugRuntimeRootBinding capturedRuntimeRoot;
 } SZrDebugIntrospectionCapture;
 
 static SZrDebugIntrospectionCapture g_debugIntrospectionCapture;
@@ -199,6 +203,41 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
             }
         }
         {
+            SZrDebugRuntimeRootBinding runtimeRoot;
+            SZrDebugRuntimeRootBinding mismatchedRoot;
+            SZrTypeValue runtimeRootValue;
+
+            memset(&runtimeRoot, 0, sizeof(runtimeRoot));
+            ZrCore_Value_ResetAsNull(&runtimeRootValue);
+            if (ZrCore_Debug_EvaluationContext_GetRuntimeRoot(
+                        state,
+                        &evaluationContext,
+                        ZR_DEBUG_RUNTIME_ROOT_ZR,
+                        &runtimeRoot) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK &&
+                runtimeRoot.token != 0u &&
+                ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot(
+                        state,
+                        &evaluationContext,
+                        &runtimeRoot,
+                        &runtimeRootValue) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK &&
+                runtimeRootValue.type == state->global->zrObject.type &&
+                runtimeRootValue.value.object == state->global->zrObject.value.object) {
+                g_debugIntrospectionCapture.sawRuntimeRoot = ZR_TRUE;
+                g_debugIntrospectionCapture.capturedRuntimeRoot = runtimeRoot;
+            }
+
+            mismatchedRoot = runtimeRoot;
+            mismatchedRoot.token++;
+            ZrCore_Value_ResetAsNull(&runtimeRootValue);
+            if (ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot(
+                        state,
+                        &evaluationContext,
+                        &mismatchedRoot,
+                        &runtimeRootValue) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME) {
+                g_debugIntrospectionCapture.sawMismatchedRuntimeRootRejected = ZR_TRUE;
+            }
+        }
+        {
             SZrDebugFrameBinding receiverBinding;
             SZrTypeValue receiverValue;
             const SZrFunctionLocalVariable *receiverInputLocal;
@@ -321,15 +360,27 @@ static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawReusedFrameGenerationRejected);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawFreeFrameWithoutReceiver);
     TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawCanonicalReceiver);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawRuntimeRoot);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawMismatchedRuntimeRootRejected);
 
     {
         SZrDebugFrameBinding binding;
+        SZrTypeValue runtimeRootValue;
+
         TEST_ASSERT_EQUAL_INT(
                 ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME,
                 ZrCore_Debug_EvaluationContext_GetBinding(state,
                                                            &g_debugIntrospectionCapture.capturedEvaluationContext,
                                                            0u,
                                                            &binding));
+        ZrCore_Value_ResetAsNull(&runtimeRootValue);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME,
+                ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot(
+                        state,
+                        &g_debugIntrospectionCapture.capturedEvaluationContext,
+                        &g_debugIntrospectionCapture.capturedRuntimeRoot,
+                        &runtimeRootValue));
     }
 
     ZrCore_Debug_SetHook(state, ZR_NULL, 0u, 0u);

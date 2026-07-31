@@ -162,6 +162,15 @@ typedef struct SZrDebugEvaluationContext {
     TZrUInt16 reserved0;
 } SZrDebugEvaluationContext;
 
+typedef enum EZrDebugRuntimeRootKind {
+    ZR_DEBUG_RUNTIME_ROOT_ZR = 1
+} EZrDebugRuntimeRootKind;
+
+typedef struct SZrDebugRuntimeRootBinding {
+    EZrDebugRuntimeRootKind kind;
+    TZrUInt64 token;
+} SZrDebugRuntimeRootBinding;
+
 typedef enum EZrDebugGenericContextKind {
     ZR_DEBUG_GENERIC_CONTEXT_TYPE = 0,
     ZR_DEBUG_GENERIC_CONTEXT_METHOD
@@ -238,6 +247,18 @@ ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetRe
         struct SZrState *state,
         const SZrDebugEvaluationContext *context,
         SZrDebugFrameBinding *outBinding,
+        struct SZrTypeValue *outValue);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetRuntimeRoot(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        EZrDebugRuntimeRootKind kind,
+        SZrDebugRuntimeRootBinding *outBinding);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        const SZrDebugRuntimeRootBinding *binding,
         struct SZrTypeValue *outValue);
 
 ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetGenericArgument(

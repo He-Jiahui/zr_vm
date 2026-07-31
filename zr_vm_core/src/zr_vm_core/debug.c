@@ -493,6 +493,73 @@ EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetReceiver(
     return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 
+static TZrBool debug_runtime_root_is_available(
+        const SZrState *state,
+        EZrDebugRuntimeRootKind kind) {
+    return (TZrBool)(kind == ZR_DEBUG_RUNTIME_ROOT_ZR &&
+                     state != ZR_NULL &&
+                     state->global != ZR_NULL &&
+                     !ZR_VALUE_IS_TYPE_NULL(state->global->zrObject.type) &&
+                     state->global->zrObject.value.object != ZR_NULL);
+}
+
+EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetRuntimeRoot(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        EZrDebugRuntimeRootKind kind,
+        SZrDebugRuntimeRootBinding *outBinding) {
+    EZrDebugEvaluationContextStatus status;
+
+    if (outBinding != ZR_NULL) {
+        memset(outBinding, 0, sizeof(*outBinding));
+    }
+    if (outBinding == ZR_NULL || kind != ZR_DEBUG_RUNTIME_ROOT_ZR) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = debug_evaluation_context_validate(state, context, ZR_NULL, ZR_NULL);
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return status;
+    }
+    if (!debug_runtime_root_is_available(state, kind)) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+    }
+
+    outBinding->kind = kind;
+    outBinding->token = context->frameGeneration;
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+}
+
+EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        const SZrDebugRuntimeRootBinding *binding,
+        struct SZrTypeValue *outValue) {
+    EZrDebugEvaluationContextStatus status;
+
+    if (outValue != ZR_NULL) {
+        ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (binding == ZR_NULL || outValue == ZR_NULL ||
+        binding->kind != ZR_DEBUG_RUNTIME_ROOT_ZR || binding->token == 0u) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = debug_evaluation_context_validate(state, context, ZR_NULL, ZR_NULL);
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return status;
+    }
+    if (binding->token != context->frameGeneration) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME;
+    }
+    if (!debug_runtime_root_is_available(state, binding->kind)) {
+        return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
+    }
+
+    debug_snapshot_value(state, outValue, &state->global->zrObject);
+    return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
+}
+
 TZrBool ZrCore_Debug_GetInfo(struct SZrState *state,
                              const SZrDebugActivation *activation,
                              EZrDebugInfoType type,
