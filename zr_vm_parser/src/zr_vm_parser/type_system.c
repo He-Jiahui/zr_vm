@@ -1387,6 +1387,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
             ZrParser_InferredType_Free(state, &binding->type);
             ZrParser_InferredType_Copy(state, &binding->type, type);
             binding->typeId = typeId;
+            binding->placeId = 0;
             if (hasDeclarationRange) {
                 binding->declarationRange = declarationRange;
                 binding->hasDeclarationRange = ZR_TRUE;
@@ -1402,6 +1403,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
     binding.hasDeclarationRange = hasDeclarationRange;
     binding.typeId = ZR_SEMANTIC_ID_INVALID;
     binding.symbolId = ZR_SEMANTIC_ID_INVALID;
+    binding.placeId = 0;
     ZrParser_InferredType_Copy(state, &binding.type, type);
 
     if (env->semanticContext != ZR_NULL) {
@@ -1450,6 +1452,25 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariable(
         TZrSymbolId symbolId,
         TZrTypeId typeId,
         SZrFileRange declarationRange) {
+    return ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(state,
+                                                                        env,
+                                                                        name,
+                                                                        type,
+                                                                        symbolId,
+                                                                        typeId,
+                                                                        0,
+                                                                        declarationRange);
+}
+
+TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId,
+        TZrUInt32 placeId,
+        SZrFileRange declarationRange) {
     SZrTypeBinding binding;
     TZrBool hasDeclarationRange;
 
@@ -1480,6 +1501,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariable(
         existing->hasDeclarationRange = ZR_TRUE;
         existing->symbolId = symbolId;
         existing->typeId = typeId;
+        existing->placeId = placeId;
         return ZR_TRUE;
     }
 
@@ -1488,6 +1510,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariable(
     binding.hasDeclarationRange = ZR_TRUE;
     binding.typeId = typeId;
     binding.symbolId = symbolId;
+    binding.placeId = placeId;
     ZrParser_InferredType_Copy(state, &binding.type, type);
     ZrCore_Array_Push(state, &env->variableTypes, &binding);
     return ZR_TRUE;

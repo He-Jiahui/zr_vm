@@ -353,6 +353,7 @@ void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
     fact.kind = ZR_SEMANTIC_REFERENCE_WRITE;
     fact.symbolId = binding->symbolId;
     fact.typeId = binding->typeId;
+    fact.placeId = binding->placeId;
     fact.ownershipQualifier = binding->type.ownershipQualifier;
     fact.name = binding->name;
     fact.definiteAssignmentState = ZR_SEMANTIC_DEFINITE_ASSIGNMENT_INIT;

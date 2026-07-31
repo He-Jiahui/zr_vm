@@ -20,11 +20,19 @@ doc_type: module-detail
 
 ## Contract
 
-`ZrParser_TypeEnvironment_RegisterCanonicalVariable` registers a name in a
+`ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace` registers a name in a
 temporary type environment while retaining identity supplied by an already
 validated canonical producer. The caller supplies the inferred type,
-`SymbolId`, `TypeId`, and declaration range. The API accepts only non-invalid
-identity values and a non-empty declaration range.
+`SymbolId`, `TypeId`, `PlaceId`, and declaration range. The API accepts only
+non-invalid symbol/type identity values and a non-empty declaration range. A
+missing executable slot is represented by `PlaceId=0`; it is not reconstructed
+from a binding name.
+
+`ZrParser_TypeEnvironment_RegisterCanonicalVariable` remains the compatibility
+entry for canonical producers that do not publish a Place and delegates with
+`PlaceId=0`. Ordinary `RegisterVariableEx` registration also writes zero on
+both creation and replacement, so a prior external Place cannot leak into a
+source-local binding.
 
 The environment owns the inferred-type copy but treats the supplied identity as
 opaque. It does not register a replacement semantic symbol, allocate a new
@@ -34,18 +42,13 @@ binding update.
 
 ## Semantic-Fact Projection
 
-Identifier inference already projects a type-environment binding into the
-canonical `ZR_SEMANTIC_REFERENCE_READ` fact. With an externally injected
-binding, that fact therefore contains the supplied `SymbolId`, `TypeId`, and
-declaration range. The formal expression parser and ordinary inference path
-remain unchanged; no debug-specific grammar, AST reconstruction, name lookup
-fallback, or synthetic `any` type is introduced.
-
-The API deliberately does not claim a `PlaceId`. A `SZrSemanticReferenceFact`
-has no place field, while the paused-frame Debug evaluation context retains the
-separate verified `PlaceId` needed by E2b execution planning. Consumers must
-keep those two fact carriers separate rather than inventing a place from a
-binding name.
+Identifier inference projects a type-environment binding into canonical
+`ZR_SEMANTIC_REFERENCE_READ` and `ZR_SEMANTIC_REFERENCE_WRITE` facts. With an
+externally injected binding, each fact therefore contains the supplied
+`SymbolId`, `TypeId`, `PlaceId`, and declaration range. The formal expression
+parser and ordinary inference path remain unchanged; no debug-specific grammar,
+AST reconstruction, name lookup fallback, or synthetic `any` type is
+introduced.
 
 ## Debug/REPL Boundary
 
@@ -62,9 +65,10 @@ Syntax05 Task4 property import contract remain outside this support slice.
 ## Validation
 
 `test_expression_fragment_parser.c` parses `paused`, injects external
-`SymbolId=7001` and `TypeId=7002`, infers the identifier through the ordinary
-parser type-inference path, and asserts that the resulting canonical reference
-fact has the exact supplied identity and declaration offsets `400..406`.
+`SymbolId=7001`, `TypeId=7002`, and `PlaceId=7003`, infers the identifier
+through the ordinary parser type-inference path, and asserts that the resulting
+canonical reference fact has the exact supplied identity and declaration
+offsets `400..406`.
 
 On 2026-07-28, GCC, Clang, and MSVC each built and directly ran
 `zr_vm_expression_fragment_parser_test` with `4 Tests`, `0 Failures`, `0

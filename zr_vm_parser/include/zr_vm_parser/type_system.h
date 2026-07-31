@@ -84,6 +84,7 @@ typedef struct SZrTypeBinding {
     TZrBool hasDeclarationRange;     // declarationRange 是否有效
     TZrTypeId typeId;                // 共享语义类型 ID（可选）
     TZrSymbolId symbolId;            // 共享语义符号 ID（可选）
+    TZrUInt32 placeId;               // 共享语义 Place ID（可选）
 } SZrTypeBinding;
 
 // 函数类型信息
@@ -245,6 +246,15 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariable(
         const SZrInferredType *type,
         TZrSymbolId symbolId,
         TZrTypeId typeId,
+        SZrFileRange declarationRange);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId,
+        TZrUInt32 placeId,
         SZrFileRange declarationRange);
 
 // 查找变量类型
