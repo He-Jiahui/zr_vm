@@ -402,6 +402,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
   - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-receiver-role-frame-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -916,6 +917,16 @@ model while still requiring a valid layout schema/hash and exact receiver payloa
 canonical APIs additionally require cache `cTypeId` identity. A declared bitmap that cannot resolve this shape, or
 more than one flagged row, stops unwind before any Drop. This A7.2D verifier does not add field-initialization dataflow,
 per-field cleanup lowering, return/destination ABI, or a new reachability manifest schema.
+
+The patch-38 canonical receiver role is now a verified frame input before any zero-frame return or code stripping.
+Typed-local tables with a nonzero length require storage, every role bit must be known, and a receiver role must be
+unique, carry nonzero `SymbolId`/`TypeId`/`PlaceId`, occupy stack slot 0, and belong to a function with at least one
+parameter. If that slot is materialized, its frame row must be marked as a parameter. The complete-frame parameter
+classifier counts a canonical receiver role even when its display name is absent, so complete, sparse, and zero-frame
+receiver layouts do not depend on local spelling. Role-free older artifacts remain unavailable rather than guessed and
+continue through the established named-binding compatibility rule. This A7.2E verifier consumes the existing role
+carrier; it does not derive a missing receiver, parameter direction/type, return/destination, spill, or address-taken
+ABI and does not add a reachability manifest schema.
 
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,

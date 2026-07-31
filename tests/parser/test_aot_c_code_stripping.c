@@ -1922,6 +1922,152 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_role(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *unreachable;
+    SZrFunctionFrameSlotLayout *layouts;
+    SZrFunctionTypedLocalBinding *bindings;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    unreachable = &function->childFunctionList[1];
+    unreachable->parameterCount = 1u;
+    unreachable->stackSize = 2u;
+    layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layouts);
+    memset(layouts, 0, sizeof(SZrFunctionFrameSlotLayout) * 2u);
+    layouts[0] = unreachable->frameSlotLayouts[0];
+    layouts[0].isParameter = 1u;
+    layouts[1].stackSlot = 1u;
+    layouts[1].byteOffset = 8u;
+    layouts[1].byteSize = 8u;
+    layouts[1].byteAlign = 8u;
+    layouts[1].typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    layouts[1].slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    ZrCore_Memory_RawFreeWithType(
+            state->global,
+            unreachable->frameSlotLayouts,
+            sizeof(SZrFunctionFrameSlotLayout),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    unreachable->frameSlotLayouts = layouts;
+    unreachable->frameSlotLayoutLength = 2u;
+    unreachable->frameByteSize = 16u;
+
+    bindings = (SZrFunctionTypedLocalBinding *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedLocalBinding) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(bindings);
+    memset(bindings, 0, sizeof(SZrFunctionTypedLocalBinding) * 2u);
+    bindings[0].name = ZR_NULL;
+    bindings[0].stackSlot = 0u;
+    bindings[0].symbolId = 11u;
+    bindings[0].typeId = 12u;
+    bindings[0].placeId = 13u;
+    bindings[0].roleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+    bindings[1].name = ZrCore_String_CreateFromNative(state, "local");
+    bindings[1].stackSlot = 1u;
+    bindings[1].symbolId = 21u;
+    bindings[1].typeId = 22u;
+    bindings[1].placeId = 23u;
+    unreachable->typedLocalBindings = bindings;
+    unreachable->typedLocalBindingLength = 2u;
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_malformed_unreachable_receiver_role";
+    options.sourceHash = "aot-c-code-stripping-malformed-unreachable-receiver-role";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-malformed-unreachable-receiver-role";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_code_stripping",
+            "generated",
+            "malformed_unreachable_receiver_role",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    unreachable->frameSlotLayoutLength = 1u;
+    unreachable->frameByteSize = 8u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    unreachable->frameSlotLayoutLength = 0u;
+    unreachable->frameByteSize = 0u;
+    unreachable->frameByteAlign = 0u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    unreachable->frameSlotLayoutLength = 2u;
+    unreachable->frameByteSize = 16u;
+    unreachable->frameByteAlign = 8u;
+
+    bindings[0].roleFlags |= 2u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].roleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+
+    bindings[0].symbolId = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].symbolId = 11u;
+    bindings[0].typeId = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].typeId = 12u;
+    bindings[0].placeId = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].placeId = 13u;
+
+    bindings[0].stackSlot = 1u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].stackSlot = 0u;
+
+    unreachable->frameSlotLayouts[0].isParameter = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    unreachable->frameSlotLayouts[0].isParameter = 1u;
+
+    unreachable->parameterCount = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    unreachable->parameterCount = 1u;
+
+    bindings[1].roleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[1].stackSlot = 1u;
+    bindings[1].roleFlags = 0u;
+
+    unreachable->typedLocalBindings = ZR_NULL;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    unreachable->typedLocalBindings = bindings;
+
+    bindings[0].roleFlags = 0u;
+    bindings[0].name = ZrCore_String_CreateFromNative(state, "receiver");
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    bindings[0].roleFlags = 2u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_code_stripping_preserves_legal_frame_alias_layouts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3591,6 +3737,7 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_materialized_parameter_undercount);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_bitmap);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_role);
     RUN_TEST(test_aot_c_code_stripping_preserves_legal_frame_alias_layouts);
     RUN_TEST(test_aot_c_code_stripping_preserves_property_accessor_root);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_property_accessor_root);

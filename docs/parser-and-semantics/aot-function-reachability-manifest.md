@@ -56,6 +56,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
   - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-receiver-role-frame-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
 doc_type: module-detail
 ---
@@ -259,6 +260,13 @@ the uint64 bitmap tail from receiver field count and frame size/alignment, then 
 borrowed-alias physical storage envelope ends before the tail. Malformed unreachable owners therefore fail closed
 instead of disappearing during trimming. The retained frame manifest remains unchanged because the bitmap is verified
 frame ABI state, not a new reachability-node kind.
+
+Canonical receiver roles are also verified graph inputs rather than trim-discardable typed-local annotations. ExecIR
+rejects a missing typed-local table, unknown role bits, duplicate receivers, incomplete receiver identity, a non-slot-0
+receiver, a receiver on a zero-parameter function, or a materialized receiver row without the parameter marker before
+filtering any owner. A canonical receiver role participates in complete-frame parameter classification without a local
+name; sparse and zero-frame layouts remain legal, and role-free older artifacts are not upgraded by inference. The
+retained frame manifest stays version 1 because this gate validates owner metadata and does not add a new graph node.
 
 The retained debug sidecar manifest is generated from the validated source-location rows and matched ExecIR owners:
 

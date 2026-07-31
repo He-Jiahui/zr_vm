@@ -474,7 +474,8 @@ static TZrBool backend_aot_exec_ir_complete_frame_slot_is_parameter(
     for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
         const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
 
-        if (binding->name == ZR_NULL) {
+        if (binding->name == ZR_NULL &&
+            (binding->roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) == 0u) {
             continue;
         }
         if (parameterBindingCount >= function->parameterCount) {
@@ -489,6 +490,56 @@ static TZrBool backend_aot_exec_ir_complete_frame_slot_is_parameter(
     return ZR_FALSE;
 }
 
+static TZrBool backend_aot_exec_ir_validate_receiver_role(
+        const SZrFunction *function) {
+    const TZrUInt32 knownRoleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+    TZrUInt32 receiverCount = 0u;
+
+    if (function == ZR_NULL ||
+        (function->typedLocalBindingLength > 0u &&
+         function->typedLocalBindings == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding =
+                &function->typedLocalBindings[index];
+
+        if ((binding->roleFlags & ~knownRoleFlags) != 0u) {
+            return ZR_FALSE;
+        }
+        if ((binding->roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) == 0u) {
+            continue;
+        }
+
+        receiverCount++;
+        if (receiverCount > 1u ||
+            binding->symbolId == 0u ||
+            binding->typeId == 0u ||
+            binding->placeId == 0u ||
+            binding->stackSlot != 0u ||
+            function->parameterCount == 0u) {
+            return ZR_FALSE;
+        }
+
+        if (function->frameSlotLayouts != ZR_NULL) {
+            for (TZrUInt32 layoutIndex = 0u;
+                 layoutIndex < function->frameSlotLayoutLength;
+                 layoutIndex++) {
+                const SZrFunctionFrameSlotLayout *layout =
+                        &function->frameSlotLayouts[layoutIndex];
+
+                if (layout->stackSlot == binding->stackSlot &&
+                    layout->isParameter == 0u) {
+                    return ZR_FALSE;
+                }
+            }
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
                                                          const SZrFunction *function) {
     const TZrUInt16 knownFlags =
@@ -501,7 +552,8 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(SZrState *state,
     TZrUInt32 parameterLayoutCount = 0u;
 
     if (state == ZR_NULL || function == ZR_NULL ||
-        function->parameterCount > function->stackSize) {
+        function->parameterCount > function->stackSize ||
+        !backend_aot_exec_ir_validate_receiver_role(function)) {
         return ZR_FALSE;
     }
     if (function->frameSlotLayoutLength == 0u) {

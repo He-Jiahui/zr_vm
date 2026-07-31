@@ -106,6 +106,11 @@ identity/kind/shape 漂移不再被静默删除；沿用既有 manifest，S1/S3/
 parameter、TypeLayout 漂移、tail 对齐/容量与 direct/indirect/borrowed storage overlap 均 fail closed；沿用既有
 frame manifest，S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-08-01 receiver role frame verifier](./07-codegen/2026-08-01-receiver-role-frame-verifier.md)
+完成 canonical receiver role 的裁剪前 owner gate：不可达 owner 的未知/重复 role、缺失 identity、非 slot 0、
+zero-parameter 或 materialized non-parameter receiver 均 fail closed；沿用既有 frame manifest，S1/S3/S6 与
+AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

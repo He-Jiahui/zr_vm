@@ -78,6 +78,11 @@ sparse typed-register hybrid；parameter direction/type、receiver/return/spill 
 envelope 校验，并在 code stripping 前拒绝不可达 malformed owner；field-init dataflow、return/destination ABI 与
 完整 A7.2 仍开放。
 
+[2026-08-01 receiver role frame verifier](./07-codegen/2026-08-01-receiver-role-frame-verifier.md)
+完成 A7.2E 的 patch-38 canonical receiver role 消费、完整 identity、slot 0 parameter 与 complete/sparse/zero
+frame 一致性校验；不从名称重建缺失 role，parameter direction/type、return/destination、spill/address-taken 与
+完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。
