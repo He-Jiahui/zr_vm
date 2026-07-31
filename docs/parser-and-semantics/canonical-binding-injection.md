@@ -4,15 +4,23 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_assignment_join.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_refinement.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_loop_assignment_scope.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/type_system.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_assignment_join.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_refinement.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_loop_assignment_scope.c
 plan_sources:
   - docs/plans/lsp/04-debug-and-repl.md
   - user: 2026-07-28 optimize semantic inference and record each completed LSP milestone
 tests:
   - tests/parser/test_expression_fragment_parser.c
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e2b0-canonical-binding-injection.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b4-structured-runtime-root-reference-origin.md
 doc_type: module-detail
 ---
 
@@ -50,6 +58,28 @@ parser and ordinary inference path remain unchanged; no debug-specific grammar,
 AST reconstruction, name lookup fallback, or synthetic `any` type is
 introduced.
 
+## Structured Runtime-Root Origin
+
+`ZrParser_TypeEnvironment_RegisterRuntimeRoot` registers a new query-local
+semantic identity for a structured runtime root. It accepts only a published
+`EZrSemanticRuntimeRootKind` and a nonzero opaque token, rejects a name that is
+already bound, and uses the normal semantic context to allocate the query-local
+`SymbolId` and `TypeId`. The binding has `PlaceId=0` and no declaration range;
+neither identity is reconstructed from the root's source spelling.
+
+`SZrTypeBinding` and `SZrSemanticReferenceFact` carry an explicit origin kind,
+runtime-root kind, and token. The fact fields are appended at the end of the
+public structure so existing field offsets remain stable. Identifier-read
+projection copies those fields directly and leaves the declaration range empty
+for a runtime root. Ordinary and canonical source registration explicitly reset
+the origin to `SOURCE_DECLARATION`, clear the runtime-root kind/token, and cannot
+inherit a stale root carrier.
+
+Branch-assignment replay, branch refinement, and loop-assignment scopes clone
+the complete binding identity, including `PlaceId` and origin fields. A refined
+or replayed runtime-root read therefore retains the same structured token; the
+flow layer must not allocate or infer a replacement identity.
+
 ## Debug/REPL Boundary
 
 LSP 04 E2b1 consumes this support API. The Debug semantic binder first obtains
@@ -81,3 +111,14 @@ reference with the runtime query's `SymbolId`, `TypeId`, and declaration start.
 On 2026-07-29, GCC, Clang, and MSVC each built and ran
 `zr_vm_debug_expression_diagnostics_test` with `34 Tests`, `0 Failures`, `0
 Ignored`, and a real zero exit code.
+
+The E2b4 focused case parses `zr != null ? zr : zr`, registers a structured
+runtime root, and verifies that both conditional branch reads retain the exact
+origin kind, root kind, and token while exposing no Place or declaration range.
+It also rejects `NONE`, a zero token, and duplicate registration, then verifies
+that ordinary replacement clears the carrier. A clean MSVC static rebuild
+passes expression fragment 6/6, semantic facts 12/12, semantic query 27/27, and
+Debug expression diagnostics 37/37 with real exit 0. GCC and Clang compile all
+five changed implementation objects plus the focused test object with real exit
+0; after the duplicate-registration tightening, both also recompile the exact
+changed `type_system.c` and test objects with real exit 0.

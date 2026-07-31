@@ -88,6 +88,10 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_StoreBindingInCurrentScope(
     binding.hasDeclarationRange = sourceBinding->hasDeclarationRange;
     binding.typeId = sourceBinding->typeId;
     binding.symbolId = sourceBinding->symbolId;
+    binding.placeId = sourceBinding->placeId;
+    binding.originKind = sourceBinding->originKind;
+    binding.runtimeRootKind = sourceBinding->runtimeRootKind;
+    binding.originToken = sourceBinding->originToken;
     ZrParser_InferredType_Copy(cs->state, &binding.type, type);
     ZrCore_Array_Push(cs->state, &cs->typeEnv->variableTypes, &binding);
     return ZR_TRUE;

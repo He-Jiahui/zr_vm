@@ -26,6 +26,17 @@ typedef TZrUInt32 TZrLifetimeRegionId;
 
 #define ZR_PARSER_NUMERIC_RANGE_SEGMENT_CAPACITY ((TZrSize)2)
 
+typedef enum EZrSemanticReferenceOriginKind {
+    ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION = 0,
+    ZR_SEMANTIC_REFERENCE_ORIGIN_RUNTIME_ROOT,
+    ZR_SEMANTIC_REFERENCE_ORIGIN_CLOSURE_CAPTURE
+} EZrSemanticReferenceOriginKind;
+
+typedef enum EZrSemanticRuntimeRootKind {
+    ZR_SEMANTIC_RUNTIME_ROOT_NONE = 0,
+    ZR_SEMANTIC_RUNTIME_ROOT_ZR
+} EZrSemanticRuntimeRootKind;
+
 typedef struct SZrNumericRangeSegment {
     TZrInt64 minValue;
     TZrInt64 maxValue;
@@ -85,6 +96,9 @@ typedef struct SZrTypeBinding {
     TZrTypeId typeId;                // 共享语义类型 ID（可选）
     TZrSymbolId symbolId;            // 共享语义符号 ID（可选）
     TZrUInt32 placeId;               // 共享语义 Place ID（可选）
+    EZrSemanticReferenceOriginKind originKind;
+    EZrSemanticRuntimeRootKind runtimeRootKind;
+    TZrUInt64 originToken;
 } SZrTypeBinding;
 
 // 函数类型信息
@@ -256,6 +270,15 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlac
         TZrTypeId typeId,
         TZrUInt32 placeId,
         SZrFileRange declarationRange);
+
+/* Registers a query-local identity for a structured root without a source declaration or Place. */
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterRuntimeRoot(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        EZrSemanticRuntimeRootKind runtimeRootKind,
+        TZrUInt64 originToken);
 
 // 查找变量类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupVariable(SZrState *state, SZrTypeEnvironment *env, SZrString *name, SZrInferredType *result);

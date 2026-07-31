@@ -1164,11 +1164,18 @@ static void record_identifier_reference_fact(SZrCompilerState *cs,
     memset(&fact, 0, sizeof(fact));
     fact.node = node;
     fact.range = node->location;
-    fact.declarationRange = binding->hasDeclarationRange ? binding->declarationRange : node->location;
+    if (binding->hasDeclarationRange) {
+        fact.declarationRange = binding->declarationRange;
+    } else if (binding->originKind == ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION) {
+        fact.declarationRange = node->location;
+    }
     fact.kind = ZR_SEMANTIC_REFERENCE_READ;
     fact.symbolId = binding->symbolId;
     fact.typeId = binding->typeId;
     fact.placeId = binding->placeId;
+    fact.originKind = binding->originKind;
+    fact.runtimeRootKind = binding->runtimeRootKind;
+    fact.originToken = binding->originToken;
     fact.ownershipQualifier = binding->type.ownershipQualifier;
     fact.name = binding->name;
     fact.isResolved = ZR_TRUE;

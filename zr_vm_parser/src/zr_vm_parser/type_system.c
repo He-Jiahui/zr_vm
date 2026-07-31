@@ -1388,6 +1388,9 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
             ZrParser_InferredType_Copy(state, &binding->type, type);
             binding->typeId = typeId;
             binding->placeId = 0;
+            binding->originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
+            binding->runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
+            binding->originToken = 0u;
             if (hasDeclarationRange) {
                 binding->declarationRange = declarationRange;
                 binding->hasDeclarationRange = ZR_TRUE;
@@ -1404,6 +1407,9 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
     binding.typeId = ZR_SEMANTIC_ID_INVALID;
     binding.symbolId = ZR_SEMANTIC_ID_INVALID;
     binding.placeId = 0;
+    binding.originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
+    binding.runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
+    binding.originToken = 0u;
     ZrParser_InferredType_Copy(state, &binding.type, type);
 
     if (env->semanticContext != ZR_NULL) {
@@ -1502,6 +1508,9 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
         existing->symbolId = symbolId;
         existing->typeId = typeId;
         existing->placeId = placeId;
+        existing->originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
+        existing->runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
+        existing->originToken = 0u;
         return ZR_TRUE;
     }
 
@@ -1511,9 +1520,49 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
     binding.typeId = typeId;
     binding.symbolId = symbolId;
     binding.placeId = placeId;
+    binding.originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
+    binding.runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
+    binding.originToken = 0u;
     ZrParser_InferredType_Copy(state, &binding.type, type);
     ZrCore_Array_Push(state, &env->variableTypes, &binding);
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_TypeEnvironment_RegisterRuntimeRoot(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        EZrSemanticRuntimeRootKind runtimeRootKind,
+        TZrUInt64 originToken) {
+    SZrFileRange emptyRange = {0};
+
+    if (state == ZR_NULL || env == ZR_NULL || name == ZR_NULL || type == ZR_NULL ||
+        runtimeRootKind != ZR_SEMANTIC_RUNTIME_ROOT_ZR || originToken == 0u ||
+        ZrParser_TypeEnvironment_FindVariableBinding(env, name) != ZR_NULL ||
+        !ZrParser_TypeEnvironment_RegisterVariableEx(
+                state, env, name, type, ZR_NULL, emptyRange)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < env->variableTypes.length; i++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&env->variableTypes, i);
+
+        if (binding == ZR_NULL || binding->name == ZR_NULL ||
+            !ZrCore_String_Equal(binding->name, name)) {
+            continue;
+        }
+
+        memset(&binding->declarationRange, 0, sizeof(binding->declarationRange));
+        binding->hasDeclarationRange = ZR_FALSE;
+        binding->placeId = 0u;
+        binding->originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_RUNTIME_ROOT;
+        binding->runtimeRootKind = runtimeRootKind;
+        binding->originToken = originToken;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
 }
 
 TZrBool ZrParser_TypeEnvironment_RegisterVariable(SZrState *state,

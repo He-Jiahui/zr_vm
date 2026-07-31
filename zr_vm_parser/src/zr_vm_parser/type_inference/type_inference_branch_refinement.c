@@ -521,6 +521,10 @@ static TZrBool type_inference_branch_append_refined_binding(SZrState *state,
     binding.hasDeclarationRange = sourceBinding->hasDeclarationRange;
     binding.typeId = sourceBinding->typeId;
     binding.symbolId = sourceBinding->symbolId;
+    binding.placeId = sourceBinding->placeId;
+    binding.originKind = sourceBinding->originKind;
+    binding.runtimeRootKind = sourceBinding->runtimeRootKind;
+    binding.originToken = sourceBinding->originToken;
     ZrParser_InferredType_Copy(state, &binding.type, refinedType);
     ZrCore_Array_Push(state, &env->variableTypes, &binding);
     return ZR_TRUE;

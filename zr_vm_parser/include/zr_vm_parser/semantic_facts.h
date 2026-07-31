@@ -178,6 +178,9 @@ typedef struct SZrSemanticReferenceFact {
     EZrSemanticDefiniteAssignmentState definiteAssignmentState;
     TZrBool hasDefiniteAssignmentState;
     TZrBool isResolved;
+    EZrSemanticReferenceOriginKind originKind;
+    EZrSemanticRuntimeRootKind runtimeRootKind;
+    TZrUInt64 originToken;
 } SZrSemanticReferenceFact;
 
 typedef struct SZrSemanticNumericFact {
