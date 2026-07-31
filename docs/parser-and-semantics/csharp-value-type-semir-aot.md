@@ -114,6 +114,7 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/app/app.c
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
@@ -277,7 +278,9 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_internal.h
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
@@ -401,12 +404,14 @@ tests:
   - tests/library/test_project_import_resolver.c
   - tests/parser/test_aot_c_descriptor_diagnostics.c
   - tests/parser/test_aot_c_code_stripping.c
+  - tests/parser/test_aot_c_method_info_signature.c
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
   - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
   - tests/acceptance/2026-08-01-aot-07-receiver-role-frame-verifier.md
   - tests/acceptance/2026-08-01-aot-07-parameter-binding-identity-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-execir-parameter-layout-projection.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -943,6 +948,14 @@ the established compatibility path. This A7.2F verifier checks identity presence
 TypeId with TypeRef, TypeLayout, or CallableContract, derive passing direction/defaults, or create return, destination,
 spill, or address-taken ABI. Frame validation/building now lives in `backend_aot_exec_ir_frame.c`, leaving the ExecIR
 orchestrator responsible for traversal and ownership without changing the public frame or manifest schema.
+
+A7.2G turns that verified prefix into an owned internal parameter-layout sidecar. A typed-local row contributes its
+stack slot, canonical SymbolId/TypeId/PlaceId, receiver role, and TypeRef in producer order, and MethodInfo signature
+emission consumes those rows by runtime parameter index. This prevents an explicit AST metadata row from occupying the
+implicit receiver slot. When typed locals are absent, metadata is copied only if `parameterMetadataCount` exactly equals
+`parameterCount`; partial metadata is positionally ambiguous and therefore projects unknown types for every runtime
+parameter. Nonzero/null metadata storage and metadata count overflow fail before code stripping. This slice does not
+prove TypeId/TypeRef equality, metadata completeness, passing direction/defaults, return ABI, or public artifact parity.
 
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,

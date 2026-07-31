@@ -2240,6 +2240,66 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_bi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_metadata_shape(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *unreachable;
+    SZrFunctionMetadataParameter *metadata;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    unreachable = &function->childFunctionList[1];
+    unreachable->parameterCount = 1u;
+    unreachable->stackSize = 1u;
+    unreachable->frameSlotLayoutLength = 0u;
+    unreachable->frameByteSize = 0u;
+    unreachable->frameByteAlign = 0u;
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_malformed_unreachable_parameter_metadata_shape";
+    options.sourceHash = "aot-c-code-stripping-malformed-unreachable-parameter-metadata-shape";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-malformed-unreachable-parameter-metadata-shape";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_code_stripping",
+            "generated",
+            "malformed_unreachable_parameter_metadata_shape",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+
+    unreachable->parameterMetadataCount = 1u;
+    unreachable->parameterMetadata = ZR_NULL;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    metadata = (SZrFunctionMetadataParameter *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionMetadataParameter) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(metadata);
+    memset(metadata, 0, sizeof(SZrFunctionMetadataParameter) * 2u);
+    unreachable->parameterMetadata = metadata;
+    unreachable->parameterMetadataCount = 2u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    unreachable->parameterMetadataCount = 1u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    unreachable->parameterMetadataCount = 0u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    unreachable->parameterMetadataCount = 1u;
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_code_stripping_preserves_legal_frame_alias_layouts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3911,6 +3971,7 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_role);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_binding_identity);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_metadata_shape);
     RUN_TEST(test_aot_c_code_stripping_preserves_legal_frame_alias_layouts);
     RUN_TEST(test_aot_c_code_stripping_preserves_property_accessor_root);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_property_accessor_root);

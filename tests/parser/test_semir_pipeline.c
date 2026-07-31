@@ -840,10 +840,15 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(execIrFrameSourceText);
 
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrFrameSlotLayout"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrParameterLayout"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "SZrFunctionTypedTypeRef type;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteSize;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteAlign;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 slotLayoutCount;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "SZrAotExecIrFrameSlotLayout *slotLayouts;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 parameterLayoutCount;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText,
+                                    "SZrAotExecIrParameterLayout *parameterLayouts;"));
 
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
                                     "outFrameLayout->frameByteSize = function->frameByteSize;"));
@@ -853,7 +858,18 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText, "sizeof(SZrAotExecIrFrameSlotLayout)"));
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
                                     "destinationLayout->byteOffset = sourceLayout->byteOffset;"));
-        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "frameLayout.slotLayouts"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "sizeof(SZrAotExecIrParameterLayout) * function->parameterCount"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "destination->symbolId = source->symbolId;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "destination->roleFlags = source->roleFlags;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "backend_aot_exec_ir_release_frame_layout("));
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText,
+                                    "backend_aot_exec_ir_build_frame_layout("));
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText,
+                                    "backend_aot_exec_ir_release_frame_layout("));
 
         free(execIrHeaderText);
         free(execIrSourceText);

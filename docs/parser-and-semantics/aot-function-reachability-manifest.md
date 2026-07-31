@@ -9,6 +9,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
@@ -19,6 +20,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
 implementation_files:
@@ -34,6 +36,7 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
@@ -44,6 +47,7 @@ plan_sources:
 tests:
   - tests/parser/test_aot_reachability.c
   - tests/parser/test_aot_c_code_stripping.c
+  - tests/parser/test_aot_c_method_info_signature.c
   - tests/parser/test_aot_c_generic_reference_sharing.c
   - tests/core/test_type_layout_inline_copy.c
   - tests/acceptance/2026-07-30-aot-12-s1b-s2f-s6a-function-reachability-manifest.md
@@ -61,6 +65,7 @@ tests:
   - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
   - tests/acceptance/2026-08-01-aot-07-receiver-role-frame-verifier.md
   - tests/acceptance/2026-08-01-aot-07-parameter-binding-identity-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-execir-parameter-layout-projection.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
 doc_type: module-detail
 ---
@@ -280,6 +285,14 @@ are not reclassified as parameters, and a receiver after the prefix is malformed
 table, or a uniformly all-zero legacy identity set, retain their compatibility behavior. Because this is an owner
 metadata gate rather than a retained node, malformed unreachable owners fail closed without changing the version 1
 frame manifest.
+
+The validated prefix is now projected into an internal `SZrAotExecIrParameterLayout` table before filtering. Each row
+keeps its runtime stack slot, canonical SymbolId/TypeId/PlaceId, receiver role, and typed TypeRef, and MethodInfo emits
+signature parameters from that slot-aligned table. A nonzero metadata count requires storage and cannot exceed the
+runtime parameter count. With no typed-local table, metadata is copied only when both counts match; a partial legacy
+table is positionally ambiguous in the presence of an implicit receiver or synthetic parameter, so every projected
+type remains unknown instead of shifting the explicit argument onto slot 0. These checks cover unreachable owners but
+do not add a graph node or change the version 1 frame manifest.
 
 The retained debug sidecar manifest is generated from the validated source-location rows and matched ExecIR owners:
 

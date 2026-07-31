@@ -843,15 +843,8 @@ void backend_aot_exec_ir_release_module(SZrState *state, SZrAotExecIrModule *mod
 
     if (module->functions != ZR_NULL) {
         for (TZrUInt32 functionIndex = 0; functionIndex < module->functionCount; functionIndex++) {
-            if (module->functions[functionIndex].frameLayout.slotLayouts != ZR_NULL &&
-                module->functions[functionIndex].frameLayout.slotLayoutCount > 0) {
-                ZrCore_Memory_RawFreeWithType(
-                        state->global,
-                        module->functions[functionIndex].frameLayout.slotLayouts,
-                        sizeof(SZrAotExecIrFrameSlotLayout) *
-                                module->functions[functionIndex].frameLayout.slotLayoutCount,
-                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-            }
+            backend_aot_exec_ir_release_frame_layout(
+                    state, &module->functions[functionIndex].frameLayout);
             if (module->functions[functionIndex].basicBlocks != ZR_NULL &&
                 module->functions[functionIndex].basicBlockCount > 0) {
                 ZrCore_Memory_RawFreeWithType(state->global,

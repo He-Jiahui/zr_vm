@@ -7,5 +7,8 @@ TZrBool backend_aot_exec_ir_build_frame_layout(
         SZrState *state,
         const SZrFunction *function,
         SZrAotExecIrFrameLayout *outFrameLayout);
+void backend_aot_exec_ir_release_frame_layout(
+        SZrState *state,
+        SZrAotExecIrFrameLayout *frameLayout);
 
 #endif

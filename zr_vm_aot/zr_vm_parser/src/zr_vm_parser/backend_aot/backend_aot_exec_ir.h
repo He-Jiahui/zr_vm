@@ -66,6 +66,15 @@ typedef struct SZrAotExecIrFrameSlotLayout {
     TZrUInt16 reserved0;
 } SZrAotExecIrFrameSlotLayout;
 
+typedef struct SZrAotExecIrParameterLayout {
+    TZrUInt32 stackSlot;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 placeId;
+    TZrUInt32 roleFlags;
+    SZrFunctionTypedTypeRef type;
+} SZrAotExecIrParameterLayout;
+
 typedef struct SZrAotExecIrFrameLayout {
     TZrUInt32 parameterCount;
     TZrUInt32 stackSlotCount;
@@ -75,6 +84,8 @@ typedef struct SZrAotExecIrFrameLayout {
     TZrUInt32 exportedValueCount;
     TZrUInt32 frameByteSize;
     TZrUInt32 frameByteAlign;
+    TZrUInt32 parameterLayoutCount;
+    SZrAotExecIrParameterLayout *parameterLayouts;
     TZrUInt32 slotLayoutCount;
     SZrAotExecIrFrameSlotLayout *slotLayouts;
 } SZrAotExecIrFrameLayout;

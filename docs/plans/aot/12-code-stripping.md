@@ -116,6 +116,11 @@ AOT 12 仍为部分完成。
 重复 SymbolId/PlaceId、缺失 parameter row 与越过 prefix 的 receiver 均 fail closed；沿用既有 frame manifest，
 S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-08-01 ExecIR parameter layout projection](./07-codegen/2026-08-01-execir-parameter-layout-projection.md)
+完成 parameter metadata shape 的裁剪前 owner gate，并把已验证 parameter prefix 投影为内部 ExecIR slot 表；
+不可达 owner 的 nonzero/null metadata table 或 metadata count overflow 均 fail closed，沿用既有 frame manifest，
+不新增 reachability node，S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

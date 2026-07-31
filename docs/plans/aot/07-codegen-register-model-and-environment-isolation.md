@@ -88,6 +88,11 @@ frame 一致性校验；不从名称重建缺失 role，parameter direction/type
 唯一性校验，同时保留无 typed-local table 与全零 legacy tuple 兼容；direction/type equality、default、
 return/destination、spill/address-taken 与完整 A7.2 仍开放。
 
+[2026-08-01 ExecIR parameter layout projection](./07-codegen/2026-08-01-execir-parameter-layout-projection.md)
+完成 A7.2G 的 verified parameter prefix 到内部 ExecIR parameter layout 投影，并让 MethodInfo signature 按
+runtime parameter slot 消费该投影；typed-local 是权威输入，legacy metadata 仅在 count 完全相等时按索引复制，
+不完整 metadata 保持 unknown；passing direction/default、return/destination 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

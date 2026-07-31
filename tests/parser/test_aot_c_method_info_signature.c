@@ -9,6 +9,7 @@
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
@@ -155,6 +156,273 @@ static void assert_script_return_signature_without(const char *caseName,
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void init_signature_type_ref(SZrFunctionTypedTypeRef *typeRef,
+                                    EZrValueType baseType,
+                                    EZrStaticCType staticCType) {
+    TEST_ASSERT_NOT_NULL(typeRef);
+    memset(typeRef, 0, sizeof(*typeRef));
+    typeRef->baseType = baseType;
+    typeRef->elementBaseType = ZR_VALUE_TYPE_OBJECT;
+    typeRef->staticCType = staticCType;
+    typeRef->staticCTypeId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+}
+
+static const char *find_signature_type_row(const char *signatureTypes,
+                                           TZrUInt32 rowIndex) {
+    const char *row = signatureTypes;
+
+    for (TZrUInt32 index = 0u; index <= rowIndex; index++) {
+        row = row != ZR_NULL ? strstr(row, "    {\n") : ZR_NULL;
+        if (row == ZR_NULL) {
+            return ZR_NULL;
+        }
+        if (index < rowIndex) {
+            row += strlen("    {\n");
+        }
+    }
+    return row;
+}
+
+static void assert_signature_type_row(const char *signatureTypes,
+                                      TZrUInt32 rowIndex,
+                                      EZrValueType expectedBaseType,
+                                      EZrStaticCType expectedStaticCType) {
+    const char *row = find_signature_type_row(signatureTypes, rowIndex);
+    const char *rowEnd;
+    const char *baseType;
+    const char *staticCType;
+    char baseTypeText[96];
+    char staticCTypeText[96];
+
+    TEST_ASSERT_NOT_NULL(row);
+    rowEnd = strstr(row, "    },\n");
+    TEST_ASSERT_NOT_NULL(rowEnd);
+    snprintf(baseTypeText,
+             sizeof(baseTypeText),
+             "        .baseType = (TZrUInt16)%uu,",
+             (unsigned)expectedBaseType);
+    snprintf(staticCTypeText,
+             sizeof(staticCTypeText),
+             "        .staticCType = (TZrUInt16)%uu,",
+             (unsigned)expectedStaticCType);
+    baseType = strstr(row, baseTypeText);
+    staticCType = strstr(row, staticCTypeText);
+    TEST_ASSERT_NOT_NULL(baseType);
+    TEST_ASSERT_NOT_NULL(staticCType);
+    TEST_ASSERT_TRUE(baseType < rowEnd);
+    TEST_ASSERT_TRUE(staticCType < rowEnd);
+}
+
+static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *root;
+    SZrFunction *method;
+    SZrFunctionTypedLocalBinding *bindings;
+    SZrFunctionMetadataParameter *metadata;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    char *signatureTypes;
+    char *signatureDescriptor;
+    char *receiverBaseType;
+    char *receiverStaticType;
+    char *explicitBaseType;
+    char *explicitStaticType;
+    char receiverBaseTypeText[96];
+    char receiverStaticTypeText[96];
+    char explicitBaseTypeText[96];
+    char explicitStaticTypeText[96];
+
+    TEST_ASSERT_NOT_NULL(state);
+    root = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(root);
+    root->stackSize = 1u;
+    root->childFunctionList = (SZrFunction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunction),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->childFunctionList);
+    memset(root->childFunctionList, 0, sizeof(SZrFunction));
+    root->childFunctionLength = 1u;
+
+    method = &root->childFunctionList[0];
+    method->ownerFunction = root;
+    method->parameterCount = 2u;
+    method->stackSize = 2u;
+    method->functionName = ZrCore_String_CreateFromNative(state, "pass");
+    TEST_ASSERT_NOT_NULL(method->functionName);
+
+    bindings = (SZrFunctionTypedLocalBinding *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedLocalBinding) * 2u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(bindings);
+    memset(bindings, 0, sizeof(SZrFunctionTypedLocalBinding) * 2u);
+    bindings[0].name = ZrCore_String_CreateFromNative(state, "this");
+    bindings[0].stackSlot = 0u;
+    bindings[0].symbolId = 11u;
+    bindings[0].typeId = 12u;
+    bindings[0].placeId = 13u;
+    bindings[0].roleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+    init_signature_type_ref(
+            &bindings[0].type, ZR_VALUE_TYPE_OBJECT, ZR_STATIC_C_TYPE_GC_REF);
+    bindings[1].name = ZrCore_String_CreateFromNative(state, "value");
+    bindings[1].stackSlot = 1u;
+    bindings[1].symbolId = 21u;
+    bindings[1].typeId = 22u;
+    bindings[1].placeId = 23u;
+    init_signature_type_ref(
+            &bindings[1].type, ZR_VALUE_TYPE_INT64, ZR_STATIC_C_TYPE_I64);
+    TEST_ASSERT_NOT_NULL(bindings[0].name);
+    TEST_ASSERT_NOT_NULL(bindings[1].name);
+    method->typedLocalBindings = bindings;
+    method->typedLocalBindingLength = 2u;
+
+    metadata = (SZrFunctionMetadataParameter *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionMetadataParameter),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(metadata);
+    memset(metadata, 0, sizeof(SZrFunctionMetadataParameter));
+    metadata[0].name = bindings[1].name;
+    init_signature_type_ref(
+            &metadata[0].type, ZR_VALUE_TYPE_UINT64, ZR_STATIC_C_TYPE_U64);
+    method->parameterMetadata = metadata;
+    method->parameterMetadataCount = 1u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_method_info_signature",
+            "receiver_parameter_alignment",
+            "main",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_EnsureParentDirectory(generatedCPath));
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_method_info_receiver_parameter_alignment";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, root, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    signatureTypes = strstr(
+            generatedCText, "static const SZrAotSignatureType zr_aot_signature_1_types[] = {");
+    signatureDescriptor = strstr(
+            generatedCText, "static const SZrAotSignature zr_aot_signature_1 = {");
+    TEST_ASSERT_NOT_NULL(signatureTypes);
+    TEST_ASSERT_NOT_NULL(signatureDescriptor);
+    TEST_ASSERT_TRUE(signatureTypes < signatureDescriptor);
+    snprintf(receiverBaseTypeText,
+             sizeof(receiverBaseTypeText),
+             "        .baseType = (TZrUInt16)%uu,",
+             (unsigned)ZR_VALUE_TYPE_OBJECT);
+    snprintf(receiverStaticTypeText,
+             sizeof(receiverStaticTypeText),
+             "        .staticCType = (TZrUInt16)%uu,",
+             (unsigned)ZR_STATIC_C_TYPE_GC_REF);
+    snprintf(explicitBaseTypeText,
+             sizeof(explicitBaseTypeText),
+             "        .baseType = (TZrUInt16)%uu,",
+             (unsigned)ZR_VALUE_TYPE_INT64);
+    snprintf(explicitStaticTypeText,
+             sizeof(explicitStaticTypeText),
+             "        .staticCType = (TZrUInt16)%uu,",
+             (unsigned)ZR_STATIC_C_TYPE_I64);
+    receiverBaseType = strstr(signatureTypes, receiverBaseTypeText);
+    receiverStaticType = receiverBaseType != ZR_NULL
+                                 ? strstr(receiverBaseType, receiverStaticTypeText)
+                                 : ZR_NULL;
+    explicitBaseType = receiverStaticType != ZR_NULL
+                               ? strstr(receiverStaticType, explicitBaseTypeText)
+                               : ZR_NULL;
+    explicitStaticType = explicitBaseType != ZR_NULL
+                                 ? strstr(explicitBaseType, explicitStaticTypeText)
+                                 : ZR_NULL;
+    TEST_ASSERT_NOT_NULL(receiverBaseType);
+    TEST_ASSERT_NOT_NULL(receiverStaticType);
+    TEST_ASSERT_NOT_NULL(explicitBaseType);
+    TEST_ASSERT_NOT_NULL(explicitStaticType);
+    TEST_ASSERT_TRUE(explicitStaticType < signatureDescriptor);
+    assert_text_contains(signatureDescriptor, "    .parameterCount = 2u,");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_c_method_info_leaves_ambiguous_legacy_parameter_types_unknown(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *root;
+    SZrFunction *method;
+    SZrFunctionMetadataParameter *metadata;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+    const char *signatureTypes;
+    const char *signatureDescriptor;
+
+    TEST_ASSERT_NOT_NULL(state);
+    root = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(root);
+    root->stackSize = 1u;
+    root->childFunctionList = (SZrFunction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunction),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(root->childFunctionList);
+    memset(root->childFunctionList, 0, sizeof(SZrFunction));
+    root->childFunctionLength = 1u;
+
+    method = &root->childFunctionList[0];
+    method->ownerFunction = root;
+    method->parameterCount = 2u;
+    method->stackSize = 2u;
+    method->functionName = ZrCore_String_CreateFromNative(state, "legacyPass");
+    TEST_ASSERT_NOT_NULL(method->functionName);
+
+    metadata = (SZrFunctionMetadataParameter *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionMetadataParameter),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(metadata);
+    memset(metadata, 0, sizeof(SZrFunctionMetadataParameter));
+    init_signature_type_ref(
+            &metadata[0].type, ZR_VALUE_TYPE_INT64, ZR_STATIC_C_TYPE_I64);
+    method->parameterMetadata = metadata;
+    method->parameterMetadataCount = 1u;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_method_info_signature",
+            "ambiguous_legacy_parameter_alignment",
+            "main",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_EnsureParentDirectory(generatedCPath));
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_method_info_ambiguous_legacy_parameter_alignment";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.requireExecutableLowering = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, root, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    signatureTypes = strstr(
+            generatedCText, "static const SZrAotSignatureType zr_aot_signature_1_types[] = {");
+    signatureDescriptor = strstr(
+            generatedCText, "static const SZrAotSignature zr_aot_signature_1 = {");
+    TEST_ASSERT_NOT_NULL(signatureTypes);
+    TEST_ASSERT_NOT_NULL(signatureDescriptor);
+    assert_signature_type_row(
+            signatureTypes, 1u, (EZrValueType)0u, (EZrStaticCType)0u);
+    assert_signature_type_row(
+            signatureTypes, 2u, (EZrValueType)0u, (EZrStaticCType)0u);
+    assert_text_contains(signatureDescriptor, "    .parameterCount = 2u,");
+
+    free(generatedCText);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures(void) {
     assert_script_return_signature("bool",
                                    "var left: int = 7;\n"
@@ -248,5 +516,7 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures);
+    RUN_TEST(test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types);
+    RUN_TEST(test_aot_c_method_info_leaves_ambiguous_legacy_parameter_types_unknown);
     return UNITY_END();
 }

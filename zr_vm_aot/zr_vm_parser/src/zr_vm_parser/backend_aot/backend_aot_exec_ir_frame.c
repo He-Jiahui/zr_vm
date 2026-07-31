@@ -62,7 +62,10 @@ static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
 
     if (function == ZR_NULL ||
         (function->typedLocalBindingLength > 0u &&
-         function->typedLocalBindings == ZR_NULL)) {
+         function->typedLocalBindings == ZR_NULL) ||
+        (function->parameterMetadataCount > 0u &&
+         function->parameterMetadata == ZR_NULL) ||
+        function->parameterMetadataCount > function->parameterCount) {
         return ZR_FALSE;
     }
     if (function->typedLocalBindingLength == 0u) {
@@ -334,6 +337,71 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(
                      parameterLayoutCount == function->parameterCount);
 }
 
+static TZrBool backend_aot_exec_ir_build_parameter_layouts(
+        SZrState *state,
+        const SZrFunction *function,
+        SZrAotExecIrFrameLayout *outFrameLayout) {
+    TZrUInt32 parameterIndex = 0u;
+
+    if (function->parameterCount == 0u) {
+        return ZR_TRUE;
+    }
+
+    outFrameLayout->parameterLayouts =
+            (SZrAotExecIrParameterLayout *)ZrCore_Memory_RawMallocWithType(
+                    state->global,
+                    sizeof(SZrAotExecIrParameterLayout) * function->parameterCount,
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (outFrameLayout->parameterLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    outFrameLayout->parameterLayoutCount = function->parameterCount;
+    ZrCore_Memory_RawSet(
+            outFrameLayout->parameterLayouts,
+            0,
+            sizeof(SZrAotExecIrParameterLayout) * function->parameterCount);
+
+    if (function->typedLocalBindingLength == 0u) {
+        for (parameterIndex = 0u;
+             parameterIndex < function->parameterCount;
+             parameterIndex++) {
+            SZrAotExecIrParameterLayout *destination =
+                    &outFrameLayout->parameterLayouts[parameterIndex];
+
+            destination->stackSlot = parameterIndex;
+            if (function->parameterMetadataCount == function->parameterCount) {
+                destination->type = function->parameterMetadata[parameterIndex].type;
+            }
+        }
+        return ZR_TRUE;
+    }
+
+    parameterIndex = 0u;
+    for (TZrUInt32 bindingIndex = 0u;
+         bindingIndex < function->typedLocalBindingLength &&
+         parameterIndex < function->parameterCount;
+         bindingIndex++) {
+        const SZrFunctionTypedLocalBinding *source =
+                &function->typedLocalBindings[bindingIndex];
+        SZrAotExecIrParameterLayout *destination;
+
+        if (!backend_aot_exec_ir_typed_local_is_parameter_eligible(source)) {
+            continue;
+        }
+
+        destination = &outFrameLayout->parameterLayouts[parameterIndex];
+        destination->stackSlot = source->stackSlot;
+        destination->symbolId = source->symbolId;
+        destination->typeId = source->typeId;
+        destination->placeId = source->placeId;
+        destination->roleFlags = source->roleFlags;
+        destination->type = source->type;
+        parameterIndex++;
+    }
+
+    return (TZrBool)(parameterIndex == function->parameterCount);
+}
+
 TZrBool backend_aot_exec_ir_build_frame_layout(
         SZrState *state,
         const SZrFunction *function,
@@ -358,6 +426,12 @@ TZrBool backend_aot_exec_ir_build_frame_layout(
     outFrameLayout->frameByteAlign = function->frameByteAlign;
     outFrameLayout->slotLayoutCount = function->frameSlotLayoutLength;
 
+    if (!backend_aot_exec_ir_build_parameter_layouts(
+                state, function, outFrameLayout)) {
+        backend_aot_exec_ir_release_frame_layout(state, outFrameLayout);
+        return ZR_FALSE;
+    }
+
     if (function->frameSlotLayoutLength > 0u) {
         outFrameLayout->slotLayouts =
                 (SZrAotExecIrFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
@@ -366,6 +440,7 @@ TZrBool backend_aot_exec_ir_build_frame_layout(
                                 function->frameSlotLayoutLength,
                         ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         if (outFrameLayout->slotLayouts == ZR_NULL) {
+            backend_aot_exec_ir_release_frame_layout(state, outFrameLayout);
             return ZR_FALSE;
         }
 
@@ -394,4 +469,33 @@ TZrBool backend_aot_exec_ir_build_frame_layout(
     }
 
     return ZR_TRUE;
+}
+
+void backend_aot_exec_ir_release_frame_layout(
+        SZrState *state,
+        SZrAotExecIrFrameLayout *frameLayout) {
+    if (state == ZR_NULL || state->global == ZR_NULL || frameLayout == ZR_NULL) {
+        return;
+    }
+
+    if (frameLayout->parameterLayouts != ZR_NULL &&
+        frameLayout->parameterLayoutCount > 0u) {
+        ZrCore_Memory_RawFreeWithType(
+                state->global,
+                frameLayout->parameterLayouts,
+                sizeof(SZrAotExecIrParameterLayout) *
+                        frameLayout->parameterLayoutCount,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (frameLayout->slotLayouts != ZR_NULL &&
+        frameLayout->slotLayoutCount > 0u) {
+        ZrCore_Memory_RawFreeWithType(
+                state->global,
+                frameLayout->slotLayouts,
+                sizeof(SZrAotExecIrFrameSlotLayout) *
+                        frameLayout->slotLayoutCount,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    ZrCore_Memory_RawSet(frameLayout, 0, sizeof(*frameLayout));
 }

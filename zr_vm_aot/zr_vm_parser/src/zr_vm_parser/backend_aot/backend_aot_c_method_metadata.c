@@ -134,7 +134,13 @@ static void backend_aot_write_c_signature_type(FILE *file,
 
 static const SZrFunctionTypedTypeRef *backend_aot_c_signature_parameter_type(
         const SZrFunction *function,
+        const SZrAotExecIrFunction *functionIr,
         TZrUInt32 parameterIndex) {
+    if (functionIr != ZR_NULL &&
+        functionIr->frameLayout.parameterLayouts != ZR_NULL &&
+        parameterIndex < functionIr->frameLayout.parameterLayoutCount) {
+        return &functionIr->frameLayout.parameterLayouts[parameterIndex].type;
+    }
     if (function == ZR_NULL ||
         function->parameterMetadata == ZR_NULL ||
         parameterIndex >= function->parameterMetadataCount) {
@@ -315,7 +321,8 @@ static void backend_aot_write_c_signature(FILE *file,
     backend_aot_write_c_signature_type(file, returnType);
     for (parameterIndex = 0u; parameterIndex < parameterCount; parameterIndex++) {
         backend_aot_write_c_signature_type(file,
-                                           backend_aot_c_signature_parameter_type(function, parameterIndex));
+                                           backend_aot_c_signature_parameter_type(
+                                                   function, functionIr, parameterIndex));
     }
     fprintf(file, "};\n");
     fprintf(file, "static const SZrAotSignature zr_aot_signature_%u = {\n", (unsigned)functionIndex);
