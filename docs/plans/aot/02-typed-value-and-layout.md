@@ -37,6 +37,23 @@ TypeLayout {
 4. C与LLVM ABI classification parity。
 5. `.zro` dependency layout hash mismatch diagnostic。
 
+## Syntax 上游追踪
+
+| Syntax 节点 | 本计划消费的稳定输入 | 本计划退出责任 |
+|---|---|---|
+| [01/M1、M4](../syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | Canonical TypeId/TypeUse 与 versioned type section | machine value 分类、type/layout roundtrip 与 mismatch 拒绝 |
+| [03/M1、M3-M5](../syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md) | struct/ref-like/fat-ref TypeLayout、copy/GC/owner maps | target size/alignment/offset/hash、aggregate ABI、no-boxing construct |
+| [04/M1-M4、M7](../syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | Unique/Shared/Weak/GcBox representation 与 ownership/GC maps | copy/move/drop class、root/barrier map 与 domain-aware layout |
+| [05/M2、M4](../syntax/2026-07-18-05-property-unified-ast-design.md) | explicit field layout 与 ref-return Place type | field/ref-get ABI classification，不生成隐藏 backing field |
+| [08/M1、M3-M4](../syntax/2026-07-19-08-reflection-library-type-system-design.md) | descriptor category、preserved layout 与 construction contract | reflection-visible layout 与 machine layout 使用同一 TypeId/hash |
+| [09/M3-M4](../syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md) | slab GcScanKind、StableSlot 与 pool layout schema | GcFree/Mapped/Barriered map 与 artifact hash |
+| [10F/M3](../syntax/2026-07-19-10-native-ffi-module-package-design.md) | FfiSignature 所引用的 closed TypeLayout | target ABI class、unsupported ref-like/owner marshalling 拒绝 |
+| [11/M4](../syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | typed patch 生成的普通 canonical declaration | generated type 与 source type 走同一布局管线 |
+| [12/M2](../syntax/2026-07-20-12-async-task-job-scheduler-design.md) | Task private frame TypeIds 与 field maps | task frame layout、root map 与 backend ABI 一致 |
+| [13/M3](../syntax/2026-07-20-13-iterator-enumerator-yield-design.md) | Iterator private frame TypeIds 与 field maps | iterator frame layout、root map 与 backend ABI 一致 |
+
+逐节点状态和证据边界见[完整追踪矩阵](./syntax-contract-traceability.md)；Syntax 完成不自动晋级本计划。
+
 ## 完成记录
 
 [2026-06-24 typed layout baseline](./02-type-layout/2026-06-24-typed-layout-baseline.md) 证明已有布局基础；Canonical TypeRef与全部目标类别仍需按本文 gate 收敛。

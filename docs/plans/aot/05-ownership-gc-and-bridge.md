@@ -24,6 +24,20 @@
 
 允许消除配对retain/release、证明无逃逸的短生命周期分配、冗余barrier和bounds check，但证明必须来自共享facts并在debug verifier中可关闭。Weak upgrade、external native pointer和动态cast不能凭惯例删除检查。
 
+## Syntax 上游追踪
+
+| Syntax 节点 | 本计划消费的稳定输入 | 本计划退出责任 |
+|---|---|---|
+| [02/M3-M5](../syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md) | loan/NLL、escape、closure/suspension facts | ref provenance 与 cleanup 保真，不在 runtime 重做 borrow checker |
+| [03/M3-M5](../syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md) | ref-like restriction、Span/pool/FFI lifetime | stack/root/pin/guard lowering 与非法跨界拒绝 |
+| [04/M1-M7](../syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | Unique/Shared/Weak、Drop、GcDomain、handoff/transport contracts | exactly-once Drop、root/barrier/safepoint/transport runtime ABI |
+| [09/M1-M5](../syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md) | StableSlot、PoolRef guard、deferred reuse、GcScanKind | handle validation、guard Drop、reuse/scan/barrier behavior |
+| [10F/M3](../syntax/2026-07-19-10-native-ffi-module-package-design.md) | owner/ref-like pin/marshaller rules | native success/failure/callback cleanup 与 unsupported ABI 拒绝 |
+| [12/M2-M5](../syntax/2026-07-20-12-async-task-job-scheduler-design.md) | Task frame roots、domain policy、Job handoff 与 transport | suspension roots、same/isolated-domain cleanup、failure Drop=1 |
+| [13/M2-M4](../syntax/2026-07-20-13-iterator-enumerator-yield-design.md) | iterator frame ownership、yield suspension 与 dispose | frame roots、early dispose/throw cleanup、artifact projection |
+
+本计划只处理已由 Syntax 验证的 ownership operation；逐节点状态见[完整追踪矩阵](./syntax-contract-traceability.md)。
+
 ## Syntax 04 M4 已落地基线
 
 - `Gc<T>` / `GcBox<T>` 使用独立 canonical bridge kind，不复用 ownership qualifier。

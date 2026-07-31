@@ -24,6 +24,22 @@
 
 测量allocation count/bytes、peak live bytes、GC root/scan bytes、barrier/card、Drop、pool reuse、fragmentation、cache miss与pause。任何“更快”结论必须指明输入、backend、target和未改变的语义检查。
 
+## Syntax 上游追踪
+
+| Syntax 节点 | 本计划消费的稳定输入 | 本计划退出责任 |
+|---|---|---|
+| [01/M2-M3](../syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | escape/CFG/SemIR allocation 与 liveness facts | 可审计 allocation class、root lifetime 与 optimization proof |
+| [03/M1、M3-M5](../syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md) | TypeLayout、ref-like/Span/pool/FFI constraints | stack/aggregate placement、root/scan map、pin/guard behavior |
+| [04/M1-M7](../syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | owner/GC/domain/transport lifecycle | ownership heap、domain roots、barrier/safepoint 与 cleanup profile |
+| [08/M4](../syntax/2026-07-19-08-reflection-library-type-system-design.md) | reflection construction allocation contract | dynamic construction 的 allocation/category/cleanup behavior |
+| [09/M1-M5](../syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md) | 完整 pooling handle/guard/slab contract | allocation/fragmentation/slab/reuse/scan 分项实现和压力证据 |
+| [10F/M3](../syntax/2026-07-19-10-native-ffi-module-package-design.md) | pin/marshal/callback lifetime | native window root/pin cleanup 与外部地址边界 |
+| [12/M2、M4-M5](../syntax/2026-07-20-12-async-task-job-scheduler-design.md) | Task frame roots、domain scheduler 与 transport buffers | suspension/root maps、domain-local pauses、remote payload cleanup |
+| [13/M2-M3](../syntax/2026-07-20-13-iterator-enumerator-yield-design.md) | iterator frame escape/layout/dispose | frame allocation、root map、early disposal 与 profile |
+| [14/M3](../syntax/2026-07-20-14-test-function-harness-design.md) | per-module/per-case runner isolation | test artifact runtime state 不跨 case 泄漏，sync/async profile 可比 |
+
+完整 readiness 与验证范围见[追踪矩阵](./syntax-contract-traceability.md)。
+
 ## 完成记录
 
 [2026-06-25 GC/AOT memory baseline](./09-memory/2026-06-25-gc-aot-memory-baseline.md) 记录已有GC map/bridge基础；pooling与新TypeLayout分类仍按syntax 03/04/09实施。

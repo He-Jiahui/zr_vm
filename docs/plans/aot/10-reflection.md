@@ -42,6 +42,24 @@ full metadata、trimmed metadata与explicit preserve三种模式共享同一查�
 
 最终退出：`typeof`返回最精确descriptor、`typeid`只提供identity；member/property query统一；createInstance class/boxed struct成功且非法类别稳定失败；source/binary/AOT/trim模式返回一致可见集合；cache按ModuleIdentity/generation正确失效。
 
+## Syntax 上游追踪
+
+| Syntax 节点 | 本计划消费的稳定输入 | 本计划退出责任 |
+|---|---|---|
+| [01/M4-M5](../syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | canonical artifact/query projection | reflection consumer 只读 versioned schema，不从 runtime shape 补语义 |
+| [03/M1-M2](../syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md) | TypeLayout 与 receiver effect | descriptor layout/effect 与 backend hash 一致 |
+| [04/M7](../syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | ownership/domain artifact projection | resource/GC bridge category、visibility 与 lifecycle 边界 |
+| [05/M5](../syntax/05-property-unified-ast/m5-property-consumers-reflection-migration.md) | unified PropertyDef/accessor identity | get/set/ref-get query/invoker 与 trimming roots |
+| [08/M1-M5](../syntax/2026-07-19-08-reflection-library-type-system-design.md) | Type/TypeOf/member/construct/invoke/preserve contracts | full/trim/preserve AOT reflection service 闭合 |
+| [09/M4](../syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md) | pool descriptor/provider contract | pool type/member query 与 native service identity |
+| [10R/M2、10C/M4-M5](../syntax/2026-07-19-10-native-ffi-module-package-design.md) | ModuleIdentity/provider phase 与 convergence | runtime-bound service/cache、provider-owned TypeIds、stale rejection |
+| [11/M3-M5](../syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | static metadata roles 与 generated declaration identity | generated member visibility、attribute rows 与 preserve roots |
+| [12/M6](../syntax/2026-07-20-12-async-task-job-scheduler-design.md) | task artifact/debug projection | Task/Job/frame descriptor visibility、generation 与 trim behavior |
+| [13/M4](../syntax/2026-07-20-13-iterator-enumerator-yield-design.md) | iterator artifact/debug projection | iterator carrier/frame descriptor、resume roots 与 trim behavior |
+| [14/M1、M4](../syntax/2026-07-20-14-test-function-harness-design.md) | TestManifest/test metadata role | test build 可见、production trim、debug/LSP consumer parity |
+
+逐节点阻塞和证据边界见[完整追踪矩阵](./syntax-contract-traceability.md)。
+
 ## 完成记录
 
 - [Token/generic reflection baseline](./10-reflection/2026-07-19-token-and-generic-reflection-baseline.md)

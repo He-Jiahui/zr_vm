@@ -31,6 +31,21 @@ Semantic IR必须区分 `LoadPlace`、`StorePlace`、`BorrowPlace`、`MovePlace`
 - cleanup和exception successor是结构化edge，不靠C `goto`文本反推。
 - source map从Semantic IR稳定映射到ExecIR range。
 
+## Syntax 上游追踪
+
+| Syntax 节点 | 本计划消费的稳定输入 | 本计划退出责任 |
+|---|---|---|
+| [01/M2-M3](../syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md) | Place/Value、CFG、cleanup region 与前置 SemIR | 每个 source operation 形成唯一 validated ExecIR op/edge |
+| [02/M2-M5](../syntax/2026-07-18-02-reference-syntax-borrow-checker-design.md) | definite assignment、loan/NLL、receiver 与 escape facts | out/ref/move/borrow 只按已验证 facts lowering，不做 runtime borrow fallback |
+| [03/M1-M5](../syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md) | destination Place、receiver effect、ref-like 与 bounds facts | ValueConstruct、aggregate projection、guard 与 cleanup op |
+| [04/M1-M7](../syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md) | ownership operations、domain/transport 与 Drop plan | OwnConstruct/move/drop/bridge/safepoint/transport edge |
+| [05/M2-M4](../syntax/2026-07-18-05-property-unified-ast-design.md) | explicit field Place、get/set/ref-get 与 region | Property access 收敛为 call/Place op，无 AST-shape lowering |
+| [11/M4](../syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md) | typed generation 后的普通 bound declarations | generated body 与 source body 使用相同 SemIR/ExecIR validator |
+| [12/M1-M6](../syntax/2026-07-20-12-async-task-job-scheduler-design.md) | async effect、Task/Job state、scheduler/domain/transport facts | suspend/resume/complete/fault/handoff 的显式状态与 cleanup edge |
+| [13/M1-M4](../syntax/2026-07-20-13-iterator-enumerator-yield-design.md) | Enumerator witness、yield/state/frame contract | for/yield/resume/dispose 的显式 op、artifact 与 source map |
+
+逐节点状态和 evidence 见[完整追踪矩阵](./syntax-contract-traceability.md)。
+
 ## 验收
 
 覆盖 nested projection、ref-return property、out、move后分支、partial init失败、loop cleanup、try/finally、using close、resource Drop与async禁止跨越ref-like value。VM与AOT必须共享Semantic IR golden。
