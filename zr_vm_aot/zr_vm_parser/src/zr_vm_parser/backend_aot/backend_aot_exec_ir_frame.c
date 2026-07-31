@@ -1,0 +1,397 @@
+#include "backend_aot_exec_ir_frame.h"
+
+#include "zr_vm_core/function.h"
+#include "zr_vm_core/memory.h"
+#include "zr_vm_core/type_layout.h"
+
+static TZrBool backend_aot_exec_ir_is_power_of_two(TZrUInt32 value) {
+    return (TZrBool)(value != 0u && (value & (value - 1u)) == 0u);
+}
+
+static TZrBool backend_aot_exec_ir_frame_storage_contains(TZrUInt32 frameByteSize,
+                                                          TZrUInt32 byteOffset,
+                                                          TZrUInt32 storageSize) {
+    return (TZrBool)(byteOffset <= frameByteSize &&
+                     storageSize <= frameByteSize - byteOffset);
+}
+
+static TZrBool backend_aot_exec_ir_typed_local_is_parameter_eligible(
+        const SZrFunctionTypedLocalBinding *binding) {
+    return (TZrBool)(binding != ZR_NULL &&
+                     (binding->name != ZR_NULL ||
+                      (binding->roleFlags &
+                       ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u));
+}
+
+static TZrBool backend_aot_exec_ir_complete_frame_slot_is_parameter(
+        const SZrFunction *function,
+        TZrUInt32 stackSlot) {
+    TZrUInt32 parameterBindingCount = 0u;
+
+    if (function == ZR_NULL || function->parameterCount == 0u) {
+        return ZR_FALSE;
+    }
+    if (function->typedLocalBindings == ZR_NULL ||
+        function->typedLocalBindingLength == 0u) {
+        return (TZrBool)(stackSlot < function->parameterCount);
+    }
+
+    for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+
+        if (!backend_aot_exec_ir_typed_local_is_parameter_eligible(binding)) {
+            continue;
+        }
+        if (parameterBindingCount >= function->parameterCount) {
+            break;
+        }
+        if (binding->stackSlot == stackSlot) {
+            return ZR_TRUE;
+        }
+        parameterBindingCount++;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
+        const SZrFunction *function) {
+    TZrUInt32 parameterBindingCount = 0u;
+    TZrBool identityAvailabilityKnown = ZR_FALSE;
+    TZrBool parametersHaveIdentity = ZR_FALSE;
+
+    if (function == ZR_NULL ||
+        (function->typedLocalBindingLength > 0u &&
+         function->typedLocalBindings == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    if (function->typedLocalBindingLength == 0u) {
+        return ZR_TRUE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding =
+                &function->typedLocalBindings[index];
+        TZrBool hasSymbolIdentity;
+        TZrBool hasTypeIdentity;
+        TZrBool hasPlaceIdentity;
+        TZrBool hasCompleteIdentity;
+        TZrUInt32 previousParameterCount = 0u;
+
+        if (!backend_aot_exec_ir_typed_local_is_parameter_eligible(binding)) {
+            continue;
+        }
+        if (parameterBindingCount >= function->parameterCount) {
+            if ((binding->roleFlags &
+                 ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
+        hasSymbolIdentity = (TZrBool)(binding->symbolId != 0u);
+        hasTypeIdentity = (TZrBool)(binding->typeId != 0u);
+        hasPlaceIdentity = (TZrBool)(binding->placeId != 0u);
+        hasCompleteIdentity = (TZrBool)(hasSymbolIdentity &&
+                                        hasTypeIdentity &&
+                                        hasPlaceIdentity);
+        if (binding->stackSlot >= function->stackSize ||
+            (hasSymbolIdentity || hasTypeIdentity || hasPlaceIdentity) !=
+                    hasCompleteIdentity) {
+            return ZR_FALSE;
+        }
+        if (identityAvailabilityKnown &&
+            parametersHaveIdentity != hasCompleteIdentity) {
+            return ZR_FALSE;
+        }
+        identityAvailabilityKnown = ZR_TRUE;
+        parametersHaveIdentity = hasCompleteIdentity;
+
+        for (TZrUInt32 previous = 0u; previous < index; previous++) {
+            const SZrFunctionTypedLocalBinding *previousBinding =
+                    &function->typedLocalBindings[previous];
+
+            if (!backend_aot_exec_ir_typed_local_is_parameter_eligible(
+                        previousBinding)) {
+                continue;
+            }
+            if (previousParameterCount >= function->parameterCount) {
+                break;
+            }
+            if (previousBinding->stackSlot == binding->stackSlot ||
+                (hasCompleteIdentity &&
+                 (previousBinding->symbolId == binding->symbolId ||
+                  previousBinding->placeId == binding->placeId))) {
+                return ZR_FALSE;
+            }
+            previousParameterCount++;
+        }
+
+        parameterBindingCount++;
+    }
+
+    return (TZrBool)(parameterBindingCount == function->parameterCount);
+}
+
+static TZrBool backend_aot_exec_ir_validate_receiver_role(
+        const SZrFunction *function) {
+    const TZrUInt32 knownRoleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+    TZrUInt32 receiverCount = 0u;
+
+    if (function == ZR_NULL ||
+        (function->typedLocalBindingLength > 0u &&
+         function->typedLocalBindings == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding =
+                &function->typedLocalBindings[index];
+
+        if ((binding->roleFlags & ~knownRoleFlags) != 0u) {
+            return ZR_FALSE;
+        }
+        if ((binding->roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) == 0u) {
+            continue;
+        }
+
+        receiverCount++;
+        if (receiverCount > 1u ||
+            binding->symbolId == 0u ||
+            binding->typeId == 0u ||
+            binding->placeId == 0u ||
+            binding->stackSlot != 0u ||
+            function->parameterCount == 0u) {
+            return ZR_FALSE;
+        }
+
+        if (function->frameSlotLayouts != ZR_NULL) {
+            for (TZrUInt32 layoutIndex = 0u;
+                 layoutIndex < function->frameSlotLayoutLength;
+                 layoutIndex++) {
+                const SZrFunctionFrameSlotLayout *layout =
+                        &function->frameSlotLayouts[layoutIndex];
+
+                if (layout->stackSlot == binding->stackSlot &&
+                    layout->isParameter == 0u) {
+                    return ZR_FALSE;
+                }
+            }
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_exec_ir_validate_frame_layout(
+        SZrState *state,
+        const SZrFunction *function) {
+    const TZrUInt16 knownFlags =
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    TZrBool hasCompleteSlotTable;
+    TZrUInt32 parameterLayoutCount = 0u;
+
+    if (state == ZR_NULL || function == ZR_NULL ||
+        function->parameterCount > function->stackSize ||
+        !backend_aot_exec_ir_validate_parameter_bindings(function) ||
+        !backend_aot_exec_ir_validate_receiver_role(function)) {
+        return ZR_FALSE;
+    }
+    if (function->frameSlotLayoutLength == 0u) {
+        return (TZrBool)(function->frameByteSize == 0u &&
+                         function->frameByteAlign == 0u);
+    }
+    if (function->frameSlotLayouts == ZR_NULL ||
+        function->frameSlotLayoutLength > function->stackSize ||
+        (TZrSize)function->frameSlotLayoutLength >
+                ((TZrSize)-1) / sizeof(SZrAotExecIrFrameSlotLayout) ||
+        function->frameByteSize == 0u ||
+        !backend_aot_exec_ir_is_power_of_two(function->frameByteAlign)) {
+        return ZR_FALSE;
+    }
+    hasCompleteSlotTable = (TZrBool)(
+            function->frameSlotLayoutLength == function->stackSize);
+
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        const SZrTypeLayout *typeLayout = ZR_NULL;
+        const TZrUInt16 flags = layout->reserved0;
+        TZrUInt32 storageSize = layout->byteSize;
+        TZrUInt32 storageAlign = layout->byteAlign;
+
+        if ((flags & (TZrUInt16)~knownFlags) != 0u ||
+            layout->stackSlot >= function->stackSize ||
+            layout->byteSize == 0u ||
+            !backend_aot_exec_ir_is_power_of_two(layout->byteAlign) ||
+            layout->slotKind > (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+            layout->isParameter > 1u ||
+            (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+             layout->typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) ||
+            (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+             layout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE)) {
+            return ZR_FALSE;
+        }
+        if (hasCompleteSlotTable &&
+            layout->isParameter !=
+                    backend_aot_exec_ir_complete_frame_slot_is_parameter(
+                            function, layout->stackSlot)) {
+            return ZR_FALSE;
+        }
+        if (layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(
+                    function, layout->typeLayoutId, state);
+            if (typeLayout == ZR_NULL ||
+                !ZrCore_TypeLayout_Validate(typeLayout) ||
+                typeLayout->cTypeId != layout->typeLayoutId ||
+                (typeLayout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_STRUCT &&
+                 typeLayout->kind != (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION) ||
+                typeLayout->byteSize != layout->byteSize ||
+                typeLayout->byteAlign != layout->byteAlign) {
+                return ZR_FALSE;
+            }
+        }
+        if (layout->isParameter != 0u) {
+            parameterLayoutCount++;
+            if (parameterLayoutCount > function->parameterCount) {
+                return ZR_FALSE;
+            }
+        }
+        for (TZrUInt32 previous = 0u; previous < index; previous++) {
+            if (function->frameSlotLayouts[previous].stackSlot == layout->stackSlot) {
+                return ZR_FALSE;
+            }
+        }
+        if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS) == 0u &&
+            (flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) != 0u) {
+            return ZR_FALSE;
+        }
+        if (flags != 0u &&
+            layout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            return ZR_FALSE;
+        }
+        if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP) != 0u &&
+            (layout->isParameter == 0u ||
+             layout->stackSlot != 0u ||
+             (flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                       ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+                       ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) != 0u)) {
+            return ZR_FALSE;
+        }
+        if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP) != 0u) {
+            TZrUInt32 bitmapByteOffset;
+            TZrUInt32 initializedFieldWordCount;
+
+            if (!ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+                        state,
+                        function,
+                        &bitmapByteOffset,
+                        &initializedFieldWordCount)) {
+                return ZR_FALSE;
+            }
+        }
+        if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT) != 0u &&
+            (flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP |
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) != 0u) {
+            return ZR_FALSE;
+        }
+        if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) != 0u) {
+            const TZrUInt16 required =
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+
+            if ((flags & required) != required || layout->isParameter == 0u ||
+                layout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+                (flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+                          ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP)) != 0u) {
+                return ZR_FALSE;
+            }
+            storageSize = (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding);
+            storageAlign = (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
+        } else if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u) {
+            if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT) != 0u) {
+                return ZR_FALSE;
+            }
+            storageSize = (TZrUInt32)sizeof(SZrFunctionFrameIndirectAliasBinding);
+            storageAlign = (TZrUInt32)_Alignof(SZrFunctionFrameIndirectAliasBinding);
+        }
+        if (storageAlign > function->frameByteAlign ||
+            layout->byteOffset % storageAlign != 0u ||
+            !backend_aot_exec_ir_frame_storage_contains(
+                    function->frameByteSize, layout->byteOffset, storageSize)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return (TZrBool)(!hasCompleteSlotTable ||
+                     parameterLayoutCount == function->parameterCount);
+}
+
+TZrBool backend_aot_exec_ir_build_frame_layout(
+        SZrState *state,
+        const SZrFunction *function,
+        SZrAotExecIrFrameLayout *outFrameLayout) {
+    if (state == ZR_NULL || state->global == ZR_NULL ||
+        function == ZR_NULL || outFrameLayout == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!backend_aot_exec_ir_validate_frame_layout(state, function)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(outFrameLayout, 0, sizeof(*outFrameLayout));
+    outFrameLayout->parameterCount = function->parameterCount;
+    outFrameLayout->stackSlotCount = function->stackSize;
+    outFrameLayout->generatedFrameSlotCount =
+            ZrCore_Function_GetGeneratedFrameSlotCount(function);
+    outFrameLayout->closureValueCount = function->closureValueLength;
+    outFrameLayout->localVariableCount = function->localVariableLength;
+    outFrameLayout->exportedValueCount = function->exportedVariableLength;
+    outFrameLayout->frameByteSize = function->frameByteSize;
+    outFrameLayout->frameByteAlign = function->frameByteAlign;
+    outFrameLayout->slotLayoutCount = function->frameSlotLayoutLength;
+
+    if (function->frameSlotLayoutLength > 0u) {
+        outFrameLayout->slotLayouts =
+                (SZrAotExecIrFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+                        state->global,
+                        sizeof(SZrAotExecIrFrameSlotLayout) *
+                                function->frameSlotLayoutLength,
+                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (outFrameLayout->slotLayouts == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawSet(
+                outFrameLayout->slotLayouts,
+                0,
+                sizeof(SZrAotExecIrFrameSlotLayout) *
+                        function->frameSlotLayoutLength);
+        for (TZrUInt32 layoutIndex = 0u;
+             layoutIndex < function->frameSlotLayoutLength;
+             layoutIndex++) {
+            const SZrFunctionFrameSlotLayout *sourceLayout =
+                    &function->frameSlotLayouts[layoutIndex];
+            SZrAotExecIrFrameSlotLayout *destinationLayout =
+                    &outFrameLayout->slotLayouts[layoutIndex];
+
+            destinationLayout->stackSlot = sourceLayout->stackSlot;
+            destinationLayout->byteOffset = sourceLayout->byteOffset;
+            destinationLayout->byteSize = sourceLayout->byteSize;
+            destinationLayout->byteAlign = sourceLayout->byteAlign;
+            destinationLayout->typeLayoutId = sourceLayout->typeLayoutId;
+            destinationLayout->slotKind = sourceLayout->slotKind;
+            destinationLayout->isParameter = sourceLayout->isParameter;
+            destinationLayout->reserved0 = sourceLayout->reserved0;
+        }
+    }
+
+    return ZR_TRUE;
+}

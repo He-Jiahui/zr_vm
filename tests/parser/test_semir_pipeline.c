@@ -832,9 +832,12 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h");
         char *execIrSourceText = read_repo_text_file_owned(
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+        char *execIrFrameSourceText = read_repo_text_file_owned(
+                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
 
         TEST_ASSERT_NOT_NULL(execIrHeaderText);
         TEST_ASSERT_NOT_NULL(execIrSourceText);
+        TEST_ASSERT_NOT_NULL(execIrFrameSourceText);
 
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrFrameSlotLayout"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteSize;"));
@@ -842,15 +845,19 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 slotLayoutCount;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "SZrAotExecIrFrameSlotLayout *slotLayouts;"));
 
-        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "outFrameLayout->frameByteSize = function->frameByteSize;"));
-        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "outFrameLayout->frameByteAlign = function->frameByteAlign;"));
-        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "function->frameSlotLayoutLength"));
-        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "sizeof(SZrAotExecIrFrameSlotLayout)"));
-        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "destinationLayout->byteOffset = sourceLayout->byteOffset;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "outFrameLayout->frameByteSize = function->frameByteSize;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "outFrameLayout->frameByteAlign = function->frameByteAlign;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText, "function->frameSlotLayoutLength"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText, "sizeof(SZrAotExecIrFrameSlotLayout)"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "destinationLayout->byteOffset = sourceLayout->byteOffset;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "frameLayout.slotLayouts"));
 
         free(execIrHeaderText);
         free(execIrSourceText);
+        free(execIrFrameSourceText);
     }
 
     timer.endTime = clock();

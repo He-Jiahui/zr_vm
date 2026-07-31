@@ -269,7 +269,7 @@ static void test_aot_c_frame_alias_preserves_addressing_without_duplicate_lifecy
             "ZrCore_TypeLayout_DropInline(state,",
     };
     char *execIrSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
     char *cleanupSourceText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
     char *methodMetadataSourceText = read_repo_text_file_owned(

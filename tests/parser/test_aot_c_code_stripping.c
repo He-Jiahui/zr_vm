@@ -2068,6 +2068,178 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_rol
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_binding_identity(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *unreachable;
+    SZrFunctionTypedLocalBinding *bindings;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrUInt32 originalFrameSlotLayoutLength;
+    TZrUInt32 originalFrameByteSize;
+    TZrUInt32 originalFrameByteAlign;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_static_callable_trim_fixture(state);
+    TEST_ASSERT_NOT_NULL(function);
+    unreachable = &function->childFunctionList[1];
+    originalFrameSlotLayoutLength = unreachable->frameSlotLayoutLength;
+    originalFrameByteSize = unreachable->frameByteSize;
+    originalFrameByteAlign = unreachable->frameByteAlign;
+    unreachable->parameterCount = 2u;
+    unreachable->stackSize = 3u;
+    unreachable->frameSlotLayoutLength = 0u;
+    unreachable->frameByteSize = 0u;
+    unreachable->frameByteAlign = 0u;
+
+    bindings = (SZrFunctionTypedLocalBinding *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedLocalBinding) * 3u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(bindings);
+    memset(bindings, 0, sizeof(SZrFunctionTypedLocalBinding) * 3u);
+    bindings[0].name = ZrCore_String_CreateFromNative(state, "first");
+    bindings[0].stackSlot = 0u;
+    bindings[0].symbolId = 11u;
+    bindings[0].typeId = 12u;
+    bindings[0].placeId = 13u;
+    bindings[1].name = ZrCore_String_CreateFromNative(state, "second");
+    bindings[1].stackSlot = 1u;
+    bindings[1].symbolId = 21u;
+    bindings[1].typeId = 22u;
+    bindings[1].placeId = 23u;
+    bindings[2].name = ZrCore_String_CreateFromNative(state, "local");
+    bindings[2].stackSlot = 2u;
+    bindings[2].symbolId = 31u;
+    bindings[2].typeId = 32u;
+    bindings[2].placeId = 33u;
+    TEST_ASSERT_NOT_NULL(bindings[0].name);
+    TEST_ASSERT_NOT_NULL(bindings[1].name);
+    TEST_ASSERT_NOT_NULL(bindings[2].name);
+    unreachable->typedLocalBindings = bindings;
+    unreachable->typedLocalBindingLength = 3u;
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_code_stripping_malformed_unreachable_parameter_binding_identity";
+    options.sourceHash = "aot-c-code-stripping-malformed-unreachable-parameter-binding-identity";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "aot-c-code-stripping-malformed-unreachable-parameter-binding-identity";
+    options.requireExecutableLowering = ZR_TRUE;
+    options.enableCodeStripping = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_code_stripping",
+            "generated",
+            "malformed_unreachable_parameter_binding_identity",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    bindings[0].symbolId = 0u;
+    bindings[0].typeId = 0u;
+    bindings[0].placeId = 0u;
+    bindings[1].symbolId = 0u;
+    bindings[1].typeId = 0u;
+    bindings[1].placeId = 0u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    bindings[0].stackSlot = 3u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].stackSlot = 0u;
+    bindings[1].stackSlot = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[1].stackSlot = 1u;
+
+    bindings[0].symbolId = 11u;
+    bindings[0].typeId = 12u;
+    bindings[0].placeId = 13u;
+    bindings[1].symbolId = 21u;
+    bindings[1].typeId = 22u;
+    bindings[1].placeId = 23u;
+
+    bindings[1].symbolId = 0u;
+    bindings[1].typeId = 0u;
+    bindings[1].placeId = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[1].symbolId = 21u;
+    bindings[1].typeId = 22u;
+    bindings[1].placeId = 23u;
+
+    bindings[1].typeId = bindings[0].typeId;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    bindings[1].typeId = 22u;
+
+    bindings[2].typeId = 0u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    bindings[2].typeId = 32u;
+
+    bindings[0].name = ZR_NULL;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    bindings[0].name = ZrCore_String_CreateFromNative(state, "first");
+    TEST_ASSERT_NOT_NULL(bindings[0].name);
+    bindings[1].name = ZR_NULL;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    bindings[1].name = ZrCore_String_CreateFromNative(state, "second");
+    TEST_ASSERT_NOT_NULL(bindings[1].name);
+
+    bindings[0].symbolId = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].symbolId = 11u;
+    bindings[0].typeId = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].typeId = 12u;
+    bindings[0].placeId = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].placeId = 13u;
+
+    bindings[0].stackSlot = 3u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[0].stackSlot = 0u;
+    bindings[1].stackSlot = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[1].stackSlot = 1u;
+
+    bindings[1].symbolId = bindings[0].symbolId;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[1].symbolId = 21u;
+    bindings[1].placeId = bindings[0].placeId;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[1].placeId = 23u;
+
+    bindings[1].name = ZR_NULL;
+    bindings[2].name = ZR_NULL;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    bindings[1].name = ZrCore_String_CreateFromNative(state, "second");
+    TEST_ASSERT_NOT_NULL(bindings[1].name);
+    bindings[2].roleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+    bindings[2].stackSlot = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    unreachable->frameSlotLayoutLength = originalFrameSlotLayoutLength;
+    unreachable->frameByteSize = originalFrameByteSize;
+    unreachable->frameByteAlign = originalFrameByteAlign;
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_code_stripping_preserves_legal_frame_alias_layouts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -3738,6 +3910,7 @@ int main(void) {
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_bitmap);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_frame_layout);
     RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_role);
+    RUN_TEST(test_aot_c_code_stripping_rejects_malformed_unreachable_parameter_binding_identity);
     RUN_TEST(test_aot_c_code_stripping_preserves_legal_frame_alias_layouts);
     RUN_TEST(test_aot_c_code_stripping_preserves_property_accessor_root);
     RUN_TEST(test_aot_c_code_stripping_rejects_unresolved_property_accessor_root);

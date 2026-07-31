@@ -83,6 +83,11 @@ envelope 校验，并在 code stripping 前拒绝不可达 malformed owner；fie
 frame 一致性校验；不从名称重建缺失 role，parameter direction/type、return/destination、spill/address-taken 与
 完整 A7.2 仍开放。
 
+[2026-08-01 parameter binding identity verifier](./07-codegen/2026-08-01-parameter-binding-identity-verifier.md)
+完成 A7.2F 的 producer-order parameter prefix、set-wide identity availability、stack slot 与 SymbolId/PlaceId
+唯一性校验，同时保留无 typed-local table 与全零 legacy tuple 兼容；direction/type equality、default、
+return/destination、spill/address-taken 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

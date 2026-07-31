@@ -111,6 +111,11 @@ frame manifest，S1/S3/S6 与 AOT 12 仍为部分完成。
 zero-parameter 或 materialized non-parameter receiver 均 fail closed；沿用既有 frame manifest，S1/S3/S6 与
 AOT 12 仍为部分完成。
 
+[2026-08-01 parameter binding identity verifier](./07-codegen/2026-08-01-parameter-binding-identity-verifier.md)
+完成 parameter binding prefix 的裁剪前 owner gate：不可达 owner 的 partial/mixed identity、越界/重复 slot、
+重复 SymbolId/PlaceId、缺失 parameter row 与越过 prefix 的 receiver 均 fail closed；沿用既有 frame manifest，
+S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

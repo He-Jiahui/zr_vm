@@ -10,6 +10,8 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.h
@@ -27,6 +29,7 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
@@ -57,6 +60,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
   - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
   - tests/acceptance/2026-08-01-aot-07-receiver-role-frame-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-parameter-binding-identity-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
 doc_type: module-detail
 ---
@@ -267,6 +271,15 @@ receiver, a receiver on a zero-parameter function, or a materialized receiver ro
 filtering any owner. A canonical receiver role participates in complete-frame parameter classification without a local
 name; sparse and zero-frame layouts remain legal, and role-free older artifacts are not upgraded by inference. The
 retained frame manifest stays version 1 because this gate validates owner metadata and does not add a new graph node.
+
+Canonical parameter binding identity is likewise validated before filtering. For a present typed-local table, ExecIR
+selects the first `parameterCount` named-or-receiver rows under the producer ordering rule, requires unique in-range
+stack slots, and rejects an incomplete or mixed-availability identity set. Fully canonical rows require unique SymbolId
+and PlaceId while allowing equal TypeId. Nameless non-receiver rows do not consume the prefix, ordinary rows after it
+are not reclassified as parameters, and a receiver after the prefix is malformed. Older artifacts with no typed-local
+table, or a uniformly all-zero legacy identity set, retain their compatibility behavior. Because this is an owner
+metadata gate rather than a retained node, malformed unreachable owners fail closed without changing the version 1
+frame manifest.
 
 The retained debug sidecar manifest is generated from the validated source-location rows and matched ExecIR owners:
 

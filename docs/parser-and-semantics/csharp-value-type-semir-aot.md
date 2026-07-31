@@ -115,6 +115,8 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.h
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.h
@@ -276,6 +278,7 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.h
@@ -403,6 +406,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
   - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
   - tests/acceptance/2026-08-01-aot-07-receiver-role-frame-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-parameter-binding-identity-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -927,6 +931,18 @@ receiver layouts do not depend on local spelling. Role-free older artifacts rema
 continue through the established named-binding compatibility rule. This A7.2E verifier consumes the existing role
 carrier; it does not derive a missing receiver, parameter direction/type, return/destination, spill, or address-taken
 ABI and does not add a reachability manifest schema.
+
+The same pre-filter frame gate now validates the canonical parameter binding prefix. When typed-local metadata is
+present, the first `parameterCount` producer-eligible rows, meaning named rows or a canonical receiver, must exist and
+bind unique in-range stack slots. Identity availability is set-wide: the selected rows must either all expose the
+legacy unavailable tuple (`SymbolId == TypeId == PlaceId == 0`) or all expose complete nonzero triples. Complete
+identity sets additionally require unique SymbolId and PlaceId; repeated TypeId remains legal because parameters may
+share a canonical type. Nameless non-receiver rows are skipped consistently with the producer, ordinary locals after
+the prefix remain outside this gate, and a receiver cannot appear after the prefix. An absent typed-local table keeps
+the established compatibility path. This A7.2F verifier checks identity presence and ordering only; it does not compare
+TypeId with TypeRef, TypeLayout, or CallableContract, derive passing direction/defaults, or create return, destination,
+spill, or address-taken ABI. Frame validation/building now lives in `backend_aot_exec_ir_frame.c`, leaving the ExecIR
+orchestrator responsible for traversal and ownership without changing the public frame or manifest schema.
 
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,
