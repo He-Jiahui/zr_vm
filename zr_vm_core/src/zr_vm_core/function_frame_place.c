@@ -1669,6 +1669,7 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap_layout(
         const SZrFunction *function,
         FZrFunctionFrameTypeLayoutResolver resolver,
         TZrPtr resolverUserData,
+        TZrBool requireCanonicalLayoutIdentity,
         TZrUInt32 *outBitmapByteOffset,
         TZrUInt32 *outInitializedFieldWordCount) {
     const SZrFunctionFrameSlotLayout *receiverLayout;
@@ -1699,6 +1700,11 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap_layout(
     }
     receiverTypeLayout = resolver(function, receiverLayout->typeLayoutId, resolverUserData);
     if (!function_frame_slot_matches_layout_kind(receiverLayout, receiverTypeLayout) ||
+        !ZrCore_TypeLayout_Validate(receiverTypeLayout) ||
+        receiverTypeLayout->byteSize != receiverLayout->byteSize ||
+        receiverTypeLayout->byteAlign != receiverLayout->byteAlign ||
+        (requireCanonicalLayoutIdentity &&
+         receiverTypeLayout->cTypeId != receiverLayout->typeLayoutId) ||
         receiverTypeLayout->fieldCount == 0u ||
         receiverTypeLayout->fieldCount > UINT32_MAX - 63u) {
         return ZR_FALSE;
@@ -1749,6 +1755,7 @@ TZrBool ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
             function,
             ZrCore_Function_ResolvePrototypeFrameTypeLayout,
             state,
+            ZR_TRUE,
             outBitmapByteOffset,
             outInitializedFieldWordCount);
 }
@@ -1758,6 +1765,7 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap(
         TZrStackValuePointer frameBase,
         FZrFunctionFrameTypeLayoutResolver resolver,
         TZrPtr resolverUserData,
+        TZrBool requireCanonicalLayoutIdentity,
         const TZrUInt64 **outInitializedFieldWords,
         TZrUInt32 *outInitializedFieldWordCount) {
     TZrUInt32 bitmapOffset;
@@ -1774,6 +1782,7 @@ static TZrBool function_frame_get_constructor_initialized_field_bitmap(
                 function,
                 resolver,
                 resolverUserData,
+                requireCanonicalLayoutIdentity,
                 &bitmapOffset,
                 outInitializedFieldWordCount)) {
         return ZR_FALSE;
@@ -1795,6 +1804,7 @@ TZrBool ZrCore_Function_GetInlineConstructorInitializedFieldBitmap(
             frameBase,
             ZrCore_Function_ResolvePrototypeFrameTypeLayout,
             state,
+            ZR_TRUE,
             outInitializedFieldWords,
             outInitializedFieldWordCount);
 }
@@ -1892,6 +1902,7 @@ static TZrBool function_drop_inline_frame_values(
     TZrBool hasRegistry;
     const TZrUInt64 *initializedFieldWords = ZR_NULL;
     TZrUInt32 initializedFieldWordCount = 0u;
+    TZrUInt32 constructorBitmapLayoutCount = 0u;
     TZrBool hasConstructorBitmap = ZR_FALSE;
 
     if (function == ZR_NULL || frameBase == ZR_NULL) {
@@ -1900,13 +1911,23 @@ static TZrBool function_drop_inline_frame_values(
     hasRegistry = ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
             function, &registry);
     if (unwind) {
+        for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+            if ((function->frameSlotLayouts[index].reserved0 &
+                 ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP) != 0u) {
+                constructorBitmapLayoutCount++;
+            }
+        }
         hasConstructorBitmap = function_frame_get_constructor_initialized_field_bitmap(
                 function,
                 frameBase,
                 resolver,
                 resolverUserData,
+                ZR_FALSE,
                 &initializedFieldWords,
                 &initializedFieldWordCount);
+        if (constructorBitmapLayoutCount != (hasConstructorBitmap ? 1u : 0u)) {
+            return ZR_FALSE;
+        }
     }
 
     for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {

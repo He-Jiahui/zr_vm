@@ -17,6 +17,8 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/src/zr_vm_core/function_frame_place.c
 implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
@@ -29,6 +31,7 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_core/src/zr_vm_core/function_frame_place.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
   - docs/plans/aot/07-codegen-register-model-and-environment-isolation.md
@@ -39,6 +42,7 @@ tests:
   - tests/parser/test_aot_reachability.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/parser/test_aot_c_generic_reference_sharing.c
+  - tests/core/test_type_layout_inline_copy.c
   - tests/acceptance/2026-07-30-aot-12-s1b-s2f-s6a-function-reachability-manifest.md
   - tests/acceptance/2026-07-30-aot-12-property-accessor-required-root.md
   - tests/acceptance/2026-07-30-aot-12-resource-drop-required-root.md
@@ -51,6 +55,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
 doc_type: module-detail
 ---
@@ -246,6 +251,14 @@ diagnostics. ExecIR derives the canonical parameter slots from the same typed-bi
 stack-slot prefix when typed bindings are absent, and rejects missing or swapped markers before filtering. Zero-row and
 sparse hybrid tables deliberately remain legal so register-only scalar parameters need not be materialized merely to
 satisfy the frame manifest.
+
+The constructor initialization-bitmap flag is also a verified graph input. Before filtering, its owner must be a
+constructor with a direct inline-struct parameter at stack slot 0, and the core-owned layout query must resolve a
+canonical, schema/hash-valid receiver TypeLayout whose identity and payload shape match the frame row. The query derives
+the uint64 bitmap tail from receiver field count and frame size/alignment, then proves every direct, indirect-alias, and
+borrowed-alias physical storage envelope ends before the tail. Malformed unreachable owners therefore fail closed
+instead of disappearing during trimming. The retained frame manifest remains unchanged because the bitmap is verified
+frame ABI state, not a new reachability-node kind.
 
 The retained debug sidecar manifest is generated from the validated source-location rows and matched ExecIR owners:
 

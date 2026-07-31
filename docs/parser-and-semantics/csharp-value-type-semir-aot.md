@@ -401,6 +401,7 @@ tests:
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
+  - tests/acceptance/2026-08-01-aot-07-constructor-bitmap-layout-verifier.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -903,6 +904,18 @@ Every complete-table row must carry the matching `isParameter` marker and the fi
 frames remain legal for fully register-carried scalar parameters, and sparse hybrid tables may omit register-only
 parameters while materializing an inline local. This A7.2C verifier does not derive direction, receiver role, return,
 spill, or address-taken ABI.
+
+Constructor receiver initialization bitmaps now have a core-owned structural layout query instead of an AOT-local
+offset guess. A flagged row must be the direct inline-struct parameter at stack slot 0 of a constructor. Its canonical
+receiver TypeLayout must pass schema/hash validation and match the row's `cTypeId`, byte size, and byte alignment. The
+bitmap is the final `_Alignof(TZrUInt64)`-aligned tail of the frame, with
+`ceil(fieldCount / 64) * sizeof(TZrUInt64)` bytes, and every direct, indirect-alias, or borrowed-alias physical storage
+envelope must end before that tail. ExecIR invokes this query before stripping, so an invalid unreachable owner fails
+closed and leaves no generated C. Runtime unwind with a caller-supplied TypeLayout resolver retains its local identity
+model while still requiring a valid layout schema/hash and exact receiver payload size/alignment; only the public
+canonical APIs additionally require cache `cTypeId` identity. A declared bitmap that cannot resolve this shape, or
+more than one flagged row, stops unwind before any Drop. This A7.2D verifier does not add field-initialization dataflow,
+per-field cleanup lowering, return/destination ABI, or a new reachability manifest schema.
 
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,

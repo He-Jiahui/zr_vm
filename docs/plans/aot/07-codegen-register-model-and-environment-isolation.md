@@ -55,6 +55,11 @@ manifest schema，CallableContract slot 派生与完整 A7.2 仍开放。
 完成 A7.2C 的完整 frame table parameter marker 数量与 canonical slot identity 校验，同时保留 zero-frame 与
 sparse typed-register hybrid；parameter direction/type、receiver/return/spill 派生与完整 A7.2 仍开放。
 
+[2026-08-01 constructor bitmap layout verifier](./07-codegen/2026-08-01-constructor-bitmap-layout-verifier.md)
+完成 A7.2D 的 constructor receiver 初始化 bitmap 尾布局、canonical TypeLayout 身份/shape 与全部物理 slot
+envelope 校验，并在 code stripping 前拒绝不可达 malformed owner；field-init dataflow、return/destination ABI 与
+完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

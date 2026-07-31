@@ -1698,7 +1698,11 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_
     SZrFunction *unreachable;
     SZrFunctionFrameSlotLayout *layouts;
     SZrTypeLayoutField field;
+    SZrTypeLayoutField aliasField;
     SZrAotWriterOptions options;
+    TZrUInt32 bitmapAlign = (TZrUInt32)_Alignof(TZrUInt64);
+    TZrUInt32 borrowedStorageAlign =
+            (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
     TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
 
     TEST_ASSERT_NOT_NULL(state);
@@ -1736,6 +1740,20 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
             state, function, generatedCPath, &options));
 
+    unreachable->parameterCount = 0u;
+    unreachable->frameSlotLayouts[0].isParameter = 0u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    unreachable->parameterCount = 1u;
+    unreachable->frameSlotLayouts[0].isParameter = 1u;
+
+    unreachable->stackSize = 2u;
+    unreachable->frameSlotLayouts[0].stackSlot = 1u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+    unreachable->stackSize = 1u;
+    unreachable->frameSlotLayouts[0].stackSlot = 0u;
+
     unreachable->frameByteSize = 8u;
     assert_aot_c_write_rejected_without_output(
             state, function, generatedCPath, &options);
@@ -1753,14 +1771,24 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_
     assert_aot_c_write_rejected_without_output(
             state, function, generatedCPath, &options);
 
-    field.byteSize = 4u;
-    initialize_test_struct_layout(
-            &function->prototypeFrameTypeLayouts[2], 4u, 4u, &field, 1u, 2u);
-    unreachable->frameSlotLayouts[0].byteSize = 4u;
-    unreachable->frameSlotLayouts[0].byteAlign = 4u;
-    unreachable->frameByteAlign = 4u;
-    assert_aot_c_write_rejected_without_output(
-            state, function, generatedCPath, &options);
+    if (bitmapAlign > 1u) {
+        TZrUInt32 underAligned = bitmapAlign / 2u;
+
+        field.byteSize = underAligned;
+        initialize_test_struct_layout(
+                &function->prototypeFrameTypeLayouts[2],
+                underAligned,
+                underAligned,
+                &field,
+                1u,
+                2u);
+        unreachable->frameSlotLayouts[0].byteSize = underAligned;
+        unreachable->frameSlotLayouts[0].byteAlign = underAligned;
+        unreachable->frameByteSize = underAligned + (TZrUInt32)sizeof(TZrUInt64);
+        unreachable->frameByteAlign = underAligned;
+        assert_aot_c_write_rejected_without_output(
+                state, function, generatedCPath, &options);
+    }
 
     field.byteSize = 8u;
     initialize_test_struct_layout(
@@ -1798,6 +1826,41 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_constructor_
             state, function, generatedCPath, &options));
 
     unreachable->frameByteSize = 16u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    memset(&aliasField, 0, sizeof(aliasField));
+    aliasField.byteSize = 4u;
+    initialize_test_struct_layout(
+            &function->prototypeFrameTypeLayouts[1], 4u, 4u, &aliasField, 1u, 1u);
+    function->childFunctionList[0].frameSlotLayouts[0].byteSize = 4u;
+    function->childFunctionList[0].frameSlotLayouts[0].byteAlign = 4u;
+    layouts[1].byteOffset = 12u;
+    layouts[1].byteSize = 4u;
+    layouts[1].byteAlign = 4u;
+    layouts[1].reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                           ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS;
+    unreachable->frameByteSize = 32u;
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    unreachable->frameByteSize = 24u;
+    assert_aot_c_write_rejected_without_output(
+            state, function, generatedCPath, &options);
+
+    layouts[1].stackSlot = 2u;
+    layouts[1].byteOffset = borrowedStorageAlign > 8u ? borrowedStorageAlign : 8u;
+    layouts[1].isParameter = 1u;
+    layouts[1].reserved0 |= ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    unreachable->parameterCount = 2u;
+    unreachable->stackSize = 3u;
+    unreachable->frameByteAlign = borrowedStorageAlign > 8u ? borrowedStorageAlign : 8u;
+    unreachable->frameByteSize =
+            layouts[1].byteOffset +
+            (TZrUInt32)sizeof(SZrFunctionFrameBorrowedAliasBinding) +
+            (TZrUInt32)sizeof(TZrUInt64);
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    unreachable->frameByteSize -= (TZrUInt32)sizeof(TZrUInt64);
     assert_aot_c_write_rejected_without_output(
             state, function, generatedCPath, &options);
 

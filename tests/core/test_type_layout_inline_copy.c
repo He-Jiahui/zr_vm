@@ -749,10 +749,27 @@ static void test_init_string_constant(SZrState *state, SZrTypeValue *value, cons
     value->type = ZR_VALUE_TYPE_STRING;
 }
 
+static void assert_constructor_bitmap_layout_rejected_and_outputs_reset(
+        SZrState *state,
+        const SZrFunction *function) {
+    TZrUInt32 bitmapByteOffset = UINT32_MAX;
+    TZrUInt32 initializedFieldWordCount = UINT32_MAX;
+
+    TEST_ASSERT_FALSE(ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+            state,
+            function,
+            &bitmapByteOffset,
+            &initializedFieldWordCount));
+    TEST_ASSERT_EQUAL_UINT32(0u, bitmapByteOffset);
+    TEST_ASSERT_EQUAL_UINT32(0u, initializedFieldWordCount);
+}
+
 static void test_constructor_field_store_marks_runtime_initialization_bitmap(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
-    SZrFunctionFrameSlotLayout receiverLayout = {0};
+    SZrFunctionFrameSlotLayout frameLayouts[2] = {0};
+    SZrFunctionFrameSlotLayout *receiverLayout = &frameLayouts[0];
+    SZrTypeLayout *receiverTypeLayout;
     SZrCompiledPrototypeInfo prototype;
     SZrCompiledMemberInfo member;
     SZrTypeValue constants[3];
@@ -784,22 +801,22 @@ static void test_constructor_field_store_marks_runtime_initialization_bitmap(voi
     member.fieldOffset = 0u;
     member.fieldSize = (TZrUInt32)sizeof(TZrInt32);
 
-    receiverLayout.stackSlot = 0u;
-    receiverLayout.byteOffset = 64u;
-    receiverLayout.byteSize = (TZrUInt32)sizeof(TZrInt32);
-    receiverLayout.byteAlign = (TZrUInt32)_Alignof(TZrInt32);
-    receiverLayout.typeLayoutId = 0u;
-    receiverLayout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
-    receiverLayout.isParameter = ZR_TRUE;
-    receiverLayout.reserved0 =
+    receiverLayout->stackSlot = 0u;
+    receiverLayout->byteOffset = 64u;
+    receiverLayout->byteSize = (TZrUInt32)sizeof(TZrInt32);
+    receiverLayout->byteAlign = (TZrUInt32)_Alignof(TZrInt32);
+    receiverLayout->typeLayoutId = 0u;
+    receiverLayout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    receiverLayout->isParameter = ZR_TRUE;
+    receiverLayout->reserved0 =
             ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP;
 
     function.functionName = ZrCore_String_CreateFromNative(state, "constructor");
     function.stackSize = 2u;
-    function.frameSlotLayouts = &receiverLayout;
+    function.frameSlotLayouts = frameLayouts;
     function.frameSlotLayoutLength = 1u;
     bitmapOffset = test_align_up(
-            receiverLayout.byteOffset + receiverLayout.byteSize,
+            receiverLayout->byteOffset + receiverLayout->byteSize,
             (TZrUInt32)_Alignof(TZrUInt64));
     function.frameByteSize = bitmapOffset + (TZrUInt32)sizeof(TZrUInt64);
     function.frameByteAlign = (TZrUInt32)_Alignof(TZrUInt64);
@@ -818,10 +835,62 @@ static void test_constructor_field_store_marks_runtime_initialization_bitmap(voi
             state, &function, &layoutBitmapOffset, &layoutWordCount));
     TEST_ASSERT_EQUAL_UINT32(bitmapOffset, layoutBitmapOffset);
     TEST_ASSERT_EQUAL_UINT32(1u, layoutWordCount);
+
+    receiverTypeLayout = &function.prototypeFrameTypeLayouts[0];
+    receiverTypeLayout->layoutHash ^= UINT64_C(1);
+    assert_constructor_bitmap_layout_rejected_and_outputs_reset(state, &function);
+    receiverTypeLayout->layoutHash ^= UINT64_C(1);
+
+    receiverTypeLayout->cTypeId = receiverLayout->typeLayoutId + 1u;
+    assert_constructor_bitmap_layout_rejected_and_outputs_reset(state, &function);
+    receiverTypeLayout->cTypeId = receiverLayout->typeLayoutId;
+
+    receiverTypeLayout->byteSize += receiverTypeLayout->byteAlign;
+    receiverTypeLayout->layoutHash = ZrCore_TypeLayout_ComputeHash(receiverTypeLayout);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(receiverTypeLayout));
+    assert_constructor_bitmap_layout_rejected_and_outputs_reset(state, &function);
+    receiverTypeLayout->byteSize = receiverLayout->byteSize;
+    receiverTypeLayout->layoutHash = ZrCore_TypeLayout_ComputeHash(receiverTypeLayout);
+
+    receiverTypeLayout->byteAlign = receiverLayout->byteAlign == 1u
+            ? 2u
+            : receiverLayout->byteAlign / 2u;
+    receiverTypeLayout->layoutHash = ZrCore_TypeLayout_ComputeHash(receiverTypeLayout);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(receiverTypeLayout));
+    assert_constructor_bitmap_layout_rejected_and_outputs_reset(state, &function);
+    receiverTypeLayout->byteAlign = receiverLayout->byteAlign;
+    receiverTypeLayout->layoutHash = ZrCore_TypeLayout_ComputeHash(receiverTypeLayout);
+
     function.frameByteSize = bitmapOffset;
-    TEST_ASSERT_FALSE(ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
-            state, &function, &layoutBitmapOffset, &layoutWordCount));
+    assert_constructor_bitmap_layout_rejected_and_outputs_reset(state, &function);
+    initializedFieldWords = (const TZrUInt64 *)(const void *)&function;
+    initializedFieldWordCount = UINT32_MAX;
+    TEST_ASSERT_FALSE(ZrCore_Function_GetInlineConstructorInitializedFieldBitmap(
+            state,
+            &function,
+            state->stackBase.valuePointer,
+            &initializedFieldWords,
+            &initializedFieldWordCount));
+    TEST_ASSERT_NULL(initializedFieldWords);
+    TEST_ASSERT_EQUAL_UINT32(0u, initializedFieldWordCount);
     function.frameByteSize = bitmapOffset + (TZrUInt32)sizeof(TZrUInt64);
+
+    frameLayouts[1].stackSlot = 1u;
+    frameLayouts[1].byteOffset = receiverLayout->byteOffset + receiverLayout->byteSize;
+    frameLayouts[1].byteSize = receiverLayout->byteSize;
+    frameLayouts[1].byteAlign = receiverLayout->byteAlign;
+    frameLayouts[1].typeLayoutId = receiverLayout->typeLayoutId;
+    frameLayouts[1].slotKind = receiverLayout->slotKind;
+    function.frameSlotLayoutLength = 2u;
+    TEST_ASSERT_TRUE(ZrCore_Function_GetInlineConstructorInitializedFieldBitmapLayout(
+            state, &function, &layoutBitmapOffset, &layoutWordCount));
+    frameLayouts[1].reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                                ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS;
+    assert_constructor_bitmap_layout_rejected_and_outputs_reset(state, &function);
+    frameLayouts[1].reserved0 |= ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    assert_constructor_bitmap_layout_rejected_and_outputs_reset(state, &function);
+    frameLayouts[1].reserved0 = 0u;
+    function.frameSlotLayoutLength = 1u;
 
     frameBase = state->stackBase.valuePointer + 2u;
     memset((TZrByte *)frameBase, 0, function.frameByteSize);
@@ -849,6 +918,7 @@ static void test_constructor_unwind_drops_only_initialized_fields_without_custom
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction function = {0};
     SZrFunctionFrameSlotLayout receiverLayout = {0};
+    SZrFunctionFrameSlotLayout duplicateBitmapLayouts[2];
     SZrTypeLayoutField fields[3] = {0};
     SZrTypeLayoutContract contract = {0};
     SZrTypeLayout layout;
@@ -908,6 +978,59 @@ static void test_constructor_unwind_drops_only_initialized_fields_without_custom
     ZrCore_Value_InitAsInt(state, &storage[2], 30);
     initializedFieldWords = (TZrUInt64 *)((TZrByte *)frameBase + bitmapOffset);
     initializedFieldWords[0] = UINT64_C(1) | (UINT64_C(1) << 2u);
+
+    layout.byteSize += layout.byteAlign;
+    layout.layoutHash = ZrCore_TypeLayout_ComputeHash(&layout);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+    TEST_ASSERT_FALSE(ZrCore_Function_DropInlineFrameValuesOnUnwind(
+            state,
+            &function,
+            frameBase,
+            test_resolve_function_frame_layout,
+            &resolver));
+    TEST_ASSERT_EQUAL_UINT32(0u, customDrop.callCount);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[0].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[1].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[2].type);
+    layout.byteSize = receiverLayout.byteSize;
+    layout.layoutHash = ZrCore_TypeLayout_ComputeHash(&layout);
+
+    layout.byteAlign = receiverLayout.byteAlign == 1u
+            ? 2u
+            : receiverLayout.byteAlign / 2u;
+    layout.layoutHash = ZrCore_TypeLayout_ComputeHash(&layout);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+    TEST_ASSERT_FALSE(ZrCore_Function_DropInlineFrameValuesOnUnwind(
+            state,
+            &function,
+            frameBase,
+            test_resolve_function_frame_layout,
+            &resolver));
+    TEST_ASSERT_EQUAL_UINT32(0u, customDrop.callCount);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[0].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[1].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[2].type);
+    layout.byteAlign = receiverLayout.byteAlign;
+    layout.layoutHash = ZrCore_TypeLayout_ComputeHash(&layout);
+
+    duplicateBitmapLayouts[0] = receiverLayout;
+    duplicateBitmapLayouts[1] = receiverLayout;
+    duplicateBitmapLayouts[1].stackSlot = 1u;
+    duplicateBitmapLayouts[1].byteOffset = 0u;
+    function.frameSlotLayouts = duplicateBitmapLayouts;
+    function.frameSlotLayoutLength = ZR_ARRAY_COUNT(duplicateBitmapLayouts);
+    TEST_ASSERT_FALSE(ZrCore_Function_DropInlineFrameValuesOnUnwind(
+            state,
+            &function,
+            frameBase,
+            test_resolve_function_frame_layout,
+            &resolver));
+    TEST_ASSERT_EQUAL_UINT32(0u, customDrop.callCount);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[0].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[1].type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storage[2].type);
+    function.frameSlotLayouts = &receiverLayout;
+    function.frameSlotLayoutLength = 1u;
 
     TEST_ASSERT_TRUE(ZrCore_Function_DropInlineFrameValuesOnUnwind(
             state,
