@@ -240,7 +240,10 @@ static SZrTypeValue *debug_get_frame_value_slot(SZrState *state,
     return ZrCore_Stack_GetValue(frameBase + stackSlot);
 }
 
-static void debug_snapshot_value(SZrState *state, SZrTypeValue *destination, SZrTypeValue *source) {
+void debug_evaluation_context_snapshot_value(
+        SZrState *state,
+        SZrTypeValue *destination,
+        const SZrTypeValue *source) {
     ZR_UNUSED_PARAMETER(state);
 
     if (destination == ZR_NULL || source == ZR_NULL) {
@@ -488,7 +491,7 @@ EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetReceiver(
             memset(outBinding, 0, sizeof(*outBinding));
             return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
         }
-        debug_snapshot_value(state, outValue, slot);
+        debug_evaluation_context_snapshot_value(state, outValue, slot);
     }
     return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
@@ -556,7 +559,7 @@ EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_ResolveRuntimeRoo
         return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE;
     }
 
-    debug_snapshot_value(state, outValue, &state->global->zrObject);
+    debug_evaluation_context_snapshot_value(state, outValue, &state->global->zrObject);
     return ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK;
 }
 
@@ -840,7 +843,7 @@ TZrNativeString ZrCore_Debug_GetLocal(struct SZrState *state,
         if (slot == ZR_NULL) {
             return ZR_NULL;
         }
-        debug_snapshot_value(state, outValue, slot);
+        debug_evaluation_context_snapshot_value(state, outValue, slot);
     }
 
     return name;
@@ -908,7 +911,7 @@ TZrNativeString ZrCore_Debug_GetUpvalue(struct SZrState *state,
         return ZR_NULL;
     }
     if (outValue != ZR_NULL) {
-        debug_snapshot_value(state, outValue, value);
+        debug_evaluation_context_snapshot_value(state, outValue, value);
     }
     return debug_get_string_native(closure->function->closureValueList[index].name, ZR_NULL);
 }

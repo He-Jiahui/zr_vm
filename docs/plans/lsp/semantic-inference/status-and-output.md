@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-02 04:38 +08:00
+updated_at: 2026-08-02 05:20 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -61,10 +61,11 @@ source_plans:
 | 2026-07-28 22:56 +08:00 | 已完成 | LSP 04 E2b0 external canonical binding injection：temporary TypeEnvironment保留已验证SymbolId、TypeId与declaration range，identifier inference直接发布同一reference fact identity，不注册替代symbol/type；GCC/Clang/MSVC独立target均4/4真实exit 0 | [Canonical binding injection](../04-debug-and-repl/2026-07-28-e2b0-canonical-binding-injection.md) |
 | 2026-07-29 00:13 +08:00 | 已完成 | LSP 04 E2b1 paused-frame canonical binding integration：formal fragment inference从generation-validated readonly debug context注册canonical local identity；GCC、Clang、MSVC debug diagnostics均34/34真实exit 0，新增回归精确比较paused binding的SymbolId、TypeId与declaration start，不生成临时替代identity | [Paused-frame canonical binding integration](../04-debug-and-repl/2026-07-29-e2b1-paused-frame-canonical-binding-integration.md) |
 | 2026-08-02 04:38 +08:00 | 已完成 | LSP 04 E2b6a canonical closure-capture artifact identity：`.zro` patch 41 typed sidecar保留capture index、完整TypeRef、SymbolId、TypeId与declaration range；lambda与命名嵌套函数只从exact parent binding/pre-SemIR slot冻结identity；runtime query、GC mark/young/reference compact relocation均fail closed且无capture name/slot/AST/text fallback；GCC/Clang/MSVC metadata 8/8、GC 10/10真实exit 0 | [Canonical closure-capture artifact identity](../04-debug-and-repl/2026-08-02-e2b6a-canonical-closure-capture-artifact-identity.md) |
+| 2026-08-02 05:20 +08:00 | 已完成 | LSP 04 E2b6b generation-checked paused-frame closure resolver：精确活动VM closure与E2b6a sidecar identity按capture index联结，binding携带TypeRef、SymbolId、TypeId、whole declaration range和frame-generation token；resolve重验activation/PC/token/full identity并清空失败输出，禁止legacy upvalue/name/slot/AST/text fallback；GCC/Clang/MSVC introspection 3/3真实exit 0 | [Generation-checked paused-frame closure resolver](../04-debug-and-repl/2026-08-02-e2b6b-generation-checked-paused-frame-closure-resolver.md) |
 
 ## 当前状态
 
 - 总体目标进行中。当前记录只表示四十三个子里程碑完成，不表示L1-L8整体完成。
 - LSP 04 E1 已完成计划要求的 module、scope、receiver、generic context和visible SymbolId reconstruction；没有稳定canonical fact时不伪造source `TypeId`或const-generic runtime carrier。下一步是E2b，以E2a正式fragment parser绑定只读debug context并复用Canonical TypeRef/Place query；随后继续E3-E5，以及property/constructor/meta callable target identity、native generic constraint/effectful method contract、public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
-- LSP 04 E2a formal fragment parser、E2b0/E2b1 binding injection、E2b2 canonical Place、E2b3-E2b5 runtime-root carrier/consumer 与 E2b6a closure artifact identity 已完成。下一步 E2b6b 必须提供 generation-checked paused-frame closure resolver；E2b6c/E2b6d 再发布 parser closure origin/token facts并让 Debug consumer消费。任何 stale、trimmed、missing 或 duplicate identity 必须 fail closed。
+- LSP 04 E2a formal fragment parser、E2b0/E2b1 binding injection、E2b2 canonical Place、E2b3-E2b5 runtime-root carrier/consumer 与 E2b6a/E2b6b closure artifact/resolver 已完成。下一步 E2b6c/E2b6d 必须发布 parser closure origin/token facts并让 Debug consumer消费。任何 stale、trimmed、missing 或 duplicate identity 必须 fail closed。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

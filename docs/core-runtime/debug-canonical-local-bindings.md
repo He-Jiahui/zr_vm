@@ -6,6 +6,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/debug.c
+  - zr_vm_core/src/zr_vm_core/debug_evaluation_closure.c
   - zr_vm_core/src/zr_vm_core/debug_evaluation_context.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_closure_identity.c
@@ -30,6 +31,7 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/debug.c
+  - zr_vm_core/src/zr_vm_core/debug_evaluation_closure.c
   - zr_vm_core/src/zr_vm_core/debug_evaluation_context.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/function_closure_identity.c
@@ -65,6 +67,7 @@ tests:
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b3-generation-checked-runtime-root.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b5-generation-checked-runtime-root-consumer.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6a-canonical-closure-capture-artifact-identity.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6b-generation-checked-paused-frame-closure-resolver.md
 doc_type: module-detail
 ---
 
@@ -148,10 +151,31 @@ bytes cannot accidentally look like an identity.
 
 The sidecar TypeRef participates in GC mark, young-reference detection, and
 compact relocation. It therefore remains valid when its type projection holds
-managed references. This stage deliberately does not publish a paused-frame
-generation token, parser reference origin, or Debug evaluator execution path
-for captures. Those are E2b6b through E2b6d and must keep captures unavailable
-until their own canonical contracts exist.
+managed references. E2b6a itself does not publish a paused-frame generation
+token, parser reference origin, or Debug evaluator execution path for captures.
+
+## Paused Closure-Capture Resolver
+
+E2b6b adds `ZrCore_Debug_EvaluationContext_GetClosureCapture` and
+`ZrCore_Debug_EvaluationContext_ResolveClosureCapture`. Both first reuse the
+paused-frame validation for exact active call-info membership, VM-frame kind,
+function identity, frame generation, and instruction offset. The resolver then
+requires the active callable to be the exact VM closure for that function,
+requires its capture-cell count to match the function metadata, and joins the
+requested capture index to exactly one E2b6a sidecar identity row.
+
+The returned binding carries only the capture index, canonical TypeRef,
+SymbolId, TypeId, whole declaration range, and the current frame generation
+token. Resolve clears its output before validation, requires the exact token
+and every identity field to match a freshly regenerated binding, then snapshots
+the matching closure cell. Resumed, retired, reused, changed-PC, trimmed, or
+incomplete frames fail closed; missing cells or metadata are unavailable. The
+resolver never calls legacy upvalue name APIs or searches a capture name, stack
+slot, AST, display type, or text.
+
+E2b6b is runtime-only. E2b6c must still publish parser closure-origin and
+token facts, and E2b6d must make the formal Debug consumer use those facts.
+Until then the resolver is not permission for a consumer fallback.
 
 ## Consumer Boundary
 

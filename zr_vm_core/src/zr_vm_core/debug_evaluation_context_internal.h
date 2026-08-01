@@ -12,4 +12,9 @@ EZrDebugEvaluationContextStatus debug_evaluation_context_validate(
         struct SZrCallInfo **outCallInfo,
         struct SZrFunction **outFunction);
 
+void debug_evaluation_context_snapshot_value(
+        struct SZrState *state,
+        struct SZrTypeValue *destination,
+        const struct SZrTypeValue *source);
+
 #endif

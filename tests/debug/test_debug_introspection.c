@@ -28,8 +28,13 @@ typedef struct SZrDebugIntrospectionCapture {
     TZrBool sawCanonicalReceiver;
     TZrBool sawRuntimeRoot;
     TZrBool sawMismatchedRuntimeRootRejected;
+    TZrBool sawClosureCapture;
+    TZrBool sawClosureCaptureTokenRejected;
+    TZrBool sawClosureCaptureOutOfRangeRejected;
     SZrDebugEvaluationContext capturedEvaluationContext;
     SZrDebugRuntimeRootBinding capturedRuntimeRoot;
+    SZrDebugEvaluationContext capturedClosureContext;
+    SZrDebugClosureCaptureBinding capturedClosureCapture;
 } SZrDebugIntrospectionCapture;
 
 static SZrDebugIntrospectionCapture g_debugIntrospectionCapture;
@@ -320,6 +325,63 @@ static void debug_introspection_hook(SZrState *state, SZrDebugInfo *debugInfo) {
     }
 }
 
+static void debug_closure_capture_hook(SZrState *state, SZrDebugInfo *debugInfo) {
+    SZrDebugEvaluationContext context;
+    SZrDebugClosureCaptureBinding capture;
+    SZrDebugClosureCaptureBinding invalidCapture;
+    SZrDebugClosureCaptureBinding mismatchedCapture;
+    SZrTypeValue value;
+
+    ZR_UNUSED_PARAMETER(debugInfo);
+    if (state == ZR_NULL || g_debugIntrospectionCapture.sawClosureCapture) {
+        return;
+    }
+
+    memset(&context, 0, sizeof(context));
+    memset(&capture, 0, sizeof(capture));
+    if (ZrCore_Debug_GetEvaluationContext(state, 0u, &context) !=
+            ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK ||
+        context.activation.function == ZR_NULL || context.activation.function->closureValueLength != 1u) {
+        return;
+    }
+
+    if (ZrCore_Debug_EvaluationContext_GetClosureCapture(
+                state, &context, 0u, &capture) != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK ||
+        capture.type == ZR_NULL || capture.symbolId == 0u || capture.typeId == 0u ||
+        capture.token == 0u) {
+        return;
+    }
+
+    ZrCore_Value_ResetAsNull(&value);
+    if (ZrCore_Debug_EvaluationContext_ResolveClosureCapture(
+                state, &context, &capture, &value) != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK ||
+        !value_is_int64(&value, 4)) {
+        return;
+    }
+
+    mismatchedCapture = capture;
+    mismatchedCapture.token++;
+    ZrCore_Value_ResetAsNull(&value);
+    if (ZrCore_Debug_EvaluationContext_ResolveClosureCapture(
+                state, &context, &mismatchedCapture, &value) ==
+        ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME) {
+        g_debugIntrospectionCapture.sawClosureCaptureTokenRejected = ZR_TRUE;
+    }
+
+    memset(&invalidCapture, 0, sizeof(invalidCapture));
+    if (ZrCore_Debug_EvaluationContext_GetClosureCapture(
+                state, &context, 1u, &invalidCapture) ==
+                ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE &&
+        invalidCapture.type == ZR_NULL && invalidCapture.symbolId == 0u &&
+        invalidCapture.typeId == 0u && invalidCapture.token == 0u) {
+        g_debugIntrospectionCapture.sawClosureCaptureOutOfRangeRejected = ZR_TRUE;
+    }
+
+    g_debugIntrospectionCapture.capturedClosureContext = context;
+    g_debugIntrospectionCapture.capturedClosureCapture = capture;
+    g_debugIntrospectionCapture.sawClosureCapture = ZR_TRUE;
+}
+
 static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
     const char *source =
             "fn target(input: int): int {\n"
@@ -388,6 +450,49 @@ static void test_getlocal_and_setlocal_walk_active_locals_by_index(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_evaluation_context_resolves_generation_checked_closure_capture(void) {
+    const char *source =
+            "fn outer(): int {\n"
+            "    var seed: int = 4;\n"
+            "    var reader = fn(): int {\n"
+            "        return seed + 1;\n"
+            "    };\n"
+            "    return reader();\n"
+            "}\n"
+            "return outer();";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrTypeValue staleValue;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_introspection_source(state, source, "debug_introspection_closure_capture.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    debug_introspection_capture_reset();
+    ZrCore_Debug_SetHook(state, debug_closure_capture_hook, ZR_DEBUG_HOOK_MASK_LINE, 0u);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(5, result);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawClosureCapture);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawClosureCaptureTokenRejected);
+    TEST_ASSERT_TRUE(g_debugIntrospectionCapture.sawClosureCaptureOutOfRangeRejected);
+
+    ZrCore_Value_ResetAsNull(&staleValue);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DEBUG_EVALUATION_CONTEXT_STATUS_STALE_FRAME,
+            ZrCore_Debug_EvaluationContext_ResolveClosureCapture(
+                    state,
+                    &g_debugIntrospectionCapture.capturedClosureContext,
+                    &g_debugIntrospectionCapture.capturedClosureCapture,
+                    &staleValue));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, staleValue.type);
+
+    ZrCore_Debug_SetHook(state, ZR_NULL, 0u, 0u);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_getupvalue_setupvalue_and_upvalue_id_use_closure_cells(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -447,6 +552,7 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_getlocal_and_setlocal_walk_active_locals_by_index);
+    RUN_TEST(test_evaluation_context_resolves_generation_checked_closure_capture);
     RUN_TEST(test_getupvalue_setupvalue_and_upvalue_id_use_closure_cells);
     return UNITY_END();
 }

@@ -34,6 +34,12 @@ REPL cell具有显式module/environment generation。每个cell末尾simple stat
 
 LSP负责编辑器请求与expression diagnostics；`zr.debug`/DAP负责暂停态、frame、memory/value transport。双方通过DebugMap、SymbolId、TypeId和ModuleIdentity连接。
 
+E2b6b 已发布 generation-checked paused-frame closure-capture resolver：它只从当前
+VM closure 与 E2b6a typed capture identity读取 capture index、TypeRef、SymbolId、TypeId
+和 declaration range，并在 resolve 时复验同一 frame generation、PC 和完整 identity。
+E2b6c/E2b6d 尚未发布 parser closure-origin fact 或 Debug consumer；在此之前 LSP/DAP
+consumer 不得按 capture name、slot、AST 或文本回退。
+
 ## 实施与安全矩阵
 
 输出为绑定到frame/snapshot generation的DebugEvaluationContext、typed evaluation plan、effect classification、structured result/error和可失效children handle。

@@ -13,6 +13,7 @@ struct SZrTypeValue;
 struct SZrObjectPrototype;
 struct SZrObject;
 struct SZrFunction;
+struct SZrFunctionTypedTypeRef;
 struct SZrClosure;
 struct SZrMetadataRuntime;
 
@@ -171,6 +172,22 @@ typedef struct SZrDebugRuntimeRootBinding {
     TZrUInt64 token;
 } SZrDebugRuntimeRootBinding;
 
+/*
+ * A borrowed closure capture selected from the exact paused VM closure.
+ * `type` remains valid only while the same evaluation context is current.
+ */
+typedef struct SZrDebugClosureCaptureBinding {
+    TZrUInt32 captureIndex;
+    const struct SZrFunctionTypedTypeRef *type;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 declarationStartLine;
+    TZrUInt32 declarationStartColumn;
+    TZrUInt32 declarationEndLine;
+    TZrUInt32 declarationEndColumn;
+    TZrUInt64 token;
+} SZrDebugClosureCaptureBinding;
+
 typedef enum EZrDebugGenericContextKind {
     ZR_DEBUG_GENERIC_CONTEXT_TYPE = 0,
     ZR_DEBUG_GENERIC_CONTEXT_METHOD
@@ -259,6 +276,18 @@ ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_Resol
         struct SZrState *state,
         const SZrDebugEvaluationContext *context,
         const SZrDebugRuntimeRootBinding *binding,
+        struct SZrTypeValue *outValue);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetClosureCapture(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        TZrUInt32 captureIndex,
+        SZrDebugClosureCaptureBinding *outBinding);
+
+ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_ResolveClosureCapture(
+        struct SZrState *state,
+        const SZrDebugEvaluationContext *context,
+        const SZrDebugClosureCaptureBinding *binding,
         struct SZrTypeValue *outValue);
 
 ZR_CORE_API EZrDebugEvaluationContextStatus ZrCore_Debug_EvaluationContext_GetGenericArgument(
