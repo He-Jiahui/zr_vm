@@ -4,6 +4,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_library/aot_runtime.h"
+#include "../../zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_internal.h"
 
 #define TEST_REF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_REF, 1u)
 #define TEST_REF_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 1u)
@@ -53,6 +54,111 @@ static ZrAotGeneratedFrame make_frame(SZrFunction *caller, SZrFunction **functio
     frame.functionTable = functionTable;
     frame.functionCount = functionCount;
     return frame;
+}
+
+static TZrInt64 direct_call_identity_thunk_a(struct SZrState *state) {
+    ZR_UNUSED_PARAMETER(state);
+    return 1;
+}
+
+static TZrInt64 direct_call_identity_thunk_b(struct SZrState *state) {
+    ZR_UNUSED_PARAMETER(state);
+    return 2;
+}
+
+static ZrAotGeneratedFrame make_static_direct_call_identity_frame(
+        SZrFunction **functionTable,
+        const FZrAotEntryThunk *functionThunks,
+        TZrUInt32 functionCount) {
+    ZrAotGeneratedFrame frame = {0};
+
+    frame.functionTable = functionTable;
+    frame.functionCount = functionCount;
+    frame.functionThunks = functionThunks;
+    frame.functionThunkCount = functionCount;
+    return frame;
+}
+
+static void test_static_direct_call_identity_accepts_exact_frame_snapshot(void) {
+    SZrFunction caller = {0};
+    SZrFunction callee = {0};
+    SZrFunction *functionTable[2] = {&caller, &callee};
+    const FZrAotEntryThunk functionThunks[2] = {
+            direct_call_identity_thunk_a,
+            direct_call_identity_thunk_b,
+    };
+    ZrAotGeneratedFrame frame = make_static_direct_call_identity_frame(
+            functionTable, functionThunks, 2u);
+
+    TEST_ASSERT_TRUE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &callee, direct_call_identity_thunk_b));
+}
+
+static void test_static_direct_call_identity_rejects_metadata_generation_drift(void) {
+    SZrFunction caller = {0};
+    SZrFunction callee = {0};
+    SZrFunction replacement = {0};
+    SZrFunction *functionTable[2] = {&caller, &callee};
+    const FZrAotEntryThunk functionThunks[2] = {
+            direct_call_identity_thunk_a,
+            direct_call_identity_thunk_b,
+    };
+    ZrAotGeneratedFrame frame = make_static_direct_call_identity_frame(
+            functionTable, functionThunks, 2u);
+
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &replacement, direct_call_identity_thunk_b));
+}
+
+static void test_static_direct_call_identity_rejects_thunk_generation_drift(void) {
+    SZrFunction caller = {0};
+    SZrFunction callee = {0};
+    SZrFunction *functionTable[2] = {&caller, &callee};
+    const FZrAotEntryThunk functionThunks[2] = {
+            direct_call_identity_thunk_a,
+            direct_call_identity_thunk_b,
+    };
+    ZrAotGeneratedFrame frame = make_static_direct_call_identity_frame(
+            functionTable, functionThunks, 2u);
+
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &callee, direct_call_identity_thunk_a));
+}
+
+static void test_static_direct_call_identity_rejects_incomplete_or_out_of_range_snapshots(void) {
+    SZrFunction caller = {0};
+    SZrFunction callee = {0};
+    SZrFunction *functionTable[2] = {&caller, &callee};
+    const FZrAotEntryThunk functionThunks[2] = {
+            direct_call_identity_thunk_a,
+            direct_call_identity_thunk_b,
+    };
+    ZrAotGeneratedFrame frame = make_static_direct_call_identity_frame(
+            functionTable, functionThunks, 2u);
+
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            ZR_NULL, 1u, &callee, direct_call_identity_thunk_b));
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, ZR_NULL, direct_call_identity_thunk_b));
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &callee, ZR_NULL));
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 2u, &callee, direct_call_identity_thunk_b));
+    frame.functionCount = 1u;
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &callee, direct_call_identity_thunk_b));
+    frame.functionCount = 2u;
+    frame.functionTable = ZR_NULL;
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &callee, direct_call_identity_thunk_b));
+    frame.functionTable = functionTable;
+    frame.functionThunks = ZR_NULL;
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &callee, direct_call_identity_thunk_b));
+    frame.functionThunks = functionThunks;
+    frame.functionThunkCount = 1u;
+    TEST_ASSERT_FALSE(aot_runtime_static_direct_call_identity_matches(
+            &frame, 1u, &callee, direct_call_identity_thunk_b));
 }
 
 static void test_typed_direct_call_guard_accepts_empty_caller_and_callee_bindings(void) {
@@ -134,6 +240,10 @@ static void test_typed_direct_call_guard_deopts_on_malformed_caller_binding_tabl
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_static_direct_call_identity_accepts_exact_frame_snapshot);
+    RUN_TEST(test_static_direct_call_identity_rejects_metadata_generation_drift);
+    RUN_TEST(test_static_direct_call_identity_rejects_thunk_generation_drift);
+    RUN_TEST(test_static_direct_call_identity_rejects_incomplete_or_out_of_range_snapshots);
     RUN_TEST(test_typed_direct_call_guard_accepts_empty_caller_and_callee_bindings);
     RUN_TEST(test_typed_direct_call_guard_deopts_on_caller_binding_drift);
     RUN_TEST(test_typed_direct_call_guard_deopts_on_callee_binding_drift);

@@ -130,6 +130,12 @@ typed-local role 与内部 ExecIR parameter sidecar 的投影。显式参数必�
 参数前缀外 role 在裁剪前 fail closed；当前 aggregate `CALL_TYPED` 只接受 exact-count VALUE 参数，其他形式保持
 fallback。真实 ref/out storage identity、writeback、return/destination、spill/address-taken 与完整 A7.2 仍开放。
 
+[2026-08-02 static direct-call frame identity guard](./07-codegen/2026-08-02-static-direct-call-frame-identity-guard.md)
+完成 A7.2N 的 same-module static direct-call generation identity 门禁：runtime record 解析出的 metadata function 与
+entry thunk 必须在同一 flat index 精确匹配 generated frame 快照，null/越界/不完整或漂移均在栈扩容、参数暂存和
+callee call-info 创建前 fail closed。dynamic/meta/cross-module binding、物理 ref/out storage/writeback、aggregate
+destination/return、spill/address-taken、A7.3 environment generation key 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

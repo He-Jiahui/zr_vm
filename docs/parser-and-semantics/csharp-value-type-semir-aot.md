@@ -60,6 +60,9 @@ related_code:
   - tests/parser/test_aot_c_generic_monomorphization.c
   - tests/parser/test_aot_c_generic_reference_sharing.c
   - tests/parser/test_aot_c_generic_call_typed.c
+  - tests/parser/test_aot_llvm_symbol_stripping.c
+  - tests/parser/test_aot_static_direct_call_identity_source_contract_cases.h
+  - tests/module/test_aot_runtime_typed_direct_call_compatibility.c
   - tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h
   - tests/parser/test_aot_c_parameter_passing_form_projection_cases.h
   - tests/parser/test_aot_parameter_passing_form_roundtrip_cases.h
@@ -403,6 +406,8 @@ tests:
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_aot_c_source_contracts.c
   - tests/parser/test_aot_c_generic_call_typed.c
+  - tests/parser/test_aot_llvm_symbol_stripping.c
+  - tests/parser/test_aot_static_direct_call_identity_source_contract_cases.h
   - tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h
   - tests/cli/test_cli_aot_writer_options.c
   - tests/module/test_metadata_type_ref_binding.c
@@ -422,6 +427,7 @@ tests:
   - tests/parser/test_aot_c_generic_call_typed_default_declaration_cases.h
   - tests/acceptance/2026-08-01-aot-07-direct-inline-return-layout-projection.md
   - tests/acceptance/2026-08-01-aot-07-parameter-source-passing-form-projection.md
+  - tests/acceptance/2026-08-02-aot-07-static-direct-call-frame-identity-guard.md
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
@@ -2943,3 +2949,18 @@ requires exact arity/layout count and known VALUE for every explicit parameter; 
 role-only and passing-form unknown. Unknown or any non-VALUE form conservatively falls back instead of entering the
 current by-value aggregate ABI. Real REF/OUT identity and storage projection, writeback, return/destination ABI,
 spill/address-taken slots, and GC/ref provenance remain later A7.2 work.
+
+Focused 2026-08-02 AOT 07-A7.2N binds same-module static direct calls to the generated frame snapshot before any
+callee frame preparation. `ZrLibrary_AotRuntime_PrepareStaticDirectCall()` resolves the runtime record's metadata
+function and entry thunk, then requires exact pointer identity with `ZrAotGeneratedFrame.functionTable` and
+`functionThunks` at the same flat index. Null tables, missing entries, count mismatches, metadata generation drift, and
+thunk generation drift fail closed with a runtime diagnostic while the output direct-call descriptor remains zeroed.
+
+The identity check runs before `aot_runtime_prepare_vm_direct_call_frame()`, so failure cannot grow the stack, stage
+arguments, publish a callee call-info, or mutate caller source/destination storage. The LLVM receiver-alias runtime
+fixture injects metadata and thunk drift independently against a real configured AOT record, snapshots the generated
+frame, caller call-info, stack top, destination value, and source payload, and proves each failure changes only the
+expected runtime error state. Restoring exact identities still exercises the existing stack-relocation and borrowed
+receiver success path. This slice does not alter the public ABI or artifact schema and does not cover dynamic, meta, or
+cross-module calls; physical ref/out writeback, aggregate destination/return storage, spill/address-taken places, and
+A7.3 environment generation keys remain open.

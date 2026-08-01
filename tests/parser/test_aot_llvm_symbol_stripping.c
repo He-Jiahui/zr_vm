@@ -133,6 +133,53 @@ static TZrInt64 aot_llvm_receiver_alias_test_thunk(SZrState *state) {
     return 1;
 }
 
+static TZrInt64 aot_llvm_receiver_alias_drift_test_thunk(SZrState *state) {
+    ZR_UNUSED_PARAMETER(state);
+    return 2;
+}
+
+static void assert_aot_llvm_static_direct_call_identity_drift_preserves_caller(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        ZrAotGeneratedDirectCall *directCall,
+        const TZrPtr sourceAddress,
+        const TZrByte *sourceBytes,
+        TZrSize sourceByteCount) {
+    ZrAotGeneratedDirectCall emptyDirectCall = {0};
+    ZrAotGeneratedFrame frameSnapshot;
+    SZrCallInfo callerCallInfoSnapshot;
+    SZrTypeValue destinationSnapshot;
+    TZrStackValuePointer stackTopSnapshot;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(frame);
+    TEST_ASSERT_NOT_NULL(frame->callInfo);
+    TEST_ASSERT_NOT_NULL(directCall);
+    TEST_ASSERT_NOT_NULL(sourceAddress);
+    TEST_ASSERT_NOT_NULL(sourceBytes);
+
+    frameSnapshot = *frame;
+    callerCallInfoSnapshot = *frame->callInfo;
+    destinationSnapshot = frame->slotBase[2u].value;
+    stackTopSnapshot = state->stackTop.valuePointer;
+    memset(directCall, 0xa5, sizeof(*directCall));
+
+    TEST_ASSERT_FALSE(ZrLibrary_AotRuntime_PrepareStaticDirectCall(
+            state, frame, 2u, 0u, 1u, 1u, directCall));
+    TEST_ASSERT_EQUAL_MEMORY(&emptyDirectCall, directCall, sizeof(*directCall));
+    TEST_ASSERT_EQUAL_PTR(frameSnapshot.callInfo, state->callInfoList);
+    TEST_ASSERT_EQUAL_PTR(stackTopSnapshot, state->stackTop.valuePointer);
+    TEST_ASSERT_EQUAL_MEMORY(&frameSnapshot, frame, sizeof(*frame));
+    TEST_ASSERT_EQUAL_MEMORY(
+            &callerCallInfoSnapshot, frame->callInfo, sizeof(*frame->callInfo));
+    TEST_ASSERT_EQUAL_MEMORY(
+            &destinationSnapshot, &frame->slotBase[2u].value, sizeof(destinationSnapshot));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(sourceBytes, sourceAddress, sourceByteCount);
+    TEST_ASSERT_EQUAL(ZR_THREAD_STATUS_RUNTIME_ERROR, state->threadStatus);
+
+    state->threadStatus = ZR_THREAD_STATUS_FINE;
+}
+
 static void aot_llvm_force_call_hook_stack_relocation(SZrState *state,
                                                        SZrDebugInfo *debugInfo) {
     TZrStackValuePointer previousStackBase;
@@ -280,12 +327,16 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
     SZrFunction *callerFunction;
     SZrFunction *calleeFunction;
     SZrFunction *functionTable[2];
+    SZrFunction *generatedFunctionTable[2];
     SZrFunctionFrameSlotLayout *callerLayout;
     SZrFunctionFrameSlotLayout *calleeLayout;
     SZrTypeLayout receiverTypeLayout;
     const SZrTypeLayout *typeLayouts[1];
     TZrUInt32 frameSlotCounts[2];
     FZrAotEntryThunk functionPointers[2] = {
+            aot_llvm_receiver_alias_test_thunk,
+            aot_llvm_receiver_alias_test_thunk};
+    FZrAotEntryThunk generatedFunctionPointers[2] = {
             aot_llvm_receiver_alias_test_thunk,
             aot_llvm_receiver_alias_test_thunk};
     SZrAotCodeRegistration codeRegistration;
@@ -378,6 +429,8 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
 
     functionTable[0] = callerFunction;
     functionTable[1] = calleeFunction;
+    generatedFunctionTable[0] = callerFunction;
+    generatedFunctionTable[1] = calleeFunction;
     frameSlotCounts[0] =
             (TZrUInt32)ZrCore_Function_GetFrameStorageSlotCount(callerFunction);
     frameSlotCounts[1] =
@@ -443,6 +496,31 @@ static void test_aot_llvm_static_direct_call_borrows_readonly_receiver_storage(v
     frame.slotBase = callerFrameBase;
     frame.functionIndex = 0u;
     frame.generatedFrameSlotCount = frameSlotCounts[0];
+    frame.functionTable = generatedFunctionTable;
+    frame.functionCount = 2u;
+    frame.codeRegistration = &codeRegistration;
+    frame.functionThunks = generatedFunctionPointers;
+    frame.functionThunkCount = 2u;
+
+    generatedFunctionTable[1] = callerFunction;
+    assert_aot_llvm_static_direct_call_identity_drift_preserves_caller(
+            state,
+            &frame,
+            &directCall,
+            sourcePlace.address,
+            payload,
+            sizeof(payload));
+    generatedFunctionTable[1] = calleeFunction;
+
+    generatedFunctionPointers[1] = aot_llvm_receiver_alias_drift_test_thunk;
+    assert_aot_llvm_static_direct_call_identity_drift_preserves_caller(
+            state,
+            &frame,
+            &directCall,
+            sourcePlace.address,
+            payload,
+            sizeof(payload));
+    generatedFunctionPointers[1] = aot_llvm_receiver_alias_test_thunk;
 
     memset(&g_aotLlvmStackRelocationCapture,
            0,

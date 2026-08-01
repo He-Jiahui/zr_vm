@@ -31,6 +31,7 @@
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
+#include "aot_runtime/aot_runtime_internal.h"
 
 #if defined(ZR_PLATFORM_WIN)
 #include <windows.h>
@@ -8037,6 +8038,7 @@ TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(SZrState *state,
     SZrLibraryAotRuntimeState *runtimeState;
     SZrLibraryAotLoadedModule *record;
     SZrFunction *metadataFunction;
+    FZrAotEntryThunk calleeThunk;
 
     if (directCall != ZR_NULL) {
         memset(directCall, 0, sizeof(*directCall));
@@ -8062,6 +8064,18 @@ TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(SZrState *state,
                          (unsigned)calleeFunctionIndex);
         return ZR_FALSE;
     }
+    calleeThunk = record->codeRegistration->functionPointers[calleeFunctionIndex];
+    if (!aot_runtime_static_direct_call_identity_matches(
+                frame,
+                calleeFunctionIndex,
+                metadataFunction,
+                calleeThunk)) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "generated AOT static direct call identity drift for function index %u",
+                         (unsigned)calleeFunctionIndex);
+        return ZR_FALSE;
+    }
 
     if (!aot_runtime_prepare_vm_direct_call_frame(state,
                                                   frame,
@@ -8071,12 +8085,12 @@ TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(SZrState *state,
                                                   record,
                                                   metadataFunction,
                                                   calleeFunctionIndex,
-                                                  record->codeRegistration->functionPointers[calleeFunctionIndex],
+                                                  calleeThunk,
                                                   directCall)) {
         return ZR_FALSE;
     }
 
-    directCall->nativeFunction = record->codeRegistration->functionPointers[calleeFunctionIndex];
+    directCall->nativeFunction = calleeThunk;
     return ZR_TRUE;
 }
 
