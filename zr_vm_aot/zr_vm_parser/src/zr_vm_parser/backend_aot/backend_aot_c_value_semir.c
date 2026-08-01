@@ -28,9 +28,15 @@ TZrBool backend_aot_c_value_semir_needs_skip_drop_slot(
         const SZrAotExecIrModule *module,
         const SZrAotExecIrFunction *functionIr) {
     TZrUInt32 instructionIndex;
+    TZrUInt32 directInlineReturnTypeLayoutId;
 
     if (module == ZR_NULL || functionIr == ZR_NULL ||
         module->instructions == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    directInlineReturnTypeLayoutId =
+            backend_aot_exec_ir_direct_inline_return_type_layout_id(functionIr);
+    if (directInlineReturnTypeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
         return ZR_FALSE;
     }
     for (instructionIndex = 0u;
@@ -53,7 +59,9 @@ TZrBool backend_aot_c_value_semir_needs_skip_drop_slot(
         if (sourceLayout != ZR_NULL &&
             sourceLayout->slotKind ==
                     (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
-            sourceLayout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE &&
+            (sourceLayout->reserved0 &
+             ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) == 0u &&
+            sourceLayout->typeLayoutId == directInlineReturnTypeLayoutId &&
             sourceLayout->byteSize > 0u) {
             return ZR_TRUE;
         }
@@ -319,7 +327,7 @@ TZrBool backend_aot_try_write_c_value_semir_for_exec_instruction(FILE *file,
             }
             case ZR_SEMIR_OPCODE_RETURN_TYPED:
                 if (backend_aot_try_write_c_value_semir_return_typed_exec(
-                            file, &functionIr->frameLayout, instruction, allowTypedReturn)) {
+                            file, functionIr, instruction, allowTypedReturn)) {
                     return ZR_TRUE;
                 }
                 break;

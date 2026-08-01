@@ -14,6 +14,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
+#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
 
 typedef struct SZrBinaryFixtureReader {
     const TZrByte *bytes;
@@ -238,6 +239,37 @@ static TZrBool function_contains_semir_opcode(const SZrFunction *function, EZrSe
     }
 
     return ZR_FALSE;
+}
+
+static SZrFunction *find_named_function(
+        SZrFunction *function,
+        const char *name) {
+    TZrUInt32 childIndex;
+    TZrSize nameLength;
+
+    if (function == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    nameLength = strlen(name);
+    if (function->functionName != ZR_NULL &&
+        ZrCore_String_GetByteLength(function->functionName) == nameLength &&
+        memcmp(ZrCore_String_GetNativeString(function->functionName),
+               name,
+               nameLength) == 0) {
+        return function;
+    }
+    for (childIndex = 0u;
+         function->childFunctionList != ZR_NULL &&
+         childIndex < function->childFunctionLength;
+         childIndex++) {
+        SZrFunction *found = find_named_function(
+                &function->childFunctionList[childIndex], name);
+
+        if (found != ZR_NULL) {
+            return found;
+        }
+    }
+    return ZR_NULL;
 }
 
 static TZrUInt32 function_count_semir_opcode(const SZrFunction *function, EZrSemIrOpcode opcode) {
@@ -832,6 +864,8 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h");
         char *execIrSourceText = read_repo_text_file_owned(
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+        char *execIrReturnLayoutSourceText = read_repo_text_file_owned(
+                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c");
         char *execIrFrameSourceText = read_repo_text_file_owned(
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
         char *methodMetadataSourceText = read_repo_text_file_owned(
@@ -841,6 +875,7 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
 
         TEST_ASSERT_NOT_NULL(execIrHeaderText);
         TEST_ASSERT_NOT_NULL(execIrSourceText);
+        TEST_ASSERT_NOT_NULL(execIrReturnLayoutSourceText);
         TEST_ASSERT_NOT_NULL(execIrFrameSourceText);
         TEST_ASSERT_NOT_NULL(methodMetadataSourceText);
         TEST_ASSERT_NOT_NULL(scalarLocalsSourceText);
@@ -904,6 +939,36 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(strstr(
                 execIrSourceText,
                 "outFunction->callableReturnType = entry->function->callableReturnType;"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrHeaderText,
+                "TZrBool directInlineReturnLayoutKnown;"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrHeaderText,
+                "TZrUInt32 directInlineReturnTypeLayoutId;"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrHeaderText,
+                "backend_aot_exec_ir_direct_inline_return_type_layout_id("));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrSourceText,
+                "backend_aot_exec_ir_project_direct_inline_return_layout("));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrReturnLayoutSourceText,
+                "ZrCore_String_Equal((SZrString *)lhs, (SZrString *)rhs)"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrReturnLayoutSourceText,
+                "ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrReturnLayoutSourceText,
+                "resolvedTypeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrReturnLayoutSourceText,
+                "sourceInstruction->typeTableIndex >= function->semIrTypeTableLength"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrReturnLayoutSourceText,
+                "sourceType->staticCTypeId != sourceLayout->typeLayoutId"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrReturnLayoutSourceText,
+                "backend_aot_exec_ir_return_layouts_are_copy_compatible"));
         TEST_ASSERT_NOT_NULL(strstr(execIrSourceText,
                                     "backend_aot_exec_ir_release_frame_layout("));
         TEST_ASSERT_NOT_NULL(strstr(
@@ -917,6 +982,7 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
 
         free(execIrHeaderText);
         free(execIrSourceText);
+        free(execIrReturnLayoutSourceText);
         free(execIrFrameSourceText);
         free(methodMetadataSourceText);
         free(scalarLocalsSourceText);
@@ -998,6 +1064,141 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
     TEST_DIVIDER();
 }
 
+#if defined(ZR_PLATFORM_UNIX)
+static void test_binary_roundtrip_projects_direct_inline_return_layout(void) {
+    SZrTestTimer timer;
+    const char *testSummary =
+            "Binary Roundtrip Projects Direct Inline Return Layout";
+    SZrState *state;
+    const char *source =
+            "struct DirectInlineReturnProjectionPointWithArtifactNameLongerThanTheShortStringInterningBoundaryForContentStableCallableAndSemanticIrIdentityProof {\n"
+            "    pub var x: int;\n"
+            "    pub var y: int;\n"
+            "    pub @constructor(x: int, y: int) {\n"
+            "        this.x = x;\n"
+            "        this.y = y;\n"
+            "    }\n"
+            "}\n"
+            "pub fn makePoint(seed: int): DirectInlineReturnProjectionPointWithArtifactNameLongerThanTheShortStringInterningBoundaryForContentStableCallableAndSemanticIrIdentityProof {\n"
+            "    var local: DirectInlineReturnProjectionPointWithArtifactNameLongerThanTheShortStringInterningBoundaryForContentStableCallableAndSemanticIrIdentityProof = init DirectInlineReturnProjectionPointWithArtifactNameLongerThanTheShortStringInterningBoundaryForContentStableCallableAndSemanticIrIdentityProof(seed, seed + 1);\n"
+            "    return local;\n"
+            "}\n"
+            "var returned: DirectInlineReturnProjectionPointWithArtifactNameLongerThanTheShortStringInterningBoundaryForContentStableCallableAndSemanticIrIdentityProof = makePoint(3);\n"
+            "return returned.x + returned.y;";
+    const char *binaryPath = "semir_direct_inline_return_roundtrip_test.zro";
+    SZrString *sourceName;
+    SZrString *independentReturnTypeName;
+    SZrString *originalReturnTypeName;
+    SZrFunction *sourceFunction;
+    SZrFunction *runtimeFunction;
+    SZrFunction *runtimeCallee;
+    SZrIo *io;
+    SZrIoSource *sourceObject;
+    TZrByte *binaryBytes;
+    TZrSize binaryLength = 0u;
+    SZrBinaryFixtureReader reader;
+    SZrAotExecIrModule module;
+    const SZrAotExecIrFunction *calleeIr = ZR_NULL;
+    const SZrFunctionTypedTypeRef *returnInstructionType = ZR_NULL;
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Direct inline return binary roundtrip",
+              "Testing content-stable callable/SemIR TypeRef identity and current-binary ExecIR projection");
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(
+            state,
+            "semir_direct_inline_return_roundtrip_test.zr",
+            strlen("semir_direct_inline_return_roundtrip_test.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    sourceFunction = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(sourceFunction);
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(
+            state, sourceFunction, binaryPath));
+    binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+    TEST_ASSERT_NOT_NULL(binaryBytes);
+
+    reader.bytes = binaryBytes;
+    reader.length = binaryLength;
+    reader.consumed = ZR_FALSE;
+    io = ZrCore_Io_New(state->global);
+    TEST_ASSERT_NOT_NULL(io);
+    ZrCore_Io_Init(
+            state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+    io->isBinary = ZR_TRUE;
+    sourceObject = ZrCore_Io_ReadSourceNew(io);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    runtimeCallee = find_named_function(runtimeFunction, "makePoint");
+    TEST_ASSERT_NOT_NULL(runtimeCallee);
+    TEST_ASSERT_TRUE(function_contains_semir_opcode(
+            runtimeCallee, ZR_SEMIR_OPCODE_RETURN_TYPED));
+    TEST_ASSERT_EQUAL(ZR_TRUE, runtimeCallee->hasCallableReturnType);
+    for (TZrUInt32 index = 0u;
+         index < runtimeCallee->semIrInstructionLength;
+         index++) {
+        const SZrSemIrInstruction *instruction =
+                &runtimeCallee->semIrInstructions[index];
+
+        if (instruction->opcode == (TZrUInt32)ZR_SEMIR_OPCODE_RETURN_TYPED) {
+            TEST_ASSERT_LESS_THAN_UINT32(
+                    runtimeCallee->semIrTypeTableLength,
+                    instruction->typeTableIndex);
+            returnInstructionType =
+                    &runtimeCallee->semIrTypeTable[instruction->typeTableIndex];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(returnInstructionType);
+    TEST_ASSERT_NOT_NULL(runtimeCallee->callableReturnType.typeName);
+    TEST_ASSERT_NOT_NULL(returnInstructionType->typeName);
+    originalReturnTypeName = returnInstructionType->typeName;
+    independentReturnTypeName = ZrCore_String_Create(
+            state,
+            ZrCore_String_GetNativeString(originalReturnTypeName),
+            ZrCore_String_GetByteLength(originalReturnTypeName));
+    TEST_ASSERT_NOT_NULL(independentReturnTypeName);
+    TEST_ASSERT_NOT_EQUAL(
+            runtimeCallee->callableReturnType.typeName, independentReturnTypeName);
+    TEST_ASSERT_TRUE(ZrCore_String_Equal(
+            runtimeCallee->callableReturnType.typeName, independentReturnTypeName));
+    ((SZrFunctionTypedTypeRef *)returnInstructionType)->typeName =
+            independentReturnTypeName;
+
+    memset(&module, 0, sizeof(module));
+    TEST_ASSERT_TRUE(backend_aot_exec_ir_build_module(
+            state, runtimeFunction, &module));
+    for (TZrUInt32 index = 0u; index < module.functionCount; index++) {
+        if (module.functions[index].function == runtimeCallee) {
+            calleeIr = &module.functions[index];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(calleeIr);
+    TEST_ASSERT_NOT_EQUAL(
+            ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE,
+            backend_aot_exec_ir_direct_inline_return_type_layout_id(calleeIr));
+
+    ((SZrFunctionTypedTypeRef *)returnInstructionType)->typeName =
+            originalReturnTypeName;
+    backend_aot_exec_ir_release_module(state, &module);
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrCore_Function_Free(state, sourceFunction);
+    ZrCore_Io_Free(state->global, io);
+    free(binaryBytes);
+    remove(binaryPath);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+#endif
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -1014,5 +1215,8 @@ int main(void) {
     RUN_TEST(test_struct_value_type_call_and_return_emit_semir_metadata);
     RUN_TEST(test_aot_execir_source_exposes_inline_frame_byte_layout);
     RUN_TEST(test_binary_roundtrip_preserves_semir_metadata);
+#if defined(ZR_PLATFORM_UNIX)
+    RUN_TEST(test_binary_roundtrip_projects_direct_inline_return_layout);
+#endif
     return UNITY_END();
 }

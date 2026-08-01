@@ -117,6 +117,8 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/metadata/zrp_metadata_dump.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.h
@@ -281,6 +283,8 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
@@ -412,6 +416,9 @@ tests:
   - tests/parser/test_aot_c_descriptor_diagnostics.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/parser/test_aot_c_method_info_signature.c
+  - tests/parser/test_aot_c_direct_inline_return_layout_projection_cases.h
+  - tests/parser/test_aot_c_generic_call_typed_default_declaration_cases.h
+  - tests/acceptance/2026-08-01-aot-07-direct-inline-return-layout-projection.md
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
@@ -2901,3 +2908,21 @@ preserve the existing bool/u64/f64 static-return inference path. The borrowed st
 source function graph lifetime, matching parameter-layout snapshots. Typed thunks and TypeLayout-token consumers are
 outside this slice and continue to read raw metadata; aggregate return destinations remain open because the current
 producer does not carry canonical static layout identity.
+
+Focused 2026-08-01 AOT 07-A7.2L derives a function-level direct inline aggregate return layout from typed SemIR
+instead of trusting raw callable metadata. `backend_aot_exec_ir_return_layout.c` cross-checks every `RETURN_TYPED`
+source against the callable return TypeRef, the SemIR type table, the frame slot, and the canonical TypeLayout table.
+Only one direct `STRUCT` layout identity across all typed returns becomes
+`directInlineReturnTypeLayoutId`; legacy dynamic rows, union layouts, indirect aliases, unknown callable identity, and
+copy-compatible but non-identical struct layout ids conservatively leave the sidecar unknown. Struct identities with
+incompatible byte/alignment/copy/drop/GC/ownership/field shapes, malformed type indexes, absent source slots, or
+semantic TypeRef drift reject ExecIR construction before code stripping. Direct aliases remain legal because they
+share storage, while `INDIRECT_ALIAS` remains outside this direct layout contract.
+
+The value-SemIR `CALL_TYPED` destination, `RETURN_TYPED` source, and return-source skip-drop decision now require the
+projected sidecar id and matching direct frame layout before taking the inline aggregate path. Synthetic authority
+tests prove poisoned raw callable ids cannot authorize or override the sidecar. A current `.zro` Unix roundtrip also
+proves long non-interned type-name content comparison and layout projection survive serialization; the Windows suite
+keeps source/public-writer coverage because the private ExecIR symbols are not exported by the shared parser. This
+slice does not define a complete aggregate callable ABI, caller destination storage, nested callable returns,
+`in/ref/out`, spill/address-taken handling, or GC/ref provenance maps.

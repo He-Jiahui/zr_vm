@@ -117,6 +117,13 @@ unknown，非 canonical bool 在裁剪前全树拒绝。MethodInfo signature 与
 sidecar，unknown 继续走既有静态返回推断；typed thunk、aggregate return destination、direction、spill/
 address-taken 与完整 A7.2 仍开放。
 
+[2026-08-01 direct inline return layout projection](./07-codegen/2026-08-01-direct-inline-return-layout-projection.md)
+完成 A7.2L 的 typed SemIR return-source 到内部 direct `STRUCT` TypeLayout id 投影，并让 inline-struct
+`CALL_TYPED` destination、`RETURN_TYPED` source 与 return-source skip-drop 只消费该 sidecar。每条 return 的
+TypeRef、frame slot 与 TypeLayout shape 在裁剪前全树交叉验证；legacy/union/indirect/compatible-nonuniform
+证据保持 unknown，malformed 或 incompatible shape fail closed。不新增 public/artifact/manifest schema；完整
+aggregate callable contract、caller destination storage、direction、spill/address-taken 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

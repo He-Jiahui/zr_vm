@@ -129,6 +129,8 @@ typedef struct SZrAotExecIrFunction {
     TZrUInt32 execInstructionCount;
     TZrBool callableReturnTypeKnown;
     SZrFunctionTypedTypeRef callableReturnType;
+    TZrBool directInlineReturnLayoutKnown;
+    TZrUInt32 directInlineReturnTypeLayoutId;
     SZrAotExecIrFrameLayout frameLayout;
     SZrAotExecIrBasicBlock *basicBlocks;
     TZrUInt32 basicBlockCount;
@@ -140,6 +142,17 @@ static inline const SZrFunctionTypedTypeRef *backend_aot_exec_ir_callable_return
         return ZR_NULL;
     }
     return &functionIr->callableReturnType;
+}
+
+static inline TZrUInt32 backend_aot_exec_ir_direct_inline_return_type_layout_id(
+        const SZrAotExecIrFunction *functionIr) {
+    if (functionIr == ZR_NULL ||
+        functionIr->directInlineReturnLayoutKnown != ZR_TRUE ||
+        functionIr->directInlineReturnTypeLayoutId ==
+                ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+        return ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    }
+    return functionIr->directInlineReturnTypeLayoutId;
 }
 
 typedef struct SZrAotExecIrModule {

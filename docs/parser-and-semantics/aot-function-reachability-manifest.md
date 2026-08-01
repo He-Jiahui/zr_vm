@@ -11,6 +11,8 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.h
@@ -22,6 +24,10 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
 implementation_files:
@@ -32,6 +38,8 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_generic_sharing.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_layout_manifest.c
@@ -39,6 +47,10 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
@@ -50,6 +62,11 @@ tests:
   - tests/parser/test_aot_reachability.c
   - tests/parser/test_aot_c_code_stripping.c
   - tests/parser/test_aot_c_method_info_signature.c
+  - tests/parser/test_aot_c_direct_inline_return_layout_projection_cases.h
+  - tests/parser/test_aot_c_generic_call_typed_default_declaration_cases.h
+  - tests/parser/test_semir_pipeline.c
+  - tests/parser/test_aot_c_value_semir_contracts.c
+  - tests/acceptance/2026-08-01-aot-07-direct-inline-return-layout-projection.md
   - tests/parser/test_aot_c_generic_reference_sharing.c
   - tests/core/test_type_layout_inline_copy.c
   - tests/acceptance/2026-07-30-aot-12-s1b-s2f-s6a-function-reachability-manifest.md
@@ -381,3 +398,13 @@ behind trimming; the focused fixture first proves `functionsBefore=3`, `function
 then injects the invalid flag into the removed child and requires writer failure with no artifact. Retained MethodInfo
 and scalar-local consumers use the projected borrowed snapshot. No manifest node, count, serialized schema, or public
 ABI changes in this slice.
+
+A7.2L direct inline return-layout projection remains an internal ExecIR owner fact and adds no graph node, predecessor,
+count, manifest row, artifact field, or public ABI. The complete function table still builds ExecIR before filtering;
+the focused fixture first proves a legal `functionsBefore=3`, `functionsAfter=2`, `functionsRemoved=1` result, then
+makes the owner that would be removed carry a malformed non-inline return source and requires writer failure before
+trimming. Retained functions project a layout id only when all typed return paths identify the same direct `STRUCT`
+TypeLayout. Legacy dynamic rows, union layouts, indirect aliases, unknown callable identity, and copy-compatible but
+non-identical layout ids remain unknown, while malformed/incompatible evidence fails closed. `CALL_TYPED`,
+`RETURN_TYPED`, and return-source skip-drop consume only the projected id; raw callable layout metadata cannot enable
+the path. A full callable destination/return-storage ABI and aggregate reachability schema remain open.

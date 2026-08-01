@@ -260,6 +260,8 @@ static char *write_default_sidecar_state_case(
     calleeFunctionIr.frameLayout.parameterCount = 1u;
     calleeFunctionIr.frameLayout.parameterLayoutCount = 1u;
     calleeFunctionIr.frameLayout.parameterLayouts = &calleeParameter;
+    calleeFunctionIr.directInlineReturnLayoutKnown = ZR_TRUE;
+    calleeFunctionIr.directInlineReturnTypeLayoutId = 5u;
 
     instruction.destinationSlot = 0u;
     instruction.operand0 = 1u;

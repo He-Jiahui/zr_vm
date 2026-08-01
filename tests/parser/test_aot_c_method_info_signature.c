@@ -214,6 +214,7 @@ static void assert_signature_type_row(const char *signatureTypes,
 }
 
 #include "test_aot_c_method_info_return_projection_cases.h"
+#include "test_aot_c_direct_inline_return_layout_projection_cases.h"
 
 static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -527,5 +528,10 @@ int main(void) {
     RUN_TEST(test_aot_c_method_info_uses_projected_callable_return_type);
     RUN_TEST(test_aot_c_unknown_callable_return_uses_scalar_inference);
     RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_noncanonical_callable_return_flag);
+    RUN_TEST(test_aot_exec_ir_direct_inline_return_layout_accessor_isolates_raw_metadata);
+#if defined(ZR_PLATFORM_UNIX)
+    RUN_TEST(test_aot_exec_ir_projects_and_validates_direct_inline_return_layout);
+    RUN_TEST(test_aot_c_value_semir_consumes_direct_inline_return_layout_sidecar);
+#endif
     return UNITY_END();
 }

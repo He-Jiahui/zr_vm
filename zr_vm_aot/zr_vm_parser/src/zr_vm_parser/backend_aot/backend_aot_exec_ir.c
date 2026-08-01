@@ -1,6 +1,7 @@
 #include "backend_aot_exec_ir.h"
 
 #include "backend_aot_exec_ir_frame.h"
+#include "backend_aot_exec_ir_return_layout.h"
 #include "backend_aot_exec_ir_source_location.h"
 #include "backend_aot_function_table.h"
 #include "backend_aot_internal.h"
@@ -8,7 +9,6 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
-#include "zr_vm_core/type_layout.h"
 
 #include <stdint.h>
 
@@ -703,8 +703,12 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
         outFunction->callableReturnType = entry->function->callableReturnType;
     }
 
-    if (!backend_aot_exec_ir_build_frame_layout(state, entry->function, &outFunction->frameLayout) ||
-        !backend_aot_exec_ir_build_basic_blocks(state, entry->function, outFunction, &instructionToBlockIndex)) {
+    if (!backend_aot_exec_ir_build_frame_layout(
+                state, entry->function, &outFunction->frameLayout) ||
+        !backend_aot_exec_ir_project_direct_inline_return_layout(
+                state, entry->function, outFunction) ||
+        !backend_aot_exec_ir_build_basic_blocks(
+                state, entry->function, outFunction, &instructionToBlockIndex)) {
         return ZR_FALSE;
     }
 

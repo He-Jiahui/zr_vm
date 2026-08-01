@@ -259,6 +259,7 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
         TZrUInt32 calleeFunctionIndex,
         TZrBool requireFullAot) {
     const SZrAotExecIrFrameSlotLayout *destinationLayout;
+    TZrUInt32 directInlineReturnTypeLayoutId;
     TZrUInt32 argumentCount;
     TZrUInt32 argumentIndex;
     TZrBool hasDefaultableParameter = ZR_FALSE;
@@ -268,8 +269,15 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
         return ZR_FALSE;
     }
 
-    destinationLayout = backend_aot_c_value_call_find_frame_slot_layout(frameLayout, instruction->destinationSlot);
-    if (!backend_aot_c_value_call_layout_can_inline_struct(destinationLayout)) {
+    directInlineReturnTypeLayoutId =
+            backend_aot_exec_ir_direct_inline_return_type_layout_id(calleeFunctionIr);
+    destinationLayout = backend_aot_c_value_call_find_frame_slot_layout(
+            frameLayout, instruction->destinationSlot);
+    if (!backend_aot_c_value_call_layout_can_inline_struct(destinationLayout) ||
+        (destinationLayout->reserved0 &
+         ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u ||
+        directInlineReturnTypeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+        destinationLayout->typeLayoutId != directInlineReturnTypeLayoutId) {
         return ZR_FALSE;
     }
     argumentCount = instruction->operand1;
@@ -454,17 +462,26 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
 
 TZrBool backend_aot_try_write_c_value_semir_return_typed_exec(
         FILE *file,
-        const SZrAotExecIrFrameLayout *frameLayout,
+        const SZrAotExecIrFunction *functionIr,
         const SZrAotExecIrInstruction *instruction,
         TZrBool allowTypedReturn) {
     const SZrAotExecIrFrameSlotLayout *sourceLayout;
+    TZrUInt32 directInlineReturnTypeLayoutId;
 
-    if (file == ZR_NULL || frameLayout == ZR_NULL || instruction == ZR_NULL || !allowTypedReturn) {
+    if (file == ZR_NULL || functionIr == ZR_NULL || instruction == ZR_NULL ||
+        !allowTypedReturn) {
         return ZR_FALSE;
     }
 
-    sourceLayout = backend_aot_c_value_call_find_frame_slot_layout(frameLayout, instruction->operand0);
-    if (!backend_aot_c_value_call_layout_can_inline_struct(sourceLayout)) {
+    directInlineReturnTypeLayoutId =
+            backend_aot_exec_ir_direct_inline_return_type_layout_id(functionIr);
+    sourceLayout = backend_aot_c_value_call_find_frame_slot_layout(
+            &functionIr->frameLayout, instruction->operand0);
+    if (!backend_aot_c_value_call_layout_can_inline_struct(sourceLayout) ||
+        (sourceLayout->reserved0 &
+         ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u ||
+        directInlineReturnTypeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+        sourceLayout->typeLayoutId != directInlineReturnTypeLayoutId) {
         return ZR_FALSE;
     }
 

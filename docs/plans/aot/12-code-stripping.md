@@ -141,6 +141,12 @@ manifest 或 artifact schema；S1/S3/S6 与 AOT 12 仍为部分完成。
 snapshot；不可达 malformed owner 同样 fail closed。裁剪沿用既有 function owner，不新增 reachability node、
 manifest、artifact 或 public schema；S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-08-01 direct inline return layout projection](./07-codegen/2026-08-01-direct-inline-return-layout-projection.md)
+在 complete function table 的 ExecIR 构建期间、裁剪前交叉验证 typed return source 的 TypeRef、frame slot 与
+TypeLayout copy shape；不可达 owner 的 missing/non-inline/malformed/incompatible return source 同样 fail closed。
+合法 3→2 fixture 保持既有裁剪结果；unknown 投影不产生新 graph node、manifest、artifact 或 public schema，
+S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |
