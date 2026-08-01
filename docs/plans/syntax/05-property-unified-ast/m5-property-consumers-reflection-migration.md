@@ -92,6 +92,12 @@
     Clang、MSVC 的 LSP 18-target matrix 均为真实 exit 0，三套 main/position/diagnostic-fix
     stdio/CLI smoke 均 exit 0。native constructor/foreach/container 的五个既有 Unity marker
     与此叶无关，未作为通过证据；详情见 M5.1 completion record。
+  - 2026-08-01 Task4 parser property/import support 已独立复验并 exact 收口：公共
+    `ZrParser_TypeInference_RegisterRuntimePrototypes` 直接回归覆盖 source 与 `.zro` carrier、
+    空 imported placeholder、canonical TypeId/ref fields、普通 hidden-looking method 和损坏
+    accessor identity 的 unavailable 边界；无效参数现 fail-closed。GCC/Clang/MSVC focused
+    均 11/11、真实 `exit 0`。详情见
+    `m5-task4-property-import-bootstrap.md`。
 
 ## 当前实现边界
 

@@ -1268,7 +1268,11 @@ TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
     TZrSize remainingDataSize;
     TZrUInt32 prototypeCount;
 
-    if (cs == ZR_NULL || function == ZR_NULL || function->prototypeData == ZR_NULL || function->prototypeDataLength <= sizeof(TZrUInt32) ||
+    if (cs == ZR_NULL || function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (function->prototypeData == ZR_NULL ||
+        function->prototypeDataLength <= sizeof(TZrUInt32) ||
         function->prototypeCount == 0) {
         return ZR_TRUE;
     }

@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
+  - zr_vm_parser/include/zr_vm_parser/type_inference.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_property_requirements.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_property_contract.c
@@ -68,6 +69,8 @@ tests:
   - tests/parser/test_reference_receiver_call_boundary.c
   - tests/parser/test_semantic_query.c
   - tests/parser/test_property_consumer_contracts.c
+  - tests/parser/test_property_consumer_runtime_bootstrap_cases.h
+  - tests/acceptance/2026-08-01-syntax-05-m5-task4-property-import-bootstrap.md
   - tests/language_server/test_lsp_interface.c
 doc_type: module-detail
 ---
@@ -256,6 +259,14 @@ exact compiled property row into an otherwise empty imported placeholder, but on
 row and accessor rows already share structured `propertyIdentity`, `accessorRole`, value TypeId, and
 reference fields. A missing or conflicting row stays unavailable. Ordinary methods that happen to
 use a legacy-looking `__get_` or `__set_` spelling are not promoted to properties.
+
+`ZrParser_TypeInference_RegisterRuntimePrototypes` is the public bootstrap for consumers that already
+hold an exact compiled `SZrFunction`. A null compiler or function is an invalid call and fails; a
+valid function with no prototype payload is a successful no-op. Registration may fill only an empty
+imported type placeholder (or add a previously absent compiled prototype), and property publication
+still requires the structured property/accessor identity, canonical type, and reference fields above.
+If an accessor identity is removed or conflicts, the property query remains unavailable even when the
+compiled accessor has a legacy-looking hidden name.
 
 Interface refactors query transitive required PropertySymbols rather than scanning declaration
 names. A missing setter/initializer action is offered only for one unambiguous canonical contract;

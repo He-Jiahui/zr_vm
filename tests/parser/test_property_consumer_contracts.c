@@ -15,6 +15,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_query.h"
+#include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/writer.h"
 
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
@@ -220,6 +221,8 @@ static SZrFunction *property_consumer_load_binary_entry(
     free(bytes);
     return function;
 }
+
+#include "test_property_consumer_runtime_bootstrap_cases.h"
 
 static TZrBool property_consumer_import_source_loader(
         SZrState *state,
@@ -1036,6 +1039,8 @@ int main(void) {
     RUN_TEST(test_many_properties_publish_unique_canonical_contracts);
     RUN_TEST(test_property_def_row_preserves_initializer_and_visible_name);
     RUN_TEST(test_current_zro_property_carrier_roundtrips_exact_rows);
+    RUN_TEST(
+            test_public_runtime_prototype_bootstrap_preserves_property_contract);
     RUN_TEST(test_binary_import_merges_property_contract_into_placeholder);
     RUN_TEST(test_source_reflection_exposes_linked_property_accessors);
     RUN_TEST(test_aot_stripping_preserves_structured_property_dispatch_roots);
