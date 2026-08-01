@@ -179,7 +179,7 @@ static TZrBool typed_type_ref_from_ast_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-static SZrAstNodeArray *typed_metadata_current_parameter_list(SZrCompilerState *cs) {
+static SZrAstNodeArray *typed_metadata_current_parameter_list(const SZrCompilerState *cs) {
     SZrAstNode *node;
 
     if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL) {
@@ -228,6 +228,114 @@ static const SZrParameter *typed_metadata_find_parameter_by_name(const SZrAstNod
     return ZR_NULL;
 }
 
+static TZrBool typed_local_binding_is_implicit_receiver(
+        const SZrCompilerState *cs,
+        const SZrFunctionLocalVariable *localVar);
+
+static TZrBool typed_metadata_current_function_has_implicit_receiver(
+        const SZrCompilerState *cs) {
+    if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL ||
+        cs->currentFunctionReceiverEffect == ZR_CANONICAL_RECEIVER_NONE) {
+        return ZR_FALSE;
+    }
+
+    switch (cs->currentFunctionNode->type) {
+        case ZR_AST_STRUCT_METHOD:
+        case ZR_AST_STRUCT_META_FUNCTION:
+        case ZR_AST_CLASS_METHOD:
+        case ZR_AST_CLASS_META_FUNCTION:
+        case ZR_AST_CLASS_PROPERTY:
+        case ZR_AST_PROPERTY_DECLARATION:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static const SZrParameter *typed_metadata_parameter_at_local_index(
+        const SZrCompilerState *cs,
+        TZrUInt32 localIndex,
+        const SZrFunctionLocalVariable *localVar) {
+    SZrAstNodeArray *params;
+    TZrUInt32 parameterLocalIndex;
+    TZrUInt32 compiledParameterIndex = 0u;
+
+    if (cs == ZR_NULL || localVar == ZR_NULL || localVar->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    parameterLocalIndex = typed_metadata_current_function_has_implicit_receiver(cs)
+                                  ? 1u
+                                  : 0u;
+    if (localIndex < parameterLocalIndex || localVar->stackSlot != localIndex) {
+        return ZR_NULL;
+    }
+    parameterLocalIndex = localIndex - parameterLocalIndex;
+    params = typed_metadata_current_parameter_list(cs);
+    if (params == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0u; index < params->count; index++) {
+        SZrAstNode *parameterNode = params->nodes[index];
+        SZrParameter *parameter;
+
+        if (parameterNode == ZR_NULL ||
+            parameterNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+        parameter = &parameterNode->data.parameter;
+        if (parameter->name == ZR_NULL || parameter->name->name == ZR_NULL) {
+            continue;
+        }
+        if (compiledParameterIndex == parameterLocalIndex) {
+            return ZrCore_String_Equal(parameter->name->name, localVar->name)
+                           ? parameter
+                           : ZR_NULL;
+        }
+        compiledParameterIndex++;
+    }
+
+    return ZR_NULL;
+}
+
+static TZrUInt32 typed_local_binding_parameter_passing_role(
+        const SZrCompilerState *cs,
+        TZrUInt32 localIndex,
+        const SZrFunctionLocalVariable *localVar) {
+    const SZrParameter *parameter;
+
+    if (cs == ZR_NULL || localVar == ZR_NULL || localVar->name == ZR_NULL ||
+        typed_local_binding_is_implicit_receiver(cs, localVar)) {
+        return ZR_FUNCTION_TYPED_LOCAL_ROLE_NONE;
+    }
+
+    parameter = typed_metadata_parameter_at_local_index(
+            cs, localIndex, localVar);
+    if (parameter == ZR_NULL) {
+        return ZR_FUNCTION_TYPED_LOCAL_ROLE_NONE;
+    }
+
+    switch (parameter->sourcePassingForm) {
+        case ZR_PARAMETER_SOURCE_VALUE:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_VALUE;
+        case ZR_PARAMETER_SOURCE_IN:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_IN;
+        case ZR_PARAMETER_SOURCE_REF:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF;
+        case ZR_PARAMETER_SOURCE_REF_READONLY:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF_READONLY;
+        case ZR_PARAMETER_SOURCE_SCOPED_REF:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF;
+        case ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF_READONLY;
+        case ZR_PARAMETER_SOURCE_OUT:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_OUT;
+        default:
+            return ZR_FUNCTION_TYPED_LOCAL_ROLE_NONE;
+    }
+}
+
 static TZrBool typed_type_ref_from_current_parameter(SZrCompilerState *cs,
                                                      SZrString *name,
                                                      SZrFunctionTypedTypeRef *outType) {
@@ -246,9 +354,9 @@ static TZrBool typed_type_ref_from_current_parameter(SZrCompilerState *cs,
 }
 
 static TZrBool typed_local_binding_is_implicit_receiver(const SZrCompilerState *cs,
-                                                         const SZrFunctionLocalVariable *localVar) {
-    return (TZrBool)(cs != ZR_NULL && localVar != ZR_NULL && cs->currentFunctionNode != ZR_NULL &&
-                     cs->currentFunctionReceiverEffect != ZR_CANONICAL_RECEIVER_NONE &&
+                                                        const SZrFunctionLocalVariable *localVar) {
+    return (TZrBool)(typed_metadata_current_function_has_implicit_receiver(cs) &&
+                     localVar != ZR_NULL &&
                      localVar->stackSlot == 0u);
 }
 
@@ -1200,6 +1308,8 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
 
         bindings[index].name = localVar->name;
         bindings[index].stackSlot = localVar->stackSlot;
+        bindings[index].roleFlags =
+                typed_local_binding_parameter_passing_role(cs, index, localVar);
         if (compiler_semantic_ir_get_slot_identity(
                     cs, localVar->stackSlot, &semanticIdentity)) {
             bindings[index].symbolId = semanticIdentity.symbolId;

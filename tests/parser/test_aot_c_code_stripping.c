@@ -2061,7 +2061,7 @@ static void test_aot_c_code_stripping_rejects_malformed_unreachable_receiver_rol
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
             state, function, generatedCPath, &options));
 
-    bindings[0].roleFlags = 2u;
+    bindings[0].roleFlags = 1u << 31;
     assert_aot_c_write_rejected_without_output(
             state, function, generatedCPath, &options);
 

@@ -816,6 +816,7 @@ static void test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_i
 
 #include "test_aot_c_generic_call_typed_parameter_layout_cases.h"
 #include "test_aot_c_generic_call_typed_default_declaration_cases.h"
+#include "test_aot_c_parameter_passing_form_projection_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -836,6 +837,11 @@ int main(void) {
     RUN_TEST(test_aot_c_reference_generic_call_typed_keeps_receiver_default_metadata_unknown);
     RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_invalid_default_sidecar_state);
     RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_unreachable_noncanonical_default_flag_before_stripping);
+    RUN_TEST(test_aot_exec_ir_parameter_passing_form_sidecar_rejects_noncanonical_states);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_unknown_parameter_passing_form);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_non_value_parameter_passing_form);
+    RUN_TEST(test_aot_c_value_semir_typed_call_accepts_only_value_passing_parameters);
+    RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_partial_parameter_passing_forms);
     RUN_TEST(test_aot_c_reference_generic_call_typed_full_aot_omits_missing_instance_deopt);
     RUN_TEST(test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_interpreter);
     return UNITY_END();

@@ -66,16 +66,57 @@ typedef struct SZrAotExecIrFrameSlotLayout {
     TZrUInt16 reserved0;
 } SZrAotExecIrFrameSlotLayout;
 
+typedef enum EZrAotExecIrParameterPassingForm {
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_UNKNOWN = 0,
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_VALUE,
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_IN,
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_REF,
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_REF_READONLY,
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_SCOPED_REF,
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_SCOPED_REF_READONLY,
+    ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_OUT,
+} EZrAotExecIrParameterPassingForm;
+
 typedef struct SZrAotExecIrParameterLayout {
     TZrUInt32 stackSlot;
     TZrUInt32 symbolId;
     TZrUInt32 typeId;
     TZrUInt32 placeId;
     TZrUInt32 roleFlags;
+    TZrBool passingFormKnown;
+    TZrUInt32 passingForm;
     TZrBool defaultDeclarationKnown;
     TZrBool hasDeclaredDefault;
     SZrFunctionTypedTypeRef type;
 } SZrAotExecIrParameterLayout;
+
+static inline TZrBool backend_aot_exec_ir_parameter_passing_form_is_valid(
+        const SZrAotExecIrParameterLayout *layout) {
+    if (layout == ZR_NULL ||
+        (layout->passingFormKnown != ZR_FALSE &&
+         layout->passingFormKnown != ZR_TRUE)) {
+        return ZR_FALSE;
+    }
+    if (layout->passingFormKnown == ZR_FALSE) {
+        return (TZrBool)(
+                layout->passingForm ==
+                (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_UNKNOWN);
+    }
+    return (TZrBool)(
+            layout->passingForm >=
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_VALUE &&
+            layout->passingForm <=
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_OUT);
+}
+
+static inline TZrBool backend_aot_exec_ir_parameter_is_value_passing(
+        const SZrAotExecIrParameterLayout *layout) {
+    return (TZrBool)(
+            backend_aot_exec_ir_parameter_passing_form_is_valid(layout) &&
+            layout->passingFormKnown == ZR_TRUE &&
+            layout->passingForm ==
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_VALUE);
+}
 
 static inline TZrBool backend_aot_exec_ir_parameter_default_declaration_is_valid(
         const SZrAotExecIrParameterLayout *layout) {

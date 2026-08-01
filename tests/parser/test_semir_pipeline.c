@@ -6,6 +6,7 @@
 #include "unity.h"
 #include "runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
+#include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
@@ -14,7 +15,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
+#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h"
 
 typedef struct SZrBinaryFixtureReader {
     const TZrByte *bytes;
@@ -868,6 +869,12 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c");
         char *execIrFrameSourceText = read_repo_text_file_owned(
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
+        char *functionHeaderText = read_repo_text_file_owned(
+                "zr_vm_core/include/zr_vm_core/function.h");
+        char *typedMetadataSourceText = read_repo_text_file_owned(
+                "zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c");
+        char *valueSemIrCallSourceText = read_repo_text_file_owned(
+                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
         char *methodMetadataSourceText = read_repo_text_file_owned(
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
         char *scalarLocalsSourceText = read_repo_text_file_owned(
@@ -877,6 +884,9 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(execIrSourceText);
         TEST_ASSERT_NOT_NULL(execIrReturnLayoutSourceText);
         TEST_ASSERT_NOT_NULL(execIrFrameSourceText);
+        TEST_ASSERT_NOT_NULL(functionHeaderText);
+        TEST_ASSERT_NOT_NULL(typedMetadataSourceText);
+        TEST_ASSERT_NOT_NULL(valueSemIrCallSourceText);
         TEST_ASSERT_NOT_NULL(methodMetadataSourceText);
         TEST_ASSERT_NOT_NULL(scalarLocalsSourceText);
 
@@ -884,9 +894,17 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrParameterLayout"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrBool defaultDeclarationKnown;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrBool hasDeclaredDefault;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrBool passingFormKnown;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 passingForm;"));
         TEST_ASSERT_NOT_NULL(strstr(
                 execIrHeaderText,
                 "backend_aot_exec_ir_parameter_default_declaration_is_valid"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrHeaderText,
+                "backend_aot_exec_ir_parameter_passing_form_is_valid"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrHeaderText,
+                "backend_aot_exec_ir_parameter_is_value_passing"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "SZrFunctionTypedTypeRef type;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteSize;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteAlign;"));
@@ -914,7 +932,9 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
                                     "destination->symbolId = source->symbolId;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
-                                    "destination->roleFlags = source->roleFlags;"));
+                                    "backend_aot_exec_ir_project_parameter_passing_form"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK"));
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
                                     "function->parameterMetadataCount == function->parameterCount"));
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
@@ -979,11 +999,35 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(strstr(
                 scalarLocalsSourceText,
                 "backend_aot_exec_ir_callable_return_type(functionIr)"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                functionHeaderText,
+                "ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_VALUE"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                functionHeaderText,
+                "ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                typedMetadataSourceText,
+                "parameter->sourcePassingForm"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                typedMetadataSourceText,
+                "typed_local_binding_parameter_passing_role"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                typedMetadataSourceText,
+                "typed_metadata_parameter_at_local_index"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                typedMetadataSourceText,
+                "localVar->stackSlot != localIndex"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                valueSemIrCallSourceText,
+                "backend_aot_exec_ir_parameter_is_value_passing"));
 
         free(execIrHeaderText);
         free(execIrSourceText);
         free(execIrReturnLayoutSourceText);
         free(execIrFrameSourceText);
+        free(functionHeaderText);
+        free(typedMetadataSourceText);
+        free(valueSemIrCallSourceText);
         free(methodMetadataSourceText);
         free(scalarLocalsSourceText);
     }
@@ -1063,6 +1107,8 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
     TEST_PASS_CUSTOM(timer, testSummary);
     TEST_DIVIDER();
 }
+
+#include "test_aot_parameter_passing_form_roundtrip_cases.h"
 
 #if defined(ZR_PLATFORM_UNIX)
 static void test_binary_roundtrip_projects_direct_inline_return_layout(void) {
@@ -1215,6 +1261,8 @@ int main(void) {
     RUN_TEST(test_struct_value_type_call_and_return_emit_semir_metadata);
     RUN_TEST(test_aot_execir_source_exposes_inline_frame_byte_layout);
     RUN_TEST(test_binary_roundtrip_preserves_semir_metadata);
+    RUN_TEST(test_parameter_passing_forms_roundtrip_into_exec_ir);
+    RUN_TEST(test_parameter_passing_role_stops_at_parameter_prefix);
 #if defined(ZR_PLATFORM_UNIX)
     RUN_TEST(test_binary_roundtrip_projects_direct_inline_return_layout);
 #endif

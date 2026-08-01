@@ -124,6 +124,12 @@ TypeRef、frame slot 与 TypeLayout shape 在裁剪前全树交叉验证；legac
 证据保持 unknown，malformed 或 incompatible shape fail closed。不新增 public/artifact/manifest schema；完整
 aggregate callable contract、caller destination storage、direction、spill/address-taken 与完整 A7.2 仍开放。
 
+[2026-08-01 parameter source passing-form projection](./07-codegen/2026-08-01-parameter-source-passing-form-projection.md)
+完成 A7.2M 的 VALUE/IN/REF/REF_READONLY/SCOPED_REF/SCOPED_REF_READONLY/OUT 源码 passing form 到 patch-38
+typed-local role 与内部 ExecIR parameter sidecar 的投影。显式参数必须全 known 或全 unknown，receiver/组合/未知/
+参数前缀外 role 在裁剪前 fail closed；当前 aggregate `CALL_TYPED` 只接受 exact-count VALUE 参数，其他形式保持
+fallback。真实 ref/out storage identity、writeback、return/destination、spill/address-taken 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

@@ -256,6 +256,9 @@ static char *write_default_sidecar_state_case(
 
     calleeParameter.defaultDeclarationKnown = defaultDeclarationKnown;
     calleeParameter.hasDeclaredDefault = hasDeclaredDefault;
+    calleeParameter.passingFormKnown = ZR_TRUE;
+    calleeParameter.passingForm =
+            (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_VALUE;
     calleeParameter.type.baseType = ZR_VALUE_TYPE_OBJECT;
     calleeFunctionIr.frameLayout.parameterCount = 1u;
     calleeFunctionIr.frameLayout.parameterLayoutCount = 1u;

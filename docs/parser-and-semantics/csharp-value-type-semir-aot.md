@@ -61,6 +61,8 @@ related_code:
   - tests/parser/test_aot_c_generic_reference_sharing.c
   - tests/parser/test_aot_c_generic_call_typed.c
   - tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h
+  - tests/parser/test_aot_c_parameter_passing_form_projection_cases.h
+  - tests/parser/test_aot_parameter_passing_form_roundtrip_cases.h
   - tests/module/test_zrp_metadata_format.c
   - tests/acceptance/2026-06-24-aot-11-s1g-zrp-pool-payload-writer.md
   - tests/acceptance/2026-06-24-aot-11-s1h-zrp-definition-table-payload-writer.md
@@ -419,6 +421,7 @@ tests:
   - tests/parser/test_aot_c_direct_inline_return_layout_projection_cases.h
   - tests/parser/test_aot_c_generic_call_typed_default_declaration_cases.h
   - tests/acceptance/2026-08-01-aot-07-direct-inline-return-layout-projection.md
+  - tests/acceptance/2026-08-01-aot-07-parameter-source-passing-form-projection.md
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
@@ -2926,3 +2929,17 @@ proves long non-interned type-name content comparison and layout projection surv
 keeps source/public-writer coverage because the private ExecIR symbols are not exported by the shared parser. This
 slice does not define a complete aggregate callable ABI, caller destination storage, nested callable returns,
 `in/ref/out`, spill/address-taken handling, or GC/ref provenance maps.
+
+Focused 2026-08-01 AOT 07-A7.2M projects source parameter passing form through the existing patch-38 typed-local
+`roleFlags` field. The compiler assigns one canonical bit for VALUE, IN, REF, REF_READONLY, SCOPED_REF,
+SCOPED_REF_READONLY, or OUT only to the explicit producer-order parameter prefix; receiver offset and parameter-name
+agreement prevent receiver or same-name local drift. Binary IO already roundtrips this fixed-width field, so legacy
+zero roles remain an all-unknown compatibility state without a schema or manifest change.
+
+The frame verifier requires every explicit parameter in a function to be either known together or unknown together,
+rejects receiver/passing combinations, multiple or unknown bits, and passing bits outside the parameter prefix, then
+projects the one-hot fact into `SZrAotExecIrParameterLayout.passingForm`. The aggregate value-SemIR typed-call route
+requires exact arity/layout count and known VALUE for every explicit parameter; an exact slot-zero receiver remains
+role-only and passing-form unknown. Unknown or any non-VALUE form conservatively falls back instead of entering the
+current by-value aggregate ABI. Real REF/OUT identity and storage projection, writeback, return/destination ABI,
+spill/address-taken slots, and GC/ref provenance remain later A7.2 work.

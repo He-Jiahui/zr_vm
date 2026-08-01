@@ -59,6 +59,8 @@ static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
     TZrUInt32 parameterBindingCount = 0u;
     TZrBool identityAvailabilityKnown = ZR_FALSE;
     TZrBool parametersHaveIdentity = ZR_FALSE;
+    TZrBool passingFormAvailabilityKnown = ZR_FALSE;
+    TZrBool explicitParametersHavePassingForm = ZR_FALSE;
 
     if (function == ZR_NULL ||
         (function->typedLocalBindingLength > 0u &&
@@ -89,17 +91,40 @@ static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
         TZrBool hasTypeIdentity;
         TZrBool hasPlaceIdentity;
         TZrBool hasCompleteIdentity;
+        TZrBool isReceiver;
+        TZrBool hasPassingForm;
+        TZrUInt32 passingRoleFlags;
         TZrUInt32 previousParameterCount = 0u;
 
+        passingRoleFlags =
+                binding->roleFlags &
+                ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK;
         if (!backend_aot_exec_ir_typed_local_is_parameter_eligible(binding)) {
+            if (passingRoleFlags != 0u) {
+                return ZR_FALSE;
+            }
             continue;
         }
         if (parameterBindingCount >= function->parameterCount) {
             if ((binding->roleFlags &
-                 ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u) {
+                 ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u ||
+                passingRoleFlags != 0u) {
                 return ZR_FALSE;
             }
             continue;
+        }
+
+        isReceiver = (TZrBool)(
+                (binding->roleFlags &
+                 ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u);
+        hasPassingForm = (TZrBool)(passingRoleFlags != 0u);
+        if (!isReceiver) {
+            if (passingFormAvailabilityKnown &&
+                explicitParametersHavePassingForm != hasPassingForm) {
+                return ZR_FALSE;
+            }
+            passingFormAvailabilityKnown = ZR_TRUE;
+            explicitParametersHavePassingForm = hasPassingForm;
         }
 
         hasSymbolIdentity = (TZrBool)(binding->symbolId != 0u);
@@ -188,7 +213,9 @@ static void backend_aot_exec_ir_project_parameter_default_declaration(
 
 static TZrBool backend_aot_exec_ir_validate_receiver_role(
         const SZrFunction *function) {
-    const TZrUInt32 knownRoleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+    const TZrUInt32 knownRoleFlags =
+            ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER |
+            ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK;
     TZrUInt32 receiverCount = 0u;
 
     if (function == ZR_NULL ||
@@ -200,8 +227,16 @@ static TZrBool backend_aot_exec_ir_validate_receiver_role(
     for (TZrUInt32 index = 0u; index < function->typedLocalBindingLength; index++) {
         const SZrFunctionTypedLocalBinding *binding =
                 &function->typedLocalBindings[index];
+        const TZrUInt32 passingRoleFlags =
+                binding->roleFlags &
+                ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK;
 
-        if ((binding->roleFlags & ~knownRoleFlags) != 0u) {
+        if ((binding->roleFlags & ~knownRoleFlags) != 0u ||
+            (passingRoleFlags != 0u &&
+             (passingRoleFlags & (passingRoleFlags - 1u)) != 0u) ||
+            ((binding->roleFlags &
+              ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u &&
+             passingRoleFlags != 0u)) {
             return ZR_FALSE;
         }
         if ((binding->roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) == 0u) {
@@ -387,6 +422,52 @@ static TZrBool backend_aot_exec_ir_validate_frame_layout(
                      parameterLayoutCount == function->parameterCount);
 }
 
+static void backend_aot_exec_ir_project_parameter_passing_form(
+        const SZrFunctionTypedLocalBinding *source,
+        SZrAotExecIrParameterLayout *destination) {
+    TZrUInt32 passingRoleFlags;
+
+    if (source == ZR_NULL || destination == ZR_NULL) {
+        return;
+    }
+    passingRoleFlags =
+            source->roleFlags &
+            ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK;
+    switch (passingRoleFlags) {
+        case ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_VALUE:
+            destination->passingForm =
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_VALUE;
+            break;
+        case ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_IN:
+            destination->passingForm =
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_IN;
+            break;
+        case ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF:
+            destination->passingForm =
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_REF;
+            break;
+        case ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF_READONLY:
+            destination->passingForm =
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_REF_READONLY;
+            break;
+        case ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF:
+            destination->passingForm =
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_SCOPED_REF;
+            break;
+        case ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF_READONLY:
+            destination->passingForm =
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_SCOPED_REF_READONLY;
+            break;
+        case ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_OUT:
+            destination->passingForm =
+                    (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_OUT;
+            break;
+        default:
+            return;
+    }
+    destination->passingFormKnown = ZR_TRUE;
+}
+
 static TZrBool backend_aot_exec_ir_build_parameter_layouts(
         SZrState *state,
         const SZrFunction *function,
@@ -446,7 +527,10 @@ static TZrBool backend_aot_exec_ir_build_parameter_layouts(
         destination->symbolId = source->symbolId;
         destination->typeId = source->typeId;
         destination->placeId = source->placeId;
-        destination->roleFlags = source->roleFlags;
+        destination->roleFlags =
+                source->roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;
+        backend_aot_exec_ir_project_parameter_passing_form(
+                source, destination);
         destination->type = source->type;
         backend_aot_exec_ir_project_parameter_default_declaration(
                 function, parameterIndex, destination);

@@ -57,6 +57,53 @@ static TZrBool backend_aot_c_value_call_type_ref_is_reference(
                       typeRef->baseType == ZR_VALUE_TYPE_ARRAY));
 }
 
+static TZrBool backend_aot_c_value_call_parameters_are_value_passing(
+        const SZrAotExecIrFunction *calleeFunctionIr,
+        TZrUInt32 argumentCount) {
+    const SZrAotExecIrFrameLayout *calleeFrameLayout;
+
+    if (calleeFunctionIr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    calleeFrameLayout = &calleeFunctionIr->frameLayout;
+    if (calleeFrameLayout->parameterCount != argumentCount ||
+        calleeFrameLayout->parameterLayoutCount != argumentCount) {
+        return ZR_FALSE;
+    }
+    if (argumentCount == 0u) {
+        return ZR_TRUE;
+    }
+    if (calleeFrameLayout->parameterLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 argumentIndex = 0u;
+         argumentIndex < argumentCount;
+         argumentIndex++) {
+        const SZrAotExecIrParameterLayout *parameterLayout =
+                &calleeFrameLayout->parameterLayouts[argumentIndex];
+
+        if (!backend_aot_exec_ir_parameter_passing_form_is_valid(
+                    parameterLayout)) {
+            return ZR_FALSE;
+        }
+        if (parameterLayout->roleFlags ==
+            ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) {
+            if (argumentIndex != 0u ||
+                parameterLayout->passingFormKnown != ZR_FALSE) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+        if (parameterLayout->roleFlags != 0u ||
+            !backend_aot_exec_ir_parameter_is_value_passing(
+                    parameterLayout)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_c_value_call_should_use_shared_method_slot(
         const SZrAotExecIrFrameLayout *frameLayout,
         const SZrAotExecIrInstruction *instruction,
@@ -283,6 +330,10 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
     argumentCount = instruction->operand1;
     if (instruction->operand0 >= frameLayout->generatedFrameSlotCount ||
         argumentCount > frameLayout->generatedFrameSlotCount - instruction->operand0 - 1u) {
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_value_call_parameters_are_value_passing(
+                calleeFunctionIr, argumentCount)) {
         return ZR_FALSE;
     }
     for (argumentIndex = 0u; argumentIndex < argumentCount; argumentIndex++) {

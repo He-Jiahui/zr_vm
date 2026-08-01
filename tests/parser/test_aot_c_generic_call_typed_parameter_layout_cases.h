@@ -82,7 +82,8 @@ static TZrUInt32 clear_projected_reference_parameter_types_recursive(
                 &function->typedLocalBindings[bindingIndex];
 
         if (binding->stackSlot >= function->parameterCount ||
-            binding->roleFlags != 0u ||
+            (binding->roleFlags &
+             ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u ||
             !parameter_layout_type_ref_is_reference(&binding->type)) {
             continue;
         }
@@ -125,7 +126,8 @@ static TZrUInt32 mark_slot_zero_reference_parameter_as_receiver_recursive(
                 &function->typedLocalBindings[bindingIndex];
 
         if (binding->stackSlot != 0u ||
-            binding->roleFlags != 0u ||
+            (binding->roleFlags &
+             ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u ||
             binding->name == ZR_NULL ||
             !parameter_layout_type_ref_is_reference(&binding->type)) {
             continue;

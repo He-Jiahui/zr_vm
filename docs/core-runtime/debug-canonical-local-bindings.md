@@ -38,13 +38,18 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/writer.c
 plan_sources:
   - docs/plans/lsp/04-debug-and-repl.md
+  - docs/plans/aot/07-codegen-register-model-and-environment-isolation.md
   - user: 2026-07-28 optimize semantic inference and record each completed LSP milestone
+  - user: 2026-08-01 optimize AOT 07-12 and record every completed sub-milestone
 tests:
   - tests/debug/test_debug_metadata.c
   - tests/debug/test_debug_introspection.c
   - tests/debug/test_debug_expression_diagnostics.c
   - tests/module/test_reflection_dynamic_generic_instance_interpreter.h
   - tests/module/test_reflection_dynamic_generic_method_context.h
+  - tests/parser/test_semir_pipeline.c
+  - tests/parser/test_aot_parameter_passing_form_roundtrip_cases.h
+  - tests/acceptance/2026-08-01-aot-07-parameter-source-passing-form-projection.md
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1a-canonical-local-binding-artifact.md
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b1-paused-frame-canonical-bindings.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b3-generation-checked-runtime-root.md
@@ -86,15 +91,23 @@ is not a replacement for canonical `TypeId`.
 4. declaration start line and column
 5. declaration end line and column
 
-Patch 38 appends `roleFlags` after those fields. Its currently defined bit is
-`ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER`. The compiler sets that bit only for
-the injected instance receiver: an active function declaration with a
-non-`NONE` receiver effect whose first compiler local occupies stack slot zero.
-It does not inspect the local name. The writer emits the role flags after the
-identity fields; the IO reader accepts them only from patch 38 or newer. Older
-artifacts receive zeroed identity and role fields, which means frame
-reconstruction is unavailable rather than guessed. Runtime loading copies the
-row unchanged into the executable function.
+Patch 38 appends `roleFlags` after those fields. Bit zero is
+`ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER`; bits one through seven are a one-hot
+projection of source parameter passing form: `VALUE`, `IN`, `REF`,
+`REF_READONLY`, `SCOPED_REF`, `SCOPED_REF_READONLY`, or `OUT`. The compiler sets
+the receiver bit only for the injected instance receiver at stack slot zero. It
+sets a passing-form bit only for an explicit parameter in the producer-order
+local prefix, adjusted by the receiver offset and checked against the matching
+AST parameter name. Later same-name locals remain role-free.
+
+The writer emits the role flags after the identity fields; the IO reader accepts
+them only from patch 38 or newer. This is a semantic extension of the existing
+fixed-width field, not a new binary field or patch. Older artifacts receive
+zeroed identity and role fields, so parameter passing form remains unknown
+rather than being guessed. Runtime loading copies the row unchanged into the
+executable function. A receiver bit combined with any passing-form bit,
+multiple passing-form bits, unknown bits, partial explicit-parameter
+availability, or a passing-form bit after the parameter prefix is malformed.
 
 ## Consumer Boundary
 
@@ -258,3 +271,9 @@ inside a function parameter named `paused`, formally parses the expression
 exact `SymbolId`, `TypeId`, and declaration start. On 2026-07-29, GCC, Clang,
 and MSVC each built and ran `zr_vm_debug_expression_diagnostics_test` with 34
 tests, zero failures, and a real zero exit code.
+
+`test_parameter_passing_forms_roundtrip_into_exec_ir` compiles all seven source
+passing forms plus a real instance method. It verifies the free-function roles,
+the instance receiver at slot zero, explicit VALUE/IN roles at slots one/two,
+and the same rows after `.zro` runtime loading. The adjacent prefix regression
+proves a nested local that shadows a parameter name remains role-free.
