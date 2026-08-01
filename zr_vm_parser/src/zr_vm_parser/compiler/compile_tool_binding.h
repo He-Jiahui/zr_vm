@@ -15,6 +15,11 @@ ZR_PARSER_API TZrBool ZrParser_CompileToolBinding_DeclareProviderWithContentHash
         SZrString *name,
         const SZrParserCompileToolModuleDescriptor *provider,
         const TZrChar *providerContentHash);
+ZR_PARSER_API TZrBool ZrParser_CompileToolBinding_DeclareResolvedProvider(
+        SZrCompilerState *cs,
+        SZrString *name,
+        const SZrParserCompileToolModuleDescriptor *provider,
+        const SZrParserCompileToolResolvedArtifact *resolvedArtifact);
 TZrBool ZrParser_CompileToolBinding_DeclareShadow(SZrCompilerState *cs, SZrString *name);
 const SZrCompileToolBinding *ZrParser_CompileToolBinding_Resolve(
         const SZrCompilerState *cs,

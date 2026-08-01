@@ -5,9 +5,6 @@
 
 #include "zr_vm_core/string.h"
 
-#define ZR_COMPTIME_CACHE_HASH_OFFSET ((TZrUInt64)14695981039346656037ULL)
-#define ZR_COMPTIME_CACHE_HASH_PRIME ((TZrUInt64)1099511628211ULL)
-
 static const SZrParserComptimeBudgetLimits g_default_limits = {
         .fuel = 1000000U,
         .callDepth = 128U,
@@ -145,41 +142,57 @@ TZrBool ZrParser_ComptimeRuntime_RequireEffect(
     return ZR_FALSE;
 }
 
-static void comptime_cache_mix_bytes(
-        TZrUInt64 *key,
+static TZrBool comptime_cache_mix_bytes(
+        SZrComptimeCacheKey *key,
         const void *data,
         TZrSize size) {
-    const TZrByte *bytes = (const TZrByte *)data;
-
-    for (TZrSize index = 0; key != ZR_NULL && index < size; index++) {
-        *key ^= (TZrUInt64)bytes[index];
-        *key *= ZR_COMPTIME_CACHE_HASH_PRIME;
+    if (key == ZR_NULL || !key->valid ||
+        (data == ZR_NULL && size != 0U) ||
+        !ZrParser_Sha256_Update(
+                &key->sha256, (const TZrByte *)data, size)) {
+        if (key != ZR_NULL) {
+            key->valid = ZR_FALSE;
+        }
+        return ZR_FALSE;
     }
+    return ZR_TRUE;
 }
 
-static void comptime_cache_mix_text(
-        TZrUInt64 *key,
+static TZrBool comptime_cache_mix_u64(
+        SZrComptimeCacheKey *key,
+        TZrUInt64 value) {
+    TZrByte bytes[8];
+
+    for (TZrSize index = 0U; index < sizeof(bytes); index++) {
+        bytes[sizeof(bytes) - 1U - index] =
+                (TZrByte)(value >> (index * 8U));
+    }
+    return comptime_cache_mix_bytes(key, bytes, sizeof(bytes));
+}
+
+static TZrBool comptime_cache_mix_text(
+        SZrComptimeCacheKey *key,
         const TZrChar *text) {
-    TZrBool present = (TZrBool)(text != ZR_NULL);
-    TZrUInt64 length = present ? (TZrUInt64)strlen(text) : 0U;
+    TZrUInt64 length = text != ZR_NULL ? (TZrUInt64)strlen(text) : 0U;
 
-    comptime_cache_mix_bytes(key, &present, sizeof(present));
-    comptime_cache_mix_bytes(key, &length, sizeof(length));
-    if (present) {
-        comptime_cache_mix_bytes(key, text, (TZrSize)length);
+    if (!comptime_cache_mix_u64(key, text != ZR_NULL ? 1U : 0U) ||
+        !comptime_cache_mix_u64(key, length)) {
+        return ZR_FALSE;
     }
+    return text == ZR_NULL ||
+           comptime_cache_mix_bytes(key, text, (TZrSize)length);
 }
 
-static void comptime_cache_mix_compile_tool_bindings(
-        TZrUInt64 *key,
+static TZrBool comptime_cache_mix_compile_tool_bindings(
+        SZrComptimeCacheKey *key,
         const SZrCompilerState *cs) {
-    TZrUInt64 bindingCount;
-
     if (key == ZR_NULL || cs == ZR_NULL) {
-        return;
+        return ZR_FALSE;
     }
-    bindingCount = (TZrUInt64)cs->compileToolBindings.length;
-    comptime_cache_mix_bytes(key, &bindingCount, sizeof(bindingCount));
+    if (!comptime_cache_mix_u64(
+                key, (TZrUInt64)cs->compileToolBindings.length)) {
+        return ZR_FALSE;
+    }
     for (TZrSize index = 0; index < cs->compileToolBindings.length; index++) {
         const SZrCompileToolBinding *binding =
                 (const SZrCompileToolBinding *)ZrCore_Array_Get(
@@ -187,68 +200,122 @@ static void comptime_cache_mix_compile_tool_bindings(
         const SZrParserCompileToolModuleDescriptor *provider;
 
         if (binding == ZR_NULL) {
-            continue;
+            return ZR_FALSE;
         }
-        comptime_cache_mix_bytes(
-                key, &binding->kind, sizeof(binding->kind));
-        comptime_cache_mix_text(
-                key,
-                binding->name != ZR_NULL
-                        ? ZrCore_String_GetNativeString(binding->name)
-                        : ZR_NULL);
+        if (!comptime_cache_mix_u64(key, (TZrUInt64)binding->kind) ||
+            !comptime_cache_mix_text(
+                    key,
+                    binding->name != ZR_NULL
+                            ? ZrCore_String_GetNativeString(binding->name)
+                            : ZR_NULL)) {
+            return ZR_FALSE;
+        }
         provider = binding->provider;
-        if (provider == ZR_NULL) {
-            continue;
+        if (!comptime_cache_mix_u64(
+                    key, provider != ZR_NULL ? 1U : 0U)) {
+            return ZR_FALSE;
         }
-        comptime_cache_mix_text(key, provider->moduleName);
-        comptime_cache_mix_bytes(
-                key, &provider->providerPhase, sizeof(provider->providerPhase));
-        comptime_cache_mix_text(key, provider->publicContractHash);
-        comptime_cache_mix_bytes(
-                key,
-                &provider->computedPublicContractHash,
-                sizeof(provider->computedPublicContractHash));
-        comptime_cache_mix_text(key, binding->providerContentHash);
+        if (provider != ZR_NULL &&
+            (!comptime_cache_mix_text(key, provider->moduleName) ||
+             !comptime_cache_mix_u64(
+                     key, (TZrUInt64)provider->providerPhase) ||
+             !comptime_cache_mix_text(key, provider->publicContractHash) ||
+             !comptime_cache_mix_u64(
+                     key, provider->computedPublicContractHash) ||
+             !comptime_cache_mix_text(
+                     key, binding->providerContentHash))) {
+            return ZR_FALSE;
+        }
+        if (!comptime_cache_mix_u64(
+                    key,
+                    binding->resolvedArtifact != ZR_NULL ? 1U : 0U)) {
+            return ZR_FALSE;
+        }
+        if (binding->resolvedArtifact != ZR_NULL) {
+            const SZrParserCompileToolResolvedArtifact *artifact =
+                    binding->resolvedArtifact;
+
+            if (!comptime_cache_mix_u64(
+                        key, (TZrUInt64)artifact->moduleIdentity.domain) ||
+                !comptime_cache_mix_text(
+                        key, artifact->moduleIdentity.packageName) ||
+                !comptime_cache_mix_text(
+                        key, artifact->moduleIdentity.segments) ||
+                !comptime_cache_mix_u64(
+                        key, (TZrUInt64)artifact->providerSourceKind) ||
+                !comptime_cache_mix_text(key, artifact->resolvedVersion) ||
+                !comptime_cache_mix_text(
+                        key, artifact->packageContentHash) ||
+                !comptime_cache_mix_text(key, artifact->lockGraphHash) ||
+                !comptime_cache_mix_text(key, artifact->artifactEntry) ||
+                !comptime_cache_mix_text(
+                        key, artifact->artifactContentHash) ||
+                !comptime_cache_mix_text(
+                        key, artifact->publicContractHash)) {
+                return ZR_FALSE;
+            }
+        }
     }
+    return ZR_TRUE;
 }
 
-TZrUInt64 ZrParser_ComptimeCache_BeginKey(
+TZrBool ZrParser_ComptimeCache_BeginKey(
         const SZrCompilerState *cs,
-        const SZrCompileTimeFunction *function) {
-    TZrUInt64 key = ZR_COMPTIME_CACHE_HASH_OFFSET;
+        const SZrCompileTimeFunction *function,
+        SZrComptimeCacheKey *outKey) {
     const TZrChar *moduleName = ZR_NULL;
     const TZrChar *functionName = ZR_NULL;
+    const TZrChar *sourceName = ZR_NULL;
 
-    if (cs == ZR_NULL || function == ZR_NULL || function->isRuntimeProjection) {
-        return 0U;
+    if (outKey == ZR_NULL) {
+        return ZR_FALSE;
     }
+    memset(outKey, 0, sizeof(*outKey));
+    if (cs == ZR_NULL || function == ZR_NULL || function->isRuntimeProjection) {
+        return ZR_FALSE;
+    }
+    ZrParser_Sha256_Init(&outKey->sha256);
+    outKey->valid = ZR_TRUE;
     if (cs->currentModuleKey != ZR_NULL) {
         moduleName = ZrCore_String_GetNativeString(cs->currentModuleKey);
     }
     if (function->name != ZR_NULL) {
         functionName = ZrCore_String_GetNativeString(function->name);
     }
-    comptime_cache_mix_text(&key, "zr.comptime.cache/v2");
-    comptime_cache_mix_text(&key, moduleName);
-    comptime_cache_mix_text(&key, functionName);
-    comptime_cache_mix_compile_tool_bindings(&key, cs);
-    comptime_cache_mix_bytes(
-            &key, &cs->comptimeContext, sizeof(cs->comptimeContext));
-    comptime_cache_mix_bytes(
-            &key, &function->location.start, sizeof(function->location.start));
-    comptime_cache_mix_bytes(
-            &key, &function->location.end, sizeof(function->location.end));
-    return key;
+    if (function->location.source != ZR_NULL) {
+        sourceName = ZrCore_String_GetNativeString(function->location.source);
+    }
+    return (TZrBool)(
+            comptime_cache_mix_text(outKey, "zr.comptime.cache/v4") &&
+            comptime_cache_mix_text(outKey, moduleName) &&
+            comptime_cache_mix_text(outKey, functionName) &&
+            comptime_cache_mix_compile_tool_bindings(outKey, cs) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)cs->comptimeContext) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)function->location.start.offset) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)(TZrInt64)function->location.start.line) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)(TZrInt64)function->location.start.column) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)function->location.end.offset) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)(TZrInt64)function->location.end.line) &&
+            comptime_cache_mix_u64(
+                    outKey, (TZrUInt64)(TZrInt64)function->location.end.column) &&
+            comptime_cache_mix_text(outKey, sourceName));
 }
 
 TZrBool ZrParser_ComptimeCache_MixValue(
-        TZrUInt64 *key,
+        SZrComptimeCacheKey *key,
         const SZrTypeValue *value) {
-    if (key == ZR_NULL || *key == 0U || value == ZR_NULL) {
+    TZrUInt64 bits;
+
+    if (key == ZR_NULL || !key->valid || value == ZR_NULL ||
+        !comptime_cache_mix_u64(key, (TZrUInt64)value->type)) {
         return ZR_FALSE;
     }
-
-    comptime_cache_mix_bytes(key, &value->type, sizeof(value->type));
     if (ZR_VALUE_IS_TYPE_NULL(value->type)) {
         return ZR_TRUE;
     }
@@ -258,15 +325,48 @@ TZrBool ZrParser_ComptimeCache_MixValue(
                 key, ZrCore_String_GetNativeString(stringValue));
         return ZR_TRUE;
     }
-    if (value->type == ZR_VALUE_TYPE_BOOL ||
-        ZR_VALUE_IS_TYPE_INT(value->type) ||
-        ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type) ||
-        ZR_VALUE_IS_TYPE_FLOAT(value->type)) {
-        comptime_cache_mix_bytes(
-                key, &value->value.nativeObject, sizeof(value->value.nativeObject));
-        return ZR_TRUE;
+    if (value->type == ZR_VALUE_TYPE_BOOL) {
+        return comptime_cache_mix_u64(
+                key, value->value.nativeObject.nativeBool != 0U ? 1U : 0U);
     }
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        return comptime_cache_mix_u64(
+                key, (TZrUInt64)value->value.nativeObject.nativeInt64);
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        return comptime_cache_mix_u64(
+                key, value->value.nativeObject.nativeUInt64);
+    }
+    if (ZR_VALUE_IS_TYPE_FLOAT(value->type)) {
+        memcpy(&bits, &value->value.nativeObject.nativeDouble, sizeof(bits));
+        return comptime_cache_mix_u64(key, bits);
+    }
+    key->valid = ZR_FALSE;
     return ZR_FALSE;
+}
+
+static TZrBool comptime_cache_finish_key(
+        const SZrComptimeCacheKey *key,
+        TZrByte digest[ZR_PARSER_COMPTIME_CACHE_DIGEST_BYTE_COUNT]) {
+    SZrParserSha256Context context;
+
+    if (key == ZR_NULL || !key->valid || digest == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    context = key->sha256;
+    ZrParser_Sha256_Final(&context, digest);
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_ComptimeCache_KeyEquals(
+        const SZrComptimeCacheKey *lhs,
+        const SZrComptimeCacheKey *rhs) {
+    TZrByte lhsDigest[ZR_PARSER_COMPTIME_CACHE_DIGEST_BYTE_COUNT];
+    TZrByte rhsDigest[ZR_PARSER_COMPTIME_CACHE_DIGEST_BYTE_COUNT];
+
+    return (TZrBool)(comptime_cache_finish_key(lhs, lhsDigest) &&
+                     comptime_cache_finish_key(rhs, rhsDigest) &&
+                     memcmp(lhsDigest, rhsDigest, sizeof(lhsDigest)) == 0);
 }
 
 static TZrBool comptime_cache_value_is_supported(
@@ -281,16 +381,20 @@ static TZrBool comptime_cache_value_is_supported(
 
 TZrBool ZrParser_ComptimeCache_Lookup(
         SZrCompilerState *cs,
-        TZrUInt64 key,
+        const SZrComptimeCacheKey *key,
         SZrTypeValue *result) {
-    if (cs == ZR_NULL || key == 0U || result == ZR_NULL) {
+    TZrByte digest[ZR_PARSER_COMPTIME_CACHE_DIGEST_BYTE_COUNT];
+
+    if (cs == ZR_NULL || result == ZR_NULL ||
+        !comptime_cache_finish_key(key, digest)) {
         return ZR_FALSE;
     }
     for (TZrSize index = 0; index < cs->comptimeCache.length; index++) {
         const SZrComptimeCacheEntry *entry =
                 (const SZrComptimeCacheEntry *)ZrCore_Array_Get(
                         &cs->comptimeCache, index);
-        if (entry != ZR_NULL && entry->key == key) {
+        if (entry != ZR_NULL &&
+            memcmp(entry->digest, digest, sizeof(digest)) == 0) {
             *result = entry->value;
             cs->comptimeCacheHitCount++;
             return ZR_TRUE;
@@ -302,15 +406,15 @@ TZrBool ZrParser_ComptimeCache_Lookup(
 
 TZrBool ZrParser_ComptimeCache_Store(
         SZrCompilerState *cs,
-        TZrUInt64 key,
+        const SZrComptimeCacheKey *key,
         const SZrTypeValue *value) {
     SZrComptimeCacheEntry entry;
 
-    if (cs == ZR_NULL || key == 0U ||
-        !comptime_cache_value_is_supported(value)) {
+    memset(&entry, 0, sizeof(entry));
+    if (cs == ZR_NULL || !comptime_cache_value_is_supported(value) ||
+        !comptime_cache_finish_key(key, entry.digest)) {
         return ZR_FALSE;
     }
-    entry.key = key;
     entry.value = *value;
     ZrCore_Array_Push(cs->state, &cs->comptimeCache, &entry);
     return ZR_TRUE;

@@ -7,12 +7,14 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/attribute_contract.h"
-#include "zr_vm_library/zrm.h"
+#include "zr_vm_common/zr_hash_conf.h"
+#include "zr_vm_library/project.h"
 
 #define ZR_PARSER_COMPILE_TOOL_MODULE_BUILD "zr.compile"
 #define ZR_PARSER_COMPILE_TOOL_MODULE_DECLARATION "zr.compile.declaration"
 #define ZR_PARSER_COMPILE_TOOL_BUILD_PUBLIC_CONTRACT_HASH "fnv1a64:ca60a1b2107c893b"
 #define ZR_PARSER_COMPILE_TOOL_DECLARATION_PUBLIC_CONTRACT_HASH "fnv1a64:b4e4667f4100e100"
+#define ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH 64U
 
 typedef enum EZrParserCompileToolRole {
     ZR_PARSER_COMPILE_TOOL_ROLE_NONE = 0,
@@ -87,6 +89,25 @@ typedef struct SZrParserCompileToolModuleDescriptor {
     TZrSize metadataRoleCount;
 } SZrParserCompileToolModuleDescriptor;
 
+typedef struct SZrParserCompileToolResolvedArtifact {
+    TZrUInt64 signature;
+    SZrLibrary_ModuleIdentity moduleIdentity;
+    EZrLibrary_ProjectManifestDependencySourceKind providerSourceKind;
+    EZrLibrary_ProviderPhase providerPhase;
+    TZrChar resolvedVersion[64];
+    TZrChar packageContentHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
+    TZrChar lockGraphHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
+    TZrChar publicContractHash[128];
+    TZrChar artifactEntry[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar artifactContentHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
+    TZrByte *archiveBytes;
+    TZrSize archiveByteCount;
+    SZrLibrary_ZrmArchive archive;
+    const SZrLibrary_ZrmEntryInfo *entry;
+    TZrByte *artifactBytes;
+    TZrSize artifactByteCount;
+} SZrParserCompileToolResolvedArtifact;
+
 ZR_PARSER_API const SZrParserCompileToolModuleDescriptor *ZrParser_CompileTool_FindModule(
         const TZrChar *moduleName);
 ZR_PARSER_API TZrBool ZrParser_CompileTool_IsModuleName(const TZrChar *moduleName);
@@ -101,5 +122,26 @@ ZR_PARSER_API const SZrParserAttributeSchema *ZrParser_CompileTool_FindMetadataR
         EZrParserAttributeRole role);
 ZR_PARSER_API TZrUInt64 ZrParser_CompileTool_ComputePublicContractHash(
         const SZrParserCompileToolModuleDescriptor *module);
+// Formats SHA-256 bytes as "sha256:" followed by unpadded base64url.
+ZR_PARSER_API TZrBool ZrParser_CompileToolContentHash_Bytes(
+        const TZrByte *bytes,
+        TZrSize byteCount,
+        TZrChar *outHash,
+        TZrSize outHashSize);
+
+// outArtifact is output-only. Close an open artifact before reusing its storage.
+ZR_PARSER_API TZrBool ZrParser_CompileToolArtifact_OpenBuildDependency(
+        const SZrLibrary_Project *project,
+        const TZrChar *rawSpecifier,
+        const SZrLibrary_ProjectManifestDependencyLockEntry *lockEntries,
+        TZrSize lockEntryCount,
+        const TZrChar *archivePath,
+        SZrParserCompileToolResolvedArtifact *outArtifact,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
+ZR_PARSER_API TZrBool ZrParser_CompileToolArtifact_IsOpen(
+        const SZrParserCompileToolResolvedArtifact *artifact);
+ZR_PARSER_API void ZrParser_CompileToolArtifact_Close(
+        SZrParserCompileToolResolvedArtifact *artifact);
 
 #endif // ZR_VM_PARSER_COMPILE_TOOL_H

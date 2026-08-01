@@ -3676,7 +3676,7 @@ static TZrBool ct_call_function(SZrCompilerState *cs,
     TZrBool didReturn = ZR_FALSE;
     TZrBool enteredCall = ZR_FALSE;
     TZrBool cacheable;
-    TZrUInt64 cacheKey;
+    SZrComptimeCacheKey cacheKey;
     TZrUInt64 diagnosticCountBefore;
 
     if (cs == ZR_NULL || func == ZR_NULL || result == ZR_NULL) {
@@ -3693,8 +3693,7 @@ static TZrBool ct_call_function(SZrCompilerState *cs,
 
     decl = &func->declaration->data.functionDeclaration;
     ct_frame_init(cs, &frame, parentFrame);
-    cacheKey = ZrParser_ComptimeCache_BeginKey(cs, func);
-    cacheable = (TZrBool)(cacheKey != 0U);
+    cacheable = ZrParser_ComptimeCache_BeginKey(cs, func, &cacheKey);
 
     if (decl->params != ZR_NULL) {
         for (TZrSize i = 0; i < decl->params->count; i++) {
@@ -3735,7 +3734,7 @@ static TZrBool ct_call_function(SZrCompilerState *cs,
     }
 
     if (cacheable && ZrParser_ComptimeCache_Lookup(
-                             cs, cacheKey, result)) {
+                             cs, &cacheKey, result)) {
         success = ZR_TRUE;
         goto cleanup;
     }
@@ -3756,7 +3755,7 @@ static TZrBool ct_call_function(SZrCompilerState *cs,
     if (success && cacheable &&
         diagnosticCountBefore ==
                 cs->comptimeBudget.usage.diagnosticCount) {
-        ZrParser_ComptimeCache_Store(cs, cacheKey, result);
+        ZrParser_ComptimeCache_Store(cs, &cacheKey, result);
     }
 
 cleanup:

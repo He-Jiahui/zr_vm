@@ -8,6 +8,7 @@
 #include "miniz.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 void setUp(void) {}
@@ -288,6 +289,90 @@ static void test_zrm_open_rejects_missing_manifest_and_corrupt_zip(void) {
     TEST_ASSERT_NOT_NULL(strstr(error, "manifest is missing"));
 }
 
+static void test_zrm_open_bytes_owns_reader_but_borrows_stable_source_bytes(void) {
+    static const TZrByte moduleText[] = "memory-backed-zrm";
+    static const TZrByte corruptBytes[] = "not-a-zip";
+    TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
+    TZrChar error[512];
+    SZrLibrary_ZrmPackModule module = {0};
+    SZrLibrary_ZrmPackRequest request = {0};
+    SZrLibrary_ZrmArchive archive;
+    const SZrLibrary_ZrmEntryInfo *entry;
+    TZrByte *archiveBytes = ZR_NULL;
+    TZrByte *readBytes = ZR_NULL;
+    TZrSize archiveByteCount = 0U;
+    TZrSize readByteCount = 0U;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "library", "zrm_open_bytes", "provider", ".zrm",
+            archivePath, sizeof(archivePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "library", "zrm_open_bytes", "main", ".zro",
+            modulePath, sizeof(modulePath)));
+    TEST_ASSERT_TRUE(write_bytes_file(
+            modulePath, moduleText, sizeof(moduleText) - 1U));
+
+    module.moduleKey = "main";
+    module.sourcePath = modulePath;
+    request.outputPath = archivePath;
+    request.assembly.name = "memory-provider";
+    request.assembly.version = "1.0.0";
+    request.assembly.kind = "library";
+    request.assembly.entryModule = "main";
+    request.modules = &module;
+    request.moduleCount = 1U;
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error)),
+            error);
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(
+            archivePath, &archiveBytes, &archiveByteCount));
+
+    memset(&archive, 0xA5, sizeof(archive));
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_OpenBytes(
+                    archiveBytes,
+                    archiveByteCount,
+                    "memory-provider.zrm",
+                    &archive,
+                    error,
+                    sizeof(error)),
+            error);
+    TEST_ASSERT_EQUAL_INT(0, remove(archivePath));
+    entry = ZrLibrary_Zrm_FindModule(&archive, "main");
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_ReadEntry(
+                    &archive,
+                    entry->entryName,
+                    &readBytes,
+                    &readByteCount,
+                    error,
+                    sizeof(error)),
+            error);
+    TEST_ASSERT_EQUAL_UINT32(
+            (TZrUInt32)(sizeof(moduleText) - 1U),
+            (TZrUInt32)readByteCount);
+    TEST_ASSERT_EQUAL_MEMORY(moduleText, readBytes, readByteCount);
+    ZrLibrary_Zrm_FreeBytes(readBytes);
+    ZrLibrary_Zrm_Close(&archive);
+    TEST_ASSERT_NULL(archive.zipHandle);
+    TEST_ASSERT_NULL(archive.modules);
+    free(archiveBytes);
+
+    memset(&archive, 0xA5, sizeof(archive));
+    TEST_ASSERT_FALSE(ZrLibrary_Zrm_OpenBytes(
+            corruptBytes,
+            sizeof(corruptBytes) - 1U,
+            "corrupt-memory.zrm",
+            &archive,
+            error,
+            sizeof(error)));
+    TEST_ASSERT_NULL(archive.zipHandle);
+    TEST_ASSERT_NULL(archive.modules);
+    ZrLibrary_Zrm_Close(&archive);
+}
+
 static void test_zrm_open_rejects_manifest_path_traversal_entries(void) {
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar error[512];
@@ -459,6 +544,7 @@ int main(void) {
     RUN_TEST(test_zrm_pack_writes_manifest_modules_and_deflated_resources);
     RUN_TEST(test_zrm_rejects_unsafe_and_duplicate_logical_names);
     RUN_TEST(test_zrm_open_rejects_missing_manifest_and_corrupt_zip);
+    RUN_TEST(test_zrm_open_bytes_owns_reader_but_borrows_stable_source_bytes);
     RUN_TEST(test_zrm_open_rejects_manifest_path_traversal_entries);
     RUN_TEST(test_zrm_provider_phase_defaults_and_rejects_unknown_values);
     RUN_TEST(test_zrm_rejects_default_entry_without_a_module);

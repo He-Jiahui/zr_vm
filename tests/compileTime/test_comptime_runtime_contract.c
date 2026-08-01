@@ -3,7 +3,9 @@
 #include <string.h>
 
 #include "runtime_support.h"
+#include "harness/path_support.h"
 #include "compile_tool_binding.h"
+#include "compile_tool_content_hash.h"
 #include "compile_time_declaration_patch_diagnostics.h"
 #include "compile_time_executor_internal.h"
 #include "comptime_runtime_contract.h"
@@ -13,6 +15,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_library/project.h"
+#include "zr_vm_library/zrm.h"
 
 static SZrState *g_state;
 
@@ -299,11 +303,11 @@ static void test_comptime_cache_key_includes_compile_tool_provider_contract(void
     SZrCompileTimeFunction function = {0};
     SZrCompilerState compiler;
     SZrString *alias;
-    TZrUInt64 baselineKey;
-    TZrUInt64 publishedHashKey;
-    TZrUInt64 computedHashKey;
-    TZrUInt64 firstContentKey;
-    TZrUInt64 secondContentKey;
+    SZrComptimeCacheKey baselineKey;
+    SZrComptimeCacheKey publishedHashKey;
+    SZrComptimeCacheKey computedHashKey;
+    SZrComptimeCacheKey firstContentKey;
+    SZrComptimeCacheKey secondContentKey;
 
     TEST_ASSERT_NOT_NULL(builtin);
     baselineProvider = *builtin;
@@ -323,34 +327,37 @@ static void test_comptime_cache_key_includes_compile_tool_provider_contract(void
 
     TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
             &compiler, alias, &baselineProvider));
-    baselineKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    TEST_ASSERT_TRUE(ZrParser_ComptimeCache_BeginKey(
+            &compiler, &function, &baselineKey));
     ZrParser_CompileToolBinding_Reset(&compiler);
     TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
             &compiler, alias, &publishedHashProvider));
-    publishedHashKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    TEST_ASSERT_TRUE(ZrParser_ComptimeCache_BeginKey(
+            &compiler, &function, &publishedHashKey));
     ZrParser_CompileToolBinding_Reset(&compiler);
     TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
             &compiler, alias, &computedHashProvider));
-    computedHashKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    TEST_ASSERT_TRUE(ZrParser_ComptimeCache_BeginKey(
+            &compiler, &function, &computedHashKey));
 
-    TEST_ASSERT_NOT_EQUAL_UINT64(0U, baselineKey);
-    TEST_ASSERT_NOT_EQUAL_UINT64(0U, publishedHashKey);
-    TEST_ASSERT_NOT_EQUAL_UINT64(0U, computedHashKey);
-    TEST_ASSERT_NOT_EQUAL_UINT64(baselineKey, publishedHashKey);
-    TEST_ASSERT_NOT_EQUAL_UINT64(baselineKey, computedHashKey);
+    TEST_ASSERT_FALSE(ZrParser_ComptimeCache_KeyEquals(
+            &baselineKey, &publishedHashKey));
+    TEST_ASSERT_FALSE(ZrParser_ComptimeCache_KeyEquals(
+            &baselineKey, &computedHashKey));
 
     ZrParser_CompileToolBinding_Reset(&compiler);
     TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProviderWithContentHash(
             &compiler, alias, &baselineProvider, "sha256:provider-content-a"));
-    firstContentKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    TEST_ASSERT_TRUE(ZrParser_ComptimeCache_BeginKey(
+            &compiler, &function, &firstContentKey));
     ZrParser_CompileToolBinding_Reset(&compiler);
     TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProviderWithContentHash(
             &compiler, alias, &baselineProvider, "sha256:provider-content-b"));
-    secondContentKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    TEST_ASSERT_TRUE(ZrParser_ComptimeCache_BeginKey(
+            &compiler, &function, &secondContentKey));
 
-    TEST_ASSERT_NOT_EQUAL_UINT64(0U, firstContentKey);
-    TEST_ASSERT_NOT_EQUAL_UINT64(0U, secondContentKey);
-    TEST_ASSERT_NOT_EQUAL_UINT64(firstContentKey, secondContentKey);
+    TEST_ASSERT_FALSE(ZrParser_ComptimeCache_KeyEquals(
+            &firstContentKey, &secondContentKey));
     ZrParser_CompilerState_Free(&compiler);
 }
 
@@ -498,6 +505,8 @@ static void test_patch_diagnostic_default_budget_accepts_1024_and_rejects_1025(v
     ZrParser_CompilerState_Free(&compiler);
 }
 
+#include "test_compile_tool_artifact_resolution_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_typed_compile_tool_assert_and_warning_run_in_check_context);
@@ -511,5 +520,7 @@ int main(void) {
     RUN_TEST(test_patch_diagnostics_preserve_error_message_severity_and_location);
     RUN_TEST(test_patch_warning_uses_warning_log_severity);
     RUN_TEST(test_patch_diagnostic_default_budget_accepts_1024_and_rejects_1025);
+    RUN_TEST(test_compile_tool_artifact_resolution_hands_owned_identity_to_cache);
+    RUN_TEST(test_compile_tool_artifact_resolution_rejects_untrusted_or_wrong_phase_inputs);
     return UNITY_END();
 }

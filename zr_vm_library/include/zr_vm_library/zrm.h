@@ -100,6 +100,14 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
                                           TZrChar *errorBuffer,
                                           TZrSize errorBufferSize);
 
+// bytes are borrowed and must remain immutable until ZrLibrary_Zrm_Close.
+ZR_LIBRARY_API TZrBool ZrLibrary_Zrm_OpenBytes(const TZrByte *bytes,
+                                               TZrSize byteCount,
+                                               const TZrChar *sourceName,
+                                               SZrLibrary_ZrmArchive *archive,
+                                               TZrChar *errorBuffer,
+                                               TZrSize errorBufferSize);
+
 ZR_LIBRARY_API void ZrLibrary_Zrm_Close(SZrLibrary_ZrmArchive *archive);
 
 ZR_LIBRARY_API const SZrLibrary_ZrmEntryInfo *ZrLibrary_Zrm_FindModule(const SZrLibrary_ZrmArchive *archive,

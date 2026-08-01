@@ -22,6 +22,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_identity.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_artifact.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.c
@@ -32,9 +35,12 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_declaration_transform.c
   - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
   - zr_vm_library/include/zr_vm_library/project.h
+  - zr_vm_library/include/zr_vm_library/zrm.h
+  - zr_vm_library/src/zr_vm_library/zrm.c
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2_lock.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/compile_tool.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/attribute_contract.c
   - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
@@ -52,6 +58,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_identity.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_artifact.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.c
@@ -64,23 +73,28 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2_lock.c
+  - zr_vm_library/src/zr_vm_library/zrm.c
 plan_sources:
   - user: 2026-07-30 verify Syntax status records and perform the breaking syntax cutover
+  - user: 2026-08-02 continue Gate 11 testing, acceptance, review, and detailed commit
   - docs/plans/syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md
   - docs/superpowers/plans/2026-07-29-syntax-upper-gates-completion.md
 tests:
   - tests/compileTime/test_attribute_contract.c
   - tests/compileTime/test_comptime_contract.c
   - tests/compileTime/test_comptime_runtime_contract.c
+  - tests/compileTime/test_compile_tool_artifact_resolution_cases.h
   - tests/compileTime/test_declaration_transform_contract.c
   - tests/compileTime/test_compile_time_execution.c
   - tests/compileTime/test_compile_time_declaration_patch_transaction_cases.h
   - tests/compileTime/test_compile_time_declaration_patch_transaction_hash_cases.h
   - tests/library/test_project_manifest_v2.c
+  - tests/library/test_zrm_container.c
   - tests/acceptance/2026-08-01-syntax-11-m4-patch-transaction.md
   - tests/acceptance/2026-08-01-syntax-11-m4-generated-source-map.md
   - tests/acceptance/2026-08-01-syntax-11-m5-build-dependencies.md
   - tests/acceptance/2026-08-01-syntax-11-m5-compile-tool-cache-identity.md
+  - tests/acceptance/2026-08-02-syntax-11-m5-compile-tool-artifact-resolution.md
   - tests/acceptance/2026-07-31-syntax-11-m4-typed-patch-diagnostics.md
   - tests/acceptance/2026-07-31-syntax-11-m4-interface-adds.md
   - tests/acceptance/2026-07-29-syntax-upper-gates-audit.md
@@ -153,11 +167,22 @@ printer or leave a partial artifact.
    and prebinds all selected interface signatures before Expansion so a Patch
    can name an interface declared later in source order.
 3. Build-fact evaluation prunes `comptime if` branches and records typed
-   diagnostics/effects under deterministic budgets.
-   The in-process cache key includes every active lexical CompileTool binding,
-   its phase and public contract, and an optional borrowed artifact content
-   hash. Public-contract or content changes therefore cannot reuse an earlier
-   result.
+   diagnostics/effects under deterministic budgets. For an external v2
+   `buildDependencies` package, the compiler-owned artifact resolver selects
+   only a CompileTool lock entry and validates its manifest version range. The
+   resolver reads the archive once into compiler-owned bytes, checks the
+   canonical SHA-256 package hash, and opens the ZRM from those same immutable
+   bytes. It validates package name/version/public contract, reads the requested
+   root or submodule, and checks the actual entry SHA-256. It also canonicalizes
+   the complete CompileTool lock section by package identity and stores its
+   SHA-256; Runtime lock entries do not enter this graph. The resolver does not
+   insert any package into the runtime dependency graph.
+   A resolved binding borrows that owned artifact until compiler-state teardown.
+   Cache schema v4 hashes canonical field encodings for the lexical provider
+   contract, package/module, source kind, resolved version, package hash,
+   CompileTool lock graph hash, artifact entry/hash, public contract, location,
+   context, and typed arguments. Cache entries retain and compare the complete
+   32-byte SHA-256 digest rather than a truncated 64-bit key.
 4. Attribute binding validates the schema and target before exposing typed
    AttributeData to a consumer.
 5. A declaration transform receives an immutable view and returns a typed
@@ -210,15 +235,15 @@ The current implementation accepts typed non-empty `diagnostics`,
 artifact/reflection retention plus `.zri` source-map projection. This is the
 complete first-version generated-declaration surface: generated methods,
 properties, and types are intentionally unpublished until each passes the
-public reference gate. Formatter projection, compiler-side build-dependency
-loading, and the remaining consumers are still Gate 11 M5 work. The v2 project manifest
-keeps `buildDependencies` separate from runtime dependencies and emits
-phase-typed CompileTool entries in the deterministic lock graph. The comptime
-cache v2 mixes lexical provider public and content identity, but the external
-compiler sandbox loader does not yet resolve a build dependency and feed its
-content hash into that binding. Persistent incremental cache integration,
-formatter projection, and the remaining consumers are also open. These gaps
-keep the root Syntax plan open.
+public reference gate. The v2 project manifest keeps `buildDependencies`
+separate from runtime dependencies and emits phase-typed CompileTool entries in
+the deterministic lock graph. The compiler-owned artifact resolver and cache
+v4 handoff now close the package/ZRM byte ownership and in-process
+content-identity layer.
+The ordinary import path and transform executor do not yet activate an external
+provider from those bytes. Persistent incremental cache integration, formatter
+projection, and the remaining consumers are also open. These gaps keep Gate 11
+M5 and the root Syntax plan open.
 
 The old runtime decorator executor and serialized helper callbacks are removed.
 An ordinary `#name#` application must resolve to a registered static metadata
@@ -256,7 +281,15 @@ handling of overflowing and truncated prototype payloads; the latter paths are
 also replayed under MSVC AddressSanitizer.
 The runtime contract also checks
 diagnostic message/severity/location preservation, warning log projection, and
-the 1024/1025 budget boundary.
+the 1024/1025 budget boundary. Its isolated CompileTool artifact cases cover
+root and package-submodule resolution, compiler-owned byte lifetime, runtime
+graph isolation, cache invalidation by canonical CompileTool lock graph, and fail-closed
+rejection of undeclared, wrong-source, wrong-phase, duplicate-lock,
+wrong-version, wrong-package, stale package/entry hash, runtime-archive, and
+public-contract mismatch inputs. Independent SHA vectors cover empty input,
+`abc`, both sides of the 56-byte padding boundary, 63/64/65 bytes, and a
+multi-block input. ZRM memory-reader coverage removes the source path after
+open, reads from the borrowed immutable bytes, and checks corrupt-input cleanup.
 `test_attribute_contract.c` locks the diagnostic constructor schema into the
 hashed canonical provider contract and verifies that unadmitted generated
 declaration variants remain absent. The upper-gate ledger records which clauses
@@ -269,7 +302,9 @@ pre-diagnostic baseline. The 2026-07-31 WSL GCC and Clang focused replays pass
 71/71 after adding direct diagnostic and interface-addition evidence; later
 2026-08-01 focused replays include attribute additions, artifact/reflection
 retention, and runtime-decorator absence. The same
-toolchains also pass the 127-case compiler integration suite. See the linked
+toolchains also pass the 127-case compiler integration suite. On 2026-08-02,
+the isolated CompileTool/ZRM matrix passed 106/106 under WSL GCC 11.4, WSL
+Clang 14, and MSVC 19.44, including strict percent cutover 6/6. See the linked
 acceptance records for exact commands and RED/GREEN history. This focused
 evidence does not replace the final multi-toolchain gate matrix.
 
@@ -279,6 +314,9 @@ The compile-time executor remains the orchestration boundary for the existing
 interpreter. New independent responsibilities are kept in semantic modules:
 descriptor evaluation, runtime budgets, attribute binding, and declaration
 transform registration each have named source files and narrow internal APIs.
+External CompileTool package/ZRM resolution is isolated in
+`compile_tool_artifact.c`; fixture-heavy resolver cases live in a dedicated
+test header so the general runtime-contract test remains an orchestration file.
 Patch diagnostic decoding is also isolated behind one internal function rather
 than adding more field/schema helpers to `compile_time_executor.c`.
 Patch interface decoding and value-type interface contract validation are

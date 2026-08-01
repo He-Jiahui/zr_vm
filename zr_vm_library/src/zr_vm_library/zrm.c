@@ -719,11 +719,12 @@ cleanup:
     return ok;
 }
 
-TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
-                           SZrLibrary_ZrmArchive *archive,
-                           TZrChar *errorBuffer,
-                           TZrSize errorBufferSize) {
-    mz_zip_archive *zip;
+static TZrBool zrm_open_initialized_reader(
+        mz_zip_archive *zip,
+        const TZrChar *sourceName,
+        SZrLibrary_ZrmArchive *archive,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize) {
     int manifestIndex;
     size_t manifestSize = 0;
     void *manifestBytes = ZR_NULL;
@@ -734,38 +735,24 @@ TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
     const TZrChar *publicContractHash;
     TZrBool ok = ZR_FALSE;
 
-    zrm_set_error(errorBuffer, errorBufferSize, ZR_NULL);
-    if (path == ZR_NULL || archive == ZR_NULL) {
-        zrm_set_error(errorBuffer, errorBufferSize, "zrm open requires a path and archive");
-        return ZR_FALSE;
-    }
-
-    memset(archive, 0, sizeof(*archive));
-    zip = (mz_zip_archive *)calloc(1, sizeof(*zip));
-    if (zip == ZR_NULL) {
-        zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to allocate zip reader");
-        return ZR_FALSE;
-    }
-
-    if (!mz_zip_reader_init_file(zip, path, 0)) {
-        zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to open '%s'", path);
-        free(zip);
-        return ZR_FALSE;
-    }
-
-    if (!zrm_copy_text(archive->path, sizeof(archive->path), path)) {
-        zrm_set_error(errorBuffer, errorBufferSize, "zrm path is too long");
+    archive->zipHandle = zip;
+    if (!zrm_copy_text(archive->path, sizeof(archive->path), sourceName)) {
+        zrm_set_error(errorBuffer, errorBufferSize, "zrm source name is too long");
         goto cleanup;
     }
-    archive->zipHandle = zip;
 
-    manifestIndex = mz_zip_reader_locate_file(zip, ZR_LIBRARY_ZRM_MANIFEST_ENTRY, ZR_NULL, MZ_ZIP_FLAG_CASE_SENSITIVE);
+    manifestIndex = mz_zip_reader_locate_file(
+            zip,
+            ZR_LIBRARY_ZRM_MANIFEST_ENTRY,
+            ZR_NULL,
+            MZ_ZIP_FLAG_CASE_SENSITIVE);
     if (manifestIndex < 0) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm manifest is missing");
         goto cleanup;
     }
 
-    manifestBytes = mz_zip_reader_extract_to_heap(zip, (mz_uint)manifestIndex, &manifestSize, 0);
+    manifestBytes = mz_zip_reader_extract_to_heap(
+            zip, (mz_uint)manifestIndex, &manifestSize, 0);
     if (manifestBytes == ZR_NULL || manifestSize == 0) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to read manifest");
         goto cleanup;
@@ -786,53 +773,81 @@ TZrBool ZrLibrary_Zrm_Open(const TZrChar *path,
     assembly = cJSON_GetObjectItemCaseSensitive(manifest, "assembly");
     if (!cJSON_IsObject(assembly) ||
         !zrm_json_optional_string(assembly, "providerPhase", &providerPhase) ||
-        !zrm_copy_text(archive->assemblyName, sizeof(archive->assemblyName), zrm_json_string(assembly, "name")) ||
-        !zrm_copy_text(archive->assemblyVersion, sizeof(archive->assemblyVersion), zrm_json_string(assembly, "version")) ||
-        !zrm_copy_text(archive->assemblyCulture, sizeof(archive->assemblyCulture), zrm_json_string(assembly, "culture")) ||
-        !zrm_copy_text(archive->assemblyPublicKeyToken,
-                       sizeof(archive->assemblyPublicKeyToken),
-                       zrm_json_string(assembly, "publicKeyToken")) ||
-        !zrm_copy_text(archive->assemblyKind, sizeof(archive->assemblyKind), zrm_json_string(assembly, "kind")) ||
-        !zrm_json_optional_string(assembly, "publicContractHash", &publicContractHash) ||
-        !zrm_copy_text(archive->publicContractHash, sizeof(archive->publicContractHash), publicContractHash) ||
+        !zrm_copy_text(
+                archive->assemblyName,
+                sizeof(archive->assemblyName),
+                zrm_json_string(assembly, "name")) ||
+        !zrm_copy_text(
+                archive->assemblyVersion,
+                sizeof(archive->assemblyVersion),
+                zrm_json_string(assembly, "version")) ||
+        !zrm_copy_text(
+                archive->assemblyCulture,
+                sizeof(archive->assemblyCulture),
+                zrm_json_string(assembly, "culture")) ||
+        !zrm_copy_text(
+                archive->assemblyPublicKeyToken,
+                sizeof(archive->assemblyPublicKeyToken),
+                zrm_json_string(assembly, "publicKeyToken")) ||
+        !zrm_copy_text(
+                archive->assemblyKind,
+                sizeof(archive->assemblyKind),
+                zrm_json_string(assembly, "kind")) ||
+        !zrm_json_optional_string(
+                assembly, "publicContractHash", &publicContractHash) ||
+        !zrm_copy_text(
+                archive->publicContractHash,
+                sizeof(archive->publicContractHash),
+                publicContractHash) ||
         !zrm_parse_provider_phase(providerPhase, &archive->providerPhase) ||
-        !zrm_copy_text(archive->entryModule, sizeof(archive->entryModule), zrm_json_string(manifest, "entry")) ||
+        !zrm_copy_text(
+                archive->entryModule,
+                sizeof(archive->entryModule),
+                zrm_json_string(manifest, "entry")) ||
         archive->assemblyName[0] == '\0' ||
         archive->assemblyVersion[0] == '\0' ||
         archive->entryModule[0] == '\0') {
-        zrm_set_error(errorBuffer, errorBufferSize, "zrm manifest has invalid assembly identity");
+        zrm_set_error(
+                errorBuffer,
+                errorBufferSize,
+                "zrm manifest has invalid assembly identity");
         goto cleanup;
     }
 
-    if (!zrm_parse_entry_array(cJSON_GetObjectItemCaseSensitive(manifest, "modules"),
-                               ZR_TRUE,
-                               &archive->modules,
-                               &archive->moduleCount,
-                               errorBuffer,
-                               errorBufferSize) ||
-        !zrm_parse_entry_array(cJSON_GetObjectItemCaseSensitive(manifest, "resources"),
-                               ZR_FALSE,
-                               &archive->resources,
-                               &archive->resourceCount,
-                               errorBuffer,
-                               errorBufferSize)) {
+    if (!zrm_parse_entry_array(
+                cJSON_GetObjectItemCaseSensitive(manifest, "modules"),
+                ZR_TRUE,
+                &archive->modules,
+                &archive->moduleCount,
+                errorBuffer,
+                errorBufferSize) ||
+        !zrm_parse_entry_array(
+                cJSON_GetObjectItemCaseSensitive(manifest, "resources"),
+                ZR_FALSE,
+                &archive->resources,
+                &archive->resourceCount,
+                errorBuffer,
+                errorBufferSize)) {
         goto cleanup;
     }
     if (ZrLibrary_Zrm_FindModule(archive, archive->entryModule) == ZR_NULL) {
-        zrm_set_error(errorBuffer,
-                      errorBufferSize,
-                      "zrm entry module '%s' does not name a module entry",
-                      archive->entryModule);
+        zrm_set_error(
+                errorBuffer,
+                errorBufferSize,
+                "zrm entry module '%s' does not name a module entry",
+                archive->entryModule);
         goto cleanup;
     }
 
     for (TZrSize index = 0; index < archive->moduleCount; index++) {
-        if (!zrm_apply_zip_stat(zip, &archive->modules[index], errorBuffer, errorBufferSize)) {
+        if (!zrm_apply_zip_stat(
+                    zip, &archive->modules[index], errorBuffer, errorBufferSize)) {
             goto cleanup;
         }
     }
     for (TZrSize index = 0; index < archive->resourceCount; index++) {
-        if (!zrm_apply_zip_stat(zip, &archive->resources[index], errorBuffer, errorBufferSize)) {
+        if (!zrm_apply_zip_stat(
+                    zip, &archive->resources[index], errorBuffer, errorBufferSize)) {
             goto cleanup;
         }
     }
@@ -850,6 +865,77 @@ cleanup:
         ZrLibrary_Zrm_Close(archive);
     }
     return ok;
+}
+
+TZrBool ZrLibrary_Zrm_Open(
+        const TZrChar *path,
+        SZrLibrary_ZrmArchive *archive,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize) {
+    mz_zip_archive *zip;
+
+    zrm_set_error(errorBuffer, errorBufferSize, ZR_NULL);
+    if (path == ZR_NULL || archive == ZR_NULL) {
+        zrm_set_error(
+                errorBuffer,
+                errorBufferSize,
+                "zrm open requires a path and archive");
+        return ZR_FALSE;
+    }
+
+    memset(archive, 0, sizeof(*archive));
+    zip = (mz_zip_archive *)calloc(1, sizeof(*zip));
+    if (zip == ZR_NULL) {
+        zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to allocate zip reader");
+        return ZR_FALSE;
+    }
+    if (!mz_zip_reader_init_file(zip, path, 0)) {
+        zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to open '%s'", path);
+        free(zip);
+        return ZR_FALSE;
+    }
+    return zrm_open_initialized_reader(
+            zip, path, archive, errorBuffer, errorBufferSize);
+}
+
+TZrBool ZrLibrary_Zrm_OpenBytes(
+        const TZrByte *bytes,
+        TZrSize byteCount,
+        const TZrChar *sourceName,
+        SZrLibrary_ZrmArchive *archive,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize) {
+    mz_zip_archive *zip;
+
+    zrm_set_error(errorBuffer, errorBufferSize, ZR_NULL);
+    if (archive != ZR_NULL) {
+        memset(archive, 0, sizeof(*archive));
+    }
+    if (bytes == ZR_NULL || byteCount == 0U || sourceName == ZR_NULL ||
+        sourceName[0] == '\0' || archive == ZR_NULL) {
+        zrm_set_error(
+                errorBuffer,
+                errorBufferSize,
+                "zrm memory open requires bytes, source name, and archive");
+        return ZR_FALSE;
+    }
+
+    zip = (mz_zip_archive *)calloc(1, sizeof(*zip));
+    if (zip == ZR_NULL) {
+        zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to allocate zip reader");
+        return ZR_FALSE;
+    }
+    if (!mz_zip_reader_init_mem(zip, bytes, (size_t)byteCount, 0)) {
+        zrm_set_error(
+                errorBuffer,
+                errorBufferSize,
+                "zrm failed to open memory source '%s'",
+                sourceName);
+        free(zip);
+        return ZR_FALSE;
+    }
+    return zrm_open_initialized_reader(
+            zip, sourceName, archive, errorBuffer, errorBufferSize);
 }
 
 void ZrLibrary_Zrm_Close(SZrLibrary_ZrmArchive *archive) {

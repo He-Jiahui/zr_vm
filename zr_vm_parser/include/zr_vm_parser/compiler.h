@@ -50,11 +50,14 @@ typedef struct SZrCompileToolBinding {
     SZrString *name;
     const SZrParserCompileToolModuleDescriptor *provider;
     const TZrChar *providerContentHash; // borrowed; provider storage outlives compiler state
+    const SZrParserCompileToolResolvedArtifact *resolvedArtifact; // borrowed; close after compiler state
     EZrCompileToolBindingKind kind;
 } SZrCompileToolBinding;
 
+#define ZR_PARSER_COMPTIME_CACHE_DIGEST_BYTE_COUNT 32U
+
 typedef struct SZrComptimeCacheEntry {
-    TZrUInt64 key;
+    TZrByte digest[ZR_PARSER_COMPTIME_CACHE_DIGEST_BYTE_COUNT];
     SZrTypeValue value;
 } SZrComptimeCacheEntry;
 

@@ -1,7 +1,13 @@
 #ifndef ZR_VM_PARSER_COMPTIME_RUNTIME_CONTRACT_H
 #define ZR_VM_PARSER_COMPTIME_RUNTIME_CONTRACT_H
 
+#include "compile_tool_content_hash.h"
 #include "compiler_internal.h"
+
+typedef struct SZrComptimeCacheKey {
+    SZrParserSha256Context sha256;
+    TZrBool valid;
+} SZrComptimeCacheKey;
 
 void ZrParser_ComptimeRuntime_Init(SZrCompilerState *cs);
 void ZrParser_ComptimeRuntime_Free(SZrCompilerState *cs);
@@ -19,19 +25,23 @@ TZrBool ZrParser_ComptimeRuntime_RequireEffect(
         EZrParserCompileToolEffect effect,
         SZrFileRange location);
 
-ZR_PARSER_API TZrUInt64 ZrParser_ComptimeCache_BeginKey(
+ZR_PARSER_API TZrBool ZrParser_ComptimeCache_BeginKey(
         const SZrCompilerState *cs,
-        const SZrCompileTimeFunction *function);
+        const SZrCompileTimeFunction *function,
+        SZrComptimeCacheKey *outKey);
 TZrBool ZrParser_ComptimeCache_MixValue(
-        TZrUInt64 *key,
+        SZrComptimeCacheKey *key,
         const SZrTypeValue *value);
+ZR_PARSER_API TZrBool ZrParser_ComptimeCache_KeyEquals(
+        const SZrComptimeCacheKey *lhs,
+        const SZrComptimeCacheKey *rhs);
 TZrBool ZrParser_ComptimeCache_Lookup(
         SZrCompilerState *cs,
-        TZrUInt64 key,
+        const SZrComptimeCacheKey *key,
         SZrTypeValue *result);
 TZrBool ZrParser_ComptimeCache_Store(
         SZrCompilerState *cs,
-        TZrUInt64 key,
+        const SZrComptimeCacheKey *key,
         const SZrTypeValue *value);
 
 #endif

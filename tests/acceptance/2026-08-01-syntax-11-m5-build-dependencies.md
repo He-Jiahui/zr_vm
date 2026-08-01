@@ -54,9 +54,9 @@ failures under GCC 11.4, Clang 14, and MSVC 19.44.35228. A separate MSVC
 
 ## Remaining M5 work
 
-- resolve and load build dependency providers only inside the compiler sandbox;
-- hand resolved CompileTool artifact content hashes from the sandbox loader to
-  the cache identity binding;
+- activate compiler-owned resolved provider bytes only through the ordinary
+  compile-only import and transform execution path;
 - integrate the identity with the persistent incremental cache;
-- prove runtime graphs cannot observe build dependency exports;
+- validate the actual transitive provider graph rather than treating the lock
+  producer's canonical transitive hash as artifact-graph proof;
 - complete formatter and remaining cross-consumer acceptance.
