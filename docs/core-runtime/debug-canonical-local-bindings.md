@@ -17,6 +17,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
+  - zr_vm_parser/include/zr_vm_parser/type_system.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c
@@ -42,6 +46,13 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
+  - zr_vm_parser/include/zr_vm_parser/type_system.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_assignment_join.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_branch_refinement.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_loop_assignment_scope.c
+  - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_closure_metadata.c
@@ -68,6 +79,7 @@ tests:
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b5-generation-checked-runtime-root-consumer.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6a-canonical-closure-capture-artifact-identity.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6b-generation-checked-paused-frame-closure-resolver.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6c-closure-capture-origin-token-facts.md
 doc_type: module-detail
 ---
 
@@ -173,9 +185,36 @@ incomplete frames fail closed; missing cells or metadata are unavailable. The
 resolver never calls legacy upvalue name APIs or searches a capture name, stack
 slot, AST, display type, or text.
 
-E2b6b is runtime-only. E2b6c must still publish parser closure-origin and
-token facts, and E2b6d must make the formal Debug consumer use those facts.
-Until then the resolver is not permission for a consumer fallback.
+E2b6b is runtime-only. E2b6c publishes the matching parser fact but does not
+enable execution; E2b6d must make the formal Debug consumer use that fact.
+Until then the resolver and parser fact are not permission for a consumer
+fallback.
+
+## Closure-Capture Reference Facts
+
+E2b6c adds `originIndex` to `SZrTypeBinding` and
+`SZrSemanticReferenceFact`. For `CLOSURE_CAPTURE`, it is the exact capture
+index and is independent from `PlaceId`: zero is a valid first capture, while
+the fact has an invalid PlaceId. Identifier inference copies the full origin
+kind, runtime-root kind, token, and origin index from the registered binding.
+
+`ZrParser_TypeEnvironment_RegisterClosureCapture` accepts only an externally
+validated canonical TypeRef, SymbolId, TypeId, declaration range, capture index,
+and nonzero token. It neither creates substitute semantic IDs nor converts a
+capture to a local Place. Duplicate binding names are rejected by the parser
+API.
+
+The Debug binder invokes the E2b6b capture query once per exact index before it
+registers a binding. The legacy capture name is used only as the parser surface
+key after that identity has been validated; it is never searched to recover an
+identity. A pre-existing source declaration retains precedence. A collision
+with any other injected binding is metadata unavailable. Missing, stale,
+trimmed, incomplete, or duplicate capture identity therefore fails closed.
+
+E2b6c is semantic-fact publication only. It does not resolve a capture value,
+construct an executable evaluation plan, or authorize `debug_formal_evaluation_execute.c`
+to fall back to a capture name, slot, AST, display type, or text. Those remain
+E2b6d work.
 
 ## Consumer Boundary
 

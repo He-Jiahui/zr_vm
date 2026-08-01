@@ -872,7 +872,7 @@ int main(void) {
     RUN_TEST(test_debug_semantic_binding_registers_canonical_receiver);
     RUN_TEST(test_debug_formal_evaluation_reads_indexed_paused_frame_binding);
     RUN_TEST(test_debug_formal_evaluation_resolves_generation_checked_runtime_root);
-    RUN_TEST(test_debug_semantic_binding_rejects_unidentified_closure_capture);
+    RUN_TEST(test_debug_semantic_binding_publishes_canonical_closure_capture);
     RUN_TEST(test_debug_semantic_binding_rejects_entry_binding_without_identity);
     return UNITY_END();
 }

@@ -181,6 +181,7 @@ typedef struct SZrSemanticReferenceFact {
     EZrSemanticReferenceOriginKind originKind;
     EZrSemanticRuntimeRootKind runtimeRootKind;
     TZrUInt64 originToken;
+    TZrUInt32 originIndex;
 } SZrSemanticReferenceFact;
 
 typedef struct SZrSemanticNumericFact {

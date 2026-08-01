@@ -1432,6 +1432,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
             binding->originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
             binding->runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
             binding->originToken = 0u;
+            binding->originIndex = 0u;
             if (hasDeclarationRange) {
                 binding->declarationRange = declarationRange;
                 binding->hasDeclarationRange = ZR_TRUE;
@@ -1460,6 +1461,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
     binding.originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
     binding.runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
     binding.originToken = 0u;
+    binding.originIndex = 0u;
     ZrParser_InferredType_Copy(state, &binding.type, type);
 
     if (env->semanticContext != ZR_NULL) {
@@ -1554,6 +1556,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
         existing->originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
         existing->runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
         existing->originToken = 0u;
+        existing->originIndex = 0u;
         return ZR_TRUE;
     }
 
@@ -1566,6 +1569,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
     binding.originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
     binding.runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
     binding.originToken = 0u;
+    binding.originIndex = 0u;
     ZrParser_InferredType_Copy(state, &binding.type, type);
     ZrCore_Array_Push(state, &env->variableTypes, &binding);
     return ZR_TRUE;
@@ -1602,10 +1606,54 @@ TZrBool ZrParser_TypeEnvironment_RegisterRuntimeRoot(
         binding->originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_RUNTIME_ROOT;
         binding->runtimeRootKind = runtimeRootKind;
         binding->originToken = originToken;
+        binding->originIndex = 0u;
         return ZR_TRUE;
     }
 
     return ZR_FALSE;
+}
+
+TZrBool ZrParser_TypeEnvironment_RegisterClosureCapture(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId,
+        SZrFileRange declarationRange,
+        TZrUInt32 captureIndex,
+        TZrUInt64 originToken) {
+    SZrTypeBinding binding;
+    TZrBool hasDeclarationRange;
+
+    hasDeclarationRange = declarationRange.source != ZR_NULL ||
+                          declarationRange.start.line != 0 ||
+                          declarationRange.start.column != 0 ||
+                          declarationRange.start.offset != 0 ||
+                          declarationRange.end.line != 0 ||
+                          declarationRange.end.column != 0 ||
+                          declarationRange.end.offset != 0;
+    if (state == ZR_NULL || env == ZR_NULL || name == ZR_NULL || type == ZR_NULL ||
+        symbolId == ZR_SEMANTIC_ID_INVALID || typeId == ZR_SEMANTIC_ID_INVALID ||
+        originToken == 0u || !hasDeclarationRange ||
+        ZrParser_TypeEnvironment_FindVariableBinding(env, name) != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&binding, 0, sizeof(binding));
+    binding.name = name;
+    binding.declarationRange = declarationRange;
+    binding.hasDeclarationRange = ZR_TRUE;
+    binding.typeId = typeId;
+    binding.symbolId = symbolId;
+    binding.placeId = ZR_SEMANTIC_ID_INVALID;
+    binding.originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_CLOSURE_CAPTURE;
+    binding.runtimeRootKind = ZR_SEMANTIC_RUNTIME_ROOT_NONE;
+    binding.originToken = originToken;
+    binding.originIndex = captureIndex;
+    ZrParser_InferredType_Copy(state, &binding.type, type);
+    ZrCore_Array_Push(state, &env->variableTypes, &binding);
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_TypeEnvironment_RegisterVariable(SZrState *state,

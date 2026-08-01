@@ -32,8 +32,14 @@ static SZrDebugCanonicalBindingCapture g_debugCanonicalBindingCapture;
 typedef struct SZrDebugClosureBindingCapture {
     ZrDebugAgent *agent;
     TZrBool sawClosureActivation;
+    TZrBool sawClosureReferenceFact;
+    TZrBool hasCanonicalIdentity;
     TZrBool sawEvaluationPolicy;
     TZrBool policyHasCanonicalFacts;
+    TZrUInt32 captureIndex;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt64 token;
     TZrChar error[ZR_DEBUG_TEXT_CAPACITY];
 } SZrDebugClosureBindingCapture;
 
@@ -312,7 +318,14 @@ static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInf
 
 static void debug_closure_binding_hook(SZrState *state, SZrDebugInfo *debugInfo) {
     SZrDebugEvaluationContext context;
+    SZrDebugClosureCaptureBinding capture;
     ZrDebugEvaluationEffectPolicy policy;
+    SZrParserState parserState;
+    SZrCompilerState compilerState;
+    SZrInferredType inferredType;
+    SZrString *sourceName;
+    SZrAstNode *expression = ZR_NULL;
+    const SZrSemanticReferenceFact *reference;
 
     ZR_UNUSED_PARAMETER(debugInfo);
     if (state == ZR_NULL || g_debugClosureBindingCapture.agent == ZR_NULL ||
@@ -326,7 +339,62 @@ static void debug_closure_binding_hook(SZrState *state, SZrDebugInfo *debugInfo)
         return;
     }
 
+    memset(&capture, 0, sizeof(capture));
+    if (ZrCore_Debug_EvaluationContext_GetClosureCapture(
+                state, &context, 0u, &capture) != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return;
+    }
+
     g_debugClosureBindingCapture.sawClosureActivation = ZR_TRUE;
+    g_debugClosureBindingCapture.captureIndex = capture.captureIndex;
+    g_debugClosureBindingCapture.symbolId = capture.symbolId;
+    g_debugClosureBindingCapture.typeId = capture.typeId;
+    g_debugClosureBindingCapture.token = capture.token;
+
+    sourceName = ZrCore_String_CreateFromNative(state, "<debug:e2b6c-closure-capture>");
+    if (sourceName != ZR_NULL) {
+        ZrParser_State_Init(&parserState, state, "seed", strlen("seed"), sourceName);
+        parserState.suppressErrorOutput = ZR_TRUE;
+        expression = ZrParser_ParseExpressionWithState(&parserState);
+        if (!parserState.hasError && expression != ZR_NULL) {
+            memset(&compilerState, 0, sizeof(compilerState));
+            ZrParser_CompilerState_Init(&compilerState, state);
+            compilerState.currentAst = expression;
+            compilerState.scriptAst = expression;
+            compilerState.suppressErrorOutput = ZR_TRUE;
+            ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+            if (zr_debug_semantic_register_bindings(
+                        g_debugClosureBindingCapture.agent, 1u, &compilerState) &&
+                ZrParser_ExpressionType_Infer(&compilerState, expression, &inferredType)) {
+                reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                        compilerState.semanticContext, expression, ZR_SEMANTIC_REFERENCE_READ);
+                if (reference != ZR_NULL) {
+                    g_debugClosureBindingCapture.sawClosureReferenceFact = ZR_TRUE;
+                    g_debugClosureBindingCapture.hasCanonicalIdentity = (TZrBool)(
+                            reference->isResolved &&
+                            reference->originKind == ZR_SEMANTIC_REFERENCE_ORIGIN_CLOSURE_CAPTURE &&
+                            reference->runtimeRootKind == ZR_SEMANTIC_RUNTIME_ROOT_NONE &&
+                            reference->originIndex == capture.captureIndex &&
+                            reference->originToken == capture.token &&
+                            reference->symbolId == capture.symbolId &&
+                            reference->typeId == capture.typeId &&
+                            reference->placeId == ZR_SEMANTIC_ID_INVALID &&
+                            reference->declarationRange.source == context.activation.function->sourceCodeList &&
+                            reference->declarationRange.start.line == (TZrInt32)capture.declarationStartLine &&
+                            reference->declarationRange.start.column == (TZrInt32)capture.declarationStartColumn &&
+                            reference->declarationRange.end.line == (TZrInt32)capture.declarationEndLine &&
+                            reference->declarationRange.end.column == (TZrInt32)capture.declarationEndColumn);
+                }
+            }
+            ZrParser_InferredType_Free(state, &inferredType);
+            ZrParser_CompilerState_Free(&compilerState);
+        }
+        if (expression != ZR_NULL) {
+            ZrParser_Ast_Free(state, expression);
+        }
+        ZrParser_State_Free(&parserState);
+    }
+
     memset(&policy, 0, sizeof(policy));
     g_debugClosureBindingCapture.error[0] = '\0';
     if (ZrDebug_ClassifyEvaluationEffect(g_debugClosureBindingCapture.agent,
@@ -846,7 +914,7 @@ static void test_debug_formal_evaluation_resolves_generation_checked_runtime_roo
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_semantic_binding_rejects_unidentified_closure_capture(void) {
+static void test_debug_semantic_binding_publishes_canonical_closure_capture(void) {
     const char *source =
             "fn makeRunner() {\n"
             "    var seed = 4;\n"
@@ -878,8 +946,14 @@ static void test_debug_semantic_binding_rejects_unidentified_closure_capture(voi
     ZrCore_Debug_SetHook(state, ZR_NULL, 0u, 0u);
 
     TEST_ASSERT_TRUE(g_debugClosureBindingCapture.sawClosureActivation);
+    TEST_ASSERT_TRUE(g_debugClosureBindingCapture.sawClosureReferenceFact);
+    TEST_ASSERT_TRUE(g_debugClosureBindingCapture.hasCanonicalIdentity);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_debugClosureBindingCapture.captureIndex);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, g_debugClosureBindingCapture.symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, g_debugClosureBindingCapture.typeId);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u, g_debugClosureBindingCapture.token);
     TEST_ASSERT_TRUE(g_debugClosureBindingCapture.sawEvaluationPolicy);
-    TEST_ASSERT_FALSE(g_debugClosureBindingCapture.policyHasCanonicalFacts);
+    TEST_ASSERT_TRUE(g_debugClosureBindingCapture.policyHasCanonicalFacts);
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);

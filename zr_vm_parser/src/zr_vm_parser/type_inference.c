@@ -1176,6 +1176,7 @@ static void record_identifier_reference_fact(SZrCompilerState *cs,
     fact.originKind = binding->originKind;
     fact.runtimeRootKind = binding->runtimeRootKind;
     fact.originToken = binding->originToken;
+    fact.originIndex = binding->originIndex;
     fact.ownershipQualifier = binding->type.ownershipQualifier;
     fact.name = binding->name;
     fact.isResolved = ZR_TRUE;

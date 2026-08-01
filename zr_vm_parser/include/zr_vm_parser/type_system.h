@@ -99,6 +99,7 @@ typedef struct SZrTypeBinding {
     EZrSemanticReferenceOriginKind originKind;
     EZrSemanticRuntimeRootKind runtimeRootKind;
     TZrUInt64 originToken;
+    TZrUInt32 originIndex;
 } SZrTypeBinding;
 
 // 函数类型信息
@@ -278,6 +279,18 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterRuntimeRoot(
         SZrString *name,
         const SZrInferredType *type,
         EZrSemanticRuntimeRootKind runtimeRootKind,
+        TZrUInt64 originToken);
+
+/* Registers an externally verified closure capture without allocating replacement IDs. */
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterClosureCapture(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *type,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId,
+        SZrFileRange declarationRange,
+        TZrUInt32 captureIndex,
         TZrUInt64 originToken);
 
 // 查找变量类型
