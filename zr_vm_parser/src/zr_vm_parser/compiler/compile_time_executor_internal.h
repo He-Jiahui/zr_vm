@@ -69,7 +69,7 @@ TZrBool execute_compile_time_block(SZrCompilerState *cs,
                                    SZrCompileTimeFrame *frame,
                                    TZrBool *didReturn,
                                    SZrTypeValue *result);
-TZrBool ZrParser_CompileTime_ExecuteLateChecksInCompilerState(
+ZR_PARSER_API TZrBool ZrParser_CompileTime_ExecuteLateChecksInCompilerState(
         SZrCompilerState *cs,
         SZrAstNode *ast);
 

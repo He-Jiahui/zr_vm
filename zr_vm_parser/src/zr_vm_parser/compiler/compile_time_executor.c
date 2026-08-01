@@ -8,6 +8,7 @@
 #include "compile_time_declaration_patch_attributes.h"
 #include "compile_time_declaration_patch_diagnostics.h"
 #include "compile_time_declaration_patch_interfaces.h"
+#include "compile_time_declaration_patch_transaction.h"
 #include "compile_time_decorator_identity.h"
 #include "compile_time_executor_internal.h"
 #include "compile_tool_binding.h"
@@ -32,6 +33,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/project.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -1950,31 +1952,6 @@ static const SZrTypeValue *ct_compile_time_array_at(
     return ZrCore_Object_GetValue(cs->state, array, &key);
 }
 
-static TZrUInt32 ct_generated_field_size(
-        SZrCompilerState *cs,
-        TZrTypeId typeId) {
-    const SZrCanonicalTypeNode *type =
-            ZrParser_CanonicalType_Find(cs->semanticContext, typeId);
-
-    if (type == ZR_NULL || type->kind != ZR_CANONICAL_TYPE_PRIMITIVE) {
-        return sizeof(SZrTypeValue);
-    }
-    switch (type->data.primitive.valueType) {
-        case ZR_VALUE_TYPE_INT8: return sizeof(TZrInt8);
-        case ZR_VALUE_TYPE_INT16: return sizeof(TZrInt16);
-        case ZR_VALUE_TYPE_INT32: return sizeof(TZrInt32);
-        case ZR_VALUE_TYPE_INT64: return sizeof(TZrInt64);
-        case ZR_VALUE_TYPE_UINT8: return sizeof(TZrUInt8);
-        case ZR_VALUE_TYPE_UINT16: return sizeof(TZrUInt16);
-        case ZR_VALUE_TYPE_UINT32: return sizeof(TZrUInt32);
-        case ZR_VALUE_TYPE_UINT64: return sizeof(TZrUInt64);
-        case ZR_VALUE_TYPE_FLOAT: return sizeof(TZrFloat32);
-        case ZR_VALUE_TYPE_DOUBLE: return sizeof(TZrDouble);
-        case ZR_VALUE_TYPE_BOOL: return sizeof(TZrBool);
-        default: return sizeof(SZrTypeValue);
-    }
-}
-
 static TZrBool ct_decode_generated_field(
         SZrCompilerState *cs,
         const SZrTypeValue *value,
@@ -2032,106 +2009,10 @@ static TZrBool ct_decode_generated_field(
     return ZR_TRUE;
 }
 
-static TZrBool ct_append_generated_field(
-        SZrCompilerState *cs,
-        SZrTypePrototypeInfo *info,
-        const SZrParserGeneratedDeclaration *addition,
-        SZrString *canonicalTypeName,
-        TZrSymbolId originTargetSymbolId,
-        SZrFileRange location) {
-    SZrTypeMemberInfo member;
-    SZrObject *metadataObject;
-    SZrTypeValue metadataValue;
-
-    if (cs == ZR_NULL || info == ZR_NULL || addition == ZR_NULL ||
-        canonicalTypeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    ZrCore_Memory_RawSet(&member, 0, sizeof(member));
-    member.memberType = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT
-                                ? ZR_AST_STRUCT_FIELD
-                                : ZR_AST_CLASS_FIELD;
-    member.name = ZrCore_String_CreateFromNative(
-            cs->state, (TZrNativeString)addition->name);
-    member.accessModifier = addition->visibility == ZR_PARSER_GENERATED_VISIBILITY_PUBLIC
-                                    ? ZR_ACCESS_PUBLIC
-                                    : addition->visibility == ZR_PARSER_GENERATED_VISIBILITY_PROTECTED
-                                              ? ZR_ACCESS_PROTECTED
-                                              : ZR_ACCESS_PRIVATE;
-    member.isConst = addition->mutability == ZR_PARSER_GENERATED_MUTABILITY_LET;
-    member.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-    member.gcBridgeKind = ZR_GC_BRIDGE_NONE;
-    member.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-    member.receiverEffect = ZR_CANONICAL_RECEIVER_NONE;
-    member.declarationOrder = (TZrUInt32)info->members.length;
-    member.fieldTypeName = canonicalTypeName;
-    member.fieldSize = ct_generated_field_size(cs, addition->typeId);
-    member.symbolId = ZrParser_Semantic_RegisterSymbol(
-            cs->semanticContext,
-            member.name,
-            ZR_SEMANTIC_SYMBOL_KIND_FIELD,
-            addition->typeId,
-            ZR_SEMANTIC_ID_INVALID,
-            ZR_NULL,
-            location);
-    member.virtualSlotIndex = UINT32_MAX;
-    member.interfaceContractSlot = UINT32_MAX;
-    member.propertyIdentity = UINT32_MAX;
-    member.propertySymbolId = ZR_SEMANTIC_ID_INVALID;
-    member.getterAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
-    member.setterAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
-    member.initAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
-    ZrCore_Array_Construct(&member.parameterTypes);
-    ZrCore_Array_Construct(&member.parameterNames);
-    ZrCore_Array_Construct(&member.parameterHasDefaultValues);
-    ZrCore_Array_Construct(&member.parameterDefaultValues);
-    ZrCore_Array_Construct(&member.genericParameters);
-    ZrCore_Array_Construct(&member.parameterPassingModes);
-    ZrCore_Array_Construct(&member.decorators);
-    ZrCore_Value_ResetAsNull(&member.decoratorMetadataValue);
-    metadataObject = ct_new_object(cs);
-    if (metadataObject == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsInt(cs->state, &metadataValue, 1);
-    if (!ct_set_object_field_value(
-                cs->state, metadataObject, "generated", &metadataValue)) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsUInt(cs->state, &metadataValue, originTargetSymbolId);
-    if (!ct_set_object_field_value(
-                cs->state,
-                metadataObject,
-                "originTargetSymbolId",
-                &metadataValue)) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsInt(cs->state, &metadataValue, location.start.line);
-    if (!ct_set_object_field_value(
-                cs->state, metadataObject, "sourceLineStart", &metadataValue)) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsInt(cs->state, &metadataValue, location.end.line);
-    if (!ct_set_object_field_value(
-                cs->state, metadataObject, "sourceLineEnd", &metadataValue)) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsRawObject(
-            cs->state,
-            &member.decoratorMetadataValue,
-            ZR_CAST_RAW_OBJECT_AS_SUPER(metadataObject));
-    member.decoratorMetadataValue.type = ZR_VALUE_TYPE_OBJECT;
-    member.hasDecoratorMetadata = ZR_TRUE;
-    if (member.name == ZR_NULL || member.symbolId == ZR_SEMANTIC_ID_INVALID) {
-        return ZR_FALSE;
-    }
-    ZrCore_Array_Push(cs->state, &info->members, &member);
-    return ZR_TRUE;
-}
-
 static TZrBool ct_apply_declaration_transform_patch(
         SZrCompilerState *cs,
         SZrTypePrototypeInfo *info,
+        SZrString *transformDecoratorName,
         const SZrTypeValue *patchValue,
         SZrFileRange location) {
     SZrParserDeclarationView view;
@@ -2246,6 +2127,15 @@ static TZrBool ct_apply_declaration_transform_patch(
 
     existingMemberCount = info->members.length;
     if (existingMemberCount != 0U) {
+        if (existingMemberCount >
+            SIZE_MAX / sizeof(*existingMemberNames)) {
+            ZrParser_CompileTime_Error(
+                    cs,
+                    ZR_COMPILE_TIME_ERROR_ERROR,
+                    "declaration_transform.patch_budget: existing member budget exceeded",
+                    location);
+            goto cleanup;
+        }
         existingMemberNames = (const TZrChar **)ZrCore_Memory_RawMallocWithType(
                 cs->state->global,
                 existingMemberCount * sizeof(*existingMemberNames),
@@ -2265,6 +2155,16 @@ static TZrBool ct_apply_declaration_transform_patch(
     }
 
     additionCount = ct_compile_time_array_count(cs->state, additionsValue);
+    if (additionCount > ZR_PARSER_DECLARATION_TRANSFORM_MAX_ADDITIONS ||
+        additionCount > SIZE_MAX / sizeof(*additions) ||
+        additionCount > SIZE_MAX / sizeof(*additionTypeNames)) {
+        ZrParser_CompileTime_Error(
+                cs,
+                ZR_COMPILE_TIME_ERROR_ERROR,
+                "declaration_transform.patch_budget: generated declaration budget exceeded",
+                location);
+        goto cleanup;
+    }
     if (additionCount != 0U) {
         additions = (SZrParserGeneratedDeclaration *)ZrCore_Memory_RawMallocWithType(
                 cs->state->global,
@@ -2315,23 +2215,19 @@ static TZrBool ct_apply_declaration_transform_patch(
         hasErrorDiagnostic) {
         goto cleanup;
     }
-    for (TZrSize index = 0; index < additionCount; index++) {
-        if (!ct_append_generated_field(
-                    cs,
-                    info,
-                    &additions[index],
-                    additionTypeNames[index],
-                    patch.targetSymbolId,
-                    location)) {
-            goto cleanup;
-        }
-    }
-    if (!ZrParser_CompileTime_ApplyPatchInterfaceAdds(
-                cs, info, &interfaceAdds)) {
-        goto cleanup;
-    }
-    if (!ZrParser_CompileTime_ApplyPatchAttributeAdds(
-                cs, info, &attributeAdds)) {
+    if (!ZrParser_CompileTime_CommitDeclarationPatchAtomic(
+                cs,
+                info,
+                additions,
+                additionTypeNames,
+                additionCount,
+                &interfaceAdds,
+                &attributeAdds,
+                transformDecoratorName,
+                patch.targetSymbolId,
+                location,
+                ZR_NULL,
+                ZR_NULL)) {
         goto cleanup;
     }
     result = ZR_TRUE;
@@ -2358,8 +2254,6 @@ static TZrBool ct_apply_type_decorator_patch(SZrCompilerState *cs,
                                              const SZrTypeValue *patchValue,
                                              TZrBool isDeclarationTransform,
                                              SZrFileRange location) {
-    SZrTypeDecoratorInfo decoratorInfo;
-
     if (cs == ZR_NULL || info == ZR_NULL || decoratorName == ZR_NULL || patchValue == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -2372,12 +2266,14 @@ static TZrBool ct_apply_type_decorator_patch(SZrCompilerState *cs,
                 location);
         return ZR_FALSE;
     }
-    if (!ct_apply_declaration_transform_patch(cs, info, patchValue, location)) {
+    if (!ct_apply_declaration_transform_patch(
+                cs,
+                info,
+                decoratorName,
+                patchValue,
+                location)) {
         return ZR_FALSE;
     }
-
-    decoratorInfo.name = decoratorName;
-    ZrCore_Array_Push(cs->state, &info->decorators, &decoratorInfo);
     return ZR_TRUE;
 }
 

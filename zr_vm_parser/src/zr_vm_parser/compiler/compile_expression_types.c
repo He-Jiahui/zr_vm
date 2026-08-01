@@ -2340,7 +2340,7 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
                         argSlot,
                         passingMode,
                         expectedType,
-                        ZR_FALSE) == ZR_PARSER_SLOT_NONE ||
+                        ZR_TRUE) == ZR_PARSER_SLOT_NONE ||
                 cs->hasError) {
                 goto cleanup;
             }

@@ -2341,7 +2341,13 @@ static TZrBool substitute_parameter_type(SZrCompilerState *cs,
         }
         ZrParser_InferredType_Copy(cs->state, outType, argumentType);
         outType->ownershipQualifier = sourceType->ownershipQualifier;
+        outType->gcBridgeKind = sourceType->gcBridgeKind;
+        outType->referenceAccess = sourceType->referenceAccess;
+        outType->isReadonlyView = sourceType->isReadonlyView;
+        outType->protocolMask |= sourceType->protocolMask;
         outType->isNullable = sourceType->isNullable;
+        outType->knownBoolValue = sourceType->knownBoolValue;
+        outType->hasKnownBoolValue = sourceType->hasKnownBoolValue;
         return ZR_TRUE;
     }
 
@@ -2363,6 +2369,10 @@ static TZrBool substitute_parameter_type(SZrCompilerState *cs,
             sourceType->isNullable,
             substitutedTypeName);
     outType->ownershipQualifier = sourceType->ownershipQualifier;
+    outType->gcBridgeKind = sourceType->gcBridgeKind;
+    outType->referenceAccess = sourceType->referenceAccess;
+    outType->isReadonlyView = sourceType->isReadonlyView;
+    outType->protocolMask = sourceType->protocolMask;
     outType->genericArgumentKind = sourceType->genericArgumentKind;
     outType->genericConstIntValue = sourceType->genericConstIntValue;
     outType->minValue = sourceType->minValue;
@@ -3247,6 +3257,7 @@ static TZrBool ensure_generic_instance_type_prototype_internal(
         }
         registeredPrototype =
                 (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, registeredPrototypeIndex);
+        type_inference_publish_property_contracts(cs, registeredPrototype);
         finalize_generic_instance_inline_layout(cs, registeredPrototype);
     }
 

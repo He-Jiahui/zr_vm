@@ -414,6 +414,7 @@ static void test_generated_field_metadata_roundtrips_to_artifact_and_reflection(
             "pub struct Meter { pub let value: int; }\n"
             "return 0;\n";
     const TZrChar *binaryPath = "generated_field_metadata_roundtrip.zro";
+    const TZrChar *intermediatePath = "generated_field_metadata_roundtrip.zri";
     SZrState *state = create_test_state();
     SZrString *sourceName;
     SZrFunction *sourceFunction;
@@ -423,6 +424,9 @@ static void test_generated_field_metadata_roundtrips_to_artifact_and_reflection(
     SZrObject *metadata;
     TZrByte *binaryBytes;
     TZrSize binaryLength = 0U;
+    TZrByte *intermediateBytes;
+    TZrSize intermediateLength = 0U;
+    TZrChar *intermediateText;
     SZrCompileTimeImportReader *reader;
     SZrIo binaryIo;
     SZrIoSource *binarySource;
@@ -436,6 +440,24 @@ static void test_generated_field_metadata_roundtrips_to_artifact_and_reflection(
     decorator_shape_assert_generated_field_reflection(state, sourceFunction);
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(
             state, sourceFunction, binaryPath));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(
+            state, sourceFunction, intermediatePath));
+
+    intermediateBytes = ZrTests_Fixture_ReadFileBytes(
+            intermediatePath, &intermediateLength);
+    TEST_ASSERT_NOT_NULL(intermediateBytes);
+    TEST_ASSERT_TRUE(intermediateLength > 0U);
+    intermediateText = (TZrChar *)malloc(intermediateLength + 1U);
+    TEST_ASSERT_NOT_NULL(intermediateText);
+    memcpy(intermediateText, intermediateBytes, intermediateLength);
+    intermediateText[intermediateLength] = '\0';
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "GENERATED_SOURCE_MAPS (1):"));
+    TEST_ASSERT_NOT_NULL(strstr(
+            intermediateText,
+            "type=Meter member=generated originTargetSymbolId="));
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "sourceLineStart=11 sourceLineEnd=12"));
+    free(intermediateText);
+    free(intermediateBytes);
 
     binaryBytes = ZrTests_Fixture_ReadFileBytes(binaryPath, &binaryLength);
     TEST_ASSERT_NOT_NULL(binaryBytes);
@@ -482,6 +504,197 @@ static void test_generated_field_metadata_roundtrips_to_artifact_and_reflection(
     ZrCore_Function_Free(state, sourceFunction);
     free(binaryBytes);
     remove(binaryPath);
+    remove(intermediatePath);
+    destroy_test_state(state);
+}
+
+static TZrChar *decorator_shape_read_text_file(
+        const TZrChar *path,
+        TZrSize *outLength) {
+    TZrByte *bytes;
+    TZrSize length = 0U;
+    TZrChar *text;
+
+    bytes = ZrTests_Fixture_ReadFileBytes(path, &length);
+    if (bytes == ZR_NULL) {
+        return ZR_NULL;
+    }
+    text = (TZrChar *)malloc(length + 1U);
+    if (text == ZR_NULL) {
+        free(bytes);
+        return ZR_NULL;
+    }
+    memcpy(text, bytes, length);
+    text[length] = '\0';
+    free(bytes);
+    if (outLength != ZR_NULL) {
+        *outLength = length;
+    }
+    return text;
+}
+
+static TZrBool decorator_shape_file_exists(const TZrChar *path) {
+    FILE *file = path != ZR_NULL ? fopen(path, "rb") : ZR_NULL;
+
+    if (file == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    fclose(file);
+    return ZR_TRUE;
+}
+
+static void test_intermediate_omits_empty_generated_source_map_section(void) {
+    static const TZrChar *source =
+            "pub struct Plain { pub let value: int; }\n"
+            "return 0;\n";
+    const TZrChar *path = "ordinary_without_generated_source_map.zri";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrChar *text;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "ordinary_without_generated_source_map.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(
+            state, function, path));
+    text = decorator_shape_read_text_file(path, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_NULL(strstr(text, "GENERATED_SOURCE_MAPS"));
+
+    free(text);
+    remove(path);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_generated_source_maps_are_ordered_and_byte_stable(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn derive(target: declaration.Struct): declaration.Patch {\n"
+            "    let first = init declaration.GeneratedField(\n"
+            "        name: \"first\", type: typeid(bool),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let);\n"
+            "    let second = init declaration.GeneratedField(\n"
+            "        name: \"second\", type: typeid(int),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let);\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId, additions: [first, second]);\n"
+            "}\n"
+            "#derive#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "return 0;\n";
+    const TZrChar *firstPath = "generated_source_maps_first.zri";
+    const TZrChar *secondPath = "generated_source_maps_second.zri";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrChar *firstText;
+    TZrChar *secondText;
+    TZrSize firstLength = 0U;
+    TZrSize secondLength = 0U;
+    const TZrChar *firstRow;
+    const TZrChar *secondRow;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "generated_source_maps_ordered.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(
+            state, function, firstPath));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(
+            state, function, secondPath));
+    firstText = decorator_shape_read_text_file(firstPath, &firstLength);
+    secondText = decorator_shape_read_text_file(secondPath, &secondLength);
+    TEST_ASSERT_NOT_NULL(firstText);
+    TEST_ASSERT_NOT_NULL(secondText);
+    TEST_ASSERT_EQUAL_UINT64(firstLength, secondLength);
+    TEST_ASSERT_EQUAL_MEMORY(firstText, secondText, firstLength);
+    TEST_ASSERT_NOT_NULL(strstr(firstText, "GENERATED_SOURCE_MAPS (2):"));
+    firstRow = strstr(firstText, "type=Meter member=first ");
+    secondRow = strstr(firstText, "type=Meter member=second ");
+    TEST_ASSERT_NOT_NULL(firstRow);
+    TEST_ASSERT_NOT_NULL(secondRow);
+    TEST_ASSERT_TRUE(firstRow < secondRow);
+
+    free(secondText);
+    free(firstText);
+    remove(secondPath);
+    remove(firstPath);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_intermediate_rejects_malformed_prototype_data_before_write(void) {
+    static const TZrChar *source =
+            "pub struct Safe { pub let value: int; }\n"
+            "return 0;\n";
+    const TZrChar *path = "malformed_prototype_data.zri";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrByte *originalData;
+    TZrUInt32 originalLength;
+    TZrUInt32 originalCount;
+    TZrByte *overflowData;
+    TZrByte *truncatedData;
+    SZrCompiledPrototypeInfo *overflowPrototype;
+    TZrUInt32 encodedCount = 1U;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "malformed_prototype_data.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    originalData = function->prototypeData;
+    originalLength = function->prototypeDataLength;
+    originalCount = function->prototypeCount;
+
+    overflowData = (TZrByte *)calloc(
+            1U, sizeof(TZrUInt32) + sizeof(SZrCompiledPrototypeInfo));
+    TEST_ASSERT_NOT_NULL(overflowData);
+    memcpy(overflowData, &encodedCount, sizeof(encodedCount));
+    overflowPrototype = (SZrCompiledPrototypeInfo *)(
+            overflowData + sizeof(TZrUInt32));
+    overflowPrototype->inheritsCount = UINT32_MAX;
+    overflowPrototype->decoratorsCount = UINT32_MAX;
+    overflowPrototype->membersCount = UINT32_MAX;
+    function->prototypeData = overflowData;
+    function->prototypeDataLength =
+            sizeof(TZrUInt32) + sizeof(SZrCompiledPrototypeInfo);
+    function->prototypeCount = 1U;
+    remove(path);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteIntermediateFile(
+            state, function, path));
+    TEST_ASSERT_FALSE(decorator_shape_file_exists(path));
+    free(overflowData);
+
+    truncatedData = (TZrByte *)malloc(3U);
+    TEST_ASSERT_NOT_NULL(truncatedData);
+    memset(truncatedData, 0, 3U);
+    function->prototypeData = truncatedData;
+    function->prototypeDataLength = 3U;
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteIntermediateFile(
+            state, function, path));
+    TEST_ASSERT_FALSE(decorator_shape_file_exists(path));
+    free(truncatedData);
+
+    function->prototypeData = originalData;
+    function->prototypeDataLength = originalLength;
+    function->prototypeCount = originalCount;
+    ZrCore_Function_Free(state, function);
     destroy_test_state(state);
 }
 

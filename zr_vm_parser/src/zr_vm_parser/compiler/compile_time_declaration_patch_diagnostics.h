@@ -3,7 +3,7 @@
 
 #include "compiler_internal.h"
 
-TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
+ZR_PARSER_API TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
         SZrCompilerState *cs,
         const SZrTypeValue *diagnosticsValue,
         TZrSymbolId patchTargetSymbolId,

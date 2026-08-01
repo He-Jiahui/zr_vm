@@ -25,8 +25,10 @@ remaining owner gates are open.
 
 ## 2026-08-01 validation snapshot
 
-- The mechanical leaf selection is unchanged: 55 records, 55 completion
-  markers, 0 missing. Raw status spellings are 20 Chinese `已完成`, 16 plain
+- The canonical milestone selection is unchanged: 55 records, 55 completion
+  markers, 0 missing. It excludes implementation plans and the completed
+  task-level `m5-task4-property-import-bootstrap.md` support record. Raw status
+  spellings are 20 Chinese `已完成`, 16 plain
   `completed`, 12 backticked `completed`, three historical
   `completed_with_known_*` qualifiers, one backticked M4-qualified
   `completed`, and three Chinese M2/M3/M4 promotion-qualified completions.
@@ -51,19 +53,30 @@ remaining owner gates are open.
   TestManifest roundtrip/corruption 1/1, SemIR 10/10, and the LSP CompileTool
   projection assertion. The final clean multi-toolchain result is recorded in
   `2026-08-01-syntax-status-and-breaking-cutover.md`.
+- The follow-up Gate 09/11 matrix is green under GCC, Clang, and MSVC: 11
+  executables and 144 Unity tests per toolchain. It includes the strict cutover,
+  callable source Pool path, native out/ref property projection, GC/artifact
+  pool contracts, ref-like identity, reflection, compile-time Patch/cache, and
+  project-manifest phase separation. The first MSVC replay exposed missing DLL
+  exports for internal acceptance APIs; adding `ZR_PARSER_API` to the existing
+  declarations closed the link failure and all 144 tests then passed.
 
 ## Gate ledger
 
 | Gate | Current evidence | State | Remaining proof/work |
 |---|---|---|---|
-| 08 M1-M5 | reflection surface 18/18 and stress 3/3; canonical identity, member query and construction paths exist | indirect | artifact corruption/trimming, full VM/AOT matrix, LSP projection and published stress/perf matrix |
-| 09 M1-M5 | pool base 11/11, GC stress 3/3 and artifact 3/3 | indirect | language guard cleanup, moving-slab compaction, PoolRef reflection/LSP and pause/allocation evidence |
+| 08 M1-M5 | reflection surface 18/18 and stress 3/3 prove selected VM paths | contradicted | remove concrete type/module-name dispatch; reject nullable operands; authenticate TypeId category; preserve by-ref modes; add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
+| 09 M1 | source-callable `Pool<T>` identity/recycle plus C state-machine, million-handle, ABA, exhaustion, alignment and concurrency evidence; pool 13/13 | proven | preserve scalar handle identity and ABI v4 descriptor contract |
+| 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, storage/escape rejection and no-repeat-validation counter | indirect | complete the full local/return/container/closure/suspension matrix and view replacement/early-exit ordering |
+| 09 M3 | deferred reclaim, partial-init rollback, GcFree/GcMapped/GcBarriered accounting and cards are covered by pool 13/13 plus GC stress 3/3 | indirect | derive the native runtime scan directly from closed canonical TypeLayout, prove exactly-once resource Drop and language early-exit cleanup, and implement compact-safe moving slabs |
+| 09 M4 | native/binary/reflection contract hash parity and corrupt/missing/unknown rejection are covered by artifact 3/3; runtime-only/readonly/property-reference facts cross native import | indirect | finish dedicated LSP facts and full reflection non-boxing/lifetime evidence |
+| 09 M5 | million-handle and churn/hot-access counters are separated | indirect | add final pause/allocation/scan-byte promotion matrix after M2-M4 close |
 | 10F M3 | native extern 27/27 and FFI 29/29 focused evidence | proven | preserve in final matrix |
 | 10C | frozen 25-module N0-N3 inventory; phase-typed owners; distinct official provider descriptors rejected; LSP CompileTool phase/hash convergence | indirect | prove artifact/reflection/debug identity and every owner provider before global promotion |
 | 11 M1-M2 | build facts, typed diagnostics/effects, deterministic limits/cache | proven | preserve |
 | 11 M3 | typed AttributeUsage/AttributeData, Conditional elision, static decorator shape coverage, runtime decorator executor/helper removal | proven | preserve retained-data consumers |
-| 11 M4 | typed diagnostics, interfaceAdds, attributeAdds, GeneratedField rebind/provenance and artifact/reflection retention | indirect | GeneratedType/Method/Property, generated source maps and allocation-failure transactional rollback |
-| 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; migration updated | indirect | formatter/build-dependency and remaining consumer acceptance |
+| 11 M4 | first-version public contract is GeneratedField-only; typed diagnostics, interfaceAdds, attributeAdds, normal rebind/layout, provenance, `.zri` generated source maps, artifact/reflection retention, and atomic cross-kind Patch commit with allocator-failure rollback are covered across GCC/Clang/MSVC/MSVC-ASan | proven | preserve; GeneratedType/Method/Property remain unpublished unless separately admitted through the reference gate |
+| 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; v2 buildDependencies are phase-separated in canonical manifest/lock output; comptime cache v2 includes lexical provider public/content identity; migration updated | indirect | compiler sandbox/content-hash handoff, persistent incremental cache, formatter and remaining consumer acceptance |
 | 14 M1 | ordinary function test/case/skip roles, typed TestManifest, production typecheck-and-trim | proven | preserve |
 | 14 M2 | official Test-phase `zr.testing` provider with assert/equal/throws and bounded structured failure | proven | preserve |
 | 14 M3 | deterministic discovery/filter/list/run, process isolation, jobs, timeout, output and exit codes | proven | preserve sync/async reference matrix |

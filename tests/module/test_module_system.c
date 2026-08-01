@@ -835,9 +835,9 @@ static const ZrLibModuleDescriptor kProbeFutureAbiModuleDescriptor = {
 };
 
 static const ZrLibModuleDescriptor kProbeLegacyPluginAbiModuleDescriptor = {
-        .abiVersion = 1u,
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION - 1u,
         .moduleName = "probe.legacy_plugin_abi",
-        .documentation = "Native module built against the retired parameter descriptor layout.",
+        .documentation = "Native module built against the previous descriptor layout.",
         .moduleVersion = "1.0.0",
         .minRuntimeAbi = 1u,
 };
@@ -8433,7 +8433,7 @@ static void test_native_registry_rejects_legacy_plugin_abi(void) {
         errorMessage = ZrLibrary_NativeRegistry_GetLastErrorMessage(state->global);
         TEST_ASSERT_NOT_NULL(errorMessage);
         TEST_ASSERT_NOT_NULL(strstr(errorMessage, "probe.legacy_plugin_abi"));
-        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "uses ABI 1"));
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "uses ABI 3"));
         TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(
                 state->global, "probe.legacy_plugin_abi"));
 

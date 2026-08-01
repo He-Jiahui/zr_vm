@@ -15,16 +15,17 @@ typedef struct SZrParserCompileTimePatchAttributeAdds {
     TZrSize count;
 } SZrParserCompileTimePatchAttributeAdds;
 
-TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
+ZR_PARSER_API TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
         const SZrTypeValue *attributeAddsValue,
         SZrFileRange location,
         SZrParserCompileTimePatchAttributeAdds *result);
-TZrBool ZrParser_CompileTime_ApplyPatchAttributeAdds(
+TZrBool ZrParser_CompileTime_BuildPatchAttributeMetadata(
         SZrCompilerState *cs,
-        SZrTypePrototypeInfo *targetInfo,
-        const SZrParserCompileTimePatchAttributeAdds *attributeAdds);
+        const SZrTypePrototypeInfo *targetInfo,
+        const SZrParserCompileTimePatchAttributeAdds *attributeAdds,
+        SZrTypeValue *metadataValue);
 void ZrParser_CompileTime_FreePatchAttributeAdds(
         SZrCompilerState *cs,
         SZrParserCompileTimePatchAttributeAdds *attributeAdds);

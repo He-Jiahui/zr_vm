@@ -4,6 +4,8 @@ related_code:
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.h
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.h
   - zr_vm_lib_container/include/zr_vm_lib_container/generational_pool.h
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_ffi/include/zr_vm_lib_ffi/runtime.h
@@ -24,6 +26,8 @@ related_code:
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.h
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.h
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
@@ -94,8 +98,10 @@ until every active guard has closed.
 contracts. The native descriptor carries the parameter passing mode as
 structured metadata; the native metadata projection and parser import path
 preserve it as `EZrParameterPassingMode`, rather than encoding `out` in a type
-name. This descriptor schema is native plugin/runtime ABI v2. Providers built
-against ABI v1 are rejected during registration and must be rebuilt.
+name. Runtime-only backing fields, readonly field facts, and ref-property
+access contracts are also structured descriptor fields. This descriptor schema
+is native plugin ABI v4. Providers built against ABI v3 or earlier are rejected
+during registration and must be rebuilt; the runtime ABI remains v3.
 
 Imported `PoolRef<T>` and `PoolReadRef<T>` are ref-like because the compiler
 queries their canonical `REF_LIKE` capability. The storage and escape passes do

@@ -202,6 +202,110 @@ static void test_project_manifest_v2_reads_structured_alias_package_and_dependen
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_project_manifest_v2_keeps_build_dependencies_phase_separated(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrLibrary_Project *project;
+    SZrLibrary_Project *roundTrippedProject;
+    SZrLibrary_ProjectManifestDependencyLockEntry lockEntries[3];
+    TZrChar output[2048];
+    static const TZrChar manifest[] =
+            "{"
+            "\"manifestVersion\":2,\"name\":\"app\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\","
+            "\"dependencies\":{"
+            "\"@shared\":{\"version\":\"^1.0.0\",\"path\":\"../shared-runtime\"}},"
+            "\"buildDependencies\":{"
+            "\"@shared\":{\"version\":\"^2.0.0\",\"path\":\"../shared-compile\"},"
+            "\"@derive\":{\"version\":\"1.4.0\",\"registry\":\"central\"}}"
+            "}";
+    static const TZrChar expected[] =
+            "{\"manifestVersion\":2,\"name\":\"app\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\","
+            "\"dependencies\":{"
+            "\"@shared\":{\"version\":\"^1.0.0\",\"path\":\"../shared-runtime\"}},"
+            "\"buildDependencies\":{"
+            "\"@derive\":{\"version\":\"1.4.0\",\"registry\":\"central\"},"
+            "\"@shared\":{\"version\":\"^2.0.0\",\"path\":\"../shared-compile\"}}}";
+    static const TZrChar expectedLock[] =
+            "{\"lockVersion\":1,\"dependencies\":{"
+            "\"@shared\":{\"version\":\"1.2.0\",\"contentHash\":\"sha256-runtime\","
+            "\"transitiveIdentity\":\"shared-runtime@1.2.0\",\"provider\":\"path\"}},"
+            "\"buildDependencies\":{"
+            "\"@derive\":{\"version\":\"1.4.0\",\"contentHash\":\"sha256-derive\","
+            "\"transitiveIdentity\":\"derive@1.4.0\",\"provider\":\"registry\"},"
+            "\"@shared\":{\"version\":\"2.1.0\",\"contentHash\":\"sha256-compile\","
+            "\"transitiveIdentity\":\"shared-compile@2.1.0\",\"provider\":\"path\"}}}";
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = new_project(state, manifest);
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_EQUAL_UINT32(1u, project->manifestDependencyCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, project->manifestBuildDependencyCount);
+    TEST_ASSERT_EQUAL_STRING("shared", project->manifestDependencies[0].packageIdentity.packageName);
+    TEST_ASSERT_EQUAL_STRING("../shared-runtime", test_string_text(project->manifestDependencies[0].source));
+    TEST_ASSERT_EQUAL_STRING("shared", project->manifestBuildDependencies[0].packageIdentity.packageName);
+    TEST_ASSERT_EQUAL_STRING("../shared-compile", test_string_text(project->manifestBuildDependencies[0].source));
+    TEST_ASSERT_EQUAL_STRING("derive", project->manifestBuildDependencies[1].packageIdentity.packageName);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY,
+                          project->manifestBuildDependencies[1].sourceKind);
+
+    memset(output, 0, sizeof(output));
+    TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_Write(project, output, sizeof(output)));
+    TEST_ASSERT_EQUAL_STRING(expected, output);
+    roundTrippedProject = new_project(state, output);
+    TEST_ASSERT_NOT_NULL(roundTrippedProject);
+    TEST_ASSERT_EQUAL_UINT32(1u, roundTrippedProject->manifestDependencyCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, roundTrippedProject->manifestBuildDependencyCount);
+
+    memset(lockEntries, 0, sizeof(lockEntries));
+    lockEntries[0].packageIdentity = project->manifestDependencies[0].packageIdentity;
+    lockEntries[0].resolvedVersion = "1.2.0";
+    lockEntries[0].contentHash = "sha256-runtime";
+    lockEntries[0].transitiveIdentity = "shared-runtime@1.2.0";
+    lockEntries[0].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH;
+    lockEntries[0].providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
+    lockEntries[1].packageIdentity = project->manifestBuildDependencies[0].packageIdentity;
+    lockEntries[1].resolvedVersion = "2.1.0";
+    lockEntries[1].contentHash = "sha256-compile";
+    lockEntries[1].transitiveIdentity = "shared-compile@2.1.0";
+    lockEntries[1].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH;
+    lockEntries[1].providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+    lockEntries[2].packageIdentity = project->manifestBuildDependencies[1].packageIdentity;
+    lockEntries[2].resolvedVersion = "1.4.0";
+    lockEntries[2].contentHash = "sha256-derive";
+    lockEntries[2].transitiveIdentity = "derive@1.4.0";
+    lockEntries[2].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY;
+    lockEntries[2].providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+    memset(output, 0, sizeof(output));
+    lockEntries[2].providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
+    TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_WriteDependencyLock(
+            project, lockEntries, ZR_ARRAY_COUNT(lockEntries), output, sizeof(output)));
+    TEST_ASSERT_EQUAL_CHAR('\0', output[0]);
+    lockEntries[2].providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+    lockEntries[2].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH;
+    TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_WriteDependencyLock(
+            project, lockEntries, ZR_ARRAY_COUNT(lockEntries), output, sizeof(output)));
+    TEST_ASSERT_EQUAL_CHAR('\0', output[0]);
+    lockEntries[2].providerSourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY;
+    lockEntries[2].packageIdentity = lockEntries[1].packageIdentity;
+    TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_WriteDependencyLock(
+            project, lockEntries, ZR_ARRAY_COUNT(lockEntries), output, sizeof(output)));
+    TEST_ASSERT_EQUAL_CHAR('\0', output[0]);
+    lockEntries[2].packageIdentity = project->manifestBuildDependencies[1].packageIdentity;
+    lockEntries[2].packageIdentity.packageName[0] = 'x';
+    TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_WriteDependencyLock(
+            project, lockEntries, ZR_ARRAY_COUNT(lockEntries), output, sizeof(output)));
+    TEST_ASSERT_EQUAL_CHAR('\0', output[0]);
+    lockEntries[2].packageIdentity = project->manifestBuildDependencies[1].packageIdentity;
+    TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_WriteDependencyLock(
+            project, lockEntries, ZR_ARRAY_COUNT(lockEntries), output, sizeof(output)));
+    TEST_ASSERT_EQUAL_STRING(expectedLock, output);
+
+    ZrLibrary_Project_Free(state, roundTrippedProject);
+    ZrLibrary_Project_Free(state, project);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_project_manifest_v2_rejects_legacy_or_ambiguous_declarations(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     static const TZrChar *invalidManifests[] = {
@@ -233,7 +337,29 @@ static void test_project_manifest_v2_rejects_legacy_or_ambiguous_declarations(vo
             "\"registry\":\"https://registry.example/math\"}}}",
             "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
             "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
-            "\"dependencies\":{\"@math\":{\"path\":\"../math\"}}}"
+            "\"dependencies\":{\"@math\":{\"path\":\"../math\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"buildDependencies\":{\"$legacy\":{\"version\":\"1.0.0\",\"path\":\"../legacy\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"buildDependencies\":{\"@derive\":{\"version\":\"1.0.0\",\"path\":\"../derive\","
+            "\"git\":\"https://git.example/derive.git\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"buildDependencies\":{\"@derive\":{\"path\":\"../derive\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"aliases\":{\"#derive\":\"@derive\"},"
+            "\"buildDependencies\":{\"@derive\":{\"version\":\"1.0.0\",\"path\":\"../derive\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"buildDependencies\":{\"@first\":{\"version\":\"1.0.0\",\"path\":\"../first\"}},"
+            "\"buildDependencies\":{\"@second\":{\"version\":\"2.0.0\",\"path\":\"../second\"}}}",
+            "{\"manifestVersion\":2,\"name\":\"physics\",\"version\":\"1.0.0\",\"kind\":\"library\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"index\","
+            "\"buildDependencies\":{\"@derive\":{\"version\":\"1.0.0\",\"version\":\"2.0.0\","
+            "\"path\":\"../derive\"}}}"
     };
 
     TEST_ASSERT_NOT_NULL(state);
@@ -419,6 +545,7 @@ int main(void) {
     RUN_TEST(test_project_manifest_v2_rejects_incomplete_or_unsupported_base_envelopes);
     RUN_TEST(test_project_manifest_v1_remains_an_explicit_migration_input);
     RUN_TEST(test_project_manifest_v2_reads_structured_alias_package_and_dependency_declarations);
+    RUN_TEST(test_project_manifest_v2_keeps_build_dependencies_phase_separated);
     RUN_TEST(test_project_manifest_v2_rejects_legacy_or_ambiguous_declarations);
     RUN_TEST(test_project_manifest_v2_writes_canonical_declarations);
     RUN_TEST(test_project_manifest_v2_writer_rejects_migration_and_absolute_path_inputs);

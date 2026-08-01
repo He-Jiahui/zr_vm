@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/attribute_contract.h
   - zr_vm_parser/include/zr_vm_parser/compile_tool.h
+  - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/comptime_contract.h
   - zr_vm_parser/include/zr_vm_parser/declaration_transform_contract.h
   - zr_vm_parser/src/zr_vm_parser/attribute_contract.c
@@ -15,16 +16,26 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_interfaces.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_attributes.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_attributes.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_transaction.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_transaction.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_identity.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_identity.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface_contracts.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface_contracts.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_attribute_binding.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_declaration_transform.c
   - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
+  - zr_vm_library/include/zr_vm_library/project.h
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2_lock.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/attribute_contract.c
   - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
   - zr_vm_parser/src/zr_vm_parser/declaration_transform_contract.c
@@ -35,15 +46,24 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_interfaces.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_attributes.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_attributes.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_transaction.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_transaction.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_identity.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_decorator_identity.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface_contracts.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface_contracts.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_attribute_binding.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_declaration_transform.c
   - zr_vm_parser/src/zr_vm_parser/compiler/comptime_runtime_contract.c
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
+  - zr_vm_library/src/zr_vm_library/project/project_manifest_v2_lock.c
 plan_sources:
   - user: 2026-07-30 verify Syntax status records and perform the breaking syntax cutover
   - docs/plans/syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md
@@ -54,6 +74,13 @@ tests:
   - tests/compileTime/test_comptime_runtime_contract.c
   - tests/compileTime/test_declaration_transform_contract.c
   - tests/compileTime/test_compile_time_execution.c
+  - tests/compileTime/test_compile_time_declaration_patch_transaction_cases.h
+  - tests/compileTime/test_compile_time_declaration_patch_transaction_hash_cases.h
+  - tests/library/test_project_manifest_v2.c
+  - tests/acceptance/2026-08-01-syntax-11-m4-patch-transaction.md
+  - tests/acceptance/2026-08-01-syntax-11-m4-generated-source-map.md
+  - tests/acceptance/2026-08-01-syntax-11-m5-build-dependencies.md
+  - tests/acceptance/2026-08-01-syntax-11-m5-compile-tool-cache-identity.md
   - tests/acceptance/2026-07-31-syntax-11-m4-typed-patch-diagnostics.md
   - tests/acceptance/2026-07-31-syntax-11-m4-interface-adds.md
   - tests/acceptance/2026-07-29-syntax-upper-gates-audit.md
@@ -102,10 +129,22 @@ decodes the currently supported typed generated field and re-enters ordinary
 member layout and symbol binding. `compile_time_declaration_patch_diagnostics.*`
 separately validates and emits typed Patch diagnostics so that this concern is
 not added to the already large evaluator orchestration file.
-`compile_time_declaration_patch_interfaces.*` decodes canonical TypeIds and
-applies interface relations only after Patch validation and diagnostics.
+`compile_time_declaration_patch_interfaces.*` decodes canonical TypeIds into
+prepared interface additions. The transaction module publishes those prepared
+relations only after Patch validation and diagnostics.
+`compile_time_declaration_patch_transaction.*` prepares generated fields and
+attribute metadata off to the side, reserves every native array before
+publication, and owns the single commit/rollback boundary for generated
+members, semantic symbols, interface relations, decorator records, and
+copy-on-write attribute metadata.
 `compiler_interface_contracts.*` keeps struct interface requirement checking
 out of the already oversized struct compiler.
+`writer_intermediate_generated_source_map.*` projects retained generated-field
+provenance into deterministic `.zri` source-map rows without expanding the
+already oversized intermediate-writer orchestration file. The same helper
+preflights the complete root/child prototype graph before the public writer
+opens an output file, so malformed packed metadata cannot reach the older debug
+printer or leave a partial artifact.
 
 ## Data Flow
 
@@ -115,6 +154,10 @@ out of the already oversized struct compiler.
    can name an interface declared later in source order.
 3. Build-fact evaluation prunes `comptime if` branches and records typed
    diagnostics/effects under deterministic budgets.
+   The in-process cache key includes every active lexical CompileTool binding,
+   its phase and public contract, and an optional borrowed artifact content
+   hash. Public-contract or content changes therefore cannot reuse an earlier
+   result.
 4. Attribute binding validates the schema and target before exposing typed
    AttributeData to a consumer.
 5. A declaration transform receives an immutable view and returns a typed
@@ -144,16 +187,38 @@ out of the already oversized struct compiler.
     the target's `inherits` and `implements` metadata. Class and struct targets
     then run ordinary required-member, receiver-effect, const-field, recursive
     parent-interface, and contract-slot validation before publication/layout.
+12. Patch publication is transactional. Generated member metadata and the
+    replacement attribute metadata object are fully built before publication;
+    member, symbol, interface, and decorator arrays are cloned into detached
+    backing storage before their lengths change. A later failure leaves the
+    original pointers, capacities, lengths, `nextSymbolId`, and metadata value
+    untouched. Existing metadata is cloned, so rollback cannot leave hidden
+    attribute entries in the old object. Detached GC values remain rooted until
+    the final no-fail swaps complete.
+13. The intermediate writer reads the retained `generated`,
+    `originTargetSymbolId`, and source-line metadata from ordinary compiled
+    members and emits a deterministic `GENERATED_SOURCE_MAPS` section. Files
+    without generated provenance do not acquire an empty section. Before any
+    output is created, it validates the encoded prototype count, each checked
+    record size, exact payload consumption, and every nested function.
 
 ## Failure and Compatibility Boundary
 
 The current implementation accepts typed non-empty `diagnostics`,
 `interfaceAdds`, and schema-checked `attributeAdds`. It supports only
 `GeneratedField` additions, with transform-source provenance and
-artifact/reflection retention. Generated methods, properties, types, generated
-source maps, complete rollback after allocation failure during a multi-add,
-formatter/build-dependency projection, and the remaining consumers are still
-Gate 11 M4/M5 work. These gaps keep the root Syntax plan open.
+artifact/reflection retention plus `.zri` source-map projection. This is the
+complete first-version generated-declaration surface: generated methods,
+properties, and types are intentionally unpublished until each passes the
+public reference gate. Formatter projection, compiler-side build-dependency
+loading, and the remaining consumers are still Gate 11 M5 work. The v2 project manifest
+keeps `buildDependencies` separate from runtime dependencies and emits
+phase-typed CompileTool entries in the deterministic lock graph. The comptime
+cache v2 mixes lexical provider public and content identity, but the external
+compiler sandbox loader does not yet resolve a build dependency and feed its
+content hash into that binding. Persistent incremental cache integration,
+formatter projection, and the remaining consumers are also open. These gaps
+keep the root Syntax plan open.
 
 The old runtime decorator executor and serialized helper callbacks are removed.
 An ordinary `#name#` application must resolve to a registered static metadata
@@ -176,13 +241,28 @@ schema-checked attribute additions, static decorator shape retention, and
 canonical interface additions for class and struct targets, later-declared
 interfaces, required members, receiver/const rules, contract slots, alias-aware
 identity collisions, negative typed constructor shapes, uint32 SymbolId alias
-rejection, and direct error-before-field-registration ordering. The runtime contract also checks
+rejection, direct error-before-field-registration ordering, generated
+multi-add allocator failure, forced mid-commit rollback, and mixed
+generated/interface/attribute rollback with existing metadata preservation.
+It also forces full GC during detached preparation, verifies exact backing
+identity on failure, and exercises transient hash-pair allocation failures at
+the root-holder, generated-provenance, attribute-entry, and attribute-envelope
+write sites.
+The generated-field roundtrip case also writes a real `.zri`, verifies its
+single source-map row contains the target SymbolId and source line range, and
+removes the artifact after the assertion. Adjacent writer cases prove omission
+of empty source-map sections, byte-stable two-row ordering, and fail-closed
+handling of overflowing and truncated prototype payloads; the latter paths are
+also replayed under MSVC AddressSanitizer.
+The runtime contract also checks
 diagnostic message/severity/location preservation, warning log projection, and
 the 1024/1025 budget boundary.
 `test_attribute_contract.c` locks the diagnostic constructor schema into the
-hashed canonical provider contract. The upper-gate
-ledger records which clauses are proven and which remain partial; passing the
-focused tests does not promote Gate 11 M4/M5 as a whole.
+hashed canonical provider contract and verifies that unadmitted generated
+declaration variants remain absent. The upper-gate ledger records which clauses
+are proven and which remain partial. Gate 11 M4 is proven for the first-version
+GeneratedField-only public surface; passing these focused tests does not
+promote Gate 11 M5 as a whole.
 
 The 2026-07-30 WSL GCC isolated build and full 123-test CTest matrix include the
 pre-diagnostic baseline. The 2026-07-31 WSL GCC and Clang focused replays pass
@@ -203,6 +283,15 @@ Patch diagnostic decoding is also isolated behind one internal function rather
 than adding more field/schema helpers to `compile_time_executor.c`.
 Patch interface decoding and value-type interface contract validation are
 isolated in their own modules for the same reason.
+Patch transaction tests are isolated in transaction and hash-failure cases
+headers so the already large compile-time runner only owns registration and
+shared fixtures.
+Generated source-map projection is isolated in
+`writer_intermediate_generated_source_map.c`; `writer_intermediate.c` contains
+only the root and nested-function orchestration calls.
+The project manifest lock projection is isolated in
+`project_manifest_v2_lock.c`; the already large v2 parser/writer exports only
+canonical package ordering, source-field, and identity-format helpers to it.
 `compiler_diagnostics.c` is the single mapping point from compile-time
 diagnostic severity to the core logging level.
 `compiler_attribute_binding.c` stays as one cohesive schema-to-application

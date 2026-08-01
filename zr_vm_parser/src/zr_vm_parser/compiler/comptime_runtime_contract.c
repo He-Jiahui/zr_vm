@@ -160,8 +160,55 @@ static void comptime_cache_mix_bytes(
 static void comptime_cache_mix_text(
         TZrUInt64 *key,
         const TZrChar *text) {
-    if (text != ZR_NULL) {
-        comptime_cache_mix_bytes(key, text, strlen(text));
+    TZrBool present = (TZrBool)(text != ZR_NULL);
+    TZrUInt64 length = present ? (TZrUInt64)strlen(text) : 0U;
+
+    comptime_cache_mix_bytes(key, &present, sizeof(present));
+    comptime_cache_mix_bytes(key, &length, sizeof(length));
+    if (present) {
+        comptime_cache_mix_bytes(key, text, (TZrSize)length);
+    }
+}
+
+static void comptime_cache_mix_compile_tool_bindings(
+        TZrUInt64 *key,
+        const SZrCompilerState *cs) {
+    TZrUInt64 bindingCount;
+
+    if (key == ZR_NULL || cs == ZR_NULL) {
+        return;
+    }
+    bindingCount = (TZrUInt64)cs->compileToolBindings.length;
+    comptime_cache_mix_bytes(key, &bindingCount, sizeof(bindingCount));
+    for (TZrSize index = 0; index < cs->compileToolBindings.length; index++) {
+        const SZrCompileToolBinding *binding =
+                (const SZrCompileToolBinding *)ZrCore_Array_Get(
+                        (SZrArray *)&cs->compileToolBindings, index);
+        const SZrParserCompileToolModuleDescriptor *provider;
+
+        if (binding == ZR_NULL) {
+            continue;
+        }
+        comptime_cache_mix_bytes(
+                key, &binding->kind, sizeof(binding->kind));
+        comptime_cache_mix_text(
+                key,
+                binding->name != ZR_NULL
+                        ? ZrCore_String_GetNativeString(binding->name)
+                        : ZR_NULL);
+        provider = binding->provider;
+        if (provider == ZR_NULL) {
+            continue;
+        }
+        comptime_cache_mix_text(key, provider->moduleName);
+        comptime_cache_mix_bytes(
+                key, &provider->providerPhase, sizeof(provider->providerPhase));
+        comptime_cache_mix_text(key, provider->publicContractHash);
+        comptime_cache_mix_bytes(
+                key,
+                &provider->computedPublicContractHash,
+                sizeof(provider->computedPublicContractHash));
+        comptime_cache_mix_text(key, binding->providerContentHash);
     }
 }
 
@@ -181,9 +228,10 @@ TZrUInt64 ZrParser_ComptimeCache_BeginKey(
     if (function->name != ZR_NULL) {
         functionName = ZrCore_String_GetNativeString(function->name);
     }
-    comptime_cache_mix_text(&key, "zr.comptime.cache/v1");
+    comptime_cache_mix_text(&key, "zr.comptime.cache/v2");
     comptime_cache_mix_text(&key, moduleName);
     comptime_cache_mix_text(&key, functionName);
+    comptime_cache_mix_compile_tool_bindings(&key, cs);
     comptime_cache_mix_bytes(
             &key, &cs->comptimeContext, sizeof(cs->comptimeContext));
     comptime_cache_mix_bytes(

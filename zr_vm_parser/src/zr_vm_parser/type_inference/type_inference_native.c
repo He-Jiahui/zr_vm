@@ -67,6 +67,10 @@ extern SZrObject *native_metadata_make_module_info(SZrState *state,
                                                    const ZrLibModuleDescriptor *descriptor,
                                                    const ZrLibRegisteredModuleRecord *record);
 
+static SZrTypePrototypeInfo *find_registered_type_prototype_inference_exact_only(
+        SZrCompilerState *cs,
+        SZrString *typeName);
+
 static TZrBool inferred_type_is_task_handle(SZrCompilerState *cs, const SZrInferredType *type) {
     if (cs == ZR_NULL || type == ZR_NULL) {
         return ZR_FALSE;
@@ -80,12 +84,28 @@ static TZrBool inferred_type_is_task_handle(SZrCompilerState *cs, const SZrInfer
 static void inferred_type_apply_registered_protocol_mask(
         SZrCompilerState *cs,
         SZrInferredType *type) {
+    SZrString *genericBaseName = ZR_NULL;
+    SZrArray genericArgumentTypeNames;
     SZrTypePrototypeInfo *prototype;
 
     if (cs == ZR_NULL || type == ZR_NULL || type->typeName == ZR_NULL) {
         return;
     }
-    prototype = find_compiler_type_prototype_inference(cs, type->typeName);
+    prototype = find_registered_type_prototype_inference_exact_only(cs, type->typeName);
+    ZrCore_Array_Construct(&genericArgumentTypeNames);
+    if (prototype == ZR_NULL &&
+        try_parse_generic_instance_type_name(
+                cs->state,
+                type->typeName,
+                &genericBaseName,
+                &genericArgumentTypeNames)) {
+        prototype = find_registered_type_prototype_inference_exact_only(
+                cs, genericBaseName);
+        ZrCore_Array_Free(cs->state, &genericArgumentTypeNames);
+    }
+    if (prototype == ZR_NULL) {
+        prototype = find_compiler_type_prototype_inference(cs, type->typeName);
+    }
     if (prototype != ZR_NULL) {
         type->protocolMask |= prototype->protocolMask;
     }
@@ -581,6 +601,20 @@ static void native_module_info_init_prototype(SZrState *state,
     info->allowBoxedConstruction =
             type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE && type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
     info->constructorSignature = ZR_NULL;
+}
+
+static void native_module_info_free_empty_prototype_arrays(
+        SZrState *state,
+        SZrTypePrototypeInfo *info) {
+    if (state == ZR_NULL || info == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Array_Free(state, &info->members);
+    ZrCore_Array_Free(state, &info->decorators);
+    ZrCore_Array_Free(state, &info->genericParameters);
+    ZrCore_Array_Free(state, &info->implements);
+    ZrCore_Array_Free(state, &info->inherits);
 }
 
 static TZrBool native_module_info_has_public_constructor(const SZrTypePrototypeInfo *info) {
@@ -1789,6 +1823,111 @@ not_array_type_name:
     return ZR_TRUE;
 }
 
+static TZrBool native_module_info_add_reference_property(
+        SZrCompilerState *cs,
+        SZrString *moduleName,
+        SZrTypePrototypeInfo *info,
+        EZrAstNodeType methodMemberType,
+        SZrString *propertyName,
+        SZrString *methodName,
+        SZrString *returnTypeName,
+        TZrBool isStatic,
+        EZrCanonicalReceiverEffect receiverEffect,
+        TZrUInt32 parameterCount,
+        TZrUInt32 minArgumentCount,
+        SZrObject *parametersArray,
+        SZrObject *genericParametersArray,
+        TZrUInt32 contractRole,
+        EZrReferenceAccess referenceAccess,
+        TZrBool exportsWritableRef,
+        const SZrNativeModuleMemberIdentity *identity) {
+    SZrTypeMemberInfo visible;
+    SZrTypeMemberInfo *accessor;
+    SZrString *localReturnTypeName;
+    TZrUInt32 propertyIdentity;
+    TZrSize memberCountBeforeAccessor;
+
+    if (cs == ZR_NULL || info == ZR_NULL || propertyName == ZR_NULL ||
+        methodName == ZR_NULL || returnTypeName == ZR_NULL || isStatic ||
+        referenceAccess == ZR_REFERENCE_ACCESS_NONE ||
+        referenceAccess > ZR_REFERENCE_ACCESS_READONLY ||
+        native_module_info_has_member(info, propertyName)) {
+        return ZR_FALSE;
+    }
+
+    localReturnTypeName = native_module_info_local_type_name(
+            cs, moduleName, returnTypeName);
+    propertyIdentity = info->nextPropertyIdentity++;
+    memset(&visible, 0, sizeof(visible));
+    visible.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
+    visible.memberType = ZR_AST_PROPERTY_DECLARATION;
+    visible.name = propertyName;
+    visible.accessModifier = ZR_ACCESS_PUBLIC;
+    visible.receiverEffect =
+            referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE
+                    ? ZR_CANONICAL_RECEIVER_MUTABLE
+                    : ZR_CANONICAL_RECEIVER_READONLY;
+    visible.fieldTypeName = localReturnTypeName;
+    visible.ownerTypeName = info->name;
+    visible.baseDefinitionOwnerTypeName = info->name;
+    visible.baseDefinitionName = propertyName;
+    visible.contractRole = contractRole;
+    visible.virtualSlotIndex = UINT32_MAX;
+    visible.interfaceContractSlot = UINT32_MAX;
+    visible.propertyIdentity = propertyIdentity;
+    visible.propertySymbolId = ZR_SEMANTIC_ID_INVALID;
+    visible.propertyValueTypeId = ZR_SEMANTIC_ID_INVALID;
+    visible.getterAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
+    visible.setterAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
+    visible.initAccessorSymbolId = ZR_SEMANTIC_ID_INVALID;
+    visible.metaType = (EZrMetaType)referenceAccess;
+    visible.isMetaMethod = exportsWritableRef;
+    if (!inferred_type_from_type_name(
+                cs, localReturnTypeName, &visible.structuredReturnType)) {
+        return ZR_FALSE;
+    }
+    visible.structuredReturnType.referenceAccess = referenceAccess;
+    visible.hasStructuredReturnType = ZR_TRUE;
+    ZrCore_Array_Push(cs->state, &info->members, &visible);
+
+    memberCountBeforeAccessor = info->members.length;
+    native_module_info_add_method_member_with_identity(
+            cs,
+            moduleName,
+            info,
+            methodMemberType,
+            methodName,
+            returnTypeName,
+            isStatic,
+            receiverEffect,
+            parameterCount,
+            minArgumentCount,
+            parametersArray,
+            genericParametersArray,
+            contractRole,
+            identity);
+    if (info->members.length != memberCountBeforeAccessor + 1U) {
+        return ZR_FALSE;
+    }
+    accessor = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+            &info->members, info->members.length - 1U);
+    if (accessor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    accessor->propertyIdentity = propertyIdentity;
+    accessor->accessorRole = ZR_PROPERTY_ACCESSOR_ROLE_GET;
+    accessor->baseDefinitionName = propertyName;
+    accessor->receiverEffect = visible.receiverEffect;
+    accessor->propertySymbolId = ZR_SEMANTIC_ID_INVALID;
+    accessor->propertyValueTypeId = ZR_SEMANTIC_ID_INVALID;
+    ZrParser_InferredType_Copy(
+            cs->state,
+            &accessor->structuredReturnType,
+            &visible.structuredReturnType);
+    accessor->hasStructuredReturnType = ZR_TRUE;
+    return ZR_TRUE;
+}
+
 static TZrBool native_module_info_register_canonical_constructor_contracts(
         SZrCompilerState *cs,
         SZrTypePrototypeInfo *info) {
@@ -2913,6 +3052,7 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
     TZrUInt64 pathHash;
     TZrUInt32 nativeMemberRidCursor = 1;
     TZrUInt32 nativeSignatureRidCursor = 1;
+    TZrSize nativeTypeForwardStart = 0;
     TZrBool pushedImportStack = ZR_FALSE;
     TZrBool result = ZR_FALSE;
     const TZrChar *moduleNameText;
@@ -3156,6 +3296,40 @@ translate_module_info:
 
     typeHintsArray = native_module_info_get_array_field(cs->state, moduleInfo, "typeHints");
     typesArray = native_module_info_get_array_field(cs->state, moduleInfo, "types");
+    nativeTypeForwardStart = cs->typePrototypes.length;
+    for (TZrSize i = 0; i < native_module_info_array_length(typesArray); i++) {
+        SZrObject *entry = native_module_info_array_get_object(cs->state, typesArray, i);
+        SZrString *name = native_module_info_get_string_field(cs->state, entry, "name");
+        TZrInt64 prototypeTypeValue = native_module_info_get_int_field(
+                cs->state,
+                entry,
+                "prototypeType",
+                ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        TZrUInt64 protocolMask = (TZrUInt64)native_module_info_get_int_field(
+                cs->state, entry, "protocolMask", 0);
+        SZrTypePrototypeInfo forwardPrototype;
+
+        if (name == ZR_NULL ||
+            find_compiler_type_prototype_inference(cs, name) != ZR_NULL) {
+            continue;
+        }
+
+        native_module_info_init_prototype(
+                cs->state,
+                &forwardPrototype,
+                name,
+                (EZrObjectPrototypeType)prototypeTypeValue);
+        forwardPrototype.importModuleName = moduleName;
+        forwardPrototype.protocolMask = protocolMask;
+        if ((protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)) != 0) {
+            forwardPrototype.modifierFlags |= ZR_DECLARATION_MODIFIER_REF_LIKE;
+        }
+        if ((protocolMask &
+             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY)) != 0) {
+            forwardPrototype.modifierFlags |= ZR_DECLARATION_MODIFIER_READONLY;
+        }
+        ZrCore_Array_Push(cs->state, &cs->typePrototypes, &forwardPrototype);
+    }
     for (TZrSize i = 0; i < native_module_info_array_length(typesArray); i++) {
         SZrObject *entry = native_module_info_array_get_object(cs->state, typesArray, i);
         SZrString *name = native_module_info_get_string_field(cs->state, entry, "name");
@@ -3186,6 +3360,8 @@ translate_module_info:
         SZrObject *metaMethodsArray = native_module_info_get_array_field(cs->state, entry, "metaMethods");
         SZrObject *genericParametersArray = native_module_info_get_array_field(cs->state, entry, "genericParameters");
         SZrTypePrototypeInfo typePrototype;
+        TZrSize forwardPrototypeIndex = 0;
+        TZrBool hasForwardPrototype = ZR_FALSE;
         EZrAstNodeType fieldMemberType;
         EZrAstNodeType methodMemberType;
 
@@ -3218,7 +3394,22 @@ translate_module_info:
                                                               &identity);
         }
 
-        if (find_compiler_type_prototype_inference(cs, name) != ZR_NULL) {
+        for (TZrSize prototypeIndex = nativeTypeForwardStart;
+             prototypeIndex < cs->typePrototypes.length;
+             prototypeIndex++) {
+            SZrTypePrototypeInfo *candidate =
+                    (SZrTypePrototypeInfo *)ZrCore_Array_Get(
+                            &cs->typePrototypes, prototypeIndex);
+            if (candidate != ZR_NULL && candidate->name != ZR_NULL &&
+                candidate->importModuleName != ZR_NULL &&
+                ZrCore_String_Equal(candidate->name, name) &&
+                ZrCore_String_Equal(candidate->importModuleName, moduleName)) {
+                forwardPrototypeIndex = prototypeIndex;
+                hasForwardPrototype = ZR_TRUE;
+                break;
+            }
+        }
+        if (!hasForwardPrototype) {
             continue;
         }
 
@@ -3231,9 +3422,6 @@ translate_module_info:
         typePrototype.protocolMask = protocolMask;
         if ((protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)) != 0) {
             typePrototype.modifierFlags |= ZR_DECLARATION_MODIFIER_REF_LIKE;
-            if (typePrototype.type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-                typePrototype.isImportedNative = ZR_FALSE;
-            }
         }
         if ((protocolMask &
              ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY)) != 0) {
@@ -3273,9 +3461,11 @@ translate_module_info:
             SZrObject *fieldEntry = native_module_info_array_get_object(cs->state, fieldsArray, fieldIndex);
             SZrString *fieldName = native_module_info_get_string_field(cs->state, fieldEntry, "name");
             SZrString *fieldTypeName = native_module_info_get_string_field(cs->state, fieldEntry, "typeName");
+            TZrBool runtimeOnly = native_module_info_get_bool_field(
+                    cs->state, fieldEntry, "runtimeOnly", ZR_FALSE);
             TZrUInt32 contractRole =
                     (TZrUInt32)native_module_info_get_int_field(cs->state, fieldEntry, "contractRole", 0);
-            if (fieldName != ZR_NULL) {
+            if (fieldName != ZR_NULL && !runtimeOnly) {
                 native_module_info_add_field_member(cs->state,
                                                     &typePrototype,
                                                     fieldMemberType,
@@ -3293,6 +3483,19 @@ translate_module_info:
             TZrBool isStatic = native_module_info_get_bool_field(cs->state, methodEntry, "isStatic", ZR_FALSE);
             TZrBool isReadonlyReceiver = native_module_info_get_bool_field(
                     cs->state, methodEntry, "isReadonlyReceiver", ZR_FALSE);
+            SZrString *propertyName = native_module_info_get_string_field(
+                    cs->state, methodEntry, "propertyName");
+            TZrInt64 propertyReferenceAccess = native_module_info_get_int_field(
+                    cs->state,
+                    methodEntry,
+                    "propertyReferenceAccess",
+                    ZR_REFERENCE_ACCESS_NONE);
+            TZrBool propertyExportsWritableRef =
+                    native_module_info_get_bool_field(
+                            cs->state,
+                            methodEntry,
+                            "propertyExportsWritableRef",
+                            ZR_FALSE);
             TZrUInt32 parameterCount = native_module_info_exact_parameter_count(cs->state, methodEntry);
             TZrUInt32 minArgumentCount =
                     native_module_info_min_argument_count(cs->state, methodEntry, parameterCount);
@@ -3316,25 +3519,51 @@ translate_module_info:
                                                         &nativeMemberRidCursor,
                                                         &nativeSignatureRidCursor,
                                                         &identity);
-                native_module_info_add_method_member_with_identity(
-                        cs,
-                        moduleName,
-                        &typePrototype,
-                        methodMemberType,
-                        methodName,
-                        returnTypeName,
-                        isStatic,
-                        isStatic
-                                ? ZR_CANONICAL_RECEIVER_NONE
-                                : (isReadonlyReceiver
-                                           ? ZR_CANONICAL_RECEIVER_READONLY
-                                           : ZR_CANONICAL_RECEIVER_MUTABLE),
-                        parameterCount,
-                        minArgumentCount,
-                        parametersArray,
-                        methodGenericParametersArray,
-                        contractRole,
-                        &identity);
+                if (propertyName != ZR_NULL &&
+                    propertyReferenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+                    if (!native_module_info_add_reference_property(
+                                cs,
+                                moduleName,
+                                &typePrototype,
+                                methodMemberType,
+                                propertyName,
+                                methodName,
+                                returnTypeName,
+                                isStatic,
+                                isReadonlyReceiver
+                                        ? ZR_CANONICAL_RECEIVER_READONLY
+                                        : ZR_CANONICAL_RECEIVER_MUTABLE,
+                                parameterCount,
+                                minArgumentCount,
+                                parametersArray,
+                                methodGenericParametersArray,
+                                contractRole,
+                                (EZrReferenceAccess)propertyReferenceAccess,
+                                propertyExportsWritableRef,
+                                &identity)) {
+                        goto cleanup;
+                    }
+                } else {
+                    native_module_info_add_method_member_with_identity(
+                            cs,
+                            moduleName,
+                            &typePrototype,
+                            methodMemberType,
+                            methodName,
+                            returnTypeName,
+                            isStatic,
+                            isStatic
+                                    ? ZR_CANONICAL_RECEIVER_NONE
+                                    : (isReadonlyReceiver
+                                               ? ZR_CANONICAL_RECEIVER_READONLY
+                                               : ZR_CANONICAL_RECEIVER_MUTABLE),
+                            parameterCount,
+                            minArgumentCount,
+                            parametersArray,
+                            methodGenericParametersArray,
+                            contractRole,
+                            &identity);
+                }
             }
         }
 
@@ -3385,6 +3614,7 @@ translate_module_info:
             }
         }
 
+        type_inference_publish_property_contracts(cs, &typePrototype);
         if (!native_module_info_register_canonical_value_definition(
                     cs, &typePrototype)) {
             goto cleanup;
@@ -3393,7 +3623,17 @@ translate_module_info:
                    cs, &typePrototype)) {
             goto cleanup;
         }
-        ZrCore_Array_Push(cs->state, &cs->typePrototypes, &typePrototype);
+        {
+            SZrTypePrototypeInfo *forwardPrototype =
+                    (SZrTypePrototypeInfo *)ZrCore_Array_Get(
+                            &cs->typePrototypes, forwardPrototypeIndex);
+            if (forwardPrototype == ZR_NULL) {
+                goto cleanup;
+            }
+            native_module_info_free_empty_prototype_arrays(
+                    cs->state, forwardPrototype);
+            *forwardPrototype = typePrototype;
+        }
     }
 
     for (TZrSize hintIndex = 0; hintIndex < native_module_info_array_length(typeHintsArray); hintIndex++) {

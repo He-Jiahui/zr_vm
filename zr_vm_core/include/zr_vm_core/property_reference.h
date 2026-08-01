@@ -17,6 +17,12 @@ ZR_CORE_API TZrBool ZrCore_PropertyReference_CreateMember(
         TZrUInt32 memberEntryIndex,
         SZrTypeValue *result);
 
+ZR_CORE_API TZrBool ZrCore_PropertyReference_CreateMemberByName(
+        struct SZrState *state,
+        const SZrTypeValue *base,
+        const TZrChar *name,
+        SZrTypeValue *result);
+
 ZR_CORE_API TZrBool ZrCore_PropertyReference_CreateIndex(
         struct SZrState *state,
         const SZrTypeValue *base,

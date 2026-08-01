@@ -3,13 +3,18 @@
 
 #include "compiler_internal.h"
 
-void ZrParser_CompileToolBinding_Reset(SZrCompilerState *cs);
+ZR_PARSER_API void ZrParser_CompileToolBinding_Reset(SZrCompilerState *cs);
 TZrSize ZrParser_CompileToolBinding_Mark(const SZrCompilerState *cs);
 void ZrParser_CompileToolBinding_Restore(SZrCompilerState *cs, TZrSize mark);
-TZrBool ZrParser_CompileToolBinding_DeclareProvider(
+ZR_PARSER_API TZrBool ZrParser_CompileToolBinding_DeclareProvider(
         SZrCompilerState *cs,
         SZrString *name,
         const SZrParserCompileToolModuleDescriptor *provider);
+ZR_PARSER_API TZrBool ZrParser_CompileToolBinding_DeclareProviderWithContentHash(
+        SZrCompilerState *cs,
+        SZrString *name,
+        const SZrParserCompileToolModuleDescriptor *provider,
+        const TZrChar *providerContentHash);
 TZrBool ZrParser_CompileToolBinding_DeclareShadow(SZrCompilerState *cs, SZrString *name);
 const SZrCompileToolBinding *ZrParser_CompileToolBinding_Resolve(
         const SZrCompilerState *cs,

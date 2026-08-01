@@ -49,6 +49,7 @@ typedef enum EZrCompileToolBindingKind {
 typedef struct SZrCompileToolBinding {
     SZrString *name;
     const SZrParserCompileToolModuleDescriptor *provider;
+    const TZrChar *providerContentHash; // borrowed; provider storage outlives compiler state
     EZrCompileToolBindingKind kind;
 } SZrCompileToolBinding;
 

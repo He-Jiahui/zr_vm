@@ -943,12 +943,19 @@ static TZrTypeId import_property_accessor_callable_type_id(
         return ZR_SEMANTIC_ID_INVALID;
     }
     if (accessor->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_GET) {
-        if (accessor->returnTypeName == ZR_NULL ||
-            !inferred_type_from_type_name(
-                    cs,
-                    accessor->returnTypeName,
-                    &returnType)) {
-            return ZR_SEMANTIC_ID_INVALID;
+        if (accessor->hasStructuredReturnType) {
+            ZrParser_InferredType_Copy(
+                    cs->state,
+                    &returnType,
+                    &accessor->structuredReturnType);
+        } else {
+            if (accessor->returnTypeName == ZR_NULL ||
+                !inferred_type_from_type_name(
+                        cs,
+                        accessor->returnTypeName,
+                        &returnType)) {
+                return ZR_SEMANTIC_ID_INVALID;
+            }
         }
     } else {
         ZrParser_InferredType_Init(
@@ -1017,15 +1024,20 @@ static TZrBool import_publish_one_property_contract(
     SZrString *initializerValueName = ZR_NULL;
     SZrFileRange unavailableRange;
     TZrTypeId propertyTypeId;
+    EZrReferenceAccess referenceAccess;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
         prototype == ZR_NULL || visible == ZR_NULL ||
         visible->memberType != ZR_AST_PROPERTY_DECLARATION ||
         visible->accessorRole != ZR_PROPERTY_ACCESSOR_ROLE_NONE ||
         visible->propertyIdentity == UINT32_MAX || visible->name == ZR_NULL ||
-        visible->fieldTypeName == ZR_NULL ||
-        (TZrUInt32)visible->metaType >
-                (TZrUInt32)ZR_REFERENCE_ACCESS_READONLY) {
+        visible->fieldTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    referenceAccess = visible->hasStructuredReturnType
+                              ? visible->structuredReturnType.referenceAccess
+                              : (EZrReferenceAccess)visible->metaType;
+    if (referenceAccess > ZR_REFERENCE_ACCESS_READONLY) {
         return ZR_FALSE;
     }
     for (TZrSize index = 0U; index < prototype->members.length; index++) {
@@ -1063,8 +1075,15 @@ static TZrBool import_publish_one_property_contract(
     if (getter == ZR_NULL && setter == ZR_NULL && initializer == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (!inferred_type_from_type_name(cs, visible->fieldTypeName, &propertyType)) {
-        return ZR_FALSE;
+    if (visible->hasStructuredReturnType) {
+        ZrParser_InferredType_Copy(
+                cs->state, &propertyType, &visible->structuredReturnType);
+    } else {
+        if (!inferred_type_from_type_name(
+                    cs, visible->fieldTypeName, &propertyType)) {
+            return ZR_FALSE;
+        }
+        propertyType.referenceAccess = referenceAccess;
     }
     propertyTypeId = ZrParser_CanonicalType_FromInferred(
             cs->semanticContext,
@@ -1196,8 +1215,9 @@ static TZrBool import_publish_one_property_contract(
                                          ? initializer->accessModifier
                                          : visible->accessModifier;
     contract.modifierFlags = visible->modifierFlags;
-    contract.referenceAccess = (EZrReferenceAccess)visible->metaType;
-    contract.exportsWritableRef = visible->isMetaMethod;
+    contract.referenceAccess = referenceAccess;
+    contract.exportsWritableRef =
+            visible->exportsWritableRef || visible->isMetaMethod;
     contract.isStatic = visible->isStatic;
     contract.receiverEffect = visible->isStatic
                                       ? ZR_CANONICAL_RECEIVER_NONE
@@ -1240,7 +1260,7 @@ static TZrBool import_publish_one_property_contract(
     return ZR_TRUE;
 }
 
-static void import_publish_compiled_property_contracts(
+void type_inference_publish_property_contracts(
         SZrCompilerState *cs,
         SZrTypePrototypeInfo *prototype) {
     if (cs == ZR_NULL || prototype == ZR_NULL) {
@@ -1496,7 +1516,7 @@ TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
                 }
             }
 
-            import_publish_compiled_property_contracts(cs, &typePrototype);
+            type_inference_publish_property_contracts(cs, &typePrototype);
 
             register_imported_type_name(cs, prototypeName);
             if (mergeImportedPlaceholder) {

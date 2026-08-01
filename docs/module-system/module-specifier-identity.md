@@ -98,26 +98,30 @@ Syntax 10R M2.2 makes three v2 manifest fields structured project facts rather t
 - `aliases` preserves its full `#root` spelling and a parsed `SZrLibrary_ModuleSpecifier` target. Targets may
   be workspace, official-native, registered-native, package-root, or canonical `file:` specifiers. Relative
   targets and alias-to-alias recursion are rejected. A package target must be the current package or a declared
-  dependency. `ZrLibrary_Project_ResolveManifestAlias` expands canonical child segments into the target domain;
+  runtime dependency; build-only packages cannot pass through the phase-neutral alias table.
+  `ZrLibrary_Project_ResolveManifestAlias` expands canonical child segments into the target domain;
   file targets receive URI path segments only. It never chooses a provider or validates a terminal artifact.
 - `package.name` is exactly one `@package` root. `package.exports` maps `.` or `./logical.module` keys to
   workspace module specifiers. `ZrLibrary_Project_ResolvePackageExport` resolves only an explicitly exported
   key, so `@package/hidden` fails instead of falling back to a filename or raw module text.
-- `dependencies` stores a package identity, nonempty version requirement, exactly one source kind (`path`,
-  `registry`, or `git`), and its source spelling. The reader does not load a path, fetch a registry, clone git,
-  or serialize a lock at this stage.
+- `dependencies` and `buildDependencies` each store a package identity, nonempty version requirement, exactly one
+  source kind (`path`, `registry`, or `git`), and its source spelling. They use separate arrays: a package may be
+  present in both with different requirements/providers without merging Runtime and CompileTool facts. The reader
+  rejects duplicate section/version keys and guards dependency-array size multiplication before allocation. It does
+  not load a path, fetch a registry, clone git, or choose a compiler sandbox provider at this stage.
 
 The v2 reader rejects v1-only `pathAliases`, `references`, `dependency`, and `local` fields. That keeps old
 `@` aliases plus `$`/`&` dependency resolution in the v1 migration adapter instead of silently translating
-them into the v2 identity model. `project.c` owns only lifecycle installation/freeing; all JSON loops and
-cross-declaration checks stay in `project_manifest_v2.c`.
+them into the v2 identity model. `project.c` owns only lifecycle installation/freeing; manifest JSON loops and
+cross-declaration checks stay in `project_manifest_v2.c`, while phase-typed lock projection is isolated in
+`project_manifest_v2_lock.c`.
 
 ## Canonical V2 Writer And Lock Projection
 
 `ZrLibrary_ProjectManifestV2_Write` accepts only a complete v2 project and emits the required base envelope followed
-by v2 `aliases`, `package.exports`, and `dependencies`. Base fields have a fixed order; declaration keys are ordered
-by their canonical `#root`, export key, or `@package` identity. Logical segment output uses slash separators, but
-the in-memory `ModuleSpecifier`/`ModuleIdentity` remains structured and dot-normalized.
+by v2 `aliases`, `package.exports`, `dependencies`, and `buildDependencies`. Base fields have a fixed order;
+declaration keys are ordered by their canonical `#root`, export key, or `@package` identity. Logical segment output
+uses slash separators, but the in-memory `ModuleSpecifier`/`ModuleIdentity` remains structured and dot-normalized.
 
 The publisher rejects v1 migration projects and every machine-local source locator: absolute drive, POSIX, UNC, and
 `file:` locations are never publishable. A `path` dependency must therefore remain relative; a `registry` dependency
@@ -126,17 +130,19 @@ git URI with an authority. Empty-authority URIs, drive-like authorities, `localh
 rejected. The writer does not emit `pathAliases`, `$dependency`, `&reference`, `local`, or a machine-local cache path.
 
 `ZrLibrary_ProjectManifestV2_WriteDependencyLock` receives independently resolved
-`SZrLibrary_ProjectManifestDependencyLockEntry` facts. Each lock entry must match exactly one declared package and
-the declaration's source kind. The generated lock contains only resolved version, content hash, transitive identity,
-and structured provider kind. It deliberately does not receive or write a provider locator, so lock data cannot
-accidentally publish a local cache path.
+`SZrLibrary_ProjectManifestDependencyLockEntry` facts. Each lock entry must match exactly one declared package,
+the declaration's source kind, and its Runtime or CompileTool provider phase. The generated lock preserves separate
+`dependencies` and `buildDependencies` sections, so even the same package identity can carry distinct runtime and
+compiler content hashes. It contains only resolved version, content hash, transitive identity, and structured
+provider kind. It deliberately does not receive or write a provider locator, so lock data cannot accidentally
+publish a local cache path.
 
 ## Test Coverage
 
 `test_project_module_specifier.c` fixes absolute-domain separator equivalence, native/workspace distinction,
 relative domain-preserving resolution, alias and package decomposition, canonical POSIX/drive/UNC locators,
 and malformed-input rejection. `test_project_manifest_v2.c` covers structured alias/package/dependency storage,
-domain-preserving alias and export resolution, deterministic v2 writer and lock projection output, unexported package
-rejection, v1-field isolation, local locator and loopback publication rejection, ambiguous dependency source
-rejection, and malformed roots. The existing `test_project_import_resolver.c` remains a regression guard for the
-untouched legacy resolver path.
+domain-preserving alias and export resolution, phase-separated runtime/build dependency storage, deterministic v2
+writer and phase-typed lock projection output, unexported package rejection, v1-field isolation, local locator and
+loopback publication rejection, ambiguous dependency source rejection, and malformed roots. The existing
+`test_project_import_resolver.c` remains a regression guard for the untouched legacy resolver path.

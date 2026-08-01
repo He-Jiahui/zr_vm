@@ -227,7 +227,12 @@ TZrBool ZrCore_Value_CanFastCopyPlainHeapObject(struct SZrState *state, const SZ
     }
 
     sourceObject = ZR_CAST_OBJECT(state, source->value.object);
-    return (TZrBool)(sourceObject != ZR_NULL && sourceObject->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT);
+    return (TZrBool)(sourceObject != ZR_NULL &&
+                     (sourceObject->internalType !=
+                              ZR_OBJECT_INTERNAL_TYPE_STRUCT ||
+                      (sourceObject->prototype != ZR_NULL &&
+                       (sourceObject->prototype->protocolMask &
+                        ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)) != 0U)));
 }
 
 void ZrCore_Value_CopySlow(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {

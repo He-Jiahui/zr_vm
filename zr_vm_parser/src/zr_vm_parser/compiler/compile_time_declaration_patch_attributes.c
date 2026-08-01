@@ -40,23 +40,33 @@ static TZrBool patch_attribute_set_object_field(
         SZrObject *object,
         const TZrChar *name,
         const SZrTypeValue *value) {
-    SZrString *keyString;
+    ZrExternCompilerTempRoot keyRoot = {0};
+    SZrString *keyString = ZR_NULL;
     SZrTypeValue key;
+    TZrBool result = ZR_FALSE;
 
     if (cs == ZR_NULL || object == ZR_NULL || name == ZR_NULL ||
-        value == ZR_NULL) {
+        value == ZR_NULL ||
+        !extern_compiler_temp_root_begin(cs, &keyRoot)) {
         return ZR_FALSE;
     }
     keyString = ZrCore_String_CreateFromNative(
             cs->state, (TZrNativeString)name);
     if (keyString == ZR_NULL) {
-        return ZR_FALSE;
+        goto cleanup;
     }
     ZrCore_Value_InitAsRawObject(
             cs->state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
     key.type = ZR_VALUE_TYPE_STRING;
+    if (!extern_compiler_temp_root_set_value(&keyRoot, &key)) {
+        goto cleanup;
+    }
     ZrCore_Object_SetValue(cs->state, object, &key, value);
-    return ZR_TRUE;
+    result = ZrCore_Object_GetValue(cs->state, object, &key) != ZR_NULL;
+
+cleanup:
+    extern_compiler_temp_root_end(&keyRoot);
+    return result;
 }
 
 static const SZrTypeValue *patch_attribute_array_at(
@@ -115,23 +125,14 @@ static const SZrCompilerAttributeSchemaBinding *patch_attribute_find_schema(
     return ZR_NULL;
 }
 
-static TZrSize patch_attribute_existing_count(
+static TZrSize patch_attribute_metadata_count(
         SZrCompilerState *cs,
-        const SZrTypePrototypeInfo *targetInfo,
+        SZrObject *metadataObject,
         TZrUInt32 attributeId) {
-    SZrObject *metadataObject;
     TZrSize count = 0U;
     TZrChar key[64];
 
-    if (cs == ZR_NULL || targetInfo == ZR_NULL ||
-        !targetInfo->hasDecoratorMetadata ||
-        targetInfo->decoratorMetadataValue.type != ZR_VALUE_TYPE_OBJECT ||
-        targetInfo->decoratorMetadataValue.value.object == ZR_NULL) {
-        return 0U;
-    }
-    metadataObject = ZR_CAST_OBJECT(
-            cs->state, targetInfo->decoratorMetadataValue.value.object);
-    if (metadataObject == ZR_NULL) {
+    if (cs == ZR_NULL || metadataObject == ZR_NULL) {
         return 0U;
     }
     for (;;) {
@@ -143,6 +144,23 @@ static TZrSize patch_attribute_existing_count(
         }
         count++;
     }
+}
+
+static TZrSize patch_attribute_existing_count(
+        SZrCompilerState *cs,
+        const SZrTypePrototypeInfo *targetInfo,
+        TZrUInt32 attributeId) {
+    SZrObject *metadataObject;
+
+    if (cs == ZR_NULL || targetInfo == ZR_NULL ||
+        !targetInfo->hasDecoratorMetadata ||
+        targetInfo->decoratorMetadataValue.type != ZR_VALUE_TYPE_OBJECT ||
+        targetInfo->decoratorMetadataValue.value.object == ZR_NULL) {
+        return 0U;
+    }
+    metadataObject = ZR_CAST_OBJECT(
+            cs->state, targetInfo->decoratorMetadataValue.value.object);
+    return patch_attribute_metadata_count(cs, metadataObject, attributeId);
 }
 
 static TZrBool patch_attribute_normalize_constant(
@@ -163,7 +181,10 @@ static TZrBool patch_attribute_normalize_constant(
     switch (expectedKind) {
         case ZR_PARSER_ATTRIBUTE_VALUE_BOOL:
             if (value->type != ZR_VALUE_TYPE_BOOL) return ZR_FALSE;
-            constant->value.boolValue = value->value.nativeObject.nativeBool;
+            constant->value.boolValue =
+                    value->value.nativeObject.nativeBool != 0U
+                            ? ZR_TRUE
+                            : ZR_FALSE;
             return ZR_TRUE;
         case ZR_PARSER_ATTRIBUTE_VALUE_INT:
         case ZR_PARSER_ATTRIBUTE_VALUE_ENUM:
@@ -403,17 +424,21 @@ TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
                     cs->state->global,
                     result->count * sizeof(*result->entries),
                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-    result->contractData =
-            (SZrParserAttributeData *)ZrCore_Memory_RawMallocWithType(
-                    cs->state->global,
-                    result->count * sizeof(*result->contractData),
-                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-    if (result->entries == ZR_NULL || result->contractData == ZR_NULL) {
+    if (result->entries == ZR_NULL) {
         ZrParser_CompileTime_FreePatchAttributeAdds(cs, result);
         return ZR_FALSE;
     }
     ZrCore_Memory_RawSet(
             result->entries, 0, result->count * sizeof(*result->entries));
+    result->contractData =
+            (SZrParserAttributeData *)ZrCore_Memory_RawMallocWithType(
+                    cs->state->global,
+                    result->count * sizeof(*result->contractData),
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (result->contractData == ZR_NULL) {
+        ZrParser_CompileTime_FreePatchAttributeAdds(cs, result);
+        return ZR_FALSE;
+    }
     for (TZrSize index = 0; index < result->count; index++) {
         if (!patch_attribute_prepare_entry(
                     cs,
@@ -431,40 +456,83 @@ TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_CompileTime_ApplyPatchAttributeAdds(
+static TZrBool patch_attribute_copy_metadata_fields(
         SZrCompilerState *cs,
-        SZrTypePrototypeInfo *targetInfo,
-        const SZrParserCompileTimePatchAttributeAdds *attributeAdds) {
+        SZrObject *target,
+        SZrObject *source) {
+    if (cs == ZR_NULL || target == ZR_NULL || source == ZR_NULL ||
+        !source->nodeMap.isValid || source->nodeMap.buckets == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize bucketIndex = 0;
+         bucketIndex < source->nodeMap.capacity;
+         bucketIndex++) {
+        SZrHashKeyValuePair *pair = source->nodeMap.buckets[bucketIndex];
+
+        while (pair != ZR_NULL) {
+            ZrCore_Object_SetValue(
+                    cs->state, target, &pair->key, &pair->value);
+            if (ZrCore_Object_GetValue(
+                        cs->state, target, &pair->key) == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            pair = pair->next;
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_CompileTime_BuildPatchAttributeMetadata(
+        SZrCompilerState *cs,
+        const SZrTypePrototypeInfo *targetInfo,
+        const SZrParserCompileTimePatchAttributeAdds *attributeAdds,
+        SZrTypeValue *metadataValue) {
     SZrObject *metadataObject = ZR_NULL;
+    SZrObject *existingMetadataObject = ZR_NULL;
+    ZrExternCompilerTempRoot existingMetadataRoot = {0};
+    ZrExternCompilerTempRoot metadataRoot = {0};
+    TZrBool result = ZR_FALSE;
 
     if (cs == ZR_NULL || targetInfo == ZR_NULL || attributeAdds == ZR_NULL ||
+        metadataValue == ZR_NULL ||
         (attributeAdds->count > 0U && attributeAdds->entries == ZR_NULL)) {
         return ZR_FALSE;
     }
+    ZrCore_Value_ResetAsNull(metadataValue);
     if (attributeAdds->count == 0U) {
         return ZR_TRUE;
+    }
+    if (!extern_compiler_temp_root_begin(cs, &existingMetadataRoot) ||
+        !extern_compiler_temp_root_begin(cs, &metadataRoot)) {
+        goto cleanup;
     }
     if (targetInfo->hasDecoratorMetadata) {
         if (targetInfo->decoratorMetadataValue.type != ZR_VALUE_TYPE_OBJECT ||
             targetInfo->decoratorMetadataValue.value.object == ZR_NULL) {
-            return ZR_FALSE;
+            goto cleanup;
         }
-        metadataObject = ZR_CAST_OBJECT(
+        existingMetadataObject = ZR_CAST_OBJECT(
                 cs->state, targetInfo->decoratorMetadataValue.value.object);
-    }
-    if (metadataObject == ZR_NULL) {
-        metadataObject = ZrCore_Object_New(cs->state, ZR_NULL);
-        if (metadataObject == ZR_NULL) {
-            return ZR_FALSE;
+        if (existingMetadataObject == ZR_NULL ||
+            !extern_compiler_temp_root_set_value(
+                    &existingMetadataRoot,
+                    &targetInfo->decoratorMetadataValue)) {
+            goto cleanup;
         }
-        ZrCore_Object_Init(cs->state, metadataObject);
     }
-    ZrCore_Value_InitAsRawObject(
-            cs->state,
-            &targetInfo->decoratorMetadataValue,
-            ZR_CAST_RAW_OBJECT_AS_SUPER(metadataObject));
-    targetInfo->decoratorMetadataValue.type = ZR_VALUE_TYPE_OBJECT;
-    targetInfo->hasDecoratorMetadata = ZR_TRUE;
+    metadataObject = extern_compiler_new_object_constant(cs);
+    if (metadataObject == ZR_NULL ||
+        !extern_compiler_temp_root_set_object(
+                &metadataRoot, metadataObject, ZR_VALUE_TYPE_OBJECT)) {
+        goto cleanup;
+    }
+    if (!metadataObject->nodeMap.isValid ||
+        metadataObject->nodeMap.buckets == ZR_NULL ||
+        (existingMetadataObject != ZR_NULL &&
+         !patch_attribute_copy_metadata_fields(
+                 cs, metadataObject, existingMetadataObject))) {
+        goto cleanup;
+    }
 
     for (TZrSize index = 0; index < attributeAdds->count; index++) {
         const SZrParserCompileTimePatchAttributeAdd *addition =
@@ -474,33 +542,36 @@ TZrBool ZrParser_CompileTime_ApplyPatchAttributeAdds(
         SZrTypeValue entryValue;
         TZrChar key[64];
         TZrSize existingCount;
-        SZrTypeDecoratorInfo decoratorInfo;
+        ZrExternCompilerTempRoot entryRoot = {0};
+        TZrBool entryResult = ZR_FALSE;
 
-        if (addition->schema == ZR_NULL) {
-            return ZR_FALSE;
+        if (addition->schema == ZR_NULL ||
+            !extern_compiler_temp_root_begin(cs, &entryRoot)) {
+            goto cleanup;
         }
-        entry = ZrCore_Object_New(cs->state, ZR_NULL);
-        if (entry == ZR_NULL) {
-            return ZR_FALSE;
+        entry = extern_compiler_new_object_constant(cs);
+        if (entry == ZR_NULL ||
+            !extern_compiler_temp_root_set_object(
+                    &entryRoot, entry, ZR_VALUE_TYPE_OBJECT)) {
+            goto entry_cleanup;
         }
-        ZrCore_Object_Init(cs->state, entry);
         ZrCore_Value_InitAsUInt(cs->state, &scalar, addition->data.attributeId);
         if (!patch_attribute_set_object_field(
-                    cs, entry, "attributeId", &scalar)) return ZR_FALSE;
+                    cs, entry, "attributeId", &scalar)) goto entry_cleanup;
         ZrCore_Value_InitAsUInt(cs->state, &scalar, addition->data.typeId);
         if (!patch_attribute_set_object_field(
-                    cs, entry, "typeId", &scalar)) return ZR_FALSE;
+                    cs, entry, "typeId", &scalar)) goto entry_cleanup;
         ZrCore_Value_InitAsInt(cs->state, &scalar, addition->data.retention);
         if (!patch_attribute_set_object_field(
-                    cs, entry, "retention", &scalar)) return ZR_FALSE;
+                    cs, entry, "retention", &scalar)) goto entry_cleanup;
         ZrCore_Value_InitAsInt(
                 cs->state, &scalar, addition->data.sourceRange.start.line);
         if (!patch_attribute_set_object_field(
-                    cs, entry, "sourceLineStart", &scalar)) return ZR_FALSE;
+                    cs, entry, "sourceLineStart", &scalar)) goto entry_cleanup;
         ZrCore_Value_InitAsInt(
                 cs->state, &scalar, addition->data.sourceRange.end.line);
         if (!patch_attribute_set_object_field(
-                    cs, entry, "sourceLineEnd", &scalar)) return ZR_FALSE;
+                    cs, entry, "sourceLineEnd", &scalar)) goto entry_cleanup;
         for (TZrSize fieldIndex = 0;
              fieldIndex < addition->data.fieldValueCount;
              fieldIndex++) {
@@ -514,11 +585,11 @@ TZrBool ZrParser_CompileTime_ApplyPatchAttributeAdds(
                         entry,
                         ZrCore_String_GetNativeStringShort(field->name),
                         &addition->values[fieldIndex])) {
-                return ZR_FALSE;
+                goto entry_cleanup;
             }
         }
-        existingCount = patch_attribute_existing_count(
-                cs, targetInfo, addition->data.attributeId);
+        existingCount = patch_attribute_metadata_count(
+                cs, metadataObject, addition->data.attributeId);
         snprintf(key, sizeof(key), "attribute:%08x:%llu",
                  (unsigned int)addition->data.attributeId,
                  (unsigned long long)existingCount);
@@ -527,19 +598,27 @@ TZrBool ZrParser_CompileTime_ApplyPatchAttributeAdds(
         entryValue.type = ZR_VALUE_TYPE_OBJECT;
         if (!patch_attribute_set_object_field(
                     cs, metadataObject, key, &entryValue)) {
-            return ZR_FALSE;
+            goto entry_cleanup;
         }
-        decoratorInfo.name = addition->schema->name;
-        if (!targetInfo->decorators.isValid || targetInfo->decorators.head == ZR_NULL) {
-            ZrCore_Array_Init(
-                    cs->state,
-                    &targetInfo->decorators,
-                    sizeof(SZrTypeDecoratorInfo),
-                    ZR_PARSER_INITIAL_CAPACITY_TINY);
+        entryResult = ZR_TRUE;
+
+entry_cleanup:
+        extern_compiler_temp_root_end(&entryRoot);
+        if (!entryResult) {
+            goto cleanup;
         }
-        ZrCore_Array_Push(cs->state, &targetInfo->decorators, &decoratorInfo);
     }
-    return ZR_TRUE;
+    ZrCore_Value_InitAsRawObject(
+            cs->state,
+            metadataValue,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(metadataObject));
+    metadataValue->type = ZR_VALUE_TYPE_OBJECT;
+    result = ZR_TRUE;
+
+cleanup:
+    extern_compiler_temp_root_end(&metadataRoot);
+    extern_compiler_temp_root_end(&existingMetadataRoot);
+    return result;
 }
 
 void ZrParser_CompileTime_FreePatchAttributeAdds(

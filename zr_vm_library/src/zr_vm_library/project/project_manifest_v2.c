@@ -1,6 +1,7 @@
 #include "project/project_manifest_v2.h"
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -268,6 +269,7 @@ static TZrBool library_project_manifest_v2_parse_dependency_source(
     EZrLibrary_ProjectManifestDependencySourceKind sourceKind =
             ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH;
     TZrSize sourceCount = 0u;
+    TZrSize versionCount = 0u;
 
     cJSON_ArrayForEach(field, dependencyJson) {
         if (field->string == ZR_NULL ||
@@ -277,24 +279,27 @@ static TZrBool library_project_manifest_v2_parse_dependency_source(
              strcmp(field->string, "git") != 0)) {
             return ZR_FALSE;
         }
-        if (strcmp(field->string, "version") != 0) {
-            if (!cJSON_IsString(field) || field->valuestring == ZR_NULL || field->valuestring[0] == '\0') {
-                return ZR_FALSE;
-            }
-            sourceCount++;
-            sourceJson = field;
-            if (strcmp(field->string, "path") == 0) {
-                sourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH;
-            } else if (strcmp(field->string, "registry") == 0) {
-                sourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY;
-            } else {
-                sourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_GIT;
-            }
+        if (!cJSON_IsString(field) || field->valuestring == ZR_NULL ||
+            field->valuestring[0] == '\0') {
+            return ZR_FALSE;
+        }
+        if (strcmp(field->string, "version") == 0) {
+            versionCount++;
+            continue;
+        }
+        sourceCount++;
+        sourceJson = field;
+        if (strcmp(field->string, "path") == 0) {
+            sourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH;
+        } else if (strcmp(field->string, "registry") == 0) {
+            sourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY;
+        } else {
+            sourceKind = ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_GIT;
         }
     }
     field = cJSON_GetObjectItemCaseSensitive(dependencyJson, "version");
     if (!cJSON_IsString(field) || field->valuestring == ZR_NULL || field->valuestring[0] == '\0' ||
-        sourceCount != 1u || sourceJson == ZR_NULL) {
+        versionCount != 1u || sourceCount != 1u || sourceJson == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -307,18 +312,39 @@ static TZrBool library_project_manifest_v2_parse_dependency_source(
     return ZR_TRUE;
 }
 
-static TZrBool library_project_manifest_v2_parse_dependencies(SZrState *state,
-                                                               SZrLibrary_Project *project,
-                                                               cJSON *manifestJson) {
+static TZrBool library_project_manifest_v2_parse_dependency_collection(
+        SZrState *state,
+        cJSON *manifestJson,
+        const TZrChar *fieldName,
+        SZrLibrary_ProjectManifestDependency **outDependencies,
+        TZrSize *outDependencyCount,
+        TZrSize *outDependencyCapacity) {
     cJSON *dependenciesJson;
     cJSON *dependencyJson;
+    cJSON *manifestField;
+    SZrLibrary_ProjectManifestDependency *dependencies;
+    TZrSize sectionCount = 0u;
     TZrSize count = 0u;
     TZrSize index = 0u;
 
-    dependenciesJson = cJSON_GetObjectItemCaseSensitive(manifestJson, "dependencies");
-    if (dependenciesJson == ZR_NULL) {
+    if (state == ZR_NULL || state->global == ZR_NULL || manifestJson == ZR_NULL ||
+        fieldName == ZR_NULL || outDependencies == ZR_NULL ||
+        outDependencyCount == ZR_NULL || outDependencyCapacity == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    cJSON_ArrayForEach(manifestField, manifestJson) {
+        if (manifestField->string != ZR_NULL &&
+            strcmp(manifestField->string, fieldName) == 0) {
+            sectionCount++;
+        }
+    }
+    if (sectionCount == 0u) {
         return ZR_TRUE;
     }
+    if (sectionCount != 1u) {
+        return ZR_FALSE;
+    }
+    dependenciesJson = cJSON_GetObjectItemCaseSensitive(manifestJson, fieldName);
     if (!cJSON_IsObject(dependenciesJson)) {
         return ZR_FALSE;
     }
@@ -328,19 +354,23 @@ static TZrBool library_project_manifest_v2_parse_dependencies(SZrState *state,
     if (count == 0u) {
         return ZR_TRUE;
     }
-
-    project->manifestDependencies = (SZrLibrary_ProjectManifestDependency *)ZrCore_Memory_RawMallocWithType(
-            state->global,
-            sizeof(*project->manifestDependencies) * count,
-            ZR_MEMORY_NATIVE_TYPE_PROJECT);
-    if (project->manifestDependencies == ZR_NULL) {
+    if (count > SIZE_MAX / sizeof(*dependencies)) {
         return ZR_FALSE;
     }
-    memset(project->manifestDependencies, 0, sizeof(*project->manifestDependencies) * count);
-    project->manifestDependencyCapacity = count;
+
+    dependencies = (SZrLibrary_ProjectManifestDependency *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(*dependencies) * count,
+            ZR_MEMORY_NATIVE_TYPE_PROJECT);
+    if (dependencies == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(dependencies, 0, sizeof(*dependencies) * count);
+    *outDependencies = dependencies;
+    *outDependencyCapacity = count;
 
     cJSON_ArrayForEach(dependencyJson, dependenciesJson) {
-        SZrLibrary_ProjectManifestDependency *dependency = &project->manifestDependencies[index];
+        SZrLibrary_ProjectManifestDependency *dependency = &dependencies[index];
         TZrSize priorIndex;
 
         if (dependencyJson->string == ZR_NULL || !cJSON_IsObject(dependencyJson) ||
@@ -349,15 +379,33 @@ static TZrBool library_project_manifest_v2_parse_dependencies(SZrState *state,
             return ZR_FALSE;
         }
         for (priorIndex = 0u; priorIndex < index; priorIndex++) {
-            if (strcmp(project->manifestDependencies[priorIndex].packageIdentity.packageName,
+            if (strcmp(dependencies[priorIndex].packageIdentity.packageName,
                        dependency->packageIdentity.packageName) == 0) {
                 return ZR_FALSE;
             }
         }
         index++;
     }
-    project->manifestDependencyCount = index;
+    *outDependencyCount = index;
     return ZR_TRUE;
+}
+static TZrBool library_project_manifest_v2_parse_dependencies(SZrState *state,
+                                                               SZrLibrary_Project *project,
+                                                               cJSON *manifestJson) {
+    return library_project_manifest_v2_parse_dependency_collection(
+                   state,
+                   manifestJson,
+                   "dependencies",
+                   &project->manifestDependencies,
+                   &project->manifestDependencyCount,
+                   &project->manifestDependencyCapacity) &&
+           library_project_manifest_v2_parse_dependency_collection(
+                   state,
+                   manifestJson,
+                   "buildDependencies",
+                   &project->manifestBuildDependencies,
+                   &project->manifestBuildDependencyCount,
+                   &project->manifestBuildDependencyCapacity);
 }
 
 static TZrBool library_project_manifest_v2_declares_package(const SZrLibrary_Project *project,
@@ -460,6 +508,15 @@ void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
                                       sizeof(*project->manifestDependencies) * project->manifestDependencyCapacity,
                                       ZR_MEMORY_NATIVE_TYPE_PROJECT);
     }
+    if (project->manifestBuildDependencies != ZR_NULL &&
+        project->manifestBuildDependencyCapacity > 0u) {
+        ZrCore_Memory_RawFreeWithType(
+                global,
+                project->manifestBuildDependencies,
+                sizeof(*project->manifestBuildDependencies) *
+                        project->manifestBuildDependencyCapacity,
+                ZR_MEMORY_NATIVE_TYPE_PROJECT);
+    }
     project->manifestAliases = ZR_NULL;
     project->manifestAliasCount = 0u;
     project->manifestAliasCapacity = 0u;
@@ -470,6 +527,9 @@ void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
     project->manifestDependencies = ZR_NULL;
     project->manifestDependencyCount = 0u;
     project->manifestDependencyCapacity = 0u;
+    project->manifestBuildDependencies = ZR_NULL;
+    project->manifestBuildDependencyCount = 0u;
+    project->manifestBuildDependencyCapacity = 0u;
 }
 
 TZrBool library_project_manifest_v2_parse_declarations(SZrState *state,
@@ -996,7 +1056,7 @@ static TZrBool library_project_manifest_v2_specifier_to_literal(const SZrLibrary
     }
 }
 
-static TZrBool library_project_manifest_v2_package_identity_to_literal(
+TZrBool library_project_manifest_v2_package_identity_to_literal(
         const SZrLibrary_ModuleIdentity *identity,
         TZrChar *outLiteral,
         TZrSize outLiteralSize) {
@@ -1087,26 +1147,27 @@ static TZrBool library_project_manifest_v2_export_index_at_ordinal(const SZrLibr
     return ZR_FALSE;
 }
 
-static TZrBool library_project_manifest_v2_dependency_index_at_ordinal(const SZrLibrary_Project *project,
-                                                                        TZrSize ordinal,
-                                                                        TZrSize *outIndex) {
+TZrBool library_project_manifest_v2_dependency_index_at_ordinal(
+        const SZrLibrary_ProjectManifestDependency *dependencies,
+        TZrSize dependencyCount,
+        TZrSize ordinal,
+        TZrSize *outIndex) {
     TZrSize index;
 
-    if (project == ZR_NULL || outIndex == ZR_NULL || ordinal >= project->manifestDependencyCount) {
+    if (dependencies == ZR_NULL || outIndex == ZR_NULL || ordinal >= dependencyCount) {
         return ZR_FALSE;
     }
-    for (index = 0u; index < project->manifestDependencyCount; index++) {
-        const TZrChar *packageName = project->manifestDependencies[index].packageIdentity.packageName;
+    for (index = 0u; index < dependencyCount; index++) {
+        const TZrChar *packageName = dependencies[index].packageIdentity.packageName;
         TZrSize otherIndex;
         TZrSize rank = 0u;
 
-        if (project->manifestDependencies[index].packageIdentity.domain != ZR_LIBRARY_MODULE_DOMAIN_PACKAGE ||
-            packageName[0] == '\0' || project->manifestDependencies[index].packageIdentity.segments[0] != '\0') {
+        if (dependencies[index].packageIdentity.domain != ZR_LIBRARY_MODULE_DOMAIN_PACKAGE ||
+            packageName[0] == '\0' || dependencies[index].packageIdentity.segments[0] != '\0') {
             return ZR_FALSE;
         }
-        for (otherIndex = 0u; otherIndex < project->manifestDependencyCount; otherIndex++) {
-            const SZrLibrary_ModuleIdentity *otherIdentity =
-                    &project->manifestDependencies[otherIndex].packageIdentity;
+        for (otherIndex = 0u; otherIndex < dependencyCount; otherIndex++) {
+            const SZrLibrary_ModuleIdentity *otherIdentity = &dependencies[otherIndex].packageIdentity;
             int comparison;
 
             if (otherIdentity->domain != ZR_LIBRARY_MODULE_DOMAIN_PACKAGE || otherIdentity->packageName[0] == '\0' ||
@@ -1133,9 +1194,28 @@ static TZrBool library_project_manifest_v2_dependency_source_kind_is_valid(
            sourceKind == ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_GIT;
 }
 
-TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Project *project) {
-    TZrSize index;
+static TZrBool library_project_manifest_v2_validate_dependency_collection(
+        const SZrLibrary_ProjectManifestDependency *dependencies,
+        TZrSize dependencyCount) {
+    if (dependencyCount > 0u && dependencies == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0u; index < dependencyCount; index++) {
+        const SZrLibrary_ProjectManifestDependency *dependency = &dependencies[index];
 
+        if (!library_project_manifest_v2_has_nonempty_string(dependency->versionRequirement) ||
+            !library_project_manifest_v2_has_nonempty_string(dependency->source) ||
+            !library_project_manifest_v2_dependency_source_kind_is_valid(dependency->sourceKind) ||
+            !library_project_manifest_v2_dependency_source_is_publishable(
+                    dependency->sourceKind,
+                    library_project_manifest_v2_string_text(dependency->source))) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Project *project) {
     if (project == ZR_NULL || project->manifestVersion != 2u ||
         !library_project_manifest_v2_has_nonempty_string(project->name) ||
         !library_project_manifest_v2_has_nonempty_string(project->version) ||
@@ -1144,7 +1224,12 @@ TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Proje
         !library_project_manifest_v2_has_nonempty_string(project->binary) ||
         !library_project_manifest_v2_has_nonempty_string(project->entry) ||
         (project->manifestAliasCount > 0u && project->manifestAliases == ZR_NULL) ||
-        (project->manifestDependencyCount > 0u && project->manifestDependencies == ZR_NULL) ||
+        !library_project_manifest_v2_validate_dependency_collection(
+                project->manifestDependencies,
+                project->manifestDependencyCount) ||
+        !library_project_manifest_v2_validate_dependency_collection(
+                project->manifestBuildDependencies,
+                project->manifestBuildDependencyCount) ||
         (project->packageExportCount > 0u && project->packageExports == ZR_NULL)) {
         return ZR_FALSE;
     }
@@ -1159,18 +1244,6 @@ TZrBool library_project_manifest_v2_validate_writer_input(const SZrLibrary_Proje
     }
     if (!library_project_manifest_v2_validate_alias_package_targets(project)) {
         return ZR_FALSE;
-    }
-    for (index = 0u; index < project->manifestDependencyCount; index++) {
-        const SZrLibrary_ProjectManifestDependency *dependency = &project->manifestDependencies[index];
-
-        if (!library_project_manifest_v2_has_nonempty_string(dependency->versionRequirement) ||
-            !library_project_manifest_v2_has_nonempty_string(dependency->source) ||
-            !library_project_manifest_v2_dependency_source_kind_is_valid(dependency->sourceKind) ||
-            !library_project_manifest_v2_dependency_source_is_publishable(
-                    dependency->sourceKind,
-                    library_project_manifest_v2_string_text(dependency->source))) {
-            return ZR_FALSE;
-        }
     }
     return ZR_TRUE;
 }
@@ -1253,7 +1326,7 @@ static cJSON *library_project_manifest_v2_build_package(const SZrLibrary_Project
     return packageJson;
 }
 
-static const TZrChar *library_project_manifest_v2_dependency_source_field(
+const TZrChar *library_project_manifest_v2_dependency_source_field(
         EZrLibrary_ProjectManifestDependencySourceKind sourceKind) {
     switch (sourceKind) {
     case ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH:
@@ -1267,7 +1340,9 @@ static const TZrChar *library_project_manifest_v2_dependency_source_field(
     }
 }
 
-static cJSON *library_project_manifest_v2_build_dependencies(const SZrLibrary_Project *project) {
+static cJSON *library_project_manifest_v2_build_dependencies(
+        const SZrLibrary_ProjectManifestDependency *dependencies,
+        TZrSize dependencyCount) {
     cJSON *dependenciesJson;
     TZrSize ordinal;
 
@@ -1275,18 +1350,19 @@ static cJSON *library_project_manifest_v2_build_dependencies(const SZrLibrary_Pr
     if (dependenciesJson == ZR_NULL) {
         return ZR_NULL;
     }
-    for (ordinal = 0u; ordinal < project->manifestDependencyCount; ordinal++) {
+    for (ordinal = 0u; ordinal < dependencyCount; ordinal++) {
         TZrSize index;
         const SZrLibrary_ProjectManifestDependency *dependency;
         const TZrChar *sourceField;
         TZrChar packageLiteral[ZR_LIBRARY_MAX_PATH_LENGTH];
         cJSON *dependencyJson;
 
-        if (!library_project_manifest_v2_dependency_index_at_ordinal(project, ordinal, &index)) {
+        if (!library_project_manifest_v2_dependency_index_at_ordinal(
+                    dependencies, dependencyCount, ordinal, &index)) {
             cJSON_Delete(dependenciesJson);
             return ZR_NULL;
         }
-        dependency = &project->manifestDependencies[index];
+        dependency = &dependencies[index];
         sourceField = library_project_manifest_v2_dependency_source_field(dependency->sourceKind);
         dependencyJson = cJSON_CreateObject();
         if (sourceField == ZR_NULL || dependencyJson == ZR_NULL ||
@@ -1315,6 +1391,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_Write(const SZrLibrary_Projec
     cJSON *aliasesJson = ZR_NULL;
     cJSON *packageJson = ZR_NULL;
     cJSON *dependenciesJson = ZR_NULL;
+    cJSON *buildDependenciesJson = ZR_NULL;
     TZrBool ok = ZR_FALSE;
 
     if (outManifest != ZR_NULL && outManifestSize > 0u) {
@@ -1350,11 +1427,24 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_Write(const SZrLibrary_Projec
         packageJson = ZR_NULL;
     }
     if (project->manifestDependencyCount > 0u) {
-        dependenciesJson = library_project_manifest_v2_build_dependencies(project);
+        dependenciesJson = library_project_manifest_v2_build_dependencies(
+                project->manifestDependencies,
+                project->manifestDependencyCount);
         if (dependenciesJson == ZR_NULL || !cJSON_AddItemToObject(manifestJson, "dependencies", dependenciesJson)) {
             goto cleanup;
         }
         dependenciesJson = ZR_NULL;
+    }
+    if (project->manifestBuildDependencyCount > 0u) {
+        buildDependenciesJson = library_project_manifest_v2_build_dependencies(
+                project->manifestBuildDependencies,
+                project->manifestBuildDependencyCount);
+        if (buildDependenciesJson == ZR_NULL ||
+            !cJSON_AddItemToObject(
+                    manifestJson, "buildDependencies", buildDependenciesJson)) {
+            goto cleanup;
+        }
+        buildDependenciesJson = ZR_NULL;
     }
     ok = cJSON_PrintPreallocated(manifestJson, outManifest, (int)outManifestSize, 0) ? ZR_TRUE : ZR_FALSE;
 
@@ -1365,132 +1455,7 @@ cleanup:
     cJSON_Delete(aliasesJson);
     cJSON_Delete(packageJson);
     cJSON_Delete(dependenciesJson);
+    cJSON_Delete(buildDependenciesJson);
     cJSON_Delete(manifestJson);
-    return ok;
-}
-
-static TZrBool library_project_manifest_v2_lock_entry_index_at_ordinal(
-        const SZrLibrary_ProjectManifestDependencyLockEntry *entries,
-        TZrSize entryCount,
-        TZrSize ordinal,
-        TZrSize *outIndex) {
-    TZrSize index;
-
-    if (entries == ZR_NULL || outIndex == ZR_NULL || ordinal >= entryCount) {
-        return ZR_FALSE;
-    }
-    for (index = 0u; index < entryCount; index++) {
-        const SZrLibrary_ModuleIdentity *identity = &entries[index].packageIdentity;
-        TZrSize otherIndex;
-        TZrSize rank = 0u;
-
-        if (identity->domain != ZR_LIBRARY_MODULE_DOMAIN_PACKAGE || identity->packageName[0] == '\0' ||
-            identity->segments[0] != '\0' || entries[index].resolvedVersion == ZR_NULL ||
-            entries[index].resolvedVersion[0] == '\0' || entries[index].contentHash == ZR_NULL ||
-            entries[index].contentHash[0] == '\0' || entries[index].transitiveIdentity == ZR_NULL ||
-            entries[index].transitiveIdentity[0] == '\0' ||
-            !library_project_manifest_v2_dependency_source_kind_is_valid(entries[index].providerSourceKind)) {
-            return ZR_FALSE;
-        }
-        for (otherIndex = 0u; otherIndex < entryCount; otherIndex++) {
-            const SZrLibrary_ModuleIdentity *otherIdentity = &entries[otherIndex].packageIdentity;
-            int comparison;
-
-            if (otherIdentity->domain != ZR_LIBRARY_MODULE_DOMAIN_PACKAGE || otherIdentity->packageName[0] == '\0' ||
-                otherIdentity->segments[0] != '\0') {
-                return ZR_FALSE;
-            }
-            comparison = strcmp(otherIdentity->packageName, identity->packageName);
-            if ((otherIndex != index && comparison == 0) || comparison < 0) {
-                rank++;
-            }
-        }
-        if (rank == ordinal) {
-            *outIndex = index;
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
-static const SZrLibrary_ProjectManifestDependency *library_project_manifest_v2_find_dependency(
-        const SZrLibrary_Project *project,
-        const SZrLibrary_ModuleIdentity *identity) {
-    TZrSize index;
-
-    for (index = 0u; index < project->manifestDependencyCount; index++) {
-        if (ZrLibrary_ModuleIdentity_Equals(&project->manifestDependencies[index].packageIdentity, identity)) {
-            return &project->manifestDependencies[index];
-        }
-    }
-    return ZR_NULL;
-}
-
-ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_WriteDependencyLock(
-        const SZrLibrary_Project *project,
-        const SZrLibrary_ProjectManifestDependencyLockEntry *entries,
-        TZrSize entryCount,
-        TZrChar *outLock,
-        TZrSize outLockSize) {
-    cJSON *lockJson = ZR_NULL;
-    cJSON *dependenciesJson = ZR_NULL;
-    TZrSize ordinal;
-    TZrBool ok = ZR_FALSE;
-
-    if (outLock != ZR_NULL && outLockSize > 0u) {
-        outLock[0] = '\0';
-    }
-    if (outLock == ZR_NULL || outLockSize == 0u || outLockSize > (TZrSize)INT_MAX ||
-        !library_project_manifest_v2_validate_writer_input(project) ||
-        entryCount != project->manifestDependencyCount || (entryCount > 0u && entries == ZR_NULL)) {
-        return ZR_FALSE;
-    }
-    lockJson = cJSON_CreateObject();
-    dependenciesJson = cJSON_CreateObject();
-    if (lockJson == ZR_NULL || dependenciesJson == ZR_NULL ||
-        cJSON_AddNumberToObject(lockJson, "lockVersion", 1) == ZR_NULL) {
-        goto cleanup;
-    }
-    for (ordinal = 0u; ordinal < entryCount; ordinal++) {
-        TZrSize index;
-        const SZrLibrary_ProjectManifestDependencyLockEntry *entry;
-        const SZrLibrary_ProjectManifestDependency *dependency;
-        const TZrChar *provider;
-        TZrChar packageLiteral[ZR_LIBRARY_MAX_PATH_LENGTH];
-        cJSON *entryJson;
-
-        if (!library_project_manifest_v2_lock_entry_index_at_ordinal(entries, entryCount, ordinal, &index)) {
-            goto cleanup;
-        }
-        entry = &entries[index];
-        dependency = library_project_manifest_v2_find_dependency(project, &entry->packageIdentity);
-        provider = library_project_manifest_v2_dependency_source_field(entry->providerSourceKind);
-        entryJson = cJSON_CreateObject();
-        if (dependency == ZR_NULL || dependency->sourceKind != entry->providerSourceKind || provider == ZR_NULL ||
-            entryJson == ZR_NULL ||
-            !library_project_manifest_v2_package_identity_to_literal(&entry->packageIdentity,
-                                                                     packageLiteral,
-                                                                     sizeof(packageLiteral)) ||
-            cJSON_AddStringToObject(entryJson, "version", entry->resolvedVersion) == ZR_NULL ||
-            cJSON_AddStringToObject(entryJson, "contentHash", entry->contentHash) == ZR_NULL ||
-            cJSON_AddStringToObject(entryJson, "transitiveIdentity", entry->transitiveIdentity) == ZR_NULL ||
-            cJSON_AddStringToObject(entryJson, "provider", provider) == ZR_NULL ||
-            !cJSON_AddItemToObject(dependenciesJson, packageLiteral, entryJson)) {
-            cJSON_Delete(entryJson);
-            goto cleanup;
-        }
-    }
-    if (!cJSON_AddItemToObject(lockJson, "dependencies", dependenciesJson)) {
-        goto cleanup;
-    }
-    dependenciesJson = ZR_NULL;
-    ok = cJSON_PrintPreallocated(lockJson, outLock, (int)outLockSize, 0) ? ZR_TRUE : ZR_FALSE;
-
-cleanup:
-    if (!ok) {
-        outLock[0] = '\0';
-    }
-    cJSON_Delete(dependenciesJson);
-    cJSON_Delete(lockJson);
     return ok;
 }

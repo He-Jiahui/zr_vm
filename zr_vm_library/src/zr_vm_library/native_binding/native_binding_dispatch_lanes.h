@@ -92,7 +92,8 @@ static ZR_FORCE_INLINE TZrBool native_binding_value_requires_cloned_stable_copy_
     }
 
     object = ZR_CAST_OBJECT(state, value->value.object);
-    return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT;
+    return object != ZR_NULL &&
+           !ZrCore_Value_CanFastCopyPlainHeapObject(state, value);
 }
 
 static ZR_FORCE_INLINE TZrBool native_binding_value_can_shallow_stable_copy_inline(SZrState *state,

@@ -9,17 +9,13 @@ typedef struct SZrParserCompileTimePatchInterfaceAdds {
     TZrSize count;
 } SZrParserCompileTimePatchInterfaceAdds;
 
-TZrBool ZrParser_CompileTime_PreparePatchInterfaceAdds(
+ZR_PARSER_API TZrBool ZrParser_CompileTime_PreparePatchInterfaceAdds(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
         const SZrTypeValue *interfaceAddsValue,
         SZrFileRange location,
         SZrParserCompileTimePatchInterfaceAdds *result);
-TZrBool ZrParser_CompileTime_ApplyPatchInterfaceAdds(
-        SZrCompilerState *cs,
-        SZrTypePrototypeInfo *targetInfo,
-        const SZrParserCompileTimePatchInterfaceAdds *interfaceAdds);
-void ZrParser_CompileTime_FreePatchInterfaceAdds(
+ZR_PARSER_API void ZrParser_CompileTime_FreePatchInterfaceAdds(
         SZrCompilerState *cs,
         SZrParserCompileTimePatchInterfaceAdds *interfaceAdds);
 

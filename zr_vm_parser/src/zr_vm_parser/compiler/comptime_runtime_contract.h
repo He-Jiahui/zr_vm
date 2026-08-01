@@ -19,7 +19,7 @@ TZrBool ZrParser_ComptimeRuntime_RequireEffect(
         EZrParserCompileToolEffect effect,
         SZrFileRange location);
 
-TZrUInt64 ZrParser_ComptimeCache_BeginKey(
+ZR_PARSER_API TZrUInt64 ZrParser_ComptimeCache_BeginKey(
         const SZrCompilerState *cs,
         const SZrCompileTimeFunction *function);
 TZrBool ZrParser_ComptimeCache_MixValue(

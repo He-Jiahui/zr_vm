@@ -232,7 +232,7 @@ static SZrString *execution_member_cache_resolve_name(SZrFunction *function, TZr
 
 static void execution_member_barrier_callsite_target(SZrState *state,
                                                      SZrFunction *function,
-                                                     SZrRawObject *target);
+                                                     void *target);
 
 static ZR_FORCE_INLINE EZrFunctionCallSitePicHotFieldKind execution_member_resolve_hot_field_kind(
         SZrString *memberName);
@@ -258,7 +258,7 @@ static ZR_FORCE_INLINE SZrString *execution_member_slot_resolve_cached_name(SZrS
             slot->cachedHotFieldKind = (TZrUInt16)execution_member_resolve_hot_field_kind(memberName);
         }
         if (state != ZR_NULL && function != ZR_NULL) {
-            execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+            execution_member_barrier_callsite_target(state, function, memberName);
         }
     }
 
@@ -285,7 +285,7 @@ static ZR_FORCE_INLINE void execution_member_backfill_multi_slot_instance_field_
 
         slot->cachedMemberName = memberName;
         if (state != ZR_NULL && function != ZR_NULL) {
-            execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+            execution_member_barrier_callsite_target(state, function, memberName);
         }
     }
 }
@@ -417,12 +417,15 @@ static void execution_member_clear_cache_entry(SZrFunction *function,
 
 static void execution_member_barrier_callsite_target(SZrState *state,
                                                      SZrFunction *function,
-                                                     SZrRawObject *target) {
+                                                     void *target) {
     if (state == ZR_NULL || function == ZR_NULL || target == ZR_NULL) {
         return;
     }
 
-    ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function), target);
+    ZrCore_RawObject_Barrier(
+            state,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(function),
+            ZR_CAST(SZrRawObject *, target));
 }
 
 static TZrBool execution_member_find_owner_descriptor(SZrObjectPrototype *receiverPrototype,
@@ -648,20 +651,20 @@ static void execution_member_store_pic_slot(SZrState *state,
             slot->cachedFunction = callableTarget;
             slot->cachedMemberName = cachedMemberName;
             execution_member_barrier_callsite_target(state,
-                                                     function,
-                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(receiverPrototype));
+                                                      function,
+                                                      receiverPrototype);
             execution_member_barrier_callsite_target(state,
-                                                     function,
-                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(cachedReceiverObject));
+                                                      function,
+                                                      cachedReceiverObject);
             execution_member_barrier_callsite_target(state,
-                                                     function,
-                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(ownerPrototype));
+                                                      function,
+                                                      ownerPrototype);
             execution_member_barrier_callsite_target(state,
-                                                     function,
-                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(callableTarget));
+                                                      function,
+                                                      callableTarget);
             execution_member_barrier_callsite_target(state,
-                                                     function,
-                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(cachedMemberName));
+                                                      function,
+                                                      cachedMemberName);
             garbage_collector_record_callsite_cache_pic_write(function,
                                                               cacheIndex,
                                                               slotIndex,
@@ -702,11 +705,11 @@ static void execution_member_store_pic_slot(SZrState *state,
     slot->cachedHotFieldKind = (TZrUInt16)hotFieldKind;
     slot->cachedFunction = callableTarget;
     slot->cachedMemberName = cachedMemberName;
-    execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(receiverPrototype));
-    execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(cachedReceiverObject));
-    execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(ownerPrototype));
-    execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(callableTarget));
-    execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(cachedMemberName));
+    execution_member_barrier_callsite_target(state, function, receiverPrototype);
+    execution_member_barrier_callsite_target(state, function, cachedReceiverObject);
+    execution_member_barrier_callsite_target(state, function, ownerPrototype);
+    execution_member_barrier_callsite_target(state, function, callableTarget);
+    execution_member_barrier_callsite_target(state, function, cachedMemberName);
     garbage_collector_record_callsite_cache_pic_write(function,
                                                       cacheIndex,
                                                       slotIndex,
@@ -1212,7 +1215,7 @@ static ZR_FORCE_INLINE void execution_member_refresh_cached_instance_field_slot(
         if (resolvedPair != ZR_NULL) {
             mutableSlot->cachedReceiverObject = receiverObject;
             mutableSlot->cachedReceiverPair = resolvedPair;
-            execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(receiverObject));
+            execution_member_barrier_callsite_target(state, function, receiverObject);
             if (ZR_UNLIKELY(execution_member_callsite_sanitize_enabled())) {
                 TZrUInt32 slotIndex = (TZrUInt32)(mutableSlot - entry->picSlots);
                 garbage_collector_record_callsite_cache_pic_write(
@@ -1231,7 +1234,7 @@ static ZR_FORCE_INLINE void execution_member_refresh_cached_instance_field_slot(
             mutableSlot->cachedReceiverPair = resolvedPair;
             mutableSlot->cachedReceiverVersion = mutableSlot->cachedReceiverPrototype->super.memberVersion;
             mutableSlot->cachedOwnerVersion = mutableSlot->cachedOwnerPrototype->super.memberVersion;
-            execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(receiverObject));
+            execution_member_barrier_callsite_target(state, function, receiverObject);
             garbage_collector_record_callsite_cache_pic_write(
                     function, cacheIndex, slotIndex, "member-refresh", "exact-receiver-pair", entry, mutableSlot);
             garbage_collector_sanitize_callsite_cache_pic(function, cacheIndex, "runtime-member-refresh-after", entry);
@@ -1241,7 +1244,7 @@ static ZR_FORCE_INLINE void execution_member_refresh_cached_instance_field_slot(
         mutableSlot->cachedReceiverPair = resolvedPair;
         mutableSlot->cachedReceiverVersion = mutableSlot->cachedReceiverPrototype->super.memberVersion;
         mutableSlot->cachedOwnerVersion = mutableSlot->cachedOwnerPrototype->super.memberVersion;
-        execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(receiverObject));
+        execution_member_barrier_callsite_target(state, function, receiverObject);
         return;
     }
 

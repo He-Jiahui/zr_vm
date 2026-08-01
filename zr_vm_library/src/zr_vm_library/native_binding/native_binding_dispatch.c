@@ -5,6 +5,7 @@
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_core/property_reference.h"
 #include "native_binding/native_binding_dispatch_lanes.h"
 
 /*
@@ -737,6 +738,10 @@ TZrBool ZrLib_CallContext_WriteBackArgument(ZrLibCallContext *context,
     callbackArgument = ZrLib_CallContext_Argument(context, index);
     if (callbackArgument == ZR_NULL) {
         return ZR_FALSE;
+    }
+    if (ZrCore_PropertyReference_IsValid(context->state, callbackArgument)) {
+        return ZrCore_PropertyReference_Store(
+                context->state, callbackArgument, value);
     }
     if (callbackArgument != value) {
         ZrCore_Value_Copy(context->state, callbackArgument, value);

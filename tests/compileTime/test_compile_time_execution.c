@@ -16,6 +16,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/value.h"
@@ -31,9 +32,12 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compile_tool.h"
+#include "zr_vm_parser/declaration_transform_contract.h"
 #include "zr_vm_core/reflection.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_attributes.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_interfaces.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_transaction.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.h"
 
 #define TEST_START(summary) ZR_TEST_START(summary)
@@ -3626,6 +3630,9 @@ static void test_declaration_transform_invalid_multi_add_commits_nothing(void) {
     destroy_test_state(state);
 }
 
+#include "test_compile_time_declaration_patch_transaction_cases.h"
+#include "test_compile_time_declaration_patch_transaction_hash_cases.h"
+
 static void test_declaration_transform_patch_target_rejects_uint32_wraparound(void) {
     static const TZrChar *source =
             "let declaration = import(\"zr.compile.declaration\");\n"
@@ -4873,6 +4880,13 @@ int main(void) {
     RUN_TEST(test_declaration_transform_typed_error_rejects_patch);
     RUN_TEST(test_declaration_transform_error_prevents_generated_member_registration);
     RUN_TEST(test_declaration_transform_invalid_multi_add_commits_nothing);
+    RUN_TEST(test_declaration_transform_generated_multi_add_failure_rolls_back);
+    RUN_TEST(test_declaration_transform_cross_kind_failure_rolls_back);
+    RUN_TEST(test_declaration_transform_attribute_prepare_oom_frees_only_initialized_entries);
+    RUN_TEST(test_declaration_transform_hash_pair_retry_preserves_metadata);
+    RUN_TEST(test_declaration_transform_attribute_hash_pair_retry_preserves_metadata);
+    RUN_TEST(test_declaration_transform_failed_stage_preserves_array_identity);
+    RUN_TEST(test_declaration_transform_generated_metadata_survives_commit_gc);
     RUN_TEST(test_declaration_transform_patch_target_rejects_uint32_wraparound);
     RUN_TEST(test_declaration_transform_diagnostic_constructor_rejects_invalid_fields);
     RUN_TEST(test_declaration_transform_rejects_invalid_signature_and_patch_shape);
@@ -4888,6 +4902,9 @@ int main(void) {
     RUN_TEST(test_ordinary_enum_static_and_dynamic_decorators_compose);
     RUN_TEST(test_generated_field_retains_transform_source_provenance);
     RUN_TEST(test_generated_field_metadata_roundtrips_to_artifact_and_reflection);
+    RUN_TEST(test_intermediate_omits_empty_generated_source_map_section);
+    RUN_TEST(test_generated_source_maps_are_ordered_and_byte_stable);
+    RUN_TEST(test_intermediate_rejects_malformed_prototype_data_before_write);
     RUN_TEST(test_legacy_runtime_decorators_are_rejected_without_codegen);
     RUN_TEST(test_runtime_local_binding_shadows_compile_tool_alias);
     RUN_TEST(test_expression_nested_comptime_if_is_selected_during_build_facts);

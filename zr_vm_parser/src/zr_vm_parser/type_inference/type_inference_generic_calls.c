@@ -471,12 +471,24 @@ static TZrBool substitute_generic_parameter_type(SZrState *state,
             return ZR_FALSE;
         }
         ZrParser_InferredType_Copy(state, result, &binding->inferredType);
+        result->ownershipQualifier = sourceType->ownershipQualifier;
+        result->gcBridgeKind = sourceType->gcBridgeKind;
+        result->referenceAccess = sourceType->referenceAccess;
+        result->isReadonlyView = sourceType->isReadonlyView;
+        result->protocolMask |= sourceType->protocolMask;
+        result->isNullable = sourceType->isNullable;
+        result->knownBoolValue = sourceType->knownBoolValue;
+        result->hasKnownBoolValue = sourceType->hasKnownBoolValue;
         return ZR_TRUE;
     }
 
     ZrParser_InferredType_Init(state, result, sourceType->baseType);
     result->isNullable = sourceType->isNullable;
     result->ownershipQualifier = sourceType->ownershipQualifier;
+    result->gcBridgeKind = sourceType->gcBridgeKind;
+    result->referenceAccess = sourceType->referenceAccess;
+    result->isReadonlyView = sourceType->isReadonlyView;
+    result->protocolMask = sourceType->protocolMask;
     result->typeName = sourceType->typeName;
     result->genericArgumentKind = sourceType->genericArgumentKind;
     result->genericConstIntValue = sourceType->genericConstIntValue;
@@ -484,6 +496,8 @@ static TZrBool substitute_generic_parameter_type(SZrState *state,
     result->maxValue = sourceType->maxValue;
     result->hasRangeConstraint = sourceType->hasRangeConstraint;
     ZrParser_InferredType_CopyRangeSegments(state, result, sourceType);
+    result->knownBoolValue = sourceType->knownBoolValue;
+    result->hasKnownBoolValue = sourceType->hasKnownBoolValue;
     result->arrayFixedSize = sourceType->arrayFixedSize;
     result->arrayMinSize = sourceType->arrayMinSize;
     result->arrayMaxSize = sourceType->arrayMaxSize;

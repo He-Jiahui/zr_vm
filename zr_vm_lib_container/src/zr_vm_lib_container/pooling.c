@@ -1,4 +1,5 @@
 #include "pooling.h"
+#include "pooling_generational_runtime.h"
 
 #include "zr_vm_lib_container/generational_pool.h"
 
@@ -623,6 +624,7 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
         {.name = "deliver",
          .minArgumentCount = 1u,
          .maxArgumentCount = 1u,
+         .callback = ZrPooling_Generational_Deliver,
          .returnTypeName = "PoolHandle<T>",
          .documentation = "Initialize a stable slot and publish its weak identity.",
          .parameters = kPoolValueParameters,
@@ -631,6 +633,7 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
         {.name = "isLive",
          .minArgumentCount = 1u,
          .maxArgumentCount = 1u,
+         .callback = ZrPooling_Generational_IsLive,
          .returnTypeName = "bool",
          .documentation = "Validate the complete pool, slot and generation identity.",
          .parameters = kPoolHandleParameters,
@@ -639,6 +642,7 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
         {.name = "recycle",
          .minArgumentCount = 1u,
          .maxArgumentCount = 1u,
+         .callback = ZrPooling_Generational_Recycle,
          .returnTypeName = "bool",
          .documentation = "Retire a live identity and reclaim it after active guards end.",
          .parameters = kPoolHandleParameters,
@@ -647,6 +651,7 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
         {.name = "tryRead",
          .minArgumentCount = 2u,
          .maxArgumentCount = 2u,
+         .callback = ZrPooling_Generational_TryRead,
          .returnTypeName = "bool",
          .documentation = "Acquire a scoped readonly guard through an out parameter.",
          .parameters = kPoolReadParameters,
@@ -655,6 +660,7 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
         {.name = "tryBorrow",
          .minArgumentCount = 2u,
          .maxArgumentCount = 2u,
+         .callback = ZrPooling_Generational_TryBorrow,
          .returnTypeName = "bool",
          .documentation = "Acquire an exclusive scoped writable guard through an out parameter.",
          .parameters = kPoolBorrowParameters,
@@ -663,17 +669,55 @@ static const ZrLibMethodDescriptor kGenerationalPoolMethods[] = {
 };
 
 static const ZrLibFieldDescriptor kPoolRefFields[] = {
-        ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(
-                "value",
-                "T",
-                "Guarded stable-slot ref projection.",
-                ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION),
+        {.name = "__zr_pool_guard_value",
+         .typeName = "T",
+         .documentation = "Runtime-only storage for the guarded projection.",
+         .runtimeOnly = ZR_TRUE},
 };
 
 static const ZrLibMethodDescriptor kPoolRefMethods[] = {
+        {.name = "__get_value",
+         .minArgumentCount = 0u,
+         .maxArgumentCount = 0u,
+         .callback = ZrPooling_Generational_RefValue,
+         .returnTypeName = "T",
+         .documentation = "Return the writable guarded projection.",
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION,
+         .propertyName = "value",
+         .propertyReferenceAccess = ZR_LIB_REFERENCE_ACCESS_WRITABLE,
+         .propertyExportsWritableRef = ZR_TRUE},
         {.name = "close",
          .minArgumentCount = 0u,
          .maxArgumentCount = 0u,
+         .callback = ZrPooling_Generational_RefClose,
+         .returnTypeName = "null",
+         .documentation = "Release this guard exactly once.",
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE},
+};
+
+static const ZrLibFieldDescriptor kPoolReadRefFields[] = {
+        {.name = "__zr_pool_guard_value",
+         .typeName = "T",
+         .documentation = "Runtime-only storage for the guarded projection.",
+         .runtimeOnly = ZR_TRUE,
+         .isReadonly = ZR_TRUE},
+};
+
+static const ZrLibMethodDescriptor kPoolReadRefMethods[] = {
+        {.name = "__get_value",
+         .minArgumentCount = 0u,
+         .maxArgumentCount = 0u,
+         .callback = ZrPooling_Generational_RefValue,
+         .returnTypeName = "T",
+         .documentation = "Return the readonly guarded projection.",
+         .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION,
+         .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER,
+         .propertyName = "value",
+         .propertyReferenceAccess = ZR_LIB_REFERENCE_ACCESS_READONLY},
+        {.name = "close",
+         .minArgumentCount = 0u,
+         .maxArgumentCount = 0u,
+         .callback = ZrPooling_Generational_RefClose,
          .returnTypeName = "null",
          .documentation = "Release this guard exactly once.",
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE},
@@ -683,6 +727,7 @@ static const ZrLibMetaMethodDescriptor kPoolRefMetaMethods[] = {
         {.metaType = ZR_META_CLOSE,
          .minArgumentCount = 1u,
          .maxArgumentCount = 1u,
+         .callback = ZrPooling_Generational_RefClose,
          .returnTypeName = "null",
          .contractRole = ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE},
 };
@@ -828,10 +873,10 @@ static const ZrLibTypeDescriptor kPoolingTypes[] = {
          .protocolMask = ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE)},
         {.name = "PoolReadRef",
          .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
-         .fields = kPoolRefFields,
-         .fieldCount = ZR_ARRAY_COUNT(kPoolRefFields),
-         .methods = kPoolRefMethods,
-         .methodCount = ZR_ARRAY_COUNT(kPoolRefMethods),
+         .fields = kPoolReadRefFields,
+         .fieldCount = ZR_ARRAY_COUNT(kPoolReadRefFields),
+         .methods = kPoolReadRefMethods,
+         .methodCount = ZR_ARRAY_COUNT(kPoolReadRefMethods),
          .metaMethods = kPoolRefMetaMethods,
          .metaMethodCount = ZR_ARRAY_COUNT(kPoolRefMetaMethods),
          .documentation = "Move-only scoped readonly stable-slot guard.",

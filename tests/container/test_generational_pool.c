@@ -11,6 +11,7 @@
 #include "unity.h"
 
 #include "container_test_common.h"
+#include "harness/runtime_support.h"
 #include "zr_vm_lib_container/generational_pool.h"
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_core/function.h"
@@ -146,6 +147,7 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
     const ZrLibTypeDescriptor *handle;
     const ZrLibTypeDescriptor *writeRef;
     const ZrLibTypeDescriptor *readRef;
+    const ZrLibMethodDescriptor *deliver;
     const ZrLibMethodDescriptor *tryRead;
     const ZrLibMethodDescriptor *tryBorrow;
 
@@ -177,8 +179,10 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
     TEST_ASSERT_EQUAL_INT(
             ZR_MEMBER_CONTRACT_ROLE_POOL_HANDLE_GENERATION,
             handle->fields[2].contractRole);
-    TEST_ASSERT_NOT_NULL(find_pooling_method(
-            pool, ZR_MEMBER_CONTRACT_ROLE_POOL_DELIVER));
+    deliver = find_pooling_method(
+            pool, ZR_MEMBER_CONTRACT_ROLE_POOL_DELIVER);
+    TEST_ASSERT_NOT_NULL(deliver);
+    TEST_ASSERT_EQUAL_STRING("PoolHandle<T>", deliver->returnTypeName);
     TEST_ASSERT_NOT_NULL(find_pooling_method(
             pool, ZR_MEMBER_CONTRACT_ROLE_POOL_VALIDATE));
     TEST_ASSERT_NOT_NULL(find_pooling_method(
@@ -209,12 +213,105 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE), readRef->protocolMask);
     TEST_ASSERT_FALSE(writeRef->allowBoxedConstruction);
     TEST_ASSERT_FALSE(readRef->allowBoxedConstruction);
+    TEST_ASSERT_EQUAL_STRING(
+            "__zr_pool_guard_value", writeRef->fields[0].name);
+    TEST_ASSERT_TRUE(writeRef->fields[0].runtimeOnly);
+    TEST_ASSERT_FALSE(writeRef->fields[0].isReadonly);
+    TEST_ASSERT_TRUE(readRef->fields[0].runtimeOnly);
+    TEST_ASSERT_TRUE(readRef->fields[0].isReadonly);
+    TEST_ASSERT_EQUAL_STRING("value", writeRef->methods[0].propertyName);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LIB_REFERENCE_ACCESS_WRITABLE,
+            writeRef->methods[0].propertyReferenceAccess);
+    TEST_ASSERT_TRUE(writeRef->methods[0].propertyExportsWritableRef);
+    TEST_ASSERT_EQUAL_STRING("value", readRef->methods[0].propertyName);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LIB_REFERENCE_ACCESS_READONLY,
+            readRef->methods[0].propertyReferenceAccess);
+    TEST_ASSERT_FALSE(readRef->methods[0].propertyExportsWritableRef);
     TEST_ASSERT_EQUAL_INT(
             ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION,
-            writeRef->fields[0].contractRole);
+            writeRef->methods[0].contractRole);
     TEST_ASSERT_EQUAL_INT(
             ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE,
-            writeRef->methods[0].contractRole);
+            writeRef->methods[1].contractRole);
+    for (TZrSize index = 0u; index < pool->methodCount; index++) {
+        TEST_ASSERT_NOT_NULL(pool->methods[index].callback);
+    }
+    TEST_ASSERT_NOT_NULL(writeRef->methods[0].callback);
+    TEST_ASSERT_NOT_NULL(writeRef->methods[1].callback);
+    TEST_ASSERT_NOT_NULL(writeRef->metaMethods[0].callback);
+    TEST_ASSERT_NOT_NULL(readRef->methods[0].callback);
+    TEST_ASSERT_NOT_NULL(readRef->methods[1].callback);
+    TEST_ASSERT_NOT_NULL(readRef->metaMethods[0].callback);
+}
+
+static void test_native_pool_executes_identity_and_recycle_from_source(void) {
+    static const TZrChar *source =
+            "var {Pool} = import(\"zr.pooling\");\n"
+            "var pool = new Pool<int>();\n"
+            "var handle = pool.deliver(41);\n"
+            "if (!pool.isLive(handle)) { return -1; }\n"
+            "if (!pool.recycle(handle)) { return -2; }\n"
+            "if (pool.isLive(handle)) { return -3; }\n"
+            "return 41;\n";
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "generational_pool_language_identity.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(41, result);
+
+    ZrCore_Function_Free(state, function);
+    ZrContainerTests_DestroyState(state);
+}
+
+static void test_native_pool_executes_scoped_read_write_guards_from_source(void) {
+    static const TZrChar *source =
+            "var {Pool, PoolRef, PoolReadRef} = import(\"zr.pooling\");\n"
+            "var pool = new Pool<int>();\n"
+            "var handle = pool.deliver(41);\n"
+            "var readView: PoolReadRef<int>;\n"
+            "if (!pool.tryRead(handle, out readView)) { return -1; }\n"
+            "if (readView.value != 41) { return -2; }\n"
+            "var writeView: PoolRef<int>;\n"
+            "if (pool.tryBorrow(handle, out writeView)) { return -3; }\n"
+            "readView.close();\n"
+            "if (!pool.tryBorrow(handle, out writeView)) { return -4; }\n"
+            "writeView.value = 42;\n"
+            "writeView.close();\n"
+            "if (!pool.tryRead(handle, out readView)) { return -5; }\n"
+            "if (readView.value != 42) { return -6; }\n"
+            "if (!pool.recycle(handle)) { return -7; }\n"
+            "if (pool.tryRead(handle, out readView)) { return -8; }\n"
+            "return 42;\n";
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "generational_pool_language_guard.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(42, result);
+
+    ZrCore_Function_Free(state, function);
+    ZrContainerTests_DestroyState(state);
 }
 
 static void test_native_semantic_import_preserves_ref_like_and_stable_slot_protocols(void) {
@@ -228,9 +325,11 @@ static void test_native_semantic_import_preserves_ref_like_and_stable_slot_proto
     const SZrTypePrototypeInfo *handle;
     const SZrTypePrototypeInfo *writeRef;
     const SZrTypePrototypeInfo *readRef;
+    const SZrTypeMemberInfo *deliver;
     const SZrTypeMemberInfo *tryRead;
     const SZrTypeMemberInfo *tryBorrow;
     const SZrTypeMemberInfo *valueProjection;
+    const SZrTypeMemberInfo *readValueProjection;
 
     TEST_ASSERT_NOT_NULL(state);
     compiler = ZrContainerTests_CreateCompilerState(state);
@@ -266,12 +365,20 @@ static void test_native_semantic_import_preserves_ref_like_and_stable_slot_proto
     TEST_ASSERT_FALSE(writeRef->allowBoxedConstruction);
     TEST_ASSERT_FALSE(readRef->allowBoxedConstruction);
     TEST_ASSERT_EQUAL_UINT64(3u, handle->members.length);
+    deliver = ZrContainerTests_FindTypeMemberByName(pool, "deliver");
     tryRead = ZrContainerTests_FindTypeMemberByName(pool, "tryRead");
     tryBorrow = ZrContainerTests_FindTypeMemberByName(pool, "tryBorrow");
     valueProjection = ZrContainerTests_FindTypeMemberByName(writeRef, "value");
+    readValueProjection =
+            ZrContainerTests_FindTypeMemberByName(readRef, "value");
+    TEST_ASSERT_NOT_NULL(deliver);
+    TEST_ASSERT_EQUAL_STRING(
+            "PoolHandle<T>",
+            ZrCore_String_GetNativeString(deliver->returnTypeName));
     TEST_ASSERT_NOT_NULL(tryRead);
     TEST_ASSERT_NOT_NULL(tryBorrow);
     TEST_ASSERT_NOT_NULL(valueProjection);
+    TEST_ASSERT_NOT_NULL(readValueProjection);
     TEST_ASSERT_EQUAL_INT(
             ZR_MEMBER_CONTRACT_ROLE_POOL_ACQUIRE_READ,
             tryRead->contractRole);
@@ -281,6 +388,17 @@ static void test_native_semantic_import_preserves_ref_like_and_stable_slot_proto
     TEST_ASSERT_EQUAL_INT(
             ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION,
             valueProjection->contractRole);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_PROPERTY_DECLARATION,
+                          valueProjection->memberType);
+    TEST_ASSERT_TRUE(valueProjection->hasStructuredReturnType);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_REFERENCE_ACCESS_WRITABLE,
+            valueProjection->structuredReturnType.referenceAccess);
+    TEST_ASSERT_TRUE(valueProjection->exportsWritableRef);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_REFERENCE_ACCESS_READONLY,
+            readValueProjection->structuredReturnType.referenceAccess);
+    TEST_ASSERT_FALSE(readValueProjection->exportsWritableRef);
     TEST_ASSERT_EQUAL_UINT32(2u, tryRead->parameterCount);
     TEST_ASSERT_EQUAL_UINT32(2u, tryBorrow->parameterCount);
     TEST_ASSERT_EQUAL_STRING(
@@ -291,6 +409,18 @@ static void test_native_semantic_import_preserves_ref_like_and_stable_slot_proto
     TEST_ASSERT_TRUE(tryBorrow->parameterPassingModes.isValid);
     TEST_ASSERT_EQUAL_UINT64(2u, tryRead->parameterPassingModes.length);
     TEST_ASSERT_EQUAL_UINT64(2u, tryBorrow->parameterPassingModes.length);
+    TEST_ASSERT_EQUAL_UINT64(2u, tryRead->parameterTypes.length);
+    TEST_ASSERT_EQUAL_UINT64(2u, tryBorrow->parameterTypes.length);
+    TEST_ASSERT_BITS_HIGH(
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE),
+            ((const SZrInferredType *)ZrCore_Array_Get(
+                     (SZrArray *)&tryRead->parameterTypes, 1u))
+                    ->protocolMask);
+    TEST_ASSERT_BITS_HIGH(
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE),
+            ((const SZrInferredType *)ZrCore_Array_Get(
+                     (SZrArray *)&tryBorrow->parameterTypes, 1u))
+                    ->protocolMask);
     TEST_ASSERT_EQUAL_INT(
             ZR_PARAMETER_PASSING_MODE_VALUE,
             *(const EZrParameterPassingMode *)ZrCore_Array_Get(
@@ -861,6 +991,8 @@ static void test_concurrent_pool_serializes_state_without_charging_thread_local_
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_native_descriptor_publishes_stable_slot_contract_by_role);
+    RUN_TEST(test_native_pool_executes_identity_and_recycle_from_source);
+    RUN_TEST(test_native_pool_executes_scoped_read_write_guards_from_source);
     RUN_TEST(test_native_semantic_import_preserves_ref_like_and_stable_slot_protocols);
     RUN_TEST(test_native_ref_like_capability_rejects_pool_ref_storage);
     RUN_TEST(test_native_ref_like_capability_rejects_pool_ref_escape);

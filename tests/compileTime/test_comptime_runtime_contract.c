@@ -3,8 +3,10 @@
 #include <string.h>
 
 #include "runtime_support.h"
+#include "compile_tool_binding.h"
 #include "compile_time_declaration_patch_diagnostics.h"
 #include "compile_time_executor_internal.h"
+#include "comptime_runtime_contract.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/object.h"
@@ -288,6 +290,70 @@ static void test_pure_comptime_function_results_use_deterministic_cache(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_comptime_cache_key_includes_compile_tool_provider_contract(void) {
+    const SZrParserCompileToolModuleDescriptor *builtin =
+            ZrParser_CompileTool_FindModule(ZR_PARSER_COMPILE_TOOL_MODULE_BUILD);
+    SZrParserCompileToolModuleDescriptor baselineProvider;
+    SZrParserCompileToolModuleDescriptor publishedHashProvider;
+    SZrParserCompileToolModuleDescriptor computedHashProvider;
+    SZrCompileTimeFunction function = {0};
+    SZrCompilerState compiler;
+    SZrString *alias;
+    TZrUInt64 baselineKey;
+    TZrUInt64 publishedHashKey;
+    TZrUInt64 computedHashKey;
+    TZrUInt64 firstContentKey;
+    TZrUInt64 secondContentKey;
+
+    TEST_ASSERT_NOT_NULL(builtin);
+    baselineProvider = *builtin;
+    publishedHashProvider = *builtin;
+    computedHashProvider = *builtin;
+    publishedHashProvider.publicContractHash = "sha256:provider-contract-changed";
+    computedHashProvider.computedPublicContractHash = 0x2222222222222222ULL;
+
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentModuleKey = ZrCore_String_CreateFromNative(
+            g_state, "@workspace/cache-contract");
+    function.name = ZrCore_String_CreateFromNative(g_state, "cachedValue");
+    alias = ZrCore_String_CreateFromNative(g_state, "compile");
+    TEST_ASSERT_NOT_NULL(compiler.currentModuleKey);
+    TEST_ASSERT_NOT_NULL(function.name);
+    TEST_ASSERT_NOT_NULL(alias);
+
+    TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
+            &compiler, alias, &baselineProvider));
+    baselineKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    ZrParser_CompileToolBinding_Reset(&compiler);
+    TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
+            &compiler, alias, &publishedHashProvider));
+    publishedHashKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    ZrParser_CompileToolBinding_Reset(&compiler);
+    TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
+            &compiler, alias, &computedHashProvider));
+    computedHashKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, baselineKey);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, publishedHashKey);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, computedHashKey);
+    TEST_ASSERT_NOT_EQUAL_UINT64(baselineKey, publishedHashKey);
+    TEST_ASSERT_NOT_EQUAL_UINT64(baselineKey, computedHashKey);
+
+    ZrParser_CompileToolBinding_Reset(&compiler);
+    TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProviderWithContentHash(
+            &compiler, alias, &baselineProvider, "sha256:provider-content-a"));
+    firstContentKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+    ZrParser_CompileToolBinding_Reset(&compiler);
+    TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProviderWithContentHash(
+            &compiler, alias, &baselineProvider, "sha256:provider-content-b"));
+    secondContentKey = ZrParser_ComptimeCache_BeginKey(&compiler, &function);
+
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, firstContentKey);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0U, secondContentKey);
+    TEST_ASSERT_NOT_EQUAL_UINT64(firstContentKey, secondContentKey);
+    ZrParser_CompilerState_Free(&compiler);
+}
+
 static void test_removed_global_assert_and_fatal_error_are_not_builtins(void) {
     static const TZrChar *sources[] = {
             "comptime { Assert(true, \"legacy\"); }\nreturn 0;\n",
@@ -440,6 +506,7 @@ int main(void) {
     RUN_TEST(test_fuel_budget_stops_evaluation_without_partial_overrun);
     RUN_TEST(test_call_depth_budget_stops_recursive_comptime_function);
     RUN_TEST(test_pure_comptime_function_results_use_deterministic_cache);
+    RUN_TEST(test_comptime_cache_key_includes_compile_tool_provider_contract);
     RUN_TEST(test_removed_global_assert_and_fatal_error_are_not_builtins);
     RUN_TEST(test_patch_diagnostics_preserve_error_message_severity_and_location);
     RUN_TEST(test_patch_warning_uses_warning_log_severity);

@@ -29,9 +29,13 @@ text is an internal artifact format and is not source syntax.
 
 ## Status record census
 
-The recursive leaf selection produces exactly 55 records and every selected
-record has a completion marker. Raw historical spellings are intentionally not
-normalized:
+The canonical milestone selection produces exactly 55 records and every
+selected record has a completion marker. The selection contains milestone
+status records in the numbered subdirectories, excludes root design/README
+documents and `*-implementation-plan.md`, and treats
+`05-property-unified-ast/m5-task4-property-import-bootstrap.md` as a supporting
+task record rather than a second M5 milestone. That supporting record is also
+`completed`. Raw historical spellings are intentionally not normalized:
 
 | Status spelling | Count |
 |---|---:|
@@ -48,6 +52,11 @@ normalized:
 The 29-entry syntax-reference coverage manifest remains deliberately split as
 15 `current`, 1 `negative`, and 13 `design-pending`. Therefore leaf completion
 must not be promoted into a false root completion statement.
+
+The current directory therefore contains 56 non-implementation-plan status
+documents under numbered subdirectories: the frozen 55-record milestone set
+plus the one completed M5 task-level support record. A raw recursive file count
+must not silently redefine the accepted milestone inventory.
 
 ## Review closure
 
@@ -111,6 +120,19 @@ The same three externally owned Debug groups failed under both compilers:
 source changes are outside this staged commit and were left untouched. Thus the
 accurate result is: Syntax scope accepted with relevant gates green, while the
 repository-wide suite is 121/124 rather than globally clean.
+
+## 2026-08-01 follow-up revalidation
+
+The milestone selector was rerun against the current tree: 55 canonical
+records, 55 status markers, and 0 missing. The additional M5 task-level support
+record is independently `completed`.
+
+The strict cutover executable was rebuilt and rerun with GCC, Clang, and MSVC.
+Every toolchain reported 6 tests and 0 failures. Its matrix covers 28 removed
+percent forms, unknown `%future`, the non-percent legacy surface, canonical
+reference bindings, and the still-valid `%`/`%=` operators. The parser's
+percent-name branches remain rejection-only diagnostic routing and never
+produce a legacy AST.
 
 ## Final boundary
 

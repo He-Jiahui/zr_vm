@@ -4,6 +4,7 @@ static TZrBool compile_tool_binding_declare(
         SZrCompilerState *cs,
         SZrString *name,
         const SZrParserCompileToolModuleDescriptor *provider,
+        const TZrChar *providerContentHash,
         EZrCompileToolBindingKind kind) {
     SZrCompileToolBinding binding;
 
@@ -13,6 +14,7 @@ static TZrBool compile_tool_binding_declare(
 
     binding.name = name;
     binding.provider = provider;
+    binding.providerContentHash = providerContentHash;
     binding.kind = kind;
     ZrCore_Array_Push(cs->state, &cs->compileToolBindings, &binding);
     return ZR_TRUE;
@@ -39,12 +41,27 @@ TZrBool ZrParser_CompileToolBinding_DeclareProvider(
         SZrCompilerState *cs,
         SZrString *name,
         const SZrParserCompileToolModuleDescriptor *provider) {
+    return ZrParser_CompileToolBinding_DeclareProviderWithContentHash(
+            cs, name, provider, ZR_NULL);
+}
+
+TZrBool ZrParser_CompileToolBinding_DeclareProviderWithContentHash(
+        SZrCompilerState *cs,
+        SZrString *name,
+        const SZrParserCompileToolModuleDescriptor *provider,
+        const TZrChar *providerContentHash) {
     return provider != ZR_NULL &&
-           compile_tool_binding_declare(cs, name, provider, ZR_COMPILE_TOOL_BINDING_PROVIDER);
+           compile_tool_binding_declare(
+                   cs,
+                   name,
+                   provider,
+                   providerContentHash,
+                   ZR_COMPILE_TOOL_BINDING_PROVIDER);
 }
 
 TZrBool ZrParser_CompileToolBinding_DeclareShadow(SZrCompilerState *cs, SZrString *name) {
-    return compile_tool_binding_declare(cs, name, ZR_NULL, ZR_COMPILE_TOOL_BINDING_SHADOW);
+    return compile_tool_binding_declare(
+            cs, name, ZR_NULL, ZR_NULL, ZR_COMPILE_TOOL_BINDING_SHADOW);
 }
 
 const SZrCompileToolBinding *ZrParser_CompileToolBinding_Resolve(

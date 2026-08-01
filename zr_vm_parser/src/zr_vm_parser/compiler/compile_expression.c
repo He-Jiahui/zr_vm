@@ -1698,6 +1698,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
         }
         if ((hasLeftType || ZrParser_ExpressionType_Infer(cs, left, &leftType)) &&
             ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
+            if (left != ZR_NULL &&
+                left->type == ZR_AST_PRIMARY_EXPRESSION &&
+                leftType.referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+                leftType.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+            }
             if (!ZrParser_AssignmentCompatibility_Check(cs, &leftType, &rightType, node->location)) {
                 ZrParser_InferredType_Free(cs->state, &leftType);
                 ZrParser_InferredType_Free(cs->state, &rightType);

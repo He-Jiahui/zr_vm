@@ -241,6 +241,8 @@ SZrObject *native_metadata_make_field_entry(SZrState *state, const ZrLibFieldDes
     native_metadata_set_string_field(state, object, "name", descriptor->name);
     native_metadata_set_string_field(state, object, "typeName", descriptor->typeName);
     native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
+    native_metadata_set_bool_field(state, object, "runtimeOnly", descriptor->runtimeOnly);
+    native_metadata_set_bool_field(state, object, "isReadonly", descriptor->isReadonly);
     return object;
 }
 
@@ -452,6 +454,18 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
             !descriptor->isStatic &&
                     (descriptor->dispatchFlags &
                      ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER) != 0u);
+    native_metadata_set_optional_string_field(
+            state, object, "propertyName", descriptor->propertyName);
+    native_metadata_set_int_field(
+            state,
+            object,
+            "propertyReferenceAccess",
+            (TZrInt64)descriptor->propertyReferenceAccess);
+    native_metadata_set_bool_field(
+            state,
+            object,
+            "propertyExportsWritableRef",
+            descriptor->propertyExportsWritableRef);
     native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
     if (hasParameterMetadata) {
         native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
@@ -1161,7 +1175,7 @@ static void native_registry_add_field_descriptors(SZrState *state,
         ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
         descriptor.name = fieldName;
         descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
-        descriptor.isWritable = ZR_TRUE;
+        descriptor.isWritable = fieldDescriptor->isReadonly ? ZR_FALSE : ZR_TRUE;
         ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
 
         if (fieldDescriptor->contractRole == ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD) {
@@ -1256,6 +1270,43 @@ TZrBool native_registry_add_methods(SZrState *state,
             descriptor.isWritable = ZR_FALSE;
             descriptor.contractRole = methodDescriptor->contractRole;
             ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
+        }
+
+        if (methodDescriptor->propertyName != ZR_NULL &&
+            methodDescriptor->propertyReferenceAccess !=
+                    ZR_LIB_REFERENCE_ACCESS_NONE) {
+            SZrMemberDescriptor descriptor;
+            SZrString *propertyName = native_binding_create_string(
+                    state, methodDescriptor->propertyName);
+
+            if (propertyName == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
+            descriptor.name = propertyName;
+            descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY;
+            descriptor.isStatic = methodDescriptor->isStatic;
+            descriptor.isWritable = ZR_FALSE;
+            descriptor.getterFunction =
+                    ZR_CAST(SZrFunction *, methodValue.value.object);
+            descriptor.contractRole = methodDescriptor->contractRole;
+            descriptor.receiverEffect =
+                    methodDescriptor->propertyReferenceAccess ==
+                                    ZR_LIB_REFERENCE_ACCESS_WRITABLE
+                            ? ZR_MEMBER_RECEIVER_EFFECT_MUTABLE
+                            : ZR_MEMBER_RECEIVER_EFFECT_READONLY;
+            descriptor.referenceAccess =
+                    (TZrUInt32)methodDescriptor->propertyReferenceAccess;
+            descriptor.exportsWritableRef =
+                    methodDescriptor->propertyExportsWritableRef;
+            descriptor.accessModifier = 0u;
+            descriptor.getterAccessModifier = 0u;
+            descriptor.setterAccessModifier =
+                    ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
+            descriptor.initializerAccessModifier =
+                    ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE;
+            ZrCore_ObjectPrototype_AddMemberDescriptor(
+                    state, prototype, &descriptor);
         }
 
         native_registry_bind_standard_method_contract(prototype,

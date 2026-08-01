@@ -180,26 +180,6 @@ TZrBool ZrParser_CompileTime_PreparePatchInterfaceAdds(
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_CompileTime_ApplyPatchInterfaceAdds(
-        SZrCompilerState *cs,
-        SZrTypePrototypeInfo *targetInfo,
-        const SZrParserCompileTimePatchInterfaceAdds *interfaceAdds) {
-    if (cs == ZR_NULL || targetInfo == ZR_NULL || interfaceAdds == ZR_NULL ||
-        (interfaceAdds->count > 0U && interfaceAdds->typeNames == ZR_NULL)) {
-        return ZR_FALSE;
-    }
-    for (TZrSize index = 0; index < interfaceAdds->count; index++) {
-        SZrString *name = interfaceAdds->typeNames[index];
-
-        if (name == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        ZrCore_Array_Push(cs->state, &targetInfo->inherits, &name);
-        ZrCore_Array_Push(cs->state, &targetInfo->implements, &name);
-    }
-    return ZR_TRUE;
-}
-
 void ZrParser_CompileTime_FreePatchInterfaceAdds(
         SZrCompilerState *cs,
         SZrParserCompileTimePatchInterfaceAdds *interfaceAdds) {

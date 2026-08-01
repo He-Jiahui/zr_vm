@@ -137,6 +137,68 @@ static TZrBool property_reference_create_shell(
                              &kindValue));
 }
 
+static TZrBool property_reference_create_resolved_member(
+        SZrState *state,
+        const SZrTypeValue *base,
+        SZrObjectPrototype *ownerPrototype,
+        TZrUInt32 descriptorIndex,
+        SZrTypeValue *result) {
+    SZrTypeValue ownerValue;
+    SZrTypeValue descriptorValue;
+
+    if (state == ZR_NULL || base == ZR_NULL || ownerPrototype == ZR_NULL ||
+        ownerPrototype->memberDescriptors == ZR_NULL ||
+        descriptorIndex >= ownerPrototype->memberDescriptorCount ||
+        result == ZR_NULL ||
+        !property_reference_create_shell(
+                state, base, ZR_PROPERTY_REFERENCE_KIND_MEMBER, result)) {
+        return ZR_FALSE;
+    }
+    ZrCore_Value_InitAsRawObject(
+            state, &ownerValue, ZR_CAST_RAW_OBJECT_AS_SUPER(ownerPrototype));
+    ZrCore_Value_InitAsUInt(
+            state, &descriptorValue, (TZrUInt64)descriptorIndex);
+    return (TZrBool)(property_reference_set_member(
+                             state,
+                             result,
+                             ZR_PROPERTY_REFERENCE_OWNER_MEMBER,
+                             &ownerValue) &&
+                     property_reference_set_member(
+                             state,
+                             result,
+                             ZR_PROPERTY_REFERENCE_DESCRIPTOR_MEMBER,
+                             &descriptorValue));
+}
+
+TZrBool ZrCore_PropertyReference_CreateMemberByName(
+        SZrState *state,
+        const SZrTypeValue *base,
+        const TZrChar *name,
+        SZrTypeValue *result) {
+    SZrString *symbol;
+    SZrObjectPrototype *ownerPrototype;
+    TZrUInt32 descriptorIndex;
+
+    if (state == ZR_NULL || base == ZR_NULL || name == ZR_NULL ||
+        result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    symbol = property_reference_member_name(state, name);
+    return (TZrBool)(symbol != ZR_NULL &&
+                     property_reference_resolve_symbol_descriptor(
+                             state,
+                             base,
+                             symbol,
+                             &ownerPrototype,
+                             &descriptorIndex) &&
+                     property_reference_create_resolved_member(
+                             state,
+                             base,
+                             ownerPrototype,
+                             descriptorIndex,
+                             result));
+}
+
 TZrBool ZrCore_PropertyReference_CreateMember(
         SZrState *state,
         SZrFunction *function,
@@ -678,6 +740,11 @@ TZrBool ZrCore_PropertyReference_Store(
                                  reference,
                                  &ownerPrototype,
                                  &descriptorIndex) &&
+                         ownerPrototype->memberDescriptors != ZR_NULL &&
+                         descriptorIndex <
+                                 ownerPrototype->memberDescriptorCount &&
+                         ownerPrototype->memberDescriptors[descriptorIndex]
+                                 .isWritable &&
                          ZrCore_Object_SetMemberCachedDescriptorUnchecked(
                                  state,
                                  &base,

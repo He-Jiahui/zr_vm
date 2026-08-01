@@ -167,6 +167,46 @@ static void test_value_try_copy_fast_rejects_plain_struct_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_value_copy_preserves_ref_like_struct_identity(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrString *prototypeName;
+    SZrStructPrototype *prototype;
+    SZrObject *sourceObject;
+    SZrTypeValue source;
+    SZrTypeValue destination;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    prototypeName = ZrCore_String_CreateFromNative(
+            state, "FastCopyRefLikeStruct");
+    TEST_ASSERT_NOT_NULL(prototypeName);
+    prototype = ZrCore_StructPrototype_New(state, prototypeName);
+    TEST_ASSERT_NOT_NULL(prototype);
+    prototype->super.protocolMask |=
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_REF_LIKE);
+
+    sourceObject = ZrCore_Object_NewCustomized(
+            state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_STRUCT);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+    sourceObject->prototype = &prototype->super;
+    ZrCore_Object_Init(state, sourceObject);
+
+    ZrCore_Value_InitAsRawObject(
+            state, &source, ZR_CAST_RAW_OBJECT_AS_SUPER(sourceObject));
+    source.type = ZR_VALUE_TYPE_OBJECT;
+    ZrCore_Value_ResetAsNull(&destination);
+
+    TEST_ASSERT_TRUE(ZrCore_Value_TryCopyFastNoProfile(
+            state, &destination, &source));
+    TEST_ASSERT_EQUAL_PTR(source.value.object, destination.value.object);
+
+    ZrCore_Value_ResetAsNull(&destination);
+    ZrCore_Value_Copy(state, &destination, &source);
+    TEST_ASSERT_EQUAL_PTR(source.value.object, destination.value.object);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_value_try_copy_fast_rejects_null_heap_object_payload(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrTypeValue source;
@@ -200,6 +240,7 @@ int main(void) {
     RUN_TEST(test_value_try_copy_fast_reuses_plain_heap_object);
     RUN_TEST(test_value_copy_clones_plain_struct_object);
     RUN_TEST(test_value_try_copy_fast_rejects_plain_struct_object);
+    RUN_TEST(test_value_copy_preserves_ref_like_struct_identity);
     RUN_TEST(test_value_try_copy_fast_rejects_null_heap_object_payload);
 
     return UNITY_END();

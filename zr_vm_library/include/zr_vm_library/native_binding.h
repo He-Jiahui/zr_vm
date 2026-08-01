@@ -53,7 +53,15 @@ typedef struct ZrLibFieldDescriptor {
     const TZrChar *typeName;
     const TZrChar *documentation;
     TZrUInt32 contractRole;
+    TZrBool runtimeOnly;
+    TZrBool isReadonly;
 } ZrLibFieldDescriptor;
+
+typedef enum EZrLibReferenceAccess {
+    ZR_LIB_REFERENCE_ACCESS_NONE = 0,
+    ZR_LIB_REFERENCE_ACCESS_WRITABLE = 1,
+    ZR_LIB_REFERENCE_ACCESS_READONLY = 2
+} EZrLibReferenceAccess;
 
 typedef enum EZrLibParameterPassingMode {
     ZR_LIB_PARAMETER_PASSING_MODE_VALUE = 0,
@@ -203,6 +211,9 @@ typedef struct ZrLibMethodDescriptor {
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
     TZrUInt32 dispatchFlags;
+    const TZrChar *propertyName;
+    EZrLibReferenceAccess propertyReferenceAccess;
+    TZrBool propertyExportsWritableRef;
 } ZrLibMethodDescriptor;
 
 typedef struct ZrLibMetaMethodDescriptor {
@@ -283,10 +294,10 @@ typedef struct ZrLibTypeDescriptor {
 } ZrLibTypeDescriptor;
 
 #define ZR_LIB_FIELD_DESCRIPTOR_INIT(NAME, TYPE_NAME, DOCUMENTATION)                                                  \
-    {(NAME), (TYPE_NAME), (DOCUMENTATION), 0U}
+    {(NAME), (TYPE_NAME), (DOCUMENTATION), 0U, ZR_FALSE, ZR_FALSE}
 
 #define ZR_LIB_FIELD_DESCRIPTOR_ROLE_INIT(NAME, TYPE_NAME, DOCUMENTATION, CONTRACT_ROLE)                              \
-    {(NAME), (TYPE_NAME), (DOCUMENTATION), (CONTRACT_ROLE)}
+    {(NAME), (TYPE_NAME), (DOCUMENTATION), (CONTRACT_ROLE), ZR_FALSE, ZR_FALSE}
 
 #define ZR_LIB_METHOD_DESCRIPTOR_INIT(NAME, MIN_ARGUMENT_COUNT, MAX_ARGUMENT_COUNT, CALLBACK, RETURN_TYPE_NAME,       \
                                       DOCUMENTATION, IS_STATIC, PARAMETERS, PARAMETER_COUNT)                          \
@@ -299,7 +310,13 @@ typedef struct ZrLibTypeDescriptor {
      (IS_STATIC),                                                                                                     \
      (PARAMETERS),                                                                                                    \
      (PARAMETER_COUNT),                                                                                               \
-     0U}
+     0U,                                                                                                              \
+     ZR_NULL,                                                                                                         \
+     0U,                                                                                                              \
+     0U,                                                                                                              \
+     ZR_NULL,                                                                                                         \
+     ZR_LIB_REFERENCE_ACCESS_NONE,                                                                                    \
+     ZR_FALSE}
 
 #define ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT(NAME, MIN_ARGUMENT_COUNT, MAX_ARGUMENT_COUNT, CALLBACK, RETURN_TYPE_NAME,  \
                                            DOCUMENTATION, IS_STATIC, PARAMETERS, PARAMETER_COUNT, CONTRACT_ROLE)      \
@@ -312,7 +329,13 @@ typedef struct ZrLibTypeDescriptor {
      (IS_STATIC),                                                                                                     \
      (PARAMETERS),                                                                                                    \
      (PARAMETER_COUNT),                                                                                               \
-     (CONTRACT_ROLE)}
+     (CONTRACT_ROLE),                                                                                                 \
+     ZR_NULL,                                                                                                         \
+     0U,                                                                                                              \
+     0U,                                                                                                              \
+     ZR_NULL,                                                                                                         \
+     ZR_LIB_REFERENCE_ACCESS_NONE,                                                                                    \
+     ZR_FALSE}
 
 #define ZR_LIB_TYPE_DESCRIPTOR_INIT(NAME, PROTOTYPE_TYPE, FIELDS, FIELD_COUNT, METHODS, METHOD_COUNT, META_METHODS,  \
                                     META_METHOD_COUNT, DOCUMENTATION, EXTENDS_TYPE_NAME, IMPLEMENTS_TYPE_NAMES,       \

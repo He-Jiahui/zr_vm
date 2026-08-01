@@ -80,6 +80,7 @@ typedef struct SZrLibrary_ProjectManifestDependencyLockEntry {
     const TZrChar *contentHash;
     const TZrChar *transitiveIdentity;
     EZrLibrary_ProjectManifestDependencySourceKind providerSourceKind;
+    EZrLibrary_ProviderPhase providerPhase;
 } SZrLibrary_ProjectManifestDependencyLockEntry;
 
 typedef struct SZrLibrary_ProjectDependencyReference {
@@ -242,6 +243,9 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrLibrary_ProjectManifestDependency *manifestDependencies;
     TZrSize manifestDependencyCount;
     TZrSize manifestDependencyCapacity;
+    SZrLibrary_ProjectManifestDependency *manifestBuildDependencies;
+    TZrSize manifestBuildDependencyCount;
+    TZrSize manifestBuildDependencyCapacity;
     SZrLibrary_ProjectResource *resources;
     TZrSize resourceCount;
     TZrSize resourceCapacity;

@@ -21,6 +21,7 @@
 
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_core/constant_reference.h"
+#include "writer_intermediate_generated_source_map.h"
 
 static const TZrChar *writer_intermediate_primitive_type_name(EZrValueType baseType) {
     switch (baseType) {
@@ -847,6 +848,9 @@ static void writer_intermediate_write_nested_function(FILE *file,
         fprintf(file, "\n");
     }
 
+    writer_intermediate_write_generated_source_maps(
+            file, state, function, indentLevel);
+
     writer_intermediate_write_indent(file, indentLevel);
     fprintf(file, "INSTRUCTIONS (%u):\n", function->instructionsLength);
     for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
@@ -1362,6 +1366,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
     if (state == ZR_NULL || function == ZR_NULL || filename == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (!writer_intermediate_validate_function_prototype_data(function)) {
+        return ZR_FALSE;
+    }
     
     FILE *file = fopen(filename, "w");
     if (file == ZR_NULL) {
@@ -1460,6 +1467,8 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
         ZrCore_Debug_PrintPrototypesFromData(state, function, file);
         fprintf(file, "\n");
     }
+
+    writer_intermediate_write_generated_source_maps(file, state, function, 0);
     
     // 指令列表
     fprintf(file, "INSTRUCTIONS (%u):\n", function->instructionsLength);

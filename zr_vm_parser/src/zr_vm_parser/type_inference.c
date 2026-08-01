@@ -2398,6 +2398,11 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     }
 
     if (hasLeftType) {
+        if (assignExpr->left != ZR_NULL &&
+            assignExpr->left->type == ZR_AST_PRIMARY_EXPRESSION &&
+            leftType.referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+            leftType.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+        }
         if (!type_inference_report_ownership_flow_escape(cs, &leftType, result, node->location)) {
             ZrParser_InferredType_Free(cs->state, &leftType);
             return ZR_FALSE;
