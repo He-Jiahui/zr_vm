@@ -48,9 +48,9 @@ doc_type: milestone-detail
   SymbolId, TypeId, and declaration range into the canonical reference fact.
   Missing, stale, trimmed, incomplete, or duplicate identity therefore cannot
   become a synthetic local, name-derived fact, or runtime-root fact.
-- This stage only publishes semantic facts. It does not resolve a closure value
-  or enable formal Debug execution. E2b6d must consume the fact and resolver
-  without name, slot, AST, display-type, or text fallback.
+- This stage only publishes semantic facts. The separate E2b6d consumer now
+  resolves a closure value only by consuming this fact and the resolver, with
+  no name, slot, AST, display-type, or text fallback.
 
 ## Status And Output Record
 

@@ -36,11 +36,15 @@ typedef struct SZrDebugClosureBindingCapture {
     TZrBool hasCanonicalIdentity;
     TZrBool sawEvaluationPolicy;
     TZrBool policyHasCanonicalFacts;
+    TZrBool sawFormalEvaluation;
     TZrUInt32 captureIndex;
     TZrUInt32 symbolId;
     TZrUInt32 typeId;
     TZrUInt64 token;
     TZrChar error[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar formalEvaluationType[ZR_DEBUG_NAME_CAPACITY];
+    TZrChar formalEvaluationValue[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar formalEvaluationError[ZR_DEBUG_TEXT_CAPACITY];
 } SZrDebugClosureBindingCapture;
 
 static SZrDebugClosureBindingCapture g_debugClosureBindingCapture;
@@ -405,6 +409,31 @@ static void debug_closure_binding_hook(SZrState *state, SZrDebugInfo *debugInfo)
                                          sizeof(g_debugClosureBindingCapture.error))) {
         g_debugClosureBindingCapture.sawEvaluationPolicy = ZR_TRUE;
         g_debugClosureBindingCapture.policyHasCanonicalFacts = policy.hasCanonicalFacts;
+    }
+    {
+        ZrDebugEvaluateResult result;
+
+        memset(&result, 0, sizeof(result));
+        g_debugClosureBindingCapture.formalEvaluationError[0] = '\0';
+        if (ZrDebug_EvaluateWithCapabilities(g_debugClosureBindingCapture.agent,
+                                             1u,
+                                             "seed",
+                                             ZR_DEBUG_EVALUATION_EFFECT_NONE,
+                                             &result,
+                                             g_debugClosureBindingCapture.formalEvaluationError,
+                                             sizeof(g_debugClosureBindingCapture.formalEvaluationError))) {
+            g_debugClosureBindingCapture.sawFormalEvaluation = ZR_TRUE;
+            strncpy(g_debugClosureBindingCapture.formalEvaluationType,
+                    result.type_name,
+                    sizeof(g_debugClosureBindingCapture.formalEvaluationType) - 1u);
+            g_debugClosureBindingCapture.formalEvaluationType[
+                    sizeof(g_debugClosureBindingCapture.formalEvaluationType) - 1u] = '\0';
+            strncpy(g_debugClosureBindingCapture.formalEvaluationValue,
+                    result.value_text,
+                    sizeof(g_debugClosureBindingCapture.formalEvaluationValue) - 1u);
+            g_debugClosureBindingCapture.formalEvaluationValue[
+                    sizeof(g_debugClosureBindingCapture.formalEvaluationValue) - 1u] = '\0';
+        }
     }
 }
 
@@ -954,6 +983,10 @@ static void test_debug_semantic_binding_publishes_canonical_closure_capture(void
     TEST_ASSERT_NOT_EQUAL_UINT64(0u, g_debugClosureBindingCapture.token);
     TEST_ASSERT_TRUE(g_debugClosureBindingCapture.sawEvaluationPolicy);
     TEST_ASSERT_TRUE(g_debugClosureBindingCapture.policyHasCanonicalFacts);
+    TEST_ASSERT_TRUE_MESSAGE(g_debugClosureBindingCapture.sawFormalEvaluation,
+                             g_debugClosureBindingCapture.formalEvaluationError);
+    TEST_ASSERT_EQUAL_STRING("int", g_debugClosureBindingCapture.formalEvaluationType);
+    TEST_ASSERT_EQUAL_STRING("4", g_debugClosureBindingCapture.formalEvaluationValue);
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);

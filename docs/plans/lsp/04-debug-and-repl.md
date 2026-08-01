@@ -42,8 +42,10 @@ E2b6c 已在正式 TypeEnvironment 与 `SZrSemanticReferenceFact` 发布
 declaration range。capture index 不复用 PlaceId，首个 capture 的 index `0` 有效；
 缺失、stale、trimmed、incomplete 或 duplicate identity 均 fail closed。legacy capture
 name 只在 core 已按 exact index 验证身份后作为 parser surface key，不能用于恢复 identity。
-E2b6d 尚未发布 Debug consumer；在此之前 LSP/DAP consumer 不得按 capture name、slot、AST
-或文本回退，也不得执行 capture value。
+E2b6d 已让 formal Debug consumer 只消费该 reference fact：它重验source、capture index、
+token、SymbolId、TypeId和whole declaration range后调用generation-checked resolver。任何
+不匹配都使formal execution unavailable；LSP/DAP consumer 不得按 capture name、slot、AST
+或文本回退。
 
 ## 实施与安全矩阵
 

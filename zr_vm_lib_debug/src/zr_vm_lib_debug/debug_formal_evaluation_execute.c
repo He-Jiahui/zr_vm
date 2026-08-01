@@ -150,6 +150,58 @@ static TZrBool zr_debug_formal_read_runtime_root(
                      ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK);
 }
 
+static TZrBool zr_debug_formal_read_closure_capture(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const SZrSemanticReferenceFact *reference,
+        SZrTypeValue *outValue) {
+    SZrDebugEvaluationContext context;
+    SZrDebugClosureCaptureBinding capture;
+
+    if (agent == ZR_NULL || agent->state == ZR_NULL || reference == ZR_NULL || outValue == ZR_NULL ||
+        !reference->isResolved || reference->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        reference->typeId == ZR_SEMANTIC_ID_INVALID ||
+        reference->originKind != ZR_SEMANTIC_REFERENCE_ORIGIN_CLOSURE_CAPTURE ||
+        reference->runtimeRootKind != ZR_SEMANTIC_RUNTIME_ROOT_NONE ||
+        reference->originToken == 0u || reference->placeId != ZR_SEMANTIC_ID_INVALID ||
+        reference->declarationRange.source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&context, 0, sizeof(context));
+    if (ZrCore_Debug_GetEvaluationContext(
+                agent->state,
+                frameId == 0u ? 0u : frameId - 1u,
+                &context) != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK ||
+        context.activation.function == ZR_NULL ||
+        reference->declarationRange.source != context.activation.function->sourceCodeList) {
+        return ZR_FALSE;
+    }
+
+    memset(&capture, 0, sizeof(capture));
+    if (ZrCore_Debug_EvaluationContext_GetClosureCapture(
+                agent->state,
+                &context,
+                reference->originIndex,
+                &capture) != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK ||
+        capture.captureIndex != reference->originIndex ||
+        capture.symbolId != reference->symbolId || capture.typeId != reference->typeId ||
+        capture.token != reference->originToken ||
+        capture.declarationStartLine != (TZrUInt32)reference->declarationRange.start.line ||
+        capture.declarationStartColumn != (TZrUInt32)reference->declarationRange.start.column ||
+        capture.declarationEndLine != (TZrUInt32)reference->declarationRange.end.line ||
+        capture.declarationEndColumn != (TZrUInt32)reference->declarationRange.end.column) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(outValue);
+    return (TZrBool)(ZrCore_Debug_EvaluationContext_ResolveClosureCapture(
+                             agent->state,
+                             &context,
+                             &capture,
+                             outValue) == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK);
+}
+
 static TZrBool zr_debug_formal_read_reference_value(
         ZrDebugAgent *agent,
         TZrUInt32 frameId,
@@ -165,6 +217,7 @@ static TZrBool zr_debug_formal_read_reference_value(
         case ZR_SEMANTIC_REFERENCE_ORIGIN_RUNTIME_ROOT:
             return zr_debug_formal_read_runtime_root(agent, frameId, reference, outValue);
         case ZR_SEMANTIC_REFERENCE_ORIGIN_CLOSURE_CAPTURE:
+            return zr_debug_formal_read_closure_capture(agent, frameId, reference, outValue);
         default:
             return ZR_FALSE;
     }

@@ -186,9 +186,8 @@ resolver never calls legacy upvalue name APIs or searches a capture name, stack
 slot, AST, display type, or text.
 
 E2b6b is runtime-only. E2b6c publishes the matching parser fact but does not
-enable execution; E2b6d must make the formal Debug consumer use that fact.
-Until then the resolver and parser fact are not permission for a consumer
-fallback.
+enable execution. E2b6d consumes the parser fact and the resolver for formal
+Debug evaluation without adding a consumer fallback.
 
 ## Closure-Capture Reference Facts
 
@@ -213,8 +212,24 @@ trimmed, incomplete, or duplicate capture identity therefore fails closed.
 
 E2b6c is semantic-fact publication only. It does not resolve a capture value,
 construct an executable evaluation plan, or authorize `debug_formal_evaluation_execute.c`
-to fall back to a capture name, slot, AST, display type, or text. Those remain
-E2b6d work.
+to fall back to a capture name, slot, AST, display type, or text. E2b6d is the
+separate consumer that uses these facts under the following contract.
+
+## Closure-Capture Formal Evaluation
+
+E2b6d adds the `CLOSURE_CAPTURE` branch to the formal reference-value reader.
+It accepts only a resolved reference with an invalid PlaceId, runtime-root kind
+`NONE`, nonzero SymbolId, TypeId and token, and a source-backed declaration
+range. It reloads the current paused context, requires that source to be the
+active function's source, asks the E2b6b query for exactly `originIndex`, and
+compares the returned SymbolId, TypeId, token, and whole range with the parser
+fact. Only then does it call the generation-checked closure resolver.
+
+The consumer does not inspect `SZrFunctionClosureVariable.name`, reparse a
+capture name to discover a slot, or use a captured value before the full
+identity comparison. A mismatched index, token, ID, range, source, stale frame,
+or unavailable resolver result leaves formal evaluation unsupported. This makes
+the capture a read-only formal value while retaining the existing effect policy.
 
 ## Consumer Boundary
 
