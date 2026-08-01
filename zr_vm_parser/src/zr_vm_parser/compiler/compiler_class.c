@@ -7,14 +7,7 @@
 #include "compile_time_executor_internal.h"
 #include "cfg_internal.h"
 #include "compiler_attribute_binding.h"
-
-static const TZrChar *compiler_class_builtin_ffi_wrapper_leaf_names[] = {
-        "lowering",
-        "viewType",
-        "underlying",
-        "ownerMode",
-        "releaseHook",
-};
+#include "compiler_decorator_contract.h"
 
 static TZrBool compiler_class_ffi_integer_type_name_supported(SZrString *typeName) {
     static const TZrChar *const kSupportedIntegerTypeNames[] = {
@@ -692,34 +685,6 @@ static TZrBool compiler_class_validate_required_members_recursive(SZrCompilerSta
     return ZR_TRUE;
 }
 
-static const TZrChar *compiler_class_builtin_ffi_wrapper_leaf_name(SZrAstNode *decoratorNode,
-                                                                   TZrBool *outHasCall) {
-    TZrSize index;
-
-    if (outHasCall != ZR_NULL) {
-        *outHasCall = ZR_FALSE;
-    }
-
-    for (index = 0; index < ZR_ARRAY_COUNT(compiler_class_builtin_ffi_wrapper_leaf_names); index++) {
-        const TZrChar *leafName = compiler_class_builtin_ffi_wrapper_leaf_names[index];
-        if (extern_compiler_match_decorator_path(decoratorNode, leafName, ZR_TRUE, ZR_NULL)) {
-            if (outHasCall != ZR_NULL) {
-                *outHasCall = ZR_TRUE;
-            }
-            return leafName;
-        }
-        if (extern_compiler_match_decorator_path(decoratorNode, leafName, ZR_FALSE, ZR_NULL)) {
-            return leafName;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-static TZrBool compiler_class_decorator_is_builtin_ffi_wrapper(SZrAstNode *decoratorNode) {
-    return compiler_class_builtin_ffi_wrapper_leaf_name(decoratorNode, ZR_NULL) != ZR_NULL;
-}
-
 static TZrBool compiler_class_extract_builtin_ffi_string_decorator(SZrCompilerState *cs,
                                                                    SZrAstNodeArray *decorators,
                                                                    const TZrChar *leafName,
@@ -744,8 +709,9 @@ static TZrBool compiler_class_extract_builtin_ffi_string_decorator(SZrCompilerSt
     if (decoratorNode == ZR_NULL) {
         for (TZrSize index = 0; decorators != ZR_NULL && index < decorators->count; index++) {
             TZrBool hasCall = ZR_FALSE;
-            const TZrChar *builtinLeafName = compiler_class_builtin_ffi_wrapper_leaf_name(decorators->nodes[index],
-                                                                                           &hasCall);
+            const TZrChar *builtinLeafName =
+                    ZrParser_DecoratorContract_BuiltinFfiWrapperLeafName(
+                            decorators->nodes[index], &hasCall);
             if (builtinLeafName != ZR_NULL && strcmp(builtinLeafName, leafName) == 0 && !hasCall) {
                 ZrParser_Compiler_Error(cs, "zr.ffi class wrapper decorators require a single string argument", location);
                 return ZR_FALSE;
@@ -947,60 +913,19 @@ static TZrBool compiler_class_apply_builtin_ffi_wrapper_decorators(SZrCompilerSt
     return ZR_TRUE;
 }
 
-static TZrBool compiler_class_emit_runtime_decorators_excluding_builtin_ffi(SZrCompilerState *cs,
-                                                                            SZrAstNodeArray *decorators,
-                                                                            TZrUInt32 targetSlot,
-                                                                            TZrBool persistTarget,
-                                                                            SZrFileRange location) {
-    if (cs == ZR_NULL || decorators == ZR_NULL || decorators->count == 0) {
-        return ZR_TRUE;
-    }
-
-    for (TZrSize index = decorators->count; index > 0; index--) {
-        SZrAstNode *decoratorNode = decorators->nodes[index - 1];
-        SZrAstNode *singleDecoratorNodes[1];
-        SZrAstNodeArray singleDecoratorArray;
-
-        if (decoratorNode == ZR_NULL ||
-            compiler_class_decorator_is_builtin_ffi_wrapper(decoratorNode) ||
-            ZrParser_Metadata_IsRegisteredAttribute(cs, decoratorNode) ||
-            ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
-            if (cs->hasError) {
-                return ZR_FALSE;
-            }
-            continue;
-        }
-
-        singleDecoratorNodes[0] = decoratorNode;
-        singleDecoratorArray.nodes = singleDecoratorNodes;
-        singleDecoratorArray.count = 1;
-        singleDecoratorArray.capacity = 1;
-        if (!emit_runtime_decorator_applications(cs,
-                                                 &singleDecoratorArray,
-                                                 targetSlot,
-                                                 persistTarget,
-                                                 location)) {
-            return ZR_FALSE;
-        }
-    }
-
-    return ZR_TRUE;
-}
-
 static TZrBool compiler_class_validate_interface_const_fields(SZrCompilerState *cs,
                                                               const SZrTypePrototypeInfo *classInfo,
-                                                              SZrAstNodeArray *inherits,
+                                                              const SZrArray *inherits,
                                                               SZrFileRange errorLocation) {
     if (cs == ZR_NULL || classInfo == ZR_NULL || inherits == ZR_NULL) {
         return ZR_TRUE;
     }
 
-    for (TZrSize inheritIndex = 0; inheritIndex < inherits->count; inheritIndex++) {
-        SZrAstNode *inheritType = inherits->nodes[inheritIndex];
+    for (TZrSize inheritIndex = 0; inheritIndex < inherits->length; inheritIndex++) {
+        SZrString **inheritTypeNamePtr =
+                (SZrString **)ZrCore_Array_Get((SZrArray *)inherits, inheritIndex);
         SZrString *inheritTypeName =
-                inheritType != ZR_NULL && inheritType->type == ZR_AST_TYPE
-                        ? extract_type_name_string(cs, &inheritType->data.type)
-                        : ZR_NULL;
+                inheritTypeNamePtr != ZR_NULL ? *inheritTypeNamePtr : ZR_NULL;
         SZrTypePrototypeInfo *inheritInfo;
 
         if (inheritTypeName == ZR_NULL) {
@@ -1156,13 +1081,6 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {
-        cs->currentTypeName = oldTypeName;
-        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-        cs->currentTypeNode = oldTypeNode;
-        return;
-    }
-    
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
@@ -1232,6 +1150,13 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 if (actualPhase != memberPhase) {
                     continue;
                 }
+
+            if (!compiler_test_validate_non_module_roles(cs, member)) {
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
 
             if (member->type == ZR_AST_PROPERTY_DECLARATION) {
                 if (!compiler_property_bind(
@@ -1628,7 +1553,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
-    if (!compiler_class_validate_interface_const_fields(cs, &info, classDecl->inherits, node->location)) {
+    if (!compiler_class_validate_interface_const_fields(
+                cs, &info, &info.inherits, node->location)) {
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;
@@ -1646,119 +1572,6 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     // 将 prototype 信息添加到数组
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
-
-    if (classDecl->members != ZR_NULL && classDecl->members->count > 0) {
-        for (TZrSize memberIndex = 0; memberIndex < classDecl->members->count; memberIndex++) {
-            SZrAstNode *memberNode = classDecl->members->nodes[memberIndex];
-            SZrAstNodeArray *memberDecorators = ZR_NULL;
-            SZrString *memberName = ZR_NULL;
-            EZrRuntimeDecoratorTargetKind targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_INVALID;
-
-            if (memberNode == ZR_NULL) {
-                continue;
-            }
-
-            switch (memberNode->type) {
-                case ZR_AST_CLASS_FIELD:
-                    memberDecorators = memberNode->data.classField.decorators;
-                    memberName = memberNode->data.classField.name != ZR_NULL
-                                         ? memberNode->data.classField.name->name
-                                         : ZR_NULL;
-                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD;
-                    break;
-                case ZR_AST_CLASS_METHOD:
-                    memberDecorators = memberNode->data.classMethod.decorators;
-                    memberName = memberNode->data.classMethod.name != ZR_NULL
-                                         ? memberNode->data.classMethod.name->name
-                                         : ZR_NULL;
-                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_METHOD;
-                    break;
-                case ZR_AST_CLASS_PROPERTY:
-                    memberDecorators = memberNode->data.classProperty.decorators;
-                    if (memberNode->data.classProperty.modifier != ZR_NULL) {
-                        if (memberNode->data.classProperty.modifier->type == ZR_AST_PROPERTY_GET &&
-                            memberNode->data.classProperty.modifier->data.propertyGet.name != ZR_NULL) {
-                            memberName = memberNode->data.classProperty.modifier->data.propertyGet.name->name;
-                        } else if (memberNode->data.classProperty.modifier->type == ZR_AST_PROPERTY_SET &&
-                                   memberNode->data.classProperty.modifier->data.propertySet.name != ZR_NULL) {
-                            memberName = memberNode->data.classProperty.modifier->data.propertySet.name->name;
-                        }
-                    }
-                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY;
-                    break;
-                case ZR_AST_PROPERTY_DECLARATION:
-                    memberDecorators =
-                            memberNode->data.propertyDeclaration.decorators;
-                    memberName =
-                            memberNode->data.propertyDeclaration.name != ZR_NULL
-                                    ? memberNode->data.propertyDeclaration.name->name
-                                    : ZR_NULL;
-                    targetKind = ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY;
-                    break;
-                default:
-                    break;
-            }
-
-            if (memberDecorators == ZR_NULL || memberName == ZR_NULL ||
-                targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_INVALID) {
-                continue;
-            }
-
-            if (!emit_runtime_member_decorator_applications(cs,
-                                                            memberDecorators,
-                                                            typeName,
-                                                            memberName,
-                                                            targetKind,
-                                                            memberNode->location)) {
-                cs->currentTypeName = oldTypeName;
-                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-                cs->currentTypeNode = oldTypeNode;
-                return;
-            }
-        }
-    }
-
-    if (classDecl->decorators != ZR_NULL && classDecl->decorators->count > 0) {
-        TZrBool hasRuntimeDecorators = ZR_FALSE;
-        for (TZrSize decoratorIndex = 0; decoratorIndex < classDecl->decorators->count; decoratorIndex++) {
-            SZrAstNode *decoratorNode = classDecl->decorators->nodes[decoratorIndex];
-            if (decoratorNode == ZR_NULL) {
-                continue;
-            }
-
-            if (!ZrParser_Compiler_IsCompileTimeDecorator(cs, decoratorNode)) {
-                if (cs->hasError) {
-                    cs->currentTypeName = oldTypeName;
-                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-                    cs->currentTypeNode = oldTypeNode;
-                    return;
-                }
-                if (compiler_class_decorator_is_builtin_ffi_wrapper(decoratorNode)) {
-                    continue;
-                }
-                hasRuntimeDecorators = ZR_TRUE;
-                break;
-            }
-            if (cs->hasError) {
-                cs->currentTypeName = oldTypeName;
-                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-                cs->currentTypeNode = oldTypeNode;
-                return;
-            }
-        }
-
-        if (hasRuntimeDecorators &&
-            !compiler_class_emit_runtime_decorators_excluding_builtin_ffi(cs,
-                                                                          classDecl->decorators,
-                                                                          emit_load_global_identifier(cs, typeName),
-                                                                          ZR_FALSE,
-                                                                          node->location)) {
-            cs->currentTypeName = oldTypeName;
-            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-            cs->currentTypeNode = oldTypeNode;
-            return;
-        }
-    }
 
     emit_class_static_field_initializers(cs, node);
     if (cs->hasError) {

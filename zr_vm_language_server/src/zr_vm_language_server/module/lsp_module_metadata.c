@@ -1,4 +1,5 @@
 #include "module/lsp_module_metadata.h"
+#include "module/lsp_compile_tool_projection.h"
 #include "lsp_virtual_documents.h"
 
 #include "zr_vm_library/file.h"
@@ -370,6 +371,14 @@ static const ZrLibModuleDescriptor *module_metadata_resolve_native_module_descri
     const TZrChar *moduleName,
     EZrLspImportedModuleSourceKind *outSourceKind) {
     const ZrLibModuleDescriptor *descriptor;
+
+    descriptor = ZrLanguageServer_LspCompileToolProjection_FindModule(moduleName);
+    if (descriptor != ZR_NULL) {
+        if (outSourceKind != ZR_NULL) {
+            *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_COMPILE_TOOL;
+        }
+        return descriptor;
+    }
 
     if (projectIndex != ZR_NULL) {
         module_metadata_try_load_project_native_plugin(state, projectIndex, moduleName);

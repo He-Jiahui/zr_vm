@@ -27,6 +27,7 @@
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_library/native_registry.h"
 #include "test_support.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h"
 
@@ -1728,13 +1729,19 @@ static void test_convert_ast_type_preserves_qualified_root_module_member_name(vo
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "var patch: zr.DecoratorPatch = null;";
+        SZrString *declarationAlias = ZrCore_String_CreateFromNative(state, "declaration");
+        const SZrParserCompileToolModuleDescriptor *declarationProvider =
+                ZrParser_CompileTool_FindModule("zr.compile.declaration");
+        const char *source = "var patch: declaration.Patch = null;";
         SZrString *sourceName = ZrCore_String_Create(state, "qualified_root_module_member_type_test.zr", 42);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *decl;
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(declarationProvider);
+        TEST_ASSERT_TRUE(ZrParser_CompileToolBinding_DeclareProvider(
+                cs, declarationAlias, declarationProvider));
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
@@ -1751,7 +1758,7 @@ static void test_convert_ast_type_preserves_qualified_root_module_member_name(vo
                 ZrParser_AstTypeToInferredType_Convert(cs, decl->data.variableDeclaration.typeInfo, &convertedType));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, convertedType.baseType);
         TEST_ASSERT_NOT_NULL(convertedType.typeName);
-        TEST_ASSERT_EQUAL_STRING("zr.DecoratorPatch", ZrCore_String_GetNativeString(convertedType.typeName));
+        TEST_ASSERT_EQUAL_STRING("zr.compile.declaration.Patch", ZrCore_String_GetNativeString(convertedType.typeName));
 
         ZrParser_InferredType_Free(state, &convertedType);
         ZrParser_Ast_Free(state, ast);

@@ -1115,14 +1115,6 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                     garbage_collector_mark_object(state, &function->childFunctionList[i].super);
                 }
             }
-            if (function->runtimeDecoratorMetadata != ZR_NULL) {
-                garbage_collector_mark_object(state,
-                                              ZR_CAST_RAW_OBJECT_AS_SUPER(function->runtimeDecoratorMetadata));
-            }
-            if (function->runtimeDecoratorDecorators != ZR_NULL) {
-                garbage_collector_mark_object(state,
-                                              ZR_CAST_RAW_OBJECT_AS_SUPER(function->runtimeDecoratorDecorators));
-            }
             if (function->cachedStatelessClosure != ZR_NULL) {
                 garbage_collector_mark_object(state,
                                               ZR_CAST_RAW_OBJECT_AS_SUPER(function->cachedStatelessClosure));

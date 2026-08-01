@@ -329,52 +329,6 @@ static TZrBool ct_compile_time_function_append_parameter(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-static SZrCompileTimeDecoratorClass *find_compile_time_decorator_class_local(SZrCompilerState *cs, SZrString *name) {
-    if (cs == ZR_NULL || name == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize i = 0; i < cs->compileTimeDecoratorClasses.length; i++) {
-        SZrCompileTimeDecoratorClass **classPtr =
-                (SZrCompileTimeDecoratorClass **)ZrCore_Array_Get(&cs->compileTimeDecoratorClasses, i);
-        if (classPtr != ZR_NULL && *classPtr != ZR_NULL && (*classPtr)->name != ZR_NULL &&
-            ZrCore_String_Equal((*classPtr)->name, name)) {
-            return *classPtr;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-static SZrAstNode *find_compile_time_decorator_meta_method_from_members(SZrAstNodeArray *members,
-                                                                        const TZrChar *metaName,
-                                                                        TZrBool isStructDecorator) {
-    if (members == ZR_NULL || metaName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize i = 0; i < members->count; i++) {
-        SZrAstNode *member = members->nodes[i];
-        SZrIdentifier *meta = ZR_NULL;
-
-        if (member == ZR_NULL) {
-            continue;
-        }
-
-        if (!isStructDecorator && member->type == ZR_AST_CLASS_META_FUNCTION) {
-            meta = member->data.classMetaFunction.meta;
-        } else if (isStructDecorator && member->type == ZR_AST_STRUCT_META_FUNCTION) {
-            meta = member->data.structMetaFunction.meta;
-        }
-
-        if (meta != ZR_NULL && meta->name != ZR_NULL && ct_string_equals(meta->name, metaName)) {
-            return member;
-        }
-    }
-
-    return ZR_NULL;
-}
-
 TZrBool ct_value_from_compile_time_function(SZrCompilerState *cs,
                                                  SZrCompileTimeFunction *func,
                                                  SZrTypeValue *result) {
@@ -659,50 +613,5 @@ TZrBool register_compile_time_function_alias(SZrCompilerState *cs,
                                                   &func->paramTypes);
     }
 
-    return ZR_TRUE;
-}
-
-TZrBool register_compile_time_decorator_class_alias(SZrCompilerState *cs,
-                                                    SZrString *aliasName,
-                                                    SZrAstNode *node,
-                                                    SZrFileRange location) {
-    SZrCompileTimeDecoratorClass *decoratorClass;
-    SZrAstNodeArray *members = ZR_NULL;
-    TZrBool isStructDecorator = ZR_FALSE;
-
-    if (cs == ZR_NULL || aliasName == ZR_NULL || node == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (node->type == ZR_AST_CLASS_DECLARATION) {
-        members = node->data.classDeclaration.members;
-    } else if (node->type == ZR_AST_STRUCT_DECLARATION) {
-        members = node->data.structDeclaration.members;
-        isStructDecorator = ZR_TRUE;
-    } else {
-        return ZR_FALSE;
-    }
-
-    decoratorClass = find_compile_time_decorator_class_local(cs, aliasName);
-    if (decoratorClass == ZR_NULL) {
-        decoratorClass = (SZrCompileTimeDecoratorClass *)ZrCore_Memory_RawMallocWithType(
-                cs->state->global,
-                sizeof(SZrCompileTimeDecoratorClass),
-                ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        if (decoratorClass == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        ZrCore_Array_Push(cs->state, &cs->compileTimeDecoratorClasses, &decoratorClass);
-    }
-
-    ZrCore_Memory_RawSet(decoratorClass, 0, sizeof(*decoratorClass));
-    decoratorClass->name = aliasName;
-    decoratorClass->declaration = node;
-    decoratorClass->decorateMethod =
-            find_compile_time_decorator_meta_method_from_members(members, "decorate", isStructDecorator);
-    decoratorClass->constructorMethod =
-            find_compile_time_decorator_meta_method_from_members(members, "constructor", isStructDecorator);
-    decoratorClass->isStructDecorator = isStructDecorator;
-    decoratorClass->location = location;
     return ZR_TRUE;
 }

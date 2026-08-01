@@ -329,6 +329,8 @@ static void compiler_append_error_analysis(TZrChar *buffer,
 
 // 编译期错误报告
 void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel level, const TZrChar *message, SZrFileRange location) {
+    EZrLogLevel logLevel = ZR_LOG_LEVEL_INFO;
+
     if (cs == ZR_NULL || message == ZR_NULL) {
         return;
     }
@@ -337,18 +339,22 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
     switch (level) {
         case ZR_COMPILE_TIME_ERROR_INFO:
             levelStr = "INFO";
+            logLevel = ZR_LOG_LEVEL_INFO;
             break;
         case ZR_COMPILE_TIME_ERROR_WARNING:
             levelStr = "WARNING";
+            logLevel = ZR_LOG_LEVEL_WARNING;
             break;
         case ZR_COMPILE_TIME_ERROR_ERROR:
             levelStr = "ERROR";
+            logLevel = ZR_LOG_LEVEL_ERROR;
             cs->hasError = ZR_TRUE;
             cs->hadRecoverableError = ZR_TRUE;
             cs->hasCompileTimeError = ZR_TRUE;
             break;
         case ZR_COMPILE_TIME_ERROR_FATAL:
             levelStr = "FATAL";
+            logLevel = ZR_LOG_LEVEL_FATAL;
             cs->hasError = ZR_TRUE;
             cs->hadRecoverableError = ZR_TRUE;
             cs->hasCompileTimeError = ZR_TRUE;
@@ -366,7 +372,7 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
     
     if (!cs->suppressErrorOutput) {
         ZrCore_Log_Diagnosticf(cs->state,
-                               level == ZR_COMPILE_TIME_ERROR_FATAL ? ZR_LOG_LEVEL_FATAL : ZR_LOG_LEVEL_ERROR,
+                               logLevel,
                                ZR_OUTPUT_CHANNEL_STDERR,
                                "[CompileTime %s] %s:%d:%d: %s\n",
                                levelStr,

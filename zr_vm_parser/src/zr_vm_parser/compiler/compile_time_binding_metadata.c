@@ -221,7 +221,6 @@ static TZrBool binding_collect_from_identifier(SZrCompileTimeBindingResolver *re
                                                SZrArray *bindings) {
     SZrCompileTimeBindingSourceVariable *variable;
     SZrCompileTimeFunction *functionInfo;
-    SZrCompileTimeDecoratorClass *decoratorClass;
 
     if (resolver == ZR_NULL || identifier == ZR_NULL || bindings == ZR_NULL) {
         return ZR_FALSE;
@@ -234,17 +233,6 @@ static TZrBool binding_collect_from_identifier(SZrCompileTimeBindingResolver *re
                               prefix,
                               ZR_COMPILE_TIME_BINDING_TARGET_FUNCTION,
                               functionInfo->name);
-    }
-
-    decoratorClass =
-            resolver->findDecoratorClass != ZR_NULL ? resolver->findDecoratorClass(resolver->userData, identifier)
-                                                    : ZR_NULL;
-    if (decoratorClass != ZR_NULL) {
-        return binding_append(resolver->state,
-                              bindings,
-                              prefix,
-                              ZR_COMPILE_TIME_BINDING_TARGET_DECORATOR_CLASS,
-                              decoratorClass->name);
     }
 
     variable = resolver->findVariable != ZR_NULL ? resolver->findVariable(resolver->userData, identifier) : ZR_NULL;
@@ -267,7 +255,6 @@ static TZrBool binding_collect_from_primary(SZrCompileTimeBindingResolver *resol
     SZrString *requestedPath = ZR_NULL;
     SZrCompileTimeBindingSourceVariable *variable;
     SZrCompileTimeFunction *functionInfo;
-    SZrCompileTimeDecoratorClass *decoratorClass;
 
     if (resolver == ZR_NULL || primary == ZR_NULL || bindings == ZR_NULL || primary->property == ZR_NULL ||
         primary->property->type != ZR_AST_IDENTIFIER_LITERAL || primary->property->data.identifier.name == ZR_NULL) {
@@ -291,19 +278,6 @@ static TZrBool binding_collect_from_primary(SZrCompileTimeBindingResolver *resol
                                   prefix,
                                   ZR_COMPILE_TIME_BINDING_TARGET_FUNCTION,
                                   functionInfo->name);
-        }
-        return ZR_TRUE;
-    }
-
-    decoratorClass = resolver->findDecoratorClass != ZR_NULL ? resolver->findDecoratorClass(resolver->userData, rootName)
-                                                              : ZR_NULL;
-    if (decoratorClass != ZR_NULL) {
-        if (strcmp(binding_string_or_empty(requestedPath), "") == 0) {
-            return binding_append(resolver->state,
-                                  bindings,
-                                  prefix,
-                                  ZR_COMPILE_TIME_BINDING_TARGET_DECORATOR_CLASS,
-                                  decoratorClass->name);
         }
         return ZR_TRUE;
     }

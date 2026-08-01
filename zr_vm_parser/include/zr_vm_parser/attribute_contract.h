@@ -14,6 +14,10 @@
 #define ZR_PARSER_ATTRIBUTE_CONDITIONAL_QUALIFIED_NAME "zr.compile.conditional"
 #define ZR_PARSER_ATTRIBUTE_DECLARATION_TRANSFORM_QUALIFIED_NAME \
     "zr.compile.declarationTransform"
+#define ZR_PARSER_ATTRIBUTE_MODULE_TESTING "zr.testing"
+#define ZR_PARSER_ATTRIBUTE_TEST_QUALIFIED_NAME "zr.testing.test"
+#define ZR_PARSER_ATTRIBUTE_TEST_CASE_QUALIFIED_NAME "zr.testing.case"
+#define ZR_PARSER_ATTRIBUTE_TEST_SKIP_QUALIFIED_NAME "zr.testing.skip"
 
 typedef enum EZrParserAttributeRole {
     ZR_PARSER_ATTRIBUTE_ROLE_NONE = 0,
@@ -120,6 +124,11 @@ ZR_PARSER_API const SZrParserAttributeSchema *ZrParser_AttributeContract_FindBui
         const TZrChar *qualifiedName);
 ZR_PARSER_API const SZrParserAttributeSchema *ZrParser_AttributeContract_FindBuiltinByRole(
         EZrParserAttributeRole role);
+// Resolves only canonical built-in attribute paths from a parsed decorator AST.
+// Argument values remain the responsibility of the compiler's typed binder.
+ZR_PARSER_API TZrBool ZrParser_AttributeContract_ResolveBuiltinDecorator(
+        const SZrAstNode *decoratorNode,
+        SZrParserAttributeData *outAttribute);
 ZR_PARSER_API EZrParserAttributeValidationError ZrParser_AttributeContract_ValidateSchema(
         TZrBool isReadonly,
         const SZrParserAttributeFieldSchema *fields,

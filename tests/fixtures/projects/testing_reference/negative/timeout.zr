@@ -1,0 +1,4 @@
+#zr.testing.test#
+fn expectedTimeout(): void {
+    while (true) { }
+}

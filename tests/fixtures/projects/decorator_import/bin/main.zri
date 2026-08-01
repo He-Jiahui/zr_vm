@@ -14,7 +14,7 @@ CONSTANTS (3):
   [2] null
 
 LOCAL_VARIABLES (1):
-  [0] decorated: offset_activate=3, offset_dead=10
+  [0] decorated: offset_activate=4, offset_dead=10
 
 CLOSURE_VARIABLES (0):
 
@@ -31,23 +31,43 @@ TYPE_METADATA:
   TOP_LEVEL_CALLABLE_BINDINGS (0):
   COMPILE_TIME_VARIABLES (0):
   COMPILE_TIME_FUNCTIONS (0):
-  TESTS (0):
 
-TYPE_TABLE (0):
+TYPE_TABLE (2):
+  [0] object
+  [1] decorated_user
 
 OWNERSHIP_TABLE (0):
 
-EFFECT_TABLE (0):
+EFFECT_TABLE (6):
+  [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+  [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+  [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+  [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+  [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
+  [5] DYNAMIC_RUNTIME inst=5 from=0 to=0
 
-BLOCK_GRAPH (0):
+BLOCK_GRAPH (1):
+  [0] block=0 first=0 count=6
 
-SEMIR (0):
+SEMIR (6):
+  [0] DYN_CALL exec=2 type=0 effect=0 dst=1 op0=1 op1=1 deopt=1
+  [1] META_GET exec=4 type=0 effect=1 dst=1 op0=0 op1=0 deopt=2
+  [2] DYN_CALL exec=5 type=0 effect=2 dst=1 op0=1 op1=0 deopt=3
+  [3] META_GET exec=6 type=0 effect=3 dst=2 op0=0 op1=1 deopt=4
+  [4] DYN_CALL exec=7 type=0 effect=4 dst=2 op0=2 op1=0 deopt=5
+  [5] DYN_ARITHMETIC exec=8 type=0 effect=5 dst=3 op0=1 op1=2 deopt=6
 
-DEOPT_MAP (0):
+DEOPT_MAP (6):
+  [0] deopt=1 exec=2
+  [1] deopt=2 exec=4
+  [2] deopt=3 exec=5
+  [3] deopt=4 exec=6
+  [4] deopt=5 exec=7
+  [5] deopt=6 exec=8
 
 CALLSITE_CACHE_TABLE (2):
-  [0] kind=MEMBER_GET inst=4 member=0 deopt=0 args=0 hits=0 misses=0
-  [1] kind=MEMBER_GET inst=6 member=1 deopt=0 args=0 hits=0 misses=0
+  [0] kind=MEMBER_GET inst=4 member=0 deopt=2 args=0 hits=0 misses=0
+  [1] kind=MEMBER_GET inst=6 member=1 deopt=4 args=0 hits=0 misses=0
 
 EH_TABLE (0):
 

@@ -13,6 +13,9 @@ target_compile_definitions(${zr_curr_module_exec} PRIVATE
         ZR_VM_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
+find_package(Threads REQUIRED)
+target_link_libraries(${zr_curr_module_exec} Threads::Threads)
+
 if (WIN32)
     file(TO_CMAKE_PATH "${CMAKE_C_COMPILER}" zr_vm_host_c_compiler)
     target_compile_definitions(${zr_curr_module_exec} PRIVATE
@@ -47,6 +50,14 @@ zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_system")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_iteration")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_container")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_parser")
+zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_testing")
+
+if (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static)
+    zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_network")
+    target_compile_definitions(${zr_curr_module_exec} PRIVATE
+            ZR_VM_HAS_NETWORK_MODULE=1
+    )
+endif ()
 
 if (TARGET zr_vm_lib_thread_shared OR TARGET zr_vm_lib_thread_static)
     zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_thread")
@@ -63,7 +74,6 @@ elseif (TARGET zr_vm_lib_network_static AND TARGET zr_vm_debug_static)
 endif ()
 
 if (zr_vm_cli_has_debug_agent)
-    zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_network")
     zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_debug")
     target_compile_definitions(${zr_curr_module_exec} PRIVATE
             ZR_VM_CLI_HAS_DEBUG_AGENT=1

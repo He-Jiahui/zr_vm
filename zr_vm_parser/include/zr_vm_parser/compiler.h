@@ -10,6 +10,7 @@
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/compile_tool.h"
 #include "zr_vm_parser/comptime_contract.h"
+#include "zr_vm_parser/test_contract.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_system.h"
@@ -125,6 +126,8 @@ typedef struct SZrCompilerState {
     
     // 嵌套函数
     SZrArray childFunctions;            // 子函数数组（SZrFunction*）
+    TZrBool emitTestManifest;
+    SZrArray testManifestEntries;       // SZrParserTestEntry
     
     // 函数名到子函数索引的映射（仅用于编译时查找，运行时不需要）
     SZrArray childFunctionNameMap;      // 函数名映射数组（SZrChildFunctionNameMap）
@@ -167,6 +170,7 @@ typedef struct SZrCompilerState {
     
     // 类型 Prototype 信息（用于运行时创建）
     SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
+    SZrArray signatureCompiledInterfaceNodes; // Signature phase 已绑定的 interface AST 节点（SZrAstNode*）
     struct SZrTypePrototypeInfo *currentTypePrototypeInfo; // 当前正在构建的类型原型
     TZrBool externBindingsPredeclared;    // 是否已预注册 source-level extern 编译期绑定
     
@@ -174,7 +178,6 @@ typedef struct SZrCompilerState {
     SZrTypeEnvironment *compileTimeTypeEnv;   // 编译期类型环境
     SZrArray compileTimeVariables;            // 编译期变量表（SZrCompileTimeVariable*）
     SZrArray compileTimeFunctions;            // 编译期函数表（SZrCompileTimeFunction*）
-    SZrArray compileTimeDecoratorClasses;     // 编译期装饰器类表（SZrCompileTimeDecoratorClass*）
     SZrArray importedCompileTimeModules;      // 跨文件导入模块的 compile-time 元数据（SZrImportedCompileTimeModule*）
     SZrArray importedCompileTimeModuleAliases; // 模块别名表（SZrImportedCompileTimeModuleAlias）
     SZrArray typeValueAliases;                // 类型值别名表（SZrTypeBinding）
@@ -232,21 +235,11 @@ typedef struct SZrCompileTimeFunction {
     SZrFileRange location;                  // 声明位置
 } SZrCompileTimeFunction;
 
-typedef struct SZrCompileTimeDecoratorClass {
-    SZrString *name;                       // 装饰器类名
-    SZrAstNode *declaration;               // ClassDeclaration / StructDeclaration
-    SZrAstNode *decorateMethod;            // @decorate 元方法节点
-    SZrAstNode *constructorMethod;         // @constructor 元方法节点（可选）
-    TZrBool isStructDecorator;             // legacy decorator-struct metadata carrier
-    SZrFileRange location;                 // 声明位置
-} SZrCompileTimeDecoratorClass;
-
 typedef struct SZrImportedCompileTimeModule {
     SZrString *moduleName;                 // 逻辑模块路径
     SZrAstNode *scriptAst;                 // imported module AST（保持声明节点存活）
     SZrArray compileTimeVariables;         // SZrFunctionCompileTimeVariableInfo*
     SZrArray compileTimeFunctions;         // SZrCompileTimeFunction*
-    SZrArray compileTimeDecoratorClasses;  // SZrCompileTimeDecoratorClass*
 } SZrImportedCompileTimeModule;
 
 typedef struct SZrImportedCompileTimeModuleAlias {
@@ -518,6 +511,7 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidatePreSemanticIr(
 
 // 编译 AST 为函数
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast);
+ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileTest(SZrState *state, SZrAstNode *ast);
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrState *state,
                                                                          SZrAstNode *ast,
                                                                          SZrString *currentModuleKey);
@@ -635,6 +629,7 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_IsCompileTimeDecorator(SZrCompilerState 
 // 编译源代码为函数（封装了从解析到编译的全流程）
 // 这是提供给 globalState 的统一接口
 ZR_PARSER_API struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
+ZR_PARSER_API struct SZrFunction *ZrParser_Source_CompileTest(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
 
 // 注册 compileSource 函数到 globalState
 // 在 global 初始化时调用此函数来注册 parser 模块

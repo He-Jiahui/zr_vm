@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_interface_contracts.h"
 
 #include "zr_vm_common/zr_ast_constants.h"
 
@@ -1265,13 +1266,6 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentTypeNode = oldTypeNode;
         return;
     }
-    if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {
-        cs->currentTypeName = oldTypeName;
-        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-        cs->currentTypeNode = oldTypeNode;
-        return;
-    }
-    
     // 初始化继承数组
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
@@ -1328,6 +1322,13 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 if (actualPhase != memberPhase) {
                     continue;
                 }
+
+            if (!compiler_test_validate_non_module_roles(cs, member)) {
+                cs->currentTypeName = oldTypeName;
+                cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                cs->currentTypeNode = oldTypeNode;
+                return;
+            }
 
             if (member->type == ZR_AST_PROPERTY_DECLARATION) {
                 if (!compiler_property_bind(
@@ -1660,6 +1661,14 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
     if (!ZrParser_Metadata_ApplyTypeAttributes(
                 cs, structDecl->decorators, &info, node->location)) {
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        return;
+    }
+
+    if (!compiler_interface_contracts_validate_value_type(
+                cs, &info, node->location)) {
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;

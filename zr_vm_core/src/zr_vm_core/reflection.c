@@ -15,7 +15,6 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/object.h"
-#include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_ast_constants.h"
@@ -1880,7 +1879,6 @@ static void reflection_populate_function_metadata(SZrState *state, SZrObject *re
         reflection_array_push(state, codeBlocksArray, &codeBlockValue);
     }
 
-    ZrCore_RuntimeDecorator_OverlayFunctionReflection(state, reflectionObject, function);
 }
 
 static void reflection_append_decorator_name_value(SZrState *state,
@@ -2587,7 +2585,6 @@ static void reflection_record_property_member(SZrState *state,
                                               TZrUInt64 hashSeed) {
     SZrObject *propertyReflection;
     TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
-    SZrString *propertyNameString;
     TZrBool createdPropertyReflection = ZR_FALSE;
 
     if (state == ZR_NULL || membersObject == ZR_NULL || typeReflection == ZR_NULL || prototype == ZR_NULL ||
@@ -2648,312 +2645,6 @@ static void reflection_record_property_member(SZrState *state,
                 state, propertyReflection, entryFunction, member);
     }
 
-    propertyNameString = ZrCore_String_Create(state, (TZrNativeString)propertyName, strlen(propertyName));
-    if (propertyNameString != ZR_NULL) {
-        ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
-                                                        propertyReflection,
-                                                        prototype,
-                                                        propertyNameString,
-                                                        ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY);
-    }
-}
-
-ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZrState *state,
-                                                                               SZrObjectPrototype *prototype,
-                                                                               SZrString *memberName,
-                                                                               TZrUInt32 targetKindValue) {
-    SZrObjectModule *module = ZR_NULL;
-    SZrFunction *entryFunction = ZR_NULL;
-    const SZrCompiledPrototypeInfo *prototypeInfo;
-    SZrObject *typeReflection;
-    SZrObject *moduleReflection = ZR_NULL;
-    SZrObject *membersObject = ZR_NULL;
-    const TZrByte *membersBase;
-    const SZrTypeLayout *typeLayout = ZR_NULL;
-    const TZrChar *qualifiedTypeName;
-    const TZrChar *memberNameText;
-    TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
-    TZrUInt32 instanceFieldIndex = 0u;
-    EZrRuntimeDecoratorTargetKind targetKind;
-
-    if (state == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    targetKind = (EZrRuntimeDecoratorTargetKind)targetKindValue;
-    if (targetKind != ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD &&
-        targetKind != ZR_RUNTIME_DECORATOR_TARGET_KIND_METHOD &&
-        targetKind != ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY) {
-        return ZR_NULL;
-    }
-
-    memberNameText = ZrCore_String_GetNativeString(memberName);
-    if (memberNameText == ZR_NULL || memberNameText[0] == '\0') {
-        return ZR_NULL;
-    }
-
-    reflection_get_prototype_metadata_context(state, prototype, &module, &entryFunction);
-    if (entryFunction == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    prototypeInfo = reflection_find_compiled_prototype_info(entryFunction, prototype);
-    if (prototypeInfo == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    typeLayout = ZrCore_MetadataRuntime_ResolveFunctionPrototypeTypeLayout(entryFunction, prototype, &typeLayoutId);
-    (void)typeLayoutId;
-
-    typeReflection = reflection_build_type_reflection(state, prototype, module, entryFunction, ZR_NULL);
-    if (typeReflection == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    moduleReflection = reflection_get_field_object(state, typeReflection, "module", ZR_VALUE_TYPE_OBJECT);
-    membersObject = reflection_get_field_object(state, typeReflection, "members", ZR_VALUE_TYPE_OBJECT);
-    qualifiedTypeName = reflection_get_field_string_native(state, typeReflection, "qualifiedName", "");
-    membersBase = (const TZrByte *)prototypeInfo + sizeof(SZrCompiledPrototypeInfo) +
-                  ((TZrSize)prototypeInfo->inheritsCount * sizeof(TZrUInt32)) +
-                  ((TZrSize)prototypeInfo->decoratorsCount * sizeof(TZrUInt32));
-
-    if (targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY) {
-        SZrObject *propertyReflection;
-
-        if (membersObject == ZR_NULL) {
-            return ZR_NULL;
-        }
-
-        propertyReflection = reflection_find_named_entry_of_kind(state, membersObject, memberNameText, "property");
-        if (propertyReflection != ZR_NULL) {
-            return propertyReflection;
-        }
-
-        for (TZrUInt32 memberIndex = 0; memberIndex < prototypeInfo->membersCount; memberIndex++) {
-            const SZrCompiledMemberInfo *member = (const SZrCompiledMemberInfo *)(membersBase +
-                                                                                  (sizeof(SZrCompiledMemberInfo) *
-                                                                                   memberIndex));
-            const SZrTypeValue *memberNameValue;
-            SZrString *compiledName;
-            const TZrChar *compiledNameText;
-            const TZrChar *propertyName = ZR_NULL;
-
-            if (member->nameStringIndex >= entryFunction->constantValueLength) {
-                continue;
-            }
-
-            memberNameValue = &entryFunction->constantValueList[member->nameStringIndex];
-            if (memberNameValue->type != ZR_VALUE_TYPE_STRING || memberNameValue->value.object == ZR_NULL) {
-                continue;
-            }
-
-            compiledName = ZR_CAST_STRING(state, memberNameValue->value.object);
-            compiledNameText = compiledName != ZR_NULL ? ZrCore_String_GetNativeString(compiledName) : ZR_NULL;
-            if (compiledNameText == ZR_NULL) {
-                continue;
-            }
-
-            if (member->memberType == ZR_AST_CONSTANT_PROPERTY_DECLARATION) {
-                if (strcmp(compiledNameText, memberNameText) != 0) {
-                    continue;
-                }
-                propertyName = compiledNameText;
-            } else if (member->accessorRole == 0u ||
-                       member->propertyIdentity == (TZrUInt32)-1 ||
-                       !reflection_parse_hidden_property_accessor_name(
-                               compiledNameText, &propertyName, ZR_NULL) ||
-                       propertyName == ZR_NULL ||
-                       strcmp(propertyName, memberNameText) != 0) {
-                continue;
-            }
-
-            reflection_record_property_member(state,
-                                              membersObject,
-                                              typeReflection,
-                                              moduleReflection,
-                                              prototype,
-                                              qualifiedTypeName,
-                                              memberNameText,
-                                              member,
-                                              entryFunction,
-                                              reflection_extract_function_from_constant_index(state,
-                                                                                            entryFunction,
-                                                                                            member->functionConstantIndex),
-                                              prototype->super.super.hash ^
-                                                      ((TZrUInt64)memberIndex + ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE +
-                                                       (TZrUInt64)0x1000u));
-        }
-
-        return reflection_find_named_entry_of_kind(state, membersObject, memberNameText, "property");
-    }
-
-    if (membersObject != ZR_NULL) {
-        const TZrChar *expectedKind = targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD ? "field" : "method";
-        SZrObject *cachedMemberReflection =
-                reflection_find_named_entry_of_kind(state, membersObject, memberNameText, expectedKind);
-        if (cachedMemberReflection != ZR_NULL) {
-            return cachedMemberReflection;
-        }
-    }
-
-    for (TZrUInt32 memberIndex = 0; memberIndex < prototypeInfo->membersCount; memberIndex++) {
-        const SZrCompiledMemberInfo *member = (const SZrCompiledMemberInfo *)(membersBase +
-                                                                              (sizeof(SZrCompiledMemberInfo) *
-                                                                               memberIndex));
-        const SZrTypeLayoutField *registryField = ZR_NULL;
-        const SZrTypeValue *memberNameValue;
-        SZrString *compiledName;
-        const TZrChar *compiledNameText;
-        const TZrChar *kind;
-        const TZrChar *fieldTypeName;
-        const TZrChar *returnTypeName;
-        TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
-        SZrObject *memberReflection;
-
-        if ((member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD ||
-             member->memberType == ZR_AST_CONSTANT_CLASS_FIELD) &&
-            !member->isStatic) {
-            registryField = reflection_find_registry_field_by_instance_index(typeLayout, instanceFieldIndex);
-            instanceFieldIndex++;
-        }
-
-        if (member->nameStringIndex >= entryFunction->constantValueLength) {
-            continue;
-        }
-
-        memberNameValue = &entryFunction->constantValueList[member->nameStringIndex];
-        if (memberNameValue->type != ZR_VALUE_TYPE_STRING || memberNameValue->value.object == ZR_NULL) {
-            continue;
-        }
-
-        compiledName = ZR_CAST_STRING(state, memberNameValue->value.object);
-        compiledNameText = compiledName != ZR_NULL ? ZrCore_String_GetNativeString(compiledName) : ZR_NULL;
-        if (compiledNameText == ZR_NULL || strcmp(compiledNameText, memberNameText) != 0) {
-            continue;
-        }
-
-        if (targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD &&
-            member->memberType != ZR_AST_CONSTANT_STRUCT_FIELD &&
-            member->memberType != ZR_AST_CONSTANT_CLASS_FIELD) {
-            continue;
-        }
-
-        if (targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_METHOD &&
-            member->memberType != ZR_AST_CONSTANT_STRUCT_METHOD &&
-            member->memberType != ZR_AST_CONSTANT_CLASS_METHOD) {
-            continue;
-        }
-
-        kind = (targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD) ? "field" : "method";
-        fieldTypeName = reflection_string_from_constant(state, entryFunction, member->fieldTypeNameStringIndex, "any");
-        returnTypeName = reflection_string_from_constant(state, entryFunction,
-                                                         member->returnTypeNameStringIndex,
-                                                         "void");
-        snprintf(qualifiedMemberName, sizeof(qualifiedMemberName), "%s.%s", qualifiedTypeName, compiledNameText);
-
-        memberReflection = reflection_build_member_info(state,
-                                                        compiledNameText,
-                                                        qualifiedMemberName,
-                                                        kind,
-                                                        prototype->super.super.hash ^
-                                                                ((TZrUInt64)memberIndex +
-                                                                 ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE));
-        if (memberReflection == ZR_NULL) {
-            return ZR_NULL;
-        }
-
-        reflection_assign_owner_links(state, memberReflection, typeReflection, moduleReflection);
-        reflection_populate_compiled_member_oop_metadata(state, memberReflection, entryFunction, member);
-        reflection_set_field_bool(state, memberReflection, "isStatic", member->isStatic ? ZR_TRUE : ZR_FALSE);
-        reflection_set_field_bool(state, memberReflection, "isConst", member->isConst ? ZR_TRUE : ZR_FALSE);
-        reflection_set_field_int(state, memberReflection, "parameterCount", member->parameterCount);
-        reflection_set_field_int(state, memberReflection, "declarationOrder", member->declarationOrder);
-
-        if (targetKind == ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD) {
-            reflection_set_field_string(state,
-                                        memberReflection,
-                                        "typeName",
-                                        fieldTypeName != ZR_NULL ? fieldTypeName : "any");
-            {
-                if (registryField != ZR_NULL) {
-                    reflection_apply_field_layout_to_member(state, memberReflection, registryField);
-                } else {
-                    reflection_set_field_int(state, memberReflection, "offset", member->fieldOffset);
-                    reflection_set_field_int(state, memberReflection, "size", member->fieldSize);
-                    reflection_set_field_int(state,
-                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                             "offset",
-                                             member->fieldOffset);
-                    reflection_set_field_int(state,
-                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                             "size",
-                                             member->fieldSize);
-                    reflection_set_field_int(state,
-                                             reflection_get_field_object(state, memberReflection, "layout", ZR_VALUE_TYPE_OBJECT),
-                                             "alignment",
-                                             member->fieldSize > 0 ? member->fieldSize : 0);
-                }
-            }
-            reflection_set_field_int(state,
-                                     reflection_get_field_object(state, memberReflection, "ownership", ZR_VALUE_TYPE_OBJECT),
-                                     "qualifier",
-                                     member->ownershipQualifier);
-            reflection_set_field_bool(state,
-                                      reflection_get_field_object(state, memberReflection, "ownership", ZR_VALUE_TYPE_OBJECT),
-                                      "callsClose",
-                                      member->callsClose ? ZR_TRUE : ZR_FALSE);
-            reflection_set_field_bool(state,
-                                      reflection_get_field_object(state, memberReflection, "ownership", ZR_VALUE_TYPE_OBJECT),
-                                      "callsDestructor",
-                                      member->callsDestructor ? ZR_TRUE : ZR_FALSE);
-            reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
-            ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
-                                                            memberReflection,
-                                                            prototype,
-                                                            memberName,
-                                                            ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD);
-        } else {
-            SZrFunction *memberFunction = reflection_extract_function_from_constant_index(state,
-                                                                                          entryFunction,
-                                                                                          member->functionConstantIndex);
-            if (member->isMetaMethod && compiledNameText[0] != '\0') {
-                TZrChar metaName[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
-                snprintf(metaName, sizeof(metaName), "@%s", compiledNameText);
-                reflection_set_field_string(state, memberReflection, "name", metaName);
-            }
-            reflection_set_field_string(state,
-                                        memberReflection,
-                                        "returnTypeName",
-                                        returnTypeName != ZR_NULL ? returnTypeName : "void");
-            if (memberFunction != ZR_NULL) {
-                reflection_populate_parameters_from_function(state,
-                                                             memberReflection,
-                                                             memberFunction,
-                                                             member->parameterCount);
-                reflection_populate_function_metadata(state, memberReflection, memberFunction);
-            } else if (member->parameterCount > 0) {
-                reflection_populate_parameters_from_typed_refs(state,
-                                                               memberReflection,
-                                                               ZR_NULL,
-                                                               member->parameterCount);
-            }
-            reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
-
-            ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
-                                                            memberReflection,
-                                                            prototype,
-                                                            memberName,
-                                                            ZR_RUNTIME_DECORATOR_TARGET_KIND_METHOD);
-        }
-
-        if (membersObject != ZR_NULL) {
-            reflection_add_named_entry(state, membersObject, compiledNameText, memberReflection);
-        }
-
-        return memberReflection;
-    }
-
-    return ZR_NULL;
 }
 
 static void reflection_populate_type_decorator_metadata(SZrState *state,
@@ -3042,7 +2733,6 @@ static void reflection_populate_script_members(SZrState *state,
 
     reflection_populate_type_decorator_metadata(state, typeReflection, entryFunction, prototypeInfo);
     reflection_populate_type_oop_metadata(state, typeReflection, prototypeInfo);
-    ZrCore_RuntimeDecorator_OverlayTypeReflection(state, typeReflection, prototype);
 
     scriptSize = prototypeInfo->layoutByteSize;
     scriptAlignment = prototypeInfo->layoutByteAlign;
@@ -3215,13 +2905,6 @@ static void reflection_populate_script_members(SZrState *state,
                                       "callsDestructor",
                                       member->callsDestructor ? ZR_TRUE : ZR_FALSE);
             reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
-            if (memberNameString != ZR_NULL) {
-                ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
-                                                                memberReflection,
-                                                                prototype,
-                                                                memberNameString,
-                                                                ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD);
-            }
         } else {
             SZrFunction *memberFunction = reflection_extract_function_from_constant_index(state,
                                                                                           entryFunction,
@@ -3239,14 +2922,6 @@ static void reflection_populate_script_members(SZrState *state,
                 reflection_populate_parameters_from_typed_refs(state, memberReflection, ZR_NULL, member->parameterCount);
             }
             reflection_populate_compiled_member_decorator_metadata(state, memberReflection, entryFunction, member);
-
-            if (memberNameString != ZR_NULL) {
-                ZrCore_RuntimeDecorator_OverlayMemberReflection(state,
-                                                                memberReflection,
-                                                                prototype,
-                                                                memberNameString,
-                                                                ZR_RUNTIME_DECORATOR_TARGET_KIND_METHOD);
-            }
 
             if (isPropertyAccessor && propertyName != ZR_NULL) {
                 reflection_record_property_member(state,

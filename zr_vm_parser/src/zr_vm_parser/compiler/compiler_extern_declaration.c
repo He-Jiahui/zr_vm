@@ -3,11 +3,247 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_attribute_binding.h"
 
 #include "zr_vm_parser/ffi_contract.h"
 
 static const TZrChar *kCompilerEnumRuntimeValueTypeFieldName = "__zr_enumValueTypeName";
 static const TZrChar *kCompilerEnumRuntimeMembersFieldName = "__zr_enumMembers";
+
+typedef struct SZrExternStaticDecoratorRule {
+    const TZrChar *leafName;
+    TZrBool requireCall;
+} SZrExternStaticDecoratorRule;
+
+static TZrBool compiler_decorators_validate_static_rules(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *decorators,
+        const SZrExternStaticDecoratorRule *rules,
+        TZrSize ruleCount) {
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (decorators == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize decoratorIndex = 0;
+         decoratorIndex < decorators->count;
+         decoratorIndex++) {
+        SZrAstNode *decoratorNode = decorators->nodes[decoratorIndex];
+        TZrBool matched = ZR_FALSE;
+
+        if (decoratorNode == ZR_NULL) {
+            continue;
+        }
+        for (TZrSize ruleIndex = 0; ruleIndex < ruleCount; ruleIndex++) {
+            if (extern_compiler_match_decorator_path(
+                        decoratorNode,
+                        rules[ruleIndex].leafName,
+                        rules[ruleIndex].requireCall,
+                        ZR_NULL)) {
+                matched = ZR_TRUE;
+                break;
+            }
+        }
+        if (!matched) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "decorator.runtime_removed: native extern accepts only canonical zr.ffi static directives",
+                    decoratorNode->location);
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static void compiler_enum_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
+    if (memberInfo == ZR_NULL) {
+        return;
+    }
+
+    memset(memberInfo, 0, sizeof(*memberInfo));
+    memberInfo->minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
+    memberInfo->memberType = ZR_AST_CLASS_FIELD;
+    memberInfo->accessModifier = ZR_ACCESS_PUBLIC;
+    memberInfo->isStatic = ZR_TRUE;
+    memberInfo->isConst = ZR_TRUE;
+    memberInfo->metaType = ZR_META_ENUM_MAX;
+    memberInfo->virtualSlotIndex = (TZrUInt32)-1;
+    memberInfo->interfaceContractSlot = (TZrUInt32)-1;
+    memberInfo->propertyIdentity = (TZrUInt32)-1;
+    ZrCore_Array_Construct(&memberInfo->parameterTypes);
+    ZrCore_Array_Construct(&memberInfo->parameterNames);
+    ZrCore_Array_Construct(&memberInfo->parameterHasDefaultValues);
+    ZrCore_Array_Construct(&memberInfo->parameterDefaultValues);
+    ZrCore_Array_Construct(&memberInfo->genericParameters);
+    ZrCore_Array_Construct(&memberInfo->parameterPassingModes);
+    ZrCore_Array_Construct(&memberInfo->decorators);
+    ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
+}
+
+static const SZrExternStaticDecoratorRule kExternFunctionDecoratorRules[] = {
+        {"entry", ZR_TRUE},
+        {"callingConvention", ZR_TRUE},
+        {"callconv", ZR_TRUE},
+        {"charset", ZR_TRUE},
+        {"errorPolicy", ZR_TRUE},
+        {"cleanup", ZR_TRUE},
+        {"callbackLifetime", ZR_TRUE},
+        {"callbackThread", ZR_TRUE},
+        {"callbackException", ZR_TRUE},
+        {"platform", ZR_TRUE},
+        {"requiredCapabilities", ZR_TRUE},
+};
+
+static const SZrExternStaticDecoratorRule kExternDelegateDecoratorRules[] = {
+        {"callingConvention", ZR_TRUE},
+        {"callconv", ZR_TRUE},
+        {"charset", ZR_TRUE},
+};
+
+static const SZrExternStaticDecoratorRule kExternStructDecoratorRules[] = {
+        {"kind", ZR_TRUE},
+        {"pack", ZR_TRUE},
+        {"align", ZR_TRUE},
+};
+
+static const SZrExternStaticDecoratorRule kExternStructFieldDecoratorRules[] = {
+        {"offset", ZR_TRUE},
+        {"charset", ZR_TRUE},
+};
+
+static const SZrExternStaticDecoratorRule kExternEnumDecoratorRules[] = {
+        {"underlying", ZR_TRUE},
+};
+
+static const SZrExternStaticDecoratorRule kExternEnumMemberDecoratorRules[] = {
+        {"value", ZR_TRUE},
+};
+
+static const SZrExternStaticDecoratorRule kExternParameterDecoratorRules[] = {
+        {"in", ZR_FALSE},
+        {"out", ZR_FALSE},
+        {"inout", ZR_FALSE},
+        {"charset", ZR_TRUE},
+};
+
+static TZrBool compiler_extern_validate_parameter_decorators(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *params,
+        SZrParameter *args) {
+    if (params != ZR_NULL) {
+        for (TZrSize index = 0; index < params->count; index++) {
+            SZrAstNode *parameterNode = params->nodes[index];
+
+            if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+            if (!compiler_decorators_validate_static_rules(
+                        cs,
+                        parameterNode->data.parameter.decorators,
+                        kExternParameterDecoratorRules,
+                        ZR_ARRAY_COUNT(kExternParameterDecoratorRules))) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    return args == ZR_NULL ||
+           compiler_decorators_validate_static_rules(
+                   cs,
+                   args->decorators,
+                   kExternParameterDecoratorRules,
+                   ZR_ARRAY_COUNT(kExternParameterDecoratorRules));
+}
+
+static TZrBool compiler_extern_validate_declaration_decorators(
+        SZrCompilerState *cs,
+        SZrAstNode *declaration) {
+    if (cs == ZR_NULL || declaration == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (declaration->type) {
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
+            SZrExternFunctionDeclaration *function =
+                    &declaration->data.externFunctionDeclaration;
+            return compiler_decorators_validate_static_rules(
+                           cs,
+                           function->decorators,
+                           kExternFunctionDecoratorRules,
+                           ZR_ARRAY_COUNT(kExternFunctionDecoratorRules)) &&
+                   compiler_extern_validate_parameter_decorators(
+                           cs, function->params, function->args);
+        }
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
+            SZrExternDelegateDeclaration *delegate =
+                    &declaration->data.externDelegateDeclaration;
+            return compiler_decorators_validate_static_rules(
+                           cs,
+                           delegate->decorators,
+                           kExternDelegateDecoratorRules,
+                           ZR_ARRAY_COUNT(kExternDelegateDecoratorRules)) &&
+                   compiler_extern_validate_parameter_decorators(
+                           cs, delegate->params, delegate->args);
+        }
+        case ZR_AST_STRUCT_DECLARATION: {
+            SZrStructDeclaration *structDecl = &declaration->data.structDeclaration;
+
+            if (!compiler_decorators_validate_static_rules(
+                        cs,
+                        structDecl->decorators,
+                        kExternStructDecoratorRules,
+                        ZR_ARRAY_COUNT(kExternStructDecoratorRules))) {
+                return ZR_FALSE;
+            }
+            if (structDecl->members != ZR_NULL) {
+                for (TZrSize index = 0; index < structDecl->members->count; index++) {
+                    SZrAstNode *member = structDecl->members->nodes[index];
+
+                    if (member != ZR_NULL && member->type == ZR_AST_STRUCT_FIELD &&
+                        !compiler_decorators_validate_static_rules(
+                                cs,
+                                member->data.structField.decorators,
+                                kExternStructFieldDecoratorRules,
+                                ZR_ARRAY_COUNT(kExternStructFieldDecoratorRules))) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            return ZR_TRUE;
+        }
+        case ZR_AST_ENUM_DECLARATION: {
+            SZrEnumDeclaration *enumDecl = &declaration->data.enumDeclaration;
+
+            if (!compiler_decorators_validate_static_rules(
+                        cs,
+                        enumDecl->decorators,
+                        kExternEnumDecoratorRules,
+                        ZR_ARRAY_COUNT(kExternEnumDecoratorRules))) {
+                return ZR_FALSE;
+            }
+            if (enumDecl->members != ZR_NULL) {
+                for (TZrSize index = 0; index < enumDecl->members->count; index++) {
+                    SZrAstNode *member = enumDecl->members->nodes[index];
+
+                    if (member != ZR_NULL && member->type == ZR_AST_ENUM_MEMBER &&
+                        !compiler_decorators_validate_static_rules(
+                                cs,
+                                member->data.enumMember.decorators,
+                                kExternEnumMemberDecoratorRules,
+                                ZR_ARRAY_COUNT(kExternEnumMemberDecoratorRules))) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            return ZR_TRUE;
+        }
+        default:
+            return ZR_TRUE;
+    }
+}
 
 TZrBool extern_compiler_has_registered_type(SZrCompilerState *cs, SZrString *typeName) {
     if (cs == ZR_NULL || typeName == ZR_NULL) {
@@ -136,8 +372,9 @@ static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
 }
 
 static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
-                                                 SZrAstNode *declarationNode,
-                                                 SZrTypePrototypeInfo *info) {
+                                                  SZrAstNode *declarationNode,
+                                                  SZrTypePrototypeInfo *info,
+                                                  TZrBool isExternDeclaration) {
     SZrEnumDeclaration *enumDecl;
     SZrString *underlyingName;
     SZrObject *metadataObject;
@@ -221,15 +458,38 @@ static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
                 continue;
             }
 
-            memset(&memberInfo, 0, sizeof(memberInfo));
-            memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
-            memberInfo.memberType = ZR_AST_CLASS_FIELD;
-            memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
-            memberInfo.isStatic = ZR_TRUE;
-            memberInfo.isConst = ZR_TRUE;
+            compiler_enum_init_member_defaults(&memberInfo);
+            memberInfo.declarationNode = memberNode;
             memberInfo.name = memberNode->data.enumMember.name->name;
             memberInfo.fieldTypeName = info->name;
-            ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
+
+            if (isExternDeclaration) {
+                if (!compiler_decorators_validate_static_rules(
+                            cs,
+                            memberNode->data.enumMember.decorators,
+                            kExternEnumMemberDecoratorRules,
+                            ZR_ARRAY_COUNT(kExternEnumMemberDecoratorRules))) {
+                    extern_compiler_temp_root_end(&membersRoot);
+                    extern_compiler_temp_root_end(&metadataRoot);
+                    return ZR_FALSE;
+                }
+            } else {
+                if (!ZrParser_CompileTime_ApplyMemberDecorators(
+                            cs,
+                            memberNode,
+                            memberNode->data.enumMember.decorators,
+                            &memberInfo) ||
+                    !ZrParser_Metadata_ApplyMemberAttributes(
+                            cs,
+                            memberNode->data.enumMember.decorators,
+                            ZR_PARSER_ATTRIBUTE_TARGET_FIELD,
+                            &memberInfo,
+                            memberNode->location)) {
+                    extern_compiler_temp_root_end(&membersRoot);
+                    extern_compiler_temp_root_end(&metadataRoot);
+                    return ZR_FALSE;
+                }
+            }
 
             if (!compiler_enum_init_member_runtime_value(cs,
                                                          memberNode,
@@ -240,6 +500,8 @@ static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
                 extern_compiler_temp_root_end(&metadataRoot);
                 return ZR_FALSE;
             }
+
+            ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
 
             memberNameText = ZrCore_String_GetNativeString(memberNode->data.enumMember.name->name);
             if (memberNameText == ZR_NULL ||
@@ -360,7 +622,7 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
         return;
     }
 
-    if (!compiler_enum_fill_prototype_info(cs, declarationNode, &info)) {
+    if (!compiler_enum_fill_prototype_info(cs, declarationNode, &info, ZR_TRUE)) {
         return;
     }
 
@@ -376,6 +638,7 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
 void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrEnumDeclaration *enumDecl;
     SZrTypePrototypeInfo info;
+    TZrBool decoratorsValid;
 
     if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_ENUM_DECLARATION || cs->hasError) {
         return;
@@ -387,11 +650,17 @@ void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if (!compiler_enum_fill_prototype_info(cs, node, &info)) {
+    if (!compiler_enum_fill_prototype_info(cs, node, &info, ZR_FALSE)) {
         return;
     }
 
-    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, enumDecl->decorators, &info)) {
+    decoratorsValid = ZrParser_Compiler_ApplyCompileTimeTypeDecorators(
+            cs, node, enumDecl->decorators, &info);
+    if (decoratorsValid) {
+        decoratorsValid = ZrParser_Metadata_ApplyTypeAttributes(
+                cs, enumDecl->decorators, &info, node->location);
+    }
+    if (!decoratorsValid) {
         return;
     }
 
@@ -407,6 +676,15 @@ void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 void compiler_register_extern_block_bindings(SZrCompilerState *cs, SZrExternBlock *externBlock) {
     if (cs == ZR_NULL || externBlock == ZR_NULL || externBlock->declarations == ZR_NULL || cs->hasError) {
         return;
+    }
+
+    for (TZrSize index = 0; index < externBlock->declarations->count; index++) {
+        SZrAstNode *declaration = externBlock->declarations->nodes[index];
+
+        if (declaration != ZR_NULL &&
+            !compiler_extern_validate_declaration_decorators(cs, declaration)) {
+            return;
+        }
     }
 
     for (TZrSize index = 0; index < externBlock->declarations->count; index++) {

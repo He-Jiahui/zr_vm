@@ -3,20 +3,55 @@
 #include <string.h>
 
 #include "runtime_support.h"
+#include "compile_time_declaration_patch_diagnostics.h"
 #include "compile_time_executor_internal.h"
+#include "zr_vm_core/global.h"
+#include "zr_vm_core/log.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 
 static SZrState *g_state;
 
+typedef struct STestLogCapture {
+    TZrBool called;
+    EZrLogLevel level;
+    EZrOutputChannel channel;
+    EZrOutputKind kind;
+    TZrChar message[256];
+} STestLogCapture;
+
+static STestLogCapture g_logCapture;
+
+static void capture_log(
+        SZrState *state,
+        EZrLogLevel level,
+        EZrOutputChannel channel,
+        EZrOutputKind kind,
+        TZrNativeString message) {
+    ZR_UNUSED_PARAMETER(state);
+
+    g_logCapture.called = ZR_TRUE;
+    g_logCapture.level = level;
+    g_logCapture.channel = channel;
+    g_logCapture.kind = kind;
+    strncpy(
+            g_logCapture.message,
+            message != ZR_NULL ? message : "",
+            sizeof(g_logCapture.message) - 1U);
+    g_logCapture.message[sizeof(g_logCapture.message) - 1U] = '\0';
+}
+
 void setUp(void) {
+    memset(&g_logCapture, 0, sizeof(g_logCapture));
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
 void tearDown(void) {
     if (g_state != ZR_NULL) {
+        g_state->global->logFunction = ZR_NULL;
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
@@ -42,6 +77,74 @@ static TZrBool prepare_and_run_late_checks(
     compiler->compilePhase = ZR_PARSER_COMPILE_PHASE_LATE_CHECK;
     return ZrParser_CompileTime_ExecuteLateChecksInCompilerState(
             compiler, ast);
+}
+
+static void set_object_field(
+        SZrObject *object,
+        const TZrChar *name,
+        const SZrTypeValue *value) {
+    SZrString *keyString = ZrCore_String_CreateFromNative(
+            g_state, (TZrNativeString)name);
+    SZrTypeValue key;
+
+    TEST_ASSERT_NOT_NULL(keyString);
+    ZrCore_Value_InitAsRawObject(
+            g_state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(g_state, object, &key, value);
+}
+
+static SZrObject *make_patch_diagnostic(
+        TZrBool isError,
+        const TZrChar *message,
+        TZrSymbolId targetSymbolId) {
+    SZrObject *diagnostic = ZrCore_Object_New(g_state, ZR_NULL);
+    SZrString *messageString;
+    SZrTypeValue value;
+
+    TEST_ASSERT_NOT_NULL(diagnostic);
+    ZrCore_Object_Init(g_state, diagnostic);
+
+    ZrCore_Value_InitAsInt(
+            g_state, &value, ZR_PARSER_COMPILE_TOOL_TYPE_DIAGNOSTIC);
+    set_object_field(diagnostic, "__zrCompileToolTypeRole", &value);
+    ZrCore_Value_InitAsBool(g_state, &value, isError);
+    set_object_field(diagnostic, "isError", &value);
+    messageString = ZrCore_String_CreateFromNative(
+            g_state, (TZrNativeString)message);
+    TEST_ASSERT_NOT_NULL(messageString);
+    ZrCore_Value_InitAsRawObject(
+            g_state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(messageString));
+    value.type = ZR_VALUE_TYPE_STRING;
+    set_object_field(diagnostic, "message", &value);
+    ZrCore_Value_InitAsInt(g_state, &value, (TZrInt64)targetSymbolId);
+    set_object_field(diagnostic, "target", &value);
+    return diagnostic;
+}
+
+static void init_object_value(SZrTypeValue *value, SZrObject *object) {
+    ZrCore_Value_InitAsRawObject(
+            g_state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(object));
+    value->type = ZR_VALUE_TYPE_OBJECT;
+}
+
+static void init_array_value_with_repeated_entry(
+        SZrTypeValue *arrayValue,
+        const SZrTypeValue *entry,
+        TZrSize count) {
+    SZrObject *array = ZrCore_Object_NewCustomized(
+            g_state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    SZrTypeValue key;
+
+    TEST_ASSERT_NOT_NULL(array);
+    ZrCore_Object_Init(g_state, array);
+    for (TZrSize index = 0; index < count; index++) {
+        ZrCore_Value_InitAsInt(g_state, &key, (TZrInt64)index);
+        ZrCore_Object_SetValue(g_state, array, &key, entry);
+    }
+    ZrCore_Value_InitAsRawObject(
+            g_state, arrayValue, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+    arrayValue->type = ZR_VALUE_TYPE_ARRAY;
 }
 
 static void test_typed_compile_tool_assert_and_warning_run_in_check_context(void) {
@@ -205,6 +308,130 @@ static void test_removed_global_assert_and_fatal_error_are_not_builtins(void) {
     }
 }
 
+static void test_patch_diagnostics_preserve_error_message_severity_and_location(void) {
+    SZrCompilerState compiler;
+    SZrObject *warning;
+    SZrObject *error;
+    SZrObject *array;
+    SZrTypeValue arrayValue;
+    SZrTypeValue warningValue;
+    SZrTypeValue errorValue;
+    SZrTypeValue key;
+    SZrFileRange location = {0};
+    TZrBool hasErrorDiagnostic = ZR_FALSE;
+
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    location.source = ZrCore_String_CreateFromNative(
+            g_state, "typed_patch_diagnostic.zr");
+    location.start = ZrParser_FilePosition_Create(19U, 7, 11);
+    location.end = ZrParser_FilePosition_Create(27U, 7, 19);
+    warning = make_patch_diagnostic(
+            ZR_FALSE, "generated member warning", 41U);
+    error = make_patch_diagnostic(
+            ZR_TRUE, "generated member rejected", 41U);
+    init_object_value(&warningValue, warning);
+    init_object_value(&errorValue, error);
+    array = ZrCore_Object_NewCustomized(
+            g_state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(array);
+    ZrCore_Object_Init(g_state, array);
+    ZrCore_Value_InitAsInt(g_state, &key, 0);
+    ZrCore_Object_SetValue(g_state, array, &key, &warningValue);
+    ZrCore_Value_InitAsInt(g_state, &key, 1);
+    ZrCore_Object_SetValue(g_state, array, &key, &errorValue);
+    ZrCore_Value_InitAsRawObject(
+            g_state, &arrayValue, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+    arrayValue.type = ZR_VALUE_TYPE_ARRAY;
+
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_ProcessPatchDiagnostics(
+            &compiler, &arrayValue, 41U, location, &hasErrorDiagnostic));
+    TEST_ASSERT_TRUE(hasErrorDiagnostic);
+    TEST_ASSERT_TRUE(compiler.hasCompileTimeError);
+    TEST_ASSERT_NOT_NULL(compiler.errorMessage);
+    TEST_ASSERT_EQUAL_STRING("generated member rejected", compiler.errorMessage);
+    TEST_ASSERT_EQUAL_PTR(location.source, compiler.errorLocation.source);
+    TEST_ASSERT_EQUAL_INT32(7, compiler.errorLocation.start.line);
+    TEST_ASSERT_EQUAL_INT32(11, compiler.errorLocation.start.column);
+    TEST_ASSERT_EQUAL_INT32(7, compiler.errorLocation.end.line);
+    TEST_ASSERT_EQUAL_INT32(19, compiler.errorLocation.end.column);
+    TEST_ASSERT_EQUAL_UINT64(2U, compiler.comptimeBudget.usage.diagnosticCount);
+
+    ZrParser_CompilerState_Free(&compiler);
+}
+
+static void test_patch_warning_uses_warning_log_severity(void) {
+    SZrCompilerState compiler;
+    SZrObject *warning;
+    SZrTypeValue warningValue;
+    SZrTypeValue arrayValue;
+    SZrFileRange location = {0};
+    TZrBool hasErrorDiagnostic = ZR_FALSE;
+
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    warning = make_patch_diagnostic(
+            ZR_FALSE, "generated severity warning", 41U);
+    init_object_value(&warningValue, warning);
+    init_array_value_with_repeated_entry(&arrayValue, &warningValue, 1U);
+    g_state->global->logFunction = capture_log;
+
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_ProcessPatchDiagnostics(
+            &compiler, &arrayValue, 41U, location, &hasErrorDiagnostic));
+    TEST_ASSERT_FALSE(hasErrorDiagnostic);
+    TEST_ASSERT_FALSE(compiler.hasCompileTimeError);
+    TEST_ASSERT_TRUE(g_logCapture.called);
+    TEST_ASSERT_EQUAL_INT(ZR_LOG_LEVEL_WARNING, g_logCapture.level);
+    TEST_ASSERT_EQUAL_INT(ZR_OUTPUT_CHANNEL_STDERR, g_logCapture.channel);
+    TEST_ASSERT_EQUAL_INT(ZR_OUTPUT_KIND_DIAGNOSTIC, g_logCapture.kind);
+    TEST_ASSERT_NOT_NULL(strstr(
+            g_logCapture.message, "[CompileTime WARNING]"));
+    TEST_ASSERT_NOT_NULL(strstr(
+            g_logCapture.message, "generated severity warning"));
+
+    g_state->global->logFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+}
+
+static void test_patch_diagnostic_default_budget_accepts_1024_and_rejects_1025(void) {
+    SZrCompilerState compiler;
+    SZrObject *warning;
+    SZrTypeValue warningValue;
+    SZrTypeValue acceptedArray;
+    SZrTypeValue rejectedArray;
+    SZrFileRange location = {0};
+    TZrBool hasErrorDiagnostic = ZR_FALSE;
+
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_EQUAL_UINT64(
+            1024U, compiler.comptimeBudget.limits.diagnosticCount);
+    warning = make_patch_diagnostic(ZR_FALSE, "boundary warning", 41U);
+    init_object_value(&warningValue, warning);
+    init_array_value_with_repeated_entry(&acceptedArray, &warningValue, 1024U);
+    TEST_ASSERT_TRUE(ZrParser_CompileTime_ProcessPatchDiagnostics(
+            &compiler, &acceptedArray, 41U, location, &hasErrorDiagnostic));
+    TEST_ASSERT_FALSE(hasErrorDiagnostic);
+    TEST_ASSERT_FALSE(compiler.hasCompileTimeError);
+    TEST_ASSERT_EQUAL_UINT64(
+            1024U, compiler.comptimeBudget.usage.diagnosticCount);
+    ZrParser_CompilerState_Free(&compiler);
+
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    init_array_value_with_repeated_entry(&rejectedArray, &warningValue, 1025U);
+    TEST_ASSERT_FALSE(ZrParser_CompileTime_ProcessPatchDiagnostics(
+            &compiler, &rejectedArray, 41U, location, &hasErrorDiagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_PARSER_COMPTIME_BUDGET_DIAGNOSTIC_COUNT,
+            compiler.comptimeBudget.exceededResource);
+    TEST_ASSERT_EQUAL_UINT64(0U, compiler.comptimeBudget.usage.diagnosticCount);
+    TEST_ASSERT_NOT_NULL(compiler.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(
+            compiler.errorMessage, "comptime.budget_exceeded"));
+
+    ZrParser_CompilerState_Free(&compiler);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_typed_compile_tool_assert_and_warning_run_in_check_context);
@@ -214,5 +441,8 @@ int main(void) {
     RUN_TEST(test_call_depth_budget_stops_recursive_comptime_function);
     RUN_TEST(test_pure_comptime_function_results_use_deterministic_cache);
     RUN_TEST(test_removed_global_assert_and_fatal_error_are_not_builtins);
+    RUN_TEST(test_patch_diagnostics_preserve_error_message_severity_and_location);
+    RUN_TEST(test_patch_warning_uses_warning_log_severity);
+    RUN_TEST(test_patch_diagnostic_default_budget_accepts_1024_and_rejects_1025);
     return UNITY_END();
 }

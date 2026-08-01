@@ -1,1 +1,43 @@
-// design-pending: owner 11 typed compile-time declarations
+let declaration = import("zr.compile.declaration");
+
+#zr.reflection.attributeUsage(
+    targets: zr.reflection.AttributeTargets.type,
+    retention: zr.reflection.AttributeRetention.artifact,
+    repeatable: false,
+    inherited: false
+)#
+pub readonly struct SyntaxReferenceLabel {
+    pub let value: int;
+}
+
+#zr.compile.declarationTransform#
+pub comptime fn deriveSyntaxReference(
+    target: declaration.Struct
+): declaration.Patch {
+    let generated = init declaration.GeneratedField(
+        name: "generated",
+        type: typeid(bool),
+        visibility: declaration.Visibility.public,
+        mutability: declaration.Mutability.let
+    );
+    let label = init declaration.AttributeData(
+        typeId: typeid(SyntaxReferenceLabel),
+        fieldValues: [14]
+    );
+    return init declaration.Patch(
+        target: target.symbolId,
+        additions: [generated],
+        attributeAdds: [label]
+    );
+}
+
+#deriveSyntaxReference#
+pub struct SyntaxReferenceGenerated {
+    pub let value: int;
+}
+
+#zr.compile.conditional("trace")#
+fn syntaxReferenceTrace(value: int): void {
+}
+
+return 0;

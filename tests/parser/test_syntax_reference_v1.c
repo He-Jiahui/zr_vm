@@ -78,8 +78,8 @@ static const SZrSyntaxReferenceFeatureMapping kFeatureMappings[] = {
         {"module_namespace.import_binding", "design-pending", "design-pending", "src/modules.zr"},
         {"reflection.type_and_construction", "design-pending", "design-pending", "src/reflection.zr"},
         {"pooling.handle_and_ref", "design-pending", "design-pending", "src/pooling.zr"},
-        {"comptime.metadata_transform", "design-pending", "design-pending", "src/compile_time_and_attributes.zr"},
-        {"conditional.direct_call", "design-pending", "design-pending", "src/compile_time_and_attributes.zr"},
+        {"comptime.metadata_transform", "current", "current", "src/compile_time_and_attributes.zr"},
+        {"conditional.direct_call", "current", "current", "src/compile_time_and_attributes.zr"},
         {"async.task_job_scheduler", "design-pending", "design-pending", "src/async_jobs.zr"},
         {"iterator.enumerator_yield", "design-pending", "design-pending", "src/iterators.zr"},
         {"testing.manifest_and_case", "design-pending", "design-pending", "tests/syntax_tests.zr"},
@@ -97,6 +97,7 @@ static const TZrChar *const kCurrentCollectionFiles[] = {
         "src/object_model.zr",
         "src/algorithms.zr",
         "src/effects.zr",
+        "src/compile_time_and_attributes.zr",
         "src/ownership.zr",
         "src/main.zr",
         "surface/lexical_and_literals.zr",
@@ -115,7 +116,6 @@ static const TZrChar *const kDesignPendingCollectionFiles[] = {
         "src/modules.zr",
         "src/native_ffi.zr",
         "src/engine/render.zr",
-        "src/compile_time_and_attributes.zr",
         "src/async_jobs.zr",
         "src/iterators.zr",
         "generated/file_locator_import.zr",
@@ -139,6 +139,9 @@ static const SZrSyntaxReferenceCurrentEvidence kCurrentEvidence[] = {
         {"src/model.zr", "union SyntaxReferenceChoice<T>"},
         {"surface/lexical_and_literals.zr", "var [first, second]"},
         {"src/ownership.zr", "var owner: Unique<SyntaxReferenceOwned>"},
+        {"src/compile_time_and_attributes.zr", "#zr.compile.declarationTransform#"},
+        {"src/compile_time_and_attributes.zr", "declaration.GeneratedField"},
+        {"src/compile_time_and_attributes.zr", "#zr.compile.conditional(\"trace\")#"},
 };
 
 static const SZrSyntaxReferenceCurrentEvidence kDesignPendingEvidence[] = {
@@ -732,6 +735,86 @@ static void test_syntax_reference_v1_callable_parameter_retains_its_exact_signat
     syntax_reference_assert_current_source_compiles("src/callables.zr");
 }
 
+static void test_syntax_reference_v1_compile_time_metadata_fixture_compiles(void) {
+    syntax_reference_assert_current_source_compiles(
+            "src/compile_time_and_attributes.zr");
+}
+
+static const SZrFunction *syntax_reference_find_function(
+        const SZrFunction *function,
+        const TZrChar *expectedName) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || expectedName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (function->functionName != ZR_NULL) {
+        const TZrChar *actualName = ZrCore_String_GetNativeString(function->functionName);
+
+        if (actualName != ZR_NULL && strcmp(actualName, expectedName) == 0) {
+            return function;
+        }
+    }
+    for (index = 0u; index < function->childFunctionLength; index++) {
+        const SZrFunction *match = syntax_reference_find_function(
+                &function->childFunctionList[index], expectedName);
+
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void test_compiler_assigns_distinct_canonical_symbols_to_reused_parameter_names(void) {
+    const TZrChar *source =
+            "pub fn echo(value: int): int { return value; }\n"
+            "pub fn echo_unsigned(value: uint): uint { return value; }\n"
+            "pub fn sum_values(left: int, right: int): int { return left + right; }\n"
+            "pub fn sum_unsigned(left: uint, right: uint): uint { return left + right; }\n"
+            "pub fn sum_three(left: int, middle: int, right: int): int { return left + middle + right; }\n";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFunction *script;
+    const SZrFunction *sumThree;
+    TZrUInt32 parameterIndex;
+    TZrUInt32 otherIndex;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(
+            state, "canonical_parameter_identity.zr", strlen("canonical_parameter_identity.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    script = ZrParser_Compiler_Compile(state, ast);
+    TEST_ASSERT_NOT_NULL(script);
+    sumThree = syntax_reference_find_function(script, "sum_three");
+    TEST_ASSERT_NOT_NULL(sumThree);
+    TEST_ASSERT_EQUAL_UINT16(3u, sumThree->parameterCount);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(sumThree->parameterCount,
+                                        sumThree->typedLocalBindingLength);
+    TEST_ASSERT_NOT_NULL(sumThree->typedLocalBindings);
+
+    for (parameterIndex = 0u; parameterIndex < sumThree->parameterCount; parameterIndex++) {
+        const SZrFunctionTypedLocalBinding *parameter =
+                &sumThree->typedLocalBindings[parameterIndex];
+
+        TEST_ASSERT_EQUAL_UINT32(parameterIndex, parameter->stackSlot);
+        TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, parameter->symbolId);
+        for (otherIndex = parameterIndex + 1u;
+             otherIndex < sumThree->parameterCount;
+             otherIndex++) {
+            TEST_ASSERT_NOT_EQUAL(parameter->symbolId,
+                                  sumThree->typedLocalBindings[otherIndex].symbolId);
+        }
+    }
+
+    ZrCore_Function_Free(state, script);
+    ZrParser_Ast_Free(state, ast);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_syntax_reference_v1_manifest_enumerates_stable_feature_ids);
@@ -743,5 +826,7 @@ int main(void) {
     RUN_TEST(test_syntax_reference_v1_formatted_and_minified_current_source_have_identical_ast_and_semantic_hashes);
     RUN_TEST(test_syntax_reference_v1_gcbox_bridge_compiles_with_its_declared_type);
     RUN_TEST(test_syntax_reference_v1_callable_parameter_retains_its_exact_signature);
+    RUN_TEST(test_syntax_reference_v1_compile_time_metadata_fixture_compiles);
+    RUN_TEST(test_compiler_assigns_distinct_canonical_symbols_to_reused_parameter_names);
     return UNITY_END();
 }

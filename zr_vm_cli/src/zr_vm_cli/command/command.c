@@ -19,7 +19,8 @@ typedef enum EZrCliPrimaryMode {
     ZR_CLI_PRIMARY_MODE_DUMP_ZRP_METADATA = 7,
     ZR_CLI_PRIMARY_MODE_DIFF_ZRP_METADATA = 8,
     ZR_CLI_PRIMARY_MODE_CHECK_ZRP_METADATA_VERSION = 9,
-    ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX = 10
+    ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX = 10,
+    ZR_CLI_PRIMARY_MODE_TEST = 11
 } EZrCliPrimaryMode;
 
 static void zr_cli_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrChar *format, ...) {
@@ -51,8 +52,12 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->zrpMetadataAfterPath = ZR_NULL;
     command->zrpMetadataVersionCheckPath = ZR_NULL;
     command->migrationPath = ZR_NULL;
+    command->testPath = ZR_NULL;
+    command->testFilter = ZR_NULL;
     command->programArgs = ZR_NULL;
     command->programArgCount = 0;
+    command->testJobs = 1U;
+    command->testTimeoutMilliseconds = 0U;
     command->debugAddress = ZR_NULL;
     command->profileOutputPath = ZR_NULL;
     command->coverageOutputPath = ZR_NULL;
@@ -75,6 +80,7 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->migrationCheck = ZR_FALSE;
     command->migrationWrite = ZR_FALSE;
     command->migrationIncludeGenerated = ZR_FALSE;
+    command->testList = ZR_FALSE;
     command->migrationFormat = ZR_CLI_MIGRATION_FORMAT_JSON;
 }
 
@@ -93,6 +99,53 @@ static TZrBool zr_cli_command_parse_execution_mode(const TZrChar *text, EZrCliEx
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool zr_cli_command_parse_positive_uint32(
+        const TZrChar *text,
+        TZrUInt32 *outValue) {
+    TZrChar *end = ZR_NULL;
+    unsigned long value;
+
+    if (text == ZR_NULL || text[0] == '\0' || outValue == ZR_NULL || text[0] == '-') {
+        return ZR_FALSE;
+    }
+    value = strtoul(text, &end, 10);
+    if (end == text || *end != '\0' || value == 0UL || value > UINT32_MAX) {
+        return ZR_FALSE;
+    }
+    *outValue = (TZrUInt32)value;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_command_parse_duration_milliseconds(
+        const TZrChar *text,
+        TZrUInt64 *outMilliseconds) {
+    TZrChar *end = ZR_NULL;
+    unsigned long long value;
+    TZrUInt64 multiplier;
+
+    if (text == ZR_NULL || text[0] == '\0' || outMilliseconds == ZR_NULL || text[0] == '-') {
+        return ZR_FALSE;
+    }
+    value = strtoull(text, &end, 10);
+    if (end == text || value == 0ULL) {
+        return ZR_FALSE;
+    }
+    if (strcmp(end, "ms") == 0) {
+        multiplier = 1U;
+    } else if (strcmp(end, "s") == 0) {
+        multiplier = 1000U;
+    } else if (strcmp(end, "m") == 0) {
+        multiplier = 60000U;
+    } else {
+        return ZR_FALSE;
+    }
+    if ((TZrUInt64)value > UINT64_MAX / multiplier) {
+        return ZR_FALSE;
+    }
+    *outMilliseconds = (TZrUInt64)value * multiplier;
+    return ZR_TRUE;
 }
 
 static TZrBool zr_cli_command_set_primary_mode(EZrCliPrimaryMode *currentMode,
@@ -145,6 +198,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  %s --diff-zrp-metadata <before> <after>\n"
             "  %s --check-zrp-metadata-version <file>\n"
             "  %s migrate syntax <path> (--check|--write) [--format json|text]\n"
+            "  zr test <project-or-module> [--filter <pattern>] [--jobs N] [--timeout <duration>] [--list]\n"
             "  %s -e <code> [-- <args...>]\n"
             "  %s -c <code> [-- <args...>]\n"
             "  %s --project <project.zrp> -m <module> [run-options] [-- <args...>]\n"
@@ -232,6 +286,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  %s --diff-zrp-metadata <before> <after>\n"
              "  %s --check-zrp-metadata-version <file>\n"
              "  %s migrate syntax <path> (--check|--write) [--format json|text]\n"
+             "  zr test <project-or-module> [--filter <pattern>] [--jobs N] [--timeout <duration>] [--list]\n"
              "  %s -e <code> [-- <args...>]\n"
              "  %s -c <code> [-- <args...>]\n"
              "  %s --project <project.zrp> -m <module> [run-options] [-- <args...>]\n"
@@ -337,6 +392,8 @@ TZrBool ZrCli_Command_Parse(int argc,
     TZrBool compileSeen = ZR_FALSE;
     TZrBool explicitProjectSeen = ZR_FALSE;
     TZrBool positionalSeen = ZR_FALSE;
+    TZrBool testJobsSeen = ZR_FALSE;
+    TZrBool testTimeoutSeen = ZR_FALSE;
     const TZrChar *compilePath = ZR_NULL;
     const TZrChar *explicitProjectPath = ZR_NULL;
     const TZrChar *positionalPath = ZR_NULL;
@@ -383,6 +440,75 @@ TZrBool ZrCli_Command_Parse(int argc,
                                                  errorBuffer,
                                                  errorBufferSize)) {
                 return ZR_FALSE;
+            }
+            continue;
+        }
+
+        if (strcmp(argument, "test") == 0) {
+            if (!zr_cli_command_set_primary_mode(
+                        &primaryMode,
+                        ZR_CLI_PRIMARY_MODE_TEST,
+                        "test",
+                        errorBuffer,
+                        errorBufferSize)) {
+                return ZR_FALSE;
+            }
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing <project-or-module> after test");
+                return ZR_FALSE;
+            }
+            outCommand->testPath = argv[++index];
+            continue;
+        }
+
+        if (strcmp(argument, "--filter") == 0 || strcmp(argument, "--jobs") == 0 ||
+            strcmp(argument, "--timeout") == 0 || strcmp(argument, "--list") == 0) {
+            if (primaryMode != ZR_CLI_PRIMARY_MODE_TEST) {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "%s requires test <project-or-module>", argument);
+                return ZR_FALSE;
+            }
+            if (strcmp(argument, "--list") == 0) {
+                if (outCommand->testList) {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Duplicate test option: --list");
+                    return ZR_FALSE;
+                }
+                outCommand->testList = ZR_TRUE;
+                continue;
+            }
+            if (index + 1 >= argc || argv[index + 1][0] == '-') {
+                zr_cli_write_error(errorBuffer, errorBufferSize, "Missing value after %s", argument);
+                return ZR_FALSE;
+            }
+            if (strcmp(argument, "--filter") == 0) {
+                if (outCommand->testFilter != ZR_NULL || argv[index + 1][0] == '\0') {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Invalid or duplicate test filter");
+                    return ZR_FALSE;
+                }
+                outCommand->testFilter = argv[++index];
+            } else if (strcmp(argument, "--jobs") == 0) {
+                if (testJobsSeen) {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Duplicate test option: --jobs");
+                    return ZR_FALSE;
+                }
+                if (!zr_cli_command_parse_positive_uint32(argv[++index], &outCommand->testJobs)) {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "--jobs requires a positive integer");
+                    return ZR_FALSE;
+                }
+                testJobsSeen = ZR_TRUE;
+            } else {
+                if (testTimeoutSeen) {
+                    zr_cli_write_error(errorBuffer, errorBufferSize, "Duplicate test option: --timeout");
+                    return ZR_FALSE;
+                }
+                if (!zr_cli_command_parse_duration_milliseconds(
+                            argv[++index], &outCommand->testTimeoutMilliseconds)) {
+                    zr_cli_write_error(
+                            errorBuffer,
+                            errorBufferSize,
+                            "--timeout requires a positive duration using ms, s, or m");
+                    return ZR_FALSE;
+                }
+                testTimeoutSeen = ZR_TRUE;
             }
             continue;
         }
@@ -910,6 +1036,21 @@ TZrBool ZrCli_Command_Parse(int argc,
                            "migrate syntax cannot be combined with run, compile, debug, or output modifiers");
         return ZR_FALSE;
     }
+
+    if (primaryMode == ZR_CLI_PRIMARY_MODE_TEST &&
+        (interactiveRequested || outCommand->emitIntermediate || outCommand->emitZrm || outCommand->emitAotC ||
+         outCommand->incremental || outCommand->runAfterCompile || outCommand->emitExecutedVia ||
+         outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
+         outCommand->profileEnabled || outCommand->coverageEnabled || outCommand->dumpBytecodeEnabled ||
+         outCommand->heapSummaryEnabled || outCommand->debugAddress != ZR_NULL ||
+         outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP || outCommand->moduleName != ZR_NULL ||
+         outCommand->programArgCount > 0 || compileSeen || explicitProjectSeen || positionalSeen)) {
+        zr_cli_write_error(
+                errorBuffer,
+                errorBufferSize,
+                "test cannot be combined with run, compile, debug, profiling, or output modifiers");
+        return ZR_FALSE;
+    }
     if (primaryMode == ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX &&
         (outCommand->migrationCheck == outCommand->migrationWrite)) {
         zr_cli_write_error(errorBuffer, errorBufferSize, "migrate syntax requires exactly one of --check or --write");
@@ -964,6 +1105,10 @@ TZrBool ZrCli_Command_Parse(int argc,
 
         case ZR_CLI_PRIMARY_MODE_MIGRATE_SYNTAX:
             outCommand->mode = ZR_CLI_MODE_MIGRATE_SYNTAX;
+            return ZR_TRUE;
+
+        case ZR_CLI_PRIMARY_MODE_TEST:
+            outCommand->mode = ZR_CLI_MODE_TEST;
             return ZR_TRUE;
 
         case ZR_CLI_PRIMARY_MODE_COMPILE:

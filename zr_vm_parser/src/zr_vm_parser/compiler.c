@@ -4,12 +4,14 @@
 
 #include "compiler_internal.h"
 #include "compiler/compile_time_executor_internal.h"
+#include "compiler/compiler_attribute_binding.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "module_init_analysis.h"
 #include "type_inference_internal.h"
+#include "zr_vm_library/native_registry.h"
 
 static TZrBool zr_parser_compile_trace_enabled(void);
 static void zr_parser_compile_trace(const TZrChar *format, ...);
@@ -190,6 +192,7 @@ static TZrUInt32 compiler_resolve_serialized_member_function_constant_index(SZrC
 
 static TZrUInt32 compiler_add_serialized_string_constant(SZrCompilerState *cs, SZrString *value) {
     SZrTypeValue stringValue;
+    TZrUInt32 index;
 
     if (cs == ZR_NULL || value == ZR_NULL) {
         return 0;
@@ -197,7 +200,25 @@ static TZrUInt32 compiler_add_serialized_string_constant(SZrCompilerState *cs, S
 
     ZrCore_Value_InitAsRawObject(cs->state, &stringValue, ZR_CAST_RAW_OBJECT_AS_SUPER(value));
     stringValue.type = ZR_VALUE_TYPE_STRING;
-    return add_constant(cs, &stringValue);
+
+    /* Serialized prototype fields reserve index zero for "not present". */
+    for (TZrSize constantIndex = 1u; constantIndex < cs->constants.length; constantIndex++) {
+        SZrTypeValue *existingValue =
+                (SZrTypeValue *)ZrCore_Array_Get(&cs->constants, constantIndex);
+        if (existingValue != ZR_NULL &&
+            ZrCore_Value_Equal(cs->state, existingValue, &stringValue)) {
+            return (TZrUInt32)constantIndex;
+        }
+    }
+
+    index = add_constant(cs, &stringValue);
+    if (index != 0u) {
+        return index;
+    }
+
+    ZrCore_Array_Push(cs->state, &cs->constants, &stringValue);
+    cs->constantCount = cs->constants.length;
+    return (TZrUInt32)(cs->constants.length - 1u);
 }
 
 static void compiler_log_failure_summary(SZrCompilerState *cs) {
@@ -512,6 +533,17 @@ static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNod
             compile_class_declaration(cs, statement);
             break;
         case ZR_AST_INTERFACE_DECLARATION:
+            for (TZrSize index = 0;
+                 index < cs->signatureCompiledInterfaceNodes.length;
+                 index++) {
+                SZrAstNode **compiledNode =
+                        (SZrAstNode **)ZrCore_Array_Get(
+                                &cs->signatureCompiledInterfaceNodes, index);
+                if (compiledNode != ZR_NULL && *compiledNode == statement) {
+                    compiler_finalize_interface_decorators(cs, statement);
+                    return;
+                }
+            }
             compile_interface_declaration(cs, statement);
             break;
         case ZR_AST_ENUM_DECLARATION:
@@ -527,6 +559,95 @@ static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNod
                                    "    Skipping statement type %d (not implemented yet)\n",
                                    statement->type);
             break;
+    }
+}
+
+static void compiler_compile_interface_signatures(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *statements) {
+    if (cs == ZR_NULL || statements == ZR_NULL || cs->hasError) {
+        return;
+    }
+    for (TZrSize index = 0; index < statements->count; index++) {
+        SZrAstNode *statement = statements->nodes[index];
+
+        if (statement == ZR_NULL) {
+            continue;
+        }
+        if (statement->type == ZR_AST_COMPILE_TIME_DECLARATION &&
+            statement->data.compileTimeDeclaration.isConditionalPruning &&
+            statement->data.compileTimeDeclaration.selectedBranch != ZR_NULL) {
+            SZrAstNode *selected =
+                    statement->data.compileTimeDeclaration.selectedBranch;
+            if (selected->type == ZR_AST_BLOCK) {
+                compiler_compile_interface_signatures(
+                        cs, selected->data.block.body);
+            } else {
+                SZrAstNode *selectedNodes[] = {selected};
+                SZrAstNodeArray selectedArray = {
+                        .nodes = selectedNodes,
+                        .count = 1U,
+                        .capacity = 1U,
+                };
+                compiler_compile_interface_signatures(cs, &selectedArray);
+            }
+            if (cs->hasError) {
+                return;
+            }
+            continue;
+        }
+        if (statement->type != ZR_AST_INTERFACE_DECLARATION) {
+            continue;
+        }
+        compile_interface_declaration(cs, statement);
+        if (cs->hasError) {
+            return;
+        }
+        ZrCore_Array_Push(
+                cs->state,
+                &cs->signatureCompiledInterfaceNodes,
+                &statement);
+    }
+}
+
+static void compiler_predeclare_attribute_schemas(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *statements) {
+    if (cs == ZR_NULL || statements == ZR_NULL || cs->hasError) {
+        return;
+    }
+    for (TZrSize index = 0U; index < statements->count; index++) {
+        SZrAstNode *statement = statements->nodes[index];
+
+        if (statement == ZR_NULL) {
+            continue;
+        }
+        if (statement->type == ZR_AST_COMPILE_TIME_DECLARATION &&
+            statement->data.compileTimeDeclaration.isConditionalPruning &&
+            statement->data.compileTimeDeclaration.selectedBranch != ZR_NULL) {
+            SZrAstNode *selected =
+                    statement->data.compileTimeDeclaration.selectedBranch;
+            if (selected->type == ZR_AST_BLOCK) {
+                compiler_predeclare_attribute_schemas(
+                        cs, selected->data.block.body);
+            } else {
+                SZrAstNode *selectedNodes[] = {selected};
+                SZrAstNodeArray selectedArray = {
+                        .nodes = selectedNodes,
+                        .count = 1U,
+                        .capacity = 1U,
+                };
+                compiler_predeclare_attribute_schemas(cs, &selectedArray);
+            }
+            if (cs->hasError) {
+                return;
+            }
+            continue;
+        }
+        if (statement->type == ZR_AST_STRUCT_DECLARATION &&
+            !ZrParser_Metadata_RegisterAttributeSchema(cs, statement)) {
+            return;
+        }
     }
 }
 
@@ -579,6 +700,14 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
         }
 
         ZrParser_Compiler_PredeclareFunctionBindings(cs, script->statements);
+        if (cs->hasError) {
+            return;
+        }
+        compiler_predeclare_attribute_schemas(cs, script->statements);
+        if (cs->hasError) {
+            return;
+        }
+        compiler_compile_interface_signatures(cs, script->statements);
         if (cs->hasError) {
             return;
         }
@@ -802,15 +931,18 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     cs->isScriptLevel = ZR_FALSE;
 }
 
-ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrState *state,
-                                                                         SZrAstNode *ast,
-                                                                         SZrString *currentModuleKey) {
+static SZrFunction *zr_parser_compiler_compile_mode_active(
+        SZrState *state,
+        SZrAstNode *ast,
+        SZrString *currentModuleKey,
+        TZrBool emitTestManifest) {
     if (state == ZR_NULL || ast == ZR_NULL) {
         return ZR_NULL;
     }
 
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
+    cs.emitTestManifest = emitTestManifest;
     cs.currentAst = ast;
     cs.currentModuleKey = currentModuleKey;
     zr_parser_compile_trace("compiler compile core init ast=%p", (void *)ast);
@@ -849,6 +981,10 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrStat
     zr_parser_compile_trace("compile_script start ast=%p", (void *)ast);
     compile_script(&cs, ast);
     zr_parser_compile_trace("compile_script done ast=%p hasError=%d", (void *)ast, (int)cs.hasError);
+
+    if (!cs.hasError && !compiler_test_finalize_manifest(&cs)) {
+        cs.hasError = ZR_TRUE;
+    }
 
     if (cs.hasError) {
         // 错误信息已在 ZrParser_Compiler_Error 中输出（包含行列号）
@@ -904,9 +1040,45 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrStat
     return func;
 }
 
+static SZrFunction *zr_parser_compiler_compile_mode(
+        SZrState *state,
+        SZrAstNode *ast,
+        SZrString *currentModuleKey,
+        TZrBool emitTestManifest) {
+    EZrLibrary_ProviderPhase previousPhase;
+    SZrFunction *result;
+
+    if (state == ZR_NULL || ast == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    previousPhase = ZrLibrary_State_GetProviderPhase(state);
+    ZrLibrary_State_SetProviderPhase(
+            state,
+            emitTestManifest
+                    ? ZR_LIBRARY_PROVIDER_PHASE_TEST
+                    : ZR_LIBRARY_PROVIDER_PHASE_RUNTIME);
+    result = zr_parser_compiler_compile_mode_active(
+            state, ast, currentModuleKey, emitTestManifest);
+    ZrLibrary_State_SetProviderPhase(state, previousPhase);
+    return result;
+}
+
+ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(
+        SZrState *state,
+        SZrAstNode *ast,
+        SZrString *currentModuleKey) {
+    return zr_parser_compiler_compile_mode(
+            state, ast, currentModuleKey, ZR_FALSE);
+}
+
 // 主编译入口（占位实现）
 SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     return ZrParser_Compiler_CompileWithCurrentModuleKey(state, ast, ZR_NULL);
+}
+
+SZrFunction *ZrParser_Compiler_CompileTest(SZrState *state, SZrAstNode *ast) {
+    return zr_parser_compiler_compile_mode(state, ast, ZR_NULL, ZR_TRUE);
 }
 
 ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
@@ -922,7 +1094,12 @@ ZR_PARSER_API void ZrParser_Compiler_CompileInterfaceDeclaration(SZrCompilerStat
 }
 
 // 编译源代码为函数（封装了从解析到编译的全流程）
-struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName) {
+static struct SZrFunction *zr_parser_source_compile_mode(
+        struct SZrState *state,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        struct SZrString *sourceName,
+        TZrBool emitTestManifest) {
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
     SZrFileRange importErrorLocation;
     SZrString *currentModuleKey = ZR_NULL;
@@ -994,7 +1171,8 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
     
     // 编译AST为函数
-    func = ZrParser_Compiler_CompileWithCurrentModuleKey(state, ast, currentModuleKey);
+    func = zr_parser_compiler_compile_mode(
+            state, ast, currentModuleKey, emitTestManifest);
     zr_parser_compile_trace("compiler compile finished name='%s' func=%p",
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (void *)func);
@@ -1006,6 +1184,24 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
     
     return func;
+}
+
+struct SZrFunction *ZrParser_Source_Compile(
+        struct SZrState *state,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        struct SZrString *sourceName) {
+    return zr_parser_source_compile_mode(
+            state, source, sourceLength, sourceName, ZR_FALSE);
+}
+
+struct SZrFunction *ZrParser_Source_CompileTest(
+        struct SZrState *state,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        struct SZrString *sourceName) {
+    return zr_parser_source_compile_mode(
+            state, source, sourceLength, sourceName, ZR_TRUE);
 }
 
 // 注册 compileSource 函数到 globalState

@@ -3,55 +3,42 @@
 
 FUNCTION: <anonymous>
   START_LINE: 1
-  END_LINE: 56
+  END_LINE: 31
   PARAMETERS: 0
   HAS_VAR_ARGS: false
-  STACK_SIZE: 20
+  STACK_SIZE: 10
 
-CONSTANTS (23):
+CONSTANTS (15):
   [0] null
   [1] native closure
   [2] string: "decorators"
   [3] function
   [4] function
-  [5] native closure
-  [6] string: "id"
-  [7] int: 1
-  [8] native closure
-  [9] string: "load"
-  [10] int: 2
-  [11] native closure
-  [12] string: "value"
-  [13] int: 3
-  [14] native closure
-  [15] function
-  [16] native closure
-  [17] function
-  [18] string: "User"
-  [19] string: "zr.builtin.Object"
-  [20] string: "int"
-  [21] string: "_value"
-  [22] string: "__get_value"
+  [5] function
+  [6] function
+  [7] string: "User"
+  [8] string: "zr.builtin.Object"
+  [9] string: "id"
+  [10] string: "int"
+  [11] string: "_value"
+  [12] string: "load"
+  [13] string: "value"
+  [14] string: "__get_value"
 
-LOCAL_VARIABLES (13):
-  [0] decoratedBonus: offset_activate=0, offset_dead=63
-  [1] decorators: offset_activate=3, offset_dead=63
-  [2] markClass: offset_activate=5, offset_dead=63
-  [3] markField: offset_activate=7, offset_dead=63
-  [4] markMethod: offset_activate=9, offset_dead=63
-  [5] markProperty: offset_activate=11, offset_dead=63
-  [6] markFunction: offset_activate=13, offset_dead=63
-  [7] __zr_member_definition_runtime_decorator_27_0: offset_activate=14, offset_dead=63
-  [8] __zr_member_definition_runtime_decorator_43_0: offset_activate=24, offset_dead=63
-  [9] __zr_member_definition_runtime_decorator_59_0: offset_activate=34, offset_dead=63
-  [10] __zr_definition_runtime_decorator_77_0: offset_activate=46, offset_dead=63
-  [11] __zr_definition_runtime_decorator_89_0: offset_activate=54, offset_dead=63
-  [12] verifyDecorators: offset_activate=62, offset_dead=63
+LOCAL_VARIABLES (8):
+  [0] decoratedBonus: offset_activate=0, offset_dead=19
+  [1] decorators: offset_activate=7, offset_dead=19
+  [2] markClass: offset_activate=8, offset_dead=19
+  [3] markField: offset_activate=10, offset_dead=19
+  [4] markMethod: offset_activate=12, offset_dead=19
+  [5] markProperty: offset_activate=14, offset_dead=19
+  [6] markFunction: offset_activate=15, offset_dead=19
+  [7] verifyDecorators: offset_activate=19, offset_dead=19
 
 CLOSURE_VARIABLES (0):
 
 TYPE_METADATA:
-  LOCAL_BINDINGS (13):
+  LOCAL_BINDINGS (8):
     [0] decoratedBonus: function
     [1] decorators: decorators
     [2] markClass: function
@@ -59,15 +46,10 @@ TYPE_METADATA:
     [4] markMethod: function
     [5] markProperty: function
     [6] markFunction: function
-    [7] __zr_member_definition_runtime_decorator_27_0: object
-    [9] __zr_member_definition_runtime_decorator_43_0: object
-    [11] __zr_member_definition_runtime_decorator_59_0: object
-    [14] __zr_definition_runtime_decorator_77_0: object
-    [16] __zr_definition_runtime_decorator_89_0: object
-    [17] verifyDecorators: %func()->int
+    [8] verifyDecorators: fn() -> object
   EXPORTED_SYMBOLS (2):
     fn decoratedBonus(): int [kind=function readiness=declaration child=0]
-    fn verifyDecorators(): int [kind=value readiness=entry child=4294967295]
+    fn verifyDecorators(): object [kind=value readiness=entry child=4294967295]
   STATIC_IMPORTS (1):
     import decorators
   MODULE_ENTRY_EFFECTS (5):
@@ -77,31 +59,54 @@ TYPE_METADATA:
     IMPORT_REF decorators.markProperty [kind=function readiness=declaration]
     IMPORT_REF decorators.markFunction [kind=function readiness=declaration]
   EXPORTED_CALLABLE_SUMMARIES (1):
-    fn decoratedBonus [child=4294967295 effects=0]
+    fn decoratedBonus [child=0 effects=1]
+      LOCAL_ENTRY_BINDING_READ decorated_user.markFunction [kind=value readiness=entry]
   TOP_LEVEL_CALLABLE_BINDINGS (1):
     fn decoratedBonus [slot=0 child=0 kind=function readiness=declaration access=0]
   COMPILE_TIME_VARIABLES (0):
   COMPILE_TIME_FUNCTIONS (0):
-  TESTS (0):
 
-TYPE_TABLE (0):
+TYPE_TABLE (4):
+  [0] object
+  [1] function
+  [2] decorators
+  [3] fn() -> object
 
 OWNERSHIP_TABLE (0):
 
-EFFECT_TABLE (0):
+EFFECT_TABLE (6):
+  [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+  [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+  [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+  [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+  [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
+  [5] DYNAMIC_RUNTIME inst=5 from=0 to=0
 
-BLOCK_GRAPH (0):
+BLOCK_GRAPH (1):
+  [0] block=0 first=0 count=6
 
-SEMIR (0):
+SEMIR (6):
+  [0] DYN_CALL exec=3 type=1 effect=0 dst=2 op0=2 op1=1 deopt=1
+  [1] META_GET exec=7 type=1 effect=1 dst=3 op0=1 op1=0 deopt=2
+  [2] META_GET exec=8 type=1 effect=2 dst=4 op0=1 op1=1 deopt=3
+  [3] META_GET exec=10 type=1 effect=3 dst=5 op0=1 op1=2 deopt=4
+  [4] META_GET exec=12 type=1 effect=4 dst=6 op0=1 op1=3 deopt=5
+  [5] META_GET exec=14 type=0 effect=5 dst=7 op0=1 op1=4 deopt=6
 
-DEOPT_MAP (0):
+DEOPT_MAP (6):
+  [0] deopt=1 exec=3
+  [1] deopt=2 exec=7
+  [2] deopt=3 exec=8
+  [3] deopt=4 exec=10
+  [4] deopt=5 exec=12
+  [5] deopt=6 exec=14
 
 CALLSITE_CACHE_TABLE (5):
-  [0] kind=MEMBER_GET inst=4 member=0 deopt=0 args=0 hits=0 misses=0
-  [1] kind=MEMBER_GET inst=6 member=1 deopt=0 args=0 hits=0 misses=0
-  [2] kind=MEMBER_GET inst=8 member=2 deopt=0 args=0 hits=0 misses=0
-  [3] kind=MEMBER_GET inst=10 member=3 deopt=0 args=0 hits=0 misses=0
-  [4] kind=MEMBER_GET inst=12 member=4 deopt=0 args=0 hits=0 misses=0
+  [0] kind=MEMBER_GET inst=7 member=0 deopt=2 args=0 hits=0 misses=0
+  [1] kind=MEMBER_GET inst=8 member=1 deopt=3 args=0 hits=0 misses=0
+  [2] kind=MEMBER_GET inst=10 member=2 deopt=4 args=0 hits=0 misses=0
+  [3] kind=MEMBER_GET inst=12 member=3 deopt=5 args=0 hits=0 misses=0
+  [4] kind=MEMBER_GET inst=14 member=4 deopt=6 args=0 hits=0 misses=0
 
 EH_TABLE (0):
 
@@ -110,6 +115,8 @@ PROTOTYPES (1):
 // --- Prototype 1 ---
 class User : zr.builtin.Object {
   access: public (0),
+  layoutByteSize: 0,
+  layoutByteAlign: 0,
   members: [
     {
       type: CLASS_FIELD (17),
@@ -140,6 +147,21 @@ class User : zr.builtin.Object {
       returnType: "int"
     },
     {
+      type: unknown (92),
+      name: "value",
+      access: public (0),
+      static: false,
+      // Unknown member type, showing all fields:
+      fieldType: "int",
+      fieldTypeNameStringIndex: 10,
+      fieldOffset: 0,
+      fieldSize: 0,
+      isMetaMethod: false,
+      metaType: 0,
+      functionConstantIndex: 0,
+      parameterCount: 2
+    },
+    {
       type: CLASS_METHOD (18),
       name: "__get_value",
       access: public (0),
@@ -154,104 +176,55 @@ class User : zr.builtin.Object {
 
 // ========== END OF PROTOTYPES ==========
 
-INSTRUCTIONS (65):
-  [0] GET_CONSTANT (extra=2, operand=1)
-  [1] GET_CONSTANT (extra=3, operand=2)
-  [2] KNOWN_NATIVE_CALL (extra=2, operand1=2, operand2=1)
-  [3] SET_STACK (extra=1, operand=2)
-  [4] GET_MEMBER_SLOT (extra=3, operand1=1, operand2=0)
-  [5] SET_STACK (extra=2, operand=3)
-  [6] GET_MEMBER_SLOT (extra=4, operand1=1, operand2=1)
-  [7] SET_STACK (extra=3, operand=4)
-  [8] GET_MEMBER_SLOT (extra=5, operand1=1, operand2=2)
-  [9] SET_STACK (extra=4, operand=5)
-  [10] GET_MEMBER_SLOT (extra=6, operand1=1, operand2=3)
-  [11] SET_STACK (extra=5, operand=6)
-  [12] GET_MEMBER_SLOT (extra=7, operand1=1, operand2=4)
-  [13] SET_STACK (extra=6, operand=7)
-  [14] GET_STACK (extra=8, operand=3)
-  [15] SET_STACK (extra=7, operand=8)
-  [16] GET_GLOBAL (extra=8)
-  [17] GET_MEMBER (extra=8, operand1=8, operand2=5)
-  [18] GET_CONSTANT (extra=9, operand=5)
-  [19] GET_STACK (extra=10, operand=8)
-  [20] GET_CONSTANT (extra=11, operand=6)
-  [21] GET_CONSTANT (extra=12, operand=7)
-  [22] GET_STACK (extra=13, operand=7)
-  [23] KNOWN_NATIVE_CALL (extra=9, operand1=9, operand2=4)
-  [24] GET_STACK (extra=10, operand=4)
-  [25] SET_STACK (extra=9, operand=10)
-  [26] GET_GLOBAL (extra=10)
-  [27] GET_MEMBER (extra=10, operand1=10, operand2=5)
-  [28] GET_CONSTANT (extra=11, operand=8)
-  [29] GET_STACK (extra=12, operand=10)
-  [30] GET_CONSTANT (extra=13, operand=9)
-  [31] GET_CONSTANT (extra=14, operand=10)
-  [32] GET_STACK (extra=15, operand=9)
-  [33] KNOWN_NATIVE_CALL (extra=11, operand1=11, operand2=4)
-  [34] GET_STACK (extra=12, operand=5)
-  [35] SET_STACK (extra=11, operand=12)
-  [36] GET_GLOBAL (extra=12)
-  [37] GET_MEMBER (extra=12, operand1=12, operand2=5)
-  [38] GET_CONSTANT (extra=13, operand=11)
-  [39] GET_STACK (extra=14, operand=12)
-  [40] GET_CONSTANT (extra=15, operand=12)
-  [41] GET_CONSTANT (extra=16, operand=13)
-  [42] GET_STACK (extra=17, operand=11)
-  [43] KNOWN_NATIVE_CALL (extra=13, operand1=13, operand2=4)
-  [44] GET_GLOBAL (extra=13)
-  [45] GET_MEMBER (extra=13, operand1=13, operand2=5)
-  [46] GET_STACK (extra=15, operand=2)
-  [47] SET_STACK (extra=14, operand=15)
-  [48] GET_CONSTANT (extra=15, operand=14)
-  [49] GET_STACK (extra=16, operand=13)
-  [50] GET_STACK (extra=17, operand=14)
-  [51] KNOWN_NATIVE_CALL (extra=15, operand1=15, operand2=2)
-  [52] CREATE_CLOSURE (extra=15)
-  [53] SET_STACK (extra=0, operand=15)
-  [54] GET_STACK (extra=17, operand=6)
-  [55] SET_STACK (extra=16, operand=17)
-  [56] GET_CONSTANT (extra=17, operand=16)
-  [57] GET_STACK (extra=18, operand=0)
-  [58] GET_STACK (extra=19, operand=16)
-  [59] KNOWN_NATIVE_CALL (extra=17, operand1=17, operand2=2)
-  [60] SET_STACK (extra=0, operand=17)
-  [61] CREATE_CLOSURE (extra=18)
-  [62] SET_STACK (extra=17, operand=18)
-  [63] GET_CONSTANT (extra=18, operand=0)
-  [64] FUNCTION_RETURN (extra=1, operand1=18, operand2=0)
+INSTRUCTIONS (21):
+  [0] RESET_STACK_NULL (extra=0)
+  [1] GET_CONSTANT (extra=2, operand=1)
+  [2] GET_CONSTANT (extra=3, operand=2)
+  [3] KNOWN_NATIVE_CALL (extra=2, operand1=2, operand2=1)
+  [4] RESET_STACK_NULL (extra=3)
+  [5] SET_STACK (extra=1, operand=2)
+  [6] RESET_STACK_NULL (extra=2)
+  [7] GET_MEMBER_SLOT (extra=2, operand1=1, operand2=0)
+  [8] GET_MEMBER_SLOT (extra=3, operand1=1, operand2=1)
+  [9] RESET_STACK_NULL (extra=4)
+  [10] GET_MEMBER_SLOT (extra=4, operand1=1, operand2=2)
+  [11] RESET_STACK_NULL (extra=5)
+  [12] GET_MEMBER_SLOT (extra=5, operand1=1, operand2=3)
+  [13] RESET_STACK_NULL (extra=6)
+  [14] GET_MEMBER_SLOT (extra=6, operand1=1, operand2=4)
+  [15] CREATE_CLOSURE (extra=7)
+  [16] SET_STACK (extra=0, operand=7)
+  [17] CREATE_CLOSURE (extra=9)
+  [18] SET_STACK (extra=8, operand=9)
+  [19] RESET_STACK_NULL (extra=9)
+  [20] FUNCTION_RETURN (extra=1, operand1=9, operand2=0)
 
 CHILD_FUNCTIONS (2):
   [0] FUNCTION:
     NAME: decoratedBonus
-    START_LINE: 28
-    END_LINE: 32
+    START_LINE: 24
+    END_LINE: 26
     PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 4
+    STACK_SIZE: 1
 
-    CONSTANTS (3):
-      [0] null
-      [1] int: 16
-      [2] int: 0
+    CONSTANTS (0):
 
-    LOCAL_VARIABLES (1):
-      [0] meta: offset_activate=4, offset_dead=11
+    LOCAL_VARIABLES (0):
 
     CLOSURE_VARIABLES (1):
-      [0] decoratedBonus: in_stack=true, index=0, type=NULL
+      [0] markFunction: in_stack=true, index=6, type=NULL
 
     TYPE_METADATA:
-      LOCAL_BINDINGS (1):
-        [0] meta: object
+      LOCAL_BINDINGS (0):
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
-      MODULE_ENTRY_EFFECTS (0):
+      MODULE_ENTRY_EFFECTS (1):
+        LOCAL_ENTRY_BINDING_READ decorated_user.markFunction [kind=value readiness=entry]
       EXPORTED_CALLABLE_SUMMARIES (0):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (1):
       [0] object
@@ -265,61 +238,40 @@ CHILD_FUNCTIONS (2):
       [0] block=0 first=0 count=1
 
     SEMIR (1):
-      [0] TYPEOF exec=2 type=0 effect=0 dst=1 op0=1 op1=0 deopt=1
+      [0] DYN_TAIL_CALL exec=1 type=0 effect=0 dst=0 op0=0 op1=0 deopt=1
 
     DEOPT_MAP (1):
-      [0] deopt=1 exec=2
+      [0] deopt=1 exec=1
 
-    CALLSITE_CACHE_TABLE (1):
-      [0] kind=MEMBER_GET inst=4 member=0 deopt=0 args=0 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (0):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (11):
-      [0] OPCODE_6 (extra=2)
-      [1] SET_STACK (extra=1, operand=2)
-      [2] TYPEOF (extra=1, operand1=1, operand2=0)
-      [3] OPCODE_188 (extra=1, operand1=1, operand2=0)
-      [4] SET_STACK (extra=0, operand=1)
-      [5] OPCODE_8 (extra=1, operand1=0, operand2=1)
-      [6] OPCODE_99 (extra=1, operand=2)
-      [7] GET_CONSTANT (extra=2, operand=1)
-      [8] OPCODE_98 (extra=0, operand=1)
-      [9] GET_CONSTANT (extra=2, operand=2)
-      [10] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+    INSTRUCTIONS (3):
+      [0] OPCODE_6 (extra=0)
+      [1] SUPER_DYN_TAIL_CALL_NO_ARGS (extra=0, operand1=0, operand2=0)
+      [2] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
 
   [1] FUNCTION:
     NAME: <anonymous>
-    START_LINE: 34
-    END_LINE: 56
+    START_LINE: 28
+    END_LINE: 30
     PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 12
+    STACK_SIZE: 7
 
-    CONSTANTS (6):
-      [0] int: 0
-      [1] null
-      [2] int: 1
-      [3] int: 2
-      [4] int: 4
-      [5] int: 8
+    CONSTANTS (0):
 
-    LOCAL_VARIABLES (5):
-      [0] seed: offset_activate=1, offset_dead=54
-      [1] typeMeta: offset_activate=6, offset_dead=54
-      [2] fieldMeta: offset_activate=16, offset_dead=54
-      [3] methodMeta: offset_activate=26, offset_dead=54
-      [4] propertyMeta: offset_activate=36, offset_dead=54
+    LOCAL_VARIABLES (0):
 
-    CLOSURE_VARIABLES (0):
+    CLOSURE_VARIABLES (4):
+      [0] markClass: in_stack=true, index=2, type=NULL
+      [1] markField: in_stack=true, index=3, type=NULL
+      [2] markMethod: in_stack=true, index=4, type=NULL
+      [3] markProperty: in_stack=true, index=5, type=NULL
 
     TYPE_METADATA:
-      LOCAL_BINDINGS (5):
-        [0] seed: int
-        [1] typeMeta: object
-        [2] fieldMeta: object
-        [3] methodMeta: object
-        [4] propertyMeta: object
+      LOCAL_BINDINGS (0):
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (0):
@@ -327,97 +279,58 @@ CHILD_FUNCTIONS (2):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
-    TYPE_TABLE (2):
+    TYPE_TABLE (1):
       [0] object
-      [1] int
 
     OWNERSHIP_TABLE (0):
 
-    EFFECT_TABLE (4):
+    EFFECT_TABLE (7):
       [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
       [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
       [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
       [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+      [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
+      [5] DYNAMIC_RUNTIME inst=5 from=0 to=0
+      [6] DYNAMIC_RUNTIME inst=6 from=0 to=0
 
     BLOCK_GRAPH (1):
-      [0] block=0 first=0 count=4
+      [0] block=0 first=0 count=7
 
-    SEMIR (4):
-      [0] TYPEOF exec=4 type=0 effect=0 dst=2 op0=2 op1=0 deopt=1
-      [1] TYPEOF exec=10 type=0 effect=1 dst=3 op0=3 op1=0 deopt=2
-      [2] TYPEOF exec=20 type=0 effect=2 dst=4 op0=4 op1=0 deopt=3
-      [3] TYPEOF exec=30 type=0 effect=3 dst=5 op0=5 op1=0 deopt=4
+    SEMIR (7):
+      [0] DYN_CALL exec=1 type=0 effect=0 dst=0 op0=0 op1=0 deopt=1
+      [1] DYN_CALL exec=3 type=0 effect=1 dst=1 op0=1 op1=0 deopt=2
+      [2] DYN_ARITHMETIC exec=4 type=0 effect=2 dst=2 op0=0 op1=1 deopt=3
+      [3] DYN_CALL exec=6 type=0 effect=3 dst=3 op0=3 op1=0 deopt=4
+      [4] DYN_ARITHMETIC exec=7 type=0 effect=4 dst=4 op0=2 op1=3 deopt=5
+      [5] DYN_CALL exec=9 type=0 effect=5 dst=5 op0=5 op1=0 deopt=6
+      [6] DYN_ARITHMETIC exec=10 type=0 effect=6 dst=6 op0=4 op1=5 deopt=7
 
-    DEOPT_MAP (4):
-      [0] deopt=1 exec=4
-      [1] deopt=2 exec=10
-      [2] deopt=3 exec=20
-      [3] deopt=4 exec=30
+    DEOPT_MAP (7):
+      [0] deopt=1 exec=1
+      [1] deopt=2 exec=3
+      [2] deopt=3 exec=4
+      [3] deopt=4 exec=6
+      [4] deopt=5 exec=7
+      [5] deopt=6 exec=9
+      [6] deopt=7 exec=10
 
-    CALLSITE_CACHE_TABLE (4):
-      [0] kind=MEMBER_GET inst=7 member=1 deopt=0 args=0 hits=0 misses=0
-      [1] kind=MEMBER_GET inst=15 member=2 deopt=0 args=0 hits=0 misses=0
-      [2] kind=MEMBER_GET inst=28 member=2 deopt=0 args=0 hits=0 misses=0
-      [3] kind=MEMBER_GET inst=39 member=2 deopt=0 args=0 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (0):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (54):
-      [0] GET_CONSTANT (extra=0, operand=0)
-      [1] OPCODE_96 (extra=3, operand=0)
-      [2] OPCODE_8 (extra=3, operand1=3, operand2=0)
-      [3] SET_STACK (extra=2, operand=3)
-      [4] TYPEOF (extra=2, operand1=2, operand2=0)
-      [5] OPCODE_188 (extra=2, operand1=2, operand2=0)
-      [6] SET_STACK (extra=1, operand=2)
-      [7] OPCODE_96 (extra=4, operand=0)
-      [8] OPCODE_8 (extra=4, operand1=4, operand2=0)
-      [9] SET_STACK (extra=3, operand=4)
-      [10] TYPEOF (extra=3, operand1=3, operand2=0)
-      [11] OPCODE_188 (extra=3, operand1=3, operand2=1)
-      [12] OPCODE_8 (extra=3, operand1=3, operand2=3)
-      [13] GET_CONSTANT (extra=4, operand=0)
-      [14] OPCODE_10 (extra=3, operand1=3, operand2=4)
-      [15] OPCODE_8 (extra=3, operand1=3, operand2=1)
-      [16] SET_STACK (extra=2, operand=3)
-      [17] OPCODE_96 (extra=5, operand=0)
-      [18] OPCODE_8 (extra=5, operand1=5, operand2=0)
-      [19] SET_STACK (extra=4, operand=5)
-      [20] TYPEOF (extra=4, operand1=4, operand2=0)
-      [21] OPCODE_188 (extra=4, operand1=4, operand2=2)
-      [22] OPCODE_8 (extra=4, operand1=4, operand2=4)
-      [23] GET_CONSTANT (extra=5, operand=0)
-      [24] OPCODE_10 (extra=4, operand1=4, operand2=5)
-      [25] OPCODE_8 (extra=4, operand1=4, operand2=1)
-      [26] SET_STACK (extra=3, operand=4)
-      [27] OPCODE_96 (extra=6, operand=0)
-      [28] OPCODE_8 (extra=6, operand1=6, operand2=0)
-      [29] SET_STACK (extra=5, operand=6)
-      [30] TYPEOF (extra=5, operand1=5, operand2=0)
-      [31] OPCODE_188 (extra=5, operand1=5, operand2=3)
-      [32] OPCODE_8 (extra=5, operand1=5, operand2=5)
-      [33] GET_CONSTANT (extra=6, operand=0)
-      [34] OPCODE_10 (extra=5, operand1=5, operand2=6)
-      [35] OPCODE_8 (extra=5, operand1=5, operand2=1)
-      [36] SET_STACK (extra=4, operand=5)
-      [37] OPCODE_8 (extra=5, operand1=1, operand2=6)
-      [38] OPCODE_99 (extra=5, operand=2)
-      [39] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=2)
-      [40] OPCODE_98 (extra=0, operand=0)
-      [41] OPCODE_8 (extra=6, operand1=2, operand2=7)
-      [42] OPCODE_99 (extra=6, operand=2)
-      [43] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=3)
-      [44] OPCODE_98 (extra=0, operand=0)
-      [45] OPCODE_8 (extra=7, operand1=3, operand2=8)
-      [46] OPCODE_99 (extra=7, operand=2)
-      [47] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=4)
-      [48] OPCODE_98 (extra=0, operand=0)
-      [49] OPCODE_8 (extra=8, operand1=4, operand2=9)
-      [50] OPCODE_99 (extra=8, operand=2)
-      [51] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=5)
-      [52] OPCODE_98 (extra=0, operand=0)
-      [53] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+    INSTRUCTIONS (12):
+      [0] OPCODE_6 (extra=0)
+      [1] SUPER_DYN_CALL_NO_ARGS (extra=0, operand1=0, operand2=0)
+      [2] OPCODE_6 (extra=1, operand2=1, operand1=1, operand1_1=0)
+      [3] SUPER_DYN_CALL_NO_ARGS (extra=1, operand1=1, operand2=0)
+      [4] OPCODE_39 (extra=2, operand2=65536, operand1=0, operand1_1=1)
+      [5] OPCODE_6 (extra=3, operand2=2, operand1=2, operand1_1=0)
+      [6] SUPER_DYN_CALL_NO_ARGS (extra=3, operand1=3, operand2=0)
+      [7] OPCODE_39 (extra=4, operand2=196610, operand1=2, operand1_1=3)
+      [8] OPCODE_6 (extra=5, operand2=3, operand1=3, operand1_1=0)
+      [9] SUPER_DYN_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
+      [10] OPCODE_39 (extra=6, operand2=327684, operand1=4, operand1_1=5)
+      [11] FUNCTION_RETURN (extra=1, operand1=6, operand2=0)
 
 

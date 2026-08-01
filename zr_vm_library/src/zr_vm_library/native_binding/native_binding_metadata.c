@@ -882,6 +882,8 @@ ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(SZrState *state,
                                   "runtimeAbiVersion",
                                   descriptor->minRuntimeAbi != 0 ? descriptor->minRuntimeAbi : ZR_VM_NATIVE_RUNTIME_ABI_VERSION);
     native_metadata_set_int_field(state, object, "requiredCapabilities", (TZrInt64)descriptor->requiredCapabilities);
+    native_metadata_set_int_field(state, object, "providerPhase", (TZrInt64)descriptor->providerPhase);
+    native_metadata_set_string_field(state, object, "publicContractHash", descriptor->publicContractHash);
     native_metadata_set_string_field(state,
                                      object,
                                      "registrationKind",

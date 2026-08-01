@@ -1648,6 +1648,8 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->callSiteCaches = ZR_NULL;
         function->nativeImportContractLength = 0;
         function->nativeImportContracts = ZR_NULL;
+        function->testManifestDataLength = 0;
+        function->testManifestData = ZR_NULL;
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_PARAMETER_METADATA) {
             io_read_function_metadata_parameters(io, &function->parameterMetadata, &function->parameterMetadataLength);
         }
@@ -1706,11 +1708,31 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                     }
                 }
             }
-            {
-                TZrUInt64 removedLegacyTestInfoCount = 0;
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_TEST_MANIFEST) {
+                TZrUInt64 serializedLength = 0U;
+
+                ZR_IO_READ_NATIVE_TYPE(io, serializedLength, TZrUInt64);
+                if (serializedLength > (TZrUInt64)UINT32_MAX ||
+                    serializedLength > (TZrUInt64)SIZE_MAX) {
+                    io->hasReadError = ZR_TRUE;
+                } else if (serializedLength > 0U) {
+                    function->testManifestDataLength = (TZrSize)serializedLength;
+                    function->testManifestData = ZR_IO_MALLOC_NATIVE_DATA(
+                            global, function->testManifestDataLength);
+                    if (function->testManifestData == ZR_NULL) {
+                        io->hasReadError = ZR_TRUE;
+                        function->testManifestDataLength = 0U;
+                    } else {
+                        ZrCore_Io_Read(io,
+                                       function->testManifestData,
+                                       function->testManifestDataLength);
+                    }
+                }
+            } else {
+                TZrUInt64 removedLegacyTestInfoCount = 0U;
 
                 ZR_IO_READ_NATIVE_TYPE(io, removedLegacyTestInfoCount, TZrUInt64);
-                if (removedLegacyTestInfoCount > 0) {
+                if (removedLegacyTestInfoCount > 0U) {
                     io->hasReadError = ZR_TRUE;
                     ZrCore_Debug_RunError(
                             io->state,

@@ -11,7 +11,6 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/reflection.h"
-#include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/string.h"
 
 #include <string.h>
@@ -55,6 +54,57 @@ static TZrBool io_runtime_copy_native_import_contracts(
             function->nativeImportContracts, source->nativeImportContracts, bytes);
     function->nativeImportContractLength =
             (TZrUInt32)source->nativeImportContractLength;
+    return ZR_TRUE;
+}
+
+static TZrBool io_runtime_copy_test_manifest(
+        SZrState *state,
+        const SZrIoFunction *source,
+        SZrFunction *function) {
+    TZrSize length;
+    TZrUInt32 header[4];
+    TZrUInt32 targetTripleLength;
+
+#define ZR_IO_TEST_MANIFEST_MAGIC ((TZrUInt32)0x4d54525aU)
+#define ZR_IO_TEST_MANIFEST_SCHEMA_VERSION ((TZrUInt32)1U)
+#define ZR_IO_TEST_MANIFEST_MAX_ENTRIES ((TZrUInt32)100000U)
+#define ZR_IO_TEST_MANIFEST_HEADER_BYTES ((TZrSize)28U)
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (source->testManifestDataLength == 0U) {
+        return ZR_TRUE;
+    }
+    if (source->testManifestData == ZR_NULL ||
+        source->testManifestDataLength > (TZrSize)UINT32_MAX ||
+        source->testManifestDataLength < ZR_IO_TEST_MANIFEST_HEADER_BYTES) {
+        return ZR_FALSE;
+    }
+    length = source->testManifestDataLength;
+    ZrCore_Memory_RawCopy(header, source->testManifestData, sizeof(header));
+    ZrCore_Memory_RawCopy(
+            &targetTripleLength,
+            source->testManifestData + sizeof(header) + sizeof(TZrUInt64),
+            sizeof(targetTripleLength));
+    if (header[0] != ZR_IO_TEST_MANIFEST_MAGIC ||
+        header[1] != ZR_IO_TEST_MANIFEST_SCHEMA_VERSION ||
+        header[2] > ZR_IO_TEST_MANIFEST_MAX_ENTRIES || header[3] != 0U ||
+        targetTripleLength > length - ZR_IO_TEST_MANIFEST_HEADER_BYTES) {
+        return ZR_FALSE;
+    }
+    function->testManifestData = (TZrByte *)ZrCore_Memory_RawMallocWithType(
+            state->global, length, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->testManifestData == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Memory_RawCopy(
+            function->testManifestData, source->testManifestData, length);
+    function->testManifestDataLength = (TZrUInt32)length;
+#undef ZR_IO_TEST_MANIFEST_HEADER_BYTES
+#undef ZR_IO_TEST_MANIFEST_MAX_ENTRIES
+#undef ZR_IO_TEST_MANIFEST_SCHEMA_VERSION
+#undef ZR_IO_TEST_MANIFEST_MAGIC
     return ZR_TRUE;
 }
 static TZrBool io_runtime_copy_module_effects(SZrState *state,
@@ -213,12 +263,8 @@ FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helper
         case ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF:
             return ZrCore_Reflection_TypeOfNativeEntry;
 
-        case ZR_IO_NATIVE_HELPER_RUNTIME_DECORATOR_APPLY:
-            return ZrCore_RuntimeDecorator_ApplyNativeEntry;
-
-        case ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY:
-            return ZrCore_RuntimeDecorator_ApplyMemberNativeEntry;
-
+        case ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_DECORATOR_APPLY:
+        case ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_MEMBER_DECORATOR_APPLY:
         case ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_OWNERSHIP_USING:
         case ZR_IO_NATIVE_HELPER_NONE:
         default:
@@ -1230,6 +1276,9 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         return ZR_FALSE;
     }
     if (!io_runtime_copy_native_import_contracts(state, source, function)) {
+        return ZR_FALSE;
+    }
+    if (!io_runtime_copy_test_manifest(state, source, function)) {
         return ZR_FALSE;
     }
 

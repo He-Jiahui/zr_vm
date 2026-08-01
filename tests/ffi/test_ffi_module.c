@@ -1091,7 +1091,7 @@ static void test_zr_ffi_foreign_thread_callback_reports_error(void) {
 static void test_zr_ffi_source_extern_can_bind_and_call_symbol(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"
-            "  #zr.ffi.entry(\"zr_ffi_add_i32\")# Add(lhs:i32, rhs:i32): i32;\n"
+            "  #zr.ffi.entry(\"zr_ffi_add_i32\")# fn Add(lhs:i32, rhs:i32): i32;\n"
             "}\n"
             "return Add(7, 5);\n";
     SZrTestTimer timer;
@@ -1130,7 +1130,11 @@ static void test_zr_ffi_source_extern_delegate_works_with_callback(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"
             "  delegate Unary(value:f64): f64;\n"
-            "  #zr.ffi.entry(\"zr_ffi_apply_callback\")# Apply(value:f64, cb:Unary): f64;\n"
+            "  #zr.ffi.entry(\"zr_ffi_apply_callback\")#\n"
+            "  #zr.ffi.callbackLifetime(\"call\")#\n"
+            "  #zr.ffi.callbackThread(\"caller\")#\n"
+            "  #zr.ffi.callbackException(\"returnDefault\")#\n"
+            "  fn Apply(value:f64, cb:Unary): f64;\n"
             "}\n"
             "var ffi = import(\"zr.ffi\");\n"
             "var cb = ffi.callback(Unary, fn(value) => {\n"
@@ -1168,7 +1172,7 @@ static void test_zr_ffi_source_extern_delegate_works_with_callback(void) {
 static void test_zr_ffi_source_extern_pointer_parameter_accepts_buffer_handle(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"
-            "  #zr.ffi.entry(\"zr_ffi_fill_bytes\")# Fill(buffer: pointer<u8>, length:u64, seed:u8): i32;\n"
+            "  #zr.ffi.entry(\"zr_ffi_fill_bytes\")# fn Fill(buffer: pointer<u8>, length:u64, seed:u8): i32;\n"
             "}\n"
             "var ffi = import(\"zr.ffi\");\n"
             "var buffer = ffi.BufferHandle.allocate(8);\n"
@@ -1245,7 +1249,7 @@ static void test_zr_ffi_wrapper_lowering_does_not_apply_to_ordinary_calls(void) 
 static void test_zr_ffi_source_extern_handle_id_parameter_accepts_source_wrapper(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"
-            "  #zr.ffi.entry(\"zr_ffi_flip_mode\")# Flip(mode:i32): i32;\n"
+            "  #zr.ffi.entry(\"zr_ffi_flip_mode\")# fn Flip(mode:i32): i32;\n"
             "}\n"
             "#zr.ffi.lowering(\"handle_id\")#\n"
             "#zr.ffi.underlying(\"i32\")#\n"
@@ -1381,7 +1385,7 @@ static void test_zr_ffi_source_extern_system_callconv_uses_platform_default(void
             "native extern(\"%s\") {\n"
             "  #zr.ffi.entry(\"zr_ffi_add_i32\")#\n"
             "  #zr.ffi.callconv(\"system\")#\n"
-            "  Add(lhs:i32, rhs:i32): i32;\n"
+            "  fn Add(lhs:i32, rhs:i32): i32;\n"
             "}\n"
             "return Add(4, 9);\n";
     SZrTestTimer timer;

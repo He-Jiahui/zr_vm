@@ -248,7 +248,7 @@ static void test_legacy_migration_plan_covers_inventory_classification_contract(
         {"percentAsync", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "12", ZR_TRUE},
         {"percentAwait", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "12", ZR_TRUE},
         {"percentExtern", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "10", ZR_TRUE},
-        {"percentTest", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "14", ZR_FALSE},
+        {"percentTest", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "14", ZR_TRUE},
         {"percentCompileTime", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "11", ZR_TRUE},
         {"percentFunc", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "06A", ZR_TRUE},
         {"percentOwned", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},

@@ -1,0 +1,26 @@
+let testing = import("zr.testing");
+let task = import("zr.task");
+
+#zr.testing.test#
+fn synchronousPass(): void {
+    testing.assert(true);
+}
+
+#zr.testing.test#
+#zr.testing.case(1, 2)#
+#zr.testing.case(-1, 1)#
+fn orderedPair(left: int, right: int): void {
+    testing.assert(left < right);
+}
+
+#zr.testing.test#
+#zr.testing.skip(reason: "reference skip")#
+fn skippedCase(): void {
+    testing.assert(false);
+}
+
+#zr.testing.test#
+async fn asynchronousPass(): task.Task<void> {
+    testing.assert(true);
+    return task.yieldNow();
+}

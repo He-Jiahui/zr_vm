@@ -43,8 +43,7 @@
     Z(BIT_NOT)                                                                                                         \
     Z(GET_ITEM)                                                                                                        \
     Z(SET_ITEM)                                                                                                        \
-    Z(CLOSE)                                                                                                           \
-    Z(DECORATE)
+    Z(CLOSE)
 
 
 #define ZR_META_ENUM(META) ZR_META_##META

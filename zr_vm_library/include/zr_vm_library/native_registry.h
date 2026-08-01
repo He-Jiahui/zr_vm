@@ -20,8 +20,24 @@ typedef enum EZrLibNativeRegistryErrorCode {
     ZR_LIB_NATIVE_REGISTRY_ERROR_VERSION_MISMATCH = 4,
     ZR_LIB_NATIVE_REGISTRY_ERROR_CAPABILITY_MISMATCH = 5,
     ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_NAME_MISMATCH = 6,
-    ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_IN_USE = 7
+    ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_IN_USE = 7,
+    ZR_LIB_NATIVE_REGISTRY_ERROR_PHASE_MISMATCH = 8,
+    ZR_LIB_NATIVE_REGISTRY_ERROR_RESERVED_OFFICIAL_MODULE = 9,
+    ZR_LIB_NATIVE_REGISTRY_ERROR_DUPLICATE_OFFICIAL_PROVIDER = 10
 } EZrLibNativeRegistryErrorCode;
+
+typedef enum EZrLibOfficialModuleTier {
+    ZR_LIB_OFFICIAL_MODULE_TIER_N0 = 0,
+    ZR_LIB_OFFICIAL_MODULE_TIER_N1 = 1,
+    ZR_LIB_OFFICIAL_MODULE_TIER_N2 = 2,
+    ZR_LIB_OFFICIAL_MODULE_TIER_N3 = 3
+} EZrLibOfficialModuleTier;
+
+typedef struct ZrLibOfficialModuleInventoryEntry {
+    const TZrChar *moduleName;
+    EZrLibOfficialModuleTier tier;
+    EZrLibrary_ProviderPhase phase;
+} ZrLibOfficialModuleInventoryEntry;
 
 typedef struct ZrLibRegisteredModuleInfo {
     const ZrLibModuleDescriptor *descriptor;
@@ -57,5 +73,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_InvalidateDescriptorPluginSource
                                                                                  const TZrChar *sourcePath);
 ZR_LIBRARY_API EZrLibNativeRegistryErrorCode ZrLibrary_NativeRegistry_GetLastErrorCode(SZrGlobalState *global);
 ZR_LIBRARY_API const TZrChar *ZrLibrary_NativeRegistry_GetLastErrorMessage(SZrGlobalState *global);
+ZR_LIBRARY_API void ZrLibrary_State_SetProviderPhase(SZrState *state,
+                                                     EZrLibrary_ProviderPhase phase);
+ZR_LIBRARY_API EZrLibrary_ProviderPhase ZrLibrary_State_GetProviderPhase(const SZrState *state);
+ZR_LIBRARY_API TZrBool ZrLibrary_ProviderPhase_CanConsume(
+        EZrLibrary_ProviderPhase hostPhase,
+        EZrLibrary_ProviderPhase providerPhase);
+ZR_LIBRARY_API TZrSize ZrLibrary_OfficialModuleInventory_GetCount(void);
+ZR_LIBRARY_API const ZrLibOfficialModuleInventoryEntry *ZrLibrary_OfficialModuleInventory_GetAt(
+        TZrSize index);
+ZR_LIBRARY_API const ZrLibOfficialModuleInventoryEntry *ZrLibrary_OfficialModuleInventory_Find(
+        const TZrChar *moduleName);
 
 #endif // ZR_VM_LIBRARY_NATIVE_REGISTRY_H

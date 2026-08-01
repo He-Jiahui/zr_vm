@@ -2,6 +2,7 @@
 
 static SZrAstNode *parse_union_field(SZrParserState *ps) {
     SZrFileRange startLoc;
+    SZrAstNodeArray *decorators;
     SZrAstNode *nameNode;
     SZrIdentifier *name;
     SZrType *typeInfo;
@@ -13,8 +14,12 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
     }
 
     startLoc = get_current_location(ps);
+    decorators = parse_leading_decorators(ps);
     nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
+        if (decorators != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, decorators);
+        }
         return ZR_NULL;
     }
     name = &nameNode->data.identifier;
@@ -22,12 +27,18 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
     if (!consume_token(ps, ZR_TK_COLON)) {
         report_error(ps, "Expected ':' after union variant field name");
         free_identifier_node_from_ptr(ps->state, name);
+        if (decorators != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, decorators);
+        }
         return ZR_NULL;
     }
 
     typeInfo = parse_type(ps);
     if (typeInfo == ZR_NULL) {
         free_identifier_node_from_ptr(ps->state, name);
+        if (decorators != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, decorators);
+        }
         return ZR_NULL;
     }
 
@@ -36,6 +47,9 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
     if (node == ZR_NULL) {
         free_identifier_node_from_ptr(ps->state, name);
         free_owned_type(ps->state, typeInfo);
+        if (decorators != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, decorators);
+        }
         return ZR_NULL;
     }
 
@@ -43,7 +57,7 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
     node->data.parameter.nameLocation = nameNode->location;
     node->data.parameter.typeInfo = typeInfo;
     node->data.parameter.defaultValue = ZR_NULL;
-    node->data.parameter.decorators = ZR_NULL;
+    node->data.parameter.decorators = decorators;
     node->data.parameter.passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
     node->data.parameter.genericKind = ZR_GENERIC_PARAMETER_TYPE;
     node->data.parameter.variance = ZR_GENERIC_VARIANCE_NONE;

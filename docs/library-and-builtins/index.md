@@ -76,8 +76,11 @@ doc_type: category-index
 ## 当前主题
 
 - `../parser-and-semantics/ffi-extern-declarations.md`
-  - source-level `%extern` 声明如何 lower 到 `zr.ffi.loadLibrary(...)` / `getSymbol(...)`
+  - source-level `native extern(...)` 声明如何 lower 到 `zr.ffi.loadLibrary(...)` / `getSymbol(...)`
   - extern signature descriptor、layout descriptor 和 callback delegate 的消费规则
+- `zr-testing.md`
+  - `zr.testing` 的 Test-phase descriptor、typed assertion failure 与 metadata roles
+  - ordinary function test binding、TestManifest 和 production trimming 边界
 - `zr-debug-module.md`
   - `debug` native module 的受信/沙箱注册入口，以及 `traceback/getinfo/local/upvalue/hook` 首批脚本 API
   - 写能力默认由宿主 opt-in，沙箱描述符拒绝 `setlocal/setupvalue/sethook`
@@ -110,10 +113,11 @@ doc_type: category-index
 ## 阅读顺序
 
 1. 先看 `zr-task-runtime.md`，了解 `Task/Job/Scheduler` 的唯一 builtin 任务抽象。
-2. 再看 `zr-coroutine-runtime.md`，确认已删除的 coroutine 表面及迁移目标。
-3. 接着看 `zr-thread-runtime.md`，了解 worker isolate、`Send/Sync` contract、shared control cell 和 mutex/guard 约束。
-4. 连续内存算法和通用借用事实看 `zr-container-contiguous-views.md`。
-5. pool lease 与 pinned native provider 的具体生命周期看 `zr-pooling-and-pinned-ffi-views.md`。
-6. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
-7. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
-8. 调试脚本或宿主嵌入 debug 库时，看 `zr-debug-module.md`。
+2. 测试 metadata、断言与 Test-phase provider 看 `zr-testing.md`。
+3. 再看 `zr-coroutine-runtime.md`，确认已删除的 coroutine 表面及迁移目标。
+4. 接着看 `zr-thread-runtime.md`，了解 worker isolate、`Send/Sync` contract、shared control cell 和 mutex/guard 约束。
+5. 连续内存算法和通用借用事实看 `zr-container-contiguous-views.md`。
+6. pool lease 与 pinned native provider 的具体生命周期看 `zr-pooling-and-pinned-ffi-views.md`。
+7. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
+8. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
+9. 调试脚本或宿主嵌入 debug 库时，看 `zr-debug-module.md`。

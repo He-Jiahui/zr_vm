@@ -1993,12 +1993,20 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                     return parse_class_declaration(ps);
                 } else if (nextToken == ZR_TK_STRUCT) {
                     return parse_struct_declaration(ps);
+                } else if (nextToken == ZR_TK_UNION) {
+                    return parse_union_declaration(ps);
+                } else if (nextToken == ZR_TK_ENUM) {
+                    return parse_enum_declaration(ps);
                 } else if (nextToken == ZR_TK_PUB || nextToken == ZR_TK_PRI || nextToken == ZR_TK_PRO) {
                     if (declarationToken == ZR_TK_CLASS || declarationToken == ZR_TK_ABSTRACT ||
                         declarationToken == ZR_TK_FINAL) {
                         return parse_class_declaration(ps);
                     } else if (declarationToken == ZR_TK_STRUCT) {
                         return parse_struct_declaration(ps);
+                    } else if (declarationToken == ZR_TK_UNION) {
+                        return parse_union_declaration(ps);
+                    } else if (declarationToken == ZR_TK_ENUM) {
+                        return parse_enum_declaration(ps);
                     }
                 }
 

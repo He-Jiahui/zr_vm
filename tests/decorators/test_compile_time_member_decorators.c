@@ -59,6 +59,18 @@ static void test_legacy_compile_time_parameter_decorators_are_rejected(void) {
             "legacy_compile_time_parameter_decorator.zr");
 }
 
+static void test_legacy_decorate_meta_method_is_rejected_directly(void) {
+    static const TZrChar *source =
+            "class LegacyDecorator {\n"
+            "    @decorate(target: object): void { }\n"
+            "}\n"
+            "return 0;\n";
+
+    assert_legacy_decorator_source_is_rejected(
+            source,
+            "legacy_decorate_meta_method.zr");
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -67,5 +79,6 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_legacy_compile_time_member_decorators_are_rejected);
     RUN_TEST(test_legacy_compile_time_parameter_decorators_are_rejected);
+    RUN_TEST(test_legacy_decorate_meta_method_is_rejected_directly);
     return UNITY_END();
 }

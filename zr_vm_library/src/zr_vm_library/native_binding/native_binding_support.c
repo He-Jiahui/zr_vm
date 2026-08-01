@@ -352,6 +352,28 @@ ZrLibrary_NativeRegistryState *native_registry_get(SZrGlobalState *global) {
     return (ZrLibrary_NativeRegistryState *)global->nativeModuleLoaderUserData;
 }
 
+void ZrLibrary_State_SetProviderPhase(SZrState *state,
+                                      EZrLibrary_ProviderPhase phase) {
+    if (state == ZR_NULL) {
+        return;
+    }
+    state->nativeProviderPhase = (TZrUInt8)phase;
+}
+
+EZrLibrary_ProviderPhase ZrLibrary_State_GetProviderPhase(const SZrState *state) {
+    if (state == ZR_NULL || state->nativeProviderPhase > ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL) {
+        return ZR_LIBRARY_PROVIDER_PHASE_RUNTIME;
+    }
+    return (EZrLibrary_ProviderPhase)state->nativeProviderPhase;
+}
+
+TZrBool ZrLibrary_ProviderPhase_CanConsume(
+        EZrLibrary_ProviderPhase hostPhase,
+        EZrLibrary_ProviderPhase providerPhase) {
+    return providerPhase == ZR_LIBRARY_PROVIDER_PHASE_RUNTIME ||
+           providerPhase == hostPhase;
+}
+
 static ZrLibBindingEntry *native_registry_binding_entry_at(ZrLibrary_NativeRegistryState *registry, TZrSize index) {
     if (registry == ZR_NULL || !registry->bindingEntries.isValid ||
         index == ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX ||
@@ -680,7 +702,9 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
     }
 
     registry = native_registry_get(global);
-    if (registry == ZR_NULL || !native_registry_validate_descriptor_compatibility(registry, descriptor)) {
+    if (registry == ZR_NULL ||
+        !native_registry_validate_official_descriptor(registry, descriptor) ||
+        !native_registry_validate_descriptor_compatibility(registry, descriptor)) {
         return ZR_FALSE;
     }
 
@@ -690,6 +714,10 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
         if (record != ZR_NULL &&
             record->moduleName != ZR_NULL &&
             strcmp(record->moduleName, descriptor->moduleName) == 0) {
+            if (!native_registry_validate_official_duplicate(
+                        registry, record->descriptor, descriptor)) {
+                return ZR_FALSE;
+            }
             TZrChar *moduleNameCopy = native_registry_duplicate_string(global, descriptor->moduleName);
             TZrChar *sourcePathCopy = native_registry_duplicate_string(global, sourcePath);
 

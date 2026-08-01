@@ -17,11 +17,11 @@ CONSTANTS (6):
   [5] function
 
 LOCAL_VARIABLES (5):
-  [0] markClass: offset_activate=0, offset_dead=10
-  [1] markFunction: offset_activate=0, offset_dead=10
-  [2] markField: offset_activate=0, offset_dead=10
-  [3] markMethod: offset_activate=0, offset_dead=10
-  [4] markProperty: offset_activate=0, offset_dead=10
+  [0] markClass: offset_activate=0, offset_dead=13
+  [1] markFunction: offset_activate=1, offset_dead=13
+  [2] markField: offset_activate=1, offset_dead=13
+  [3] markMethod: offset_activate=2, offset_dead=13
+  [4] markProperty: offset_activate=2, offset_dead=13
 
 CLOSURE_VARIABLES (0):
 
@@ -33,19 +33,19 @@ TYPE_METADATA:
     [3] markMethod: function
     [4] markProperty: function
   EXPORTED_SYMBOLS (5):
-    fn markClass(Class): null [kind=function readiness=declaration child=0]
-    fn markFunction(Function): null [kind=function readiness=declaration child=1]
-    fn markField(Field): null [kind=function readiness=declaration child=2]
-    fn markMethod(Method): null [kind=function readiness=declaration child=3]
-    fn markProperty(Property): null [kind=function readiness=declaration child=4]
+    fn markClass(): int [kind=function readiness=declaration child=0]
+    fn markFunction(): int [kind=function readiness=declaration child=1]
+    fn markField(): int [kind=function readiness=declaration child=2]
+    fn markMethod(): int [kind=function readiness=declaration child=3]
+    fn markProperty(): int [kind=function readiness=declaration child=4]
   STATIC_IMPORTS (0):
   MODULE_ENTRY_EFFECTS (0):
   EXPORTED_CALLABLE_SUMMARIES (5):
-    fn markClass [child=4294967295 effects=0]
-    fn markFunction [child=4294967295 effects=0]
-    fn markField [child=4294967295 effects=0]
-    fn markMethod [child=4294967295 effects=0]
-    fn markProperty [child=4294967295 effects=0]
+    fn markClass [child=0 effects=0]
+    fn markFunction [child=1 effects=0]
+    fn markField [child=2 effects=0]
+    fn markMethod [child=3 effects=0]
+    fn markProperty [child=4 effects=0]
   TOP_LEVEL_CALLABLE_BINDINGS (5):
     fn markClass [slot=0 child=0 kind=function readiness=declaration access=0]
     fn markFunction [slot=1 child=1 kind=function readiness=declaration access=0]
@@ -54,7 +54,6 @@ TYPE_METADATA:
     fn markProperty [slot=4 child=4 kind=function readiness=declaration access=0]
   COMPILE_TIME_VARIABLES (0):
   COMPILE_TIME_FUNCTIONS (0):
-  TESTS (0):
 
 TYPE_TABLE (0):
 
@@ -72,42 +71,41 @@ CALLSITE_CACHE_TABLE (0):
 
 EH_TABLE (0):
 
-INSTRUCTIONS (12):
-  [0] CREATE_CLOSURE (extra=5)
-  [1] SET_STACK (extra=0, operand=5)
-  [2] CREATE_CLOSURE (extra=5)
-  [3] SET_STACK (extra=1, operand=5)
-  [4] CREATE_CLOSURE (extra=5)
-  [5] SET_STACK (extra=2, operand=5)
-  [6] CREATE_CLOSURE (extra=5)
-  [7] SET_STACK (extra=3, operand=5)
-  [8] CREATE_CLOSURE (extra=5)
-  [9] SET_STACK (extra=4, operand=5)
-  [10] GET_CONSTANT (extra=5, operand=0)
-  [11] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+INSTRUCTIONS (15):
+  [0] RESET_STACK_NULL2 (extra=0, first_slot=0, second_slot=1)
+  [1] RESET_STACK_NULL2 (extra=2, first_slot=2, second_slot=3)
+  [2] RESET_STACK_NULL (extra=4)
+  [3] CREATE_CLOSURE (extra=5)
+  [4] SET_STACK (extra=0, operand=5)
+  [5] CREATE_CLOSURE (extra=5)
+  [6] SET_STACK (extra=1, operand=5)
+  [7] CREATE_CLOSURE (extra=5)
+  [8] SET_STACK (extra=2, operand=5)
+  [9] CREATE_CLOSURE (extra=5)
+  [10] SET_STACK (extra=3, operand=5)
+  [11] CREATE_CLOSURE (extra=5)
+  [12] SET_STACK (extra=4, operand=5)
+  [13] RESET_STACK_NULL (extra=5)
+  [14] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
 
 CHILD_FUNCTIONS (5):
   [0] FUNCTION:
     NAME: markClass
     START_LINE: 3
     END_LINE: 5
-    PARAMETERS: 1
+    PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 4
+    STACK_SIZE: 1
 
-    CONSTANTS (3):
-      [0] bool: true
-      [1] string: "runtimeSerializable"
-      [2] null
+    CONSTANTS (1):
+      [0] int: 1
 
-    LOCAL_VARIABLES (1):
-      [0] target: offset_activate=0, offset_dead=6
+    LOCAL_VARIABLES (0):
 
     CLOSURE_VARIABLES (0):
 
     TYPE_METADATA:
-      LOCAL_BINDINGS (1):
-        [0] target: Class
+      LOCAL_BINDINGS (0):
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (0):
@@ -115,7 +113,6 @@ CHILD_FUNCTIONS (5):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (0):
 
@@ -129,40 +126,31 @@ CHILD_FUNCTIONS (5):
 
     DEOPT_MAP (0):
 
-    CALLSITE_CACHE_TABLE (1):
-      [0] kind=MEMBER_GET inst=2 member=0 deopt=0 args=0 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (0):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (6):
-      [0] GET_CONSTANT (extra=1, operand=0)
-      [1] OPCODE_188 (extra=2, operand1=0, operand2=0)
-      [2] GET_CONSTANT (extra=3, operand=1)
-      [3] OPCODE_11 (extra=1, operand1=2, operand2=3)
-      [4] GET_CONSTANT (extra=1, operand=2)
-      [5] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
 
   [1] FUNCTION:
     NAME: markFunction
     START_LINE: 7
     END_LINE: 9
-    PARAMETERS: 1
+    PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 4
+    STACK_SIZE: 1
 
-    CONSTANTS (3):
-      [0] bool: true
-      [1] string: "instrumented"
-      [2] null
+    CONSTANTS (1):
+      [0] int: 16
 
-    LOCAL_VARIABLES (1):
-      [0] target: offset_activate=0, offset_dead=6
+    LOCAL_VARIABLES (0):
 
     CLOSURE_VARIABLES (0):
 
     TYPE_METADATA:
-      LOCAL_BINDINGS (1):
-        [0] target: Function
+      LOCAL_BINDINGS (0):
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (0):
@@ -170,7 +158,6 @@ CHILD_FUNCTIONS (5):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (0):
 
@@ -184,40 +171,31 @@ CHILD_FUNCTIONS (5):
 
     DEOPT_MAP (0):
 
-    CALLSITE_CACHE_TABLE (1):
-      [0] kind=MEMBER_GET inst=2 member=0 deopt=0 args=0 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (0):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (6):
-      [0] GET_CONSTANT (extra=1, operand=0)
-      [1] OPCODE_188 (extra=2, operand1=0, operand2=0)
-      [2] GET_CONSTANT (extra=3, operand=1)
-      [3] OPCODE_11 (extra=1, operand1=2, operand2=3)
-      [4] GET_CONSTANT (extra=1, operand=2)
-      [5] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
 
   [2] FUNCTION:
     NAME: markField
     START_LINE: 11
     END_LINE: 13
-    PARAMETERS: 1
+    PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 4
+    STACK_SIZE: 1
 
-    CONSTANTS (3):
-      [0] bool: true
-      [1] string: "isRuntimeField"
-      [2] null
+    CONSTANTS (1):
+      [0] int: 2
 
-    LOCAL_VARIABLES (1):
-      [0] target: offset_activate=0, offset_dead=6
+    LOCAL_VARIABLES (0):
 
     CLOSURE_VARIABLES (0):
 
     TYPE_METADATA:
-      LOCAL_BINDINGS (1):
-        [0] target: Field
+      LOCAL_BINDINGS (0):
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (0):
@@ -225,7 +203,6 @@ CHILD_FUNCTIONS (5):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (0):
 
@@ -239,40 +216,31 @@ CHILD_FUNCTIONS (5):
 
     DEOPT_MAP (0):
 
-    CALLSITE_CACHE_TABLE (1):
-      [0] kind=MEMBER_GET inst=2 member=0 deopt=0 args=0 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (0):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (6):
-      [0] GET_CONSTANT (extra=1, operand=0)
-      [1] OPCODE_188 (extra=2, operand1=0, operand2=0)
-      [2] GET_CONSTANT (extra=3, operand=1)
-      [3] OPCODE_11 (extra=1, operand1=2, operand2=3)
-      [4] GET_CONSTANT (extra=1, operand=2)
-      [5] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
 
   [3] FUNCTION:
     NAME: markMethod
     START_LINE: 15
     END_LINE: 17
-    PARAMETERS: 1
+    PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 4
+    STACK_SIZE: 1
 
-    CONSTANTS (3):
-      [0] bool: true
-      [1] string: "isRuntimeMethod"
-      [2] null
+    CONSTANTS (1):
+      [0] int: 4
 
-    LOCAL_VARIABLES (1):
-      [0] target: offset_activate=0, offset_dead=6
+    LOCAL_VARIABLES (0):
 
     CLOSURE_VARIABLES (0):
 
     TYPE_METADATA:
-      LOCAL_BINDINGS (1):
-        [0] target: Method
+      LOCAL_BINDINGS (0):
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (0):
@@ -280,7 +248,6 @@ CHILD_FUNCTIONS (5):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (0):
 
@@ -294,40 +261,31 @@ CHILD_FUNCTIONS (5):
 
     DEOPT_MAP (0):
 
-    CALLSITE_CACHE_TABLE (1):
-      [0] kind=MEMBER_GET inst=2 member=0 deopt=0 args=0 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (0):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (6):
-      [0] GET_CONSTANT (extra=1, operand=0)
-      [1] OPCODE_188 (extra=2, operand1=0, operand2=0)
-      [2] GET_CONSTANT (extra=3, operand=1)
-      [3] OPCODE_11 (extra=1, operand1=2, operand2=3)
-      [4] GET_CONSTANT (extra=1, operand=2)
-      [5] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
 
   [4] FUNCTION:
     NAME: markProperty
     START_LINE: 19
     END_LINE: 21
-    PARAMETERS: 1
+    PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 4
+    STACK_SIZE: 1
 
-    CONSTANTS (3):
-      [0] bool: true
-      [1] string: "isRuntimeProperty"
-      [2] null
+    CONSTANTS (1):
+      [0] int: 8
 
-    LOCAL_VARIABLES (1):
-      [0] target: offset_activate=0, offset_dead=6
+    LOCAL_VARIABLES (0):
 
     CLOSURE_VARIABLES (0):
 
     TYPE_METADATA:
-      LOCAL_BINDINGS (1):
-        [0] target: Property
+      LOCAL_BINDINGS (0):
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (0):
@@ -335,7 +293,6 @@ CHILD_FUNCTIONS (5):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (0):
 
@@ -349,17 +306,12 @@ CHILD_FUNCTIONS (5):
 
     DEOPT_MAP (0):
 
-    CALLSITE_CACHE_TABLE (1):
-      [0] kind=MEMBER_GET inst=2 member=0 deopt=0 args=0 hits=0 misses=0
+    CALLSITE_CACHE_TABLE (0):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (6):
-      [0] GET_CONSTANT (extra=1, operand=0)
-      [1] OPCODE_188 (extra=2, operand1=0, operand2=0)
-      [2] GET_CONSTANT (extra=3, operand=1)
-      [3] OPCODE_11 (extra=1, operand1=2, operand2=3)
-      [4] GET_CONSTANT (extra=1, operand=2)
-      [5] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
 
 

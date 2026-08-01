@@ -3412,6 +3412,22 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                            &resolvedFunctionType,
                                                            &resolvedFunctionSignature);
                 }
+                if (hasResolvedFunctionSignature &&
+                    resolvedFunctionType != ZR_NULL &&
+                    !compiler_test_validate_production_reference(
+                            cs,
+                            resolvedFunctionType->declarationNode,
+                            member->location)) {
+                    if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                        ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                    }
+                    free_resolved_call_signature(
+                            cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(
+                            cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    return;
+                }
             }
 
             if (activeCallMemberInfo == ZR_NULL &&

@@ -254,11 +254,23 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                             SZrInferredType paramType;
                             if (param->typeInfo != ZR_NULL &&
                                 ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
-                                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                                ZrParser_TypeEnvironment_RegisterVariableEx(
+                                        cs->state,
+                                        cs->typeEnv,
+                                        paramName,
+                                        &paramType,
+                                        paramNode,
+                                        paramNode->location);
                                 ZrParser_InferredType_Free(cs->state, &paramType);
                             } else {
                                 ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                                ZrParser_TypeEnvironment_RegisterVariableEx(
+                                        cs->state,
+                                        cs->typeEnv,
+                                        paramName,
+                                        &paramType,
+                                        paramNode,
+                                        paramNode->location);
                                 ZrParser_InferredType_Free(cs->state, &paramType);
                             }
                         }

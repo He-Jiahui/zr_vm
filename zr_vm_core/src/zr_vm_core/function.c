@@ -260,6 +260,8 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->moduleMetadataBindingCapacity = 0;
     function->nativeImportContracts = ZR_NULL;
     function->nativeImportContractLength = 0;
+    function->testManifestData = ZR_NULL;
+    function->testManifestDataLength = 0;
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
     function->lineInSourceStart = 0;
@@ -332,8 +334,6 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->semIrDeoptTableLength = 0;
     function->callSiteCaches = ZR_NULL;
     function->callSiteCacheLength = 0;
-    function->runtimeDecoratorMetadata = ZR_NULL;
-    function->runtimeDecoratorDecorators = ZR_NULL;
     function->cachedStatelessClosure = ZR_NULL;
     return function;
 }
@@ -1090,8 +1090,6 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->functionName = ZR_NULL;
     function->sourceCodeList = ZR_NULL;
     function->sourceHash = ZR_NULL;
-    function->runtimeDecoratorMetadata = ZR_NULL;
-    function->runtimeDecoratorDecorators = ZR_NULL;
     function->hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&function->decoratorMetadataValue);
     function->parameterCount = 0;
@@ -1117,6 +1115,8 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->moduleMetadataBindingCapacity = 0;
     function->nativeImportContracts = ZR_NULL;
     function->nativeImportContractLength = 0;
+    function->testManifestData = ZR_NULL;
+    function->testManifestDataLength = 0;
     function->lineInSourceStart = 0;
     function->lineInSourceEnd = 0;
     function->cachedStatelessClosure = ZR_NULL;
@@ -1274,6 +1274,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->nativeImportContracts,
                                       sizeof(SZrNativeImportContract) * function->nativeImportContractLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->testManifestData != ZR_NULL && function->testManifestDataLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->testManifestData,
+                                      function->testManifestDataLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->staticImports != ZR_NULL && function->staticImportLength > 0) {

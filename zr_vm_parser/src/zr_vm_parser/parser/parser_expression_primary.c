@@ -43,25 +43,6 @@ TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qual
     return ZR_FALSE;
 }
 
-static EZrOwnershipBuiltinKind ownership_builtin_kind_from_flags(EZrOwnershipQualifier ownershipQualifier,
-                                                                 TZrBool isUsing) {
-    ZR_UNUSED_PARAMETER(isUsing);
-
-    switch (ownershipQualifier) {
-        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
-        case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
-        case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
-        case ZR_OWNERSHIP_QUALIFIER_NONE:
-        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-        case ZR_OWNERSHIP_QUALIFIER_LOANED:
-        default:
-            return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-    }
-}
-
 SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNode *memberNode,
                                          SZrFileRange startLoc) {
     if (ps == ZR_NULL || base == ZR_NULL || memberNode == ZR_NULL) {
@@ -744,24 +725,6 @@ static TZrBool type_literal_probe_identifier_supports_bare_array_literal(SZrStri
            zr_string_equals_literal(name, "Module");
 }
 
-static TZrBool type_literal_probe_identifier_is_reserved_type_query_name(SZrString *name) {
-    if (type_literal_probe_identifier_supports_bare_array_literal(name)) {
-        return ZR_TRUE;
-    }
-
-    if (name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return zr_string_equals_literal(name, "Class") ||
-           zr_string_equals_literal(name, "Struct") ||
-           zr_string_equals_literal(name, "Function") ||
-           zr_string_equals_literal(name, "Field") ||
-           zr_string_equals_literal(name, "Method") ||
-           zr_string_equals_literal(name, "Property") ||
-           zr_string_equals_literal(name, "Parameter");
-}
-
 static TZrBool type_literal_probe_has_unambiguous_marker(const SZrType *typeInfo) {
     if (typeInfo == ZR_NULL) {
         return ZR_FALSE;
@@ -786,35 +749,6 @@ static TZrBool type_literal_probe_has_unambiguous_marker(const SZrType *typeInfo
     }
 
     return typeInfo->subType != ZR_NULL ? type_literal_probe_has_unambiguous_marker(typeInfo->subType) : ZR_FALSE;
-}
-
-static TZrBool type_literal_probe_is_reserved_type_query_target(const SZrType *typeInfo) {
-    SZrString *identifierName;
-
-    if (typeInfo == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (typeInfo->name == ZR_NULL || typeInfo->name->type != ZR_AST_IDENTIFIER_LITERAL) {
-        return ZR_FALSE;
-    }
-
-    identifierName = typeInfo->name->data.identifier.name;
-
-    if ((typeInfo->dimensions > 0 || typeInfo->hasArraySizeConstraint) &&
-        typeInfo->subType == ZR_NULL &&
-        !type_literal_probe_identifier_supports_bare_array_literal(identifierName)) {
-        return ZR_FALSE;
-    }
-
-    if (typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
-        typeInfo->dimensions > 0 ||
-        typeInfo->hasArraySizeConstraint ||
-        typeInfo->subType != ZR_NULL) {
-        return type_literal_probe_identifier_is_reserved_type_query_name(identifierName);
-    }
-
-    return type_literal_probe_identifier_is_reserved_type_query_name(identifierName);
 }
 
 static TZrBool type_literal_probe_is_terminator(EZrToken token) {

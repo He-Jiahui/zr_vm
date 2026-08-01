@@ -1331,6 +1331,34 @@ void ZrParser_TypeEnvironment_Free(SZrState *state, SZrTypeEnvironment *env) {
     ZrCore_Memory_RawFreeWithType(state->global, env, sizeof(SZrTypeEnvironment), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 }
 
+static void type_environment_append_variable_declaration_fact(
+        SZrSemanticContext *semanticContext,
+        SZrAstNode *declarationNode,
+        SZrFileRange declarationRange,
+        SZrString *name,
+        const SZrInferredType *type,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId) {
+    SZrSemanticReferenceFact declarationFact;
+
+    if (semanticContext == ZR_NULL) {
+        return;
+    }
+    memset(&declarationFact, 0, sizeof(declarationFact));
+    declarationFact.node = declarationNode;
+    declarationFact.range = declarationRange;
+    declarationFact.declarationRange = declarationRange;
+    declarationFact.definitionRange = declarationRange;
+    declarationFact.hasDefinitionRange = ZR_TRUE;
+    declarationFact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
+    declarationFact.symbolId = symbolId;
+    declarationFact.typeId = typeId;
+    declarationFact.ownershipQualifier = type->ownershipQualifier;
+    declarationFact.name = name;
+    declarationFact.isResolved = ZR_TRUE;
+    ZrParser_SemanticFacts_AppendReference(semanticContext, &declarationFact);
+}
+
 // 注册变量类型
 TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
                                                     SZrTypeEnvironment *env,
@@ -1375,13 +1403,26 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
     for (TZrSize i = 0; i < env->variableTypes.length; i++) {
         SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&env->variableTypes, i);
         if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            if (env->semanticContext != ZR_NULL &&
-                binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
-                !ZrParser_Semantic_RebindSymbolType(
-                        env->semanticContext,
-                        binding->symbolId,
-                        typeId)) {
-                return ZR_FALSE;
+            if (env->semanticContext != ZR_NULL) {
+                if (hasDeclarationRange) {
+                    symbolId = ZrParser_Semantic_RegisterSymbol(
+                            env->semanticContext,
+                            name,
+                            ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                            typeId,
+                            ZR_SEMANTIC_ID_INVALID,
+                            declarationNode,
+                            declarationRange);
+                    if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+                        return ZR_FALSE;
+                    }
+                } else if (binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                           !ZrParser_Semantic_RebindSymbolType(
+                                   env->semanticContext,
+                                   binding->symbolId,
+                                   typeId)) {
+                    return ZR_FALSE;
+                }
             }
             // 已存在，更新类型
             ZrParser_InferredType_Free(state, &binding->type);
@@ -1394,6 +1435,15 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
             if (hasDeclarationRange) {
                 binding->declarationRange = declarationRange;
                 binding->hasDeclarationRange = ZR_TRUE;
+                binding->symbolId = symbolId;
+                type_environment_append_variable_declaration_fact(
+                        env->semanticContext,
+                        declarationNode,
+                        declarationRange,
+                        name,
+                        type,
+                        symbolId,
+                        typeId);
             }
             return ZR_TRUE;
         }
@@ -1428,21 +1478,14 @@ TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
         binding.symbolId = symbolId;
 
         if (hasDeclarationRange) {
-            SZrSemanticReferenceFact declarationFact;
-
-            memset(&declarationFact, 0, sizeof(declarationFact));
-            declarationFact.node = declarationNode;
-            declarationFact.range = declarationRange;
-            declarationFact.declarationRange = declarationRange;
-            declarationFact.definitionRange = declarationRange;
-            declarationFact.hasDefinitionRange = ZR_TRUE;
-            declarationFact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
-            declarationFact.symbolId = symbolId;
-            declarationFact.typeId = typeId;
-            declarationFact.ownershipQualifier = type->ownershipQualifier;
-            declarationFact.name = name;
-            declarationFact.isResolved = ZR_TRUE;
-            ZrParser_SemanticFacts_AppendReference(env->semanticContext, &declarationFact);
+            type_environment_append_variable_declaration_fact(
+                    env->semanticContext,
+                    declarationNode,
+                    declarationRange,
+                    name,
+                    type,
+                    symbolId,
+                    typeId);
         }
     }
 

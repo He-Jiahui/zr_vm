@@ -2,7 +2,6 @@
 
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_common/zr_hash_conf.h"
-#include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/string.h"
 
 #include <stdio.h>
@@ -419,19 +418,5 @@ void ZrCore_ReflectionProperty_PopulateCurrent(
                 membersObject,
                 propertyName,
                 propertyReflection);
-        {
-            SZrString *propertyNameString = ZrCore_String_Create(
-                    state,
-                    (TZrNativeString)propertyName,
-                    strlen(propertyName));
-            if (propertyNameString != ZR_NULL) {
-                ZrCore_RuntimeDecorator_OverlayMemberReflection(
-                        state,
-                        propertyReflection,
-                        prototype,
-                        propertyNameString,
-                        ZR_RUNTIME_DECORATOR_TARGET_KIND_PROPERTY);
-            }
-        }
     }
 }

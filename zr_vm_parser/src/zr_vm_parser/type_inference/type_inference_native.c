@@ -766,7 +766,6 @@ static TZrBool type_inference_is_builtin_reflection_compile_type_name(SZrString 
            strcmp(typeNameText, "Method") == 0 ||
            strcmp(typeNameText, "Property") == 0 ||
            strcmp(typeNameText, "Parameter") == 0 ||
-           strcmp(typeNameText, "DecoratorPatch") == 0 ||
            strcmp(typeNameText, "Object") == 0 ||
            strcmp(typeNameText, "zr.builtin.TypeInfo") == 0 ||
            strcmp(typeNameText, "zr.reflection.Type") == 0 ||
@@ -1057,8 +1056,6 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     }
     if (strcmp(typeNameText, "Function") == 0 || strcmp(typeNameText, "Method") == 0) {
         type_inference_builtin_reflection_add_callable_members(cs, targetInfo);
-    } else if (strcmp(typeNameText, "DecoratorPatch") == 0) {
-        type_inference_builtin_reflection_add_field(cs, targetInfo, "metadata", "object");
     }
 }
 
@@ -2938,6 +2935,20 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
         (void)ZrLibrary_NativeRegistry_Attach(global);
     }
 
+    if (moduleNameText != ZR_NULL) {
+        nativeDescriptor = ZrLibrary_NativeRegistry_FindModule(global, moduleNameText);
+        if (nativeDescriptor != ZR_NULL &&
+            !ZrLibrary_ProviderPhase_CanConsume(
+                    ZrLibrary_State_GetProviderPhase(cs->state),
+                    nativeDescriptor->providerPhase)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "provider phase mismatch: imported native module is unavailable in this compilation phase",
+                    cs->currentAst != ZR_NULL ? cs->currentAst->location : (SZrFileRange){0});
+            return ZR_FALSE;
+        }
+    }
+
     if (find_registered_type_prototype_inference_exact_only(cs, moduleName) != ZR_NULL) {
         return ZR_TRUE;
     }
@@ -2952,8 +2963,6 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
     if (moduleNameText != ZR_NULL && strcmp(moduleNameText, "zr") == 0) {
         SZrString *builtinFieldName = ZrCore_String_CreateFromNative(cs->state, "builtin");
         SZrString *builtinModuleName = type_inference_builtin_reflection_string(cs, "zr.builtin");
-        SZrString *decoratorPatchFieldName = ZrCore_String_CreateFromNative(cs->state, "DecoratorPatch");
-        SZrString *decoratorPatchTypeName = ZrCore_String_CreateFromNative(cs->state, "DecoratorPatch");
 
         native_module_info_init_prototype(cs->state, &modulePrototype, moduleName, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
         type_inference_apply_default_builtin_root(cs,
@@ -2969,26 +2978,16 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                                 ZR_TRUE,
                                                 ZR_MEMBER_CONTRACT_ROLE_NONE);
         }
-        if (decoratorPatchTypeName != ZR_NULL) {
-            ensure_builtin_reflection_compile_type(cs, decoratorPatchTypeName);
-        }
-        if (decoratorPatchFieldName != ZR_NULL && decoratorPatchTypeName != ZR_NULL &&
-            find_compiler_type_prototype_inference(cs, decoratorPatchTypeName) != ZR_NULL) {
-            native_module_info_add_field_member(cs->state,
-                                                &modulePrototype,
-                                                ZR_AST_CLASS_FIELD,
-                                                decoratorPatchFieldName,
-                                                decoratorPatchTypeName,
-                                                ZR_TRUE,
-                                                ZR_MEMBER_CONTRACT_ROLE_NONE);
-        }
-
         ZrCore_Array_Push(cs->state, &cs->typePrototypes, &modulePrototype);
         result = ZR_TRUE;
         goto cleanup;
     }
 
     module = ZrCore_Module_GetFromCache(cs->state, moduleName);
+    if (nativeDescriptor != ZR_NULL &&
+        nativeDescriptor->providerPhase != ZR_LIBRARY_PROVIDER_PHASE_RUNTIME) {
+        goto load_descriptor_fallback;
+    }
     if (module == ZR_NULL && global->nativeModuleLoader != ZR_NULL) {
         module = global->nativeModuleLoader(cs->state,
                                             moduleName,
@@ -3026,7 +3025,7 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
     goto translate_module_info;
 
 load_descriptor_fallback:
-    if (global != ZR_NULL && moduleNameText != ZR_NULL) {
+    if (nativeDescriptor == ZR_NULL && global != ZR_NULL && moduleNameText != ZR_NULL) {
         nativeDescriptor = ZrLibrary_NativeRegistry_FindModule(global, moduleNameText);
     }
     if (nativeDescriptor == ZR_NULL) {

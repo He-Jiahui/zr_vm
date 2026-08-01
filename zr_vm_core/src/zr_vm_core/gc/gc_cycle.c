@@ -588,8 +588,6 @@ static TZrBool garbage_collector_function_references_live_young(SZrState *state,
 
     if (garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->ownerFunction)) ||
         garbage_collector_string_references_live_young(function->functionName) ||
-        garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->runtimeDecoratorMetadata)) ||
-        garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->runtimeDecoratorDecorators)) ||
         garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->cachedStatelessClosure)) ||
         garbage_collector_string_references_live_young(function->sourceCodeList) ||
         garbage_collector_string_references_live_young(function->sourceHash) ||
@@ -1819,8 +1817,6 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
         }
     }
 
-    garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&function->runtimeDecoratorMetadata);
-    garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&function->runtimeDecoratorDecorators);
     garbage_collector_trace_rewrite_function_slot("cachedStatelessClosure",
                                                   function,
                                                   ZR_CAST(SZrFunction *, function->cachedStatelessClosure));

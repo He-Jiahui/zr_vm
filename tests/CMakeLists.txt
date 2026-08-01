@@ -729,6 +729,21 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_legacy_migration_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_percent_test_migration_test
+            ${CMAKE_SOURCE_DIR}/tests/migration/test_percent_test_migration.c
+    )
+    target_include_directories(zr_vm_percent_test_migration_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_percent_test_migration_test)
+    add_test(
+            NAME percent_test_migration
+            COMMAND $<TARGET_FILE:zr_vm_percent_test_migration_test>
+    )
+
+    zr_vm_add_unity_test_target(
             zr_vm_percent_syntax_cutover_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_percent_syntax_cutover.c
     )
@@ -3963,6 +3978,23 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_native_registry_descriptor_invalidation_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_official_provider_convergence_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_official_provider_convergence.c
+    )
+    target_include_directories(zr_vm_official_provider_convergence_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_testing/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_official_provider_convergence_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_lib_testing_shared)
+    else ()
+        target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_lib_testing_static)
+    endif ()
+
+    zr_vm_add_unity_test_target(
             zr_vm_rust_binding_api_test
             ${CMAKE_SOURCE_DIR}/tests/rust_binding/test_rust_binding_api.c
     )
@@ -4040,6 +4072,62 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_attribute_contract_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_test_role_binding_test
+            ${CMAKE_SOURCE_DIR}/tests/testing/test_test_role_binding.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    target_include_directories(zr_vm_test_role_binding_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_test_role_binding_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_test_manifest_roundtrip_test
+            ${CMAKE_SOURCE_DIR}/tests/artifact/test_manifest_roundtrip.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    target_include_directories(zr_vm_test_manifest_roundtrip_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_test_manifest_roundtrip_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_test_runner_test
+            ${CMAKE_SOURCE_DIR}/tests/testing/test_runner.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/testing/test_runner.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    target_include_directories(zr_vm_test_runner_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_test_runner_test)
+    target_link_libraries(zr_vm_test_runner_test PRIVATE Threads::Threads)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_testing_assertions_test
+            ${CMAKE_SOURCE_DIR}/tests/testing/test_assertions.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    target_include_directories(zr_vm_testing_assertions_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_testing/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_testing_assertions_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_testing_assertions_test PRIVATE zr_vm_lib_testing_shared)
+    else ()
+        target_link_libraries(zr_vm_testing_assertions_test PRIVATE zr_vm_lib_testing_static)
+    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_declaration_transform_contract_test
@@ -6458,6 +6546,14 @@ if (TARGET zr_vm_cli_executable)
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_PROJECTS_RUNNER_SCRIPT}
     )
+    add_test(
+            NAME testing_reference
+            COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DPROJECT_FILE=${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}/fixtures/projects/testing_reference/testing_reference.zrp"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_testing_reference.cmake
+    )
 endif ()
 
 if (TARGET zr_vm_cli_args_test)
@@ -7085,6 +7181,13 @@ if (TARGET zr_vm_aot_c_descriptor_diagnostics_test)
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_aot_c_descriptor_diagnostics_test>"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_official_provider_convergence_test)
+    add_test(
+            NAME official_provider_convergence
+            COMMAND $<TARGET_FILE:zr_vm_official_provider_convergence_test>
     )
 endif ()
 

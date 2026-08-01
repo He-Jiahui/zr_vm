@@ -891,7 +891,7 @@ static void test_union_variant_metadata_serializes_byte_layout(void) {
 
 static void test_union_owner_payload_metadata_marks_value_slot_ownership(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -999,7 +999,7 @@ static void test_union_typed_local_uses_inline_frame_layout(void) {
 
 static void test_union_typed_local_in_child_function_uses_inline_frame_layout(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1372,14 +1372,14 @@ static void test_union_nested_struct_field_using_guard_reads_constructor_payload
 
 static void test_union_owner_payload_control_shared_parameter_releases_call_window_owner(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "fn keep(shared: Shared<Box>): int {\n"
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1401,19 +1401,19 @@ static void test_union_owner_payload_control_shared_parameter_releases_call_wind
 
 static void test_union_owner_payload_releases_active_variant_on_inline_frame_drop(void) {
     const char *insideSource =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var resource: Resource = Resource.Open(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
     const char *afterSource =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1423,9 +1423,9 @@ static void test_union_owner_payload_releases_active_variant_on_inline_frame_dro
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1457,7 +1457,7 @@ static void test_union_owner_payload_releases_active_variant_on_inline_frame_dro
 
 static void test_union_constructor_assignment_drops_replaced_owner_payload(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1468,9 +1468,9 @@ static void test_union_constructor_assignment_drops_replaced_owner_payload(void)
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1492,7 +1492,7 @@ static void test_union_constructor_assignment_drops_replaced_owner_payload(void)
 
 static void test_union_struct_field_assignment_drops_replaced_owner_payload(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1507,9 +1507,9 @@ static void test_union_struct_field_assignment_drops_replaced_owner_payload(void
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1531,7 +1531,7 @@ static void test_union_struct_field_assignment_drops_replaced_owner_payload(void
 
 static void test_union_nested_struct_field_assignment_drops_replaced_owner_payload(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1549,9 +1549,9 @@ static void test_union_nested_struct_field_assignment_drops_replaced_owner_paylo
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1573,7 +1573,7 @@ static void test_union_nested_struct_field_assignment_drops_replaced_owner_paylo
 
 static void test_union_struct_field_assignment_copies_owner_payload_from_typed_local(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1594,9 +1594,9 @@ static void test_union_struct_field_assignment_copies_owner_payload_from_typed_l
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1618,7 +1618,7 @@ static void test_union_struct_field_assignment_copies_owner_payload_from_typed_l
 
 static void test_union_typed_local_initialization_copies_owner_payload_from_struct_field(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1639,9 +1639,9 @@ static void test_union_typed_local_initialization_copies_owner_payload_from_stru
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1663,7 +1663,7 @@ static void test_union_typed_local_initialization_copies_owner_payload_from_stru
 
 static void test_union_using_guard_owner_payload_binding_borrows_by_default(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1678,9 +1678,9 @@ static void test_union_using_guard_owner_payload_binding_borrows_by_default(void
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1703,7 +1703,7 @@ static void test_union_using_guard_owner_payload_binding_borrows_by_default(void
 
 static void test_union_using_guard_owner_payload_move_binding_allows_release(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1718,9 +1718,9 @@ static void test_union_using_guard_owner_payload_move_binding_allows_release(voi
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1743,7 +1743,7 @@ static void test_union_using_guard_owner_payload_move_binding_allows_release(voi
 
 static void test_union_using_guard_struct_owner_payload_move_binding_allows_release(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open { handle: Shared<Box>; }\n"
@@ -1758,9 +1758,9 @@ static void test_union_using_guard_struct_owner_payload_move_binding_allows_rele
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1783,7 +1783,7 @@ static void test_union_using_guard_struct_owner_payload_move_binding_allows_rele
 
 static void test_union_switch_owner_payload_move_binding_allows_release(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
@@ -1801,9 +1801,9 @@ static void test_union_switch_owner_payload_move_binding_allows_release(void) {
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1826,7 +1826,7 @@ static void test_union_switch_owner_payload_move_binding_allows_release(void) {
 
 static void test_union_switch_struct_owner_payload_move_binding_allows_release(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open { handle: Shared<Box>; }\n"
@@ -1844,9 +1844,9 @@ static void test_union_switch_struct_owner_payload_move_binding_allows_release(v
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";
@@ -1869,7 +1869,7 @@ static void test_union_switch_struct_owner_payload_move_binding_allows_release(v
 
 static void test_union_multiple_owner_payloads_release_all_active_variant_fields(void) {
     const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Open(a0: Shared<Box>, a1: Shared<Box>, a2: Shared<Box>, a3: Shared<Box>,\n"
             "         a4: Shared<Box>, a5: Shared<Box>, a6: Shared<Box>, a7: Shared<Box>,\n"
@@ -1884,9 +1884,9 @@ static void test_union_multiple_owner_payloads_release_all_active_variant_fields
             "    var releasedInner = drop(shared);\n"
             "    return 0;\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var shared = Shared<Box>(seed);\n"
-            "var watcher = Weak<Box>(shared);\n"
+            "var seed = own Box();\n"
+            "var shared = seed.share();\n"
+            "var watcher = shared.weak();\n"
             "var keepResult = keep(shared);\n"
             "var releasedShared = drop(shared);\n"
             "return zr.__probeInlineUnionShapeFrame();\n";

@@ -465,36 +465,6 @@ static TZrNativeString compile_statement_get_native_string(SZrString *value) {
     return (TZrNativeString)ZrCore_String_GetNativeString(value);
 }
 
-static SZrAstNode *compile_statement_find_imported_decorator_meta_method(SZrAstNodeArray *members,
-                                                                         const TZrChar *metaName,
-                                                                         TZrBool isStructDecorator) {
-    if (members == ZR_NULL || metaName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize i = 0; i < members->count; i++) {
-        SZrAstNode *member = members->nodes[i];
-        SZrIdentifier *meta = ZR_NULL;
-
-        if (member == ZR_NULL) {
-            continue;
-        }
-
-        if (!isStructDecorator && member->type == ZR_AST_CLASS_META_FUNCTION) {
-            meta = member->data.classMetaFunction.meta;
-        } else if (isStructDecorator && member->type == ZR_AST_STRUCT_META_FUNCTION) {
-            meta = member->data.structMetaFunction.meta;
-        }
-
-        if (meta != ZR_NULL && meta->name != ZR_NULL && ZrCore_String_GetNativeString(meta->name) != ZR_NULL &&
-            strcmp(ZrCore_String_GetNativeString(meta->name), metaName) == 0) {
-            return member;
-        }
-    }
-
-    return ZR_NULL;
-}
-
 static SZrImportedCompileTimeModule *compile_statement_find_imported_compile_time_module(SZrCompilerState *cs,
                                                                                          SZrString *moduleName) {
     if (cs == ZR_NULL || moduleName == ZR_NULL) {
@@ -639,35 +609,6 @@ static SZrCompileTimeFunction *compile_statement_find_imported_compile_time_func
     SZrImportedCompileTimeVariableBindingContext *context =
             (SZrImportedCompileTimeVariableBindingContext *)userData;
     return context != ZR_NULL ? compile_statement_find_imported_compile_time_function(context->module, name) : ZR_NULL;
-}
-
-static SZrCompileTimeDecoratorClass *compile_statement_find_imported_compile_time_decorator_class(
-        const SZrImportedCompileTimeModule *module,
-        SZrString *name) {
-    if (module == ZR_NULL || name == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < module->compileTimeDecoratorClasses.length; index++) {
-        SZrCompileTimeDecoratorClass **classPtr =
-                (SZrCompileTimeDecoratorClass **)ZrCore_Array_Get((SZrArray *)&module->compileTimeDecoratorClasses,
-                                                                  index);
-        if (classPtr != ZR_NULL && *classPtr != ZR_NULL && (*classPtr)->name != ZR_NULL &&
-            ZrCore_String_Equal((*classPtr)->name, name)) {
-            return *classPtr;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-static SZrCompileTimeDecoratorClass *compile_statement_find_imported_compile_time_decorator_class_callback(
-        TZrPtr userData,
-        SZrString *name) {
-    SZrImportedCompileTimeVariableBindingContext *context =
-            (SZrImportedCompileTimeVariableBindingContext *)userData;
-    return context != ZR_NULL ? compile_statement_find_imported_compile_time_decorator_class(context->module, name)
-                              : ZR_NULL;
 }
 
 static SZrCompileTimeFunction *compile_statement_create_imported_compile_time_function(SZrCompilerState *cs,
@@ -1101,54 +1042,6 @@ static TZrBool compile_statement_register_imported_compile_time_function_alias(
     return ZR_TRUE;
 }
 
-static SZrCompileTimeDecoratorClass *compile_statement_create_imported_compile_time_decorator_class(
-        SZrCompilerState *cs,
-        SZrAstNode *node,
-        SZrFileRange location) {
-    SZrCompileTimeDecoratorClass *decoratorClass;
-    SZrAstNodeArray *members = ZR_NULL;
-    TZrBool isStructDecorator = ZR_FALSE;
-
-    if (cs == ZR_NULL || node == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (node->type == ZR_AST_CLASS_DECLARATION) {
-        if (node->data.classDeclaration.name == ZR_NULL || node->data.classDeclaration.name->name == ZR_NULL) {
-            return ZR_NULL;
-        }
-        members = node->data.classDeclaration.members;
-    } else if (node->type == ZR_AST_STRUCT_DECLARATION) {
-        if (node->data.structDeclaration.name == ZR_NULL || node->data.structDeclaration.name->name == ZR_NULL) {
-            return ZR_NULL;
-        }
-        members = node->data.structDeclaration.members;
-        isStructDecorator = ZR_TRUE;
-    } else {
-        return ZR_NULL;
-    }
-
-    decoratorClass = (SZrCompileTimeDecoratorClass *)ZrCore_Memory_RawMallocWithType(
-            cs->state->global,
-            sizeof(SZrCompileTimeDecoratorClass),
-            ZR_MEMORY_NATIVE_TYPE_ARRAY);
-    if (decoratorClass == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Memory_RawSet(decoratorClass, 0, sizeof(*decoratorClass));
-    decoratorClass->name = node->type == ZR_AST_CLASS_DECLARATION ? node->data.classDeclaration.name->name
-                                                                  : node->data.structDeclaration.name->name;
-    decoratorClass->declaration = node;
-    decoratorClass->decorateMethod =
-            compile_statement_find_imported_decorator_meta_method(members, "decorate", isStructDecorator);
-    decoratorClass->constructorMethod =
-            compile_statement_find_imported_decorator_meta_method(members, "constructor", isStructDecorator);
-    decoratorClass->isStructDecorator = isStructDecorator;
-    decoratorClass->location = location;
-    return decoratorClass;
-}
-
 static TZrBool compile_statement_collect_imported_compile_time_declarations(SZrCompilerState *cs,
                                                                             SZrImportedCompileTimeModule *module,
                                                                             SZrAstNode *scriptAst) {
@@ -1192,14 +1085,6 @@ static TZrBool compile_statement_collect_imported_compile_time_declarations(SZrC
                 return ZR_FALSE;
             }
             ZrCore_Array_Push(cs->state, &module->compileTimeFunctions, &functionInfo);
-        } else if (declaration->type == ZR_AST_CLASS_DECLARATION || declaration->type == ZR_AST_STRUCT_DECLARATION) {
-            SZrCompileTimeDecoratorClass *decoratorClass =
-                    compile_statement_create_imported_compile_time_decorator_class(cs, declaration, statement->location);
-            if (decoratorClass == ZR_NULL) {
-                ZrCore_Array_Free(cs->state, &bindingSources);
-                return ZR_FALSE;
-            }
-            ZrCore_Array_Push(cs->state, &module->compileTimeDecoratorClasses, &decoratorClass);
         } else if (declaration->type == ZR_AST_VARIABLE_DECLARATION) {
             SZrFunctionCompileTimeVariableInfo *variableInfo =
                     compile_statement_create_imported_compile_time_variable_info(cs, declaration, statement->location);
@@ -1226,7 +1111,6 @@ static TZrBool compile_statement_collect_imported_compile_time_declarations(SZrC
     resolver.userData = &bindingContext;
     resolver.findVariable = compile_statement_find_imported_binding_source_variable;
     resolver.findFunction = compile_statement_find_imported_compile_time_function_callback;
-    resolver.findDecoratorClass = compile_statement_find_imported_compile_time_decorator_class_callback;
     if (bindingSources.length > 0 && !ZrParser_CompileTimeBinding_ResolveAll(
             &resolver,
             (SZrCompileTimeBindingSourceVariable *)bindingSources.head,
@@ -1337,20 +1221,12 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
                           &module->compileTimeFunctions,
                           sizeof(SZrCompileTimeFunction *),
                           source->modules[0].entryFunction->compileTimeFunctionInfosLength);
-        ZrCore_Array_Init(cs->state,
-                          &module->compileTimeDecoratorClasses,
-                          sizeof(SZrCompileTimeDecoratorClass *),
-                          ZR_PARSER_INITIAL_CAPACITY_TINY);
-
         if (!compile_statement_collect_imported_compile_time_declarations_from_binary(cs,
                                                                                       module,
                                                                                       source->modules[0].entryFunction)) {
             compile_statement_free_imported_compile_time_variables(cs->state, module);
             if (module->compileTimeFunctions.isValid && module->compileTimeFunctions.head != ZR_NULL) {
                 ZrCore_Array_Free(cs->state, &module->compileTimeFunctions);
-            }
-            if (module->compileTimeDecoratorClasses.isValid && module->compileTimeDecoratorClasses.head != ZR_NULL) {
-                ZrCore_Array_Free(cs->state, &module->compileTimeDecoratorClasses);
             }
             ZrCore_Memory_RawFreeWithType(global,
                                           module,
@@ -1422,18 +1298,10 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
                       &module->compileTimeFunctions,
                       sizeof(SZrCompileTimeFunction *),
                       ZR_PARSER_INITIAL_CAPACITY_TINY);
-    ZrCore_Array_Init(cs->state,
-                      &module->compileTimeDecoratorClasses,
-                      sizeof(SZrCompileTimeDecoratorClass *),
-                      ZR_PARSER_INITIAL_CAPACITY_TINY);
-
     if (!compile_statement_collect_imported_compile_time_declarations(cs, module, scriptAst)) {
         compile_statement_free_imported_compile_time_variables(cs->state, module);
         if (module->compileTimeFunctions.isValid && module->compileTimeFunctions.head != ZR_NULL) {
             ZrCore_Array_Free(cs->state, &module->compileTimeFunctions);
-        }
-        if (module->compileTimeDecoratorClasses.isValid && module->compileTimeDecoratorClasses.head != ZR_NULL) {
-            ZrCore_Array_Free(cs->state, &module->compileTimeDecoratorClasses);
         }
         ZrParser_Ast_Free(cs->state, scriptAst);
         ZrCore_Memory_RawFreeWithType(global,
@@ -1510,20 +1378,6 @@ static TZrBool compile_statement_try_register_imported_compile_time_module_alias
         ZrCore_Array_Push(cs->state, &cs->importedCompileTimeModuleAliases, &alias);
     }
 
-    for (TZrSize index = 0; index < module->compileTimeDecoratorClasses.length; index++) {
-        SZrCompileTimeDecoratorClass **classPtr =
-                (SZrCompileTimeDecoratorClass **)ZrCore_Array_Get(&module->compileTimeDecoratorClasses, index);
-        if (classPtr == ZR_NULL || *classPtr == ZR_NULL || (*classPtr)->name == ZR_NULL) {
-            continue;
-        }
-        if (!register_compile_time_decorator_class_alias(cs,
-                                                         (*classPtr)->name,
-                                                         (*classPtr)->declaration,
-                                                         node->location)) {
-            return ZR_FALSE;
-        }
-    }
-
     for (TZrSize index = 0; index < module->compileTimeFunctions.length; index++) {
         SZrCompileTimeFunction **funcPtr =
                 (SZrCompileTimeFunction **)ZrCore_Array_Get(&module->compileTimeFunctions, index);
@@ -1550,7 +1404,6 @@ static TZrBool compile_statement_try_register_imported_compile_time_member_alias
     SZrString *memberName = ZR_NULL;
     SZrString *relativePath = ZR_NULL;
     SZrImportedCompileTimeModule *module;
-    SZrCompileTimeDecoratorClass *decoratorClass;
     SZrCompileTimeFunction *functionInfo;
     SZrFunctionCompileTimeVariableInfo *variableInfo;
     const SZrFunctionCompileTimePathBinding *bindingInfo = ZR_NULL;
@@ -1588,11 +1441,6 @@ static TZrBool compile_statement_try_register_imported_compile_time_member_alias
         return ZR_TRUE;
     }
 
-    decoratorClass = compile_statement_find_imported_compile_time_decorator_class(module, memberName);
-    if (decoratorClass != ZR_NULL) {
-        return register_compile_time_decorator_class_alias(cs, aliasName, decoratorClass->declaration, node->location);
-    }
-
     functionInfo = compile_statement_find_imported_compile_time_function(module, memberName);
     if (functionInfo != ZR_NULL) {
         return compile_statement_register_imported_compile_time_function_alias(cs,
@@ -1617,16 +1465,6 @@ static TZrBool compile_statement_try_register_imported_compile_time_member_alias
     bindingInfo = ZrParser_CompileTimeBinding_FindPath(variableInfo, relativePath);
     if (bindingInfo == ZR_NULL || bindingInfo->targetName == ZR_NULL) {
         return ZR_TRUE;
-    }
-
-    if (bindingInfo->targetKind == ZR_COMPILE_TIME_BINDING_TARGET_DECORATOR_CLASS) {
-        decoratorClass = compile_statement_find_imported_compile_time_decorator_class(module, bindingInfo->targetName);
-        return decoratorClass != ZR_NULL
-                       ? register_compile_time_decorator_class_alias(cs,
-                                                                     aliasName,
-                                                                     decoratorClass->declaration,
-                                                                     node->location)
-                       : ZR_TRUE;
     }
 
     if (bindingInfo->targetKind == ZR_COMPILE_TIME_BINDING_TARGET_FUNCTION) {

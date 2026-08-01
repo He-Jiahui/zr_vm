@@ -6,6 +6,7 @@
 #define ZR_VM_LIBRARY_NATIVE_BINDING_H
 
 #include "zr_vm_library/conf.h"
+#include "zr_vm_library/zrm.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_common/zr_contract_conf.h"
 
@@ -238,6 +239,16 @@ typedef struct ZrLibModuleLinkDescriptor {
     const TZrChar *documentation;
 } ZrLibModuleLinkDescriptor;
 
+typedef struct ZrLibAttributeRoleDescriptor {
+    const TZrChar *qualifiedName;
+    TZrUInt32 attributeId;
+    TZrUInt32 role;
+    TZrUInt32 targetFlags;
+    TZrUInt32 retention;
+    TZrBool repeatable;
+    const TZrChar *typeName;
+} ZrLibAttributeRoleDescriptor;
+
 typedef TZrBool (*FZrLibModuleMaterializeCallback)(SZrState *state,
                                                    struct SZrObjectModule *module,
                                                    const struct ZrLibModuleDescriptor *descriptor);
@@ -421,6 +432,10 @@ typedef struct ZrLibModuleDescriptor {
     TZrUInt32 minRuntimeAbi;
     TZrUInt64 requiredCapabilities;
     FZrLibModuleMaterializeCallback onMaterialize;
+    EZrLibrary_ProviderPhase providerPhase;
+    const ZrLibAttributeRoleDescriptor *attributeRoles;
+    TZrSize attributeRoleCount;
+    const TZrChar *publicContractHash;
 } ZrLibModuleDescriptor;
 
 ZR_LIBRARY_API TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context);

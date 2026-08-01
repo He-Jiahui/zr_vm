@@ -119,6 +119,8 @@ add_subdirectory("zr_vm_lib_container")
 
 add_subdirectory("zr_vm_lib_ffi")
 
+add_subdirectory("zr_vm_lib_testing")
+
 if (BUILD_THREAD_LIB)
     if (EXISTS "${CMAKE_SOURCE_DIR}/zr_vm_lib_thread/CMakeLists.txt")
         add_subdirectory("zr_vm_lib_thread")

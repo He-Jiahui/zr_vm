@@ -3,6 +3,8 @@
 #include "zr_vm_parser/attribute_contract.h"
 #include "zr_vm_parser/compile_tool.h"
 
+#include <string.h>
+
 static void test_builtin_roles_have_canonical_owner_and_stable_id(void) {
     const SZrParserAttributeSchema *usage =
             ZrParser_AttributeContract_FindBuiltinByRole(
@@ -53,6 +55,22 @@ static void test_builtin_roles_have_canonical_owner_and_stable_id(void) {
     TEST_ASSERT_EQUAL_UINT64(
             declarationModule->computedPublicContractHash,
             ZrParser_CompileTool_ComputePublicContractHash(declarationModule));
+    TEST_ASSERT_NOT_NULL(strstr(
+            declarationModule->canonicalContract,
+            "typed-constructor:CompileDiagnostic(isError:bool,message:string,target:SymbolId)|Expansion"));
+    TEST_ASSERT_NOT_NULL(ZrParser_CompileTool_FindType(
+            declarationModule, "AttributeData"));
+    TEST_ASSERT_NOT_NULL(ZrParser_CompileTool_FindType(
+            declarationModule, "GeneratedField"));
+    TEST_ASSERT_NULL(ZrParser_CompileTool_FindType(
+            declarationModule, "GeneratedType"));
+    TEST_ASSERT_NULL(ZrParser_CompileTool_FindType(
+            declarationModule, "GeneratedMethod"));
+    TEST_ASSERT_NULL(ZrParser_CompileTool_FindType(
+            declarationModule, "GeneratedProperty"));
+    TEST_ASSERT_NOT_NULL(strstr(
+            declarationModule->canonicalContract,
+            "typed-constructor:AttributeData(typeId:TypeId,fieldValues:ConstantValue[])|Expansion"));
 }
 
 static void test_schema_requires_readonly_public_let_constant_safe_fields(void) {

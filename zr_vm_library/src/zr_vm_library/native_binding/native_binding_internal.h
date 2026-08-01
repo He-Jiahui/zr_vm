@@ -564,6 +564,13 @@ const ZrLibRegisteredModuleRecord *native_registry_find_record_by_descriptor(
         const ZrLibModuleDescriptor *descriptor);
 TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegistryState *registry,
                                                                  const ZrLibModuleDescriptor *descriptor);
+TZrBool native_registry_validate_official_descriptor(
+        ZrLibrary_NativeRegistryState *registry,
+        const ZrLibModuleDescriptor *descriptor);
+TZrBool native_registry_validate_official_duplicate(
+        ZrLibrary_NativeRegistryState *registry,
+        const ZrLibModuleDescriptor *current,
+        const ZrLibModuleDescriptor *replacement);
 TZrBool native_registry_register_module_record(SZrGlobalState *global,
                                                       const ZrLibModuleDescriptor *descriptor,
                                                       EZrLibNativeModuleRegistrationKind registrationKind,

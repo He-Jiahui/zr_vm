@@ -8,7 +8,7 @@ FUNCTION: <anonymous>
   HAS_VAR_ARGS: false
   STACK_SIZE: 10
 
-CONSTANTS (15):
+CONSTANTS (30):
   [0] null
   [1] native closure
   [2] string: "zr.math"
@@ -22,8 +22,23 @@ CONSTANTS (15):
   [10] string: "zr.container"
   [11] function
   [12] function
-  [13] string: "Holder"
-  [14] string: "zr.builtin.Object"
+  [13] string: "Span"
+  [14] string: "source"
+  [15] string: "object"
+  [16] string: "start"
+  [17] string: "int"
+  [18] string: "length"
+  [19] string: "slice"
+  [20] string: "Span<T>"
+  [21] string: "asReadOnly"
+  [22] string: "ReadOnlySpan<T>"
+  [23] string: "__constructor"
+  [24] string: "GET_ITEM"
+  [25] string: "T"
+  [26] string: "SET_ITEM"
+  [27] string: "ReadOnlySpan"
+  [28] string: "Holder"
+  [29] string: "zr.builtin.Object"
 
 LOCAL_VARIABLES (7):
   [0] makeEscapingCallback: offset_activate=0, offset_dead=32
@@ -64,27 +79,206 @@ TYPE_METADATA:
     fn nativeScore [slot=1 child=1 kind=function readiness=declaration access=0]
   COMPILE_TIME_VARIABLES (0):
   COMPILE_TIME_FUNCTIONS (0):
-  TESTS (0):
 
-TYPE_TABLE (0):
+TYPE_TABLE (7):
+  [0] object
+  [1] function
+  [2] zr.math
+  [3] zr.system
+  [4] zr.network
+  [5] zr.ffi
+  [6] zr.container
 
 OWNERSHIP_TABLE (0):
 
-EFFECT_TABLE (0):
+EFFECT_TABLE (5):
+  [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+  [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+  [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+  [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+  [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
 
-BLOCK_GRAPH (0):
+BLOCK_GRAPH (1):
+  [0] block=0 first=0 count=5
 
-SEMIR (0):
+SEMIR (5):
+  [0] DYN_CALL exec=3 type=3 effect=0 dst=3 op0=3 op1=1 deopt=1
+  [1] DYN_CALL exec=9 type=4 effect=1 dst=4 op0=4 op1=1 deopt=2
+  [2] DYN_CALL exec=15 type=5 effect=2 dst=5 op0=5 op1=1 deopt=3
+  [3] DYN_CALL exec=21 type=6 effect=3 dst=6 op0=6 op1=1 deopt=4
+  [4] DYN_CALL exec=26 type=0 effect=4 dst=7 op0=7 op1=1 deopt=5
 
-DEOPT_MAP (0):
+DEOPT_MAP (5):
+  [0] deopt=1 exec=3
+  [1] deopt=2 exec=9
+  [2] deopt=3 exec=15
+  [3] deopt=4 exec=21
+  [4] deopt=5 exec=26
 
 CALLSITE_CACHE_TABLE (0):
 
 EH_TABLE (0):
 
-PROTOTYPES (1):
-// ========== PROTOTYPES FROM DATA (count: 1) ==========
+PROTOTYPES (3):
+// ========== PROTOTYPES FROM DATA (count: 3) ==========
 // --- Prototype 1 ---
+struct Span {
+  access: public (0),
+  layoutByteSize: 0,
+  layoutByteAlign: 0,
+  members: [
+    {
+      type: STRUCT_FIELD (14),
+      name: "source",
+      access: public (0),
+      static: false,
+      fieldType: "object",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "start",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "length",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: STRUCT_METHOD (15),
+      name: "slice",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 2,
+      returnType: "Span<T>"
+    },
+    {
+      type: STRUCT_METHOD (15),
+      name: "asReadOnly",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "ReadOnlySpan<T>"
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "__constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "Span<T>"
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "GET_ITEM",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: GET_ITEM (24),
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "T"
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "SET_ITEM",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: SET_ITEM (25),
+      functionConstantIndex: 0,
+      parameterCount: 2,
+      returnType: "T"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+struct ReadOnlySpan {
+  access: public (0),
+  layoutByteSize: 0,
+  layoutByteAlign: 0,
+  members: [
+    {
+      type: STRUCT_FIELD (14),
+      name: "source",
+      access: public (0),
+      static: false,
+      fieldType: "object",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "start",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "length",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: STRUCT_METHOD (15),
+      name: "slice",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 2,
+      returnType: "ReadOnlySpan<T>"
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "__constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "ReadOnlySpan<T>"
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "GET_ITEM",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: GET_ITEM (24),
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "T"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
 class Holder : zr.builtin.Object {
   access: private (1),
   layoutByteSize: 0,
@@ -153,7 +347,7 @@ CHILD_FUNCTIONS (2):
     TYPE_METADATA:
       LOCAL_BINDINGS (2):
         [0] offset: int
-        [1] callback: %func(int)->int
+        [1] callback: fn(int) -> int
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (0):
@@ -161,7 +355,6 @@ CHILD_FUNCTIONS (2):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (0):
 
@@ -188,10 +381,10 @@ CHILD_FUNCTIONS (2):
       [0] FUNCTION:
         NAME: <anonymous>
         START_LINE: 13
-        END_LINE: 16
+        END_LINE: 15
         PARAMETERS: 1
         HAS_VAR_ARGS: false
-        STACK_SIZE: 3
+        STACK_SIZE: 4
 
         CONSTANTS (0):
 
@@ -211,7 +404,6 @@ CHILD_FUNCTIONS (2):
           TOP_LEVEL_CALLABLE_BINDINGS (0):
           COMPILE_TIME_VARIABLES (0):
           COMPILE_TIME_FUNCTIONS (0):
-          TESTS (0):
 
         TYPE_TABLE (2):
           [0] object
@@ -226,7 +418,7 @@ CHILD_FUNCTIONS (2):
           [0] block=0 first=0 count=1
 
         SEMIR (1):
-          [0] ADD exec=2 type=1 effect=0 dst=1 op0=1 op1=2 deopt=0
+          [0] ADD exec=2 type=1 effect=0 dst=3 op0=1 op1=2 deopt=0
 
         DEOPT_MAP (0):
 
@@ -237,8 +429,8 @@ CHILD_FUNCTIONS (2):
         INSTRUCTIONS (4):
           [0] GET_STACK (extra=1, operand=0)
           [1] OPCODE_6 (extra=2)
-          [2] ADD_SIGNED (extra=1, operand1=1, operand2=2)
-          [3] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+          [2] ADD_SIGNED (extra=3, operand1=1, operand2=2)
+          [3] FUNCTION_RETURN (extra=1, operand1=3, operand2=0)
 
 
   [1] FUNCTION:
@@ -247,14 +439,14 @@ CHILD_FUNCTIONS (2):
     END_LINE: 43
     PARAMETERS: 0
     HAS_VAR_ARGS: false
-    STACK_SIZE: 26
+    STACK_SIZE: 27
 
     CONSTANTS (13):
       [0] string: "Vector3"
       [1] float: 1.000000
-      [2] float: 2.000000
-      [3] float: 3.000000
-      [4] null
+      [2] null
+      [3] float: 2.000000
+      [4] float: 3.000000
       [5] int: 8
       [6] string: "LinkedList<int>"
       [7] string: "Holder"
@@ -265,39 +457,38 @@ CHILD_FUNCTIONS (2):
       [12] int: 1
 
     LOCAL_VARIABLES (11):
-      [0] vector: offset_activate=14, offset_dead=114
-      [1] handle: offset_activate=22, offset_dead=114
-      [2] tcp: offset_activate=25, offset_dead=114
-      [3] list: offset_activate=33, offset_dead=114
-      [4] owner: offset_activate=40, offset_dead=114
-      [5] shared: offset_activate=45, offset_dead=114
-      [6] weak: offset_activate=52, offset_dead=114
-      [7] upgraded: offset_activate=59, offset_dead=114
-      [8] releasedShared: offset_activate=62, offset_dead=114
-      [9] releasedUpgrade: offset_activate=65, offset_dead=114
-      [10] escaped: offset_activate=69, offset_dead=114
+      [0] vector: offset_activate=18, offset_dead=143
+      [1] handle: offset_activate=27, offset_dead=143
+      [2] tcp: offset_activate=30, offset_dead=143
+      [3] list: offset_activate=38, offset_dead=143
+      [4] owner: offset_activate=45, offset_dead=143
+      [5] shared: offset_activate=49, offset_dead=143
+      [6] weak: offset_activate=51, offset_dead=143
+      [7] upgraded: offset_activate=53, offset_dead=143
+      [8] releasedShared: offset_activate=57, offset_dead=143
+      [9] releasedUpgrade: offset_activate=60, offset_dead=143
+      [10] escaped: offset_activate=64, offset_dead=143
 
-    CLOSURE_VARIABLES (6):
-      [0] math: in_stack=true, index=2, type=NULL
-      [1] ffi: in_stack=true, index=5, type=NULL
-      [2] network: in_stack=true, index=4, type=NULL
-      [3] container: in_stack=true, index=6, type=NULL
-      [4] makeEscapingCallback: in_stack=true, index=0, type=NULL
-      [5] system: in_stack=true, index=3, type=NULL
+    CLOSURE_VARIABLES (5):
+      [0] ffi: in_stack=true, index=5, type=NULL
+      [1] network: in_stack=true, index=4, type=NULL
+      [2] container: in_stack=true, index=6, type=NULL
+      [3] makeEscapingCallback: in_stack=true, index=0, type=NULL
+      [4] system: in_stack=true, index=3, type=NULL
 
     TYPE_METADATA:
       LOCAL_BINDINGS (11):
-        [0] vector: Vector3
-        [1] handle: BufferHandle
-        [2] tcp: zr.network.tcp
-        [3] list: LinkedList<int>
-        [4] owner: Holder
-        [5] shared: Holder
-        [6] weak: Holder
-        [7] upgraded: Holder
-        [8] releasedShared: null
-        [9] releasedUpgrade: null
-        [10] escaped: object
+        [1] vector: Vector3
+        [2] handle: BufferHandle
+        [3] tcp: zr.network.tcp
+        [4] list: LinkedList<int>
+        [5] owner: Holder
+        [6] shared: Holder
+        [7] weak: Holder
+        [8] upgraded: Holder
+        [9] releasedShared: null
+        [10] releasedUpgrade: null
+        [11] escaped: object
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
       MODULE_ENTRY_EFFECTS (1):
@@ -306,7 +497,6 @@ CHILD_FUNCTIONS (2):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
-      TESTS (0):
 
     TYPE_TABLE (10):
       [0] object
@@ -326,187 +516,271 @@ CHILD_FUNCTIONS (2):
       [2] Shared
       [3] Weak
 
-    EFFECT_TABLE (17):
+    EFFECT_TABLE (40):
       [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
       [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
-      [2] OWNERSHIP_TRANSITION inst=2 from=0 to=1
-      [3] OWNERSHIP_TRANSITION inst=3 from=1 to=2
-      [4] OWNERSHIP_TRANSITION inst=4 from=2 to=3
-      [5] OWNERSHIP_TRANSITION inst=5 from=3 to=2
-      [6] OWNERSHIP_TRANSITION inst=6 from=2 to=0
-      [7] OWNERSHIP_TRANSITION inst=7 from=2 to=0
-      [8] DYNAMIC_RUNTIME inst=8 from=0 to=0
-      [9] DYNAMIC_RUNTIME inst=9 from=0 to=0
-      [10] DYNAMIC_RUNTIME inst=10 from=0 to=0
-      [11] DYNAMIC_RUNTIME inst=11 from=0 to=0
+      [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+      [3] DYNAMIC_RUNTIME inst=3 from=0 to=0
+      [4] DYNAMIC_RUNTIME inst=4 from=0 to=0
+      [5] DYNAMIC_RUNTIME inst=5 from=0 to=0
+      [6] OWNERSHIP_TRANSITION inst=6 from=0 to=1
+      [7] OWNERSHIP_TRANSITION inst=7 from=1 to=2
+      [8] OWNERSHIP_TRANSITION inst=8 from=2 to=3
+      [9] OWNERSHIP_TRANSITION inst=9 from=3 to=2
+      [10] OWNERSHIP_TRANSITION inst=10 from=2 to=0
+      [11] OWNERSHIP_TRANSITION inst=11 from=2 to=0
       [12] DYNAMIC_RUNTIME inst=12 from=0 to=0
       [13] DYNAMIC_RUNTIME inst=13 from=0 to=0
       [14] DYNAMIC_RUNTIME inst=14 from=0 to=0
       [15] DYNAMIC_RUNTIME inst=15 from=0 to=0
       [16] DYNAMIC_RUNTIME inst=16 from=0 to=0
+      [17] DYNAMIC_RUNTIME inst=17 from=0 to=0
+      [18] DYNAMIC_RUNTIME inst=18 from=0 to=0
+      [19] OWNERSHIP_TRANSITION inst=19 from=2 to=0
+      [20] OWNERSHIP_TRANSITION inst=20 from=2 to=0
+      [21] OWNERSHIP_TRANSITION inst=21 from=2 to=0
+      [22] OWNERSHIP_TRANSITION inst=22 from=2 to=0
+      [23] DYNAMIC_RUNTIME inst=23 from=0 to=0
+      [24] DYNAMIC_RUNTIME inst=24 from=0 to=0
+      [25] DYNAMIC_RUNTIME inst=25 from=0 to=0
+      [26] DYNAMIC_RUNTIME inst=26 from=0 to=0
+      [27] DYNAMIC_RUNTIME inst=27 from=0 to=0
+      [28] OWNERSHIP_TRANSITION inst=28 from=2 to=0
+      [29] OWNERSHIP_TRANSITION inst=29 from=2 to=0
+      [30] OWNERSHIP_TRANSITION inst=30 from=2 to=0
+      [31] OWNERSHIP_TRANSITION inst=31 from=2 to=0
+      [32] OWNERSHIP_TRANSITION inst=32 from=2 to=0
+      [33] OWNERSHIP_TRANSITION inst=33 from=2 to=0
+      [34] OWNERSHIP_TRANSITION inst=34 from=2 to=0
+      [35] OWNERSHIP_TRANSITION inst=35 from=2 to=0
+      [36] OWNERSHIP_TRANSITION inst=36 from=2 to=0
+      [37] OWNERSHIP_TRANSITION inst=37 from=2 to=0
+      [38] OWNERSHIP_TRANSITION inst=38 from=2 to=0
+      [39] OWNERSHIP_TRANSITION inst=39 from=2 to=0
 
     BLOCK_GRAPH (1):
-      [0] block=0 first=0 count=17
+      [0] block=0 first=0 count=40
 
-    SEMIR (17):
-      [0] META_GET exec=16 type=3 effect=0 dst=2 op0=2 op1=2 deopt=1
-      [1] DYN_CALL exec=18 type=3 effect=1 dst=2 op0=2 op1=1 deopt=2
-      [2] OWN_UNIQUE exec=36 type=6 effect=2 dst=5 op0=6 op1=0 deopt=0
-      [3] OWN_SHARE exec=40 type=7 effect=3 dst=6 op0=4 op1=0 deopt=0
-      [4] OWN_WEAK exec=48 type=8 effect=4 dst=7 op0=8 op1=0 deopt=0
-      [5] OWN_UPGRADE exec=55 type=9 effect=5 dst=8 op0=9 op1=0 deopt=0
-      [6] OWN_RELEASE exec=59 type=9 effect=6 dst=9 op0=5 op1=0 deopt=0
-      [7] OWN_RELEASE exec=62 type=0 effect=7 dst=10 op0=7 op1=0 deopt=0
-      [8] DYN_CALL exec=67 type=0 effect=8 dst=11 op0=11 op1=1 deopt=3
-      [9] META_GET exec=78 type=0 effect=9 dst=11 op0=11 op1=7 deopt=4
-      [10] DYN_CALL exec=80 type=0 effect=10 dst=11 op0=11 op1=1 deopt=5
-      [11] DYN_ARITHMETIC exec=82 type=0 effect=11 dst=13 op0=1 op1=12 deopt=6
-      [12] DYN_ARITHMETIC exec=87 type=0 effect=12 dst=14 op0=2 op1=16 deopt=7
-      [13] DYN_ARITHMETIC exec=94 type=0 effect=13 dst=11 op0=4 op1=12 deopt=8
-      [14] DYN_ARITHMETIC exec=98 type=0 effect=14 dst=19 op0=8 op1=21 deopt=9
-      [15] DYN_ARITHMETIC exec=102 type=0 effect=15 dst=20 op0=9 op1=22 deopt=10
-      [16] DYN_ARITHMETIC exec=108 type=0 effect=16 dst=23 op0=21 op1=22 deopt=11
+    SEMIR (40):
+      [0] META_GET exec=11 type=0 effect=0 dst=0 op0=1 op1=0 deopt=1
+      [1] DYN_CALL exec=13 type=0 effect=1 dst=0 op0=0 op1=4 deopt=2
+      [2] META_GET exec=20 type=9 effect=2 dst=9 op0=9 op1=2 deopt=3
+      [3] DYN_CALL exec=23 type=9 effect=3 dst=9 op0=9 op1=1 deopt=4
+      [4] META_GET exec=32 type=6 effect=4 dst=6 op0=5 op1=0 deopt=5
+      [5] DYN_CALL exec=33 type=6 effect=5 dst=6 op0=6 op1=1 deopt=6
+      [6] OWN_UNIQUE exec=41 type=7 effect=6 dst=7 op0=6 op1=0 deopt=0
+      [7] OWN_SHARE exec=46 type=6 effect=7 dst=6 op0=5 op1=0 deopt=0
+      [8] OWN_WEAK exec=50 type=7 effect=8 dst=7 op0=6 op1=0 deopt=0
+      [9] OWN_UPGRADE exec=52 type=8 effect=9 dst=8 op0=7 op1=0 deopt=0
+      [10] OWN_RELEASE exec=54 type=9 effect=10 dst=10 op0=6 op1=0 deopt=0
+      [11] OWN_RELEASE exec=57 type=0 effect=11 dst=11 op0=8 op1=0 deopt=0
+      [12] DYN_CALL exec=62 type=0 effect=12 dst=12 op0=12 op1=1 deopt=7
+      [13] META_GET exec=66 type=0 effect=13 dst=12 op0=12 op1=4 deopt=8
+      [14] DYN_CALL exec=70 type=0 effect=14 dst=12 op0=12 op1=2 deopt=9
+      [15] META_GET exec=73 type=0 effect=15 dst=17 op0=17 op1=7 deopt=10
+      [16] DYN_CALL exec=76 type=0 effect=16 dst=17 op0=17 op1=1 deopt=11
+      [17] DYN_ARITHMETIC exec=78 type=0 effect=17 dst=14 op0=12 op1=13 deopt=12
+      [18] DYN_ARITHMETIC exec=83 type=0 effect=18 dst=18 op0=16 op1=17 deopt=13
+      [19] OWN_RELEASE exec=87 type=8 effect=19 dst=8 op0=8 op1=0 deopt=0
+      [20] OWN_RELEASE exec=89 type=7 effect=20 dst=7 op0=7 op1=0 deopt=0
+      [21] OWN_RELEASE exec=91 type=6 effect=21 dst=6 op0=6 op1=0 deopt=0
+      [22] OWN_RELEASE exec=93 type=5 effect=22 dst=5 op0=5 op1=0 deopt=0
+      [23] DYN_ARITHMETIC exec=98 type=0 effect=23 dst=14 op0=12 op1=13 deopt=14
+      [24] DYN_ARITHMETIC exec=102 type=0 effect=24 dst=23 op0=21 op1=22 deopt=15
+      [25] DYN_ARITHMETIC exec=106 type=0 effect=25 dst=24 op0=22 op1=23 deopt=16
+      [26] DYN_CALL exec=112 type=0 effect=26 dst=23 op0=23 op1=1 deopt=17
+      [27] DYN_ARITHMETIC exec=113 type=0 effect=27 dst=24 op0=22 op1=23 deopt=18
+      [28] OWN_RELEASE exec=114 type=8 effect=28 dst=8 op0=8 op1=0 deopt=0
+      [29] OWN_RELEASE exec=116 type=7 effect=29 dst=7 op0=7 op1=0 deopt=0
+      [30] OWN_RELEASE exec=118 type=6 effect=30 dst=6 op0=6 op1=0 deopt=0
+      [31] OWN_RELEASE exec=120 type=5 effect=31 dst=5 op0=5 op1=0 deopt=0
+      [32] OWN_RELEASE exec=126 type=8 effect=32 dst=8 op0=8 op1=0 deopt=0
+      [33] OWN_RELEASE exec=128 type=7 effect=33 dst=7 op0=7 op1=0 deopt=0
+      [34] OWN_RELEASE exec=130 type=6 effect=34 dst=6 op0=6 op1=0 deopt=0
+      [35] OWN_RELEASE exec=132 type=5 effect=35 dst=5 op0=5 op1=0 deopt=0
+      [36] OWN_RELEASE exec=135 type=8 effect=36 dst=8 op0=8 op1=0 deopt=0
+      [37] OWN_RELEASE exec=137 type=7 effect=37 dst=7 op0=7 op1=0 deopt=0
+      [38] OWN_RELEASE exec=139 type=6 effect=38 dst=6 op0=6 op1=0 deopt=0
+      [39] OWN_RELEASE exec=141 type=5 effect=39 dst=5 op0=5 op1=0 deopt=0
 
-    DEOPT_MAP (11):
-      [0] deopt=1 exec=16
-      [1] deopt=2 exec=18
-      [2] deopt=3 exec=67
-      [3] deopt=4 exec=78
-      [4] deopt=5 exec=80
-      [5] deopt=6 exec=82
-      [6] deopt=7 exec=87
-      [7] deopt=8 exec=94
-      [8] deopt=9 exec=98
-      [9] deopt=10 exec=102
-      [10] deopt=11 exec=108
+    DEOPT_MAP (18):
+      [0] deopt=1 exec=11
+      [1] deopt=2 exec=13
+      [2] deopt=3 exec=20
+      [3] deopt=4 exec=23
+      [4] deopt=5 exec=32
+      [5] deopt=6 exec=33
+      [6] deopt=7 exec=62
+      [7] deopt=8 exec=66
+      [8] deopt=9 exec=70
+      [9] deopt=10 exec=73
+      [10] deopt=11 exec=76
+      [11] deopt=12 exec=78
+      [12] deopt=13 exec=83
+      [13] deopt=14 exec=98
+      [14] deopt=15 exec=102
+      [15] deopt=16 exec=106
+      [16] deopt=17 exec=112
+      [17] deopt=18 exec=113
 
     CALLSITE_CACHE_TABLE (9):
-      [0] kind=MEMBER_GET inst=15 member=1 deopt=0 args=0 hits=0 misses=0
-      [1] kind=MEMBER_GET inst=23 member=3 deopt=0 args=0 hits=0 misses=0
-      [2] kind=MEMBER_GET inst=75 member=5 deopt=0 args=0 hits=0 misses=0
-      [3] kind=MEMBER_GET inst=83 member=6 deopt=0 args=0 hits=0 misses=0
-      [4] kind=MEMBER_GET inst=114 member=8 deopt=0 args=0 hits=0 misses=0
-      [5] kind=DYN_CALL inst=107 member=4294967295 deopt=17 args=1 hits=0 misses=0
-      [6] kind=MEMBER_GET inst=2 member=0 deopt=1 args=0 hits=0 misses=0
-      [7] kind=MEMBER_GET inst=27 member=0 deopt=5 args=0 hits=0 misses=0
-      [8] kind=MEMBER_GET inst=71 member=4 deopt=8 args=0 hits=0 misses=0
+      [0] kind=MEMBER_GET inst=19 member=1 deopt=0 args=0 hits=0 misses=0
+      [1] kind=MEMBER_GET inst=28 member=3 deopt=0 args=0 hits=0 misses=0
+      [2] kind=MEMBER_GET inst=71 member=5 deopt=0 args=0 hits=0 misses=0
+      [3] kind=MEMBER_GET inst=80 member=6 deopt=0 args=0 hits=0 misses=0
+      [4] kind=MEMBER_GET inst=136 member=8 deopt=0 args=0 hits=0 misses=0
+      [5] kind=DYN_CALL inst=112 member=4294967295 deopt=17 args=1 hits=0 misses=0
+      [6] kind=MEMBER_GET inst=11 member=0 deopt=1 args=0 hits=0 misses=0
+      [7] kind=MEMBER_GET inst=32 member=0 deopt=5 args=0 hits=0 misses=0
+      [8] kind=MEMBER_GET inst=66 member=4 deopt=8 args=0 hits=0 misses=0
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (114):
+    INSTRUCTIONS (145):
       [0] CREATE_OBJECT (extra=1)
       [1] OPCODE_37 (extra=1, operand2=1, operand1=1, operand1_1=0)
-      [2] SET_STACK (extra=3, operand=1)
-      [3] GET_CONSTANT (extra=4, operand=1)
-      [4] GET_CONSTANT (extra=5, operand=2)
-      [5] GET_CONSTANT (extra=6, operand=3)
-      [6] KNOWN_NATIVE_MEMBER_CALL (extra=2, operand1=6, operand2=4)
-      [7] SET_STACK (extra=1, operand=2)
-      [8] RESET_STACK_NULL2 (extra=2, first_slot=2, second_slot=3)
-      [9] RESET_STACK_NULL2 (extra=4, first_slot=4, second_slot=5)
-      [10] RESET_STACK_NULL (extra=6)
-      [11] SET_STACK (extra=2, operand=1)
-      [12] SET_STACK (extra=0, operand=2)
-      [13] RESET_STACK_NULL2 (extra=1, first_slot=1, second_slot=2)
-      [14] OPCODE_6 (extra=2, operand2=1, operand1=1, operand1_1=0)
-      [15] GET_MEMBER_SLOT (extra=2, operand1=2, operand2=0)
-      [16] OPCODE_8 (extra=2, operand1=2, operand2=2)
-      [17] GET_CONSTANT (extra=3, operand=5)
-      [18] OPCODE_109 (extra=2, operand1=2, operand2=1)
-      [19] RESET_STACK_NULL (extra=3)
-      [20] SET_STACK (extra=1, operand=2)
-      [21] RESET_STACK_NULL (extra=2)
-      [22] OPCODE_6 (extra=3, operand2=2, operand1=2, operand1_1=0)
-      [23] GET_MEMBER_SLOT (extra=2, operand1=3, operand2=1)
-      [24] RESET_STACK_NULL (extra=3)
-      [25] CREATE_OBJECT (extra=4)
-      [26] OPCODE_38 (extra=4, operand2=393220, operand1=4, operand1_1=6)
-      [27] SET_STACK (extra=6, operand=4)
-      [28] KNOWN_NATIVE_MEMBER_CALL (extra=5, operand1=7, operand2=1)
-      [29] SET_STACK (extra=4, operand=6)
-      [30] RESET_STACK_NULL2 (extra=5, first_slot=5, second_slot=6)
-      [31] SET_STACK (extra=3, operand=4)
-      [32] RESET_STACK_NULL (extra=4)
-      [33] CREATE_OBJECT (extra=5)
-      [34] OPCODE_38 (extra=5, operand2=458757, operand1=5, operand1_1=7)
-      [35] SET_STACK (extra=6, operand=5)
-      [36] OWN_UNIQUE (extra=5, operand1=6, operand2=0)
-      [37] RESET_STACK_NULL (extra=6)
-      [38] SET_STACK (extra=4, operand=5)
-      [39] RESET_STACK_NULL (extra=5)
-      [40] OWN_SHARE (extra=6, operand1=4, operand2=0)
-      [41] RESET_STACK_NULL (extra=7)
-      [42] SET_STACK (extra=4, operand=7)
-      [43] SET_STACK (extra=5, operand=6)
-      [44] RESET_STACK_NULL (extra=6)
-      [45] GET_STACK (extra=9, operand=5)
-      [46] SET_STACK (extra=8, operand=9)
-      [47] RESET_STACK_NULL (extra=9)
-      [48] OWN_WEAK (extra=7, operand1=8, operand2=0)
-      [49] RESET_STACK_NULL (extra=8)
-      [50] SET_STACK (extra=6, operand=7)
-      [51] RESET_STACK_NULL (extra=7)
-      [52] GET_STACK (extra=10, operand=6)
-      [53] SET_STACK (extra=9, operand=10)
-      [54] RESET_STACK_NULL (extra=10)
-      [55] OWN_UPGRADE (extra=8, operand1=9, operand2=0)
-      [56] RESET_STACK_NULL (extra=9)
-      [57] SET_STACK (extra=7, operand=8)
-      [58] RESET_STACK_NULL (extra=8)
-      [59] OWN_RELEASE (extra=9, operand1=5, operand2=0)
-      [60] SET_STACK (extra=8, operand=9)
-      [61] RESET_STACK_NULL (extra=9)
-      [62] OWN_RELEASE (extra=10, operand1=7, operand2=0)
-      [63] SET_STACK (extra=9, operand=10)
-      [64] RESET_STACK_NULL (extra=10)
-      [65] OPCODE_6 (extra=11, operand2=4, operand1=4, operand1_1=0)
-      [66] GET_CONSTANT (extra=12, operand=8)
-      [67] OPCODE_109 (extra=11, operand1=11, operand2=1)
-      [68] SET_STACK (extra=10, operand=11)
-      [69] GET_STACK (extra=11, operand=3)
-      [70] SET_STACK (extra=12, operand=11)
-      [71] GET_MEMBER_SLOT (extra=11, operand1=11, operand2=8)
-      [72] GET_MEMBER_SLOT (extra=13, operand1=0, operand2=2)
-      [73] TO_INT_FLOAT (extra=14, operand2=13, operand1=13, operand1_1=0)
-      [74] SET_STACK (extra=13, operand=14)
-      [75] KNOWN_NATIVE_CALL (extra=11, operand1=11, operand2=2)
-      [76] OPCODE_6 (extra=11, operand2=5, operand1=5, operand1_1=0)
-      [77] GET_MEMBER_SLOT (extra=11, operand1=11, operand2=3)
-      [78] OPCODE_8 (extra=11, operand1=11, operand2=7)
-      [79] GET_CONSTANT (extra=12, operand=9)
-      [80] OPCODE_109 (extra=11, operand1=11, operand2=1)
-      [81] RESET_STACK_NULL (extra=12)
-      [82] OPCODE_95 (extra=13, operand1=1, operand2=12)
-      [83] SET_STACK (extra=14, operand=13)
-      [84] JUMP_IF_BOOL_FALSE (extra=13, operand=1)
-      [85] OPCODE_114 (extra=0, operand=2)
-      [86] RESET_STACK_NULL (extra=16)
-      [87] OPCODE_95 (extra=14, operand1=2, operand2=16)
-      [88] JUMP_IF_BOOL_FALSE (extra=14, operand=4)
-      [89] GET_CONSTANT (extra=16, operand=10)
-      [90] NEG_SIGNED (extra=11, operand2=16, operand1=16, operand1_1=0)
-      [91] FUNCTION_RETURN (extra=1, operand1=11, operand2=0)
-      [92] OPCODE_114 (extra=0, operand=0)
-      [93] RESET_STACK_NULL (extra=12)
-      [94] OPCODE_95 (extra=11, operand1=4, operand2=12)
-      [95] SET_STACK (extra=19, operand=11)
-      [96] JUMP_IF_BOOL_FALSE (extra=11, operand=2)
-      [97] RESET_STACK_NULL (extra=21)
-      [98] OPCODE_95 (extra=19, operand1=8, operand2=21)
-      [99] SET_STACK (extra=20, operand=19)
-      [100] JUMP_IF_BOOL_FALSE (extra=19, operand=2)
+      [2] GET_CONSTANT (extra=5, operand=1)
+      [3] RESET_STACK_NULL (extra=6)
+      [4] GET_CONSTANT (extra=6, operand=3)
+      [5] RESET_STACK_NULL (extra=7)
+      [6] GET_CONSTANT (extra=7, operand=4)
+      [7] RESET_STACK_NULL (extra=8)
+      [8] SET_STACK (extra=2, operand=5)
+      [9] SET_STACK (extra=3, operand=6)
+      [10] SET_STACK (extra=4, operand=7)
+      [11] GET_MEMBER_SLOT (extra=0, operand1=1, operand2=6)
+      [12] SET_STACK (extra=1, operand=1)
+      [13] KNOWN_NATIVE_CALL (extra=0, operand1=0, operand2=4)
+      [14] SET_STACK (extra=1, operand=0)
+      [15] RESET_STACK_NULL2 (extra=2, first_slot=2, second_slot=3)
+      [16] RESET_STACK_NULL2 (extra=4, first_slot=4, second_slot=5)
+      [17] RESET_STACK_NULL2 (extra=6, first_slot=6, second_slot=7)
+      [18] OPCODE_6 (extra=3)
+      [19] GET_MEMBER_SLOT (extra=9, operand1=3, operand2=0)
+      [20] OPCODE_8 (extra=9, operand1=9, operand2=2)
+      [21] GET_CONSTANT (extra=10, operand=5)
+      [22] RESET_STACK_NULL (extra=11)
+      [23] OPCODE_109 (extra=9, operand1=9, operand2=1)
+      [24] RESET_STACK_NULL (extra=10)
+      [25] SET_STACK (extra=2, operand=9)
+      [26] RESET_STACK_NULL2 (extra=3, first_slot=3, second_slot=9)
+      [27] OPCODE_6 (extra=4, operand2=1, operand1=1, operand1_1=0)
+      [28] GET_MEMBER_SLOT (extra=3, operand1=4, operand2=1)
+      [29] RESET_STACK_NULL (extra=4)
+      [30] CREATE_OBJECT (extra=5)
+      [31] OPCODE_38 (extra=5, operand2=393221, operand1=5, operand1_1=6)
+      [32] SET_STACK (extra=7, operand=5)
+      [33] KNOWN_NATIVE_MEMBER_CALL (extra=6, operand1=7, operand2=1)
+      [34] SET_STACK (extra=5, operand=7)
+      [35] RESET_STACK_NULL2 (extra=6, first_slot=6, second_slot=7)
+      [36] SET_STACK (extra=4, operand=5)
+      [37] RESET_STACK_NULL (extra=5)
+      [38] CREATE_OBJECT (extra=6)
+      [39] OPCODE_38 (extra=6, operand2=458758, operand1=6, operand1_1=7)
+      [40] OPCODE_130 (extra=6)
+      [41] OWN_UNIQUE (extra=7, operand1=6, operand2=0)
+      [42] OPCODE_131 (extra=1)
+      [43] SET_STACK (extra=5, operand=7)
+      [44] RESET_STACK_NULL2 (extra=6, first_slot=6, second_slot=7)
+      [45] OPCODE_130 (extra=5)
+      [46] OWN_SHARE (extra=6, operand1=5, operand2=0)
+      [47] RESET_STACK_NULL (extra=7)
+      [48] SET_STACK (extra=5, operand=7)
+      [49] OPCODE_130 (extra=6)
+      [50] OWN_WEAK (extra=7, operand1=6, operand2=0)
+      [51] OPCODE_130 (extra=7)
+      [52] OWN_UPGRADE (extra=8, operand1=7, operand2=0)
+      [53] OPCODE_130 (extra=8)
+      [54] OWN_RELEASE (extra=10, operand1=6, operand2=0)
+      [55] SET_STACK (extra=9, operand=10)
+      [56] RESET_STACK_NULL (extra=10)
+      [57] OWN_RELEASE (extra=11, operand1=8, operand2=0)
+      [58] SET_STACK (extra=10, operand=11)
+      [59] RESET_STACK_NULL (extra=11)
+      [60] OPCODE_6 (extra=12, operand2=3, operand1=3, operand1_1=0)
+      [61] GET_CONSTANT (extra=13, operand=8)
+      [62] OPCODE_109 (extra=12, operand1=12, operand2=1)
+      [63] SET_STACK (extra=11, operand=12)
+      [64] GET_STACK (extra=12, operand=4)
+      [65] SET_STACK (extra=13, operand=12)
+      [66] GET_MEMBER_SLOT (extra=12, operand1=12, operand2=8)
+      [67] GET_MEMBER_SLOT (extra=15, operand1=1, operand2=2)
+      [68] TO_INT_FLOAT (extra=16, operand2=15, operand1=15, operand1_1=0)
+      [69] SET_STACK (extra=14, operand=16)
+      [70] KNOWN_NATIVE_CALL (extra=12, operand1=12, operand2=2)
+      [71] OPCODE_6 (extra=12, operand2=4, operand1=4, operand1_1=0)
+      [72] GET_MEMBER_SLOT (extra=17, operand1=12, operand2=3)
+      [73] OPCODE_8 (extra=17, operand1=17, operand2=7)
+      [74] GET_CONSTANT (extra=19, operand=9)
+      [75] SET_STACK (extra=18, operand=19)
+      [76] OPCODE_109 (extra=17, operand1=17, operand2=1)
+      [77] RESET_STACK_NULL (extra=13)
+      [78] OPCODE_95 (extra=14, operand1=2, operand2=13)
+      [79] SET_STACK (extra=15, operand=14)
+      [80] JUMP_IF_BOOL_FALSE (extra=14, operand=1)
+      [81] OPCODE_114 (extra=0, operand=2)
+      [82] RESET_STACK_NULL (extra=17)
+      [83] OPCODE_95 (extra=15, operand1=3, operand2=17)
+      [84] JUMP_IF_BOOL_FALSE (extra=15, operand=12)
+      [85] GET_CONSTANT (extra=17, operand=10)
+      [86] NEG_SIGNED (extra=16, operand2=17, operand1=17, operand1_1=0)
+      [87] OWN_RELEASE (extra=8, operand1=8, operand2=0)
+      [88] OPCODE_131 (extra=1)
+      [89] OWN_RELEASE (extra=7, operand1=7, operand2=0)
+      [90] OPCODE_131 (extra=1)
+      [91] OWN_RELEASE (extra=6, operand1=6, operand2=0)
+      [92] OPCODE_131 (extra=1)
+      [93] OWN_RELEASE (extra=5, operand1=5, operand2=0)
+      [94] OPCODE_131 (extra=1)
+      [95] FUNCTION_RETURN (extra=1, operand1=16, operand2=0)
+      [96] OPCODE_114 (extra=0, operand=0)
+      [97] RESET_STACK_NULL (extra=13)
+      [98] OPCODE_95 (extra=14, operand1=5, operand2=13)
+      [99] SET_STACK (extra=20, operand=14)
+      [100] JUMP_IF_BOOL_FALSE (extra=14, operand=2)
       [101] RESET_STACK_NULL (extra=22)
       [102] OPCODE_95 (extra=20, operand1=9, operand2=22)
-      [103] JUMP_IF_BOOL_FALSE (extra=20, operand=7)
-      [104] GET_MEMBER_SLOT (extra=21, operand1=3, operand2=4)
-      [105] GET_STACK (extra=22, operand=10)
-      [106] GET_CONSTANT (extra=23, operand=11)
-      [107] SUPER_DYN_CALL_CACHED (extra=22, operand1=22, operand2=5)
-      [108] OPCODE_39 (extra=23, operand2=1441813, operand1=21, operand1_1=22)
-      [109] FUNCTION_RETURN (extra=1, operand1=23, operand2=0)
-      [110] OPCODE_114 (extra=0, operand=0)
-      [111] GET_CONSTANT (extra=25, operand=12)
-      [112] NEG_SIGNED (extra=11, operand2=25, operand1=25, operand1_1=0)
-      [113] FUNCTION_RETURN (extra=1, operand1=11, operand2=0)
+      [103] SET_STACK (extra=21, operand=20)
+      [104] JUMP_IF_BOOL_FALSE (extra=20, operand=2)
+      [105] RESET_STACK_NULL (extra=23)
+      [106] OPCODE_95 (extra=21, operand1=10, operand2=23)
+      [107] JUMP_IF_BOOL_FALSE (extra=21, operand=16)
+      [108] GET_MEMBER_SLOT (extra=22, operand1=4, operand2=4)
+      [109] GET_STACK (extra=23, operand=11)
+      [110] GET_CONSTANT (extra=25, operand=11)
+      [111] SET_STACK (extra=24, operand=25)
+      [112] SUPER_DYN_CALL_CACHED (extra=23, operand1=23, operand2=5)
+      [113] OPCODE_39 (extra=24, operand2=1507350, operand1=22, operand1_1=23)
+      [114] OWN_RELEASE (extra=8, operand1=8, operand2=0)
+      [115] OPCODE_131 (extra=1)
+      [116] OWN_RELEASE (extra=7, operand1=7, operand2=0)
+      [117] OPCODE_131 (extra=1)
+      [118] OWN_RELEASE (extra=6, operand1=6, operand2=0)
+      [119] OPCODE_131 (extra=1)
+      [120] OWN_RELEASE (extra=5, operand1=5, operand2=0)
+      [121] OPCODE_131 (extra=1)
+      [122] FUNCTION_RETURN (extra=1, operand1=24, operand2=0)
+      [123] OPCODE_114 (extra=0, operand=0)
+      [124] GET_CONSTANT (extra=26, operand=12)
+      [125] NEG_SIGNED (extra=25, operand2=26, operand1=26, operand1_1=0)
+      [126] OWN_RELEASE (extra=8, operand1=8, operand2=0)
+      [127] OPCODE_131 (extra=1)
+      [128] OWN_RELEASE (extra=7, operand1=7, operand2=0)
+      [129] OPCODE_131 (extra=1)
+      [130] OWN_RELEASE (extra=6, operand1=6, operand2=0)
+      [131] OPCODE_131 (extra=1)
+      [132] OWN_RELEASE (extra=5, operand1=5, operand2=0)
+      [133] OPCODE_131 (extra=1)
+      [134] FUNCTION_RETURN (extra=1, operand1=25, operand2=0)
+      [135] OWN_RELEASE (extra=8, operand1=8, operand2=0)
+      [136] OPCODE_131 (extra=1)
+      [137] OWN_RELEASE (extra=7, operand1=7, operand2=0)
+      [138] OPCODE_131 (extra=1)
+      [139] OWN_RELEASE (extra=6, operand1=6, operand2=0)
+      [140] OPCODE_131 (extra=1)
+      [141] OWN_RELEASE (extra=5, operand1=5, operand2=0)
+      [142] OPCODE_131 (extra=1)
+      [143] RESET_STACK_NULL (extra=26)
+      [144] FUNCTION_RETURN (extra=1, operand1=26, operand2=0)
 
 

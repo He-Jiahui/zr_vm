@@ -19,7 +19,9 @@
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_math/module.h"
+#if defined(ZR_VM_HAS_NETWORK_MODULE)
 #include "zr_vm_lib_network/module.h"
+#endif
 #include "zr_vm_lib_system/module.h"
 #if defined(ZR_VM_HAS_THREAD_MODULE)
 #include "zr_vm_lib_thread/module.h"
@@ -357,7 +359,9 @@ TZrBool ZrCli_Project_RegisterStandardModulesWithBootstrap(SZrGlobalState *globa
     ZrParser_ToGlobalState_Register(global->mainThreadState);
     return ZrVmLibMath_Register(global) &&
            ZrVmLibSystem_Register(global) &&
+#if defined(ZR_VM_HAS_NETWORK_MODULE)
            ZrVmLibNetwork_Register(global) &&
+#endif
            ZrVmLibContainer_Register(global) &&
            ZrVmLibFfi_Register(global) &&
 #if defined(ZR_VM_HAS_THREAD_MODULE)

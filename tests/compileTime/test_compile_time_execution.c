@@ -31,7 +31,9 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compile_tool.h"
+#include "zr_vm_core/reflection.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_interfaces.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.h"
 
 #define TEST_START(summary) ZR_TEST_START(summary)
@@ -2838,6 +2840,862 @@ static void test_declaration_transform_generated_field_enters_normal_layout(void
     destroy_test_state(state);
 }
 
+static void test_declaration_transform_interface_add_enters_normal_contract(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "class Device { pub fn read(): int { return 7; } }\n"
+            "fn __fixture(): int { let device = new Device(); return device.read(); }\n"
+            "return __fixture();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_interface_add.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(
+            state, function, 7, "declaration transform interface add"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_interface_add_validates_value_type_contract(void) {
+    static const TZrChar *sources[] = {
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "struct Reader { pub fn read(): int { return 3; } }\n"
+            "return 0;\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface BaseReadable { fn baseRead(): int; }\n"
+            "interface Readable : BaseReadable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "struct Reader {\n"
+            "    pub fn baseRead(): int { return 2; }\n"
+            "    pub fn read(): int { return 3; }\n"
+            "}\n"
+            "return 0;\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "declaration_transform_struct_interface.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NOT_NULL(function);
+
+        ZrCore_Function_Free(state, function);
+        destroy_test_state(state);
+    }
+}
+
+static void test_declaration_transform_interface_add_validates_imported_parent_after_growth(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "contracts",
+                    "module contracts;\n"
+                    "pub interface Filler0 { }\n"
+                    "pub interface Filler1 { }\n"
+                    "pub interface Filler2 { }\n"
+                    "pub interface Filler3 { }\n"
+                    "pub interface Filler4 { }\n"
+                    "pub interface Filler5 { }\n"
+                    "pub interface Filler6 { }\n"
+                    "pub interface Filler7 { }\n"
+                    "pub interface ParentReadable { fn baseRead(): int; }\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
+            },
+    };
+    static const TZrChar *source =
+            "let contracts = import(\"contracts\");\n"
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable : contracts.ParentReadable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "struct Reader {\n"
+            "    pub fn baseRead(): int { return 2; }\n"
+            "    pub fn read(): int { return 3; }\n"
+            "}\n"
+            "return 0;\n";
+    const SZrCompileTimeImportFixture *previousFixtures =
+            gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    gCompileTimeImportFixtures = fixtures;
+    gCompileTimeImportFixtureCount = ZR_ARRAY_COUNT(fixtures);
+    state->global->sourceLoader = compile_time_import_source_loader;
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_imported_parent_interface.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(state, function);
+    reset_loaded_module_registry(state);
+    state->global->sourceLoader = ZR_NULL;
+    destroy_test_state(state);
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+}
+
+static void test_declaration_transform_interface_add_resolves_later_signature(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "class Device { pub fn read(): int { return 7; } }\n"
+            "interface Readable { fn read(): int; }\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_later_interface.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static SZrTypePrototypeInfo *compile_time_test_find_prototype(
+        SZrCompilerState *cs,
+        const TZrChar *name) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *prototype =
+                (SZrTypePrototypeInfo *)ZrCore_Array_Get(
+                        &cs->typePrototypes, index);
+        const TZrChar *prototypeName =
+                prototype != ZR_NULL && prototype->name != ZR_NULL
+                        ? ZrCore_String_GetNativeString(prototype->name)
+                        : ZR_NULL;
+        if (prototypeName != ZR_NULL && strcmp(prototypeName, name) == 0) {
+            return prototype;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrBool compile_time_test_name_array_contains(
+        const SZrArray *array,
+        const TZrChar *name) {
+    if (array == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < array->length; index++) {
+        SZrString **candidate =
+                (SZrString **)ZrCore_Array_Get((SZrArray *)array, index);
+        const TZrChar *candidateName =
+                candidate != ZR_NULL && *candidate != ZR_NULL
+                        ? ZrCore_String_GetNativeString(*candidate)
+                        : ZR_NULL;
+        if (candidateName != ZR_NULL && strcmp(candidateName, name) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static void test_declaration_transform_interface_add_binds_prototype_and_contract_slot(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "class Device { pub fn read(): int { return 7; } }\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    SZrTypePrototypeInfo *device;
+    SZrTypeMemberInfo *readMember = ZR_NULL;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_interface_binding.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_TRUE(
+            ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement != ZR_NULL && statement->type == ZR_AST_INTERFACE_DECLARATION) {
+            ZrParser_Compiler_CompileInterfaceDeclaration(&cs, statement);
+        } else if (statement != ZR_NULL &&
+                   statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(&cs, statement);
+        }
+    }
+    TEST_ASSERT_FALSE(cs.hasError);
+    device = compile_time_test_find_prototype(&cs, "Device");
+    TEST_ASSERT_NOT_NULL(device);
+    TEST_ASSERT_TRUE(compile_time_test_name_array_contains(
+            &device->inherits, "Readable"));
+    TEST_ASSERT_TRUE(compile_time_test_name_array_contains(
+            &device->implements, "Readable"));
+    for (TZrSize index = 0; index < device->members.length; index++) {
+        SZrTypeMemberInfo *member =
+                (SZrTypeMemberInfo *)ZrCore_Array_Get(&device->members, index);
+        const TZrChar *memberName =
+                member != ZR_NULL && member->name != ZR_NULL
+                        ? ZrCore_String_GetNativeString(member->name)
+                        : ZR_NULL;
+        if (memberName != ZR_NULL && strcmp(memberName, "read") == 0) {
+            readMember = member;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(readMember);
+    TEST_ASSERT_NOT_EQUAL_UINT32(UINT32_MAX, readMember->interfaceContractSlot);
+
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_interface_add_binds_value_type_contract_slot(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "struct Reader { pub fn read(): int { return 3; } }\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    SZrTypePrototypeInfo *reader;
+    SZrTypeMemberInfo *readMember = ZR_NULL;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_struct_interface_binding.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_TRUE(
+            ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement != ZR_NULL &&
+            statement->type == ZR_AST_INTERFACE_DECLARATION) {
+            ZrParser_Compiler_CompileInterfaceDeclaration(&cs, statement);
+        } else if (statement != ZR_NULL &&
+                   statement->type == ZR_AST_STRUCT_DECLARATION) {
+            ZrParser_Compiler_CompileStructDeclaration(&cs, statement);
+        }
+    }
+    TEST_ASSERT_FALSE(cs.hasError);
+    reader = compile_time_test_find_prototype(&cs, "Reader");
+    TEST_ASSERT_NOT_NULL(reader);
+    TEST_ASSERT_TRUE(compile_time_test_name_array_contains(
+            &reader->inherits, "Readable"));
+    TEST_ASSERT_TRUE(compile_time_test_name_array_contains(
+            &reader->implements, "Readable"));
+    for (TZrSize index = 0; index < reader->members.length; index++) {
+        SZrTypeMemberInfo *member =
+                (SZrTypeMemberInfo *)ZrCore_Array_Get(&reader->members, index);
+        const TZrChar *memberName =
+                member != ZR_NULL && member->name != ZR_NULL
+                        ? ZrCore_String_GetNativeString(member->name)
+                        : ZR_NULL;
+        if (memberName != ZR_NULL && strcmp(memberName, "read") == 0) {
+            readMember = member;
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(readMember);
+    TEST_ASSERT_NOT_EQUAL_UINT32(
+            UINT32_MAX, readMember->interfaceContractSlot);
+
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_interface_add_runs_normal_requirement_validation(void) {
+    static const TZrChar *sources[] = {
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "class Missing { }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Versioned { pub const version: int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addVersioned(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Versioned)]\n"
+            "    );\n"
+            "}\n"
+            "#addVersioned#\n"
+            "class MutableVersion { pub var version: int; }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "struct MissingValue { }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface BaseReadable { fn baseRead(): int; }\n"
+            "interface Readable : BaseReadable { fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "struct MissingBase { pub fn read(): int { return 3; } }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { pub const fn read(): int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addReadable(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Readable)]\n"
+            "    );\n"
+            "}\n"
+            "#addReadable#\n"
+            "struct WritableReader { pub fn read(): int { return 3; } }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Versioned { pub const version: int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addVersioned(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Versioned)]\n"
+            "    );\n"
+            "}\n"
+            "#addVersioned#\n"
+            "struct MutableVersion { pub var version: int; }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "class NotInterface { }\n"
+            "interface Broken : NotInterface { }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addBroken(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        interfaceAdds: [typeid(Broken)]\n"
+            "    );\n"
+            "}\n"
+            "#addBroken#\n"
+            "struct InvalidParent { }\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "declaration_transform_interface_requirement.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+
+        destroy_test_state(state);
+    }
+}
+
+static void test_declaration_transform_interface_add_rejects_invalid_entries(void) {
+    static const TZrChar *sources[] = {
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "class NotInterface { }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(target: target.symbolId, interfaceAdds: [typeid(NotInterface)]);\n"
+            "}\n#invalid#\nclass Device { }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "interface Readable { }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(target: target.symbolId, interfaceAdds: [typeid(Readable)]);\n"
+            "}\n#invalid#\nclass Device : Readable { }\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Class): declaration.Patch {\n"
+            "    return init declaration.Patch(target: target.symbolId, interfaceAdds: [1]);\n"
+            "}\n#invalid#\nclass Device { }\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "declaration_transform_invalid_interface_add.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
+}
+
+static void test_declaration_transform_interface_add_rejects_alias_identity_duplicate(void) {
+    static const TZrChar *source = "interface Readable { }\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrString *readableName;
+    SZrString *aliasName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    SZrTypeBinding aliasBinding;
+    SZrTypePrototypeInfo targetInfo;
+    SZrReflectionTypeIdentity identity = {0};
+    SZrObject *typeIdObject;
+    SZrObject *arrayObject;
+    SZrTypeValue typeIdValue;
+    SZrTypeValue arrayValue;
+    SZrTypeValue key;
+    SZrParserCompileTimePatchInterfaceAdds prepared;
+    TZrBool prepareResult;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_interface_alias_duplicate.zr");
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    ZrParser_Compiler_CompileInterfaceDeclaration(
+            &cs, ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_FALSE(cs.hasError);
+
+    readableName = ZrCore_String_CreateFromNative(state, "Readable");
+    aliasName = ZrCore_String_CreateFromNative(state, "ReadableAlias");
+    TEST_ASSERT_NOT_NULL(readableName);
+    TEST_ASSERT_NOT_NULL(aliasName);
+    aliasBinding.name = aliasName;
+    ZrParser_InferredType_InitFull(
+            state,
+            &aliasBinding.type,
+            ZR_VALUE_TYPE_OBJECT,
+            ZR_FALSE,
+            readableName);
+    ZrCore_Array_Push(state, &cs.typeValueAliases, &aliasBinding);
+
+    ZrCore_Memory_RawSet(&targetInfo, 0, sizeof(targetInfo));
+    ZrCore_Array_Init(
+            state, &targetInfo.inherits, sizeof(SZrString *), 1U);
+    ZrCore_Array_Init(
+            state, &targetInfo.implements, sizeof(SZrString *), 1U);
+    ZrCore_Array_Push(state, &targetInfo.inherits, &aliasName);
+
+    identity.canonicalTypeId = 71U;
+    identity.typeToken = 17U;
+    identity.metadataGeneration = 1U;
+    identity.category = ZR_REFLECTION_TYPE_CATEGORY_INTERFACE;
+    typeIdObject = ZrCore_Reflection_BuildTypeIdObject(
+            state, readableName, &identity);
+    TEST_ASSERT_NOT_NULL(typeIdObject);
+    ZrCore_Value_InitAsRawObject(
+            state, &typeIdValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeIdObject));
+    typeIdValue.type = ZR_VALUE_TYPE_OBJECT;
+    arrayObject = ZrCore_Object_NewCustomized(
+            state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    ZrCore_Object_Init(state, arrayObject);
+    ZrCore_Value_InitAsInt(state, &key, 0);
+    ZrCore_Object_SetValue(state, arrayObject, &key, &typeIdValue);
+    ZrCore_Value_InitAsRawObject(
+            state, &arrayValue, ZR_CAST_RAW_OBJECT_AS_SUPER(arrayObject));
+    arrayValue.type = ZR_VALUE_TYPE_ARRAY;
+
+    ZrCore_Memory_RawSet(&prepared, 0, sizeof(prepared));
+    prepareResult = ZrParser_CompileTime_PreparePatchInterfaceAdds(
+            &cs, &targetInfo, &arrayValue, ast->location, &prepared);
+    ZrParser_CompileTime_FreePatchInterfaceAdds(&cs, &prepared);
+    TEST_ASSERT_FALSE(prepareResult);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_EQUAL_STRING(
+            "declaration_transform.interface_add: duplicate interface",
+            cs.errorMessage);
+
+    ZrCore_Array_Free(state, &targetInfo.inherits);
+    ZrCore_Array_Free(state, &targetInfo.implements);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_typed_warning_is_nonfatal(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn deriveMarker(target: declaration.Struct): declaration.Patch {\n"
+            "    let marker = init declaration.GeneratedField(\n"
+            "        name: \"generatedEquality\",\n"
+            "        type: typeid(bool),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let\n"
+            "    );\n"
+            "    let warning = init declaration.CompileDiagnostic(\n"
+            "        isError: false,\n"
+            "        message: \"generated marker\",\n"
+            "        target: target.symbolId\n"
+            "    );\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        additions: [marker],\n"
+            "        diagnostics: [warning]\n"
+            "    );\n"
+            "}\n"
+            "#deriveMarker#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "fn __fixture(): int {\n"
+            "    let meter = init Meter();\n"
+            "    return meter.generatedEquality ? 7 : 0;\n"
+            "}\n"
+            "return __fixture();\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_typed_warning.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(execute_test_function(
+            state, function, 0, "declaration transform typed warning"));
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_typed_error_rejects_patch(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn rejectMarker(target: declaration.Struct): declaration.Patch {\n"
+            "    let marker = init declaration.GeneratedField(\n"
+            "        name: \"mustNotBind\",\n"
+            "        type: typeid(bool),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let\n"
+            "    );\n"
+            "    let error = init declaration.CompileDiagnostic(\n"
+            "        isError: true,\n"
+            "        message: \"reject generated marker\",\n"
+            "        target: target.symbolId\n"
+            "    );\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        additions: [marker],\n"
+            "        diagnostics: [error]\n"
+            "    );\n"
+            "}\n"
+            "#rejectMarker#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_typed_error.zr");
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NULL(function);
+
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_error_prevents_generated_member_registration(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn rejectMarker(target: declaration.Struct): declaration.Patch {\n"
+            "    let marker = init declaration.GeneratedField(\n"
+            "        name: \"mustNotBind\",\n"
+            "        type: typeid(bool),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let\n"
+            "    );\n"
+            "    let error = init declaration.CompileDiagnostic(\n"
+            "        isError: true,\n"
+            "        message: \"reject before append\",\n"
+            "        target: target.symbolId\n"
+            "    );\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        additions: [marker],\n"
+            "        diagnostics: [error]\n"
+            "    );\n"
+            "}\n"
+            "#rejectMarker#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrString *generatedMemberName;
+    SZrAstNode *ast;
+    SZrAstNode *structNode = ZR_NULL;
+    SZrCompilerState cs;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_error_before_append.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_TRUE(
+            ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    for (TZrSize index = 0;
+         index < ast->data.script.statements->count;
+         index++) {
+        if (ast->data.script.statements->nodes[index] != ZR_NULL &&
+            ast->data.script.statements->nodes[index]->type ==
+                    ZR_AST_STRUCT_DECLARATION) {
+            structNode = ast->data.script.statements->nodes[index];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(structNode);
+
+    ZrParser_Compiler_CompileStructDeclaration(&cs, structNode);
+    TEST_ASSERT_TRUE(cs.hasCompileTimeError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_EQUAL_STRING("reject before append", cs.errorMessage);
+    generatedMemberName = ZrCore_String_CreateFromNative(state, "mustNotBind");
+    TEST_ASSERT_NOT_NULL(generatedMemberName);
+    TEST_ASSERT_NULL(ZrParser_Semantic_FindSymbolByNameAndKind(
+            cs.semanticContext,
+            generatedMemberName,
+            ZR_SEMANTIC_SYMBOL_KIND_FIELD));
+
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_invalid_multi_add_commits_nothing(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn duplicate(target: declaration.Struct): declaration.Patch {\n"
+            "    let first = init declaration.GeneratedField(\n"
+            "        name: \"mustNotBind\", type: typeid(bool),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let);\n"
+            "    let second = init declaration.GeneratedField(\n"
+            "        name: \"mustNotBind\", type: typeid(int),\n"
+            "        visibility: declaration.Visibility.public,\n"
+            "        mutability: declaration.Mutability.let);\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId, additions: [first, second]);\n"
+            "}\n"
+            "#duplicate#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrString *generatedMemberName;
+    SZrAstNode *ast;
+    SZrAstNode *structNode = ZR_NULL;
+    SZrCompilerState cs;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_invalid_multi_add.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_TRUE(
+            ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    for (TZrSize index = 0;
+         index < ast->data.script.statements->count;
+         index++) {
+        if (ast->data.script.statements->nodes[index] != ZR_NULL &&
+            ast->data.script.statements->nodes[index]->type ==
+                    ZR_AST_STRUCT_DECLARATION) {
+            structNode = ast->data.script.statements->nodes[index];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(structNode);
+
+    ZrParser_Compiler_CompileStructDeclaration(&cs, structNode);
+    TEST_ASSERT_TRUE(cs.hasCompileTimeError);
+    generatedMemberName = ZrCore_String_CreateFromNative(state, "mustNotBind");
+    TEST_ASSERT_NOT_NULL(generatedMemberName);
+    TEST_ASSERT_NULL(ZrParser_Semantic_FindSymbolByNameAndKind(
+            cs.semanticContext,
+            generatedMemberName,
+            ZR_SEMANTIC_SYMBOL_KIND_FIELD));
+
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_patch_target_rejects_uint32_wraparound(void) {
+    static const TZrChar *source =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Struct): declaration.Patch {\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId + 4294967296\n"
+            "    );\n"
+            "}\n"
+            "#invalid#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "return 0;\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_target_wraparound.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NULL(function);
+
+    destroy_test_state(state);
+}
+
+static void test_declaration_transform_diagnostic_constructor_rejects_invalid_fields(void) {
+    static const TZrChar *sources[] = {
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Struct): declaration.Patch {\n"
+            "    let bad = init declaration.CompileDiagnostic(isError: 1, message: \"x\", target: target.symbolId);\n"
+            "    return init declaration.Patch(target: target.symbolId);\n"
+            "}\n#invalid#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Struct): declaration.Patch {\n"
+            "    let bad = init declaration.CompileDiagnostic(isError: false, message: false, target: target.symbolId);\n"
+            "    return init declaration.Patch(target: target.symbolId);\n"
+            "}\n#invalid#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Struct): declaration.Patch {\n"
+            "    let bad = init declaration.CompileDiagnostic(isError: false, message: \"x\", target: \"wrong\");\n"
+            "    return init declaration.Patch(target: target.symbolId);\n"
+            "}\n#invalid#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn invalid(target: declaration.Struct): declaration.Patch {\n"
+            "    let bad = init declaration.CompileDiagnostic(isError: false, message: \"\", target: target.symbolId);\n"
+            "    return init declaration.Patch(target: target.symbolId);\n"
+            "}\n#invalid#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "declaration_transform_invalid_diagnostic.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
+}
+
 static void test_declaration_transform_rejects_invalid_signature_and_patch_shape(void) {
     static const TZrChar *sources[] = {
             "let declaration = import(\"zr.compile.declaration\");\n"
@@ -3089,6 +3947,212 @@ static void test_runtime_top_level_statements_reject_compile_tool_alias_use(void
         ZrParser_Ast_Free(state, ast);
         destroy_test_state(state);
     }
+}
+
+static void test_declaration_transform_attribute_adds_use_registered_schema(void) {
+    static const TZrChar *validSource =
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.type, "
+            "retention: zr.reflection.AttributeRetention.artifact, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct GeneratedLabel { pub let value: int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addLabel(target: declaration.Struct): declaration.Patch {\n"
+            "    let label = init declaration.AttributeData(\n"
+            "        typeId: typeid(GeneratedLabel),\n"
+            "        fieldValues: [7]\n"
+            "    );\n"
+            "    return init declaration.Patch(\n"
+            "        target: target.symbolId,\n"
+            "        attributeAdds: [label]\n"
+            "    );\n"
+            "}\n"
+            "#addLabel#\n"
+            "pub struct Meter { pub let value: int; }\n"
+            "return 0;\n";
+    static const TZrChar *invalidSources[] = {
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.type, "
+            "retention: zr.reflection.AttributeRetention.artifact, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct GeneratedLabel { pub let value: int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addLabel(target: declaration.Struct): declaration.Patch {\n"
+            "    let label = init declaration.AttributeData("
+            "typeId: typeid(GeneratedLabel), fieldValues: [\"wrong\"]);\n"
+            "    return init declaration.Patch(target: target.symbolId, attributeAdds: [label]);\n"
+            "}\n#addLabel#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.type, "
+            "retention: zr.reflection.AttributeRetention.artifact, "
+            "repeatable: false, inherited: false)#\n"
+            "pub readonly struct GeneratedLabel { pub let value: int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addLabel(target: declaration.Struct): declaration.Patch {\n"
+            "    let label = init declaration.AttributeData("
+            "typeId: typeid(GeneratedLabel), fieldValues: [7]);\n"
+            "    return init declaration.Patch("
+            "target: target.symbolId, attributeAdds: [label, label]);\n"
+            "}\n#addLabel#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+            "let declaration = import(\"zr.compile.declaration\");\n"
+            "#zr.reflection.attributeUsage("
+            "targets: zr.reflection.AttributeTargets.field, "
+            "retention: zr.reflection.AttributeRetention.artifact, "
+            "repeatable: true, inherited: false)#\n"
+            "pub readonly struct FieldOnly { pub let value: int; }\n"
+            "#zr.compile.declarationTransform#\n"
+            "pub comptime fn addLabel(target: declaration.Struct): declaration.Patch {\n"
+            "    let label = init declaration.AttributeData("
+            "typeId: typeid(FieldOnly), fieldValues: [7]);\n"
+            "    return init declaration.Patch(target: target.symbolId, attributeAdds: [label]);\n"
+            "}\n#addLabel#\npub struct Meter { pub let value: int; }\nreturn 0;\n",
+    };
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_CreateFromNative(
+            state, "declaration_transform_attribute_add.zr");
+    function = ZrParser_Source_Compile(
+            state, validSource, strlen(validSource), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(invalidSources); index++) {
+        state = create_test_state();
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "declaration_transform_invalid_attribute_add.zr");
+        function = ZrParser_Source_Compile(
+                state,
+                invalidSources[index],
+                strlen(invalidSources[index]),
+                sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
+}
+
+static void test_static_decorator_gate_covers_all_declaration_shapes(void) {
+    static const TZrChar *invalidSources[] = {
+            "fn legacy(target: object): object { return target; }\n"
+            "#legacy#\nunion Choice { None; }\nreturn 0;\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "union Choice { #legacy# None; }\nreturn 0;\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "union Choice { Some(#legacy# value: int); }\nreturn 0;\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "interface Service { fn run(#legacy# value: int): int; }\nreturn 0;\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "interface Service { @constructor(#legacy# value: int): Service; }\nreturn 0;\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "enum Mode { #legacy# Active; }\nreturn 0;\n",
+            "#zr.ffi.underlying(\"i32\")#\n"
+            "enum Mode { Active; }\nreturn 0;\n",
+            "enum Mode { #zr.ffi.value(7)# Active; }\nreturn 0;\n",
+            "native extern(\"fixture\") {\n"
+            "  #legacy# fn read(): i32;\n}\nreturn 0;\n",
+            "native extern(\"fixture\") {\n"
+            "  #legacy# delegate Callback(value: i32): i32;\n}\nreturn 0;\n",
+            "native extern(\"fixture\") {\n"
+            "  #legacy# struct Pair { var value: i32; }\n}\nreturn 0;\n",
+            "native extern(\"fixture\") {\n"
+            "  struct Pair { #legacy# var value: i32; }\n}\nreturn 0;\n",
+            "native extern(\"fixture\") {\n"
+            "  #legacy# enum Mode { Active; }\n}\nreturn 0;\n",
+            "native extern(\"fixture\") {\n"
+            "  enum Mode { #legacy# Active; }\n}\nreturn 0;\n",
+            "native extern(\"fixture\") {\n"
+            "  fn read(#legacy# value: i32): i32;\n}\nreturn 0;\n",
+    };
+    static const TZrChar *knownStaticFfiSource =
+            "native extern(\"fixture\") {\n"
+            "  #zr.ffi.entry(\"read\")#\n"
+            "  #zr.ffi.callconv(\"system\")#\n"
+            "  fn read(#zr.ffi.in# value: i32): i32;\n"
+            "  #zr.ffi.pack(1)#\n"
+            "  #zr.ffi.align(1)#\n"
+            "  struct Packed { #zr.ffi.offset(0)# var value: i32; }\n"
+            "  #zr.ffi.underlying(\"i32\")#\n"
+            "  enum Mode { #zr.ffi.value(7)# Active; }\n"
+            "  delegate Callback(#zr.ffi.out# value: pointer<i32>): i32;\n"
+            "  delegate Both(#zr.ffi.inout# value: pointer<i32>): i32;\n"
+            "  delegate Text(#zr.ffi.charset(\"utf8\")# value: string): i32;\n"
+            "}\nreturn 0;\n";
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(invalidSources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "runtime_decorator_shape_rejected.zr");
+        function = ZrParser_Source_Compile(
+                state,
+                invalidSources[index],
+                strlen(invalidSources[index]),
+                sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "known_static_ffi_decorators.zr");
+        function = ZrParser_Source_Compile(
+                state,
+                knownStaticFfiSource,
+                strlen(knownStaticFfiSource),
+                sourceName);
+        TEST_ASSERT_NOT_NULL(function);
+        ZrCore_Function_Free(state, function);
+        destroy_test_state(state);
+    }
+}
+
+static void test_legacy_runtime_decorators_are_rejected_without_codegen(void) {
+    static const TZrChar *sources[] = {
+            "fn legacy(target: object): object { return target; }\n"
+            "#legacy#\n"
+            "class Device { }\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "class Device { #legacy# pub var value: int = 1; }\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "#legacy#\n"
+            "fn run(): int { return 1; }\n",
+            "fn legacy(target: object): object { return target; }\n"
+            "fn run(#legacy# value: int): int { return value; }\n",
+    };
+
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_CreateFromNative(
+                state, "legacy_runtime_decorator_rejected.zr");
+        function = ZrParser_Source_Compile(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+        destroy_test_state(state);
+    }
+
+    TEST_ASSERT_NULL(ZrCore_Io_GetSerializableNativeHelperFunction(
+            ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_DECORATOR_APPLY));
+    TEST_ASSERT_NULL(ZrCore_Io_GetSerializableNativeHelperFunction(
+            ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_MEMBER_DECORATOR_APPLY));
 }
 
 static void test_runtime_local_binding_shadows_compile_tool_alias(void) {
@@ -3774,6 +4838,8 @@ static void test_signature_variants_and_decorators_enter_build_facts(void) {
     destroy_test_state(state);
 }
 
+#include "test_compile_time_decorator_shape_retention_cases.h"
+
 // 主函数
 int main(void) {
     UNITY_BEGIN();
@@ -3794,6 +4860,21 @@ int main(void) {
     RUN_TEST(test_attribute_schema_rejects_invalid_shape_and_application);
     RUN_TEST(test_declaration_transform_accepts_typed_empty_patch_once);
     RUN_TEST(test_declaration_transform_generated_field_enters_normal_layout);
+    RUN_TEST(test_declaration_transform_interface_add_enters_normal_contract);
+    RUN_TEST(test_declaration_transform_interface_add_validates_value_type_contract);
+    RUN_TEST(test_declaration_transform_interface_add_validates_imported_parent_after_growth);
+    RUN_TEST(test_declaration_transform_interface_add_resolves_later_signature);
+    RUN_TEST(test_declaration_transform_interface_add_binds_prototype_and_contract_slot);
+    RUN_TEST(test_declaration_transform_interface_add_binds_value_type_contract_slot);
+    RUN_TEST(test_declaration_transform_interface_add_runs_normal_requirement_validation);
+    RUN_TEST(test_declaration_transform_interface_add_rejects_invalid_entries);
+    RUN_TEST(test_declaration_transform_interface_add_rejects_alias_identity_duplicate);
+    RUN_TEST(test_declaration_transform_typed_warning_is_nonfatal);
+    RUN_TEST(test_declaration_transform_typed_error_rejects_patch);
+    RUN_TEST(test_declaration_transform_error_prevents_generated_member_registration);
+    RUN_TEST(test_declaration_transform_invalid_multi_add_commits_nothing);
+    RUN_TEST(test_declaration_transform_patch_target_rejects_uint32_wraparound);
+    RUN_TEST(test_declaration_transform_diagnostic_constructor_rejects_invalid_fields);
     RUN_TEST(test_declaration_transform_rejects_invalid_signature_and_patch_shape);
     RUN_TEST(test_comptime_if_prunes_static_import_summary_before_module_analysis);
     RUN_TEST(test_nested_comptime_if_prunes_build_facts_before_module_analysis);
@@ -3801,6 +4882,13 @@ int main(void) {
     RUN_TEST(test_runtime_scope_rejects_compile_tool_import);
     RUN_TEST(test_runtime_scope_rejects_top_level_compile_tool_alias_use);
     RUN_TEST(test_runtime_top_level_statements_reject_compile_tool_alias_use);
+    RUN_TEST(test_declaration_transform_attribute_adds_use_registered_schema);
+    RUN_TEST(test_static_decorator_gate_covers_all_declaration_shapes);
+    RUN_TEST(test_union_interface_parameter_decorator_metadata_is_retained);
+    RUN_TEST(test_ordinary_enum_static_and_dynamic_decorators_compose);
+    RUN_TEST(test_generated_field_retains_transform_source_provenance);
+    RUN_TEST(test_generated_field_metadata_roundtrips_to_artifact_and_reflection);
+    RUN_TEST(test_legacy_runtime_decorators_are_rejected_without_codegen);
     RUN_TEST(test_runtime_local_binding_shadows_compile_tool_alias);
     RUN_TEST(test_expression_nested_comptime_if_is_selected_during_build_facts);
     RUN_TEST(test_comptime_feature_supports_disabled_no_else_and_typed_string);

@@ -123,6 +123,18 @@ static TZrBool metadata_parse_attribute(
                    metadata_string_equals(secondName, "declarationTransform")) {
             parsed->schema = ZrParser_AttributeContract_FindBuiltinByRole(
                     ZR_PARSER_ATTRIBUTE_ROLE_DECLARATION_TRANSFORM);
+        } else if (metadata_string_equals(firstName, "testing") &&
+                   metadata_string_equals(secondName, "test")) {
+            parsed->schema = ZrParser_AttributeContract_FindBuiltinByRole(
+                    ZR_PARSER_ATTRIBUTE_ROLE_TEST);
+        } else if (metadata_string_equals(firstName, "testing") &&
+                   metadata_string_equals(secondName, "case")) {
+            parsed->schema = ZrParser_AttributeContract_FindBuiltinByRole(
+                    ZR_PARSER_ATTRIBUTE_ROLE_TEST_CASE);
+        } else if (metadata_string_equals(firstName, "testing") &&
+                   metadata_string_equals(secondName, "skip")) {
+            parsed->schema = ZrParser_AttributeContract_FindBuiltinByRole(
+                    ZR_PARSER_ATTRIBUTE_ROLE_TEST_SKIP);
         }
         return parsed->schema != ZR_NULL ? ZR_TRUE : ZR_FALSE;
     }
@@ -503,7 +515,15 @@ TZrBool ZrParser_Metadata_RegisterAttributeSchema(
                 cs, "attributeUsage.repeatability: exactly one usage declaration is allowed", typeNode->location);
         return ZR_FALSE;
     }
-    if (metadata_find_bound_schema(cs, declaration->name->name) != ZR_NULL) {
+    const SZrCompilerAttributeSchemaBinding *existingSchema =
+            metadata_find_bound_schema(cs, declaration->name->name);
+    if (existingSchema != ZR_NULL &&
+        existingSchema->sourceRange.source == typeNode->location.source &&
+        existingSchema->sourceRange.start.offset == typeNode->location.start.offset &&
+        existingSchema->sourceRange.end.offset == typeNode->location.end.offset) {
+        return ZR_TRUE;
+    }
+    if (existingSchema != ZR_NULL) {
         ZrParser_Compiler_Error(
                 cs, "attribute.schema_duplicate: attribute schema name is already registered", typeNode->location);
         return ZR_FALSE;
@@ -1068,6 +1088,29 @@ TZrBool ZrParser_Metadata_IsRegisteredAttribute(
         SZrAstNode *decoratorNode) {
     SZrParsedMetadataAttribute parsed;
     return metadata_parse_attribute(cs, decoratorNode, &parsed);
+}
+
+TZrBool ZrParser_Metadata_ParseAttributeRole(
+        SZrCompilerState *cs,
+        SZrAstNode *decoratorNode,
+        EZrParserAttributeRole *role,
+        SZrFunctionCall **call) {
+    SZrParsedMetadataAttribute parsed;
+
+    if (role != ZR_NULL) {
+        *role = ZR_PARSER_ATTRIBUTE_ROLE_NONE;
+    }
+    if (call != ZR_NULL) {
+        *call = ZR_NULL;
+    }
+    if (role == ZR_NULL || call == ZR_NULL ||
+        !metadata_parse_attribute(cs, decoratorNode, &parsed) ||
+        parsed.schema == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *role = parsed.schema->role;
+    *call = parsed.call;
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_Metadata_FunctionHasRole(

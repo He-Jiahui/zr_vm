@@ -21,10 +21,7 @@ typedef enum EZrParserDeclarationKind {
 } EZrParserDeclarationKind;
 
 typedef enum EZrParserGeneratedDeclarationKind {
-    ZR_PARSER_GENERATED_DECLARATION_TYPE = 1,
-    ZR_PARSER_GENERATED_DECLARATION_FIELD = 2,
-    ZR_PARSER_GENERATED_DECLARATION_METHOD = 3,
-    ZR_PARSER_GENERATED_DECLARATION_PROPERTY = 4
+    ZR_PARSER_GENERATED_DECLARATION_FIELD = 2
 } EZrParserGeneratedDeclarationKind;
 
 typedef enum EZrParserGeneratedVisibility {

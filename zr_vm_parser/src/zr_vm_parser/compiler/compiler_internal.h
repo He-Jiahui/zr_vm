@@ -19,7 +19,6 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/raw_object.h"
-#include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -30,6 +29,22 @@
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
+
+TZrBool compiler_test_bind_function(
+        SZrCompilerState *cs,
+        SZrAstNode *functionNode,
+        SZrFunction *function,
+        TZrUInt32 callableChildIndex,
+        TZrBool *isTest);
+TZrBool compiler_test_validate_non_module_roles(
+        SZrCompilerState *cs,
+        SZrAstNode *node);
+TZrBool compiler_test_validate_production_reference(
+        SZrCompilerState *cs,
+        const SZrAstNode *declarationNode,
+        SZrFileRange location);
+TZrBool compiler_test_finalize_manifest(SZrCompilerState *cs);
+void compiler_test_free_entries(SZrCompilerState *cs);
 
 TZrBool compiler_call_has_spread_argument(const SZrFunctionCall *call);
 TZrBool compiler_validate_spread_call_signature(
@@ -283,10 +298,6 @@ static ZR_FORCE_INLINE EZrMetaType compiler_resolve_meta_type_name(SZrString *me
     if (strcmp(metaNameText, "close") == 0) {
         return ZR_META_CLOSE;
     }
-    if (strcmp(metaNameText, "decorate") == 0) {
-        return ZR_META_DECORATE;
-    }
-
     return ZR_META_ENUM_MAX;
 }
 
@@ -522,19 +533,6 @@ ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState
 TZrBool compiler_is_compile_tool_import_declaration(const SZrAstNode *node) ;
 
 TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) ;
-TZrBool emit_runtime_decorator_applications(SZrCompilerState *cs,
-                                            SZrAstNodeArray *decorators,
-                                            TZrUInt32 targetSlot,
-                                            TZrBool persistTarget,
-                                            SZrFileRange location) ;
-
-TZrBool emit_runtime_member_decorator_applications(SZrCompilerState *cs,
-                                                   SZrAstNodeArray *decorators,
-                                                   SZrString *typeName,
-                                                   SZrString *memberName,
-                                                   EZrRuntimeDecoratorTargetKind targetKind,
-                                                   SZrFileRange location) ;
-
 void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
                                                          TZrUInt32 objectSlot,
                                                          SZrString *fieldName,
@@ -843,6 +841,9 @@ void compiler_class_lint_process_local_shared_cycles(SZrCompilerState *cs,
                                                      SZrTypePrototypeInfo *info);
 
 void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
+void compiler_finalize_interface_decorators(
+        SZrCompilerState *cs,
+        SZrAstNode *node);
 TZrBool compiler_type_member_capture_structured_return_type(
         SZrCompilerState *cs,
         SZrTypeMemberInfo *memberInfo,
@@ -885,6 +886,10 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
                                                    TZrBool includeDefaultValues,
                                                    SZrFunctionMetadataParameter **outParameters,
                                                    TZrUInt32 *outParameterCount);
+void compiler_free_function_parameter_metadata(
+        SZrState *state,
+        SZrFunctionMetadataParameter *parameters,
+        TZrUInt32 parameterCount);
 TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
                                                      SZrType *declaredReturnType,
                                                      SZrAstNode *bodyNode,

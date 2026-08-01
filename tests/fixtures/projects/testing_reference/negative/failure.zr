@@ -1,0 +1,6 @@
+let testing = import("zr.testing");
+
+#zr.testing.test#
+fn expectedFailure(): void {
+    testing.assert(false, "expected reference failure");
+}

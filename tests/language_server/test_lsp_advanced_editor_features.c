@@ -1413,8 +1413,7 @@ static void test_lsp_code_lens_exposes_test_command(SZrState *state, int *failur
     const TZrChar *summary = "LSP code lens exposes test commands";
     const TZrChar *content =
         "#zr.testing.test#\n"
-        "fn advanced(): int {\n"
-        "    return 1;\n"
+        "fn advanced(): void {\n"
         "}\n";
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
@@ -1435,6 +1434,54 @@ static void test_lsp_code_lens_exposes_test_command(SZrState *state, int *failur
         if (command == ZR_NULL || strcmp(command, "zr.runCurrentProject") != 0) {
             (*failures)++;
             TEST_FAIL(timer, summary, "codeLens command did not match the VS Code run command");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeLens(state, &lenses);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_lens_ignores_unbound_test_like_attribute(
+        SZrState *state,
+        int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code lens consumes bound test attribute roles";
+    const TZrChar *content =
+        "#zr.testing.tests#\n"
+        "fn notATest(): void {\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray lenses = {0};
+    TZrBool foundRunLens = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(
+            state, "file:///tmp/zr_lsp_lens_unbound_attribute.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeLens(state, context, uri, &lenses)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeLens failed for unbound attribute fixture");
+    } else {
+        for (TZrSize index = 0U; index < lenses.length; index++) {
+            SZrLspCodeLens **lensPtr =
+                    (SZrLspCodeLens **)ZrCore_Array_Get(&lenses, index);
+            const TZrChar *command =
+                    lensPtr != ZR_NULL && *lensPtr != ZR_NULL
+                    ? test_string_text((*lensPtr)->command)
+                    : ZR_NULL;
+            if (command != ZR_NULL && strcmp(command, "zr.runCurrentProject") == 0) {
+                foundRunLens = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundRunLens) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "unbound test-like attribute produced a run CodeLens");
         } else {
             TEST_PASS(timer, summary);
         }
@@ -2165,6 +2212,7 @@ int main(void) {
     test_lsp_code_action_ignores_multiline_block_comment_missing_import(state, &failures);
     test_lsp_code_lens_exposes_test_command(state, &failures);
     test_lsp_code_lens_ignores_non_code_test_markers(state, &failures);
+    test_lsp_code_lens_ignores_unbound_test_like_attribute(state, &failures);
     test_lsp_code_lens_exposes_reference_count(state, &failures);
     test_lsp_call_hierarchy_prepare_returns_symbol_item(state, &failures);
     test_lsp_call_hierarchy_outgoing_returns_direct_calls(state, &failures);

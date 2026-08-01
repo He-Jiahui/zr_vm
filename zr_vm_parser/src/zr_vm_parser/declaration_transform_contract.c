@@ -57,7 +57,9 @@ EZrParserDeclarationPatchError ZrParser_DeclarationPatch_Validate(
     if (patch->expansionRound != 0U) {
         return ZR_PARSER_DECLARATION_PATCH_ERROR_ROUND;
     }
-    if (patch->additionCount > ZR_PARSER_DECLARATION_TRANSFORM_MAX_ADDITIONS) {
+    if (patch->additionCount > ZR_PARSER_DECLARATION_TRANSFORM_MAX_ADDITIONS ||
+        patch->interfaceAddCount > ZR_PARSER_DECLARATION_TRANSFORM_MAX_ADDITIONS ||
+        patch->attributeAddCount > ZR_PARSER_DECLARATION_TRANSFORM_MAX_ADDITIONS) {
         return ZR_PARSER_DECLARATION_PATCH_ERROR_BUDGET;
     }
     if ((patch->additionCount > 0U && patch->additions == ZR_NULL) ||
@@ -67,11 +69,32 @@ EZrParserDeclarationPatchError ZrParser_DeclarationPatch_Validate(
         return ZR_PARSER_DECLARATION_PATCH_ERROR_ARGUMENT;
     }
 
+    for (TZrSize index = 0; index < patch->diagnosticCount; index++) {
+        const SZrParserCompileDiagnostic *diagnostic = &patch->diagnostics[index];
+
+        if (diagnostic->message == ZR_NULL || diagnostic->message[0] == '\0') {
+            return ZR_PARSER_DECLARATION_PATCH_ERROR_ARGUMENT;
+        }
+        if (diagnostic->targetSymbolId != view->symbolId) {
+            return ZR_PARSER_DECLARATION_PATCH_ERROR_TARGET;
+        }
+    }
+
+    for (TZrSize index = 0; index < patch->interfaceAddCount; index++) {
+        if (patch->interfaceAdds[index] == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_PARSER_DECLARATION_PATCH_ERROR_TYPE;
+        }
+        for (TZrSize previous = 0; previous < index; previous++) {
+            if (patch->interfaceAdds[previous] == patch->interfaceAdds[index]) {
+                return ZR_PARSER_DECLARATION_PATCH_ERROR_COLLISION;
+            }
+        }
+    }
+
     for (TZrSize index = 0; index < patch->additionCount; index++) {
         const SZrParserGeneratedDeclaration *addition = &patch->additions[index];
 
-        if (addition->kind < ZR_PARSER_GENERATED_DECLARATION_TYPE ||
-            addition->kind > ZR_PARSER_GENERATED_DECLARATION_PROPERTY) {
+        if (addition->kind != ZR_PARSER_GENERATED_DECLARATION_FIELD) {
             return ZR_PARSER_DECLARATION_PATCH_ERROR_KIND;
         }
         if (!declaration_name_is_valid(addition->name)) {

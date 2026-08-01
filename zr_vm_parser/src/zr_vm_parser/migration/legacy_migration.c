@@ -1,6 +1,7 @@
 #include "zr_vm_parser/legacy_migration.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "zr_vm_core/memory.h"
@@ -41,8 +42,8 @@ static const SZrLegacyMigrationDirectiveRule k_legacy_migration_directive_rules[
          ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
          "Native declarations use the promoted native extern spelling."},
         {"test", "percentTest", "testDeclaration", "14",
-         ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-         "Tests must become ordinary functions with zr.testing.test metadata."},
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "A structurally safe legacy test becomes an ordinary function with zr.testing.test metadata."},
         {"compileTime", "percentCompileTime", "compileTimeDeclaration", "11",
          ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
          "Compile-time declarations use the promoted comptime keyword."},
@@ -125,6 +126,16 @@ static TZrSize legacy_migration_skip_space(
         TZrSize start) {
     while (start < sourceLength &&
            (source[start] == ' ' || source[start] == '\t' || source[start] == '\r')) {
+        start++;
+    }
+    return start;
+}
+
+static TZrSize legacy_migration_skip_whitespace(
+        const TZrChar *source,
+        TZrSize sourceLength,
+        TZrSize start) {
+    while (start < sourceLength && isspace((unsigned char)source[start])) {
         start++;
     }
     return start;
@@ -247,21 +258,65 @@ static TZrChar *legacy_migration_format_unary_call(
     return result;
 }
 
-static TZrBool legacy_migration_find_call_end(
+static TZrBool legacy_migration_find_balanced_end(
         const TZrChar *source,
         TZrSize sourceLength,
         TZrSize openOffset,
+        TZrChar openCharacter,
+        TZrChar closeCharacter,
         TZrSize *outEnd) {
+    EZrLegacyMigrationLexState lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
     TZrSize index;
     TZrSize depth = 0U;
 
-    if (openOffset >= sourceLength || source[openOffset] != '(' || outEnd == ZR_NULL) {
+    if (openOffset >= sourceLength || source[openOffset] != openCharacter ||
+        outEnd == ZR_NULL) {
         return ZR_FALSE;
     }
     for (index = openOffset; index < sourceLength; index++) {
-        if (source[index] == '(') {
+        TZrChar current = source[index];
+
+        if (lexState == ZR_LEGACY_MIGRATION_LEX_LINE_COMMENT) {
+            if (current == '\n') {
+                lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
+            }
+            continue;
+        }
+        if (lexState == ZR_LEGACY_MIGRATION_LEX_BLOCK_COMMENT) {
+            if (current == '*' && index + 1U < sourceLength &&
+                source[index + 1U] == '/') {
+                lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
+                index++;
+            }
+            continue;
+        }
+        if (lexState == ZR_LEGACY_MIGRATION_LEX_QUOTED_STRING ||
+            lexState == ZR_LEGACY_MIGRATION_LEX_BACKTICK_STRING) {
+            TZrChar terminator =
+                    lexState == ZR_LEGACY_MIGRATION_LEX_QUOTED_STRING ? '"' : '`';
+            if (current == '\\' && index + 1U < sourceLength) {
+                index++;
+            } else if (current == terminator) {
+                lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
+            }
+            continue;
+        }
+        if (current == '/' && index + 1U < sourceLength && source[index + 1U] == '/') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_LINE_COMMENT;
+            index++;
+        } else if (current == '/' && index + 1U < sourceLength && source[index + 1U] == '*') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_BLOCK_COMMENT;
+            index++;
+        } else if (current == '"') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_QUOTED_STRING;
+        } else if (current == '`') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_BACKTICK_STRING;
+        } else if (current == openCharacter) {
             depth++;
-        } else if (source[index] == ')') {
+        } else if (current == closeCharacter) {
+            if (depth == 0U) {
+                return ZR_FALSE;
+            }
             depth--;
             if (depth == 0U) {
                 *outEnd = index + 1U;
@@ -270,6 +325,15 @@ static TZrBool legacy_migration_find_call_end(
         }
     }
     return ZR_FALSE;
+}
+
+static TZrBool legacy_migration_find_call_end(
+        const TZrChar *source,
+        TZrSize sourceLength,
+        TZrSize openOffset,
+        TZrSize *outEnd) {
+    return legacy_migration_find_balanced_end(
+            source, sourceLength, openOffset, '(', ')', outEnd);
 }
 
 static TZrBool legacy_migration_append_item(
@@ -312,7 +376,10 @@ static TZrBool legacy_migration_append_item(
         item.fix.title = ZR_STRING_LITERAL(state, "Migrate legacy syntax");
         item.fix.editRange = legacy_migration_range(source, sourceName, editStart, editEnd);
         item.fix.editText = ZrCore_String_Create(state, (TZrNativeString)editText, strlen(editText));
-        item.fix.applicability = ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE;
+        item.fix.applicability =
+                applicability == ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE
+                ? ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE
+                : ZR_DIAGNOSTIC_FIX_MAYBE_INCORRECT;
         item.hasFix = item.fix.editText != ZR_NULL;
     }
     if (item.diagnosticCode == ZR_NULL || item.oldConstructKind == ZR_NULL ||
@@ -429,6 +496,289 @@ static TZrBool legacy_migration_has_item_kind(
     return ZR_FALSE;
 }
 
+static TZrBool legacy_migration_range_has_identifier(
+        const TZrChar *source,
+        TZrSize start,
+        TZrSize end,
+        const TZrChar *identifier) {
+    EZrLegacyMigrationLexState lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
+    TZrSize index = start;
+
+    while (index < end) {
+        TZrChar current = source[index];
+
+        if (lexState == ZR_LEGACY_MIGRATION_LEX_LINE_COMMENT) {
+            if (current == '\n') {
+                lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
+            }
+            index++;
+            continue;
+        }
+        if (lexState == ZR_LEGACY_MIGRATION_LEX_BLOCK_COMMENT) {
+            if (current == '*' && index + 1U < end && source[index + 1U] == '/') {
+                lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
+                index += 2U;
+            } else {
+                index++;
+            }
+            continue;
+        }
+        if (lexState == ZR_LEGACY_MIGRATION_LEX_QUOTED_STRING ||
+            lexState == ZR_LEGACY_MIGRATION_LEX_BACKTICK_STRING) {
+            TZrChar terminator =
+                    lexState == ZR_LEGACY_MIGRATION_LEX_QUOTED_STRING ? '"' : '`';
+            if (current == '\\' && index + 1U < end) {
+                index += 2U;
+            } else if (current == terminator) {
+                lexState = ZR_LEGACY_MIGRATION_LEX_CODE;
+                index++;
+            } else {
+                index++;
+            }
+            continue;
+        }
+        if (current == '/' && index + 1U < end && source[index + 1U] == '/') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_LINE_COMMENT;
+            index += 2U;
+            continue;
+        }
+        if (current == '/' && index + 1U < end && source[index + 1U] == '*') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_BLOCK_COMMENT;
+            index += 2U;
+            continue;
+        }
+        if (current == '"') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_QUOTED_STRING;
+            index++;
+            continue;
+        }
+        if (current == '`') {
+            lexState = ZR_LEGACY_MIGRATION_LEX_BACKTICK_STRING;
+            index++;
+            continue;
+        }
+        if (legacy_migration_is_identifier_start(current)) {
+            TZrSize wordEnd = legacy_migration_read_identifier(source, end, index);
+            if (legacy_migration_span_equals(source, index, wordEnd, identifier)) {
+                return ZR_TRUE;
+            }
+            index = wordEnd;
+            continue;
+        }
+        index++;
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool legacy_migration_range_has_percent_directive(
+        const TZrChar *source,
+        TZrSize start,
+        TZrSize end) {
+    for (TZrSize index = start; index + 1U < end; index++) {
+        if (source[index] == '%' &&
+            legacy_migration_is_identifier_start(source[index + 1U])) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrChar *legacy_migration_test_identifier(
+        SZrState *state,
+        const TZrChar *source,
+        TZrSize displayStart,
+        TZrSize displayEnd) {
+    TZrSize maximumLength = (displayEnd - displayStart) + strlen("testCase") + 1U;
+    TZrChar *identifier;
+    TZrSize writeOffset = 0U;
+    TZrBool capitalizeNext = ZR_TRUE;
+
+    identifier = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, maximumLength);
+    if (identifier == ZR_NULL) {
+        return ZR_NULL;
+    }
+    memcpy(identifier, "test", strlen("test"));
+    writeOffset = strlen("test");
+    for (TZrSize index = displayStart; index < displayEnd; index++) {
+        TZrChar current = source[index];
+
+        if (current == '\\' && index + 1U < displayEnd) {
+            current = source[++index];
+        }
+        if (!isalnum((unsigned char)current)) {
+            capitalizeNext = ZR_TRUE;
+            continue;
+        }
+        if (capitalizeNext && isalpha((unsigned char)current)) {
+            current = (TZrChar)toupper((unsigned char)current);
+        }
+        identifier[writeOffset++] = current;
+        capitalizeNext = ZR_FALSE;
+    }
+    if (writeOffset == strlen("test")) {
+        memcpy(identifier + writeOffset, "Case", strlen("Case"));
+        writeOffset += strlen("Case");
+    }
+    identifier[writeOffset] = '\0';
+    return identifier;
+}
+
+static TZrBool legacy_migration_identifier_occurs(
+        const TZrChar *source,
+        TZrSize sourceLength,
+        const TZrChar *identifier) {
+    TZrSize identifierLength = strlen(identifier);
+
+    for (TZrSize index = 0U; index + identifierLength <= sourceLength; index++) {
+        if (memcmp(source + index, identifier, identifierLength) == 0 &&
+            (index == 0U || !legacy_migration_is_identifier_continue(source[index - 1U])) &&
+            (index + identifierLength == sourceLength ||
+             !legacy_migration_is_identifier_continue(source[index + identifierLength]))) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool legacy_migration_append_percent_test(
+        SZrState *state,
+        SZrLegacyMigrationPlan *plan,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        SZrString *sourceName,
+        const SZrLegacyMigrationDirectiveRule *rule,
+        TZrSize percentOffset,
+        TZrSize wordEnd,
+        TZrSize *outConsumedEnd) {
+    TZrSize openOffset = legacy_migration_skip_whitespace(source, sourceLength, wordEnd);
+    TZrSize callEnd;
+    TZrSize argumentStart;
+    TZrSize argumentEnd;
+    TZrSize blockStart;
+    TZrSize blockEnd;
+    TZrChar *identifier = ZR_NULL;
+    TZrChar *editText = ZR_NULL;
+    TZrBool collision;
+    EZrLegacyMigrationApplicability applicability;
+    const TZrChar *reason;
+    TZrBool result;
+
+    if (outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = wordEnd;
+    }
+    if (!legacy_migration_find_call_end(
+                source, sourceLength, openOffset, &callEnd)) {
+        return legacy_migration_append_item(
+                state, plan, source, sourceName,
+                rule->oldConstructKind, rule->targetConstructKind, rule->targetPlanId,
+                ZR_LEGACY_MIGRATION_BLOCKED,
+                "A legacy test migration requires a balanced display-name argument list.",
+                percentOffset, wordEnd, percentOffset, wordEnd, ZR_NULL);
+    }
+    argumentStart = legacy_migration_skip_whitespace(
+            source, callEnd - 1U, openOffset + 1U);
+    argumentEnd = legacy_migration_trim_end(source, argumentStart, callEnd - 1U);
+    if (argumentEnd <= argumentStart + 1U || source[argumentStart] != '"' ||
+        source[argumentEnd - 1U] != '"') {
+        return legacy_migration_append_item(
+                state, plan, source, sourceName,
+                rule->oldConstructKind, rule->targetConstructKind, rule->targetPlanId,
+                ZR_LEGACY_MIGRATION_BLOCKED,
+                "A legacy test migration requires exactly one static string display name.",
+                percentOffset, callEnd, percentOffset, callEnd, ZR_NULL);
+    }
+    blockStart = legacy_migration_skip_whitespace(source, sourceLength, callEnd);
+    if (blockStart >= sourceLength || source[blockStart] != '{' ||
+        !legacy_migration_find_balanced_end(
+                source, sourceLength, blockStart, '{', '}', &blockEnd)) {
+        return legacy_migration_append_item(
+                state, plan, source, sourceName,
+                rule->oldConstructKind, rule->targetConstructKind, rule->targetPlanId,
+                ZR_LEGACY_MIGRATION_BLOCKED,
+                "A legacy test migration requires a balanced test body.",
+                percentOffset, callEnd, percentOffset, callEnd, ZR_NULL);
+    }
+    if (outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = blockEnd;
+    }
+    if (legacy_migration_range_has_identifier(
+                source, blockStart + 1U, blockEnd - 1U, "return") ||
+        legacy_migration_range_has_percent_directive(
+                source, blockStart + 1U, blockEnd - 1U)) {
+        return legacy_migration_append_item(
+                state, plan, source, sourceName,
+                rule->oldConstructKind, rule->targetConstructKind, rule->targetPlanId,
+                ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
+                "The legacy test body uses a return convention or nested percent syntax that requires semantic review.",
+                percentOffset, blockEnd, percentOffset, blockEnd, ZR_NULL);
+    }
+
+    identifier = legacy_migration_test_identifier(
+            state, source, argumentStart + 1U, argumentEnd - 1U);
+    if (identifier == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    collision = legacy_migration_identifier_occurs(source, sourceLength, identifier);
+    if (collision) {
+        TZrSize baseLength = strlen(identifier);
+        TZrChar *suffixed = (TZrChar *)ZrCore_Memory_RawMalloc(
+                state->global, baseLength + 1U + 8U + 1U);
+        if (suffixed == ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, identifier, baseLength + 1U);
+            return ZR_FALSE;
+        }
+        snprintf(suffixed,
+                 baseLength + 1U + 8U + 1U,
+                 "%s_%08x",
+                 identifier,
+                 (unsigned int)(legacy_migration_hash(
+                         source + percentOffset, blockEnd - percentOffset) & 0xffffffffU));
+        ZrCore_Memory_RawFree(state->global, identifier, baseLength + 1U);
+        identifier = suffixed;
+    }
+
+    {
+        static const TZrChar prefix[] = "#zr.testing.test#\nfn ";
+        static const TZrChar signature[] = "(): void ";
+        TZrSize identifierLength = strlen(identifier);
+        TZrSize bodyLength = blockEnd - blockStart;
+        TZrSize editLength = strlen(prefix) + identifierLength +
+                             strlen(signature) + bodyLength;
+        TZrSize offset = 0U;
+
+        editText = (TZrChar *)ZrCore_Memory_RawMalloc(
+                state->global, editLength + 1U);
+        if (editText == ZR_NULL) {
+            ZrCore_Memory_RawFree(
+                    state->global, identifier, identifierLength + 1U);
+            return ZR_FALSE;
+        }
+        memcpy(editText + offset, prefix, strlen(prefix));
+        offset += strlen(prefix);
+        memcpy(editText + offset, identifier, identifierLength);
+        offset += identifierLength;
+        memcpy(editText + offset, signature, strlen(signature));
+        offset += strlen(signature);
+        memcpy(editText + offset, source + blockStart, bodyLength);
+        offset += bodyLength;
+        editText[offset] = '\0';
+    }
+    applicability = collision
+                    ? ZR_LEGACY_MIGRATION_REQUIRES_REVIEW
+                    : ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE;
+    reason = collision
+             ? "The generated test identifier collided; a stable hash suffix was proposed for review."
+             : rule->reason;
+    result = legacy_migration_append_item(
+            state, plan, source, sourceName,
+            rule->oldConstructKind, rule->targetConstructKind, rule->targetPlanId,
+            applicability, reason,
+            percentOffset, blockEnd, percentOffset, blockEnd, editText);
+    ZrCore_Memory_RawFree(state->global, editText, strlen(editText) + 1U);
+    ZrCore_Memory_RawFree(state->global, identifier, strlen(identifier) + 1U);
+    return result;
+}
+
 static TZrBool legacy_migration_append_directive(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -437,7 +787,8 @@ static TZrBool legacy_migration_append_directive(
         SZrString *sourceName,
         TZrSize percentOffset,
         TZrSize wordStart,
-        TZrSize wordEnd) {
+        TZrSize wordEnd,
+        TZrSize *outConsumedEnd) {
     const SZrLegacyMigrationDirectiveRule *rule =
             legacy_migration_find_directive_rule(source, wordStart, wordEnd);
     TZrSize tokenEnd = wordEnd;
@@ -445,6 +796,10 @@ static TZrBool legacy_migration_append_directive(
     TZrChar *temporaryEdit = ZR_NULL;
     const TZrChar *editText = ZR_NULL;
     TZrBool result;
+
+    if (outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = wordEnd;
+    }
 
     if (rule == ZR_NULL) {
         return legacy_migration_append_item(
@@ -462,6 +817,18 @@ static TZrBool legacy_migration_append_directive(
                 percentOffset,
                 wordEnd,
                 ZR_NULL);
+    }
+    if (strcmp(rule->directive, "test") == 0) {
+        return legacy_migration_append_percent_test(
+                state,
+                plan,
+                source,
+                sourceLength,
+                sourceName,
+                rule,
+                percentOffset,
+                wordEnd,
+                outConsumedEnd);
     }
     if (rule->applicability == ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE) {
         if (strcmp(rule->directive, "async") == 0) {
@@ -665,6 +1032,9 @@ static TZrBool legacy_migration_append_directive(
     if (temporaryEdit != ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, temporaryEdit, strlen(temporaryEdit) + 1U);
     }
+    if (result && outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = tokenEnd;
+    }
     return result;
 }
 
@@ -770,6 +1140,107 @@ static TZrBool legacy_migration_append_word_item(
             editText);
 }
 
+static TZrBool legacy_migration_append_old_test_attribute(
+        SZrState *state,
+        SZrLegacyMigrationPlan *plan,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        SZrString *sourceName,
+        TZrSize start,
+        TZrSize *outEnd) {
+    static const TZrChar prefix[] = "#zr.test.";
+    static const TZrChar replacementPrefix[] = "#zr.testing.";
+    TZrSize roleStart;
+    TZrSize roleEnd;
+    TZrSize end;
+    TZrSize replacementLength;
+    TZrChar *replacement;
+    TZrBool knownRole;
+    TZrBool result;
+
+    if (outEnd != ZR_NULL) {
+        *outEnd = start;
+    }
+    if (start + strlen(prefix) > sourceLength ||
+        memcmp(source + start, prefix, strlen(prefix)) != 0) {
+        return ZR_FALSE;
+    }
+    roleStart = start + strlen(prefix);
+    roleEnd = legacy_migration_read_identifier(source, sourceLength, roleStart);
+    end = roleEnd;
+    knownRole = legacy_migration_span_equals(source, roleStart, roleEnd, "test") ||
+                legacy_migration_span_equals(source, roleStart, roleEnd, "case") ||
+                legacy_migration_span_equals(source, roleStart, roleEnd, "skip");
+    if (!knownRole || end >= sourceLength) {
+        return ZR_FALSE;
+    }
+    if (source[end] == '(') {
+        if (!legacy_migration_find_call_end(source, sourceLength, end, &end)) {
+            return ZR_FALSE;
+        }
+    }
+    if (end >= sourceLength || source[end] != '#') {
+        return ZR_FALSE;
+    }
+    end++;
+
+    replacementLength = strlen(replacementPrefix) + (end - 1U - roleStart) + 1U;
+    replacement = (TZrChar *)ZrCore_Memory_RawMalloc(
+            state->global, replacementLength + 1U);
+    if (replacement == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memcpy(replacement, replacementPrefix, strlen(replacementPrefix));
+    memcpy(replacement + strlen(replacementPrefix),
+           source + roleStart,
+           end - 1U - roleStart);
+    replacement[replacementLength - 1U] = '#';
+    replacement[replacementLength] = '\0';
+    result = legacy_migration_append_item(
+            state,
+            plan,
+            source,
+            sourceName,
+            "legacyTestAttribute",
+            "testingAttribute",
+            "14",
+            ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+            "The draft zr.test role is now owned by the canonical zr.testing provider.",
+            start,
+            end,
+            start,
+            end,
+            replacement);
+    ZrCore_Memory_RawFree(
+            state->global, replacement, replacementLength + 1U);
+    if (result && outEnd != ZR_NULL) {
+        *outEnd = end;
+    }
+    return result;
+}
+
+static TZrBool legacy_migration_word_is_test_function_prefix(
+        const TZrChar *source,
+        TZrSize sourceLength,
+        TZrSize wordEnd) {
+    TZrSize next = legacy_migration_skip_whitespace(source, sourceLength, wordEnd);
+    TZrSize nextEnd;
+
+    if (next >= sourceLength || !legacy_migration_is_identifier_start(source[next])) {
+        return ZR_FALSE;
+    }
+    nextEnd = legacy_migration_read_identifier(source, sourceLength, next);
+    if (legacy_migration_span_equals(source, next, nextEnd, "fn")) {
+        return ZR_TRUE;
+    }
+    if (!legacy_migration_span_equals(source, next, nextEnd, "async")) {
+        return ZR_FALSE;
+    }
+    next = legacy_migration_skip_whitespace(source, sourceLength, nextEnd);
+    nextEnd = legacy_migration_read_identifier(source, sourceLength, next);
+    return legacy_migration_span_equals(source, next, nextEnd, "fn");
+}
+
 static TZrBool legacy_migration_has_machine_overlap(const SZrLegacyMigrationPlan *plan) {
     TZrSize index;
     TZrSize previousEnd = 0U;
@@ -779,7 +1250,9 @@ static TZrBool legacy_migration_has_machine_overlap(const SZrLegacyMigrationPlan
         const SZrLegacyMigrationItem *item =
                 (const SZrLegacyMigrationItem *)ZrCore_Array_Get((SZrArray *)&plan->items, index);
 
-        if (item == ZR_NULL || !item->hasFix) {
+        if (item == ZR_NULL ||
+            item->applicability != ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE ||
+            !item->hasFix) {
             continue;
         }
         if (hasPrevious && item->fix.editRange.start.offset < previousEnd) {
@@ -862,17 +1335,41 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
             index++;
             continue;
         }
+        if (current == '#') {
+            TZrSize attributeEnd = index;
+
+            if (legacy_migration_append_old_test_attribute(
+                        state,
+                        outPlan,
+                        source,
+                        sourceLength,
+                        sourceName,
+                        index,
+                        &attributeEnd)) {
+                index = attributeEnd;
+                continue;
+            }
+        }
         if (current == '%' && index + 1U < sourceLength &&
             legacy_migration_is_identifier_start(source[index + 1U])) {
             TZrSize wordStart = index + 1U;
             TZrSize wordEnd = legacy_migration_read_identifier(source, sourceLength, wordStart);
+            TZrSize consumedEnd = wordEnd;
 
             if (!legacy_migration_append_directive(
-                        state, outPlan, source, sourceLength, sourceName, index, wordStart, wordEnd)) {
+                        state,
+                        outPlan,
+                        source,
+                        sourceLength,
+                        sourceName,
+                        index,
+                        wordStart,
+                        wordEnd,
+                        &consumedEnd)) {
                 ZrParser_LegacyMigration_PlanFree(state, outPlan);
                 return ZR_FALSE;
             }
-            index = wordEnd;
+            index = consumedEnd;
             continue;
         }
         if (current == '$') {
@@ -966,7 +1463,26 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
         if (legacy_migration_is_identifier_start(current)) {
             TZrSize wordEnd = legacy_migration_read_identifier(source, sourceLength, index);
 
-            if (legacy_migration_span_equals(source, index, wordEnd, "func")) {
+            if (legacy_migration_span_equals(source, index, wordEnd, "test") &&
+                legacy_migration_word_is_test_function_prefix(
+                        source, sourceLength, wordEnd)) {
+                if (!legacy_migration_append_word_item(
+                            state,
+                            outPlan,
+                            source,
+                            sourceName,
+                            "legacyTestFunctionKeyword",
+                            "testingAttribute",
+                            "14",
+                            ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+                            "The draft test function becomes an ordinary function with the canonical test role.",
+                            index,
+                            wordEnd,
+                            "#zr.testing.test#")) {
+                    ZrParser_LegacyMigration_PlanFree(state, outPlan);
+                    return ZR_FALSE;
+                }
+            } else if (legacy_migration_span_equals(source, index, wordEnd, "func")) {
                 if (!legacy_migration_append_word_item(
                             state,
                             outPlan,
@@ -1139,7 +1655,10 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_ApplyMachineEdits(
         TZrSize editLength;
         TZrSize rangeLength;
 
-        if (item == ZR_NULL || !item->hasFix) {
+        if (item == ZR_NULL ||
+            item->applicability != ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE ||
+            item->fix.applicability != ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE ||
+            !item->hasFix) {
             continue;
         }
         if (item->fix.editText == ZR_NULL || item->fix.editRange.start.offset > item->fix.editRange.end.offset ||
@@ -1167,7 +1686,10 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_ApplyMachineEdits(
         TZrSize suffixLength;
         TZrSize editLength;
 
-        if (item == ZR_NULL || !item->hasFix) {
+        if (item == ZR_NULL ||
+            item->applicability != ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE ||
+            item->fix.applicability != ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE ||
+            !item->hasFix) {
             continue;
         }
         editStart = item->fix.editRange.start.offset;

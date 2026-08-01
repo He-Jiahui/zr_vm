@@ -5808,7 +5808,8 @@ static void test_lsp_native_declaration_document_renders_virtual_zr_source(SZrSt
         strstr(renderedText, "native extern(\"zr.container\")") == ZR_NULL ||
         strstr(renderedText, "pub class Array<T>") == ZR_NULL ||
         strstr(renderedText, "pub var length: int;") == ZR_NULL ||
-        strstr(renderedText, "pub @constructor") == ZR_NULL) {
+        strstr(renderedText, "pub @constructor") == ZR_NULL ||
+        strstr(renderedText, "@decorate") != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Native Declaration Document Renders Virtual ZR Source",
@@ -7645,6 +7646,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_property_contract_cases.h"
 #include "test_lsp_property_incremental_cases.h"
 #include "test_lsp_property_refactor_cases.h"
+#include "test_lsp_compile_tool_projection_cases.h"
 
 // 主测试函数
 int main(void) {
@@ -7673,6 +7675,9 @@ int main(void) {
     
     // 运行测试
     test_lsp_context_create_and_free(state);
+    TEST_DIVIDER();
+
+    test_lsp_compile_tool_projection_uses_canonical_contract(state);
     TEST_DIVIDER();
     
     test_lsp_update_document(state);

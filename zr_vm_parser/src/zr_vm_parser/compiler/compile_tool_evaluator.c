@@ -103,10 +103,19 @@ static TZrBool compile_tool_field_name_allowed(
                          ct_string_equals(fieldName, "mutability") ||
                          ct_string_equals(fieldName, "initializer"));
     }
+    if (role == ZR_PARSER_COMPILE_TOOL_TYPE_DIAGNOSTIC) {
+        return (TZrBool)(ct_string_equals(fieldName, "isError") ||
+                         ct_string_equals(fieldName, "message") ||
+                         ct_string_equals(fieldName, "target"));
+    }
+    if (role == ZR_PARSER_COMPILE_TOOL_TYPE_ATTRIBUTE_DATA) {
+        return (TZrBool)(ct_string_equals(fieldName, "typeId") ||
+                         ct_string_equals(fieldName, "fieldValues"));
+    }
     return ZR_FALSE;
 }
 
-static TZrBool compile_tool_has_field(
+static const SZrTypeValue *compile_tool_get_field(
         SZrCompilerState *cs,
         SZrObject *object,
         const TZrChar *name) {
@@ -114,16 +123,98 @@ static TZrBool compile_tool_has_field(
     SZrTypeValue key;
 
     if (cs == ZR_NULL || object == ZR_NULL || name == ZR_NULL) {
-        return ZR_FALSE;
+        return ZR_NULL;
     }
     keyString = ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)name);
     if (keyString == ZR_NULL) {
-        return ZR_FALSE;
+        return ZR_NULL;
     }
     ZrCore_Value_InitAsRawObject(
             cs->state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
     key.type = ZR_VALUE_TYPE_STRING;
-    return ZrCore_Object_GetValue(cs->state, object, &key) != ZR_NULL;
+    return ZrCore_Object_GetValue(cs->state, object, &key);
+}
+
+static TZrBool compile_tool_has_field(
+        SZrCompilerState *cs,
+        SZrObject *object,
+        const TZrChar *name) {
+    return compile_tool_get_field(cs, object, name) != ZR_NULL;
+}
+
+static TZrBool compile_tool_validate_diagnostic_field(
+        SZrCompilerState *cs,
+        SZrString *fieldName,
+        const SZrTypeValue *value,
+        SZrFileRange location) {
+    const TZrChar *error = ZR_NULL;
+    TZrUInt64 target = 0U;
+
+    if (cs == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ct_string_equals(fieldName, "isError")) {
+        if (value->type != ZR_VALUE_TYPE_BOOL) {
+            error = "compiletool.constructor.field_type: CompileDiagnostic.isError requires bool";
+        }
+    } else if (ct_string_equals(fieldName, "message")) {
+        if (value->type != ZR_VALUE_TYPE_STRING || value->value.object == ZR_NULL ||
+            ct_string_equals(ZR_CAST_STRING(cs->state, value->value.object), "")) {
+            error = "compiletool.constructor.field_type: CompileDiagnostic.message requires a non-empty string";
+        }
+    } else if (ct_string_equals(fieldName, "target")) {
+        if (!ZR_VALUE_IS_TYPE_INT(value->type) ||
+            (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type) &&
+             value->value.nativeObject.nativeInt64 < 0)) {
+            error = "compiletool.constructor.field_type: CompileDiagnostic.target requires SymbolId";
+        } else {
+            target = ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)
+                             ? value->value.nativeObject.nativeUInt64
+                             : (TZrUInt64)value->value.nativeObject.nativeInt64;
+            if (target == ZR_SEMANTIC_ID_INVALID || target > (TZrUInt64)UINT32_MAX) {
+                error = "compiletool.constructor.field_type: CompileDiagnostic.target requires SymbolId";
+            }
+        }
+    }
+    if (error != ZR_NULL) {
+        ZrParser_CompileTime_Error(
+                cs, ZR_COMPILE_TIME_ERROR_ERROR, error, location);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool compile_tool_validate_patch_field(
+        SZrCompilerState *cs,
+        SZrString *fieldName,
+        const SZrTypeValue *value,
+        SZrFileRange location) {
+    TZrUInt64 target;
+
+    if (cs == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!ct_string_equals(fieldName, "target")) {
+        return ZR_TRUE;
+    }
+    if (!ZR_VALUE_IS_TYPE_INT(value->type) ||
+        (!ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type) &&
+         value->value.nativeObject.nativeInt64 < 0)) {
+        target = 0U;
+    } else {
+        target = ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)
+                         ? value->value.nativeObject.nativeUInt64
+                         : (TZrUInt64)value->value.nativeObject.nativeInt64;
+    }
+    if (target == ZR_SEMANTIC_ID_INVALID || target > (TZrUInt64)UINT32_MAX) {
+        ZrParser_CompileTime_Error(
+                cs,
+                ZR_COMPILE_TIME_ERROR_ERROR,
+                "compiletool.constructor.field_type: Patch.target requires SymbolId",
+                location);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool compile_tool_add_empty_array_field(
@@ -167,7 +258,9 @@ static TZrBool compile_tool_try_evaluate_struct_init(
         return ZR_TRUE;
     }
     if (typeDescriptor->role != ZR_PARSER_COMPILE_TOOL_TYPE_PATCH &&
-        typeDescriptor->role != ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_FIELD) {
+        typeDescriptor->role != ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_FIELD &&
+        typeDescriptor->role != ZR_PARSER_COMPILE_TOOL_TYPE_DIAGNOSTIC &&
+        typeDescriptor->role != ZR_PARSER_COMPILE_TOOL_TYPE_ATTRIBUTE_DATA) {
         *handled = ZR_TRUE;
         ZrParser_CompileTime_Error(
                 cs, ZR_COMPILE_TIME_ERROR_ERROR,
@@ -221,8 +314,30 @@ static TZrBool compile_tool_try_evaluate_struct_init(
             return ZR_FALSE;
         }
         if (!evaluate_compile_time_expression_internal(
-                    cs, init->args->nodes[index], frame, &fieldValue) ||
-            !compile_tool_set_field(
+                    cs, init->args->nodes[index], frame, &fieldValue)) {
+            return ZR_FALSE;
+        }
+        if (typeDescriptor->role == ZR_PARSER_COMPILE_TOOL_TYPE_DIAGNOSTIC &&
+            !compile_tool_validate_diagnostic_field(
+                    cs,
+                    fieldName,
+                    &fieldValue,
+                    init->args->nodes[index] != ZR_NULL
+                            ? init->args->nodes[index]->location
+                            : node->location)) {
+            return ZR_FALSE;
+        }
+        if (typeDescriptor->role == ZR_PARSER_COMPILE_TOOL_TYPE_PATCH &&
+            !compile_tool_validate_patch_field(
+                    cs,
+                    fieldName,
+                    &fieldValue,
+                    init->args->nodes[index] != ZR_NULL
+                            ? init->args->nodes[index]->location
+                            : node->location)) {
+            return ZR_FALSE;
+        }
+        if (!compile_tool_set_field(
                     cs, object,
                     ZrCore_String_GetNativeString(fieldName), &fieldValue)) {
             return ZR_FALSE;
@@ -246,15 +361,51 @@ static TZrBool compile_tool_try_evaluate_struct_init(
                 return ZR_FALSE;
             }
         }
-    } else if (!compile_tool_has_field(cs, object, "name") ||
-               !compile_tool_has_field(cs, object, "type") ||
-               !compile_tool_has_field(cs, object, "visibility") ||
-               !compile_tool_has_field(cs, object, "mutability")) {
+    } else if (typeDescriptor->role == ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_FIELD &&
+               (!compile_tool_has_field(cs, object, "name") ||
+                !compile_tool_has_field(cs, object, "type") ||
+                !compile_tool_has_field(cs, object, "visibility") ||
+                !compile_tool_has_field(cs, object, "mutability"))) {
         ZrParser_CompileTime_Error(
                 cs, ZR_COMPILE_TIME_ERROR_ERROR,
                 "declaration_transform.generated_field: name, type, visibility, and mutability are required",
                 node->location);
         return ZR_FALSE;
+    } else if (typeDescriptor->role == ZR_PARSER_COMPILE_TOOL_TYPE_DIAGNOSTIC &&
+               (!compile_tool_has_field(cs, object, "isError") ||
+                !compile_tool_has_field(cs, object, "message") ||
+                !compile_tool_has_field(cs, object, "target"))) {
+        ZrParser_CompileTime_Error(
+                cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                "declaration_transform.diagnostic: isError, message, and target are required",
+                node->location);
+        return ZR_FALSE;
+    } else if (typeDescriptor->role == ZR_PARSER_COMPILE_TOOL_TYPE_ATTRIBUTE_DATA) {
+        SZrTypeValue sourceLine;
+        const SZrTypeValue *fieldValues =
+                compile_tool_has_field(cs, object, "fieldValues")
+                        ? compile_tool_get_field(cs, object, "fieldValues")
+                        : ZR_NULL;
+
+        if (!compile_tool_has_field(cs, object, "typeId") ||
+            fieldValues == ZR_NULL || fieldValues->type != ZR_VALUE_TYPE_ARRAY) {
+            ZrParser_CompileTime_Error(
+                    cs,
+                    ZR_COMPILE_TIME_ERROR_ERROR,
+                    "declaration_transform.attribute_data: typeId and fieldValues are required",
+                    node->location);
+            return ZR_FALSE;
+        }
+        ZrCore_Value_InitAsInt(cs->state, &sourceLine, node->location.start.line);
+        if (!compile_tool_set_field(
+                    cs, object, "__zrSourceLineStart", &sourceLine)) {
+            return ZR_FALSE;
+        }
+        ZrCore_Value_InitAsInt(cs->state, &sourceLine, node->location.end.line);
+        if (!compile_tool_set_field(
+                    cs, object, "__zrSourceLineEnd", &sourceLine)) {
+            return ZR_FALSE;
+        }
     }
 
     ZrCore_Value_InitAsRawObject(

@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 2,
+  "name": "testing_reference",
+  "version": "1.0.0",
+  "kind": "application",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -369,26 +369,6 @@ static SZrCompileTimeFunction *find_compile_time_binding_function(TZrPtr userDat
     return ZR_NULL;
 }
 
-static SZrCompileTimeDecoratorClass *find_compile_time_binding_decorator_class(TZrPtr userData, SZrString *name) {
-    SZrCompileTimeVariableBindingBuildContext *context =
-            (SZrCompileTimeVariableBindingBuildContext *)userData;
-
-    if (context == ZR_NULL || context->cs == ZR_NULL || name == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < context->cs->compileTimeDecoratorClasses.length; index++) {
-        SZrCompileTimeDecoratorClass **classPtr =
-                (SZrCompileTimeDecoratorClass **)ZrCore_Array_Get(&context->cs->compileTimeDecoratorClasses, index);
-        if (classPtr != ZR_NULL && *classPtr != ZR_NULL && (*classPtr)->name != ZR_NULL &&
-            ZrCore_String_Equal((*classPtr)->name, name)) {
-            return *classPtr;
-        }
-    }
-
-    return ZR_NULL;
-}
-
 static void typed_export_symbol_set_declaration_range(SZrFunctionTypedExportSymbol *symbol, SZrFileRange location) {
     if (symbol == ZR_NULL) {
         return;
@@ -562,9 +542,10 @@ static void free_typed_export_symbols(SZrState *state,
                                   ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 }
 
-static void free_metadata_parameters(SZrState *state,
-                                     SZrFunctionMetadataParameter *parameters,
-                                     TZrUInt32 parameterCount) {
+void compiler_free_function_parameter_metadata(
+        SZrState *state,
+        SZrFunctionMetadataParameter *parameters,
+        TZrUInt32 parameterCount) {
     if (state == ZR_NULL || state->global == ZR_NULL || parameters == ZR_NULL || parameterCount == 0) {
         return;
     }
@@ -592,7 +573,8 @@ static void free_compile_time_function_infos(SZrState *state,
     }
 
     for (TZrUInt32 index = 0; index < count; index++) {
-        free_metadata_parameters(state, infos[index].parameters, infos[index].parameterCount);
+        compiler_free_function_parameter_metadata(
+                state, infos[index].parameters, infos[index].parameterCount);
     }
 
     ZrCore_Memory_RawFreeWithType(state->global,
@@ -646,7 +628,7 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
         parameters[index].name =
                 paramNode->data.parameter.name != ZR_NULL ? paramNode->data.parameter.name->name : ZR_NULL;
         if (!typed_type_ref_from_ast_type(cs, paramNode->data.parameter.typeInfo, &parameters[index].type)) {
-            free_metadata_parameters(cs->state, parameters, parameterCount);
+            compiler_free_function_parameter_metadata(cs->state, parameters, parameterCount);
             return ZR_FALSE;
         }
 
@@ -654,14 +636,14 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
             if (!ZrParser_Compiler_EvaluateCompileTimeExpression(cs,
                                                                  paramNode->data.parameter.defaultValue,
                                                                  &parameters[index].defaultValue)) {
-                free_metadata_parameters(cs->state, parameters, parameterCount);
+                compiler_free_function_parameter_metadata(cs->state, parameters, parameterCount);
                 return ZR_FALSE;
             }
             parameters[index].hasDefaultValue = ZR_TRUE;
         }
 
         if (!ZrParser_CompileTime_ApplyParameterDecorators(cs, paramNode, index, &parameters[index])) {
-            free_metadata_parameters(cs->state, parameters, parameterCount);
+            compiler_free_function_parameter_metadata(cs->state, parameters, parameterCount);
             return ZR_FALSE;
         }
         if (!ZrParser_Metadata_ApplyParameterAttributes(
@@ -669,7 +651,7 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
                     paramNode->data.parameter.decorators,
                     &parameters[index],
                     paramNode->location)) {
-            free_metadata_parameters(cs->state, parameters, parameterCount);
+            compiler_free_function_parameter_metadata(cs->state, parameters, parameterCount);
             return ZR_FALSE;
         }
     }
@@ -809,7 +791,6 @@ static TZrBool build_compile_time_variable_infos(SZrCompilerState *cs,
     resolver.userData = &bindingContext;
     resolver.findVariable = find_compile_time_binding_variable_source;
     resolver.findFunction = find_compile_time_binding_function;
-    resolver.findDecoratorClass = find_compile_time_binding_decorator_class;
     if (!ZrParser_CompileTimeBinding_ResolveAll(&resolver, bindingSources, infoCount)) {
         ZrCore_Memory_RawFreeWithType(cs->state->global,
                                       bindingSources,

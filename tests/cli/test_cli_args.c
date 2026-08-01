@@ -698,6 +698,55 @@ static int test_syntax_migration_mode_parse(void) {
     return 0;
 }
 
+static int test_test_mode_parse(void) {
+    char *argv[] = {
+            "zr_vm_cli", "test", "demo.zrp", "--filter", "suite::*",
+            "--jobs", "4", "--timeout", "1500ms", "--list"
+    };
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(ZrCli_Command_Parse(10, argv, &command, error, sizeof(error)),
+                    "parse test mode");
+    CLI_ASSERT_INT_EQ(ZR_CLI_MODE_TEST, command.mode, "mode should be test");
+    CLI_ASSERT_STR_EQ("demo.zrp", command.testPath, "test path should match");
+    CLI_ASSERT_STR_EQ("suite::*", command.testFilter, "test filter should match");
+    CLI_ASSERT_INT_EQ(4, command.testJobs, "test jobs should match");
+    CLI_ASSERT_TRUE(command.testTimeoutMilliseconds == 1500U,
+                    "test timeout should be normalized to milliseconds");
+    CLI_ASSERT_TRUE(command.testList, "test list flag should be retained");
+    return 0;
+}
+
+static int test_test_mode_rejects_invalid_options(void) {
+    char *missingTarget[] = {"zr_vm_cli", "test"};
+    char *zeroJobs[] = {"zr_vm_cli", "test", "demo.zrp", "--jobs", "0"};
+    char *badTimeout[] = {"zr_vm_cli", "test", "demo.zrp", "--timeout", "5"};
+    char *duplicateJobs[] = {
+            "zr_vm_cli", "test", "demo.zrp", "--jobs", "1", "--jobs", "2"
+    };
+    char *duplicateTimeout[] = {
+            "zr_vm_cli", "test", "demo.zrp", "--timeout", "1s", "--timeout", "2s"
+    };
+    char *runtimeModifier[] = {"zr_vm_cli", "test", "demo.zrp", "--debug"};
+    char error[256];
+    SZrCliCommand command;
+
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(2, missingTarget, &command, error, sizeof(error)),
+                    "test should require a target");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(5, zeroJobs, &command, error, sizeof(error)),
+                    "test should reject zero jobs");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(5, badTimeout, &command, error, sizeof(error)),
+                    "test timeout should require an explicit unit");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(7, duplicateJobs, &command, error, sizeof(error)),
+                    "test should reject duplicate jobs");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(7, duplicateTimeout, &command, error, sizeof(error)),
+                    "test should reject duplicate timeout");
+    CLI_ASSERT_TRUE(!ZrCli_Command_Parse(4, runtimeModifier, &command, error, sizeof(error)),
+                    "test should reject runtime modifiers");
+    return 0;
+}
+
 static int test_syntax_migration_mode_rejects_invalid_combinations(void) {
     char *missingSyntax[] = {"zr_vm_cli", "migrate", "legacy.zr", "--check"};
     char *missingPath[] = {"zr_vm_cli", "migrate", "syntax", "--check"};
@@ -857,6 +906,12 @@ int main(void) {
         return 1;
     }
     if (test_syntax_migration_mode_parse() != 0) {
+        return 1;
+    }
+    if (test_test_mode_parse() != 0) {
+        return 1;
+    }
+    if (test_test_mode_rejects_invalid_options() != 0) {
         return 1;
     }
     if (test_syntax_migration_mode_rejects_invalid_combinations() != 0) {

@@ -1,9 +1,32 @@
 {
+  "allowlistedFindings": [
+    {
+      "column": 42,
+      "file": "tests/parser/test_percent_syntax_cutover.c",
+      "legacyForm": "unrecognizedPercentDirective",
+      "line": 175,
+      "reason": "expectedUnknownPercentNegative"
+    },
+    {
+      "column": 27,
+      "file": "tests/task/test_task_runtime.c",
+      "legacyForm": "unrecognizedPercentDirective",
+      "line": 862,
+      "reason": "expectedRemovedPercentTypeNegative"
+    },
+    {
+      "column": 24,
+      "file": "tests/task/test_task_runtime.c",
+      "legacyForm": "unrecognizedPercentDirective",
+      "line": 863,
+      "reason": "expectedRemovedPercentTypeNegative"
+    }
+  ],
   "classificationCounts": {
-    "blocked": 3,
+    "blocked": 0,
     "machineApplicable": 0,
     "maybeIncorrect": 0,
-    "requiresReview": 610,
+    "requiresReview": 645,
     "targetNotPromoted": 0
   },
   "exclusions": [
@@ -77,6 +100,30 @@
     },
     {
       "file": "docs/plans/aot/07-codegen/2026-07-30-frame-type-layout-closure-verifier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-constructor-bitmap-layout-verifier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-execir-parameter-layout-projection.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-parameter-binding-identity-verifier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-receiver-aware-typed-call-layout-consumption.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-receiver-role-frame-verifier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-value-semir-parameter-layout-consumption.md",
       "reason": "historicalPlan"
     },
     {
@@ -249,6 +296,10 @@
     },
     {
       "file": "docs/plans/aot/index.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/syntax-contract-traceability.md",
       "reason": "historicalPlan"
     },
     {
@@ -512,6 +563,22 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-07-31-e2b2-canonical-place-reference-carrier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b3-generation-checked-runtime-root.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b4-structured-runtime-root-reference-origin.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b5-generation-checked-runtime-root-consumer.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/plans/lsp/05-implementation-blueprint.md",
       "reason": "historicalPlan"
     },
@@ -657,6 +724,10 @@
     },
     {
       "file": "docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/syntax/05-property-unified-ast/m5-task4-property-import-bootstrap.md",
       "reason": "historicalPlan"
     },
     {
@@ -960,6 +1031,10 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/superpowers/plans/2026-08-01-aot-syntax-traceability.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/superpowers/specs/2026-04-14-steady-state-performance-convergence-design.md",
       "reason": "historicalPlan"
     },
@@ -973,6 +1048,10 @@
     },
     {
       "file": "docs/superpowers/specs/2026-07-29-cmake-portability-and-feature-switches-design.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/superpowers/specs/2026-08-01-aot-syntax-traceability-design.md",
       "reason": "historicalPlan"
     },
     {
@@ -1348,6 +1427,14 @@
       "reason": "legacyOrMigrationFixture"
     },
     {
+      "file": "tests/fixtures/projects/testing_reference/negative/failure.zr",
+      "reason": "expectedDiagnosticFixture"
+    },
+    {
+      "file": "tests/fixtures/projects/testing_reference/negative/timeout.zr",
+      "reason": "expectedDiagnosticFixture"
+    },
+    {
       "file": "tests/fixtures/reference/core_semantics/calls/named_arguments_defaults_pass.zr",
       "reason": "expectedDiagnosticFixture"
     },
@@ -1552,31 +1639,7 @@
       "reason": "binaryArtifact"
     },
     {
-      "file": "tests/golden/ast/compile_time_decorator_artifact_baseline.zrs",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/ast/compile_time_parameter_decorator_artifact_baseline.zrs",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/ast/decorator_artifact_baseline.zrs",
-      "reason": "binaryArtifact"
-    },
-    {
       "file": "tests/golden/binary/basic_operations.zro",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/binary/compile_time_decorator_artifact_baseline.zro",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/binary/compile_time_parameter_decorator_artifact_baseline.zro",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/binary/decorator_artifact_baseline.zro",
       "reason": "binaryArtifact"
     },
     {
@@ -1592,16 +1655,8 @@
       "reason": "binaryArtifact"
     },
     {
-      "file": "tests/golden/intermediate/compile_time_decorator_artifact_baseline.zri",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/intermediate/compile_time_parameter_decorator_artifact_baseline.zri",
-      "reason": "binaryArtifact"
-    },
-    {
-      "file": "tests/golden/intermediate/decorator_artifact_baseline.zri",
-      "reason": "binaryArtifact"
+      "file": "tests/migration/test_percent_test_migration.c",
+      "reason": "legacyOrMigrationFixture"
     },
     {
       "file": "tests/parser/test_legacy_migration.c",
@@ -2073,16 +2128,232 @@
     },
     {
       "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 220
+        },
+        "start": {
+          "column": 42,
+          "line": 220
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 224
+        },
+        "start": {
+          "column": 42,
+          "line": 224
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 228
+        },
+        "start": {
+          "column": 42,
+          "line": 228
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 34,
+          "line": 232
+        },
+        "start": {
+          "column": 30,
+          "line": 232
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 62,
+          "line": 232
+        },
+        "start": {
+          "column": 52,
+          "line": 232
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 52,
+          "line": 235
+        },
+        "start": {
+          "column": 42,
+          "line": 235
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 318
+        },
+        "start": {
+          "column": 42,
+          "line": 318
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 40,
+          "line": 321
+        },
+        "start": {
+          "column": 31,
+          "line": 321
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 61,
+          "line": 356
+        },
+        "start": {
+          "column": 47,
+          "line": 356
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 360
+        },
+        "start": {
+          "column": 42,
+          "line": 360
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 61,
+          "line": 406
+        },
+        "start": {
+          "column": 47,
+          "line": 406
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 410
+        },
+        "start": {
+          "column": 42,
+          "line": 410
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
       "file": "tests/compileTime/test_compile_time_execution.c",
       "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
           "column": 28,
-          "line": 522
+          "line": 524
         },
         "start": {
           "column": 18,
-          "line": 522
+          "line": 524
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2096,11 +2367,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 2784
+          "line": 2786
         },
         "start": {
           "column": 42,
-          "line": 2784
+          "line": 2786
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2114,11 +2385,11 @@
       "range": {
         "end": {
           "column": 62,
-          "line": 2809
+          "line": 2811
         },
         "start": {
           "column": 48,
-          "line": 2809
+          "line": 2811
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2132,11 +2403,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 2815
+          "line": 2817
         },
         "start": {
           "column": 42,
-          "line": 2815
+          "line": 2817
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2150,11 +2421,461 @@
       "range": {
         "end": {
           "column": 40,
-          "line": 2820
+          "line": 2822
         },
         "start": {
           "column": 35,
-          "line": 2820
+          "line": 2822
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 2849
+        },
+        "start": {
+          "column": 42,
+          "line": 2849
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyNewStruct",
+      "range": {
+        "end": {
+          "column": 53,
+          "line": 2856
+        },
+        "start": {
+          "column": 49,
+          "line": 2856
+        }
+      },
+      "reason": "new_struct_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 2949
+        },
+        "start": {
+          "column": 42,
+          "line": 2949
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 2991
+        },
+        "start": {
+          "column": 42,
+          "line": 2991
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3062
+        },
+        "start": {
+          "column": 42,
+          "line": 3062
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3128
+        },
+        "start": {
+          "column": 42,
+          "line": 3128
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 62,
+          "line": 3417
+        },
+        "start": {
+          "column": 48,
+          "line": 3417
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 66,
+          "line": 3423
+        },
+        "start": {
+          "column": 49,
+          "line": 3423
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3428
+        },
+        "start": {
+          "column": 42,
+          "line": 3428
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 40,
+          "line": 3437
+        },
+        "start": {
+          "column": 35,
+          "line": 3437
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 62,
+          "line": 3463
+        },
+        "start": {
+          "column": 48,
+          "line": 3463
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 64,
+          "line": 3469
+        },
+        "start": {
+          "column": 47,
+          "line": 3469
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3474
+        },
+        "start": {
+          "column": 42,
+          "line": 3474
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 62,
+          "line": 3502
+        },
+        "start": {
+          "column": 48,
+          "line": 3502
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 64,
+          "line": 3508
+        },
+        "start": {
+          "column": 47,
+          "line": 3508
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3513
+        },
+        "start": {
+          "column": 42,
+          "line": 3513
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 61,
+          "line": 3572
+        },
+        "start": {
+          "column": 47,
+          "line": 3572
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 62,
+          "line": 3576
+        },
+        "start": {
+          "column": 48,
+          "line": 3576
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3580
+        },
+        "start": {
+          "column": 42,
+          "line": 3580
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3634
+        },
+        "start": {
+          "column": 42,
+          "line": 3634
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 60,
+          "line": 3962
+        },
+        "start": {
+          "column": 47,
+          "line": 3962
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3966
+        },
+        "start": {
+          "column": 42,
+          "line": 3966
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 33,
+          "line": 4083
+        },
+        "start": {
+          "column": 25,
+          "line": 4083
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 29,
+          "line": 4084
+        },
+        "start": {
+          "column": 25,
+          "line": 4084
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 29,
+          "line": 4085
+        },
+        "start": {
+          "column": 25,
+          "line": 4085
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2168,11 +2889,11 @@
       "range": {
         "end": {
           "column": 35,
-          "line": 3705
+          "line": 4769
         },
         "start": {
           "column": 27,
-          "line": 3705
+          "line": 4769
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2186,11 +2907,11 @@
       "range": {
         "end": {
           "column": 43,
-          "line": 3709
+          "line": 4773
         },
         "start": {
           "column": 27,
-          "line": 3709
+          "line": 4773
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2227,6 +2948,24 @@
         "start": {
           "column": 27,
           "line": 1698
+        }
+      },
+      "reason": "new_struct_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/debug/test_debug_canonical_binding_cases.h",
+      "legacyForm": "legacyNewStruct",
+      "range": {
+        "end": {
+          "column": 30,
+          "line": 712
+        },
+        "start": {
+          "column": 26,
+          "line": 712
         }
       },
       "reason": "new_struct_binding_required",
@@ -2722,24 +3461,6 @@
     {
       "classification": "requiresReview",
       "file": "tests/ffi/test_native_extern_contract.c",
-      "legacyForm": "legacyLambdaWithoutFn",
-      "range": {
-        "end": {
-          "column": 59,
-          "line": 931
-        },
-        "start": {
-          "column": 57,
-          "line": 931
-        }
-      },
-      "reason": "lambda_keyword_has_current_syntax",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/ffi/test_native_extern_contract.c",
       "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
@@ -2788,24 +3509,6 @@
         }
       },
       "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/ffi/test_native_extern_contract.c",
-      "legacyForm": "legacyLambdaWithoutFn",
-      "range": {
-        "end": {
-          "column": 59,
-          "line": 975
-        },
-        "start": {
-          "column": 57,
-          "line": 975
-        }
-      },
-      "reason": "lambda_keyword_has_current_syntax",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -2878,24 +3581,6 @@
         }
       },
       "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/ffi/test_native_extern_contract.c",
-      "legacyForm": "legacyLambdaWithoutFn",
-      "range": {
-        "end": {
-          "column": 59,
-          "line": 1016
-        },
-        "start": {
-          "column": 57,
-          "line": 1016
-        }
-      },
-      "reason": "lambda_keyword_has_current_syntax",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -2968,24 +3653,6 @@
         }
       },
       "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/ffi/test_native_extern_contract.c",
-      "legacyForm": "legacyLambdaWithoutFn",
-      "range": {
-        "end": {
-          "column": 59,
-          "line": 1056
-        },
-        "start": {
-          "column": 57,
-          "line": 1056
-        }
-      },
-      "reason": "lambda_keyword_has_current_syntax",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -3076,24 +3743,6 @@
         }
       },
       "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/ffi/test_native_extern_contract.c",
-      "legacyForm": "legacyLambdaWithoutFn",
-      "range": {
-        "end": {
-          "column": 55,
-          "line": 1110
-        },
-        "start": {
-          "column": 53,
-          "line": 1110
-        }
-      },
-      "reason": "lambda_keyword_has_current_syntax",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -4503,6 +5152,60 @@
     },
     {
       "classification": "requiresReview",
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/compile_time_and_attributes.zr",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 52,
+          "line": 17
+        },
+        "start": {
+          "column": 38,
+          "line": 17
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "zrSource",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/compile_time_and_attributes.zr",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 23
+        },
+        "start": {
+          "column": 34,
+          "line": 23
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "zrSource",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/fixtures/projects/syntax_reference_v1/src/compile_time_and_attributes.zr",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 34,
+          "line": 27
+        },
+        "start": {
+          "column": 29,
+          "line": 27
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "zrSource",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
       "file": "tests/fixtures/projects/syntax_reference_v1/src/model.zr",
       "legacyForm": "legacyBareTypeCall",
       "range": {
@@ -5148,24 +5851,6 @@
       "reason": "test_metadata_function_required",
       "sourceKind": "zrSource",
       "targetPlan": "14"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/fixtures/scripts/compile_time_decorator_artifact_baseline.zr",
-      "legacyForm": "legacyBareTypeCall",
-      "range": {
-        "end": {
-          "column": 10,
-          "line": 37
-        },
-        "start": {
-          "column": 2,
-          "line": 37
-        }
-      },
-      "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "zrSource",
-      "targetPlan": "06A"
     },
     {
       "classification": "requiresReview",
@@ -5894,11 +6579,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 1913
+          "line": 1960
         },
         "start": {
           "column": 24,
-          "line": 1913
+          "line": 1960
         }
       },
       "reason": "new_struct_binding_required",
@@ -6020,11 +6705,11 @@
       "range": {
         "end": {
           "column": 56,
-          "line": 6220
+          "line": 6221
         },
         "start": {
           "column": 41,
-          "line": 6220
+          "line": 6221
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -6038,11 +6723,11 @@
       "range": {
         "end": {
           "column": 44,
-          "line": 6615
+          "line": 6616
         },
         "start": {
           "column": 37,
-          "line": 6615
+          "line": 6616
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -6056,11 +6741,11 @@
       "range": {
         "end": {
           "column": 44,
-          "line": 6621
+          "line": 6622
         },
         "start": {
           "column": 37,
-          "line": 6621
+          "line": 6622
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -6074,11 +6759,11 @@
       "range": {
         "end": {
           "column": 38,
-          "line": 7125
+          "line": 7126
         },
         "start": {
           "column": 31,
-          "line": 7125
+          "line": 7126
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8444,24 +9129,6 @@
       "targetPlan": "06A"
     },
     {
-      "classification": "blocked",
-      "file": "tests/parser/test_percent_syntax_cutover.c",
-      "legacyForm": "unrecognizedPercentDirective",
-      "range": {
-        "end": {
-          "column": 49,
-          "line": 175
-        },
-        "start": {
-          "column": 42,
-          "line": 175
-        }
-      },
-      "reason": "unrecognized_legacy_directive",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
       "classification": "requiresReview",
       "file": "tests/parser/test_percent_syntax_cutover.c",
       "legacyForm": "legacyBareTypeCall",
@@ -8486,11 +9153,11 @@
       "range": {
         "end": {
           "column": 24,
-          "line": 894
+          "line": 897
         },
         "start": {
           "column": 20,
-          "line": 894
+          "line": 897
         }
       },
       "reason": "property_pairing_required",
@@ -8504,11 +9171,11 @@
       "range": {
         "end": {
           "column": 31,
-          "line": 899
+          "line": 902
         },
         "start": {
           "column": 27,
-          "line": 899
+          "line": 902
         }
       },
       "reason": "property_pairing_required",
@@ -8522,11 +9189,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 903
+          "line": 906
         },
         "start": {
           "column": 24,
-          "line": 903
+          "line": 906
         }
       },
       "reason": "property_pairing_required",
@@ -9062,11 +9729,11 @@
       "range": {
         "end": {
           "column": 37,
-          "line": 874
+          "line": 897
         },
         "start": {
           "column": 34,
-          "line": 874
+          "line": 897
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9098,11 +9765,11 @@
       "range": {
         "end": {
           "column": 40,
-          "line": 1662
+          "line": 1663
         },
         "start": {
           "column": 34,
-          "line": 1662
+          "line": 1663
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9116,11 +9783,11 @@
       "range": {
         "end": {
           "column": 41,
-          "line": 1881
+          "line": 1888
         },
         "start": {
           "column": 35,
-          "line": 1881
+          "line": 1888
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9134,11 +9801,11 @@
       "range": {
         "end": {
           "column": 41,
-          "line": 1952
+          "line": 1959
         },
         "start": {
           "column": 35,
-          "line": 1952
+          "line": 1959
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9152,11 +9819,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 1953
+          "line": 1960
         },
         "start": {
           "column": 25,
-          "line": 1953
+          "line": 1960
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9170,11 +9837,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 2016
+          "line": 2023
         },
         "start": {
           "column": 33,
-          "line": 2016
+          "line": 2023
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9188,11 +9855,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 2019
+          "line": 2026
         },
         "start": {
           "column": 25,
-          "line": 2019
+          "line": 2026
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9206,11 +9873,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 2090
+          "line": 2097
         },
         "start": {
           "column": 33,
-          "line": 2090
+          "line": 2097
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9224,11 +9891,11 @@
       "range": {
         "end": {
           "column": 41,
-          "line": 2150
+          "line": 2157
         },
         "start": {
           "column": 34,
-          "line": 2150
+          "line": 2157
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9242,11 +9909,11 @@
       "range": {
         "end": {
           "column": 45,
-          "line": 3388
+          "line": 3395
         },
         "start": {
           "column": 38,
-          "line": 3388
+          "line": 3395
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9260,11 +9927,11 @@
       "range": {
         "end": {
           "column": 35,
-          "line": 3897
+          "line": 3904
         },
         "start": {
           "column": 28,
-          "line": 3897
+          "line": 3904
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9278,11 +9945,11 @@
       "range": {
         "end": {
           "column": 52,
-          "line": 3950
+          "line": 3957
         },
         "start": {
           "column": 45,
-          "line": 3950
+          "line": 3957
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9296,11 +9963,11 @@
       "range": {
         "end": {
           "column": 30,
-          "line": 4102
+          "line": 4109
         },
         "start": {
           "column": 23,
-          "line": 4102
+          "line": 4109
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9314,11 +9981,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 4155
+          "line": 4162
         },
         "start": {
           "column": 27,
-          "line": 4155
+          "line": 4162
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9332,11 +9999,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 4207
+          "line": 4214
         },
         "start": {
           "column": 29,
-          "line": 4207
+          "line": 4214
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9350,11 +10017,11 @@
       "range": {
         "end": {
           "column": 42,
-          "line": 4313
+          "line": 4320
         },
         "start": {
           "column": 28,
-          "line": 4313
+          "line": 4320
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9368,11 +10035,11 @@
       "range": {
         "end": {
           "column": 59,
-          "line": 4420
+          "line": 4427
         },
         "start": {
           "column": 56,
-          "line": 4420
+          "line": 4427
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9386,11 +10053,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 4422
+          "line": 4429
         },
         "start": {
           "column": 25,
-          "line": 4422
+          "line": 4429
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9404,11 +10071,11 @@
       "range": {
         "end": {
           "column": 27,
-          "line": 4539
+          "line": 4546
         },
         "start": {
           "column": 23,
-          "line": 4539
+          "line": 4546
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9422,11 +10089,11 @@
       "range": {
         "end": {
           "column": 22,
-          "line": 4773
+          "line": 4780
         },
         "start": {
           "column": 18,
-          "line": 4773
+          "line": 4780
         }
       },
       "reason": "new_struct_binding_required",
@@ -9440,11 +10107,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 6616
+          "line": 6623
         },
         "start": {
           "column": 47,
-          "line": 6616
+          "line": 6623
         }
       },
       "reason": "new_struct_binding_required",
@@ -9458,11 +10125,11 @@
       "range": {
         "end": {
           "column": 53,
-          "line": 7392
+          "line": 7399
         },
         "start": {
           "column": 41,
-          "line": 7392
+          "line": 7399
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9476,11 +10143,11 @@
       "range": {
         "end": {
           "column": 53,
-          "line": 7485
+          "line": 7492
         },
         "start": {
           "column": 41,
-          "line": 7485
+          "line": 7492
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9494,11 +10161,11 @@
       "range": {
         "end": {
           "column": 43,
-          "line": 7543
+          "line": 7550
         },
         "start": {
           "column": 36,
-          "line": 7543
+          "line": 7550
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10174,18 +10841,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1380
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1380
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10210,18 +10877,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1409
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1409
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10282,18 +10949,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1426
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1426
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10336,18 +11003,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1471
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1471
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10408,18 +11075,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1510
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1510
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10480,18 +11147,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1552
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1552
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10552,18 +11219,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1597
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1597
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10624,18 +11291,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1642
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1642
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10678,18 +11345,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1681
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1681
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10732,36 +11399,36 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1721
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1721
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1761
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1761
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10822,36 +11489,36 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1804
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1804
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1847
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1847
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -10894,18 +11561,18 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_union.c",
-      "legacyForm": "legacyNewStruct",
+      "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 41,
+          "column": 32,
           "line": 1887
         },
         "start": {
-          "column": 37,
+          "column": 29,
           "line": 1887
         }
       },
-      "reason": "new_struct_binding_required",
+      "reason": "call_vs_constructor_binding_required",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -12274,42 +12941,6 @@
         }
       },
       "reason": "lambda_keyword_has_current_syntax",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "blocked",
-      "file": "tests/task/test_task_runtime.c",
-      "legacyForm": "unrecognizedPercentDirective",
-      "range": {
-        "end": {
-          "column": 33,
-          "line": 862
-        },
-        "start": {
-          "column": 27,
-          "line": 862
-        }
-      },
-      "reason": "unrecognized_legacy_directive",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "blocked",
-      "file": "tests/task/test_task_runtime.c",
-      "legacyForm": "unrecognizedPercentDirective",
-      "range": {
-        "end": {
-          "column": 31,
-          "line": 863
-        },
-        "start": {
-          "column": 24,
-          "line": 863
-        }
-      },
-      "reason": "unrecognized_legacy_directive",
       "sourceKind": "embeddedZrFixture",
       "targetPlan": "06A"
     },
@@ -12758,6 +13389,10 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/cli-and-tooling/zr-vm-test-command.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/cli-and-tooling/zrp-editor-schema-and-lsp-refresh.md",
       "sourceKind": "currentDocumentation"
     },
@@ -12839,6 +13474,10 @@
     },
     {
       "file": "docs/library-and-builtins/zr-task-runtime.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "docs/library-and-builtins/zr-testing.md",
       "sourceKind": "currentDocumentation"
     },
     {
@@ -13060,6 +13699,10 @@
     {
       "file": "docs/zr_language_test_requirements.md",
       "sourceKind": "currentDocumentation"
+    },
+    {
+      "file": "tests/artifact/test_manifest_roundtrip.c",
+      "sourceKind": "embeddedZrFixture"
     },
     {
       "file": "tests/benchmarks/cases/array_index_dense/c/benchmark_case.c",
@@ -13466,6 +14109,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/compileTime/test_compile_time_execution.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -13642,6 +14289,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/debug/test_debug_canonical_binding_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/debug/test_debug_data_breakpoint.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -13651,6 +14302,10 @@
     },
     {
       "file": "tests/debug/test_debug_expression_diagnostics.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/debug/test_debug_formal_evaluation_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -14354,6 +15009,14 @@
       "sourceKind": "zrSource"
     },
     {
+      "file": "tests/fixtures/projects/testing_reference/src/main.zr",
+      "sourceKind": "zrSource"
+    },
+    {
+      "file": "tests/fixtures/projects/testing_reference/src/secondary.zr",
+      "sourceKind": "zrSource"
+    },
+    {
       "file": "tests/fixtures/projects/using_edge_matrix/src/main.zr",
       "sourceKind": "zrSource"
     },
@@ -14394,23 +15057,11 @@
       "sourceKind": "zrSource"
     },
     {
-      "file": "tests/fixtures/scripts/compile_time_decorator_artifact_baseline.zr",
-      "sourceKind": "zrSource"
-    },
-    {
       "file": "tests/fixtures/scripts/compile_time_errors.zr",
       "sourceKind": "zrSource"
     },
     {
       "file": "tests/fixtures/scripts/compile_time_execution.zr",
-      "sourceKind": "zrSource"
-    },
-    {
-      "file": "tests/fixtures/scripts/compile_time_parameter_decorator_artifact_baseline.zr",
-      "sourceKind": "zrSource"
-    },
-    {
-      "file": "tests/fixtures/scripts/decorator_artifact_baseline.zr",
       "sourceKind": "zrSource"
     },
     {
@@ -14687,6 +15338,10 @@
     },
     {
       "file": "tests/language_server/test_lsp_code_lens_utf16_ranges.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/language_server/test_lsp_compile_tool_projection_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -15042,6 +15697,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/library/test_official_provider_convergence.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/library/test_project_import_aot_provider_runtime.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -15291,6 +15950,10 @@
     },
     {
       "file": "tests/parser/test_aot_c_generic_call_typed.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -15950,6 +16613,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_property_consumer_runtime_bootstrap_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_property_consumer_stripping_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
@@ -16194,6 +16861,18 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/testing/test_assertions.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/testing/test_runner.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/testing/test_test_role_binding.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/thread/test_thread_runtime.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -16206,7 +16885,7 @@
       "sourceKind": "embeddedZrFixture"
     }
   ],
-  "scannerVersion": "1",
+  "scannerVersion": "2",
   "schemaVersion": 1,
   "selectedRoots": [
     "tests",
@@ -16219,7 +16898,7 @@
   "targetPlanCounts": {
     "04": 1,
     "05": 4,
-    "06A": 583,
+    "06A": 615,
     "14": 25
   },
   "unknownCount": 0

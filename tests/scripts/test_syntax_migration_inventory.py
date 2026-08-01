@@ -284,6 +284,30 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
         first_payload = json.loads(first.to_json())
 
         self.assertEqual(first.to_json(), second.to_json())
+        self.assertEqual(0, first_payload["classificationCounts"]["blocked"])
+        self.assertEqual(
+            [
+                (
+                    "tests/parser/test_percent_syntax_cutover.c",
+                    175,
+                    "unrecognizedPercentDirective",
+                ),
+                (
+                    "tests/task/test_task_runtime.c",
+                    862,
+                    "unrecognizedPercentDirective",
+                ),
+                (
+                    "tests/task/test_task_runtime.c",
+                    863,
+                    "unrecognizedPercentDirective",
+                ),
+            ],
+            [
+                (entry["file"], entry["line"], entry["legacyForm"])
+                for entry in first_payload["allowlistedFindings"]
+            ],
+        )
         repository_golden = FIXTURE_ROOT / "expected" / "repository-inventory.json"
         self.assertEqual(
             repository_golden.read_text(encoding="utf-8"),

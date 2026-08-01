@@ -37,6 +37,11 @@ TZrBool ZrParser_Metadata_TryElideConditionalCall(
 TZrBool ZrParser_Metadata_IsRegisteredAttribute(
         SZrCompilerState *cs,
         SZrAstNode *decoratorNode);
+TZrBool ZrParser_Metadata_ParseAttributeRole(
+        SZrCompilerState *cs,
+        SZrAstNode *decoratorNode,
+        EZrParserAttributeRole *role,
+        SZrFunctionCall **call);
 TZrBool ZrParser_Metadata_FunctionHasRole(
         SZrCompilerState *cs,
         SZrAstNode *functionNode,

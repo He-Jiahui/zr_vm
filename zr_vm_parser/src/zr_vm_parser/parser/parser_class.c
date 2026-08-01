@@ -803,6 +803,13 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
         return ZR_NULL;
     }
     SZrIdentifier *meta = &nameNode->data.identifier;
+    if (meta->name != ZR_NULL &&
+        strcmp(ZrCore_String_GetNativeString(meta->name), "decorate") == 0) {
+        report_error(
+                ps,
+                "@decorate was removed; use a declarationTransform comptime function");
+        return ZR_NULL;
+    }
 
     // 解析参数列表
     expect_token(ps, ZR_TK_LPAREN);

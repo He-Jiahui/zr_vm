@@ -3,6 +3,9 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_parameter_metadata.h"
+
+#include <stddef.h>
 
 static void compiler_interface_append_parameter_type(SZrCompilerState *cs,
                                                      SZrArray *parameterTypes,
@@ -306,4 +309,110 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     cs->currentTypeName = oldTypeName;
     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+}
+
+static SZrTypePrototypeInfo *compiler_interface_find_prototype(
+        SZrCompilerState *cs,
+        SZrString *name) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0U; index < cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *info =
+                (SZrTypePrototypeInfo *)ZrCore_Array_Get(
+                        &cs->typePrototypes, index);
+        if (info != ZR_NULL && info->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
+            info->name != ZR_NULL && ZrCore_String_Equal(info->name, name)) {
+            return info;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrBool compiler_interface_attach_variadic_parameter_metadata(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo,
+        SZrParameter *args,
+        SZrAstNode *functionNode) {
+    SZrAstNode *argsNode;
+    SZrAstNode *nodes[1];
+    SZrAstNodeArray params;
+
+    if (args == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    argsNode = (SZrAstNode *)(
+            (TZrByte *)args - offsetof(SZrAstNode, data.parameter));
+    nodes[0] = argsNode;
+    params.nodes = nodes;
+    params.count = 1U;
+    params.capacity = 1U;
+    return compiler_parameter_metadata_attach_member_array(
+            cs,
+            memberInfo,
+            &params,
+            functionNode,
+            "variadicParameters");
+}
+
+void compiler_finalize_interface_decorators(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    SZrInterfaceDeclaration *declaration;
+    SZrTypePrototypeInfo *info;
+    SZrString *previousTypeName;
+
+    if (cs == ZR_NULL || node == ZR_NULL ||
+        node->type != ZR_AST_INTERFACE_DECLARATION || cs->hasError) {
+        return;
+    }
+    declaration = &node->data.interfaceDeclaration;
+    if (declaration->name == ZR_NULL || declaration->name->name == ZR_NULL) {
+        return;
+    }
+    info = compiler_interface_find_prototype(cs, declaration->name->name);
+    if (info == ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs,
+                "interface.decorator_finalize: signature prototype is missing",
+                node->location);
+        return;
+    }
+    previousTypeName = cs->currentTypeName;
+    cs->currentTypeName = info->name;
+    for (TZrSize index = 0U; index < info->members.length; index++) {
+        SZrTypeMemberInfo *memberInfo =
+                (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, index);
+        SZrAstNode *memberNode =
+                memberInfo != ZR_NULL ? memberInfo->declarationNode : ZR_NULL;
+        SZrAstNodeArray *params = ZR_NULL;
+        SZrParameter *args = ZR_NULL;
+
+        if (memberNode == ZR_NULL) {
+            continue;
+        }
+        if (memberNode->type == ZR_AST_INTERFACE_METHOD_SIGNATURE) {
+            params = memberNode->data.interfaceMethodSignature.params;
+            args = memberNode->data.interfaceMethodSignature.args;
+        } else if (memberNode->type == ZR_AST_INTERFACE_META_SIGNATURE) {
+            params = memberNode->data.interfaceMetaSignature.params;
+            args = memberNode->data.interfaceMetaSignature.args;
+        } else {
+            continue;
+        }
+        if ((params != ZR_NULL && params->count > 0U) &&
+            !compiler_parameter_metadata_attach_member_array(
+                    cs,
+                    memberInfo,
+                    params,
+                    memberNode,
+                    "parameters")) {
+            break;
+        }
+        if (!compiler_interface_attach_variadic_parameter_metadata(
+                    cs, memberInfo, args, memberNode)) {
+            break;
+        }
+    }
+    cs->currentTypeName = previousTypeName;
 }

@@ -1,4 +1,6 @@
 #include "compiler_internal.h"
+#include "compiler_attribute_binding.h"
+#include "compiler_parameter_metadata.h"
 #include "compiler_union_canonical.h"
 
 typedef struct SZrUnionPayloadFieldLayout {
@@ -543,6 +545,8 @@ static TZrBool compiler_union_build_variant_metadata_value(SZrCompilerState *cs,
     SZrObject *metadataObject;
     SZrObject *payloadFieldsArray;
     SZrTypeValue payloadFieldsValue;
+    SZrFunctionMetadataParameter *parameterMetadata = ZR_NULL;
+    TZrUInt32 parameterMetadataCount = 0U;
     TZrSize payloadFieldCount;
     ZrExternCompilerTempRoot metadataRoot = {0};
     ZrExternCompilerTempRoot payloadFieldsRoot = {0};
@@ -555,6 +559,15 @@ static TZrBool compiler_union_build_variant_metadata_value(SZrCompilerState *cs,
 
     payloadFieldCount = variant->fields != ZR_NULL ? variant->fields->count : 0;
     ZrCore_Value_ResetAsNull(outValue);
+
+    if (!compiler_build_function_parameter_metadata(
+                cs,
+                variant->fields,
+                ZR_FALSE,
+                &parameterMetadata,
+                &parameterMetadataCount)) {
+        goto cleanup;
+    }
 
     if (!extern_compiler_temp_root_begin(cs, &metadataRoot) ||
         !extern_compiler_temp_root_begin(cs, &payloadFieldsRoot)) {
@@ -624,7 +637,13 @@ static TZrBool compiler_union_build_variant_metadata_value(SZrCompilerState *cs,
                                                             &fieldNode->data.parameter,
                                                             index,
                                                             layoutInfo,
-                                                            variantLayout)) {
+                                                            variantLayout) &&
+                index < parameterMetadataCount &&
+                compiler_parameter_metadata_write_descriptor(
+                        cs,
+                        fieldObject,
+                        &parameterMetadata[index],
+                        (TZrUInt32)index)) {
                 ZrCore_Value_InitAsRawObject(cs->state,
                                              &fieldObjectValue,
                                              ZR_CAST_RAW_OBJECT_AS_SUPER(fieldObject));
@@ -658,6 +677,8 @@ cleanup:
     if (metadataRoot.active) {
         extern_compiler_temp_root_end(&metadataRoot);
     }
+    compiler_free_function_parameter_metadata(
+            cs->state, parameterMetadata, parameterMetadataCount);
     return success;
 }
 
@@ -738,8 +759,29 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, unionDecl->generic);
 
+    if (!compiler_union_register_canonical_type(cs, node, &info)) {
+        ZrParser_Compiler_Error(cs, "failed to register canonical union type", node->location);
+        if (layoutInfoInitialized) {
+            compiler_union_layout_info_free(cs, &layoutInfo);
+        }
+        cs->currentTypeName = oldTypeName;
+        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+        cs->currentTypeNode = oldTypeNode;
+        compiler_union_free_unpublished_prototype(cs, &info);
+        return;
+    }
+
     cs->currentTypePrototypeInfo = &info;
-    if (unionDecl->variants != ZR_NULL) {
+    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(
+                cs, node, unionDecl->decorators, &info) ||
+        !ZrParser_Metadata_ApplyTypeAttributes(
+                cs, unionDecl->decorators, &info, node->location)) {
+        if (!cs->hasError) {
+            ZrParser_Compiler_Error(
+                    cs, "failed to apply union declaration decorators", node->location);
+        }
+    }
+    if (!cs->hasError && unionDecl->variants != ZR_NULL) {
         for (TZrSize index = 0; index < unionDecl->variants->count; index++) {
             SZrAstNode *variantNode = unionDecl->variants->nodes[index];
             SZrUnionVariant *variant;
@@ -779,6 +821,16 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 break;
             }
             memberInfo.hasDecoratorMetadata = ZR_TRUE;
+            if (!ZrParser_CompileTime_ApplyMemberDecorators(
+                        cs, variantNode, variant->decorators, &memberInfo) ||
+                !ZrParser_Metadata_ApplyMemberAttributes(
+                        cs,
+                        variant->decorators,
+                        ZR_PARSER_ATTRIBUTE_TARGET_FIELD,
+                        &memberInfo,
+                        variantNode->location)) {
+                break;
+            }
 
             ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
         }
@@ -795,17 +847,6 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
-    if (!compiler_union_register_canonical_type(cs, node, &info)) {
-        ZrParser_Compiler_Error(cs, "failed to register canonical union type", node->location);
-        if (layoutInfoInitialized) {
-            compiler_union_layout_info_free(cs, &layoutInfo);
-        }
-        cs->currentTypeName = oldTypeName;
-        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-        cs->currentTypeNode = oldTypeNode;
-        compiler_union_free_unpublished_prototype(cs, &info);
-        return;
-    }
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
 
     if (layoutInfoInitialized) {

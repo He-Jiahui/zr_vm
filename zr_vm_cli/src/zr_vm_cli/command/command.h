@@ -16,7 +16,8 @@ typedef enum EZrCliMode {
     ZR_CLI_MODE_DUMP_ZRP_METADATA = 7,
     ZR_CLI_MODE_DIFF_ZRP_METADATA = 8,
     ZR_CLI_MODE_CHECK_ZRP_METADATA_VERSION = 9,
-    ZR_CLI_MODE_MIGRATE_SYNTAX = 10
+    ZR_CLI_MODE_MIGRATE_SYNTAX = 10,
+    ZR_CLI_MODE_TEST = 11
 } EZrCliMode;
 
 typedef enum EZrCliMigrationFormat {
@@ -41,8 +42,12 @@ typedef struct SZrCliCommand {
     const TZrChar *zrpMetadataAfterPath;
     const TZrChar *zrpMetadataVersionCheckPath;
     const TZrChar *migrationPath;
+    const TZrChar *testPath;
+    const TZrChar *testFilter;
     const TZrChar *const *programArgs;
     TZrSize programArgCount;
+    TZrUInt32 testJobs;
+    TZrUInt64 testTimeoutMilliseconds;
     const TZrChar *debugAddress;
     const TZrChar *profileOutputPath;
     const TZrChar *coverageOutputPath;
@@ -65,6 +70,7 @@ typedef struct SZrCliCommand {
     TZrBool migrationCheck;
     TZrBool migrationWrite;
     TZrBool migrationIncludeGenerated;
+    TZrBool testList;
     EZrCliMigrationFormat migrationFormat;
 } SZrCliCommand;
 

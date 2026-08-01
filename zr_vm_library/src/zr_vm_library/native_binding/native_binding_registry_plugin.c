@@ -699,6 +699,22 @@ SZrObjectModule *native_registry_resolve_loaded_module(SZrState *state,
         return ZR_NULL;
     }
 
+    descriptor = native_registry_find_descriptor_or_plugin(state, registry, moduleName);
+    if (descriptor == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (!ZrLibrary_ProviderPhase_CanConsume(
+                ZrLibrary_State_GetProviderPhase(state), descriptor->providerPhase)) {
+        native_registry_set_error(
+                registry,
+                ZR_LIB_NATIVE_REGISTRY_ERROR_PHASE_MISMATCH,
+                "provider phase mismatch: module '%s' requires phase %u but host is phase %u",
+                moduleName,
+                (unsigned)descriptor->providerPhase,
+                (unsigned)ZrLibrary_State_GetProviderPhase(state));
+        return ZR_NULL;
+    }
+
     moduleNameString = native_binding_create_string(state, moduleName);
     if (moduleNameString == ZR_NULL) {
         return ZR_NULL;
@@ -707,11 +723,6 @@ SZrObjectModule *native_registry_resolve_loaded_module(SZrState *state,
     module = ZrCore_Module_GetFromCache(state, moduleNameString);
     if (module != ZR_NULL) {
         return module;
-    }
-
-    descriptor = native_registry_find_descriptor_or_plugin(state, registry, moduleName);
-    if (descriptor == ZR_NULL) {
-        return ZR_NULL;
     }
 
     module = native_registry_materialize_module(state, registry, descriptor);
@@ -989,6 +1000,24 @@ struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *modul
                                                        nativeModuleName,
                                                        lastError);
         }
+        return ZR_NULL;
+    }
+
+    if (!ZrLibrary_ProviderPhase_CanConsume(
+                ZrLibrary_State_GetProviderPhase(state), descriptor->providerPhase)) {
+        native_registry_set_error(
+                registry,
+                ZR_LIB_NATIVE_REGISTRY_ERROR_PHASE_MISMATCH,
+                "provider phase mismatch: module '%s' requires phase %u but host is phase %u",
+                nativeModuleName,
+                (unsigned)descriptor->providerPhase,
+                (unsigned)ZrLibrary_State_GetProviderPhase(state));
+        ZrCore_GlobalState_SetModuleLoadDiagnostic(
+                state->global,
+                "loader=native-plugin result=provider-phase-mismatch module='%s' required=%u actual=%u",
+                nativeModuleName,
+                (unsigned)descriptor->providerPhase,
+                (unsigned)ZrLibrary_State_GetProviderPhase(state));
         return ZR_NULL;
     }
 

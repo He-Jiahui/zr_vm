@@ -129,8 +129,6 @@ static const TZrChar *virtual_documents_meta_method_name(EZrMetaType metaType) {
             return "@setItem";
         case ZR_META_CLOSE:
             return "@close";
-        case ZR_META_DECORATE:
-            return "@decorate";
         default:
             return "@meta";
     }

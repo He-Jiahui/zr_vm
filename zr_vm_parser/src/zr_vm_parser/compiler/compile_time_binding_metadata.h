@@ -16,7 +16,6 @@ typedef struct SZrCompileTimeBindingResolver {
     TZrPtr userData;
     SZrCompileTimeBindingSourceVariable *(*findVariable)(TZrPtr userData, SZrString *name);
     SZrCompileTimeFunction *(*findFunction)(TZrPtr userData, SZrString *name);
-    SZrCompileTimeDecoratorClass *(*findDecoratorClass)(TZrPtr userData, SZrString *name);
 } SZrCompileTimeBindingResolver;
 
 TZrBool ZrParser_CompileTimeBinding_ResolveAll(SZrCompileTimeBindingResolver *resolver,

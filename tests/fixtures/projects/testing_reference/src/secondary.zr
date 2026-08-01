@@ -1,0 +1,6 @@
+let testing = import("zr.testing");
+
+#zr.testing.test#
+fn stableEquality(): void {
+    testing.equal("stable", "stable");
+}

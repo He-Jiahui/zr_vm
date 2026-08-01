@@ -63,6 +63,15 @@ class InventoryExclusion:
 
 
 @dataclass(frozen=True)
+class InventoryAllowlistedFinding:
+    file: str
+    line: int
+    column: int
+    legacy_form: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class MigrationRule:
     classification: MigrationClassification
     target_plan: str
@@ -74,6 +83,7 @@ class InventoryReport:
     scanned_files: tuple[ScannedFile, ...]
     exclusions: tuple[InventoryExclusion, ...]
     findings: tuple[InventoryFinding, ...]
+    allowlisted_findings: tuple[InventoryAllowlistedFinding, ...] = ()
     scanner_version: str = "1"
     selected_roots: tuple[str, ...] = ()
 
@@ -89,6 +99,16 @@ class InventoryReport:
                     for entry in self.scanned_files
                 ],
                 "exclusions": [asdict(entry) for entry in self.exclusions],
+                "allowlistedFindings": [
+                    {
+                        "file": entry.file,
+                        "line": entry.line,
+                        "column": entry.column,
+                        "legacyForm": entry.legacy_form,
+                        "reason": entry.reason,
+                    }
+                    for entry in self.allowlisted_findings
+                ],
                 "findings": [
                     {
                         "file": entry.file,
@@ -118,6 +138,7 @@ class InventoryReport:
             f"selected roots: {', '.join(self.selected_roots)}",
             f"scanned files: {len(self.scanned_files)}",
             f"excluded files: {len(self.exclusions)}",
+            f"allowlisted findings: {len(self.allowlisted_findings)}",
             f"findings: {len(self.findings)}",
             "classification counts:",
         ]
@@ -924,6 +945,23 @@ _REPOSITORY_SELECTED_ROOTS = (
 )
 _BINARY_ARTIFACT_SUFFIXES = {".zro", ".zri", ".zrs"}
 _EMBEDDED_HOST_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".js", ".ts"}
+_REPOSITORY_FINDING_ALLOWLIST = {
+    (
+        "tests/parser/test_percent_syntax_cutover.c",
+        175,
+        "unrecognizedPercentDirective",
+    ): "expectedUnknownPercentNegative",
+    (
+        "tests/task/test_task_runtime.c",
+        862,
+        "unrecognizedPercentDirective",
+    ): "expectedRemovedPercentTypeNegative",
+    (
+        "tests/task/test_task_runtime.c",
+        863,
+        "unrecognizedPercentDirective",
+    ): "expectedRemovedPercentTypeNegative",
+}
 
 
 def _tracked_files(root: Path) -> tuple[Path, ...]:
@@ -1002,6 +1040,7 @@ def build_repository_inventory(root: Path) -> InventoryReport:
     scanned_files: list[ScannedFile] = []
     exclusions: list[InventoryExclusion] = []
     findings: list[InventoryFinding] = []
+    allowlisted_findings: list[InventoryAllowlistedFinding] = []
     for relative_file in repository_candidate_paths(root):
         relative_path = Path(relative_file)
         reason = _repository_exclusion_reason(relative_path)
@@ -1024,10 +1063,32 @@ def build_repository_inventory(root: Path) -> InventoryReport:
         scanned_files.append(
             ScannedFile(file=relative_file, source_kind=source_kind)
         )
-        findings.extend(path_findings)
+        for finding in path_findings:
+            allowlist_reason = _REPOSITORY_FINDING_ALLOWLIST.get(
+                (
+                    finding.file,
+                    finding.source_range.start.line,
+                    finding.legacy_form,
+                )
+            )
+            if allowlist_reason is None:
+                findings.append(finding)
+                continue
+            allowlisted_findings.append(
+                InventoryAllowlistedFinding(
+                    file=finding.file,
+                    line=finding.source_range.start.line,
+                    column=finding.source_range.start.column,
+                    legacy_form=finding.legacy_form,
+                    reason=allowlist_reason,
+                )
+            )
 
     scanned_files.sort(key=lambda entry: (entry.file, entry.source_kind.value))
     exclusions.sort(key=lambda entry: (entry.file, entry.reason))
+    allowlisted_findings.sort(
+        key=lambda entry: (entry.file, entry.line, entry.column, entry.legacy_form)
+    )
     findings.sort(
         key=lambda entry: (
             entry.file,
@@ -1040,7 +1101,8 @@ def build_repository_inventory(root: Path) -> InventoryReport:
         scanned_files=tuple(scanned_files),
         exclusions=tuple(exclusions),
         findings=tuple(findings),
-        scanner_version="1",
+        allowlisted_findings=tuple(allowlisted_findings),
+        scanner_version="2",
         selected_roots=_REPOSITORY_SELECTED_ROOTS,
     )
 

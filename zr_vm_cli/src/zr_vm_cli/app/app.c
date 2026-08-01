@@ -1,6 +1,7 @@
 #include "app/app.h"
 
 #include "command/command.h"
+#include "commands/test_command.h"
 #include "compiler/compiler.h"
 #include "metadata/zrp_metadata_dump.h"
 #include "migration/migration.h"
@@ -62,6 +63,13 @@ int ZrCli_App_Run(int argc, char **argv) {
 
         case ZR_CLI_MODE_MIGRATE_SYNTAX:
             return ZrCli_Migration_Run(&command, stdout, stderr);
+
+        case ZR_CLI_MODE_TEST:
+            return ZrCli_TestCommand_Run(
+                    &command,
+                    argc > 0 ? argv[0] : "zr_vm_cli",
+                    stdout,
+                    stderr);
 
         case ZR_CLI_MODE_COMPILE_PROJECT: {
             int compileResult = ZrCli_Compiler_CompileProject(&command);

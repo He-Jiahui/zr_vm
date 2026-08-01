@@ -25,8 +25,8 @@ typedef enum EZrIoNativeHelperId {
     ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK = 4,
     ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_OWNERSHIP_USING = 5,
     ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF = 6,
-    ZR_IO_NATIVE_HELPER_RUNTIME_DECORATOR_APPLY = 7,
-    ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY = 8,
+    ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_DECORATOR_APPLY = 7,
+    ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_MEMBER_DECORATOR_APPLY = 8,
     ZR_IO_NATIVE_HELPER_MODULE_IMPORT_GUARD = 9,
     ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN = 10
 } EZrIoNativeHelperId;
@@ -462,6 +462,8 @@ struct SZrIoFunction {
     SZrIoFunctionCallSiteCacheEntry *callSiteCaches;
     TZrSize nativeImportContractLength;
     SZrNativeImportContract *nativeImportContracts;
+    TZrSize testManifestDataLength;
+    TZrByte *testManifestData;
     TZrSize prototypesLength;                // prototype 数量
     TZrSize classesLength;
     SZrIoClass *classes;                      // class prototype 数组（如果 type 是 CLASS）

@@ -9112,7 +9112,10 @@ static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
 }
 
 static void test_legacy_runtime_decorator_contracts_are_retired(void) {
-    TEST_IGNORE_MESSAGE("Legacy runtime decorators are retired; replace this marker with attribute M1 coverage.");
+    TEST_ASSERT_NULL(ZrCore_Io_GetSerializableNativeHelperFunction(
+            ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_DECORATOR_APPLY));
+    TEST_ASSERT_NULL(ZrCore_Io_GetSerializableNativeHelperFunction(
+            ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_RUNTIME_MEMBER_DECORATOR_APPLY));
 }
 
 // ==================== 主函数 ====================

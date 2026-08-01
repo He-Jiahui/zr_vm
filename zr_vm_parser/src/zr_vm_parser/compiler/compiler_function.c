@@ -278,13 +278,25 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             if (param->typeInfo != ZR_NULL) {
                                 // 从类型注解推断类型
                                 if (ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
-                                    ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                                    ZrParser_TypeEnvironment_RegisterVariableEx(
+                                            cs->state,
+                                            cs->typeEnv,
+                                            paramName,
+                                            &paramType,
+                                            paramNode,
+                                            paramNode->location);
                                     ZrParser_InferredType_Free(cs->state, &paramType);
                                 }
                             } else {
                                 // 没有类型注解，注册为对象类型（默认）
                                 ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, paramName, &paramType);
+                                ZrParser_TypeEnvironment_RegisterVariableEx(
+                                        cs->state,
+                                        cs->typeEnv,
+                                        paramName,
+                                        &paramType,
+                                        paramNode,
+                                        paramNode->location);
                                 ZrParser_InferredType_Free(cs->state, &paramType);
                             }
                         }
@@ -754,6 +766,24 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->constLocalVars.length = 0;
     cs->constParameters.length = oldConstParameterLength;
     compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
+
+    {
+        TZrBool isTestFunction = ZR_FALSE;
+
+        if (!compiler_test_bind_function(
+                    cs,
+                    node,
+                    newFunc,
+                    (TZrUInt32)cs->childFunctions.length,
+                    &isTestFunction)) {
+            ZrCore_Function_Free(cs->state, newFunc);
+            return;
+        }
+        if (isTestFunction && !cs->emitTestManifest) {
+            ZrCore_Function_Free(cs->state, newFunc);
+            return;
+        }
+    }
 
     // 将新函数添加到子函数列表
     // 注意：这里需要在父编译器的上下文中操作

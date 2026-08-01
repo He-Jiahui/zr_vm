@@ -69,11 +69,9 @@ static const SZrParserCompileToolTypeDescriptor g_declaration_types[] = {
         {ZR_PARSER_COMPILE_TOOL_TYPE_PARAMETER_VIEW, "Parameter", "zr.compile.declaration.Parameter", ZR_PARSER_COMPILE_PHASE_SIGNATURE, ZR_TRUE},
         {ZR_PARSER_COMPILE_TOOL_TYPE_PATCH, "Patch", "zr.compile.declaration.Patch", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
         {ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_DECLARATION, "GeneratedDeclaration", "zr.compile.declaration.GeneratedDeclaration", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
-        {ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_TYPE, "GeneratedType", "zr.compile.declaration.GeneratedType", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
         {ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_FIELD, "GeneratedField", "zr.compile.declaration.GeneratedField", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
-        {ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_METHOD, "GeneratedMethod", "zr.compile.declaration.GeneratedMethod", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
-        {ZR_PARSER_COMPILE_TOOL_TYPE_GENERATED_PROPERTY, "GeneratedProperty", "zr.compile.declaration.GeneratedProperty", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
         {ZR_PARSER_COMPILE_TOOL_TYPE_DIAGNOSTIC, "CompileDiagnostic", "zr.compile.declaration.CompileDiagnostic", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
+        {ZR_PARSER_COMPILE_TOOL_TYPE_ATTRIBUTE_DATA, "AttributeData", "zr.compile.declaration.AttributeData", ZR_PARSER_COMPILE_PHASE_EXPANSION, ZR_FALSE},
 };
 
 static const TZrChar g_build_contract[] =
@@ -87,7 +85,10 @@ static const TZrChar g_build_contract[] =
 static const TZrChar g_declaration_contract[] =
         "zr.compile.declaration/v2\n"
         "types:SymbolId,DeclarationView,TypeView,Class,Struct,Function,Field,Method,Property,Parameter|Signature|Immutable\n"
-        "types:Patch,GeneratedDeclaration,GeneratedType,GeneratedField,GeneratedMethod,GeneratedProperty,CompileDiagnostic|Expansion|TypedData\n"
+        "types:Patch,GeneratedDeclaration,GeneratedField,CompileDiagnostic,AttributeData|Expansion|TypedData\n"
+        "typed-constructor:GeneratedField(name:string,type:TypeId,visibility:Visibility,mutability:Mutability,initializer:ConstantValue?)|Expansion\n"
+        "typed-constructor:CompileDiagnostic(isError:bool,message:string,target:SymbolId)|Expansion\n"
+        "typed-constructor:AttributeData(typeId:TypeId,fieldValues:ConstantValue[])|Expansion\n"
         "metadata:declarationTransform(comptime-fn)->Patch|Expansion\n";
 
 static const SZrParserCompileToolModuleDescriptor g_build_descriptor = {
@@ -107,7 +108,7 @@ static const SZrParserCompileToolModuleDescriptor g_declaration_descriptor = {
         .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL,
         .publicContractHash = ZR_PARSER_COMPILE_TOOL_DECLARATION_PUBLIC_CONTRACT_HASH,
         .canonicalContract = g_declaration_contract,
-        .computedPublicContractHash = (TZrUInt64)0x2e5f7a42c6adbe21ULL,
+        .computedPublicContractHash = (TZrUInt64)0xb4e4667f4100e100ULL,
         .callables = ZR_NULL,
         .callableCount = 0,
         .types = g_declaration_types,

@@ -342,14 +342,10 @@ static void writer_intermediate_write_type_metadata(FILE *file,
                 TZrNativeString path = binding->path != ZR_NULL ? ZrCore_String_GetNativeString(binding->path) : "";
                 TZrNativeString targetName =
                         binding->targetName != ZR_NULL ? ZrCore_String_GetNativeString(binding->targetName) : "<unnamed>";
-                const TZrChar *targetKind =
-                        binding->targetKind == ZR_COMPILE_TIME_BINDING_TARGET_DECORATOR_CLASS ? "class" : "fn";
-
                 fprintf(file,
-                        "%s%s->%s:%s",
+                        "%s%s->fn:%s",
                         bindingIndex == 0 ? " " : ", ",
                         path != ZR_NULL ? path : "",
-                        targetKind,
                         targetName != ZR_NULL ? targetName : "<unnamed>");
             }
             fprintf(file, "]");

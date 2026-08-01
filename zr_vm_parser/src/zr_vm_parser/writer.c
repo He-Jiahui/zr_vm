@@ -11,7 +11,6 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/reflection.h"
-#include "zr_vm_core/runtime_decorator.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_core/debug.h"
@@ -324,14 +323,6 @@ ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeF
 
     if (function == ZrCore_Reflection_TypeOfNativeEntry) {
         return ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF;
-    }
-
-    if (function == ZrCore_RuntimeDecorator_ApplyNativeEntry) {
-        return ZR_IO_NATIVE_HELPER_RUNTIME_DECORATOR_APPLY;
-    }
-
-    if (function == ZrCore_RuntimeDecorator_ApplyMemberNativeEntry) {
-        return ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY;
     }
 
     return ZR_IO_NATIVE_HELPER_NONE;
@@ -1286,10 +1277,15 @@ static TZrBool write_function_decorator_metadata(FILE *file, SZrState *state, SZ
     return ZR_TRUE;
 }
 
-static void write_removed_legacy_test_metadata_tombstone(FILE *file) {
-    const TZrUInt64 removedTestCount = 0;
+static void write_function_test_manifest(FILE *file, const SZrFunction *function) {
+    const TZrUInt64 length = function != ZR_NULL
+                             ? (TZrUInt64)function->testManifestDataLength
+                             : 0U;
 
-    fwrite(&removedTestCount, sizeof(removedTestCount), 1, file);
+    fwrite(&length, sizeof(length), 1, file);
+    if (length > 0U && function->testManifestData != ZR_NULL) {
+        fwrite(function->testManifestData, sizeof(TZrByte), (TZrSize)length, file);
+    }
 }
 
 static void write_function_member_entries(FILE *file, SZrState *state, SZrFunction *function) {
@@ -1738,7 +1734,7 @@ static TZrBool write_io_function_internal(SZrState *state,
         return ZR_FALSE;
     }
     write_function_escape_metadata(file, state, function);
-    write_removed_legacy_test_metadata_tombstone(file);
+    write_function_test_manifest(file, function);
     if (!write_function_decorator_metadata(file, state, function)) {
         return ZR_FALSE;
     }

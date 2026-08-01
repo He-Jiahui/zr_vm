@@ -322,8 +322,7 @@ typedef struct SZrFunctionMetadataParameter {
 
 typedef enum EZrCompileTimeBindingTargetKind {
     ZR_COMPILE_TIME_BINDING_TARGET_NONE = 0,
-    ZR_COMPILE_TIME_BINDING_TARGET_FUNCTION = 1,
-    ZR_COMPILE_TIME_BINDING_TARGET_DECORATOR_CLASS = 2
+    ZR_COMPILE_TIME_BINDING_TARGET_FUNCTION = 1
 } EZrCompileTimeBindingTargetKind;
 
 typedef struct SZrFunctionCompileTimePathBinding {
@@ -644,8 +643,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 semIrDeoptTableLength;
     SZrFunctionCallSiteCacheEntry *callSiteCaches;
     TZrUInt32 callSiteCacheLength;
-    struct SZrObject *runtimeDecoratorMetadata;
-    struct SZrObject *runtimeDecoratorDecorators;
+    TZrByte *testManifestData;
+    TZrSize testManifestDataLength;
     struct SZrClosure *cachedStatelessClosure;
     // Append-only sidecar: keep existing SZrFunction field offsets stable for
     // native fixtures and copied function graphs that may observe the public ABI.

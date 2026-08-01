@@ -10,7 +10,12 @@
 
 ---
 
-> 状态：按Occam原则修订；类型化声明生成边界已确认。
+> 状态：按Occam原则修订；类型化声明生成边界已确认。M4 已完成 typed
+> `CompileDiagnostic[]`、canonical `interfaceAdds: TypeId[]`、schema-checked
+> `attributeAdds: AttributeData[]` 与 `GeneratedField` provenance/retention；
+> runtime decorator path 已删除。其余 generated declaration、generated
+> source map、分配失败后的完整事务回滚及 M5 剩余 consumers 仍未完成，
+> 不能据此提升整门 Gate。
 >
 > 上游契约：[01 Canonical TypeRef、Place、CFG与artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[03 `init TypeRef`与layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[05 property](./2026-07-18-05-property-unified-ast-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[08 reflection metadata](./2026-07-19-08-reflection-library-type-system-design.md)、[10R module/package foundation](./2026-07-19-10-native-ffi-module-package-design.md)。本计划不依赖 06B 最终仓库切换。
 
@@ -334,10 +339,11 @@ cache key至少包含handler artifact hash、compiler schema、arguments、targe
 | `#zr.reflection.attributeUsage#` | 不增加keyword地声明targets/retention | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/AttributeUsageAttribute.cs`；`lua/csharplang/spec/attributes.md` | `lua/roslyn/src/Compilers/CSharp/Test/Emit3/Attributes/AttributeTests.cs` |
 | `#zr.compile.declarationTransform#` | 把普通comptime fn注册为typed generator | `lua/roslyn/src/Compilers/Core/Portable/SourceGeneration/IIncrementalGenerator.cs`；`lua/jdk/src/jdk.compiler/share/classes/com/sun/tools/javac/processing/JavacProcessingEnvironment.java` | `lua/roslyn/src/Compilers/CSharp/Test/Semantic/SourceGeneration/GeneratorDriverTests.cs`；`lua/jdk/test/langtools/tools/javac/processing/GenerateAndErrorTest.java` |
 | typed `Patch` / `GeneratedDeclaration` data | 生成声明但不开放token/AST mutation | `lua/roslyn/src/Compilers/CSharp/Portable/Syntax/SyntaxFactory.cs`；`lua/jdk/src/jdk.compiler/share/classes/com/sun/tools/javac/processing/JavacFiler.java` | `lua/roslyn/src/Compilers/CSharp/Test/Semantic/SourceGeneration/GeneratorDriverTests.cs`；`lua/jdk/test/langtools/tools/javac/processing/filer/TestFilerConstraints.java` |
+| `CompileDiagnostic(isError: bool, message: string, target: SymbolId)` typed constructor | declaration transform通过Patch产生结构化warning/error，不开放字符串日志通道或可写source位置 | `lua/jdk/src/jdk.compiler/share/classes/com/sun/tools/javac/processing/JavacMessager.java`；`lua/roslyn/src/Compilers/Core/Portable/SourceGeneration/GeneratorContexts.cs`；`lua/roslyn/src/Compilers/Core/Portable/Diagnostic/Diagnostic.cs` | `lua/jdk/test/langtools/tools/javac/processing/messager/MessagerBasics.java`；`lua/roslyn/src/Compilers/CSharp/Test/Semantic/SourceGeneration/GeneratorDriverTests.cs` |
 | `#zr.compile.conditional#` | 无runtime branch地删除call和arguments | `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Diagnostics/ConditionalAttribute.cs` | `lua/roslyn/src/Compilers/CSharp/Test/Emit3/Attributes/AttributeTests_Conditional.cs`；`lua/roslyn/src/Compilers/CSharp/Test/Emit/CodeGen/CodeGenLocalFunctionTests.cs` |
 | `compile.build.feature(name): bool` | 单一build predicate来源 | `lua/rust/compiler/rustc_attr_parsing/src/attributes/cfg.rs` | `lua/rust/tests/ui/cfg/cfg_stmt_expr.rs`；`lua/rust/tests/ui/cfg/cfg-false-feature.rs` |
 | `compile.assert(...): void` | 编译期不变量失败 | `lua/rust/compiler/rustc_builtin_macros/src/compile_error.rs`；`lua/jdk/src/jdk.compiler/share/classes/com/sun/tools/javac/processing/JavacMessager.java` | `lua/rust/tests/ui/macros/compile_error_macro.rs`；`lua/jdk/test/langtools/tools/javac/processing/messager/MessagerBasics.java` |
 | `compile.error/warning(...): void` | 产生结构化diagnostic | `lua/jdk/src/jdk.compiler/share/classes/com/sun/tools/javac/processing/JavacMessager.java`；`lua/roslyn/src/Compilers/Core/Portable/Diagnostic/DiagnosticDescriptor.cs` | `lua/jdk/test/langtools/tools/javac/processing/messager/MessagerDiags.java`；`lua/roslyn/src/Compilers/CSharp/Test/Emit3/Diagnostics/DiagnosticAnalyzerTests.cs` |
 | `sizeOf<T>/alignOf<T>` | layout compile check | `lua/rust/library/core/src/mem/mod.rs` | `lua/rust/tests/ui/consts/const-size_of-align_of.rs`；`lua/rust/tests/ui/consts/const-size_of_val-align_of_val.rs` |
 
-刻意差异：ZR不复制Rust token macro、Roslyn arbitrary source text或JDK多round filer；只保留typed view、diagnostic和append-only declaration generation的共同核心。
+刻意差异：ZR不复制Rust token macro、Roslyn arbitrary source text或JDK多round filer；只保留typed view、diagnostic和append-only declaration generation的共同核心。`CompileDiagnostic`第一版只有`isError/message/target`，target必须是当前Patch的canonical SymbolId；不公开任意diagnostic id/category/location、source text或host logger。

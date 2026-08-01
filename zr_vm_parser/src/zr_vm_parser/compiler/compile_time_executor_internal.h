@@ -44,13 +44,6 @@ TZrBool register_compile_time_function_alias(SZrCompilerState *cs,
                                              SZrString *aliasName,
                                              SZrAstNode *node,
                                              SZrFileRange location);
-TZrBool register_compile_time_decorator_class_alias(SZrCompilerState *cs,
-                                                    SZrString *aliasName,
-                                                    SZrAstNode *node,
-                                                    SZrFileRange location);
-TZrBool ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(SZrCompilerState *cs,
-                                                              SZrAstNode *node,
-                                                              SZrFileRange location);
 TZrBool ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(SZrCompilerState *cs,
                                                                   SZrAstNode *node,
                                                                   SZrFileRange location);
