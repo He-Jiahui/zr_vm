@@ -60,6 +60,7 @@ related_code:
   - tests/parser/test_aot_c_generic_monomorphization.c
   - tests/parser/test_aot_c_generic_reference_sharing.c
   - tests/parser/test_aot_c_generic_call_typed.c
+  - tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h
   - tests/module/test_zrp_metadata_format.c
   - tests/acceptance/2026-06-24-aot-11-s1g-zrp-pool-payload-writer.md
   - tests/acceptance/2026-06-24-aot-11-s1h-zrp-definition-table-payload-writer.md
@@ -292,6 +293,8 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
@@ -387,10 +390,14 @@ plan_sources:
   - docs/plans/aot/08-generic-sharing.md
   - docs/plans/aot/10-reflection.md
   - docs/plans/aot/11-metadata.md
+  - docs/plans/aot/07-codegen-register-model-and-environment-isolation.md
+  - docs/plans/aot/12-code-stripping.md
   - user: 2026-07-18 按 AOT 07~12 计划持续优化代码生成并逐阶段记录状态与产出
 tests:
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_aot_c_source_contracts.c
+  - tests/parser/test_aot_c_generic_call_typed.c
+  - tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h
   - tests/cli/test_cli_aot_writer_options.c
   - tests/module/test_metadata_type_ref_binding.c
   - tests/module/test_metadata_runtime_manifest_exports.c
@@ -412,6 +419,7 @@ tests:
   - tests/acceptance/2026-08-01-aot-07-receiver-role-frame-verifier.md
   - tests/acceptance/2026-08-01-aot-07-parameter-binding-identity-verifier.md
   - tests/acceptance/2026-08-01-aot-07-execir-parameter-layout-projection.md
+  - tests/acceptance/2026-08-01-aot-07-value-semir-parameter-layout-consumption.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -957,6 +965,16 @@ implicit receiver slot. When typed locals are absent, metadata is copied only if
 parameter. Nonzero/null metadata storage and metadata count overflow fail before code stripping. This slice does not
 prove TypeId/TypeRef equality, metadata completeness, passing direction/defaults, return ABI, or public artifact parity.
 
+A7.2H makes the generic/shared inline-struct `CALL_TYPED` selector consume that retained parameter sidecar directly.
+The value-SemIR orchestrator resolves the callee by its ExecIR flat function index, and the shared-method route is
+eligible only when `parameterLayoutCount == frameLayout.parameterCount == argumentCount`, every projected row has no
+receiver role, at least one corresponding TypeRef is OBJECT/ARRAY, and each such caller source remains a VALUE slot with
+enough storage for `SZrTypeValue`. Missing or unknown projection, receiver-bearing layouts, count drift, or slot-kind/
+size drift fail closed to the ordinary inline-struct call path. Producer-materialized default arguments are compatible
+when they are already present in the exact runtime arity; default origin, direction, receiver mapping, return/
+destination, spill, and address-taken ABI remain outside this slice. No reachability node or public artifact schema is
+added.
+
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,
 nondecreasing order, and explicit line/column ranges are validated before any function can be removed by code
@@ -987,7 +1005,7 @@ The first executable M5 steps are now inline `COPY_VALUE` lowering and primitive
 - `LOAD_VALUE` / `STORE_VALUE` on matching inline struct fields that are stored as embedded `SZrTypeValue` cells now emit `zr_aot_value_exec_field_value_slot_load` / `zr_aot_value_exec_field_value_slot_store` and use `ZrCore_Value_Copy` directly between the frame byte field and the scalar destination/source slot. Value-slot loads also mirror the copied field into the dense destination, and value-slot stores prefer the dense source when it is materialized. This is the first AOT managed/reference field access slice; copy/drop ownership for whole non-POD structs still belongs to later layout-aware copy/drop lowering.
 - `LOAD_VALUE` / `STORE_VALUE` on matching nested inline struct fields now emit `zr_aot_value_exec_field_inline_struct_load` / `zr_aot_value_exec_field_inline_struct_store` when the field `typeLayoutId` and byte size match the inline destination/source slot. The generated C resolves the field `SZrTypeLayout` with `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame.function, typeLayoutId)`, checks the emitted field byte size, keeps POD field layouts on overlap-safe `memmove`, and routes non-POD field layouts through `ZrCore_TypeLayout_CopyInline(state, ...)`. This mirrors whole-struct `COPY_VALUE` semantics for nested value fields instead of unconditionally raw-copying embedded ownership/value payloads.
 - When `LOAD_VALUE` / `STORE_VALUE` resolves an inline struct field but the field is still outside the executable subset, for example a mismatched nested inline struct transfer, the generated C emits `zr_aot_value_unsupported_field_load` / `zr_aot_value_unsupported_field_store`, calls `ZrCore_Debug_RunError(state, "unsupported AOT value SemIR field ...")`, and exits through `ZR_AOT_C_FAIL()`. Unresolved or dynamic field access still falls through to the declared runtime member contract; proven value-type fields do not silently fall back to `GetMemberSlot` / `SetMemberSlot`.
-- `CALL_TYPED` on matching static/direct POD struct return sites now passes destination layout id and byte span to `ZrLibrary_AotRuntime_CallInlineStruct()`. That helper validates the generated-frame destination layout through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, typeLayoutId)`, stages the callable and arguments, resolves callable metadata from the callee slot, prepares the resolved VM call with `ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource`, invokes the generated callee thunk, posts through `ZrCore_Function_PostCall`, and refreshes the active caller frame. Passing the caller `frame.slotBase` and source argument start lets the core runtime copy byte-backed VALUE parameters from the original generated frame while still using the staged call window for VM call setup.
+- `CALL_TYPED` on matching static/direct POD struct return sites now passes destination layout id and byte span to `ZrLibrary_AotRuntime_CallInlineStruct()`. Generic/shared selection resolves the retained callee ExecIR by flat function index and consumes its slot-aligned parameter layout; exact no-receiver runtime arity plus a projected OBJECT/ARRAY argument is required, while missing, unknown, receiver-bearing, or mismatched layouts keep the ordinary inline-struct route. The helper validates the generated-frame destination layout through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, typeLayoutId)`, stages the callable and arguments, resolves callable metadata from the callee slot, prepares the resolved VM call with `ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource`, invokes the generated callee thunk, posts through `ZrCore_Function_PostCall`, and refreshes the active caller frame. Passing the caller `frame.slotBase` and source argument start lets the core runtime copy byte-backed VALUE parameters from the original generated frame while still using the staged call window for VM call setup.
 - `RETURN_TYPED` on matching single inline struct return sites now passes source layout id and byte span to `ZrLibrary_AotRuntime_ReturnInlineStruct()`. That helper validates the generated-frame source layout through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, typeLayoutId)`, publishes the source slot as `state->stackTop`, and lets core post-call route the payload through `ZrCore_Function_TryCopyInlineFrameReturnValue`.
 
 Generated AOT C functions now also have a first value-frame cleanup boundary. The generated guard macro uses `ZR_AOT_C_RETURN(expr)` instead of emitting direct `return` statements from normal return, tail return, unsupported-dispatch, and failure paths. Each generated function records `zr_aot_frame_started`, a `zr_aot_return_value`, and `zr_aot_skip_drop_slot`, then exits through `zr_aot_function_exit`. `backend_aot_c_frame_cleanup.*` emits reverse frame-layout cleanup for inline struct slots: it resolves each slot's `SZrTypeLayout` from `frame.function`, skips the typed inline return source slot when that source must remain available for core post-call return movement, and calls `ZrCore_TypeLayout_DropInline` only when the resolved layout has a non-`NONE` drop kind. This does not complete hidden-return ownership or exception-aware partial initialization; it prevents the generated C path from bypassing the existing layout-driven drop contract once non-POD inline value slots are active.

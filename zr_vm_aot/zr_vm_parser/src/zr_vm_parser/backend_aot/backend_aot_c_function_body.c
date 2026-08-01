@@ -825,11 +825,10 @@ void backend_aot_write_c_function_body(FILE *file,
 
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
-                                                                             module,
-                                                                             functionIr,
-                                                                              instructionIndex,
-                                                                              ZR_NULL,
-                                                                              ZR_AOT_INVALID_FUNCTION_INDEX,
+                                                                               module,
+                                                                               functionIr,
+                                                                               instructionIndex,
+                                                                               ZR_AOT_INVALID_FUNCTION_INDEX,
                                                                               requireFullAot,
                                                                               ZR_FALSE)) {
                     break;
@@ -2131,11 +2130,10 @@ void backend_aot_write_c_function_body(FILE *file,
             {
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
-                                                                             module,
-                                                                             functionIr,
-                                                                               instructionIndex,
-                                                                               ZR_NULL,
-                                                                               ZR_AOT_INVALID_FUNCTION_INDEX,
+                                                                               module,
+                                                                               functionIr,
+                                                                                instructionIndex,
+                                                                                ZR_AOT_INVALID_FUNCTION_INDEX,
                                                                                requireFullAot,
                                                                                ZR_FALSE)) {
                     backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
@@ -2193,11 +2191,10 @@ void backend_aot_write_c_function_body(FILE *file,
             {
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
-                                                                             module,
-                                                                             functionIr,
-                                                                               instructionIndex,
-                                                                               ZR_NULL,
-                                                                               ZR_AOT_INVALID_FUNCTION_INDEX,
+                                                                               module,
+                                                                               functionIr,
+                                                                                instructionIndex,
+                                                                                ZR_AOT_INVALID_FUNCTION_INDEX,
                                                                                requireFullAot,
                                                                                ZR_FALSE)) {
                     break;
@@ -2504,18 +2501,11 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                                                 operandA1,
                                                                                                 0);
                 }
-                const SZrFunction *calleeFunction =
-                        (calleeFunctionIndex != ZR_AOT_INVALID_FUNCTION_INDEX &&
-                         functionTable != ZR_NULL &&
-                         calleeFunctionIndex < functionTable->count)
-                                ? functionTable->entries[calleeFunctionIndex].function
-                                : ZR_NULL;
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
                                                                              module,
                                                                              functionIr,
                                                                               instructionIndex,
-                                                                              calleeFunction,
                                                                               calleeFunctionIndex,
                                                                               requireFullAot,
                                                                               ZR_FALSE)) {
@@ -2641,18 +2631,11 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                                                 operandA1,
                                                                                                 0);
                 }
-                const SZrFunction *calleeFunction =
-                        (calleeFunctionIndex != ZR_AOT_INVALID_FUNCTION_INDEX &&
-                         functionTable != ZR_NULL &&
-                         calleeFunctionIndex < functionTable->count)
-                                ? functionTable->entries[calleeFunctionIndex].function
-                                : ZR_NULL;
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
                                                                              state,
                                                                              module,
                                                                              functionIr,
                                                                               instructionIndex,
-                                                                              calleeFunction,
                                                                               calleeFunctionIndex,
                                                                               requireFullAot,
                                                                               ZR_FALSE)) {
@@ -2724,7 +2707,6 @@ void backend_aot_write_c_function_body(FILE *file,
                             module,
                             functionIr,
                             instructionIndex,
-                            ZR_NULL,
                             ZR_AOT_INVALID_FUNCTION_INDEX,
                             requireFullAot,
                             (TZrBool)(!publishExports && entry->function->exceptionHandlerCount == 0))) {

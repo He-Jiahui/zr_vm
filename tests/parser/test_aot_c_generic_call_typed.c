@@ -812,6 +812,8 @@ static void test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_i
 #endif
 }
 
+#include "test_aot_c_generic_call_typed_parameter_layout_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_runtime_generic_dictionary_lazily_resolves_method_slot);
@@ -819,6 +821,10 @@ int main(void) {
     RUN_TEST(test_aot_c_generic_call_typed_emits_monomorphized_and_shared_method_forms);
     RUN_TEST(test_aot_c_generic_call_typed_strips_generated_symbol_names_when_requested);
     RUN_TEST(test_aot_c_reference_generic_call_typed_uses_shared_method_slot_callsite);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_uses_exec_ir_parameter_layout);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_unknown_exec_ir_parameter_type);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_receiver_parameter_layout);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_finds_sparse_retained_callee_layout);
     RUN_TEST(test_aot_c_reference_generic_call_typed_full_aot_omits_missing_instance_deopt);
     RUN_TEST(test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_interpreter);
     return UNITY_END();

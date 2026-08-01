@@ -60,34 +60,39 @@ static TZrBool backend_aot_c_value_call_type_ref_is_reference(
 static TZrBool backend_aot_c_value_call_should_use_shared_method_slot(
         const SZrAotExecIrFrameLayout *frameLayout,
         const SZrAotExecIrInstruction *instruction,
-        const SZrFunction *calleeFunction) {
+        const SZrAotExecIrFunction *calleeFunctionIr) {
+    const SZrAotExecIrFrameLayout *calleeFrameLayout;
     TZrUInt32 argumentCount;
-    TZrUInt32 parameterOffset;
     TZrUInt32 argumentIndex;
     TZrBool hasReferenceArgument = ZR_FALSE;
 
     if (frameLayout == ZR_NULL ||
         instruction == ZR_NULL ||
-        calleeFunction == ZR_NULL ||
-        calleeFunction->parameterMetadata == ZR_NULL) {
+        calleeFunctionIr == ZR_NULL) {
         return ZR_FALSE;
     }
 
     argumentCount = instruction->operand1;
+    calleeFrameLayout = &calleeFunctionIr->frameLayout;
     if (argumentCount == 0u ||
-        calleeFunction->parameterMetadataCount < argumentCount) {
+        calleeFrameLayout->parameterCount != argumentCount ||
+        calleeFrameLayout->parameterLayoutCount != argumentCount ||
+        calleeFrameLayout->parameterLayouts == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    parameterOffset = calleeFunction->parameterMetadataCount - argumentCount;
     for (argumentIndex = 0u; argumentIndex < argumentCount; argumentIndex++) {
         const TZrUInt32 sourceSlot = instruction->operand0 + 1u + argumentIndex;
-        const TZrUInt32 parameterIndex = parameterOffset + argumentIndex;
+        const SZrAotExecIrParameterLayout *parameterLayout =
+                &calleeFrameLayout->parameterLayouts[argumentIndex];
         const SZrFunctionTypedTypeRef *parameterType =
-                &calleeFunction->parameterMetadata[parameterIndex].type;
+                &parameterLayout->type;
         const SZrAotExecIrFrameSlotLayout *sourceLayout =
                 backend_aot_c_value_call_find_frame_slot_layout(frameLayout, sourceSlot);
 
+        if (parameterLayout->roleFlags != 0u) {
+            return ZR_FALSE;
+        }
         if (!backend_aot_c_value_call_type_ref_is_reference(parameterType)) {
             continue;
         }
@@ -229,7 +234,7 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
         FILE *file,
         const SZrAotExecIrFrameLayout *frameLayout,
         const SZrAotExecIrInstruction *instruction,
-        const SZrFunction *calleeFunction,
+        const SZrAotExecIrFunction *calleeFunctionIr,
         TZrUInt32 callerFunctionIndex,
         TZrUInt32 execInstructionIndex,
         TZrUInt32 calleeFunctionIndex,
@@ -264,7 +269,8 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
         }
     }
 
-    if (backend_aot_c_value_call_should_use_shared_method_slot(frameLayout, instruction, calleeFunction)) {
+    if (backend_aot_c_value_call_should_use_shared_method_slot(
+                frameLayout, instruction, calleeFunctionIr)) {
         if (requireFullAot) {
             char calleeThunkExpression[32];
 

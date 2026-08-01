@@ -93,6 +93,12 @@ return/destination、spill/address-taken 与完整 A7.2 仍开放。
 runtime parameter slot 消费该投影；typed-local 是权威输入，legacy metadata 仅在 count 完全相等时按索引复制，
 不完整 metadata 保持 unknown；passing direction/default、return/destination 与完整 A7.2 仍开放。
 
+[2026-08-01 value-SemIR parameter layout consumption](./07-codegen/2026-08-01-value-semir-parameter-layout-consumption.md)
+完成 A7.2H 的 generic/shared inline-struct `CALL_TYPED` 参数布局消费：callee 通过 ExecIR flat index 解析，
+shared-method 选择仅接受 exact-count、无 receiver role、已投影 OBJECT/ARRAY 且 caller VALUE slot 容量合法的
+参数表；unknown/mismatch fail closed 到普通 inline-struct 路径，不新增 public/manifest schema。receiver、
+direction/default origin、return/destination、spill/address-taken 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

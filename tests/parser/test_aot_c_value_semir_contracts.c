@@ -350,6 +350,8 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
             "#include \"backend_aot_c_value_semir_calls.h\"",
             "backend_aot_c_value_call_find_frame_slot_layout(",
             "backend_aot_c_value_call_layout_can_inline_struct(",
+            "calleeFunctionIr->frameLayout",
+            "parameterLayoutCount != argumentCount",
             "zr_aot_value_call_typed",
             "zr_aot_value_return_typed",
             "zr_aot_value_exec_call_typed",
@@ -365,6 +367,8 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
             "&zr_aot_skip_drop_slot",
     };
     static const char *const callSourceForbiddenNeedles[] = {
+            "calleeFunction->parameterMetadata",
+            "parameterOffset",
             "SZrCallInfo *zr_aot_call_info = frame.callInfo;",
             "SZrCallInfo *zr_aot_call_info;",
             "SZrFunction *zr_aot_metadata_function;",
@@ -379,6 +383,7 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
     };
     static const char *const orchestratorNeedles[] = {
             "#include \"backend_aot_c_value_semir_calls.h\"",
+            "backend_aot_exec_ir_find_function(module, calleeFunctionIndex)",
             "backend_aot_write_c_value_semir_call_typed(file, frameLayout, instruction);",
             "backend_aot_write_c_value_semir_return_typed(file, frameLayout, instruction);",
             "backend_aot_try_write_c_value_semir_call_typed_exec(",

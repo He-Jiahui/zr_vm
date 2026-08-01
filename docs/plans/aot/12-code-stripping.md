@@ -121,6 +121,11 @@ S1/S3/S6 与 AOT 12 仍为部分完成。
 不可达 owner 的 nonzero/null metadata table 或 metadata count overflow 均 fail closed，沿用既有 frame manifest，
 不新增 reachability node，S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-08-01 value-SemIR parameter layout consumption](./07-codegen/2026-08-01-value-semir-parameter-layout-consumption.md)
+完成 retained callee ExecIR flat index 到 parameter sidecar 的 value-SemIR 消费；code stripping 后 shared-method
+选择只接受 exact-count、无 receiver role 且已知引用 TypeRef 的保留表，malformed/unknown sidecar 不会启用共享
+特化。不新增 reachability node 或 manifest schema，S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |
