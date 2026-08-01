@@ -89,11 +89,17 @@ static TZrBool backend_aot_c_value_call_should_use_shared_method_slot(
                 &parameterLayout->type;
         const SZrAotExecIrFrameSlotLayout *sourceLayout =
                 backend_aot_c_value_call_find_frame_slot_layout(frameLayout, sourceSlot);
+        const TZrBool isReferenceParameter =
+                backend_aot_c_value_call_type_ref_is_reference(parameterType);
 
-        if (parameterLayout->roleFlags != 0u) {
+        if (parameterLayout->roleFlags != 0u &&
+            (parameterLayout->roleFlags !=
+                     ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER ||
+             argumentIndex != 0u ||
+             !isReferenceParameter)) {
             return ZR_FALSE;
         }
-        if (!backend_aot_c_value_call_type_ref_is_reference(parameterType)) {
+        if (!isReferenceParameter) {
             continue;
         }
 

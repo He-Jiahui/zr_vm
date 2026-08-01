@@ -126,6 +126,11 @@ S1/S3/S6 与 AOT 12 仍为部分完成。
 选择只接受 exact-count、无 receiver role 且已知引用 TypeRef 的保留表，malformed/unknown sidecar 不会启用共享
 特化。不新增 reachability node 或 manifest schema，S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-08-01 receiver-aware typed-call layout consumption](./07-codegen/2026-08-01-receiver-aware-typed-call-layout-consumption.md)
+让裁剪后 retained callee sidecar 的 index-0 canonical receiver 进入 shared inline-struct `CALL_TYPED` 选择；
+receiver 与显式参数共用原始 argument window，unknown/组合/错位 role 和 unknown TypeRef 保持 fail closed。
+不新增 reachability node 或 manifest schema，S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

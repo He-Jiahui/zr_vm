@@ -75,6 +75,12 @@ All eight implementation/test files match across main, WSL, and Windows:
 - GCC call shared-library smoke remains 4/5 on the previously recorded binary-input quickened dynamic-call writer case;
   the value typed-call case passes.
 
+## Follow-Up Evidence Correction
+
+A7.2I established that the instance-method receiver fixture cited above lowers to `DYN_CALL`, so it never exercised the
+`CALL_TYPED` selector. The A7.2H no-role production gate remains as implemented, but that fixture only proves dynamic
+instance calls stay outside the typed route. A7.2I supplies the effective receiver-bearing `CALL_TYPED` RED/GREEN test.
+
 ## Acceptance Decision
 
 Accepted at `2026-08-01 08:42:38 +08:00` as AOT 07 A7.2H's exact-count/no-receiver value-SemIR consumption of the

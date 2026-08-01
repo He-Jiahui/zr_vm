@@ -99,6 +99,12 @@ shared-method 选择仅接受 exact-count、无 receiver role、已投影 OBJECT
 参数表；unknown/mismatch fail closed 到普通 inline-struct 路径，不新增 public/manifest schema。receiver、
 direction/default origin、return/destination、spill/address-taken 与完整 A7.2 仍开放。
 
+[2026-08-01 receiver-aware typed-call layout consumption](./07-codegen/2026-08-01-receiver-aware-typed-call-layout-consumption.md)
+完成 A7.2I 的 index-0 canonical receiver 消费：receiver 已包含在 `CALL_TYPED.argumentCount`，继续使用
+`operand0 + 1 + argumentIndex` 参数窗口；unknown/组合/错位 role 与 unknown receiver TypeRef fail closed，
+不改变 runtime/dictionary/public/manifest schema。实例方法 producer、direction/default origin、return/
+destination、spill/address-taken 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

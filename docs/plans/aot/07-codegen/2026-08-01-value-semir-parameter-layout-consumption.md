@@ -66,6 +66,12 @@ evidence_scope: sub-milestone
 - GCC call shared-library smoke 为 4/5；失败仍是 A7.2G 已记录的 binary-input quickened dynamic-call writer
   基线问题，value typed-call case 通过。本切片不扩大修复范围。
 
+## 后续证据更正
+
+- A7.2I 于 2026-08-01 发现本记录所称的 receiver consumer 反例实际从源码编译为 `DYN_CALL`，没有进入
+  `CALL_TYPED` selector。A7.2H 的 no-role 生产 gate 本身不受影响，但该 fixture 只能证明动态实例调用不进入
+  typed route；有效的 receiver-bearing `CALL_TYPED` RED/GREEN 覆盖由 A7.2I 的可控 parameter sidecar 用例补齐。
+
 ## 未完成边界
 
 - receiver-bearing parameter layout、`in/ref/out`/readonly/direction、default origin、TypeId/TypeRef/

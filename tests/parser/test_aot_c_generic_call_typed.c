@@ -823,8 +823,11 @@ int main(void) {
     RUN_TEST(test_aot_c_reference_generic_call_typed_uses_shared_method_slot_callsite);
     RUN_TEST(test_aot_c_reference_generic_call_typed_uses_exec_ir_parameter_layout);
     RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_unknown_exec_ir_parameter_type);
-    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_receiver_parameter_layout);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_uses_slot_zero_receiver_parameter_layout);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_unknown_receiver_parameter_type);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_keeps_dynamic_receiver_call_outside_typed_route);
     RUN_TEST(test_aot_c_reference_generic_call_typed_finds_sparse_retained_callee_layout);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_receiver_window_executes_in_aot);
     RUN_TEST(test_aot_c_reference_generic_call_typed_full_aot_omits_missing_instance_deopt);
     RUN_TEST(test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_interpreter);
     return UNITY_END();

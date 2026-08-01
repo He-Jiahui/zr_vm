@@ -420,6 +420,7 @@ tests:
   - tests/acceptance/2026-08-01-aot-07-parameter-binding-identity-verifier.md
   - tests/acceptance/2026-08-01-aot-07-execir-parameter-layout-projection.md
   - tests/acceptance/2026-08-01-aot-07-value-semir-parameter-layout-consumption.md
+  - tests/acceptance/2026-08-01-aot-07-receiver-aware-typed-call-layout-consumption.md
   - tests/acceptance/2026-07-30-aot-12-debug-sidecar-reachability.md
   - tests/parser/test_aot_c_zrp_metadata_typedef_pruning.c
   - tests/parser/test_aot_c_zrp_metadata_publication.c
@@ -974,6 +975,15 @@ size drift fail closed to the ordinary inline-struct call path. Producer-materia
 when they are already present in the exact runtime arity; default origin, direction, receiver mapping, return/
 destination, spill, and address-taken ABI remain outside this slice. No reachability node or public artifact schema is
 added.
+
+A7.2I extends that selector to a canonical receiver row without changing the runtime argument window. A role-free row
+remains valid; a nonzero role is accepted only when it is exactly `ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER` at parameter
+index zero. The receiver is already included in `CALL_TYPED.argumentCount`, so its caller source is still
+`operand0 + 1`, explicit arguments follow at subsequent indices, and `CallInlineStruct` stages the same count from the
+same window. Receiver role does not imply reference type: its projected TypeRef must still be OBJECT/ARRAY and its source
+must still be a full VALUE slot. Unknown/combined roles, misplaced receivers, unknown TypeRef, or shape drift fail
+closed. Current source instance-method calls still emit `DYN_CALL`; this slice closes only the receiver-bearing
+`CALL_TYPED` consumer contract and does not alter runtime, dictionary, artifact, manifest, or reachability schema.
 
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,
