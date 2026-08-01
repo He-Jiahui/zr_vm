@@ -803,6 +803,14 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "zr_aot_context.methodInfo != ZR_NULL",
             "zr_aot_context.methodInfo->gcRootMap",
     };
+    const char *frameDescriptorStart;
+    const char *functionTableAssignment;
+    const char *functionCountAssignment;
+    const char *functionThunkAssignment;
+    const char *functionThunkCountAssignment;
+    const char *exportContextStart;
+    const char *moduleAssignment;
+    const char *codeRegistrationAssignment;
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
     char *abiHeaderText = read_repo_text_file_owned("zr_vm_common/include/zr_vm_common/zr_aot_abi.h");
@@ -856,6 +864,35 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     TEST_ASSERT_NOT_NULL(reflectionBoolNumericInvokersSourceText);
     TEST_ASSERT_NOT_NULL(reflectionNumericThreeArgInvokersSourceText);
     TEST_ASSERT_NOT_NULL(reflectionBoolThreeArgInvokersSourceText);
+
+    frameDescriptorStart = strstr(frameSetupSourceText, "if (includeFrameDescriptor) {");
+    TEST_ASSERT_NOT_NULL(frameDescriptorStart);
+    functionTableAssignment = strstr(
+            frameDescriptorStart, "frame.functionTable = zr_aot_context.functionTable;");
+    functionCountAssignment = strstr(
+            frameDescriptorStart, "frame.functionCount = zr_aot_context.functionCount;");
+    functionThunkAssignment = strstr(
+            frameDescriptorStart, "frame.functionThunks = zr_aot_context.functionThunks;");
+    functionThunkCountAssignment = strstr(
+            frameDescriptorStart,
+            "frame.functionThunkCount = zr_aot_context.functionThunkCount;");
+    exportContextStart = strstr(frameDescriptorStart, "if (includeExportContext) {");
+    TEST_ASSERT_NOT_NULL(exportContextStart);
+    moduleAssignment = strstr(exportContextStart, "frame.module = zr_aot_context.module;");
+    codeRegistrationAssignment = strstr(
+            exportContextStart, "frame.codeRegistration = zr_aot_context.codeRegistration;");
+    TEST_ASSERT_NOT_NULL(functionTableAssignment);
+    TEST_ASSERT_NOT_NULL(functionCountAssignment);
+    TEST_ASSERT_NOT_NULL(functionThunkAssignment);
+    TEST_ASSERT_NOT_NULL(functionThunkCountAssignment);
+    TEST_ASSERT_NOT_NULL(moduleAssignment);
+    TEST_ASSERT_NOT_NULL(codeRegistrationAssignment);
+    TEST_ASSERT_TRUE(functionTableAssignment < exportContextStart);
+    TEST_ASSERT_TRUE(functionCountAssignment < exportContextStart);
+    TEST_ASSERT_TRUE(functionThunkAssignment < exportContextStart);
+    TEST_ASSERT_TRUE(functionThunkCountAssignment < exportContextStart);
+    TEST_ASSERT_TRUE(exportContextStart < moduleAssignment);
+    TEST_ASSERT_TRUE(exportContextStart < codeRegistrationAssignment);
 
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
     assert_text_contains_all(runtimeSourceText, runtimeSourceNeedles, ARRAY_COUNT(runtimeSourceNeedles));

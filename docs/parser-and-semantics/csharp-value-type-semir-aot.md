@@ -63,6 +63,7 @@ related_code:
   - tests/parser/test_aot_llvm_symbol_stripping.c
   - tests/parser/test_aot_static_direct_call_identity_source_contract_cases.h
   - tests/module/test_aot_runtime_typed_direct_call_compatibility.c
+  - tests/module/test_aot_runtime_direct_core_identity_cases.h
   - tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h
   - tests/parser/test_aot_c_parameter_passing_form_projection_cases.h
   - tests/parser/test_aot_parameter_passing_form_roundtrip_cases.h
@@ -408,6 +409,7 @@ tests:
   - tests/parser/test_aot_c_generic_call_typed.c
   - tests/parser/test_aot_llvm_symbol_stripping.c
   - tests/parser/test_aot_static_direct_call_identity_source_contract_cases.h
+  - tests/module/test_aot_runtime_direct_core_identity_cases.h
   - tests/parser/test_aot_c_generic_call_typed_parameter_layout_cases.h
   - tests/cli/test_cli_aot_writer_options.c
   - tests/module/test_metadata_type_ref_binding.c
@@ -428,6 +430,7 @@ tests:
   - tests/acceptance/2026-08-01-aot-07-direct-inline-return-layout-projection.md
   - tests/acceptance/2026-08-01-aot-07-parameter-source-passing-form-projection.md
   - tests/acceptance/2026-08-02-aot-07-static-direct-call-frame-identity-guard.md
+  - tests/acceptance/2026-08-02-aot-07-direct-core-frame-identity-parity.md
   - tests/acceptance/2026-07-30-aot-07-execir-frame-abi-verifier.md
   - tests/acceptance/2026-07-30-aot-07-frame-type-layout-closure-verifier.md
   - tests/acceptance/2026-07-30-aot-07-complete-frame-parameter-identity-verifier.md
@@ -2964,3 +2967,21 @@ expected runtime error state. Restoring exact identities still exercises the exi
 receiver success path. This slice does not alter the public ABI or artifact schema and does not cover dynamic, meta, or
 cross-module calls; physical ref/out writeback, aggregate destination/return storage, spill/address-taken places, and
 A7.3 environment generation keys remain open.
+
+Focused 2026-08-02 AOT 07-A7.2O extends the same exact generation identity rule to the two generated-C direct-core
+entries. `ZrLibrary_AotRuntime_CallStaticDirect()` and `ZrLibrary_AotRuntime_CallInlineStruct()` resolve the callable's
+metadata function and compare both it and the supplied thunk against the generated frame's function/thunk snapshots
+before stack growth, GC, call-window reset, argument staging, or callee call-info creation. Null or drifted identities
+fail closed with a direct-core identity diagnostic. The runtime reacquires the callable after possible stack
+relocation, so the new preflight check does not replace the existing relocation-safe lookup.
+
+Generated C now initializes `functionTable`, `functionCount`, `functionThunks`, and `functionThunkCount` whenever a
+frame descriptor is emitted, independently of export publication. `module`, `moduleExecuted`, and `codeRegistration`
+remain gated by `includeExportContext`. This fixes nested generated functions that issue direct-core calls without
+publishing exports: their frames previously carried zero identity counts and could not satisfy the exact runtime gate.
+Real runtime fixtures cover metadata and thunk drift independently for both entry points, prove the supplied thunk is
+not invoked, and preserve caller frame/call-info pointers plus callable and destination payloads. Source contracts lock
+the pre-growth gate and all four snapshot fields before the export-only block; GCC, Clang, and MSVC integration suites
+also preserve generic typed-call and generated shared-library success paths. Public ABI, artifact schema, dynamic/meta/
+cross-module generation binding, physical ref/out storage and writeback, aggregate destination/return ABI,
+spill/address-taken slots, and A7.3 environment generation keys are unchanged or remain open.

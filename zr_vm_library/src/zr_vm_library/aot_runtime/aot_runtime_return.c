@@ -548,6 +548,18 @@ TZrBool ZrLibrary_AotRuntime_CallStaticDirect(SZrState *state,
         return ZR_FALSE;
     }
 
+    callableValue = ZrCore_Stack_GetValue(frame->slotBase + functionSlot);
+    metadataFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, callableValue);
+    if (callableValue == ZR_NULL || metadataFunction == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT static direct call failed");
+        return ZR_FALSE;
+    }
+    if (!aot_runtime_static_direct_call_identity_matches(
+                frame, calleeFunctionIndex, metadataFunction, calleeThunk)) {
+        aot_runtime_fail(state, runtimeState, "generated AOT direct-core call identity drift");
+        return ZR_FALSE;
+    }
+
     callBase = frame->callInfo->functionTop.valuePointer;
     if (callBase != ZR_NULL && callBase < frame->slotBase + frame->generatedFrameSlotCount) {
         callBase = frame->slotBase + frame->generatedFrameSlotCount;
@@ -703,6 +715,18 @@ TZrBool ZrLibrary_AotRuntime_CallInlineStruct(SZrState *state,
         argumentCount > frame->generatedFrameSlotCount - functionSlot - 1u ||
         calleeFunctionIndex == ZR_AOT_RUNTIME_RESUME_FALLTHROUGH || calleeThunk == ZR_NULL) {
         aot_runtime_fail(state, runtimeState, "generated AOT inline struct typed call failed");
+        return ZR_FALSE;
+    }
+
+    callableValue = ZrCore_Stack_GetValue(frame->slotBase + functionSlot);
+    metadataFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, callableValue);
+    if (callableValue == ZR_NULL || metadataFunction == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT inline struct typed call failed");
+        return ZR_FALSE;
+    }
+    if (!aot_runtime_static_direct_call_identity_matches(
+                frame, calleeFunctionIndex, metadataFunction, calleeThunk)) {
+        aot_runtime_fail(state, runtimeState, "generated AOT direct-core call identity drift");
         return ZR_FALSE;
     }
 

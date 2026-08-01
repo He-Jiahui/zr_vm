@@ -136,6 +136,13 @@ entry thunk 必须在同一 flat index 精确匹配 generated frame 快照，nul
 callee call-info 创建前 fail closed。dynamic/meta/cross-module binding、物理 ref/out storage/writeback、aggregate
 destination/return、spill/address-taken、A7.3 environment generation key 与完整 A7.2 仍开放。
 
+[2026-08-02 direct-core frame identity parity](./07-codegen/2026-08-02-direct-core-frame-identity-parity.md)
+完成 A7.2O 的 generated-C direct-core identity parity：`CallStaticDirect` 与 `CallInlineStruct` 在栈扩容前要求
+callable metadata 与 supplied thunk 精确匹配 frame snapshot；所有 descriptor frame 均发布 function/thunk table
+与 count，export-only module/code-registration 字段继续独立受控。dynamic/meta/cross-module binding、物理 ref/out
+storage/writeback、aggregate destination/return、spill/address-taken、A7.3 environment generation key 与完整 A7.2
+仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

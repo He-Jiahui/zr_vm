@@ -238,6 +238,8 @@ static void test_typed_direct_call_guard_deopts_on_malformed_caller_binding_tabl
     ZrTests_Runtime_State_Destroy(state);
 }
 
+#include "test_aot_runtime_direct_core_identity_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_static_direct_call_identity_accepts_exact_frame_snapshot);
@@ -248,5 +250,9 @@ int main(void) {
     RUN_TEST(test_typed_direct_call_guard_deopts_on_caller_binding_drift);
     RUN_TEST(test_typed_direct_call_guard_deopts_on_callee_binding_drift);
     RUN_TEST(test_typed_direct_call_guard_deopts_on_malformed_caller_binding_table);
+    RUN_TEST(test_static_direct_core_rejects_metadata_generation_drift_before_thunk);
+    RUN_TEST(test_static_direct_core_rejects_thunk_generation_drift_before_thunk);
+    RUN_TEST(test_inline_struct_direct_core_rejects_metadata_generation_drift_before_thunk);
+    RUN_TEST(test_inline_struct_direct_core_rejects_thunk_generation_drift_before_thunk);
     return UNITY_END();
 }

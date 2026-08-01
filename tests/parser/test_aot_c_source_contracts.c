@@ -3281,5 +3281,6 @@ int main(void) {
     RUN_TEST(test_aot_c_dynamic_dependency_method_token_roots_are_source_guarded);
     RUN_TEST(test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded);
     RUN_TEST(test_aot_static_direct_call_checks_frame_identity_before_preparation);
+    RUN_TEST(test_aot_direct_core_checks_frame_identity_before_stack_growth);
     return UNITY_END();
 }
