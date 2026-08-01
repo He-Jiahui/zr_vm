@@ -21,6 +21,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
 implementation_files:
@@ -37,6 +38,7 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_debug_sidecar_manifest.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
 plan_sources:
   - user: 2026-07-30 execute AOT plans 07 through 12 and record each completed sub-milestone
@@ -372,3 +374,10 @@ same-line column ranges. Every failed public-writer call leaves its output path 
 
 The acceptance records run the focused reachability, stripping, and generic-sharing targets on WSL GCC, WSL Clang,
 and Windows MSVC. Broader graph-node convergence and behavior/size comparisons remain separate AOT 12 stages.
+
+A7.2K callable-return projection is an internal ExecIR owner fact, not a new reachability edge. The complete function
+table validates `hasCallableReturnType` as a canonical bool before filtering, so a malformed owner cannot disappear
+behind trimming; the focused fixture first proves `functionsBefore=3`, `functionsAfter=2`, and `functionsRemoved=1`,
+then injects the invalid flag into the removed child and requires writer failure with no artifact. Retained MethodInfo
+and scalar-local consumers use the projected borrowed snapshot. No manifest node, count, serialized schema, or public
+ABI changes in this slice.

@@ -3915,12 +3915,14 @@ static TZrBool backend_aot_c_scalar_locals_can_return_kind_local(
         EZrAotScalarLocalKind expectedKind,
         TZrBool requireCallableReturnType) {
     const SZrFunction *function;
+    const SZrFunctionTypedTypeRef *callableReturnType;
 
     if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
         return ZR_FALSE;
     }
 
     function = functionIr->function;
+    callableReturnType = backend_aot_exec_ir_callable_return_type(functionIr);
     if (!backend_aot_c_scalar_locals_has_slot_kind(functionIr, slot, expectedKind) ||
         function->exceptionHandlerCount > 0 ||
         backend_aot_c_scalar_locals_function_exports_slot(function, slot) ||
@@ -3929,8 +3931,8 @@ static TZrBool backend_aot_c_scalar_locals_can_return_kind_local(
     }
 
     if (requireCallableReturnType &&
-        (!function->hasCallableReturnType ||
-         backend_aot_c_scalar_locals_kind_from_type_ref(&function->callableReturnType) != expectedKind)) {
+        (callableReturnType == ZR_NULL ||
+         backend_aot_c_scalar_locals_kind_from_type_ref(callableReturnType) != expectedKind)) {
         return ZR_FALSE;
     }
 

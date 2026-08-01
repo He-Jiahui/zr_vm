@@ -683,6 +683,10 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
     if (!backend_aot_exec_ir_validate_source_locations(entry->function)) {
         return ZR_FALSE;
     }
+    if (entry->function->hasCallableReturnType != ZR_FALSE &&
+        entry->function->hasCallableReturnType != ZR_TRUE) {
+        return ZR_FALSE;
+    }
 
     ZrCore_Memory_RawSet(outFunction, 0, sizeof(*outFunction));
     outFunction->function = entry->function;
@@ -694,6 +698,10 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
     outFunction->firstInstructionOffset = *ioInstructionOffset;
     outFunction->instructionCount = entry->function->semIrInstructionLength;
     outFunction->execInstructionCount = entry->function->instructionsLength;
+    if (entry->function->hasCallableReturnType == ZR_TRUE) {
+        outFunction->callableReturnTypeKnown = ZR_TRUE;
+        outFunction->callableReturnType = entry->function->callableReturnType;
+    }
 
     if (!backend_aot_exec_ir_build_frame_layout(state, entry->function, &outFunction->frameLayout) ||
         !backend_aot_exec_ir_build_basic_blocks(state, entry->function, outFunction, &instructionToBlockIndex)) {

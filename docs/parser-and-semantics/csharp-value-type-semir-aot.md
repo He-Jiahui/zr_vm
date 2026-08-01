@@ -2891,3 +2891,13 @@ instead of copying host structure bytes. VM `.zro` roundtrip, libffi lowering, a
 C therefore validate the same signature hashes and contract vectors. Focused WSL GCC
 validation passes native-contract 10/10, dynamic FFI 29/29, pin/callback 2/2, AOT shared
 library 14/14, and AOT frame setup 1/1.
+
+Focused 2026-08-01 AOT 07-A7.2K projects a callable return `SZrFunctionTypedTypeRef` into each internal
+`SZrAotExecIrFunction` as a borrowed snapshot. The builder rejects noncanonical `hasCallableReturnType` values before
+code stripping and copies the TypeRef only for canonical true; false remains unknown. MethodInfo return-signature
+emission and scalar-local direct-return proof now consume the snapshot through
+`backend_aot_exec_ir_callable_return_type()` and never re-read the raw function return metadata. Unknown snapshots
+preserve the existing bool/u64/f64 static-return inference path. The borrowed string pointers remain valid only for the
+source function graph lifetime, matching parameter-layout snapshots. Typed thunks and TypeLayout-token consumers are
+outside this slice and continue to read raw metadata; aggregate return destinations remain open because the current
+producer does not carry canonical static layout identity.

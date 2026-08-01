@@ -834,10 +834,16 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
         char *execIrFrameSourceText = read_repo_text_file_owned(
                 "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
+        char *methodMetadataSourceText = read_repo_text_file_owned(
+                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+        char *scalarLocalsSourceText = read_repo_text_file_owned(
+                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
         TEST_ASSERT_NOT_NULL(execIrHeaderText);
         TEST_ASSERT_NOT_NULL(execIrSourceText);
         TEST_ASSERT_NOT_NULL(execIrFrameSourceText);
+        TEST_ASSERT_NOT_NULL(methodMetadataSourceText);
+        TEST_ASSERT_NOT_NULL(scalarLocalsSourceText);
 
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrFrameSlotLayout"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrParameterLayout"));
@@ -854,6 +860,11 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 parameterLayoutCount;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText,
                                     "SZrAotExecIrParameterLayout *parameterLayouts;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrBool callableReturnTypeKnown;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText,
+                                    "SZrFunctionTypedTypeRef callableReturnType;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText,
+                                    "backend_aot_exec_ir_callable_return_type("));
 
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
                                     "outFrameLayout->frameByteSize = function->frameByteSize;"));
@@ -881,12 +892,34 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
                                     "backend_aot_exec_ir_release_frame_layout("));
         TEST_ASSERT_NOT_NULL(strstr(execIrSourceText,
                                     "backend_aot_exec_ir_build_frame_layout("));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrSourceText,
+                "entry->function->hasCallableReturnType != ZR_FALSE &&"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrSourceText,
+                "entry->function->hasCallableReturnType != ZR_TRUE"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrSourceText,
+                "outFunction->callableReturnTypeKnown = ZR_TRUE;"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrSourceText,
+                "outFunction->callableReturnType = entry->function->callableReturnType;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrSourceText,
                                     "backend_aot_exec_ir_release_frame_layout("));
+        TEST_ASSERT_NOT_NULL(strstr(
+                methodMetadataSourceText,
+                "backend_aot_exec_ir_callable_return_type(functionIr)"));
+        TEST_ASSERT_NULL(strstr(methodMetadataSourceText, "function->hasCallableReturnType"));
+        TEST_ASSERT_NULL(strstr(methodMetadataSourceText, "function->callableReturnType"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                scalarLocalsSourceText,
+                "backend_aot_exec_ir_callable_return_type(functionIr)"));
 
         free(execIrHeaderText);
         free(execIrSourceText);
         free(execIrFrameSourceText);
+        free(methodMetadataSourceText);
+        free(scalarLocalsSourceText);
     }
 
     timer.endTime = clock();

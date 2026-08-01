@@ -283,11 +283,13 @@ static TZrBool backend_aot_c_signature_try_infer_static_return(
 }
 
 static const SZrFunctionTypedTypeRef *backend_aot_c_signature_return_type(
-        const SZrFunction *function,
         const SZrAotExecIrFunction *functionIr,
         SZrFunctionTypedTypeRef *inferredReturnType) {
-    if (function != ZR_NULL && function->hasCallableReturnType) {
-        return &function->callableReturnType;
+    const SZrFunctionTypedTypeRef *callableReturnType =
+            backend_aot_exec_ir_callable_return_type(functionIr);
+
+    if (callableReturnType != ZR_NULL) {
+        return callableReturnType;
     }
 
     if (backend_aot_c_signature_try_infer_static_return(functionIr, inferredReturnType)) {
@@ -313,7 +315,7 @@ static void backend_aot_write_c_signature(FILE *file,
 
     parameterCount = function != ZR_NULL ? (TZrUInt32)function->parameterCount : 0u;
     memset(&inferredReturnType, 0, sizeof(inferredReturnType));
-    returnType = backend_aot_c_signature_return_type(function, functionIr, &inferredReturnType);
+    returnType = backend_aot_c_signature_return_type(functionIr, &inferredReturnType);
     hasReturnValue = (TZrBool)(returnType != ZR_NULL);
 
     fprintf(file, "static const SZrAotSignatureType zr_aot_signature_%u_types[] = {\n",

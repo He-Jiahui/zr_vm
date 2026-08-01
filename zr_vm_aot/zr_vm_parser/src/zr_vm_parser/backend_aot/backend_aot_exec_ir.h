@@ -127,10 +127,20 @@ typedef struct SZrAotExecIrFunction {
     TZrUInt32 firstInstructionOffset;
     TZrUInt32 instructionCount;
     TZrUInt32 execInstructionCount;
+    TZrBool callableReturnTypeKnown;
+    SZrFunctionTypedTypeRef callableReturnType;
     SZrAotExecIrFrameLayout frameLayout;
     SZrAotExecIrBasicBlock *basicBlocks;
     TZrUInt32 basicBlockCount;
 } SZrAotExecIrFunction;
+
+static inline const SZrFunctionTypedTypeRef *backend_aot_exec_ir_callable_return_type(
+        const SZrAotExecIrFunction *functionIr) {
+    if (functionIr == ZR_NULL || functionIr->callableReturnTypeKnown != ZR_TRUE) {
+        return ZR_NULL;
+    }
+    return &functionIr->callableReturnType;
+}
 
 typedef struct SZrAotExecIrModule {
     SZrAotExecIrInstruction *instructions;

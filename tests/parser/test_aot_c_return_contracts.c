@@ -236,10 +236,12 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
     static const char *const scalarSourceNeedles[] = {
             "static TZrBool backend_aot_c_scalar_locals_can_return_kind_local(",
             "TZrBool requireCallableReturnType",
+            "const SZrFunctionTypedTypeRef *callableReturnType",
+            "callableReturnType = backend_aot_exec_ir_callable_return_type(functionIr);",
             "backend_aot_c_scalar_locals_has_slot_kind(functionIr, slot, expectedKind)",
             "requireCallableReturnType &&",
-            "!function->hasCallableReturnType",
-            "backend_aot_c_scalar_locals_kind_from_type_ref(&function->callableReturnType) != expectedKind",
+            "callableReturnType == ZR_NULL",
+            "backend_aot_c_scalar_locals_kind_from_type_ref(callableReturnType) != expectedKind",
             "return backend_aot_c_scalar_locals_kind_written_before(functionIr,",
             "TZrBool backend_aot_c_scalar_locals_can_direct_return_bool_local(const SZrAotExecIrFunction *functionIr,",
             "ZR_AOT_SCALAR_LOCAL_KIND_BOOL,\n"
@@ -259,6 +261,10 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
             "TZrBool backend_aot_c_scalar_locals_can_infer_return_f64_local(const SZrAotExecIrFunction *functionIr,",
             "ZR_AOT_SCALAR_LOCAL_KIND_F64,\n"
             "                                                             ZR_FALSE",
+    };
+    static const char *const forbiddenScalarSourceNeedles[] = {
+            "function->hasCallableReturnType",
+            "&function->callableReturnType",
     };
     static const char *const forbiddenEmitterNeedles[] = {
             "/* zr_aot_publish_exports_direct */",
@@ -364,6 +370,9 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
     assert_text_contains_all(typedReturnSourceText, typedReturnSourceNeedles, ARRAY_COUNT(typedReturnSourceNeedles));
     assert_text_contains_all(scalarHeaderText, scalarHeaderNeedles, ARRAY_COUNT(scalarHeaderNeedles));
     assert_text_contains_all(scalarSourceText, scalarSourceNeedles, ARRAY_COUNT(scalarSourceNeedles));
+    assert_text_contains_none(scalarSourceText,
+                              forbiddenScalarSourceNeedles,
+                              ARRAY_COUNT(forbiddenScalarSourceNeedles));
     assert_text_contains_none(controlText, forbiddenControlNeedles, ARRAY_COUNT(forbiddenControlNeedles));
     assert_text_contains_none(controlText, forbiddenEmitterNeedles, ARRAY_COUNT(forbiddenEmitterNeedles));
     assert_text_contains_none(functionBodyText, forbiddenEmitterNeedles, ARRAY_COUNT(forbiddenEmitterNeedles));

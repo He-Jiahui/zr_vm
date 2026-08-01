@@ -136,6 +136,11 @@ receiver 与显式参数共用原始 argument window，unknown/组合/错位 rol
 sidecar；不可达 malformed owner 同样 fail closed。裁剪沿用既有 frame owner，不新增 reachability node、
 manifest 或 artifact schema；S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-08-01 callable return TypeRef projection](./07-codegen/2026-08-01-callable-return-type-projection.md)
+在 complete function table 上裁剪前校验 callable-return presence bool，并投影 retained owner 的内部 borrowed
+snapshot；不可达 malformed owner 同样 fail closed。裁剪沿用既有 function owner，不新增 reachability node、
+manifest、artifact 或 public schema；S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |

@@ -213,6 +213,8 @@ static void assert_signature_type_row(const char *signatureTypes,
     TEST_ASSERT_TRUE(staticCType < rowEnd);
 }
 
+#include "test_aot_c_method_info_return_projection_cases.h"
+
 static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *root;
@@ -518,5 +520,12 @@ int main(void) {
     RUN_TEST(test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures);
     RUN_TEST(test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types);
     RUN_TEST(test_aot_c_method_info_leaves_ambiguous_legacy_parameter_types_unknown);
+    RUN_TEST(test_aot_exec_ir_callable_return_accessor_isolates_raw_metadata);
+#if defined(ZR_PLATFORM_UNIX)
+    RUN_TEST(test_aot_exec_ir_projects_callable_return_borrowed_snapshot);
+#endif
+    RUN_TEST(test_aot_c_method_info_uses_projected_callable_return_type);
+    RUN_TEST(test_aot_c_unknown_callable_return_uses_scalar_inference);
+    RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_noncanonical_callable_return_flag);
     return UNITY_END();
 }

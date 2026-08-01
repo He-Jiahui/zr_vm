@@ -111,6 +111,12 @@ destination、spill/address-taken 与完整 A7.2 仍开放。
 不进入 ExecIR。shared typed-call 仅在原有 full-arity gate 内写入声明审计 marker，不补参或求值；callsite
 default origin、known-no-default 完整性、direction、return/destination、spill/address-taken 与完整 A7.2 仍开放。
 
+[2026-08-01 callable return TypeRef projection](./07-codegen/2026-08-01-callable-return-type-projection.md)
+完成 A7.2K 的 callable return TypeRef borrowed snapshot：canonical true 投影到函数级 ExecIR，false 保持
+unknown，非 canonical bool 在裁剪前全树拒绝。MethodInfo signature 与 scalar-local direct-return gate 只消费
+sidecar，unknown 继续走既有静态返回推断；typed thunk、aggregate return destination、direction、spill/
+address-taken 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。
