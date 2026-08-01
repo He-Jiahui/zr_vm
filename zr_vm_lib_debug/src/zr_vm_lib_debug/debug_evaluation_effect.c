@@ -338,7 +338,23 @@ TZrBool zr_debug_evaluation_effect_has_canonical_facts(
             zr_debug_evaluation_effect_identifiers_are_resolved(context, expression));
 }
 
-static void zr_debug_evaluation_effect_classify_resolved_properties(
+static void zr_debug_evaluation_effect_classify_resolved_ownership(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node,
+        TZrUInt32 *effectFlags) {
+    const SZrSemanticOwnershipFact *ownership;
+
+    if (context == ZR_NULL || node == ZR_NULL || effectFlags == ZR_NULL) {
+        return;
+    }
+
+    ownership = ZrParser_SemanticFacts_FindOwnershipByNode(context, node);
+    if (ownership != ZR_NULL && !ownership->isViolation) {
+        *effectFlags |= ZR_DEBUG_EVALUATION_EFFECT_OWNER_MUTATION;
+    }
+}
+
+void zr_debug_evaluation_effect_classify_resolved_properties(
         const SZrSemanticContext *context,
         const SZrAstNode *node,
         TZrUInt32 *effectFlags) {
@@ -349,6 +365,8 @@ static void zr_debug_evaluation_effect_classify_resolved_properties(
     if (context == ZR_NULL || node == ZR_NULL || effectFlags == ZR_NULL) {
         return;
     }
+
+    zr_debug_evaluation_effect_classify_resolved_ownership(context, node, effectFlags);
 
     reference = node->type == ZR_AST_IDENTIFIER_LITERAL
                         ? ZrParser_SemanticFacts_FindReferenceAtPosition(
@@ -489,16 +507,7 @@ TZrBool ZrDebug_ClassifyEvaluationEffect(ZrDebugAgent *agent,
                                          ZrDebugEvaluationEffectPolicy *outPolicy,
                                          TZrChar *errorBuffer,
                                          TZrSize errorBufferSize) {
-    SZrParserState parserState;
-    SZrCompilerState compilerState;
-    SZrInferredType inferredType;
-    SZrString *sourceName;
-    SZrAstNode *expr = ZR_NULL;
-    const SZrSemanticExpressionFact *expressionFact;
-    TZrBool parserStateInitialized = ZR_FALSE;
-    TZrBool compilerStateInitialized = ZR_FALSE;
-    TZrBool inferredTypeInitialized = ZR_FALSE;
-    TZrBool parsedExpression = ZR_FALSE;
+    SZrDebugFormalEvaluationContext context;
 
     if (outPolicy != ZR_NULL) {
         memset(outPolicy, 0, sizeof(*outPolicy));
@@ -511,68 +520,28 @@ TZrBool ZrDebug_ClassifyEvaluationEffect(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
-    sourceName = ZrCore_String_CreateFromNative(agent->state, "<debug:effect-policy>");
-    ZrParser_State_Init(&parserState, agent->state, expression, strlen(expression), sourceName);
-    parserStateInitialized = ZR_TRUE;
-    parserState.suppressErrorOutput = ZR_TRUE;
-    expr = ZrParser_ParseExpressionWithState(&parserState);
-    if (parserState.hasError || expr == ZR_NULL) {
-        zr_debug_copy_text(errorBuffer,
-                           errorBufferSize,
-                           parserState.errorMessage != ZR_NULL
-                                   ? parserState.errorMessage
-                                   : "failed to parse debug evaluation effect expression");
-        goto cleanup;
-    }
-    parsedExpression = ZR_TRUE;
-
-    zr_debug_evaluation_effect_classify_structure(expr, &outPolicy->effectFlags);
-
-    memset(&compilerState, 0, sizeof(compilerState));
-    ZrParser_CompilerState_Init(&compilerState, agent->state);
-    compilerStateInitialized = ZR_TRUE;
-    compilerState.currentAst = expr;
-    compilerState.scriptAst = expr;
-    compilerState.suppressErrorOutput = ZR_TRUE;
-    if (zr_debug_semantic_register_bindings(agent, frameId, &compilerState)) {
-        ZrParser_InferredType_Init(agent->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-        inferredTypeInitialized = ZR_TRUE;
-        if (ZrParser_ExpressionType_Infer(&compilerState, expr, &inferredType) &&
-            !compilerState.hasError) {
-            expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(compilerState.semanticContext, expr);
-            if (zr_debug_evaluation_effect_has_canonical_facts(
-                        compilerState.semanticContext,
-                        expr,
-                        expressionFact)) {
-                outPolicy->hasCanonicalFacts = ZR_TRUE;
-                if (expressionFact->kind == ZR_SEMANTIC_EXPRESSION_FACT_OWNERSHIP_BUILTIN) {
-                    outPolicy->effectFlags |= ZR_DEBUG_EVALUATION_EFFECT_OWNER_MUTATION;
-                }
-                zr_debug_evaluation_effect_classify_resolved_properties(
-                        compilerState.semanticContext,
-                        expr,
-                        &outPolicy->effectFlags);
-            }
-        }
+    memset(&context, 0, sizeof(context));
+    if (!zr_debug_formal_prepare_expression(agent,
+                                            frameId,
+                                            expression,
+                                            &context,
+                                            errorBuffer,
+                                            errorBufferSize)) {
+        return ZR_FALSE;
     }
 
+    zr_debug_evaluation_effect_classify_structure(context.expression, &outPolicy->effectFlags);
+    outPolicy->hasCanonicalFacts = context.hasCanonicalFacts;
+    if (context.hasCanonicalFacts) {
+        zr_debug_evaluation_effect_classify_resolved_properties(
+                context.compilerState.semanticContext,
+                context.expression,
+                &outPolicy->effectFlags);
+    }
     outPolicy->isPure = outPolicy->hasCanonicalFacts &&
                         outPolicy->effectFlags == ZR_DEBUG_EVALUATION_EFFECT_NONE;
-
-cleanup:
-    if (inferredTypeInitialized) {
-        ZrParser_InferredType_Free(agent->state, &inferredType);
-    }
-    if (compilerStateInitialized) {
-        ZrParser_CompilerState_Free(&compilerState);
-    }
-    if (expr != ZR_NULL) {
-        ZrParser_Ast_Free(agent->state, expr);
-    }
-    if (parserStateInitialized) {
-        ZrParser_State_Free(&parserState);
-    }
-    return parsedExpression;
+    zr_debug_formal_free_prepared_expression(&context);
+    return ZR_TRUE;
 }
 
 TZrBool ZrDebug_EvaluationEffectPolicy_Allows(

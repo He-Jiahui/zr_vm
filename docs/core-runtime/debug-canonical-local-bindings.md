@@ -11,6 +11,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/state.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -28,6 +30,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/state.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
@@ -38,11 +42,13 @@ plan_sources:
 tests:
   - tests/debug/test_debug_metadata.c
   - tests/debug/test_debug_introspection.c
+  - tests/debug/test_debug_expression_diagnostics.c
   - tests/module/test_reflection_dynamic_generic_instance_interpreter.h
   - tests/module/test_reflection_dynamic_generic_method_context.h
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1a-canonical-local-binding-artifact.md
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b1-paused-frame-canonical-bindings.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b3-generation-checked-runtime-root.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b5-generation-checked-runtime-root-consumer.md
 doc_type: module-detail
 ---
 
@@ -147,8 +153,26 @@ retired/reused frame returns `STALE_FRAME`; a missing runtime root returns
 The token is an identity carrier, not an address or semantic name. Consumers
 must select the root by the structured runtime-root kind and must not inspect
 the token, compare `zr` text, access `global->zrObject` directly, or manufacture
-a local Place. Parser fact projection and Debug formal execution remain later
-E2b/E3 consumers of this core boundary.
+a local Place.
+
+E2b5 connects that carrier to formal Debug evaluation. Binding injection asks
+the paused evaluation context for `ZR_DEBUG_RUNTIME_ROOT_ZR`, resolves the
+current borrowed value only to construct its inferred type, and registers the
+parser binding through `ZrParser_TypeEnvironment_RegisterRuntimeRoot`. The
+reference receives query-local `SymbolId` and `TypeId`, structured root kind,
+and the opaque generation token. It has no source declaration range and no
+function-local Place. An active source binding with the same surface spelling
+remains authoritative and prevents root injection.
+
+Formal execution dispatches from `SZrSemanticReferenceFact.originKind`.
+`SOURCE_DECLARATION` requires exact SymbolId, TypeId, and PlaceId equality with
+the paused frame row. `RUNTIME_ROOT` requires the structured `ZR` role, nonzero
+token, empty Place/declaration/definition identity, and successful
+`ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot` validation against the
+same paused frame generation. `CLOSURE_CAPTURE` remains unavailable until its
+artifact identity and generation-checked resolver are published. None of these
+branches resolves by identifier spelling, stack-slot scan alone, AST shape, or
+raw global pointer.
 
 E2b1 consumes this boundary for Debug semantic inference. The internal binder
 asks `ZrCore_Debug_GetEvaluationContext` for the selected frame, enumerates
@@ -184,6 +208,30 @@ compile because the runtime-root contract did not exist. The final MSVC runner
 passes 2/2 with exit 0; GCC and Clang compile the exact core and test objects
 with exit 0. The full E3 acceptance matrix remains responsible for executing
 the consumer integration on all three toolchains.
+
+`test_debug_formal_evaluation_resolves_generation_checked_runtime_root` pauses
+inside a real VM activation with `zr` holding a byte array. It requires a
+resolved runtime-root reference with query-local IDs, no source identity or
+Place, and the exact token returned by the core binding query. Injecting a
+definition range or mutating only the fact token while leaving the `zr`
+spelling unchanged must make formal execution unsupported; restoring the
+canonical fact evaluates `zr[1]` as `uint 98`.
+The final fixed snapshot includes the clean Syntax05 Task4 property bootstrap
+support from ancestor commit `3d67352` and the 14 exact Debug code/test
+overlays. MSVC 19.44 (Visual Studio 17.14.36), GCC 11.4.0, and Clang 14.0.0
+each configure and build a fresh static target, then pass the complete
+`zr_vm_debug_expression_diagnostics_test` runner with 52 tests, zero failures,
+zero ignored, and process exit 0. The copied WSL snapshot matches all 14
+overlay SHA-256 hashes.
+The later Task4 completion commit `3c4c172` only rejects null bootstrap
+arguments; this Debug path supplies non-null compiler and function inputs, so
+the validated integration path is unchanged.
+
+`test_debug_source_binding_shadows_runtime_root_spelling` keeps the runtime root
+available while pausing in a parameter named `zr`. The resolved fact remains a
+`SOURCE_DECLARATION` with the exact frame Place and cleared root kind/token, and
+formal evaluation reads the parameter value. This freezes source shadowing
+without turning identifier spelling into runtime-root identity.
 
 `test_binary_roundtrip_preserves_canonical_receiver_binding_role` finds the
 receiver row through published `SZrCompiledPrototypeInfo` and

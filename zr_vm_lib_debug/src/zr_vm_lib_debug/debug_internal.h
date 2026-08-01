@@ -288,13 +288,27 @@ ZR_DEBUG_API void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
                                                             const TZrChar *expression,
                                                             TZrChar *buffer,
                                                             TZrSize bufferSize);
+void zr_debug_append_expression_reference_summary(ZrDebugAgent *agent,
+                                                  TZrUInt32 frameId,
+                                                  const TZrChar *expression,
+                                                  TZrChar *buffer,
+                                                  TZrSize bufferSize);
 ZR_DEBUG_API TZrBool zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
-                                                          TZrUInt32 frameId,
-                                                          SZrCompilerState *compilerState);
+                                                           TZrUInt32 frameId,
+                                                           SZrCompilerState *compilerState);
 TZrBool zr_debug_semantic_register_summary_bindings(ZrDebugAgent *agent,
                                                     TZrUInt32 frameId,
                                                     SZrCompilerState *compilerState,
                                                     const SZrAstNode *expression);
+TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
+                                            TZrUInt32 frameId,
+                                            const TZrChar *expression,
+                                            TZrUInt32 allowedEffectFlags,
+                                            SZrTypeValue *outValue,
+                                            TZrChar *errorBuffer,
+                                            TZrSize errorBufferSize,
+                                            TZrBool *outHandled,
+                                            TZrBool *outParserFailure);
 void zr_debug_reference_summary_from_scope(EZrDebugScopeKind scopeKind,
                                            const TZrChar *name,
                                            TZrChar *buffer,
@@ -384,5 +398,16 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
                                      TZrSize errorBufferSize,
                                      TZrChar *referenceBuffer,
                                      TZrSize referenceBufferSize);
+TZrBool zr_debug_evaluate_expression_with_capabilities(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const TZrChar *expression,
+        TZrUInt32 allowedEffectFlags,
+        TZrBool allowLegacyCompatibility,
+        SZrTypeValue *outValue,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize,
+        TZrChar *referenceBuffer,
+        TZrSize referenceBufferSize);
 
 #endif

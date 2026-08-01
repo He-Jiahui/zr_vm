@@ -904,15 +904,20 @@ static TZrBool zr_debug_eval_parse_expression(ZrDebugEvalParser *parser, SZrType
     return ZR_TRUE;
 }
 
-TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
-                                     TZrUInt32 frameId,
-                                     const TZrChar *expression,
-                                     SZrTypeValue *outValue,
-                                     TZrChar *errorBuffer,
-                                     TZrSize errorBufferSize,
-                                     TZrChar *referenceBuffer,
-                                     TZrSize referenceBufferSize) {
+TZrBool zr_debug_evaluate_expression_with_capabilities(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const TZrChar *expression,
+        TZrUInt32 allowedEffectFlags,
+        TZrBool allowLegacyCompatibility,
+        SZrTypeValue *outValue,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize,
+        TZrChar *referenceBuffer,
+        TZrSize referenceBufferSize) {
     ZrDebugEvalParser parser;
+    TZrBool formalHandled = ZR_FALSE;
+    TZrBool formalParserFailure = ZR_FALSE;
 
     if (outValue != ZR_NULL) {
         ZrCore_Value_ResetAsNull(outValue);
@@ -923,6 +928,36 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
     if (agent == ZR_NULL || expression == ZR_NULL || outValue == ZR_NULL) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "invalid debug evaluate request");
         return ZR_FALSE;
+    }
+    if (!zr_debug_formal_evaluate_expression(agent,
+                                             frameId,
+                                             expression,
+                                             allowedEffectFlags,
+                                             outValue,
+                                             errorBuffer,
+                                             errorBufferSize,
+                                             &formalHandled,
+                                             &formalParserFailure)) {
+        if (!allowLegacyCompatibility || !formalParserFailure) {
+            return ZR_FALSE;
+        }
+        if (errorBuffer != ZR_NULL && errorBufferSize > 0u) {
+            errorBuffer[0] = '\0';
+        }
+    }
+    if (formalHandled) {
+        return ZR_TRUE;
+    }
+    if (!allowLegacyCompatibility) {
+        if (errorBuffer == ZR_NULL || errorBufferSize == 0u || errorBuffer[0] == '\0') {
+            zr_debug_copy_text(errorBuffer,
+                               errorBufferSize,
+                               "formal execution is unavailable for the authorized debug evaluation");
+        }
+        return ZR_FALSE;
+    }
+    if (errorBuffer != ZR_NULL && errorBufferSize > 0u) {
+        errorBuffer[0] = '\0';
     }
 
     memset(&parser, 0, sizeof(parser));
@@ -952,4 +987,25 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
     }
 
     return ZR_TRUE;
+}
+
+TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
+                                     TZrUInt32 frameId,
+                                     const TZrChar *expression,
+                                     SZrTypeValue *outValue,
+                                     TZrChar *errorBuffer,
+                                     TZrSize errorBufferSize,
+                                     TZrChar *referenceBuffer,
+                                     TZrSize referenceBufferSize) {
+    return zr_debug_evaluate_expression_with_capabilities(
+            agent,
+            frameId,
+            expression,
+            ZR_DEBUG_EVALUATION_EFFECT_NONE,
+            ZR_TRUE,
+            outValue,
+            errorBuffer,
+            errorBufferSize,
+            referenceBuffer,
+            referenceBufferSize);
 }

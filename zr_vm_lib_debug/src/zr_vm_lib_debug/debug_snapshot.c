@@ -2445,12 +2445,14 @@ static TZrBool zr_debug_try_evaluate_index_window(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
-TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
-                         TZrUInt32 frameId,
-                         const TZrChar *expression,
-                         ZrDebugEvaluateResult *outResult,
-                         TZrChar *errorBuffer,
-                         TZrSize errorBufferSize) {
+static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
+                                             TZrUInt32 frameId,
+                                             const TZrChar *expression,
+                                             TZrUInt32 allowedEffectFlags,
+                                             TZrBool allowLegacyCompatibility,
+                                             ZrDebugEvaluateResult *outResult,
+                                             TZrChar *errorBuffer,
+                                             TZrSize errorBufferSize) {
     SZrTypeValue value;
 
     if (outResult != ZR_NULL) {
@@ -2467,7 +2469,8 @@ TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
         zr_debug_copy_text(errorBuffer, errorBufferSize, "evaluate is only available while paused");
         return ZR_FALSE;
     }
-    if (zr_debug_try_evaluate_index_window(agent,
+    if (allowLegacyCompatibility &&
+        zr_debug_try_evaluate_index_window(agent,
                                            frameId == 0 ? 1u : frameId,
                                            expression,
                                            outResult,
@@ -2477,14 +2480,17 @@ TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
     }
 
     ZrCore_Value_ResetAsNull(&value);
-    if (!zr_debug_evaluate_expression(agent,
-                                      frameId == 0 ? 1u : frameId,
-                                      expression,
-                                      &value,
-                                      errorBuffer,
-                                      errorBufferSize,
-                                      outResult->reference_summary,
-                                      sizeof(outResult->reference_summary))) {
+    if (!zr_debug_evaluate_expression_with_capabilities(
+                agent,
+                frameId == 0 ? 1u : frameId,
+                expression,
+                allowedEffectFlags,
+                allowLegacyCompatibility,
+                &value,
+                errorBuffer,
+                errorBufferSize,
+                outResult->reference_summary,
+                sizeof(outResult->reference_summary))) {
         return ZR_FALSE;
     }
 
@@ -2526,7 +2532,45 @@ TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
                                               expression,
                                               outResult->semantic_summary,
                                               sizeof(outResult->semantic_summary));
+    zr_debug_append_expression_reference_summary(agent,
+                                                 frameId == 0 ? 1u : frameId,
+                                                 expression,
+                                                 outResult->reference_summary,
+                                                 sizeof(outResult->reference_summary));
     return ZR_TRUE;
+}
+
+TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
+                         TZrUInt32 frameId,
+                         const TZrChar *expression,
+                         ZrDebugEvaluateResult *outResult,
+                         TZrChar *errorBuffer,
+                         TZrSize errorBufferSize) {
+    return zr_debug_evaluate_with_policy(agent,
+                                         frameId,
+                                         expression,
+                                         ZR_DEBUG_EVALUATION_EFFECT_NONE,
+                                         ZR_TRUE,
+                                         outResult,
+                                         errorBuffer,
+                                         errorBufferSize);
+}
+
+TZrBool ZrDebug_EvaluateWithCapabilities(ZrDebugAgent *agent,
+                                         TZrUInt32 frameId,
+                                         const TZrChar *expression,
+                                         TZrUInt32 allowedEffectFlags,
+                                         ZrDebugEvaluateResult *outResult,
+                                         TZrChar *errorBuffer,
+                                         TZrSize errorBufferSize) {
+    return zr_debug_evaluate_with_policy(agent,
+                                         frameId,
+                                         expression,
+                                         allowedEffectFlags,
+                                         ZR_FALSE,
+                                         outResult,
+                                         errorBuffer,
+                                         errorBufferSize);
 }
 
 TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames, TZrSize *outCount) {

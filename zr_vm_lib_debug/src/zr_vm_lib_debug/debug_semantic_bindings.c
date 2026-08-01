@@ -40,54 +40,70 @@ static void zr_debug_semantic_apply_exact_value_range(const SZrTypeValue *value,
     }
 }
 
-static void zr_debug_semantic_register_value_binding(SZrCompilerState *compilerState,
-                                                     const TZrChar *nameText,
-                                                     const SZrTypeValue *value,
-                                                     TZrBool replaceExisting) {
-    SZrString *name;
+static TZrBool zr_debug_semantic_register_runtime_root(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        SZrCompilerState *compilerState) {
+    SZrDebugEvaluationContext context;
+    SZrDebugRuntimeRootBinding runtimeRoot;
+    SZrTypeValue value;
     SZrInferredType inferredType;
-    SZrFileRange emptyRange;
+    SZrString *name;
+    EZrDebugEvaluationContextStatus status;
+    TZrBool registered;
 
-    if (compilerState == ZR_NULL ||
-        compilerState->state == ZR_NULL ||
-        compilerState->typeEnv == ZR_NULL ||
-        nameText == ZR_NULL) {
-        return;
+    if (agent == ZR_NULL || agent->state == ZR_NULL || compilerState == ZR_NULL ||
+        compilerState->typeEnv == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    name = ZrCore_String_Create(compilerState->state, (TZrNativeString)nameText, strlen(nameText));
+    name = ZrCore_String_CreateFromNative(compilerState->state, "zr");
     if (name == ZR_NULL) {
-        return;
+        return ZR_FALSE;
     }
-    if (!replaceExisting && ZrParser_TypeEnvironment_FindVariableBinding(compilerState->typeEnv, name) != ZR_NULL) {
-        return;
+    if (ZrParser_TypeEnvironment_FindVariableBinding(compilerState->typeEnv, name) != ZR_NULL) {
+        return ZR_TRUE;
     }
 
-    memset(&emptyRange, 0, sizeof(emptyRange));
-    ZrParser_InferredType_Init(compilerState->state,
-                               &inferredType,
-                               value != ZR_NULL ? value->type : ZR_VALUE_TYPE_OBJECT);
-    zr_debug_semantic_apply_exact_value_range(value, &inferredType);
-    ZrParser_TypeEnvironment_RegisterVariableEx(compilerState->state,
-                                                compilerState->typeEnv,
-                                                name,
-                                                &inferredType,
-                                                ZR_NULL,
-                                                emptyRange);
+    memset(&context, 0, sizeof(context));
+    status = ZrCore_Debug_GetEvaluationContext(
+            agent->state, frameId == 0u ? 0u : frameId - 1u, &context);
+    if (status == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT ||
+        status == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE) {
+        return ZR_TRUE;
+    }
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return ZR_FALSE;
+    }
+
+    memset(&runtimeRoot, 0, sizeof(runtimeRoot));
+    status = ZrCore_Debug_EvaluationContext_GetRuntimeRoot(
+            agent->state, &context, ZR_DEBUG_RUNTIME_ROOT_ZR, &runtimeRoot);
+    if (status == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_METADATA_UNAVAILABLE) {
+        return ZR_TRUE;
+    }
+    if (status != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(&value);
+    if (ZrCore_Debug_EvaluationContext_ResolveRuntimeRoot(
+                agent->state, &context, &runtimeRoot, &value) !=
+        ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(compilerState->state, &inferredType, value.type);
+    zr_debug_semantic_apply_exact_value_range(&value, &inferredType);
+    registered = ZrParser_TypeEnvironment_RegisterRuntimeRoot(
+            compilerState->state,
+            compilerState->typeEnv,
+            name,
+            &inferredType,
+            ZR_SEMANTIC_RUNTIME_ROOT_ZR,
+            runtimeRoot.token);
     ZrParser_InferredType_Free(compilerState->state, &inferredType);
-}
-
-static void zr_debug_semantic_register_globals(ZrDebugAgent *agent, SZrCompilerState *compilerState) {
-    if (agent == ZR_NULL || agent->state == ZR_NULL || agent->state->global == ZR_NULL) {
-        return;
-    }
-
-    zr_debug_semantic_register_value_binding(
-            compilerState, "loadedModules", &agent->state->global->loadedModulesRegistry, ZR_FALSE);
-    zr_debug_semantic_register_value_binding(compilerState, "zr", &agent->state->global->zrObject, ZR_FALSE);
-    if (agent->state->hasCurrentException) {
-        zr_debug_semantic_register_value_binding(compilerState, "error", &agent->state->currentException, ZR_FALSE);
-    }
+    return registered;
 }
 
 static void zr_debug_semantic_register_summary_value_binding(
@@ -95,28 +111,41 @@ static void zr_debug_semantic_register_summary_value_binding(
         TZrUInt32 frameId,
         SZrCompilerState *compilerState,
         const SZrAstNode *identifier) {
+    SZrString *name;
     SZrTypeValue value;
-    const TZrChar *nameText;
+    SZrInferredType inferredType;
+    SZrFileRange emptyRange;
 
     if (agent == ZR_NULL || compilerState == ZR_NULL || compilerState->typeEnv == ZR_NULL ||
-        identifier == ZR_NULL || identifier->type != ZR_AST_IDENTIFIER_LITERAL ||
-        identifier->data.identifier.name == ZR_NULL) {
+        identifier == ZR_NULL || identifier->type != ZR_AST_IDENTIFIER_LITERAL) {
         return;
     }
-    if (ZrParser_TypeEnvironment_FindVariableBinding(
-                compilerState->typeEnv,
-                identifier->data.identifier.name) != ZR_NULL) {
+    name = identifier->data.identifier.name;
+    if (name == ZR_NULL ||
+        ZrParser_TypeEnvironment_FindVariableBinding(compilerState->typeEnv, name) != ZR_NULL) {
         return;
     }
 
-    nameText = zr_debug_string_native(identifier->data.identifier.name);
     ZrCore_Value_ResetAsNull(&value);
-    if (!zr_debug_resolve_identifier_value(
-                agent, frameId, nameText, &value, ZR_NULL, 0u)) {
+    if (!zr_debug_resolve_identifier_value(agent,
+                                           frameId,
+                                           zr_debug_string_native(name),
+                                           &value,
+                                           ZR_NULL,
+                                           0u)) {
         return;
     }
-    zr_debug_semantic_register_value_binding(
-            compilerState, nameText, &value, ZR_FALSE);
+
+    memset(&emptyRange, 0, sizeof(emptyRange));
+    ZrParser_InferredType_Init(compilerState->state, &inferredType, value.type);
+    zr_debug_semantic_apply_exact_value_range(&value, &inferredType);
+    (void)ZrParser_TypeEnvironment_RegisterVariableEx(compilerState->state,
+                                                      compilerState->typeEnv,
+                                                      name,
+                                                      &inferredType,
+                                                      ZR_NULL,
+                                                      emptyRange);
+    ZrParser_InferredType_Free(compilerState->state, &inferredType);
 }
 
 static void zr_debug_semantic_register_summary_node(ZrDebugAgent *agent,
@@ -329,12 +358,13 @@ static TZrBool zr_debug_semantic_register_canonical_frame_binding(
     declarationRange.end.column = (TZrInt32)frameBinding->declarationEndColumn;
     zr_debug_semantic_type_ref_to_inferred(compilerState, &typedBinding->type, &inferredType);
     zr_debug_semantic_apply_exact_value_range(activeValue, &inferredType);
-    registered = ZrParser_TypeEnvironment_RegisterCanonicalVariable(compilerState->state,
+    registered = ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(compilerState->state,
                                                                      compilerState->typeEnv,
                                                                      typedBinding->name,
                                                                      &inferredType,
                                                                      frameBinding->symbolId,
                                                                      frameBinding->typeId,
+                                                                     frameBinding->placeId,
                                                                      declarationRange);
     ZrParser_InferredType_Free(compilerState->state, &inferredType);
     return registered;
@@ -356,21 +386,35 @@ static void zr_debug_semantic_register_entry_typed_locals(ZrDebugAgent *agent,
     for (index = 0; index < entryFunction->typedLocalBindingLength; ++index) {
         const SZrFunctionTypedLocalBinding *binding = &entryFunction->typedLocalBindings[index];
         SZrInferredType inferredType;
-        SZrFileRange emptyRange;
+        SZrFileRange declarationRange;
+        TZrBool hasCanonicalIdentity;
 
         if (binding->name == ZR_NULL ||
             ZrParser_TypeEnvironment_FindVariableBinding(compilerState->typeEnv, binding->name) != ZR_NULL) {
             continue;
         }
 
-        memset(&emptyRange, 0, sizeof(emptyRange));
+        memset(&declarationRange, 0, sizeof(declarationRange));
+        declarationRange.source = entryFunction->sourceCodeList;
+        declarationRange.start.line = (TZrInt32)binding->declarationStartLine;
+        declarationRange.start.column = (TZrInt32)binding->declarationStartColumn;
+        declarationRange.end.line = (TZrInt32)binding->declarationEndLine;
+        declarationRange.end.column = (TZrInt32)binding->declarationEndColumn;
+        hasCanonicalIdentity = binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                               binding->typeId != ZR_SEMANTIC_ID_INVALID &&
+                               declarationRange.source != ZR_NULL;
         zr_debug_semantic_type_ref_to_inferred(compilerState, &binding->type, &inferredType);
-        (void)ZrParser_TypeEnvironment_RegisterVariableEx(compilerState->state,
-                                                          compilerState->typeEnv,
-                                                          binding->name,
-                                                          &inferredType,
-                                                          ZR_NULL,
-                                                          emptyRange);
+        if (hasCanonicalIdentity) {
+            (void)ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
+                    compilerState->state,
+                    compilerState->typeEnv,
+                    binding->name,
+                    &inferredType,
+                    binding->symbolId,
+                    binding->typeId,
+                    binding->placeId,
+                    declarationRange);
+        }
         ZrParser_InferredType_Free(compilerState->state, &inferredType);
     }
 }
@@ -566,9 +610,11 @@ TZrBool zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
         return ZR_FALSE;
     }
 
-    zr_debug_semantic_register_globals(agent, compilerState);
     if (frameStatus == ZR_DEBUG_EVALUATION_CONTEXT_STATUS_INVALID_ARGUMENT) {
         zr_debug_semantic_register_entry_typed_locals(agent, compilerState);
+    }
+    if (!zr_debug_semantic_register_runtime_root(agent, frameId, compilerState)) {
+        return ZR_FALSE;
     }
     if (agent->entryFunction != ZR_NULL &&
         !ZrParser_TypeInference_RegisterRuntimePrototypes(
@@ -587,7 +633,6 @@ TZrBool zr_debug_semantic_register_summary_bindings(ZrDebugAgent *agent,
     TZrBool canonicalBindingsAvailable =
             zr_debug_semantic_register_bindings(agent, frameId, compilerState);
 
-    zr_debug_semantic_register_summary_node(
-            agent, frameId, compilerState, expression);
+    zr_debug_semantic_register_summary_node(agent, frameId, compilerState, expression);
     return (TZrBool)(canonicalBindingsAvailable || expression != ZR_NULL);
 }

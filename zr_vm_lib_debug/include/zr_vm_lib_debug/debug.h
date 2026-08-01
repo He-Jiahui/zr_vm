@@ -191,6 +191,14 @@ ZR_DEBUG_API TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
                                       ZrDebugEvaluateResult *outResult,
                                       TZrChar *errorBuffer,
                                       TZrSize errorBufferSize);
+ZR_DEBUG_API TZrBool ZrDebug_EvaluateWithCapabilities(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const TZrChar *expression,
+        TZrUInt32 allowedEffectFlags,
+        ZrDebugEvaluateResult *outResult,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
 ZR_DEBUG_API TZrBool ZrDebug_ClassifyEvaluationEffect(ZrDebugAgent *agent,
                                                        TZrUInt32 frameId,
                                                        const TZrChar *expression,

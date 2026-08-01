@@ -3,6 +3,7 @@
 #include "unity.h"
 #include "runtime_support.h"
 #include "debug_internal.h"
+#include "debug_evaluation_effect_internal.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser.h"
@@ -38,182 +39,8 @@ static SZrFunction *compile_debug_source(SZrState *state, const char *sourceLabe
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
-typedef struct SZrDebugCanonicalBindingCapture {
-    ZrDebugAgent *agent;
-    TZrBool sawPausedBinding;
-    TZrBool sawReferenceFact;
-    TZrUInt32 expectedSymbolId;
-    TZrUInt32 expectedTypeId;
-    TZrUInt32 expectedStartLine;
-    TZrUInt32 expectedStartColumn;
-    TZrUInt32 actualSymbolId;
-    TZrUInt32 actualTypeId;
-    TZrUInt32 actualStartLine;
-    TZrUInt32 actualStartColumn;
-} SZrDebugCanonicalBindingCapture;
-
-static SZrDebugCanonicalBindingCapture g_debugCanonicalBindingCapture;
-
-static const TZrChar *debug_canonical_binding_string_text(SZrString *value) {
-    if (value == ZR_NULL) {
-        return "";
-    }
-
-    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                   ? ZrCore_String_GetNativeStringShort(value)
-                   : ZrCore_String_GetNativeString(value);
-}
-
-static const SZrFunctionTypedLocalBinding *debug_canonical_binding_find_typed_local(
-        const SZrFunction *function,
-        TZrUInt32 stackSlot) {
-    TZrUInt32 index;
-
-    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (index = 0u; index < function->typedLocalBindingLength; index++) {
-        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
-        if (binding->stackSlot == stackSlot) {
-            return binding;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-static void debug_canonical_binding_hook(SZrState *state, SZrDebugInfo *debugInfo) {
-    SZrDebugEvaluationContext context;
-    SZrDebugFrameBinding frameBinding;
-    const SZrFunctionTypedLocalBinding *typedBinding = ZR_NULL;
-    SZrParserState parserState;
-    SZrCompilerState compilerState;
-    SZrInferredType inferredType;
-    SZrString *sourceName;
-    SZrAstNode *expression = ZR_NULL;
-    const SZrSemanticReferenceFact *reference;
-    TZrUInt32 index;
-
-    ZR_UNUSED_PARAMETER(debugInfo);
-    memset(&frameBinding, 0, sizeof(frameBinding));
-    if (state == ZR_NULL || g_debugCanonicalBindingCapture.agent == ZR_NULL ||
-        g_debugCanonicalBindingCapture.sawReferenceFact) {
-        return;
-    }
-
-    memset(&context, 0, sizeof(context));
-    if (ZrCore_Debug_GetEvaluationContext(state, 0u, &context) != ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
-        return;
-    }
-
-    for (index = 0u; index < context.activeBindingCount; index++) {
-        memset(&frameBinding, 0, sizeof(frameBinding));
-        if (ZrCore_Debug_EvaluationContext_GetBinding(state, &context, index, &frameBinding) !=
-            ZR_DEBUG_EVALUATION_CONTEXT_STATUS_OK) {
-            return;
-        }
-        typedBinding = debug_canonical_binding_find_typed_local(context.activation.function, frameBinding.stackSlot);
-        if (typedBinding != ZR_NULL &&
-            strcmp(debug_canonical_binding_string_text(typedBinding->name), "paused") == 0) {
-            break;
-        }
-        typedBinding = ZR_NULL;
-    }
-
-    if (typedBinding == ZR_NULL) {
-        return;
-    }
-
-    g_debugCanonicalBindingCapture.sawPausedBinding = ZR_TRUE;
-    g_debugCanonicalBindingCapture.expectedSymbolId = frameBinding.symbolId;
-    g_debugCanonicalBindingCapture.expectedTypeId = frameBinding.typeId;
-    g_debugCanonicalBindingCapture.expectedStartLine = frameBinding.declarationStartLine;
-    g_debugCanonicalBindingCapture.expectedStartColumn = frameBinding.declarationStartColumn;
-
-    sourceName = ZrCore_String_CreateFromNative(state, "<debug:e2b1-binding>");
-    if (sourceName == ZR_NULL) {
-        return;
-    }
-    ZrParser_State_Init(&parserState, state, "paused", strlen("paused"), sourceName);
-    parserState.suppressErrorOutput = ZR_TRUE;
-    expression = ZrParser_ParseExpressionWithState(&parserState);
-    if (parserState.hasError || expression == ZR_NULL) {
-        ZrParser_State_Free(&parserState);
-        return;
-    }
-
-    memset(&compilerState, 0, sizeof(compilerState));
-    ZrParser_CompilerState_Init(&compilerState, state);
-    compilerState.currentAst = expression;
-    compilerState.scriptAst = expression;
-    compilerState.suppressErrorOutput = ZR_TRUE;
-    zr_debug_semantic_register_bindings(g_debugCanonicalBindingCapture.agent, 1u, &compilerState);
-    ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    if (ZrParser_ExpressionType_Infer(&compilerState, expression, &inferredType)) {
-        reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
-                compilerState.semanticContext,
-                expression,
-                ZR_SEMANTIC_REFERENCE_READ);
-        if (reference != ZR_NULL) {
-            g_debugCanonicalBindingCapture.sawReferenceFact = ZR_TRUE;
-            g_debugCanonicalBindingCapture.actualSymbolId = reference->symbolId;
-            g_debugCanonicalBindingCapture.actualTypeId = reference->typeId;
-            g_debugCanonicalBindingCapture.actualStartLine = (TZrUInt32)reference->declarationRange.start.line;
-            g_debugCanonicalBindingCapture.actualStartColumn = (TZrUInt32)reference->declarationRange.start.column;
-        }
-    }
-    ZrParser_InferredType_Free(state, &inferredType);
-    ZrParser_CompilerState_Free(&compilerState);
-    ZrParser_Ast_Free(state, expression);
-    ZrParser_State_Free(&parserState);
-}
-
-static void test_debug_semantic_binding_preserves_paused_frame_canonical_identity(void) {
-    const char *source =
-            "fn target(paused: int): int {\n"
-            "    return paused;\n"
-            "}\n"
-            "return target(4);";
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction *function;
-    ZrDebugAgent agent;
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(state);
-    function = compile_debug_source(state, "debug_e2b1_paused_binding.zr", source);
-    TEST_ASSERT_NOT_NULL(function);
-
-    memset(&agent, 0, sizeof(agent));
-    memset(&g_debugCanonicalBindingCapture, 0, sizeof(g_debugCanonicalBindingCapture));
-    agent.state = state;
-    agent.entryFunction = function;
-    agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
-    g_debugCanonicalBindingCapture.agent = &agent;
-
-    ZrCore_Debug_SetHook(state, debug_canonical_binding_hook, ZR_DEBUG_HOOK_MASK_LINE, 0u);
-    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(4, result);
-    ZrCore_Debug_SetHook(state, ZR_NULL, 0u, 0u);
-
-    TEST_ASSERT_TRUE(g_debugCanonicalBindingCapture.sawPausedBinding);
-    TEST_ASSERT_TRUE(g_debugCanonicalBindingCapture.sawReferenceFact);
-    TEST_ASSERT_EQUAL_UINT32(
-            g_debugCanonicalBindingCapture.expectedSymbolId,
-            g_debugCanonicalBindingCapture.actualSymbolId);
-    TEST_ASSERT_EQUAL_UINT32(
-            g_debugCanonicalBindingCapture.expectedTypeId,
-            g_debugCanonicalBindingCapture.actualTypeId);
-    TEST_ASSERT_EQUAL_UINT32(
-            g_debugCanonicalBindingCapture.expectedStartLine,
-            g_debugCanonicalBindingCapture.actualStartLine);
-    TEST_ASSERT_EQUAL_UINT32(
-            g_debugCanonicalBindingCapture.expectedStartColumn,
-            g_debugCanonicalBindingCapture.actualStartColumn);
-
-    ZrCore_Function_Free(state, function);
-    ZrTests_Runtime_State_Destroy(state);
-}
+#include "test_debug_canonical_binding_cases.h"
+#include "test_debug_formal_evaluation_cases.h"
 
 static void test_debug_evaluate_reports_missing_right_operand_with_cause_and_suggestion(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -258,7 +85,7 @@ static void test_debug_condition_expression_reports_missing_logical_operand_with
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_condition_short_circuits_or_without_resolving_missing_rhs(void) {
+static void test_debug_condition_rejects_unresolved_or_operand(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
     ZrDebugEvaluateResult result;
@@ -271,15 +98,13 @@ static void test_debug_condition_short_circuits_or_without_resolving_missing_rhs
     agent.state = state;
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "true || missingLocal", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("bool", result.type_name);
-    TEST_ASSERT_EQUAL_STRING("true", result.value_text);
-    TEST_ASSERT_EQUAL_STRING("", error);
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "true || missingLocal", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_condition_short_circuits_and_without_resolving_missing_rhs(void) {
+static void test_debug_condition_rejects_unresolved_and_operand(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
     ZrDebugEvaluateResult result;
@@ -292,10 +117,8 @@ static void test_debug_condition_short_circuits_and_without_resolving_missing_rh
     agent.state = state;
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "false && missingLocal", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("bool", result.type_name);
-    TEST_ASSERT_EQUAL_STRING("false", result.value_text);
-    TEST_ASSERT_EQUAL_STRING("", error);
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "false && missingLocal", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     ZrTests_Runtime_State_Destroy(state);
 }
@@ -375,7 +198,7 @@ static void test_debug_evaluate_semantic_summary_reports_unsigned_numeric_range(
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_evaluate_semantic_summary_reports_parser_member_reference_fact(void) {
+static void test_debug_evaluate_rejects_runtime_global_without_canonical_identity(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *arrayText;
     SZrObject *arrayObject = ZR_NULL;
@@ -397,11 +220,20 @@ static void test_debug_evaluate_semantic_summary_reports_parser_member_reference
     agent.state = state;
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "zr[1]", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("", error);
-    assert_text_contains(result.semantic_summary, "reference member access");
-    assert_text_contains(result.reference_summary, "global zr");
-    assert_text_contains(result.reference_summary, "index access");
+    TEST_ASSERT_FALSE(ZrDebug_EvaluateWithCapabilities(
+            &agent,
+            1u,
+            "zr[1]",
+            ZR_DEBUG_EVALUATION_EFFECT_NONE,
+            &result,
+            error,
+            sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
+
+    memset(&result, 0, sizeof(result));
+    error[0] = '\0';
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "zr[1]", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     ZrTests_Runtime_State_Destroy(state);
 }
@@ -653,31 +485,6 @@ static void test_debug_semantic_summary_replays_conditional_branch_facts(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_evaluate_semantic_summary_replays_boolean_runtime_condition_fact(void) {
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    ZrDebugAgent agent;
-    ZrDebugEvaluateResult result;
-    TZrChar error[ZR_DEBUG_TEXT_CAPACITY];
-
-    TEST_ASSERT_NOT_NULL(state);
-    ZrCore_Value_InitAsBool(state, &state->global->zrObject, ZR_TRUE);
-    memset(&agent, 0, sizeof(agent));
-    memset(&result, 0, sizeof(result));
-    error[0] = '\0';
-    agent.state = state;
-    agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
-
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "zr ? 1 : 2", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("int", result.type_name);
-    TEST_ASSERT_EQUAL_STRING("1", result.value_text);
-    TEST_ASSERT_EQUAL_STRING("", error);
-    assert_text_contains(result.semantic_summary, "reference read zr");
-    assert_text_contains(result.semantic_summary, "logical true");
-    assert_text_contains(result.semantic_summary, "unreachable because a constant branch skips evaluation");
-
-    ZrTests_Runtime_State_Destroy(state);
-}
-
 static void test_debug_semantic_summary_walks_lambda_local_initializer_facts(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
@@ -706,7 +513,7 @@ static void test_debug_semantic_summary_walks_lambda_local_initializer_facts(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_condition_comparison_short_circuits_without_resolving_missing_rhs(void) {
+static void test_debug_condition_rejects_unresolved_comparison_operands(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
     ZrDebugEvaluateResult result;
@@ -719,23 +526,19 @@ static void test_debug_condition_comparison_short_circuits_without_resolving_mis
     agent.state = state;
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "(1 < 2) || missingLocal", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("bool", result.type_name);
-    TEST_ASSERT_EQUAL_STRING("true", result.value_text);
-    TEST_ASSERT_EQUAL_STRING("", error);
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "(1 < 2) || missingLocal", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     memset(&result, 0, sizeof(result));
     error[0] = '\0';
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "(2 < 1) && missingLocal", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("bool", result.type_name);
-    TEST_ASSERT_EQUAL_STRING("false", result.value_text);
-    TEST_ASSERT_EQUAL_STRING("", error);
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "(2 < 1) && missingLocal", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_condition_evaluates_selected_ternary_branch_without_resolving_skipped_branch(void) {
+static void test_debug_condition_rejects_unresolved_ternary_branch(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrDebugAgent agent;
     ZrDebugEvaluateResult result;
@@ -748,23 +551,19 @@ static void test_debug_condition_evaluates_selected_ternary_branch_without_resol
     agent.state = state;
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "true ? 1 : missingLocal", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("int", result.type_name);
-    TEST_ASSERT_EQUAL_STRING("1", result.value_text);
-    TEST_ASSERT_EQUAL_STRING("", error);
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "true ? 1 : missingLocal", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     memset(&result, 0, sizeof(result));
     error[0] = '\0';
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "false ? missingLocal : 2", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("int", result.type_name);
-    TEST_ASSERT_EQUAL_STRING("2", result.value_text);
-    TEST_ASSERT_EQUAL_STRING("", error);
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "false ? missingLocal : 2", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_condition_reference_summary_tracks_selected_branch_reads(void) {
+static void test_debug_condition_rejects_unresolved_branch_with_runtime_globals(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *arrayText;
     SZrObject *arrayObject = ZR_NULL;
@@ -786,11 +585,8 @@ static void test_debug_condition_reference_summary_tracks_selected_branch_reads(
     agent.state = state;
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
 
-    TEST_ASSERT_TRUE(ZrDebug_Evaluate(&agent, 1, "zr ? loadedModules : missingLocal", &result, error, sizeof(error)));
-    TEST_ASSERT_EQUAL_STRING("", error);
-    assert_text_contains(result.reference_summary, "global zr");
-    assert_text_contains(result.reference_summary, "global loadedModules");
-    assert_text_not_contains(result.reference_summary, "missingLocal");
+    TEST_ASSERT_FALSE(ZrDebug_Evaluate(&agent, 1, "zr ? loadedModules : missingLocal", &result, error, sizeof(error)));
+    assert_text_contains(error, "canonical semantic facts");
 
     ZrTests_Runtime_State_Destroy(state);
 }
@@ -1028,12 +824,16 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_debug_evaluate_reports_missing_right_operand_with_cause_and_suggestion);
     RUN_TEST(test_debug_condition_expression_reports_missing_logical_operand_with_suggestion);
-    RUN_TEST(test_debug_condition_short_circuits_or_without_resolving_missing_rhs);
-    RUN_TEST(test_debug_condition_short_circuits_and_without_resolving_missing_rhs);
+    RUN_TEST(test_debug_condition_rejects_unresolved_or_operand);
+    RUN_TEST(test_debug_condition_rejects_unresolved_and_operand);
     RUN_TEST(test_debug_evaluate_composed_comparison_logical_expression_returns_bool);
+    RUN_TEST(test_debug_evaluate_formal_shift_expression_returns_int);
+    RUN_TEST(test_debug_evaluate_formal_bitwise_expressions_return_int);
+    RUN_TEST(test_debug_evaluate_formal_nested_shift_arithmetic_returns_int);
+    RUN_TEST(test_debug_formal_array_literal_requires_explicit_allocation);
     RUN_TEST(test_debug_evaluate_semantic_summary_escapes_string_constants);
     RUN_TEST(test_debug_evaluate_semantic_summary_reports_unsigned_numeric_range);
-    RUN_TEST(test_debug_evaluate_semantic_summary_reports_parser_member_reference_fact);
+    RUN_TEST(test_debug_evaluate_rejects_runtime_global_without_canonical_identity);
     RUN_TEST(test_debug_semantic_summary_replays_compiled_function_call_reference_fact);
     RUN_TEST(test_debug_semantic_summary_replays_compiled_top_level_variable_reference_fact);
     RUN_TEST(test_debug_semantic_summary_replays_compiled_ownership_fact);
@@ -1042,11 +842,10 @@ int main(void) {
     RUN_TEST(test_debug_semantic_summary_replays_assignment_write_reference_facts);
     RUN_TEST(test_debug_semantic_summary_walks_member_receiver_facts);
     RUN_TEST(test_debug_semantic_summary_replays_conditional_branch_facts);
-    RUN_TEST(test_debug_evaluate_semantic_summary_replays_boolean_runtime_condition_fact);
     RUN_TEST(test_debug_semantic_summary_walks_lambda_local_initializer_facts);
-    RUN_TEST(test_debug_condition_comparison_short_circuits_without_resolving_missing_rhs);
-    RUN_TEST(test_debug_condition_evaluates_selected_ternary_branch_without_resolving_skipped_branch);
-    RUN_TEST(test_debug_condition_reference_summary_tracks_selected_branch_reads);
+    RUN_TEST(test_debug_condition_rejects_unresolved_comparison_operands);
+    RUN_TEST(test_debug_condition_rejects_unresolved_ternary_branch);
+    RUN_TEST(test_debug_condition_rejects_unresolved_branch_with_runtime_globals);
     RUN_TEST(test_debug_condition_reports_missing_ternary_consequent_with_cause_and_suggestion);
     RUN_TEST(test_debug_condition_reports_missing_ternary_alternate_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluate_reports_numeric_operand_type_error_with_cause_and_suggestion);
@@ -1057,11 +856,23 @@ int main(void) {
     RUN_TEST(test_debug_condition_reports_missing_group_close_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluate_reports_unterminated_string_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluate_reports_unsupported_string_escape_with_cause_and_suggestion);
-    RUN_TEST(test_debug_evaluate_rejects_function_call_with_cause_and_suggestion);
+    RUN_TEST(test_debug_evaluate_rejects_unresolved_function_call_without_canonical_facts);
     RUN_TEST(test_debug_evaluate_rejects_assignment_with_cause_and_suggestion);
     RUN_TEST(test_debug_evaluation_effect_policy_classifies_canonical_expression_shapes);
     RUN_TEST(test_debug_evaluation_effect_policy_requires_explicit_capabilities);
+    RUN_TEST(test_debug_evaluate_with_capabilities_enforces_effect_set);
+    RUN_TEST(test_debug_evaluate_with_capabilities_preserves_formal_parse_diagnostic);
+    RUN_TEST(test_debug_evaluate_rejects_unresolved_inactive_branch);
     RUN_TEST(test_debug_evaluation_effect_policy_marks_resolved_property_getter);
+    RUN_TEST(test_debug_evaluation_effect_policy_marks_resolved_ownership_member);
     RUN_TEST(test_debug_semantic_binding_preserves_paused_frame_canonical_identity);
+    RUN_TEST(test_debug_semantic_binding_rejects_missing_paused_place);
+    RUN_TEST(test_debug_source_binding_shadows_runtime_root_spelling);
+    RUN_TEST(test_debug_formal_evaluation_rejects_paused_binding_type_drift);
+    RUN_TEST(test_debug_semantic_binding_registers_canonical_receiver);
+    RUN_TEST(test_debug_formal_evaluation_reads_indexed_paused_frame_binding);
+    RUN_TEST(test_debug_formal_evaluation_resolves_generation_checked_runtime_root);
+    RUN_TEST(test_debug_semantic_binding_rejects_unidentified_closure_capture);
+    RUN_TEST(test_debug_semantic_binding_rejects_entry_binding_without_identity);
     return UNITY_END();
 }

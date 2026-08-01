@@ -762,11 +762,52 @@ static void zr_debug_semantic_append_flow_facts(SZrState *state,
     zr_debug_semantic_walk_node(expr, &walk);
 }
 
-void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
-                                               TZrUInt32 frameId,
-                                               const TZrChar *expression,
-                                               TZrChar *buffer,
-                                               TZrSize bufferSize) {
+static void zr_debug_append_reference_summaries(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const SZrSemanticContext *context,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    TZrSize index;
+
+    if (agent == ZR_NULL || context == ZR_NULL || buffer == ZR_NULL || bufferSize == 0u) {
+        return;
+    }
+    for (index = 0u; index < context->referenceFacts.length; ++index) {
+        const SZrSemanticReferenceFact *fact =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->referenceFacts,
+                        index);
+        TZrChar summary[ZR_DEBUG_TEXT_CAPACITY];
+        TZrSize length;
+
+        if (fact == ZR_NULL || !fact->isResolved || fact->kind != ZR_SEMANTIC_REFERENCE_READ ||
+            fact->name == ZR_NULL ||
+            !zr_debug_identifier_reference_summary(agent,
+                                                   frameId,
+                                                   zr_debug_semantic_string_text(fact->name),
+                                                   summary,
+                                                   sizeof(summary)) ||
+            summary[0] == '\0' || strstr(buffer, summary) != ZR_NULL) {
+            continue;
+        }
+        length = strlen(buffer);
+        if (length > 0u && length + 2u < bufferSize) {
+            snprintf(buffer + length, bufferSize - length, ", %s", summary);
+        } else if (length == 0u) {
+            snprintf(buffer, bufferSize, "%s", summary);
+        }
+        buffer[bufferSize - 1u] = '\0';
+    }
+}
+
+static void zr_debug_append_expression_facts(ZrDebugAgent *agent,
+                                             TZrUInt32 frameId,
+                                             const TZrChar *expression,
+                                             TZrChar *semanticBuffer,
+                                             TZrSize semanticBufferSize,
+                                             TZrChar *referenceBuffer,
+                                             TZrSize referenceBufferSize) {
     SZrState *state;
     SZrParserState parserState;
     SZrCompilerState compilerState;
@@ -780,8 +821,8 @@ void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
     if (agent == ZR_NULL ||
         agent->state == ZR_NULL ||
         expression == ZR_NULL ||
-        buffer == ZR_NULL ||
-        bufferSize == 0) {
+        ((semanticBuffer == ZR_NULL || semanticBufferSize == 0u) &&
+         (referenceBuffer == ZR_NULL || referenceBufferSize == 0u))) {
         return;
     }
     state = agent->state;
@@ -809,7 +850,19 @@ void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
     ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
     inferredTypeInitialized = ZR_TRUE;
     if (ZrParser_ExpressionType_Infer(&compilerState, expr, &inferredType)) {
-        zr_debug_semantic_append_flow_facts(state, compilerState.semanticContext, expr, buffer, bufferSize);
+        if (semanticBuffer != ZR_NULL && semanticBufferSize > 0u) {
+            zr_debug_semantic_append_flow_facts(
+                    state,
+                    compilerState.semanticContext,
+                    expr,
+                    semanticBuffer,
+                    semanticBufferSize);
+        }
+        zr_debug_append_reference_summaries(agent,
+                                            frameId,
+                                            compilerState.semanticContext,
+                                            referenceBuffer,
+                                            referenceBufferSize);
     }
 
 cleanup:
@@ -825,4 +878,22 @@ cleanup:
     if (parserStateInitialized) {
         ZrParser_State_Free(&parserState);
     }
+}
+
+void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
+                                               TZrUInt32 frameId,
+                                               const TZrChar *expression,
+                                               TZrChar *buffer,
+                                               TZrSize bufferSize) {
+    zr_debug_append_expression_facts(
+            agent, frameId, expression, buffer, bufferSize, ZR_NULL, 0u);
+}
+
+void zr_debug_append_expression_reference_summary(ZrDebugAgent *agent,
+                                                  TZrUInt32 frameId,
+                                                  const TZrChar *expression,
+                                                  TZrChar *buffer,
+                                                  TZrSize bufferSize) {
+    zr_debug_append_expression_facts(
+            agent, frameId, expression, ZR_NULL, 0u, buffer, bufferSize);
 }
