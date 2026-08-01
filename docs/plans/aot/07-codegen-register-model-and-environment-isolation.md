@@ -105,6 +105,12 @@ direction/default origin、return/destination、spill/address-taken 与完整 A7
 不改变 runtime/dictionary/public/manifest schema。实例方法 producer、direction/default origin、return/
 destination、spill/address-taken 与完整 A7.2 仍开放。
 
+[2026-08-01 parameter default-declaration projection](./07-codegen/2026-08-01-parameter-default-declaration-projection.md)
+完成 A7.2J 的 parameter default-declaration 正事实投影：仅 exact-count、无 receiver 且 metadata 明确为 true
+时记录 defaultable declaration；false、partial 与 receiver-bearing 输入保持 unknown，GC-bearing default value
+不进入 ExecIR。shared typed-call 仅在原有 full-arity gate 内写入声明审计 marker，不补参或求值；callsite
+default origin、known-no-default 完整性、direction、return/destination、spill/address-taken 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

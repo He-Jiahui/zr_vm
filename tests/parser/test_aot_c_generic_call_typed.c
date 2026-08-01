@@ -15,6 +15,8 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 
+#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h"
+
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
 #endif
@@ -813,6 +815,7 @@ static void test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_i
 }
 
 #include "test_aot_c_generic_call_typed_parameter_layout_cases.h"
+#include "test_aot_c_generic_call_typed_default_declaration_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -828,6 +831,11 @@ int main(void) {
     RUN_TEST(test_aot_c_reference_generic_call_typed_keeps_dynamic_receiver_call_outside_typed_route);
     RUN_TEST(test_aot_c_reference_generic_call_typed_finds_sparse_retained_callee_layout);
     RUN_TEST(test_aot_c_reference_generic_call_typed_receiver_window_executes_in_aot);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_observes_defaultable_callee_at_full_arity);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_keeps_partial_default_metadata_unknown);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_keeps_receiver_default_metadata_unknown);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_invalid_default_sidecar_state);
+    RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_unreachable_noncanonical_default_flag_before_stripping);
     RUN_TEST(test_aot_c_reference_generic_call_typed_full_aot_omits_missing_instance_deopt);
     RUN_TEST(test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_interpreter);
     return UNITY_END();

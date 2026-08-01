@@ -841,6 +841,11 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
 
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrFrameSlotLayout"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrParameterLayout"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrBool defaultDeclarationKnown;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrBool hasDeclaredDefault;"));
+        TEST_ASSERT_NOT_NULL(strstr(
+                execIrHeaderText,
+                "backend_aot_exec_ir_parameter_default_declaration_is_valid"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "SZrFunctionTypedTypeRef type;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteSize;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteAlign;"));
@@ -864,6 +869,14 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
                                     "destination->symbolId = source->symbolId;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
                                     "destination->roleFlags = source->roleFlags;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "function->parameterMetadataCount == function->parameterCount"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "metadata->hasDefaultValue != ZR_TRUE"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "destination->defaultDeclarationKnown = ZR_TRUE;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
+                                    "destination->hasDeclaredDefault = ZR_TRUE;"));
         TEST_ASSERT_NOT_NULL(strstr(execIrFrameSourceText,
                                     "backend_aot_exec_ir_release_frame_layout("));
         TEST_ASSERT_NOT_NULL(strstr(execIrSourceText,

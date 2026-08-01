@@ -72,8 +72,24 @@ typedef struct SZrAotExecIrParameterLayout {
     TZrUInt32 typeId;
     TZrUInt32 placeId;
     TZrUInt32 roleFlags;
+    TZrBool defaultDeclarationKnown;
+    TZrBool hasDeclaredDefault;
     SZrFunctionTypedTypeRef type;
 } SZrAotExecIrParameterLayout;
+
+static inline TZrBool backend_aot_exec_ir_parameter_default_declaration_is_valid(
+        const SZrAotExecIrParameterLayout *layout) {
+    if (layout == ZR_NULL ||
+        (layout->defaultDeclarationKnown != ZR_FALSE &&
+         layout->defaultDeclarationKnown != ZR_TRUE) ||
+        (layout->hasDeclaredDefault != ZR_FALSE &&
+         layout->hasDeclaredDefault != ZR_TRUE)) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(!layout->hasDeclaredDefault ||
+                     layout->defaultDeclarationKnown);
+}
 
 typedef struct SZrAotExecIrFrameLayout {
     TZrUInt32 parameterCount;

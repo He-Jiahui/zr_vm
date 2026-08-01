@@ -985,6 +985,19 @@ must still be a full VALUE slot. Unknown/combined roles, misplaced receivers, un
 closed. Current source instance-method calls still emit `DYN_CALL`; this slice closes only the receiver-bearing
 `CALL_TYPED` consumer contract and does not alter runtime, dictionary, artifact, manifest, or reachability schema.
 
+A7.2J adds a conservative default-declaration fact to each internal parameter-layout row. Projection records
+`defaultDeclarationKnown && hasDeclaredDefault` only for a positive canonical metadata declaration, only when metadata
+and runtime parameter counts match exactly, and only for receiver-free layouts. A false metadata flag, partial table,
+or receiver-bearing layout remains unknown because current producers do not carry a defaults-complete guarantee or a
+receiver-to-metadata index contract. The GC-bearing metadata `defaultValue` is not copied into ExecIR. The shared
+inline-struct `CALL_TYPED` consumer emits `zr_aot_generic_call_typed_callee_defaultable_parameter_full_arity` only after
+the existing exact-arity and complete caller-window checks pass; omitted and explicitly supplied arguments therefore
+produce the same declaration-audit marker, and AOT neither appends nor evaluates a default. Noncanonical metadata
+booleans are rejected during the all-function pre-strip validation, including unreachable owners, while an invalid
+internal sidecar invariant fails closed to the ordinary inline-struct route. Callsite default origin still requires a
+producer-owned argument-origin carrier and remains outside this slice, as do known-no-default completeness,
+`in/ref/out` direction, return/destination, spill, and address-taken ABI.
+
 ExecIR now applies the same fail-closed boundary to the canonical function execution-location sidecar. A nonempty
 `SZrFunctionExecutionLocationInfo` table must be backed by an instruction table; signed instruction offsets,
 nondecreasing order, and explicit line/column ranges are validated before any function can be removed by code

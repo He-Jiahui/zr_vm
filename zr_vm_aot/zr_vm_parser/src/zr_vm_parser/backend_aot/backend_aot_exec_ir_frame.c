@@ -68,6 +68,16 @@ static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
         function->parameterMetadataCount > function->parameterCount) {
         return ZR_FALSE;
     }
+    for (TZrUInt32 metadataIndex = 0u;
+         metadataIndex < function->parameterMetadataCount;
+         metadataIndex++) {
+        const TZrBool hasDefaultValue =
+                function->parameterMetadata[metadataIndex].hasDefaultValue;
+
+        if (hasDefaultValue != ZR_FALSE && hasDefaultValue != ZR_TRUE) {
+            return ZR_FALSE;
+        }
+    }
     if (function->typedLocalBindingLength == 0u) {
         return ZR_TRUE;
     }
@@ -134,6 +144,46 @@ static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
     }
 
     return (TZrBool)(parameterBindingCount == function->parameterCount);
+}
+
+static TZrBool backend_aot_exec_ir_parameter_defaults_are_index_aligned(
+        const SZrFunction *function) {
+    if (function == ZR_NULL || function->parameterMetadata == ZR_NULL ||
+        function->parameterMetadataCount != function->parameterCount) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 bindingIndex = 0u;
+         bindingIndex < function->typedLocalBindingLength;
+         bindingIndex++) {
+        if ((function->typedLocalBindings[bindingIndex].roleFlags &
+             ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER) != 0u) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static void backend_aot_exec_ir_project_parameter_default_declaration(
+        const SZrFunction *function,
+        TZrUInt32 parameterIndex,
+        SZrAotExecIrParameterLayout *destination) {
+    const SZrFunctionMetadataParameter *metadata;
+
+    if (function == ZR_NULL || destination == ZR_NULL ||
+        !backend_aot_exec_ir_parameter_defaults_are_index_aligned(function) ||
+        parameterIndex >= function->parameterCount) {
+        return;
+    }
+
+    metadata = &function->parameterMetadata[parameterIndex];
+    if (metadata->hasDefaultValue != ZR_TRUE) {
+        return;
+    }
+
+    destination->defaultDeclarationKnown = ZR_TRUE;
+    destination->hasDeclaredDefault = ZR_TRUE;
 }
 
 static TZrBool backend_aot_exec_ir_validate_receiver_role(
@@ -372,6 +422,8 @@ static TZrBool backend_aot_exec_ir_build_parameter_layouts(
             if (function->parameterMetadataCount == function->parameterCount) {
                 destination->type = function->parameterMetadata[parameterIndex].type;
             }
+            backend_aot_exec_ir_project_parameter_default_declaration(
+                    function, parameterIndex, destination);
         }
         return ZR_TRUE;
     }
@@ -396,6 +448,8 @@ static TZrBool backend_aot_exec_ir_build_parameter_layouts(
         destination->placeId = source->placeId;
         destination->roleFlags = source->roleFlags;
         destination->type = source->type;
+        backend_aot_exec_ir_project_parameter_default_declaration(
+                function, parameterIndex, destination);
         parameterIndex++;
     }
 

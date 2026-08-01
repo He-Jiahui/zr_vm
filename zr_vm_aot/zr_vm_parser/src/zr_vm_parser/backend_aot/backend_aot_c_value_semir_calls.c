@@ -60,15 +60,20 @@ static TZrBool backend_aot_c_value_call_type_ref_is_reference(
 static TZrBool backend_aot_c_value_call_should_use_shared_method_slot(
         const SZrAotExecIrFrameLayout *frameLayout,
         const SZrAotExecIrInstruction *instruction,
-        const SZrAotExecIrFunction *calleeFunctionIr) {
+        const SZrAotExecIrFunction *calleeFunctionIr,
+        TZrBool *outHasDefaultableParameter) {
     const SZrAotExecIrFrameLayout *calleeFrameLayout;
     TZrUInt32 argumentCount;
     TZrUInt32 argumentIndex;
     TZrBool hasReferenceArgument = ZR_FALSE;
 
+    if (outHasDefaultableParameter != ZR_NULL) {
+        *outHasDefaultableParameter = ZR_FALSE;
+    }
     if (frameLayout == ZR_NULL ||
         instruction == ZR_NULL ||
-        calleeFunctionIr == ZR_NULL) {
+        calleeFunctionIr == ZR_NULL ||
+        outHasDefaultableParameter == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -92,6 +97,14 @@ static TZrBool backend_aot_c_value_call_should_use_shared_method_slot(
         const TZrBool isReferenceParameter =
                 backend_aot_c_value_call_type_ref_is_reference(parameterType);
 
+        if (!backend_aot_exec_ir_parameter_default_declaration_is_valid(
+                    parameterLayout)) {
+            return ZR_FALSE;
+        }
+        if (parameterLayout->defaultDeclarationKnown &&
+            parameterLayout->hasDeclaredDefault) {
+            *outHasDefaultableParameter = ZR_TRUE;
+        }
         if (parameterLayout->roleFlags != 0u &&
             (parameterLayout->roleFlags !=
                      ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER ||
@@ -248,6 +261,7 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
     const SZrAotExecIrFrameSlotLayout *destinationLayout;
     TZrUInt32 argumentCount;
     TZrUInt32 argumentIndex;
+    TZrBool hasDefaultableParameter = ZR_FALSE;
 
     if (file == ZR_NULL || frameLayout == ZR_NULL || instruction == ZR_NULL ||
         calleeFunctionIndex == ZR_AOT_INVALID_FUNCTION_INDEX) {
@@ -276,7 +290,14 @@ TZrBool backend_aot_try_write_c_value_semir_call_typed_exec(
     }
 
     if (backend_aot_c_value_call_should_use_shared_method_slot(
-                frameLayout, instruction, calleeFunctionIr)) {
+                frameLayout,
+                instruction,
+                calleeFunctionIr,
+                &hasDefaultableParameter)) {
+        if (hasDefaultableParameter) {
+            fprintf(file,
+                    "    /* zr_aot_generic_call_typed_callee_defaultable_parameter_full_arity */\n");
+        }
         if (requireFullAot) {
             char calleeThunkExpression[32];
 

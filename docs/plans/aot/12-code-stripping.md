@@ -131,6 +131,11 @@ S1/S3/S6 与 AOT 12 仍为部分完成。
 receiver 与显式参数共用原始 argument window，unknown/组合/错位 role 和 unknown TypeRef 保持 fail closed。
 不新增 reachability node 或 manifest schema，S1/S3/S6 与 AOT 12 仍为部分完成。
 
+[2026-08-01 parameter default-declaration projection](./07-codegen/2026-08-01-parameter-default-declaration-projection.md)
+在全函数裁剪前校验 canonical default metadata bool，并把 retained callee 的可靠正声明投影到内部 parameter
+sidecar；不可达 malformed owner 同样 fail closed。裁剪沿用既有 frame owner，不新增 reachability node、
+manifest 或 artifact schema；S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |
