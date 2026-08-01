@@ -438,6 +438,24 @@ static void io_read_function_typed_local_bindings(SZrIo *io,
     }
 }
 
+static void io_read_function_typed_closure_bindings(SZrIo *io,
+                                                     SZrIoFunctionTypedClosureBinding *bindings,
+                                                     TZrSize count) {
+    for (TZrSize i = 0; i < count; i++) {
+        SZrIoFunctionTypedClosureBinding *binding = &bindings[i];
+
+        ZrCore_Memory_RawSet(binding, 0, sizeof(*binding));
+        ZR_IO_READ_NATIVE_TYPE(io, binding->captureIndex, TZrUInt32);
+        io_read_function_typed_type_ref(io, &binding->type);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->symbolId, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->typeId, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->declarationStartLine, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->declarationStartColumn, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->declarationEndLine, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->declarationEndColumn, TZrUInt32);
+    }
+}
+
 static void io_read_function_typed_export_symbols(SZrIo *io,
                                                   SZrIoFunctionTypedExportSymbol *symbols,
                                                   TZrSize count) {
@@ -1543,6 +1561,24 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                                                   function->typedLocalBindingsLength);
         } else {
             function->typedLocalBindings = ZR_NULL;
+        }
+        if (io->sourceVersionPatch >=
+            ZR_IO_SOURCE_PATCH_HAS_TYPED_CLOSURE_CAPTURE_BINDINGS) {
+            ZR_IO_READ_NATIVE_TYPE(io, function->typedClosureBindingsLength, TZrSize);
+            if (function->typedClosureBindingsLength > 0) {
+                function->typedClosureBindings = ZR_IO_MALLOC_NATIVE_DATA(
+                        global,
+                        sizeof(SZrIoFunctionTypedClosureBinding) *
+                                function->typedClosureBindingsLength);
+                io_read_function_typed_closure_bindings(io,
+                                                        function->typedClosureBindings,
+                                                        function->typedClosureBindingsLength);
+            } else {
+                function->typedClosureBindings = ZR_NULL;
+            }
+        } else {
+            function->typedClosureBindingsLength = 0;
+            function->typedClosureBindings = ZR_NULL;
         }
         ZR_IO_READ_NATIVE_TYPE(io, function->typedExportedSymbolsLength, TZrSize);
         if (function->typedExportedSymbolsLength > 0) {

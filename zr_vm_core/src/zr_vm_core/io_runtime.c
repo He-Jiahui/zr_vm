@@ -918,6 +918,8 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         if (function->closureValueList == ZR_NULL) {
             return ZR_FALSE;
         }
+        /* Legacy artifact rows do not serialize the compiler-only identity tail. */
+        ZrCore_Memory_RawSet(function->closureValueList, 0, closureBytes);
 
         for (TZrSize index = 0; index < source->closureVariablesLength; index++) {
             function->closureValueList[index].name = source->closureVariables[index].name;
@@ -1048,6 +1050,37 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             function->typedLocalBindings[index].roleFlags = source->typedLocalBindings[index].roleFlags;
         }
         function->typedLocalBindingLength = (TZrUInt32)source->typedLocalBindingsLength;
+    }
+
+    if (source->typedClosureBindingsLength > 0) {
+        TZrSize bindingBytes =
+                sizeof(SZrFunctionTypedClosureBinding) * source->typedClosureBindingsLength;
+        function->typedClosureBindings =
+                (SZrFunctionTypedClosureBinding *)ZrCore_Memory_RawMallocWithType(
+                        global,
+                        bindingBytes,
+                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->typedClosureBindings == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < source->typedClosureBindingsLength; index++) {
+            const SZrIoFunctionTypedClosureBinding *sourceBinding =
+                    &source->typedClosureBindings[index];
+            SZrFunctionTypedClosureBinding *destinationBinding =
+                    &function->typedClosureBindings[index];
+
+            ZrCore_Memory_RawSet(destinationBinding, 0, sizeof(*destinationBinding));
+            destinationBinding->captureIndex = sourceBinding->captureIndex;
+            io_runtime_copy_typed_type_ref(&destinationBinding->type, &sourceBinding->type);
+            destinationBinding->symbolId = sourceBinding->symbolId;
+            destinationBinding->typeId = sourceBinding->typeId;
+            destinationBinding->declarationStartLine = sourceBinding->declarationStartLine;
+            destinationBinding->declarationStartColumn = sourceBinding->declarationStartColumn;
+            destinationBinding->declarationEndLine = sourceBinding->declarationEndLine;
+            destinationBinding->declarationEndColumn = sourceBinding->declarationEndColumn;
+        }
+        function->typedClosureBindingLength = (TZrUInt32)source->typedClosureBindingsLength;
     }
 
     if (source->typedExportedSymbolsLength > 0) {

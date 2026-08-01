@@ -69,6 +69,75 @@ static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerSta
     return ZR_TRUE;
 }
 
+static void compiler_closure_capture_identity_from_parent(
+        SZrFunctionClosureVariable *capture,
+        const SZrCompilerState *parentCompiler,
+        SZrString *name,
+        TZrUInt32 parentLocalIndex,
+        TZrUInt32 parentClosureIndex) {
+    const SZrTypeBinding *binding;
+    const SZrFunctionClosureVariable *parentCapture = ZR_NULL;
+    SZrCompilerSemanticIrSlotIdentity slotIdentity;
+
+    if (capture == ZR_NULL || parentCompiler == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+
+    binding = ZrParser_TypeEnvironment_FindVariableBinding(parentCompiler->typeEnv, name);
+    if (binding != ZR_NULL &&
+        binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+        binding->typeId != ZR_SEMANTIC_ID_INVALID) {
+        if (binding->hasDeclarationRange &&
+            binding->declarationRange.start.line >= 0 &&
+            binding->declarationRange.start.column >= 0 &&
+            binding->declarationRange.end.line >= 0 &&
+            binding->declarationRange.end.column >= 0) {
+            capture->symbolId = binding->symbolId;
+            capture->typeId = binding->typeId;
+            capture->declarationStartLine = (TZrUInt32)binding->declarationRange.start.line;
+            capture->declarationStartColumn = (TZrUInt32)binding->declarationRange.start.column;
+            capture->declarationEndLine = (TZrUInt32)binding->declarationRange.end.line;
+            capture->declarationEndColumn = (TZrUInt32)binding->declarationRange.end.column;
+            return;
+        }
+
+        ZrCore_Memory_RawSet(&slotIdentity, 0, sizeof(slotIdentity));
+        if (parentLocalIndex != ZR_PARSER_SLOT_NONE &&
+            compiler_semantic_ir_get_slot_identity(
+                    (SZrCompilerState *)parentCompiler,
+                    parentLocalIndex,
+                    &slotIdentity) &&
+            slotIdentity.symbolId == binding->symbolId &&
+            slotIdentity.typeId == binding->typeId &&
+            slotIdentity.declarationRange.start.line >= 0 &&
+            slotIdentity.declarationRange.start.column >= 0 &&
+            slotIdentity.declarationRange.end.line >= 0 &&
+            slotIdentity.declarationRange.end.column >= 0) {
+            capture->symbolId = slotIdentity.symbolId;
+            capture->typeId = slotIdentity.typeId;
+            capture->declarationStartLine = (TZrUInt32)slotIdentity.declarationRange.start.line;
+            capture->declarationStartColumn = (TZrUInt32)slotIdentity.declarationRange.start.column;
+            capture->declarationEndLine = (TZrUInt32)slotIdentity.declarationRange.end.line;
+            capture->declarationEndColumn = (TZrUInt32)slotIdentity.declarationRange.end.column;
+            return;
+        }
+    }
+
+    if (parentClosureIndex < parentCompiler->closureVars.length) {
+        parentCapture = (const SZrFunctionClosureVariable *)ZrCore_Array_Get(
+                (SZrArray *)&parentCompiler->closureVars,
+                parentClosureIndex);
+    }
+    if (parentCapture != ZR_NULL) {
+        capture->symbolId = parentCapture->symbolId;
+        capture->typeId = parentCapture->typeId;
+        capture->declarationStartLine = parentCapture->declarationStartLine;
+        capture->declarationStartColumn = parentCapture->declarationStartColumn;
+        capture->declarationEndLine = parentCapture->declarationEndLine;
+        capture->declarationEndColumn = parentCapture->declarationEndColumn;
+    }
+}
+
 void record_external_var_reference(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
         return;
@@ -446,6 +515,8 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                 // 注意：index 必须指向父作用域中的真实槽位/上值索引，而不是当前闭包数组长度。
                 if (find_closure_var(cs, name) == ZR_PARSER_INDEX_NONE) {
                     SZrFunctionClosureVariable closureVar;
+
+                    ZrCore_Memory_RawSet(&closureVar, 0, sizeof(closureVar));
                     if (!compiler_validate_closure_capture_ownership_escape(cs,
                                                                             parentCompiler,
                                                                             name,
@@ -464,6 +535,11 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                         }
                     }
                     closureVar.escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_CLOSURE_CAPTURE;
+                    compiler_closure_capture_identity_from_parent(&closureVar,
+                                                                   parentCompiler,
+                                                                   name,
+                                                                   parentLocalIndex,
+                                                                   parentClosureIndex);
                     ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVar);
                     cs->closureVarCount++;
                 }

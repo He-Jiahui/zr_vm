@@ -214,6 +214,16 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
             cs->currentFunction->typedLocalBindingLength = typedLocalBindingCount;
         }
     }
+    if (!cs->hasError) {
+        TZrUInt32 typedClosureBindingCount = 0;
+        if (!compiler_build_typed_closure_bindings(cs,
+                                                   &cs->currentFunction->typedClosureBindings,
+                                                   &typedClosureBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed closure metadata for meta function", node->location);
+        } else {
+            cs->currentFunction->typedClosureBindingLength = typedClosureBindingCount;
+        }
+    }
     
     // 检查是否有编译错误
     if (cs->hasError) {

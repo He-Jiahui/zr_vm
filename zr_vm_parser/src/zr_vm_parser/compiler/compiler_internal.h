@@ -855,6 +855,11 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
 TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
                                             SZrFunctionTypedLocalBinding **outBindings,
                                             TZrUInt32 *outCount);
+void compiler_typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest,
+                                           const SZrInferredType *src);
+TZrBool compiler_build_typed_closure_bindings(SZrCompilerState *cs,
+                                              SZrFunctionTypedClosureBinding **outBindings,
+                                              TZrUInt32 *outCount);
 TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrFunction *function);
 TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
                                                TZrUInt32 stackSlot,

@@ -8,6 +8,9 @@ related_code:
   - zr_vm_core/src/zr_vm_core/debug.c
   - zr_vm_core/src/zr_vm_core/debug_evaluation_context.c
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/function_closure_identity.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/state.c
@@ -15,6 +18,8 @@ related_code:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_closure_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
@@ -27,12 +32,17 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/debug.c
   - zr_vm_core/src/zr_vm_core/debug_evaluation_context.c
   - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/function_closure_identity.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
   - zr_vm_common/include/zr_vm_common/zr_io_conf.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_closure_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
@@ -54,6 +64,7 @@ tests:
   - docs/plans/lsp/04-debug-and-repl/2026-07-28-e1b1-paused-frame-canonical-bindings.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b3-generation-checked-runtime-root.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b5-generation-checked-runtime-root-consumer.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6a-canonical-closure-capture-artifact-identity.md
 doc_type: module-detail
 ---
 
@@ -64,8 +75,9 @@ doc_type: module-detail
 The typed-local metadata row is the artifact boundary for debugger and LSP
 frame-context reconstruction. Each source local can carry its compiler-owned
 canonical `SymbolId`, `TypeId`, `PlaceId`, and whole declaration range through a
-compiled function and its `.zro` representation. This metadata is an identity
-projection, not a second binding pass.
+compiled function and its `.zro` representation. Closure captures use the same
+identity discipline through a separate typed sidecar. Neither carrier is a
+second binding pass.
 
 ## Source Projection
 
@@ -108,6 +120,38 @@ rather than being guessed. Runtime loading copies the row unchanged into the
 executable function. A receiver bit combined with any passing-form bit,
 multiple passing-form bits, unknown bits, partial explicit-parameter
 availability, or a passing-form bit after the parameter prefix is malformed.
+
+## Closure Capture Artifact Contract
+
+E2b6a keeps the legacy `SZrFunctionClosureVariable` wire row unchanged. Its
+compiler-only in-memory tail is never written as part of that row. Instead,
+source patch 41 writes a `SZrFunctionTypedClosureBinding` sidecar after typed
+local bindings and before typed exported symbols. Each row carries the legacy
+capture index, the complete canonical type projection, source `SymbolId`,
+canonical `TypeId`, and the whole source declaration range.
+
+`compiler_closure_capture_identity_from_parent` freezes this data from the
+exact parent TypeEnvironment binding or matching pre-SemIR slot identity. A
+nested capture may reuse only an already frozen parent capture identity. The
+typed-sidecar builder accepts a recovered type only when its `SymbolId` and
+`TypeId` are exact matches; it does not search a local or capture name. Lambda
+and named nested-function compilation both preserve the parent pre-SemIR
+snapshot needed for that lookup.
+
+`ZrCore_Function_GetClosureCaptureIdentity` is the public runtime query. It
+joins a requested capture slot to exactly one sidecar row, checks nonzero IDs
+and a valid range, and returns the canonical type and identity. Missing,
+duplicate, incomplete, or inconsistent rows clear all outputs and return
+false. Runtime loading zero-initializes the extended legacy capture storage
+before filling its serialized fields, so nonserialized compiler-only tail
+bytes cannot accidentally look like an identity.
+
+The sidecar TypeRef participates in GC mark, young-reference detection, and
+compact relocation. It therefore remains valid when its type projection holds
+managed references. This stage deliberately does not publish a paused-frame
+generation token, parser reference origin, or Debug evaluator execution path
+for captures. Those are E2b6b through E2b6d and must keep captures unavailable
+until their own canonical contracts exist.
 
 ## Consumer Boundary
 
@@ -277,3 +321,11 @@ passing forms plus a real instance method. It verifies the free-function roles,
 the instance receiver at slot zero, explicit VALUE/IN roles at slots one/two,
 and the same rows after `.zro` runtime loading. The adjacent prefix regression
 proves a nested local that shadows a parameter name remains role-free.
+
+`test_binary_roundtrip_preserves_canonical_closure_capture_identity` compiles
+an array capture, requires an exact sidecar identity at source and after a
+`.zro` read/runtime load, and verifies invalid capture-index output clearing.
+`test_source_preserves_canonical_named_closure_capture_identity` repeats the
+source identity check for a named nested function. The E2b6a focused matrix
+also runs `zr_vm_gc_concurrent_major_test`, exercising collection and compact
+relocation after the sidecar TypeRef becomes part of a function graph.

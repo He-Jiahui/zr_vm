@@ -722,6 +722,16 @@ static SZrFunction *compile_type_member_function(
             cs->currentFunction->typedLocalBindingLength = typedLocalBindingCount;
         }
     }
+    if (!cs->hasError) {
+        TZrUInt32 typedClosureBindingCount = 0;
+        if (!compiler_build_typed_closure_bindings(cs,
+                                                   &cs->currentFunction->typedClosureBindings,
+                                                   &typedClosureBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed closure metadata for class member", node->location);
+        } else {
+            cs->currentFunction->typedClosureBindingLength = typedClosureBindingCount;
+        }
+    }
 
     if (cs->hasError) {
         if (cs->currentFunction != ZR_NULL) {

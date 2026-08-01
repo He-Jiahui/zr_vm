@@ -633,6 +633,12 @@ static TZrBool garbage_collector_function_references_live_young(SZrState *state,
             return ZR_TRUE;
         }
     }
+    for (TZrUInt32 index = 0; index < function->typedClosureBindingLength; index++) {
+        if (garbage_collector_typed_type_ref_references_live_young(
+                    &function->typedClosureBindings[index].type)) {
+            return ZR_TRUE;
+        }
+    }
     for (TZrUInt32 index = 0; index < function->typedExportedSymbolLength; index++) {
         const SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[index];
 
@@ -1693,6 +1699,9 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
     for (TZrUInt32 index = 0; index < function->typedLocalBindingLength; index++) {
         work += garbage_collector_rewrite_string_slot(&function->typedLocalBindings[index].name);
         work += garbage_collector_rewrite_typed_type_ref(&function->typedLocalBindings[index].type);
+    }
+    for (TZrUInt32 index = 0; index < function->typedClosureBindingLength; index++) {
+        work += garbage_collector_rewrite_typed_type_ref(&function->typedClosureBindings[index].type);
     }
     for (TZrUInt32 index = 0; index < function->typedExportedSymbolLength; index++) {
         SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[index];

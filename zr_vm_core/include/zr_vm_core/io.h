@@ -158,6 +158,17 @@ typedef struct SZrIoFunctionTypedLocalBinding {
     TZrUInt32 roleFlags;
 } SZrIoFunctionTypedLocalBinding;
 
+typedef struct SZrIoFunctionTypedClosureBinding {
+    TZrUInt32 captureIndex;
+    SZrIoFunctionTypedTypeRef type;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 declarationStartLine;
+    TZrUInt32 declarationStartColumn;
+    TZrUInt32 declarationEndLine;
+    TZrUInt32 declarationEndColumn;
+} SZrIoFunctionTypedClosureBinding;
+
 typedef struct SZrIoFunctionTypedExportSymbol {
     struct SZrString *name;
     TZrUInt32 stackSlot;
@@ -406,6 +417,8 @@ struct SZrIoFunction {
     SZrIoFunctionExportedVariable *exportedVariables;
     TZrSize typedLocalBindingsLength;
     SZrIoFunctionTypedLocalBinding *typedLocalBindings;
+    TZrSize typedClosureBindingsLength;
+    SZrIoFunctionTypedClosureBinding *typedClosureBindings;
     TZrSize typedExportedSymbolsLength;
     SZrIoFunctionTypedExportSymbol *typedExportedSymbols;
     TZrSize metadataTokenRecordLength;

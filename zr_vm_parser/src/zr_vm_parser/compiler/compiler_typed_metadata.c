@@ -46,6 +46,11 @@ static void typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest, const SZ
     }
 }
 
+void compiler_typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest,
+                                           const SZrInferredType *src) {
+    typed_type_ref_from_inferred(dest, src);
+}
+
 static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(const SZrCompilerState *cs,
                                                                               TZrUInt32 stackSlot);
 

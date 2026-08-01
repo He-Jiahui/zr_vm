@@ -52,6 +52,13 @@ struct ZR_STRUCT_ALIGN SZrFunctionClosureVariable {
     EZrValueType valueType;
     TZrUInt32 scopeDepth;
     TZrUInt32 escapeFlags;
+    /* Compiler-only canonical source identity. The legacy closure artifact row stays unchanged. */
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 declarationStartLine;
+    TZrUInt32 declarationStartColumn;
+    TZrUInt32 declarationEndLine;
+    TZrUInt32 declarationEndColumn;
 };
 
 typedef struct SZrFunctionClosureVariable SZrFunctionClosureVariable;
@@ -226,6 +233,24 @@ typedef struct SZrFunctionTypedLocalBinding {
     TZrUInt32 declarationEndColumn;
     TZrUInt32 roleFlags;
 } SZrFunctionTypedLocalBinding;
+
+typedef struct SZrFunctionTypedClosureBinding {
+    TZrUInt32 captureIndex;
+    SZrFunctionTypedTypeRef type;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt32 declarationStartLine;
+    TZrUInt32 declarationStartColumn;
+    TZrUInt32 declarationEndLine;
+    TZrUInt32 declarationEndColumn;
+} SZrFunctionTypedClosureBinding;
+
+typedef struct SZrFunctionSourceRange {
+    TZrUInt32 startLine;
+    TZrUInt32 startColumn;
+    TZrUInt32 endLine;
+    TZrUInt32 endColumn;
+} SZrFunctionSourceRange;
 
 /*
  * A compiler-owned scheduler call fact. This is intentionally not an artifact
@@ -596,6 +621,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
 
     SZrFunctionTypedLocalBinding *typedLocalBindings;
     TZrUInt32 typedLocalBindingLength;
+    SZrFunctionTypedClosureBinding *typedClosureBindings;
+    TZrUInt32 typedClosureBindingLength;
     SZrFunctionTypedExportSymbol *typedExportedSymbols;
     TZrUInt32 typedExportedSymbolLength;
     SZrFunctionSchedulerSourceFact *schedulerSourceFacts;
@@ -748,6 +775,15 @@ ZR_CORE_API SZrFunction *ZrCore_Function_ResolveGraphFunctionByFlatIndex(
         TZrUInt32 flatIndex);
 ZR_CORE_API void ZrCore_Function_ClearChildOwnerLinks(SZrFunction *function);
 ZR_CORE_API void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function);
+
+/* Returns canonical capture identity only when the typed sidecar matches a legacy capture slot. */
+ZR_CORE_API TZrBool ZrCore_Function_GetClosureCaptureIdentity(
+        const SZrFunction *function,
+        TZrUInt32 captureIndex,
+        const SZrFunctionTypedTypeRef **outType,
+        TZrUInt32 *outSymbolId,
+        TZrUInt32 *outTypeId,
+        SZrFunctionSourceRange *outDeclarationRange);
 
 ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function);
 

@@ -126,6 +126,52 @@ static SZrFunction *compile_debug_metadata_locals_fixture(SZrState *state, const
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static SZrFunction *compile_debug_metadata_closure_fixture(SZrState *state, const char *sourceLabel) {
+    const char *source =
+            "fn makeRunner() {\n"
+            "    var seed: int[] = [4];\n"
+            "    return fn() => { return seed[0] + 1; };\n"
+            "}\n"
+            "var runner = makeRunner();\n"
+            "return runner();\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL || sourceLabel == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceLabel, strlen(sourceLabel));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_debug_metadata_named_closure_fixture(
+        SZrState *state,
+        const char *sourceLabel) {
+    const char *source =
+            "fn makeRunner() {\n"
+            "    var seed: int[] = [4];\n"
+            "    fn readSeed(): int { return seed[0] + 1; }\n"
+            "    return readSeed();\n"
+            "}\n"
+            "return makeRunner();\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL || sourceLabel == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceLabel, strlen(sourceLabel));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
 static const SZrFunction *debug_metadata_function_constant_at(SZrState *state,
                                                                const SZrFunction *function,
                                                                TZrUInt32 constantIndex) {
@@ -140,6 +186,25 @@ static const SZrFunction *debug_metadata_function_constant_at(SZrState *state,
         return ZR_NULL;
     }
     return ZR_CAST_FUNCTION(state, constant->value.object);
+}
+
+static const SZrFunction *debug_metadata_find_capturing_function(const SZrFunction *function) {
+    TZrUInt32 childIndex;
+
+    if (function == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (function->closureValueLength > 0u && function->closureValueList != ZR_NULL) {
+        return function;
+    }
+    for (childIndex = 0u; childIndex < function->childFunctionLength; childIndex++) {
+        const SZrFunction *capturing =
+                debug_metadata_find_capturing_function(&function->childFunctionList[childIndex]);
+        if (capturing != ZR_NULL) {
+            return capturing;
+        }
+    }
+    return ZR_NULL;
 }
 
 static const SZrFunctionTypedLocalBinding *debug_metadata_find_receiver_binding(
@@ -576,6 +641,143 @@ static void test_binary_roundtrip_preserves_canonical_receiver_binding_role(void
     ZrTests_Runtime_State_Destroy(sourceState);
 }
 
+static void test_binary_roundtrip_preserves_canonical_closure_capture_identity(void) {
+    const char *binaryPath = "debug_metadata_closure_identity_roundtrip_test.zro";
+    const char *sourcePath = "fixtures/debug/debug_metadata_closure_identity_roundtrip_test.zr";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    const SZrFunction *sourceCaptureFunction;
+    const SZrFunctionTypedTypeRef *sourceType = ZR_NULL;
+    TZrUInt32 sourceSymbolId = 0u;
+    TZrUInt32 sourceTypeId = 0u;
+    SZrFunctionSourceRange sourceRange = {0};
+    const SZrFunctionTypedTypeRef *missingType = ZR_NULL;
+    TZrUInt32 missingSymbolId = 0u;
+    TZrUInt32 missingTypeId = 0u;
+    SZrFunctionSourceRange missingRange = {0};
+    TZrByte *buffer = ZR_NULL;
+    TZrSize bufferLength = 0u;
+    SZrBinaryFixtureReader reader;
+    SZrIo io;
+    SZrIoSource *sourceObject = ZR_NULL;
+    SZrFunction *runtimeFunction = ZR_NULL;
+    const SZrFunction *runtimeCaptureFunction;
+    const SZrFunctionTypedTypeRef *runtimeType = ZR_NULL;
+    TZrUInt32 runtimeSymbolId = 0u;
+    TZrUInt32 runtimeTypeId = 0u;
+    SZrFunctionSourceRange runtimeRange = {0};
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = compile_debug_metadata_closure_fixture(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(function);
+    sourceCaptureFunction = debug_metadata_find_capturing_function(function);
+    TEST_ASSERT_NOT_NULL(sourceCaptureFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, sourceCaptureFunction->closureValueLength);
+    TEST_ASSERT_TRUE(ZrCore_Function_GetClosureCaptureIdentity(sourceCaptureFunction,
+                                                                0u,
+                                                                &sourceType,
+                                                                &sourceSymbolId,
+                                                                &sourceTypeId,
+                                                                &sourceRange));
+    TEST_ASSERT_NOT_NULL(sourceType);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, sourceType->baseType);
+    TEST_ASSERT_TRUE(sourceType->isArray);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, sourceType->elementBaseType);
+    TEST_ASSERT_NOT_EQUAL(0u, sourceSymbolId);
+    TEST_ASSERT_NOT_EQUAL(0u, sourceTypeId);
+    TEST_ASSERT_TRUE(sourceRange.endLine >= sourceRange.startLine);
+    missingType = sourceType;
+    missingSymbolId = 99u;
+    missingTypeId = 99u;
+    missingRange.startLine = 1u;
+    missingRange.startColumn = 1u;
+    missingRange.endLine = 1u;
+    missingRange.endColumn = 1u;
+    TEST_ASSERT_FALSE(ZrCore_Function_GetClosureCaptureIdentity(sourceCaptureFunction,
+                                                                  1u,
+                                                                  &missingType,
+                                                                  &missingSymbolId,
+                                                                  &missingTypeId,
+                                                                  &missingRange));
+    TEST_ASSERT_NULL(missingType);
+    TEST_ASSERT_EQUAL_UINT32(0u, missingSymbolId);
+    TEST_ASSERT_EQUAL_UINT32(0u, missingTypeId);
+    TEST_ASSERT_EQUAL_UINT32(0u, missingRange.endLine);
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+    buffer = read_binary_file_owned(binaryPath, &bufferLength);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength > 0u);
+
+    memset(&reader, 0, sizeof(reader));
+    reader.bytes = buffer;
+    reader.length = bufferLength;
+    ZrCore_Io_Init(state, &io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+    sourceObject = ZrCore_Io_ReadSourceNew(&io);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    runtimeCaptureFunction = debug_metadata_find_capturing_function(runtimeFunction);
+    TEST_ASSERT_NOT_NULL(runtimeCaptureFunction);
+    TEST_ASSERT_TRUE(ZrCore_Function_GetClosureCaptureIdentity(runtimeCaptureFunction,
+                                                                0u,
+                                                                &runtimeType,
+                                                                &runtimeSymbolId,
+                                                                &runtimeTypeId,
+                                                                &runtimeRange));
+    TEST_ASSERT_NOT_NULL(runtimeType);
+    TEST_ASSERT_EQUAL_INT(sourceType->baseType, runtimeType->baseType);
+    TEST_ASSERT_EQUAL(sourceType->isArray, runtimeType->isArray);
+    TEST_ASSERT_EQUAL_INT(sourceType->elementBaseType, runtimeType->elementBaseType);
+    TEST_ASSERT_EQUAL_UINT32(sourceSymbolId, runtimeSymbolId);
+    TEST_ASSERT_EQUAL_UINT32(sourceTypeId, runtimeTypeId);
+    TEST_ASSERT_EQUAL_UINT32(sourceRange.startLine, runtimeRange.startLine);
+    TEST_ASSERT_EQUAL_UINT32(sourceRange.startColumn, runtimeRange.startColumn);
+    TEST_ASSERT_EQUAL_UINT32(sourceRange.endLine, runtimeRange.endLine);
+    TEST_ASSERT_EQUAL_UINT32(sourceRange.endColumn, runtimeRange.endColumn);
+
+    remove(binaryPath);
+    free(buffer);
+    ZrCore_Function_Free(state, function);
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_source_preserves_canonical_named_closure_capture_identity(void) {
+    const char *sourcePath = "fixtures/debug/debug_metadata_named_closure_identity.zr";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    const SZrFunction *captureFunction;
+    const SZrFunctionTypedTypeRef *type = ZR_NULL;
+    TZrUInt32 symbolId = 0u;
+    TZrUInt32 typeId = 0u;
+    SZrFunctionSourceRange range = {0};
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_metadata_named_closure_fixture(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(function);
+    captureFunction = debug_metadata_find_capturing_function(function);
+    TEST_ASSERT_NOT_NULL(captureFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, captureFunction->closureValueLength);
+    TEST_ASSERT_TRUE(ZrCore_Function_GetClosureCaptureIdentity(captureFunction,
+                                                                0u,
+                                                                &type,
+                                                                &symbolId,
+                                                                &typeId,
+                                                                &range));
+    TEST_ASSERT_NOT_NULL(type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, type->baseType);
+    TEST_ASSERT_TRUE(type->isArray);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, type->elementBaseType);
+    TEST_ASSERT_NOT_EQUAL(0u, symbolId);
+    TEST_ASSERT_NOT_EQUAL(0u, typeId);
+    TEST_ASSERT_TRUE(range.endLine >= range.startLine);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -588,5 +790,7 @@ int main(void) {
     RUN_TEST(test_binary_roundtrip_preserves_local_variable_names_and_slots);
     RUN_TEST(test_binary_roundtrip_preserves_canonical_local_binding_identity);
     RUN_TEST(test_binary_roundtrip_preserves_canonical_receiver_binding_role);
+    RUN_TEST(test_binary_roundtrip_preserves_canonical_closure_capture_identity);
+    RUN_TEST(test_source_preserves_canonical_named_closure_capture_identity);
     return UNITY_END();
 }

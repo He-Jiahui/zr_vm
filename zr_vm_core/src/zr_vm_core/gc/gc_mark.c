@@ -1136,6 +1136,9 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                 garbage_collector_mark_string_if_present(state, function->typedLocalBindings[i].name);
                 garbage_collector_mark_typed_type_ref(state, &function->typedLocalBindings[i].type);
             }
+            for (TZrUInt32 i = 0; i < function->typedClosureBindingLength; i++) {
+                garbage_collector_mark_typed_type_ref(state, &function->typedClosureBindings[i].type);
+            }
             for (TZrUInt32 i = 0; i < function->typedExportedSymbolLength; i++) {
                 SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[i];
 

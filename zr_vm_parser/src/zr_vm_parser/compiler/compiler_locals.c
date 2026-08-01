@@ -206,6 +206,7 @@ TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool in
 
     // 创建新的闭包变量
     SZrFunctionClosureVariable closureVar;
+    ZrCore_Memory_RawSet(&closureVar, 0, sizeof(closureVar));
     closureVar.name = name;
     closureVar.inStack = inStack;
     closureVar.index = (TZrUInt32) cs->closureVarCount;

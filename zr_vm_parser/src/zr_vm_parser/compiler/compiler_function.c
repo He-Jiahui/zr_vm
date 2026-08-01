@@ -319,6 +319,9 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
         parentCompilerSnapshot.typeEnv = cs->typeEnv;
+        parentCompilerSnapshot.preSemanticIr = cs->preSemanticIr;
+        parentCompilerSnapshot.preSemanticIrSlots = cs->preSemanticIrSlots;
+        parentCompilerSnapshot.preSemanticIrInitialized = cs->preSemanticIrInitialized;
         ZrParser_ExternalVariables_Analyze(cs, funcDecl->body, &parentCompilerSnapshot);
     }
 
@@ -420,6 +423,16 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             ZrParser_Compiler_Error(cs, "Failed to build typed local metadata for function declaration", node->location);
         } else {
             cs->currentFunction->typedLocalBindingLength = typedLocalBindingCount;
+        }
+    }
+    if (!cs->hasError) {
+        TZrUInt32 typedClosureBindingCount = 0;
+        if (!compiler_build_typed_closure_bindings(cs,
+                                                   &cs->currentFunction->typedClosureBindings,
+                                                   &typedClosureBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed closure metadata for function declaration", node->location);
+        } else {
+            cs->currentFunction->typedClosureBindingLength = typedClosureBindingCount;
         }
     }
     

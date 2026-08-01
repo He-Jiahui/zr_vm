@@ -870,6 +870,24 @@ static void write_function_typed_local_bindings(FILE *file, SZrState *state, SZr
     }
 }
 
+static void write_function_typed_closure_bindings(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 typedClosureCount = function != ZR_NULL ? function->typedClosureBindingLength : 0;
+
+    fwrite(&typedClosureCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < typedClosureCount; index++) {
+        SZrFunctionTypedClosureBinding *binding = &function->typedClosureBindings[index];
+
+        fwrite(&binding->captureIndex, sizeof(TZrUInt32), 1, file);
+        write_function_typed_type_ref(file, state, &binding->type);
+        fwrite(&binding->symbolId, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->typeId, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationStartLine, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationStartColumn, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationEndLine, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->declarationEndColumn, sizeof(TZrUInt32), 1, file);
+    }
+}
+
 static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZrFunction *function) {
     TZrUInt64 symbolCount = function != ZR_NULL ? function->typedExportedSymbolLength : 0;
 
@@ -1718,6 +1736,7 @@ static TZrBool write_io_function_internal(SZrState *state,
     }
 
     write_function_typed_local_bindings(file, state, function);
+    write_function_typed_closure_bindings(file, state, function);
     write_function_typed_export_symbols(file, state, function);
     write_function_metadata_token_model(file, state, function);
     write_function_module_metadata_ref_table(file, state, function);

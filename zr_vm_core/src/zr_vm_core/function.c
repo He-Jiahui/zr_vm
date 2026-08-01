@@ -272,6 +272,8 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->exportedVariableLength = 0;
     function->typedLocalBindings = ZR_NULL;
     function->typedLocalBindingLength = 0;
+    function->typedClosureBindings = ZR_NULL;
+    function->typedClosureBindingLength = 0;
     function->typedExportedSymbols = ZR_NULL;
     function->typedExportedSymbolLength = 0;
     function->schedulerSourceFacts = ZR_NULL;
@@ -1030,6 +1032,8 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->typedExportedSymbolLength = 0;
     function->typedLocalBindings = ZR_NULL;
     function->typedLocalBindingLength = 0;
+    function->typedClosureBindings = ZR_NULL;
+    function->typedClosureBindingLength = 0;
     function->schedulerSourceFacts = ZR_NULL;
     function->schedulerSourceFactLength = 0;
     function->metadataTokenRecords = ZR_NULL;
@@ -1232,6 +1236,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->typedLocalBindings,
                                       sizeof(SZrFunctionTypedLocalBinding) * function->typedLocalBindingLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->typedClosureBindings != ZR_NULL && function->typedClosureBindingLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->typedClosureBindings,
+                                      sizeof(SZrFunctionTypedClosureBinding) * function->typedClosureBindingLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->schedulerSourceFacts != ZR_NULL && function->schedulerSourceFactLength > 0) {
