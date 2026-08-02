@@ -748,3 +748,25 @@ cleanup:
     }
     return ok;
 }
+
+TZrBool ZrParser_CompileToolArtifact_OpenProjectBuildDependency(
+        const SZrLibrary_Project *project,
+        const TZrChar *rawSpecifier,
+        const TZrChar *archivePath,
+        SZrParserCompileToolResolvedArtifact *outArtifact,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize) {
+    return ZrParser_CompileToolArtifact_OpenBuildDependency(
+            project,
+            rawSpecifier,
+            project != ZR_NULL
+                    ? project->manifestDependencyLockEntries
+                    : ZR_NULL,
+            project != ZR_NULL
+                    ? project->manifestDependencyLockEntryCount
+                    : 0u,
+            archivePath,
+            outArtifact,
+            errorBuffer,
+            errorBufferSize);
+}

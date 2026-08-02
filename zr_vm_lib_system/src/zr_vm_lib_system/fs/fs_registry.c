@@ -68,7 +68,7 @@ static const ZrLibMetaMethodDescriptor g_entry_constructors[] = {
 
 static const ZrLibMetaMethodDescriptor g_stream_meta_methods[] = {
         {ZR_META_CLOSE, 1, 1, ZrSystem_Fs_Stream_Close, "null",
-         "Close this FileStream. Registered for using/%using auto-close.", ZR_NULL, 0, ZR_NULL, 0},
+         "Close this FileStream. Registered for canonical using auto-close.", ZR_NULL, 0, ZR_NULL, 0},
 };
 
 static const ZrLibFieldDescriptor g_file_info_fields[] = {

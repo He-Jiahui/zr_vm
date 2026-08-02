@@ -33,6 +33,7 @@ typedef struct SZrParserCursor {
     TZrSize lookaheadTokenStartLineStart;
     TZrInt32 lookaheadTokenStartLine;
     TZrBool hasError;
+    TZrBool hasFatalError;
     const TZrChar *errorMessage;
 } SZrParserCursor;
 

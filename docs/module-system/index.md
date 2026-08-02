@@ -71,7 +71,7 @@ doc_type: category-index
 
 项目模块导入现在统一走 canonical module key 解析：
 
-- bare absolute `%import("foo")` / `%import("zr.system")` 继续保留现有语义。
+- bare absolute `import("foo")` / `import("zr.system")` 使用现有 canonical module key 语义。
 - 显式相对导入只接受 leading-dot：
   - `.x.y` => 当前模块目录下的 `x/y`
   - `..x.y` => 父目录下的 `x/y`

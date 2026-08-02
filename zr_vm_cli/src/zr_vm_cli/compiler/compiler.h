@@ -9,6 +9,9 @@ typedef struct SZrCliCompileSummary {
     TZrSize compiledCount;
     TZrSize skippedCount;
     TZrSize removedCount;
+    TZrUInt64 comptimeCacheHitCount;
+    TZrUInt64 comptimeCacheMissCount;
+    TZrUInt64 comptimeCacheRejectedCount;
     TZrBool packedAssembly;
     TZrChar zrmPath[ZR_LIBRARY_MAX_PATH_LENGTH];
 } SZrCliCompileSummary;

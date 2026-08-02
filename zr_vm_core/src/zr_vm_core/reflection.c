@@ -1056,6 +1056,28 @@ static const SZrFunctionTypedLocalBinding *reflection_find_typed_local_binding(c
     return ZR_NULL;
 }
 
+static const TZrChar *reflection_parameter_mode_from_role_flags(TZrUInt32 roleFlags) {
+    if ((roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_OUT) != 0u) {
+        return "out";
+    }
+    if ((roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF_READONLY) != 0u) {
+        return "scoped ref readonly";
+    }
+    if ((roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF) != 0u) {
+        return "scoped ref";
+    }
+    if ((roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF_READONLY) != 0u) {
+        return "ref readonly";
+    }
+    if ((roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF) != 0u) {
+        return "ref";
+    }
+    if ((roleFlags & ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_IN) != 0u) {
+        return "in";
+    }
+    return "value";
+}
+
 static SZrFunction *reflection_extract_function_from_constant_index(SZrState *state,
                                                                     SZrFunction *entryFunction,
                                                                     TZrUInt32 constantIndex) {
@@ -1149,6 +1171,7 @@ static void reflection_populate_parameters_from_typed_refs(SZrState *state,
                                                            const SZrFunctionTypedTypeRef *parameterTypes,
                                                            TZrUInt32 parameterCount) {
     SZrObject *parametersArray;
+    SZrObject *parameterModesArray;
     TZrUInt64 ownerHash;
 
     if (state == ZR_NULL || callableReflection == ZR_NULL) {
@@ -1156,11 +1179,18 @@ static void reflection_populate_parameters_from_typed_refs(SZrState *state,
     }
 
     parametersArray = reflection_new_array(state);
-    if (parametersArray == ZR_NULL) {
+    parameterModesArray = reflection_new_array(state);
+    if (parametersArray == ZR_NULL || parameterModesArray == ZR_NULL) {
         return;
     }
 
     reflection_attach_parameters_array(state, callableReflection, parametersArray);
+    reflection_set_field_object(
+            state,
+            callableReflection,
+            "parameterModes",
+            parameterModesArray,
+            ZR_VALUE_TYPE_ARRAY);
     ownerHash = reflection_get_field_string_native(state, callableReflection, "name", "")[0] != '\0'
                         ? XXH3_64bits(reflection_get_field_string_native(state, callableReflection, "qualifiedName", ""),
                                       strlen(reflection_get_field_string_native(state, callableReflection, "qualifiedName", "")))
@@ -1189,21 +1219,27 @@ static void reflection_populate_parameters_from_typed_refs(SZrState *state,
             continue;
         }
 
+        reflection_set_field_string(state, parameterReflection, "passingMode", "value");
+
         reflection_init_object_value(state,
                                      &parameterValue,
                                      ZR_CAST_RAW_OBJECT_AS_SUPER(parameterReflection),
                                      ZR_VALUE_TYPE_OBJECT);
         reflection_array_push(state, parametersArray, &parameterValue);
+        reflection_array_push_string_value(state, parameterModesArray, "value");
     }
 }
 
 static void reflection_populate_parameters_from_metadata(SZrState *state,
                                                          SZrObject *callableReflection,
                                                          const SZrFunctionMetadataParameter *parameters,
-                                                         TZrUInt32 parameterCount) {
+                                                         TZrUInt32 parameterCount,
+                                                         const SZrFunction *function) {
     SZrObject *parametersArray;
+    SZrObject *parameterModesArray;
     SZrObject *moduleReflection;
     TZrUInt64 ownerHash;
+    TZrUInt32 hiddenParameterCount = 0u;
 
     if (state == ZR_NULL || callableReflection == ZR_NULL) {
         return;
@@ -1215,15 +1251,41 @@ static void reflection_populate_parameters_from_metadata(SZrState *state,
     }
 
     reflection_attach_parameters_array(state, callableReflection, parametersArray);
+    parameterModesArray = reflection_new_array(state);
+    if (parameterModesArray == ZR_NULL) {
+        return;
+    }
+    reflection_set_field_object(
+            state,
+            callableReflection,
+            "parameterModes",
+            parameterModesArray,
+            ZR_VALUE_TYPE_ARRAY);
     moduleReflection = reflection_get_field_object(state, callableReflection, "module", ZR_VALUE_TYPE_OBJECT);
     ownerHash = XXH3_64bits(reflection_get_field_string_native(state, callableReflection, "qualifiedName", ""),
                             strlen(reflection_get_field_string_native(state, callableReflection, "qualifiedName", "")));
+
+    if (function != ZR_NULL && function->parameterCount > parameterCount) {
+        hiddenParameterCount = function->parameterCount - parameterCount;
+    }
 
     for (TZrUInt32 index = 0; index < parameterCount; index++) {
         TZrChar fallbackName[ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH];
         TZrChar typeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         const TZrChar *parameterName = fallbackName;
+        const TZrChar *passingMode = "value";
         SZrObject *parameterReflection;
+
+        if (function != ZR_NULL &&
+            hiddenParameterCount + index < function->localVariableLength) {
+            const SZrFunctionLocalVariable *localVariable =
+                    &function->localVariableList[hiddenParameterCount + index];
+            const SZrFunctionTypedLocalBinding *binding =
+                    reflection_find_typed_local_binding(function, localVariable->stackSlot);
+            if (binding != ZR_NULL) {
+                passingMode = reflection_parameter_mode_from_role_flags(binding->roleFlags);
+            }
+        }
 
         snprintf(fallbackName, sizeof(fallbackName), "arg%u", (unsigned int)index);
         if (parameters != ZR_NULL && parameters[index].name != ZR_NULL) {
@@ -1246,6 +1308,7 @@ static void reflection_populate_parameters_from_metadata(SZrState *state,
                                                               moduleReflection,
                                                               ownerHash ^ ((TZrUInt64)index + ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE));
         if (parameterReflection != ZR_NULL) {
+            reflection_set_field_string(state, parameterReflection, "passingMode", passingMode);
             if (parameters != ZR_NULL) {
                 if (parameters[index].hasDecoratorMetadata &&
                     parameters[index].decoratorMetadataValue.type == ZR_VALUE_TYPE_OBJECT &&
@@ -1304,6 +1367,7 @@ static void reflection_populate_parameters_from_metadata(SZrState *state,
                 }
             }
             reflection_array_push_object(state, parametersArray, parameterReflection, ZR_VALUE_TYPE_OBJECT);
+            reflection_array_push_string_value(state, parameterModesArray, passingMode);
         }
     }
 }
@@ -1313,6 +1377,7 @@ static void reflection_populate_parameters_from_function(SZrState *state,
                                                          SZrFunction *function,
                                                          TZrUInt32 visibleParameterCount) {
     SZrObject *parametersArray;
+    SZrObject *parameterModesArray;
     SZrObject *moduleReflection;
     TZrUInt64 ownerHash;
     TZrUInt32 hiddenParameterCount = 0;
@@ -1325,16 +1390,24 @@ static void reflection_populate_parameters_from_function(SZrState *state,
         reflection_populate_parameters_from_metadata(state,
                                                      callableReflection,
                                                      function->parameterMetadata,
-                                                     function->parameterMetadataCount);
+                                                     function->parameterMetadataCount,
+                                                     function);
         return;
     }
 
     parametersArray = reflection_new_array(state);
-    if (parametersArray == ZR_NULL) {
+    parameterModesArray = reflection_new_array(state);
+    if (parametersArray == ZR_NULL || parameterModesArray == ZR_NULL) {
         return;
     }
 
     reflection_attach_parameters_array(state, callableReflection, parametersArray);
+    reflection_set_field_object(
+            state,
+            callableReflection,
+            "parameterModes",
+            parameterModesArray,
+            ZR_VALUE_TYPE_ARRAY);
     moduleReflection = reflection_get_field_object(state, callableReflection, "module", ZR_VALUE_TYPE_OBJECT);
     ownerHash = XXH3_64bits(reflection_get_field_string_native(state, callableReflection, "qualifiedName", ""),
                             strlen(reflection_get_field_string_native(state, callableReflection, "qualifiedName", "")));
@@ -1347,6 +1420,7 @@ static void reflection_populate_parameters_from_function(SZrState *state,
         TZrUInt32 localIndex = hiddenParameterCount + index;
         const TZrChar *parameterName = "arg";
         const TZrChar *typeName = "any";
+        const TZrChar *passingMode = "value";
         TZrChar fallbackName[ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH];
         TZrChar typeNameBuffer[ZR_RUNTIME_TYPE_NAME_BUFFER_LENGTH];
         SZrObject *parameterReflection;
@@ -1372,6 +1446,7 @@ static void reflection_populate_parameters_from_function(SZrState *state,
                                                                     &binding->type,
                                                                     typeNameBuffer,
                                                                     sizeof(typeNameBuffer));
+                passingMode = reflection_parameter_mode_from_role_flags(binding->roleFlags);
             }
         }
 
@@ -1385,12 +1460,14 @@ static void reflection_populate_parameters_from_function(SZrState *state,
         if (parameterReflection == ZR_NULL) {
             continue;
         }
+        reflection_set_field_string(state, parameterReflection, "passingMode", passingMode);
 
         reflection_init_object_value(state,
                                      &parameterValue,
                                      ZR_CAST_RAW_OBJECT_AS_SUPER(parameterReflection),
                                      ZR_VALUE_TYPE_OBJECT);
         reflection_array_push(state, parametersArray, &parameterValue);
+        reflection_array_push_string_value(state, parameterModesArray, passingMode);
     }
 }
 
@@ -2062,7 +2139,8 @@ static void reflection_populate_module_compile_time_metadata(SZrState *state,
         }
 
         reflection_set_field_string(state, infoObject, "kind", "compileTimeFunction");
-        reflection_populate_parameters_from_metadata(state, infoObject, info->parameters, info->parameterCount);
+        reflection_populate_parameters_from_metadata(
+                state, infoObject, info->parameters, info->parameterCount, ZR_NULL);
         reflection_set_field_int(state,
                                  reflection_get_field_object(state, infoObject, "source", ZR_VALUE_TYPE_OBJECT),
                                  "startLine",

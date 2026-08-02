@@ -669,13 +669,13 @@ static void test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(SZrState 
     SZrLspPosition laterUsage;
     const TZrChar *validContent =
         "var total = 10;\n"
-        "valueOf() {\n"
+        "fn valueOf() {\n"
         "    return total;\n"
         "}\n"
         "var later: int = 12;\n";
     const TZrChar *brokenContent =
         "var total = 10;\n"
-        "valueOf() {\n"
+        "fn valueOf() {\n"
         "    return total;\n"
         "\n"
         "var later: int = 12;\n";
@@ -1057,15 +1057,15 @@ static const TZrChar *g_callbacks_fixture =
     "var math = import(\"zr.math\");\n"
     "var system = import(\"zr.system\");\n"
     "\n"
-    "scaleValue(input: float) {\n"
+    "fn scaleValue(input: float) {\n"
     "    return input * 2.0;\n"
     "}\n"
     "\n"
-    "summarizeCallbackImpl(value: float) {\n"
+    "fn summarizeCallbackImpl(value: float) {\n"
     "    return value + 7.0;\n"
     "}\n"
     "\n"
-    "runCallbacksImpl(lin, signal, tensor) {\n"
+    "fn runCallbacksImpl(lin, signal, tensor) {\n"
     "    var vectorInfo = lin.projectVectors(2.0);\n"
     "    var signalInfo = signal.mixSignal(5.0);\n"
     "    var tensorInfo = tensor.runTensorPass();\n"
@@ -2945,7 +2945,7 @@ static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_
         "        return this.heal(amount);\n"
         "    }\n"
         "}\n"
-        "runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {\n"
+        "fn runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {\n"
         "    var boss = new BossHero(seed);\n"
         "    boss.prepare(prepareAmount);\n"
         "    return boss.afterBattle(battleAmount) + boss.heal(0);\n"
@@ -3328,7 +3328,7 @@ static void test_lsp_hover_and_completion_surface_explicit_exact_type_failures(S
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "probe() {\n"
+        "fn probe() {\n"
         "    var missing;\n"
         "    missing;\n"
         "}\n";
@@ -3420,7 +3420,7 @@ static void test_lsp_signature_help_and_completion_surface_exact_unannotated_ret
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
-        "make(seed: int) {\n"
+        "fn make(seed: int) {\n"
         "    return seed + 0;\n"
         "}\n"
         "fn use(): void {\n"
@@ -5540,7 +5540,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     SZrString *consoleModuleUri = ZR_NULL;
     const TZrChar *content =
         "var system = import(\"zr.system\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    /* \xCE\xBB */ system.console.printLine(\"one\");\n"
         "    return /* \xCE\xBB */ system.console.printLine(\"two\");\n"
         "}\n";
@@ -5662,7 +5662,7 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     SZrString *uri;
     const TZrChar *content =
         "/* \xCE\xBB */ var system = import(\"zr.system\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    return system.clockTicks();\n"
         "}\n";
     SZrLspPosition importLiteralPosition;
@@ -5957,7 +5957,7 @@ static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrSt
     SZrString *uri;
     const TZrChar *content =
         "var container = import(\"zr.container\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    return container;\n"
         "}\n";
     SZrLspPosition importLiteralPosition;
@@ -6011,7 +6011,7 @@ static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_imp
     const TZrChar *renderedText;
     const TZrChar *importContent =
         "var tcpLeaf = import(\"zr.network.tcp\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    return tcpLeaf;\n"
         "}\n";
     SZrLspPosition tcpImportLiteralPosition;
@@ -6088,7 +6088,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
     const TZrChar *content =
         "var task = import(\"zr.task\");\n"
         "var thread = import(\"zr.thread\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    var pending = task.spawn;\n"
         "    return thread.spawnThread;\n"
         "}\n";
@@ -6863,7 +6863,7 @@ static void test_lsp_semantic_query_collects_import_module_completion_items(SZrS
     SZrString *uri;
     const TZrChar *content =
         "var system = import(\"zr.system\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    return system.console;\n"
         "}\n";
     SZrLspPosition completionPosition;
@@ -6918,7 +6918,7 @@ static void test_lsp_semantic_query_collects_import_chain_completion_items(SZrSt
     SZrString *uri;
     const TZrChar *content =
         "var system = import(\"zr.system\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    return system.console.;\n"
         "}\n";
     SZrLspPosition completionPosition;
@@ -6973,7 +6973,7 @@ static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state)
     SZrString *uri;
     const TZrChar *content =
         "var system = import(\"zr.system\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    system.console.printLine(\"x\");\n"
         "}\n";
     SZrLspPosition consolePosition;
@@ -7027,7 +7027,7 @@ static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *sta
     SZrString *uri;
     const TZrChar *content =
         "var system = import(\"zr.system\");\n"
-        "run() {\n"
+        "fn run() {\n"
         "    var text = `import(\"zr.math\") @constructor #trace# system.console.printLine`;\n"
         "    return system;\n"
         "}\n";

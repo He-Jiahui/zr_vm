@@ -139,6 +139,13 @@ ZR_PARSER_API TZrBool ZrParser_CompileToolArtifact_OpenBuildDependency(
         SZrParserCompileToolResolvedArtifact *outArtifact,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize);
+ZR_PARSER_API TZrBool ZrParser_CompileToolArtifact_OpenProjectBuildDependency(
+        const SZrLibrary_Project *project,
+        const TZrChar *rawSpecifier,
+        const TZrChar *archivePath,
+        SZrParserCompileToolResolvedArtifact *outArtifact,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
 ZR_PARSER_API TZrBool ZrParser_CompileToolArtifact_IsOpen(
         const SZrParserCompileToolResolvedArtifact *artifact);
 ZR_PARSER_API void ZrParser_CompileToolArtifact_Close(

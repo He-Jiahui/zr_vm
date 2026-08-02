@@ -28,6 +28,7 @@ typedef struct SZrParserState {
     SZrState *state;              // VM 状态
     SZrFileRange currentLocation; // 当前位置
     TZrBool hasError;               // 是否有错误
+    TZrBool hasFatalError;          // production parsing cannot return an AST after removed legacy syntax
     const TZrChar *errorMessage;    // 错误消息
     TZrParserErrorCallback errorCallback; // 旧错误回调（可选）
     TZrParserStructuredErrorCallback structuredErrorCallback; // 结构化错误回调（可选）

@@ -122,7 +122,7 @@ static void test_local_expression_query_returns_constant_comparison_logical_fact
     const TZrChar *summary = "LSP Local Expression Query Returns Constant Comparison Logical Fact";
     const TZrChar *uriText = "file:///local_constant_comparison_logical_fact.zr";
     const TZrChar *content =
-        "logic() {\n"
+        "fn logic(): void {\n"
         "    var known = 1 < 2;\n"
         "}\n";
     SZrTestTimer timer;
@@ -195,7 +195,7 @@ static void test_local_expression_query_returns_composed_comparison_logical_fact
     const TZrChar *summary = "LSP Local Expression Query Returns Composed Comparison Logical Fact";
     const TZrChar *uriText = "file:///local_composed_comparison_logical_fact.zr";
     const TZrChar *content =
-        "logic() {\n"
+        "fn logic(): void {\n"
         "    var known = (1 < 2) && (3 < 4);\n"
         "}\n";
     SZrTestTimer timer;

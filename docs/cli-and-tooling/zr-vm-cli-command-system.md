@@ -197,7 +197,7 @@ doc_type: module-detail
 
 裸表达式包装只用于“看起来是表达式”的输入。声明、控制流、函数/类定义、显式 `return`、包含语句分号的提交不会被包装。完整的 aggregate-start expression 也属于可包装输入，例如 `[1 + 2][0]`；对象字面量行首输入也会经 `repl_input_scan.c` 的保守扫描进入同一路径，例如 `{a: 1 + 2}.a` 和 `{[1 + 2]: 4}[3]`。扫描器只把空对象、标识符/字符串键后跟 `:`、或计算键 `[...]` 后跟 `:` 的 `{...}` 当成对象表达式，普通 `{ var ... }`/`{ if ... }` 块仍交给 parser 语句路径。像 `1 +` 或 `true &&` 这种以操作符结尾的不完整表达式也不会套入内部 `return` 文本，而是直接交给 parser 报出具体问题、原因和建议，例如 `Missing expression after '+'`、`Cause: ...`、`Suggestion: ...`。这样 REPL 可以提升表达式运行能力，同时避免用户在错误信息里看到内部包装细节。
 
-`:type <expression>` 是 REPL 的局部语义查询入口。它创建 fresh analysis state，把当前会话声明源码和参数表达式一起解析，先把 prior function declarations 和 prior variable declarations 注册进 parser type environment，再调用 `ZrParser_ExpressionType_Infer` 推断最后一个 expression statement，并从同一个 `SZrSemanticContext` 读取 numeric/logical/reachability/ownership、reference 和 expression payload facts 输出。`1 + 2` 会显示 `Type: int` 和 `Numeric range: 3..3`；`[1 + 2]` 会显示 array root expression fact，同时输出 element expression 的 `Expression: binary exact`、`Constant: 3` 和 `Numeric range: 3..3`；在同一会话内先提交 `var seed = 2;` 后，`:type seed + 3` 会显示 `Numeric range: 5..5`；`:type true || false` 会显示 `Logical flow: short-circuits right operand` 和 `Reachability: unreachable because short-circuit skips evaluation`；`:type true ? 1 : 2` 会显示 `Expression: conditional exact`、constant condition 的 `Logical value: true`，以及 skipped alternate 的 `Reachability: unreachable because a constant branch skips evaluation`；若先声明 `var owner: %unique int;`，`:type %borrow(owner)` 会显示 `Type: %borrowed int` 和 `Ownership: borrow %borrowed`；`:type [%borrow(owner)]` 会在 aggregate borrowed type 下继续显示 nested `Ownership: borrow %borrowed`；若查询 `pick(42)` 这类调用表达式，会显示 `Call: pick args=1`；同一会话先声明 `func pick(value: int): int { ... }` 后，`:type pick(1 + 2)` 还会在 call payload 之后显示 call argument 的 `Expression: binary exact`、`Constant: 3`、`Numeric range: 3..3` 和 resolved `Reference: call pick`；`:type seed.value` 会显示 `Member: value` 和 `Reference: member value`；`:type seed[index]` 会显示 `Member: index` 和 `Reference: member index`；`:type seed.value = 3` 会显示 `Reference: member write value`。这个命令不会执行目标表达式，只暴露当前表达式的编译期推断结果和已发射的局部语义事实；unresolved member-access/member-write facts 不会伪造 `Declared at:` 位置。
+`:type <expression>` 是 REPL 的局部语义查询入口。它创建 fresh analysis state，把当前会话声明源码和参数表达式一起解析，先把 prior function declarations 和 prior variable declarations 注册进 parser type environment，再调用 `ZrParser_ExpressionType_Infer` 推断最后一个 expression statement，并从同一个 `SZrSemanticContext` 读取 numeric/logical/reachability/ownership、reference 和 expression payload facts 输出。`1 + 2` 会显示 `Type: int` 和 `Numeric range: 3..3`；`[1 + 2]` 会显示 array root expression fact，同时输出 element expression 的 `Expression: binary exact`、`Constant: 3` 和 `Numeric range: 3..3`；在同一会话内先提交 `var seed = 2;` 后，`:type seed + 3` 会显示 `Numeric range: 5..5`；`:type true || false` 会显示 `Logical flow: short-circuits right operand` 和 `Reachability: unreachable because short-circuit skips evaluation`；`:type true ? 1 : 2` 会显示 `Expression: conditional exact`、constant condition 的 `Logical value: true`，以及 skipped alternate 的 `Reachability: unreachable because a constant branch skips evaluation`；若先声明 `var owner: Unique<int>;`，`:type owner` 会显示 `Type: Unique<int>`、`Expression: identifier exact` 和 `Reference: read owner`；`:type [owner]` 会保留 aggregate 与 nested owner identifier facts；若查询 `pick(42)` 这类调用表达式，会显示 `Call: pick args=1`；同一会话先声明 `fn pick(value: int): int { ... }` 后，`:type pick(1 + 2)` 还会在 call payload 之后显示 call argument 的 `Expression: binary exact`、`Constant: 3`、`Numeric range: 3..3` 和 resolved `Reference: call pick`；`:type seed.value` 会显示 `Member: value` 和 `Reference: member value`；`:type seed[index]` 会显示 `Member: index` 和 `Reference: member index`；`:type seed.value = 3` 会显示 `Reference: member write value`。这个命令不会执行目标表达式，只暴露当前表达式的编译期推断结果和已发射的局部语义事实；unresolved member-access/member-write facts 不会伪造 `Declared at:` 位置。
 
 REPL v1 还支持两条扩展约束：
 
@@ -337,9 +337,9 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 
 `tests/cli/repl_type_ownership_smoke.js` 覆盖了：
 
-- `var owner: %unique int;` 后的 `:type %borrow(owner)` 会显示 `Type: %borrowed int`
-- 同一次查询还会显示 `Ownership: borrow %borrowed`
-- 查询不会退化成只打印 `int`，也不会报 `failed to infer expression type`
+- `var owner: Unique<int>;` 后的 `:type owner` 会显示 `Type: Unique<int>`
+- 同一次查询还会显示 identifier expression 与 `Reference: read owner`
+- 查询不会执行 owner，也不会报 `failed to infer expression type`
 
 `tests/cli/repl_type_call_member_smoke.js` 覆盖了：
 
@@ -351,7 +351,7 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 
 `tests/cli/repl_type_call_reference_smoke.js` 覆盖了：
 
-- 在同一 REPL 会话先声明 `func pick(value: int): int { ... }` 后，`:type pick(1 + 2)` 会显示 `Type: int`
+- 在同一 REPL 会话先声明 `fn pick(value: int): int { ... }` 后，`:type pick(1 + 2)` 会显示 `Type: int`
 - 同一次查询会继续显示共享 call expression payload：`Call: pick args=1`
 - 同一次查询会继续下钻到 call argument 的共享 expression fact，显示 `Expression: binary exact` 和 `Constant: 3`，但不会输出 leaf `Constant: 1` / `Constant: 2`
 - 同一次查询会显示 resolved reference fact：`Reference: call pick` 和 `Declared at:`
@@ -393,8 +393,8 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 
 `tests/cli/repl_type_nested_ownership_smoke.js` 覆盖了：
 
-- `var owner: %unique int;` 后的 `:type [%borrow(owner)]` 会显示 aggregate borrowed type
-- 同一次查询还会显示 nested ownership builtin expression fact 和 `Ownership: borrow %borrowed`
+- `var owner: Unique<int>;` 后的 `:type [owner]` 会显示 `Unique<int>[1]<Unique<int>>`
+- 同一次查询还会显示 nested owner identifier expression 与 reference facts
 - 查询不会退化成 `failed to infer expression type` 或 compiler error
 
 `tests/cli/repl_expression_aggregate_smoke.js` 覆盖了：

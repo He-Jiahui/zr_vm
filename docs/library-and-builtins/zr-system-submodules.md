@@ -75,7 +75,7 @@ doc_type: module-detail
 - `exception: zr.system.exception`
 - `vm: zr.system.vm`
 
-根模块不再重导出旧的扁平文件系统函数，也不重导出 `SystemFileInfo`、`SystemVmState`、`SystemLoadedModuleInfo` 这类类型值。类型仍然属于各自叶子模块，但会进入全局 type 空间，所以既可以写 `var fs = %import("zr.system.fs"); new fs.File("a.txt");`，也可以在类型推断阶段通过模块字段拿到原型和元信息。
+根模块不再重导出旧的扁平文件系统函数，也不重导出 `SystemFileInfo`、`SystemVmState`、`SystemLoadedModuleInfo` 这类类型值。类型仍然属于各自叶子模块，但会进入全局 type 空间，所以既可以写 `var fs = import("zr.system.fs"); new fs.File("a.txt");`，也可以在类型推断阶段通过模块字段拿到原型和元信息。
 
 `zr.system.exception` 仍然是独立叶子模块，但会通过根模块字段和 native module info 一起暴露。文件系统相关失败会抛这个模块里的 `IOException`。
 

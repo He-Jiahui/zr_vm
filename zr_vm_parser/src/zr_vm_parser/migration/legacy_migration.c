@@ -173,6 +173,47 @@ static TZrBool legacy_migration_span_equals(
            memcmp(source + start, expected, expectedLength) == 0;
 }
 
+static TZrBool legacy_migration_percent_starts_directive(
+        const TZrChar *source,
+        TZrSize percentOffset) {
+    TZrSize cursor = percentOffset;
+    TZrSize wordStart;
+    TZrChar previous;
+
+    if (source == ZR_NULL || percentOffset == 0U) {
+        return ZR_TRUE;
+    }
+    while (cursor > 0U && isspace((unsigned char)source[cursor - 1U])) {
+        if (source[cursor - 1U] == '\n') {
+            return ZR_TRUE;
+        }
+        cursor--;
+    }
+    if (cursor == 0U) {
+        return ZR_TRUE;
+    }
+
+    previous = source[cursor - 1U];
+    if (legacy_migration_is_identifier_continue(previous)) {
+        wordStart = cursor - 1U;
+        while (wordStart > 0U &&
+               legacy_migration_is_identifier_continue(source[wordStart - 1U])) {
+            wordStart--;
+        }
+        return legacy_migration_span_equals(source, wordStart, cursor, "return") ||
+               legacy_migration_span_equals(source, wordStart, cursor, "throw") ||
+               legacy_migration_span_equals(source, wordStart, cursor, "yield") ||
+               legacy_migration_span_equals(source, wordStart, cursor, "await") ||
+               legacy_migration_span_equals(source, wordStart, cursor, "case") ||
+               legacy_migration_span_equals(source, wordStart, cursor, "out");
+    }
+    if (isdigit((unsigned char)previous) || previous == ')' || previous == ']' ||
+        previous == '}' || previous == '\'' || previous == '"' || previous == '`') {
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 static const SZrLegacyMigrationDirectiveRule *legacy_migration_find_directive_rule(
         const TZrChar *source,
         TZrSize start,
@@ -576,7 +617,8 @@ static TZrBool legacy_migration_range_has_percent_directive(
         TZrSize end) {
     for (TZrSize index = start; index + 1U < end; index++) {
         if (source[index] == '%' &&
-            legacy_migration_is_identifier_start(source[index + 1U])) {
+            legacy_migration_is_identifier_start(source[index + 1U]) &&
+            legacy_migration_percent_starts_directive(source, index)) {
             return ZR_TRUE;
         }
     }
@@ -1351,7 +1393,8 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
             }
         }
         if (current == '%' && index + 1U < sourceLength &&
-            legacy_migration_is_identifier_start(source[index + 1U])) {
+            legacy_migration_is_identifier_start(source[index + 1U]) &&
+            legacy_migration_percent_starts_directive(source, index)) {
             TZrSize wordStart = index + 1U;
             TZrSize wordEnd = legacy_migration_read_identifier(source, sourceLength, wordStart);
             TZrSize consumedEnd = wordEnd;

@@ -22,6 +22,61 @@
 `completed_with_known_unrelated_markers`。本报告保留这些历史限定；“确认”表示当前
 工作树已用新鲜测试重新证明该记录声明的范围，而不是改写其历史状态文字。
 
+## 2026-08-02 严格切换复验与最终 review
+
+本轮再次按同一叶子规则机械清点：排除 `*-implementation-plan.md` 和单独的
+`m5-task4-property-import-bootstrap.md` support record 后，结果为
+`TOTAL=55 COMPLETE=55 MISSING=0`。目录分布为 01=5、02=6、03=5、04=7、
+05=6、06=2、07=1、10=5、12=15、13=3。
+
+用户列出的旧 production parser surface 已逐项复核。`%module`、`%import`、
+`%extern`、`%compileTime`、`%test`、`%owned`、ownership `%` builtins/type
+qualifiers 和 `%func` 只由 `report_removed_percent_syntax` 识别，以便产生 error 级
+`legacy_syntax_removed`；statement/expression/type 入口随后返回 `NULL`，不会生成旧
+AST。`native extern`、`comptime`、`import(...)`、`fn(...) -> R`、canonical ref
+TypeRef 与普通 `%`/`%=` 运算保持当前语法。internal intermediate text 中的 `%`
+分隔符不属于 source keyword。
+
+全新 WSL GCC 11.4 Debug 隔离快照的本轮定向结果为：parser 74/74、percent cutover
+6/6、reflection surface 18/18、module system 78/78、project manifest v2 10/10、
+comptime runtime 14/14、CLI project incremental 12/12，LSP advanced editor features
+0 failure。CLI cache 用例明确证明首轮 miss、二轮 hit、同长度语义修改 miss、损坏
+snapshot rejection/repair；首次与 hit 产物相同，语义修改产物不同，恢复原源码后再次
+逐字节复现首次 `.zro`。
+
+独立 review 发现并关闭六项问题：production parse 曾在 removed syntax 后返回恢复 AST；
+cache key 曾缺少源码语义摘要；snapshot 曾缺少全内容完整性摘要；TypeId lookup 曾可能把
+相同文本身份的另一 numeric ID 对象返回给调用者；typed-ref callable fallback 曾只填
+`parameters` 而遗漏 `parameterModes`；formatter migration scan 曾把相邻模运算误判为
+`%keyword`。修复后，removed syntax 的公共 parse 入口释放 partial AST 并返回 `NULL`，
+parser 回溯 cursor 同时恢复 fatal 状态；cache v5 认证源码和完整 snapshot；TypeId 冲突
+fail closed；callable 两套 mode 投影同步；spaced/adjacent 模运算均保留。六项原失败证据
+均在同一隔离快照复跑转绿。
+
+最终 review 又关闭一项 P1：snapshot test 曾直接调用 parser shared library 未导出的
+`MixValue`/`Lookup`/`Store` 内部符号，MSVC 共享库配置因此出现三个 `LNK2019`。测试现
+直接构造公开 compiler cache entry，并只经公开 Export/Import/Free API 验证 byte-stable、
+完整性和事务性。MSVC 19.44 Debug 共享库目标成功链接并运行 14/14；WSL GCC 同目标也为
+14/14。
+
+严格切换还暴露并关闭了旧 fixture 的假绿：compiler integration 的自定义 `ZR_TEST_FAIL`
+会提前返回但被 Unity 记为 PASS。正向 fixture 已全部迁到 `fn`、`init`、`resource class`、
+`own`/`share`/`weak`/`ref`/`intoGc`、fully-qualified Iterator 和 canonical `const`/`comptime
+fn`；负向 fixture 改为验证当前真实拒绝边界。导出全局 reference 校验也同步识别新
+`referenceAccess` 表示。最终 compiler integration 为 127/127，附加自定义 Fail 为 0。
+
+最终 WSL GCC 11.4 Debug 隔离树全目标 Ninja 构建成功。焦点矩阵保持 parser 74/74、
+percent cutover 6/6、reflection 18/18、module 78/78、manifest 10/10、comptime 14/14、
+CLI cache 12/12、LSP advanced 0 failure。完整 CTest 为 121/126；`language_server` 已通过，
+五个残余失败是已知上层基线：`language_pipeline` 仅剩 AOT Span artifact 等价 smoke，
+另四项为本次隔离树未带入并行 Debug 工作的 `debug_agent`、`debug_truncation`、
+`debug_variable_child_shape`、`debug_library`。这些失败不属于 55 份叶子或严格 parser
+切换的完成证据，也继续阻止宣称根 Syntax redesign 全绿。
+
+结论仍保持三层分离：55/55 只确认历史叶子记录声明的范围；严格 production parser
+切换已完成；root Syntax redesign 仍因 07B 的 13 个 design-pending 项，以及
+08/09/10C/11/14 的剩余 promotion 证据而未完成。
+
 ## 2026-07-28 上层 Gate 补充复验
 
 本次复验重新按同一规则独立清点状态记录，机器计数为：总数 55、完成状态 55、

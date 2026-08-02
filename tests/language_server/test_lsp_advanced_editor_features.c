@@ -2137,6 +2137,7 @@ static void test_lsp_advanced_editor_features_return_empty_for_unopened_document
 
 // These static cases depend on the diagnostic helpers declared above.
 #include "test_lsp_diagnostic_safe_fix_cases.h"
+#include "test_lsp_current_syntax_formatting_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
@@ -2159,6 +2160,8 @@ int main(void) {
 
     test_lsp_document_formatting_returns_single_document_edit(state, &failures);
     test_lsp_formatting_skips_noop_edits(state, &failures);
+    test_lsp_formatting_does_not_emit_removed_syntax(state, &failures);
+    test_lsp_formatting_preserves_current_compile_tool_syntax(state, &failures);
     test_lsp_folding_and_selection_ranges(state, &failures);
     test_lsp_folding_ranges_include_import_regions(state, &failures);
     test_lsp_formatting_ignores_non_code_braces(state, &failures);

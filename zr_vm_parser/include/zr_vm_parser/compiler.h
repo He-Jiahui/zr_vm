@@ -194,6 +194,8 @@ typedef struct SZrCompilerState {
     TZrUInt64 comptimeCacheMissCount;
     TZrUInt32 comptimeCallDepth;
     SZrArray comptimeCache;                    // SZrComptimeCacheEntry
+    TZrByte comptimeSourceDigest[ZR_PARSER_COMPTIME_CACHE_DIGEST_BYTE_COUNT];
+    TZrBool hasComptimeSourceDigest;
     TZrBool isInCompileTimeContext;             // 是否在编译期上下文中
     TZrBool isCompilingCompileTimeRuntimeSupport; // 是否正在为 binary import 生成 compile-time runtime support
     
@@ -368,6 +370,7 @@ typedef struct SZrTypePrototypeInfo {
     TZrUInt32 nextPropertyIdentity;     // 当前类型分配到的下一个 property identity
     TZrUInt32 layoutByteSize;           // inline 布局总大小（字节）
     TZrUInt32 layoutByteAlign;          // inline 布局最大对齐（字节）
+    TZrUInt32 intrinsicCapabilityId;    // registered intrinsic behavior; zero for ordinary types
 } SZrTypePrototypeInfo;
 
 #ifndef ZR_MEMBER_PARAMETER_COUNT_UNKNOWN

@@ -9,7 +9,7 @@ scope:
   - Syntax 11
   - Syntax 14
 status: in-progress
-last_verified: 2026-08-01
+last_verified: 2026-08-02
 ---
 
 # Syntax upper gates requirement-to-evidence ledger
@@ -61,11 +61,29 @@ remaining owner gates are open.
   exports for internal acceptance APIs; adding `ZR_PARSER_API` to the existing
   declarations closed the link failure and all 144 tests then passed.
 
+## 2026-08-02 strict-cutover final replay
+
+- The 55-record recount remains `TOTAL=55 COMPLETE=55 MISSING=0`; this is a
+  leaf-scope claim only.
+- A fresh isolated WSL GCC Debug all-target build completed. The focused matrix
+  is parser 74/74, percent cutover 6/6, reflection 18/18, module 78/78,
+  manifest 10/10, comptime 14/14, CLI cache 12/12, LSP advanced 0 failures,
+  and compiler integration 127/127 with no custom false-green failure output.
+- A fresh MSVC 19.44 Debug shared-library replay rebuilt and linked the
+  comptime runtime target and passed 14/14. Snapshot acceptance now calls only
+  public Export/Import/Free APIs, so it no longer depends on unexported parser
+  internals.
+- The complete registered CTest replay is 121/126. `language_server` passes.
+  The five remaining upper-level failures are the pre-existing AOT Span
+  artifact-equivalence smoke inside `language_pipeline` and four independently
+  changing Debug suites. They are retained as root-promotion blockers and are
+  not attributed to the strict parser cutover.
+
 ## Gate ledger
 
 | Gate | Current evidence | State | Remaining proof/work |
 |---|---|---|---|
-| 08 M1-M5 | reflection surface 18/18 and stress 3/3 prove selected VM paths | contradicted | remove concrete type/module-name dispatch; reject nullable operands; authenticate TypeId category; preserve by-ref modes; add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
+| 08 M1-M5 | reflection behavior is routed through the canonical capability registry; nullable `typeof` is rejected until narrowed; TypeId fields are authenticated against the per-generation registry; callable by-ref modes survive runtime projection; focused reflection surface 18/18 | indirect | add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
 | 09 M1 | source-callable `Pool<T>` identity/recycle plus C state-machine, million-handle, ABA, exhaustion, alignment and concurrency evidence; pool 13/13 | proven | preserve scalar handle identity and ABI v4 descriptor contract |
 | 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, storage/escape rejection and no-repeat-validation counter | indirect | complete the full local/return/container/closure/suspension matrix and view replacement/early-exit ordering |
 | 09 M3 | deferred reclaim, partial-init rollback, GcFree/GcMapped/GcBarriered accounting and cards are covered by pool 13/13 plus GC stress 3/3 | indirect | derive the native runtime scan directly from closed canonical TypeLayout, prove exactly-once resource Drop and language early-exit cleanup, and implement compact-safe moving slabs |
@@ -76,7 +94,7 @@ remaining owner gates are open.
 | 11 M1-M2 | build facts, typed diagnostics/effects, deterministic limits/cache | proven | preserve |
 | 11 M3 | typed AttributeUsage/AttributeData, Conditional elision, static decorator shape coverage, runtime decorator executor/helper removal | proven | preserve retained-data consumers |
 | 11 M4 | first-version public contract is GeneratedField-only; typed diagnostics, interfaceAdds, attributeAdds, normal rebind/layout, provenance, `.zri` generated source maps, artifact/reflection retention, and atomic cross-kind Patch commit with allocator-failure rollback are covered across GCC/Clang/MSVC/MSVC-ASan | proven | preserve; GeneratedType/Method/Property remain unpublished unless separately admitted through the reference gate |
-| 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; v2 buildDependencies are phase-separated in canonical manifest/lock output; compiler-owned resolver validates version range and CompileTool lock/ZRM package from one owned byte snapshot, checks actual package/entry SHA-256, hashes the canonical CompileTool lock section, and preserves runtime isolation; comptime cache v4 compares the full canonical 32-byte digest | indirect | activate and validate the external provider graph through ordinary compile-only import/transform execution, persistent incremental cache, formatter and remaining consumer acceptance |
+| 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; v2 buildDependencies are phase-separated in canonical manifest/lock output; project-owned lock admission is strict/atomic and feeds the compiler resolver without a parallel caller-owned lock graph; the resolver validates version range and CompileTool lock/ZRM package from one owned byte snapshot, checks actual package/entry SHA-256, hashes the canonical CompileTool lock section, and preserves runtime isolation; comptime cache v5 compares the full canonical 32-byte digest, includes current-module source identity, and has a versioned, deterministic, fixed-endian, whole-snapshot-authenticated format with atomic fail-closed import; the project CLI atomically persists `.zr_comptime_cache` and proves miss/hit/same-length semantic-edit miss/corrupt repair; formatter uses the migration plan as a fail-closed output gate, preserves canonical CompileTool syntax plus spaced/adjacent `%` and `%=` operators, and emits no edit for removed syntax | indirect | activate and validate the external provider graph through ordinary compile-only import/transform execution, and complete remaining artifact/reflection consumer acceptance |
 | 14 M1 | ordinary function test/case/skip roles, typed TestManifest, production typecheck-and-trim | proven | preserve |
 | 14 M2 | official Test-phase `zr.testing` provider with assert/equal/throws and bounded structured failure | proven | preserve |
 | 14 M3 | deterministic discovery/filter/list/run, process isolation, jobs, timeout, output and exit codes | proven | preserve sync/async reference matrix |

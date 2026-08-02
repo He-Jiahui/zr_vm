@@ -20,7 +20,7 @@
 ### 1.1 关键字
 
 #### 模块和类型声明
-- `%module` - 模块声明
+- `module` - 模块声明
 - `struct` - 结构体声明
 - `class` - 类声明
 - `interface` - 接口声明
@@ -114,7 +114,7 @@
 #### 其他操作符
 - `?` - 三元运算符
 - `:` - 类型注解、三元运算符
-- `->` - 规范 callable 箭头（lambda / `%func` / 返回类型展示）
+- `->` - 规范 callable TypeRef 箭头（`fn(...) -> R`）
 - `=>` - 兼容箭头输入（语义等同于 `->`）
 - `...` - 可变参数、展开操作符
 - `.` - 成员访问
@@ -170,18 +170,13 @@
 ### 2.1 模块声明
 
 ```zr
-%module "module_name";
-// 或
-%module module_name;
-// 或
-%module("module_name");
+module module_name;
 ```
 
 **说明**:
-- 模块名可以是字符串或标识符
-- 如果包含特殊符号，必须使用字符串形式
-- 括号形式只接受字符串字面量
-- 模块声明必须在文件开头（可选）
+- 模块名使用点分隔的 canonical module path
+- 模块声明必须位于模块作用域
+- 旧 `%module` 拼写只产生 `legacy_syntax_removed` 错误，不再生成模块 AST
 
 ### 2.2 变量声明
 
@@ -597,7 +592,7 @@ for (var i in array) {
 
 ```zr
 // 生成器允许在 out 时返回结果，直到运行结束
-var builtin = %import("zr.builtin");
+var builtin = import("zr.builtin");
 var k = {{
     if (builtin.Object.type(j) == "array") {
         out j.toArray();
@@ -708,18 +703,16 @@ obj["method"]();
 ### 2.12 测试声明
 
 ```zr
-%test("test_name") {
-    // throw result; 结果不符合预期而抛出，测试失败
-    // throw false; 直接测试失败
-    // test body
-    return 0;  // 测试成功，返回预期结果为 0
+#zr.testing.test#
+fn test_name(): void {
+    // test body; throw 表示测试失败
 }
 ```
 
 **说明**:
-- 使用 `%test("name")` 语法
-- `return` 值表示预期结果
+- 测试角色通过 `#zr.testing.test#` 绑定到普通 `fn(...): void`
 - `throw` 表示测试失败
+- 旧 `%test(...)` 只产生移除诊断
 
 ### 2.13 中间代码 (intermediate)
 
@@ -838,8 +831,8 @@ var name: Generic<Type>;
 var owned: Unique<Resource>;
 var shared: Shared<Resource>;
 var weak: Weak<Resource>;
-var view: Borrow<Resource>;
-var slot: Loan<Resource>;
+var view: ref readonly Resource;
+var slot: scoped ref Resource;
 var root: Gc<Document>;
 var boxed: GcBox<Resource>;
 
@@ -850,28 +843,26 @@ var name: Outer<Inner<Type>>;
 var completion: zr.task.Task<int>;
 
 // 显式函数类型
-var mapper: %func(int)->int;
-var compatMapper: %func(int)=>int;
+var mapper: fn(int) -> int;
 
 // 组合类型
-var callbacks: %shared (%func(int)->string)[];
+var callbacks: Shared<Array<fn(int) -> string>>;
 
-// 类型对象化和 %type
-var callableType = %type(%func(int)->int);
+// 类型身份与运行时描述符
+var callableId = typeid(fn(int) -> int);
+var callableDescriptor = typeof(mapper);
 
 // 类型值别名复用普通绑定模型
-var F = %func(int)->int;
-var callback: F = (x: int)->{
+var callback: fn(int) -> int = fn(x: int): int => {
     return x;
 };
 ```
 
 **说明**:
-- 类型位统一按“前缀 `%` 保留字修饰 + 主类型 + 后缀修饰”解析。
-- `%func(...) -> ReturnType` 是正式函数类型写法；`=>` 仅作兼容输入。
-- `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>` 是内建所有权泛型；旧 `%unique T` / `%shared T` / `%weak T` / `%borrow T` / `%loan T` 过渡期作为等价语法糖保留。`Gc<T>` / `GcBox<T>` 是独立 GC bridge 泛型，不属于 ownership qualifier。
-- 任意编译期可折叠且冻结的 `Type` 值都可进入类型位置，因此 `var F = %func(int)->int; var c: F = ...;` 合法。
-- `%type(...)` 同时接受 `TypeExpr` 与普通表达式；`%type(%func(int)->int)` 返回 callable reflection。
+- 函数类型统一写作 `fn(...) -> ReturnType`；lambda 使用 `fn(...): ReturnType => expression` 或 block body。
+- `Unique<T>` / `Shared<T>` / `Weak<T>` 是 owner carrier；借用统一使用 `ref` / `ref readonly` / `scoped ref` TypeRef。
+- `typeid(TypeRef)` 返回稳定类型身份，`typeof(expr)` 返回非空运行时值的精确描述符。
+- `%func`、`%type`、`%unique/%shared/%weak/%borrow/%loan` 和 `Borrow<T>/Loan<T>` 都已从 production parser 移除。
 - `async fn` 必须显式返回闭合 `zr.task.Task<T>`；`await` 只能在 async effect 中消费该 carrier。旧 `%async`、`%await` 和 `%async T` 已被拒绝。
 
 ---
@@ -1033,11 +1024,11 @@ class MyClass {
 var i: int = <int> a;
 
 // 假设 Vector3 为 m 模块声明的结构体，会真实编译为 to_struct 指令
-var m = %import("math");
+var m = import("math");
 var j = <m.Vector3> x;
 
 // 假设 Person 是 k 模块声明的类，会真实编译为 to_object 指令，指令带有 Person 原型信息
-var k = %import("PersonInfo");
+var k = import("PersonInfo");
 var l = <k.Person> p;
 ```
 
@@ -1072,7 +1063,7 @@ class Matrix<T, const N: int> {
     pub rows: Array<T>[N];
 }
 
-map<TIn, TOut>(source: Array<TIn>, f: %func(TIn)->TOut): Array<TOut> {
+fn map<TIn, TOut>(source: Array<TIn>, f: fn(TIn) -> TOut): Array<TOut> {
     return source;
 }
 ```
@@ -1106,13 +1097,13 @@ where T: class, new()
 {
 }
 
-func requireOwner<T>(): int
+fn requireOwner<T>(): int
 where T: owner
 {
     return 1;
 }
 
-func requireShared<T>(): int
+fn requireShared<T>(): int
 where T: shared
 {
     return 1;
@@ -1123,7 +1114,7 @@ where T: shared
 
 #### 所有权泛型与 using 作用域
 
-`using` 是当前推荐的资源作用域关键字；`%using` 作为兼容写法保留。当前解析器支持两种形态：
+`using` 是资源作用域关键字；`%using` 已从 production parser 移除，只保留迁移拒绝诊断。
 
 `Shared<T>` 是当前 isolation domain 内的非原子共享 owner；赋值和按值传参会 clone strong
 handle，最后一个 strong handle 被释放时立即执行 resource Drop。`Weak<T>` 只能由
@@ -1173,29 +1164,29 @@ using (var {w: width, height}: Shape.Rect = shape) {
     fallback();
 }
 
-using (var plugin = %import("render.vulkan")) {
+using (var plugin = import("render.vulkan")) {
     plugin.init();
 } else {
     fallback();
 }
 ```
 
-语义层会根据资源类型中的所有权泛型记录 deterministic cleanup step，例如 `Unique<Resource>` 会归一为 inner type `Resource` 加 owner qualifier。`Unique<T>` / `Shared<T>` 的 using scope 退出会 lowering 到 release；`Borrow<T>` / `Loan<T>` 的完整 borrow-end / loan-return 和逃逸检查仍属于后续运行时收口工作。`using` 对已知 union resource 的单 variant 守卫采用“解构 pattern + variant 标注”形式：tuple payload 写 `using (var [x]: Union.Variant = value) { ... } else { ... }`，struct payload 写 `using (var {local: field}: Union.Variant = value) { ... } else { ... }`，也可以混合默认名和别名如 `{width, h: height}`。编译器会拒绝 tuple variant 的 `{...}` 字段解构和 struct variant 的 `[...]` 元组解构；该规则同样适用于唯一 `@` 默认 variant 的省略 variant 写法。当 `value` 是已知 typed union 局部或嵌套字段链（如 `holder.inner.choice`）时，guard 会从 inline frame tag/payload 读取。省略 variant 只允许在 union 有唯一 `@` 默认 variant 且 binder 是 `[x]` 或 `{field}` 解构时使用；`%import` 资源即使显式写 `DynamicModule<T>.Variant`，目标 variant 也必须是该 union 的 `@` 默认校验 variant。旧式 `using (var Variant(x) = value)` 会被编译器拒绝并提示迁移到新形态。
-`using (var p = %import(...)) { ... } else { ... }` 当前支持插件守卫：编译器会先求值 import，把 `p` 作为 block 内局部绑定，并按 import 结果决定进入 block 或走 else；module init analysis 会把 block 内的 `p.*` 记录为 canonical module effect，metadata token builder 会把可签名的 import member effect 写成函数级 `MEMBER_REF` + `SIGNATURE` 前置记录。`using (var [m]: PluginLoad.Available = %import(...)) { ... } else { ... }` 是内置 success-payload 形态，不要求脚本声明 `DynamicModule` union；它与 `DynamicModule<T>.@Available` 和无 annotation payload guard 共用 import guard helper、插件逃逸扫描、`.share()` 提升和 guard-scope 隐藏 owner release。未 `share()` 的 guard binder、payload binding 或别名不能经 return/throw/out、调用参数或构造实参、聚合字段、闭包捕获、generator 延迟输出或 assignment expression 副作用逃逸；例如 `new Sink(m)`、`if (alias = m)` 或 `var ok = (alias = m)` 都会让未提升的 guard-scoped plugin 值继续受 `plugin_type_escape` 约束。native registry 已可通过 owner refcount API 观察这些显式/隐藏 shared owner 的生命周期；descriptor safe unload/cache invalidation、descriptor-DLL 诊断透传和更完整跨 region/global/async 插件类型逃逸检查仍属于后续运行时收口工作。
+语义层会根据资源类型中的所有权泛型记录 deterministic cleanup step，例如 `Unique<Resource>` 会归一为 inner type `Resource` 加 owner qualifier。`Unique<T>` / `Shared<T>` 的 using scope 退出会 lowering 到 release；`ref readonly T` / `ref T` view 按 lexical region 结束。`using` 对已知 union resource 的单 variant 守卫采用“解构 pattern + variant 标注”形式：tuple payload 写 `using (var [x]: Union.Variant = value) { ... } else { ... }`，struct payload 写 `using (var {local: field}: Union.Variant = value) { ... } else { ... }`，也可以混合默认名和别名如 `{width, h: height}`。编译器会拒绝 tuple variant 的 `{...}` 字段解构和 struct variant 的 `[...]` 元组解构；该规则同样适用于唯一 `@` 默认 variant 的省略 variant 写法。当 `value` 是已知 typed union 局部或嵌套字段链（如 `holder.inner.choice`）时，guard 会从 inline frame tag/payload 读取。省略 variant 只允许在 union 有唯一 `@` 默认 variant 且 binder 是 `[x]` 或 `{field}` 解构时使用；`import(...)` 资源即使显式写 `DynamicModule<T>.Variant`，目标 variant 也必须是该 union 的 `@` 默认校验 variant。旧式 `using (var Variant(x) = value)` 会被编译器拒绝并提示迁移到新形态。
+`using (var p = import(...)) { ... } else { ... }` 当前支持插件守卫：编译器会先求值 import，把 `p` 作为 block 内局部绑定，并按 import 结果决定进入 block 或走 else；module init analysis 会把 block 内的 `p.*` 记录为 canonical module effect，metadata token builder 会把可签名的 import member effect 写成函数级 `MEMBER_REF` + `SIGNATURE` 前置记录。`using (var [m]: PluginLoad.Available = import(...)) { ... } else { ... }` 是内置 success-payload 形态，不要求脚本声明 `DynamicModule` union；它与 `DynamicModule<T>.@Available` 和无 annotation payload guard 共用 import guard helper、插件逃逸扫描、`.share()` 提升和 guard-scope 隐藏 owner release。未 `share()` 的 guard binder、payload binding 或别名不能经 return/throw/out、调用参数或构造实参、聚合字段、闭包捕获、generator 延迟输出或 assignment expression 副作用逃逸；例如 `new Sink(m)`、`if (alias = m)` 或 `var ok = (alias = m)` 都会让未提升的 guard-scoped plugin 值继续受 `plugin_type_escape` 约束。native registry 已可通过 owner refcount API 观察这些显式/隐藏 shared owner 的生命周期；descriptor safe unload/cache invalidation、descriptor-DLL 诊断透传和更完整跨 region/global/async 插件类型逃逸检查仍属于后续运行时收口工作。
 
 #### 方差与参数作用
 
-`in/out` 与 `%in/%out/%ref` 是两套独立机制：
+generic variance 与 callable parameter passing 是两套独立机制：
 - `in/out` 只用于 `interface` 泛型参数，分别表示逆变和协变。
 - class / struct / function / method 泛型参数当前不允许声明 `in/out`。
-- `%in/%out/%ref` 只用于函数或方法参数，描述调用时的参数作用，不表示泛型方差。
+- callable 参数写作 `value: in T`、`value: out T`、`value: ref T` 或 `value: ref readonly T`，不表示泛型方差。
 
 ```zr
 interface IConsumer<in T> {
-    accept(value: T): void;
+    fn accept(value: T): void;
 }
 
-func tryGet<T>(key: string, %out value: T): bool {
+fn tryGet<T>(key: string, value: out T): bool {
     value = null;
     return true;
 }
@@ -1205,9 +1196,9 @@ func swap<T>(%ref left: T, %ref right: T): void {
 ```
 
 **语义规则**:
-- `%in` 形参在函数体内视为只读，禁止再次赋值。
-- `%out` 实参必须是可赋值左值，且被调用函数必须保证在所有控制流路径上完成赋值。
-- `%ref` 实参必须是可赋值左值，并按不变位置匹配。
+- `name: in T` 形参在函数体内视为只读，禁止再次赋值。
+- `name: out T` 实参必须以 `out` 标记可赋值左值，且被调用函数必须保证在所有控制流路径上完成赋值。
+- `name: ref T` 实参必须以 `ref` 标记可赋值左值，并按不变位置匹配。
 - interface 方差位置会做专用诊断，字段、双向 property 和不合法的嵌套泛型位置都会报错。
 
 ---
@@ -1216,7 +1207,7 @@ func swap<T>(%ref left: T, %ref right: T): void {
 
 1. **可选的模块声明**
    ```zr
-   %module "module_name";
+   module module_name;
    ```
 
 2. **顶层语句（按顺序）**:

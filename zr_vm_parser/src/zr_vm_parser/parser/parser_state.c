@@ -48,6 +48,7 @@ void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
     cursor->lookaheadTokenStartLineStart = ps->lexer->lookaheadTokenStartLineStart;
     cursor->lookaheadTokenStartLine = ps->lexer->lookaheadTokenStartLine;
     cursor->hasError = ps->hasError;
+    cursor->hasFatalError = ps->hasFatalError;
     cursor->errorMessage = ps->errorMessage;
 }
 
@@ -75,6 +76,7 @@ void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor) {
     ps->lexer->lookaheadTokenStartLineStart = cursor->lookaheadTokenStartLineStart;
     ps->lexer->lookaheadTokenStartLine = cursor->lookaheadTokenStartLine;
     ps->hasError = cursor->hasError;
+    ps->hasFatalError = cursor->hasFatalError;
     ps->errorMessage = cursor->errorMessage;
 }
 
@@ -183,6 +185,10 @@ TZrBool report_removed_percent_syntax(SZrParserState *ps) {
         return ZR_FALSE;
     }
 
+    if (!ps->enableLegacyMigrationParsing) {
+        ps->hasFatalError = ZR_TRUE;
+    }
+
     location.end.offset = end;
     location.end.column = location.start.column + (TZrInt32)(end - start);
     snprintf(message,
@@ -223,6 +229,10 @@ void report_removed_legacy_syntax_at(SZrParserState *ps,
     if (ps == ZR_NULL || ps->state == ZR_NULL ||
         spelling == ZR_NULL || suggestion == ZR_NULL) {
         return;
+    }
+
+    if (!ps->enableLegacyMigrationParsing) {
+        ps->hasFatalError = ZR_TRUE;
     }
 
     snprintf(message,

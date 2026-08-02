@@ -380,6 +380,7 @@ TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,
                                         const TZrChar *projectPath) {
     SZrLibrary_Project *project;
     static const TZrChar manifestFileName[] = ".zr_cli_manifest";
+    static const TZrChar comptimeCacheFileName[] = ".zr_comptime_cache";
     TZrSize binaryRootLength;
     TZrSize manifestNameLength;
     TZrSize manifestLength;
@@ -415,6 +416,11 @@ TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,
     context->manifestPath[binaryRootLength] = ZR_SEPARATOR;
     memcpy(context->manifestPath + binaryRootLength + 1, manifestFileName, manifestNameLength);
     context->manifestPath[manifestLength] = '\0';
+    ZrLibrary_File_PathJoin(
+            context->binaryRoot, comptimeCacheFileName, context->comptimeCachePath);
+    if (context->comptimeCachePath[0] == '\0') {
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
 }
 

@@ -28,6 +28,16 @@ promotion.
 - The lock graph retains a separate `buildDependencies` section with resolved
   version, content hash, transitive identity, and provider kind. It does not
   serialize a machine-local provider locator.
+- `ZrLibrary_ProjectManifestV2_ReadDependencyLock` admits that projection into
+  project-owned storage only after the complete Runtime and CompileTool graph
+  matches the manifest exactly. The reader rejects duplicate sections, package
+  entries, entry fields, undeclared packages, missing packages, and provider
+  source drift. It also requires the JSON document to terminate after the root
+  object instead of accepting trailing bytes. Replacement is atomic: a rejected
+  lock leaves the previously admitted graph intact.
+- Lock entry text is copied into one project-owned allocation. Resolver callers
+  do not borrow cJSON input storage, and project destruction frees the complete
+  entry/text block with its exact allocation size.
 
 ## TDD evidence
 
@@ -45,12 +55,20 @@ promotion.
 5. Independent review found duplicate-key normalization and an unguarded
    allocation product. New RED cases accepted duplicate build-dependency
    sections/version fields; GREEN rejects both and guards the allocation size.
+6. The project-owned lock RED failed because `SZrLibrary_Project` had no lock
+   storage and no reader API. GREEN covers valid phase-separated admission,
+   source-buffer destruction, invalid replacement atomicity, wrong version,
+   missing/undeclared packages, provider drift, duplicate entry fields, and
+   trailing-garbage rejection.
 
 ## Focused validation
 
-The same `zr_vm_project_manifest_v2_test` executable passed 9 tests with zero
-failures under GCC 11.4, Clang 14, and MSVC 19.44.35228. A separate MSVC
-`/Od /fsanitize=address` build also passed 9/9 with no sanitizer report.
+The original writer/manifest matrix passed 9 tests with zero failures under
+GCC 11.4, Clang 14, and MSVC 19.44.35228. A separate MSVC
+`/Od /fsanitize=address` build also passed the original 9/9 with no sanitizer
+report. After adding project-owned lock admission, the expanded executable
+passes 10/10 under WSL GCC 11.4; Clang/MSVC expansion remains part of the final
+Gate 11 matrix and is not claimed by this record yet.
 
 ## Remaining M5 work
 

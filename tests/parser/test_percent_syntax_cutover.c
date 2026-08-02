@@ -83,10 +83,7 @@ static void assert_legacy_source_is_rejected(const TZrChar *source) {
     ast = ZrParser_ParseWithState(&parserState);
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0U, capture.errorCount, source);
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0U, capture.removedSyntaxCount, source);
-
-    if (ast != ZR_NULL) {
-        ZrParser_Ast_Free(g_state, ast);
-    }
+    TEST_ASSERT_NULL_MESSAGE(ast, source);
     ZrParser_State_Free(&parserState);
 }
 

@@ -61,20 +61,20 @@ doc_type: module-detail
 
 ## 目标
 
-ownership surface 现在按 Rust-first 方式收敛成 dedicated builtin 和 dedicated opcode，而不是继续让 `%using` 混在 owner 构造语义里。
+ownership surface 现在按 Rust-first 方式收敛成 canonical type/member/reference surface 和 dedicated opcode。百分号 ownership 形式只存在于迁移诊断与负向测试。
 
-当前 ownership expression surface 是：
+当前 ownership/reference surface 是：
 
-- `%unique new T(...)`
-- `%shared(owner)`
-- `%weak(shared)`
-- `%borrow(expr)`
-- `%loan(owner)`
-- `%upgrade(weak)`
-- `%release(owner)`
-- `%detach(owner)`
+- `own T(...)`
+- `owner.share()`
+- `shared.weak()`
+- `weak.upgrade()`
+- `var view: ref readonly T = ref owner`
+- `var view: ref T = ref owner`
+- `owner.intoGc()`
+- `drop(owner)`
 
-`%using` 只保留 statement / block 级 lifetime fence。
+普通 `using` statement 只承担受支持的 statement/block lifetime contract，不构造 owner。
 
 ## Parser / AST
 
@@ -93,33 +93,32 @@ ownership builtin `USING` 已从 expression surface 移除。
 
 当前 parser 规则：
 
-- `%using new ...` 报迁移诊断
-- `%using(expr)` 报迁移诊断
-- `%borrow/%loan/%detach` 按 dedicated ownership builtin 解析
-- `%unique new ...` 仍是唯一允许直接和 `new` 绑定的 owner 构造形态
+- 已知百分号 ownership 拼写统一报告 `legacy_syntax_removed`，不生成 ownership AST
+- `own T(...)` 是 resource unique 构造入口
+- `ref` / `ref readonly` 建立 lexical reference view
+- `share` / `weak` / `upgrade` / `intoGc` / `drop` 走类型化 member/builtin contract
 
 ## 类型与借用约束
 
 当前前端做了显式 operand 校验：
 
-- `%shared(...)` 只接受 `%unique`
-- `%weak(...)` 只接受 `%shared`
-- `%loan(...)` 只接受 `%unique`
-- `%upgrade(...)` 只接受 `%weak`
-- `%release(...)` 只接受 `%unique | %shared`
-- `%detach(...)` 只接受 `%unique | %shared`
+- `share()` 只接受 `Unique<T>`
+- `weak()` 只接受 `Shared<T>`
+- `upgrade()` 只接受 `Weak<T>`
+- `drop(...)` 只接受可释放 owner
+- `intoGc()` 只接受可进入 plain GC world 的独占 owner bridge
 
 borrow / loan 规则当前已覆盖到 task/await 路径：
 
-- local `%borrow(...)` 不可跨 `await`
-- local `%loan(...)` 不可跨 `await`
+- local `ref readonly` view 不可跨 `await`
+- local writable `ref` view 不可跨 `await`
 - borrowed parameter 也不可在 `await` 之后继续使用
 
 v1 仍保持保守限制：
 
-- `%release` 仍只支持 local identifier binding
-- `%detach(shared)` 只有 strong-count 为 1 时才允许
-- `%borrow/%loan` 的更完整 escape analysis 仍以“不可返回/不可捕获/不可全局存储”为主方向
+- `drop` 的可消费 Place 仍受 owner/definite-assignment 约束
+- `intoGc()` 不接受多 owner shared value
+- reference view 的 escape analysis 以“不可返回/不可捕获/不可全局存储”为硬边界
 
 ## ExecBC 与 `SemIR`
 
@@ -136,9 +135,9 @@ ownership expression 现在直接落成 dedicated opcode：
 
 对应的 `SemIR` opcode 同步保留这些 ownership transition，而不是退回 native helper constant。
 
-statement-level `%using` 与 ownership builtin 已明确拆开：
+statement-level `using` 与 ownership builtin 已明确拆开：
 
-- statement `%using`
+- statement `using`
   - `MARK_TO_BE_CLOSED`
   - `CLOSE_SCOPE`
 - ownership expression
@@ -151,17 +150,17 @@ statement-level `%using` 与 ownership builtin 已明确拆开：
 runtime ownership helper 目前和 surface 对齐：
 
 - `ZrCore_Ownership_ShareValue`
-  - 只接受 `%unique`
+  - 只接受 `Unique<T>`
 - `ZrCore_Ownership_WeakValue`
-  - 只接受 `%shared`
+  - 只接受 `Shared<T>`
 - `ZrCore_Ownership_LoanValue`
-  - 只接受 `%unique`
+  - 只接受 `Unique<T>`
 - `ZrCore_Ownership_UpgradeValue`
-  - 只接受 `%weak`
+  - 只接受 `Weak<T>`
   - weak 失效时返回 `null`
 - `ZrCore_Ownership_ReturnToGcValue`
-  - 对应 `%detach`
-  - 只接受 `%unique` 或单 owner `%shared`
+  - 对应 canonical `intoGc()` bridge
+  - 只接受可独占转移的 owner
 
 legacy ownership native helper `%using` 已从 writer/runtime helper 映射中移除，helper id `5` 仅保留为二进制编号洞位，不再映射到运行时函数。
 
@@ -202,7 +201,7 @@ artifact兼容，但compiler/writer不再从新source发出它们。`OWN_INTO_GC
 
 当前 artifact 侧已经对齐到新语义：
 
-- parser / compiler 不再生成 ownership helper `%using`
+- parser / compiler 不再从 production source 生成百分号 ownership helper
 - writer 不再序列化 legacy ownership using helper
 - io runtime 不再反序列化 legacy ownership using helper
 - checked-in `.zri` / AOT fixture 需要重生成，避免继续携带旧 `OWN_USING` 文本
@@ -223,7 +222,7 @@ artifact兼容，但compiler/writer不再从新source发出它们。`OWN_INTO_GC
   - `OWN_VIEW_SHARED/OWN_VIEW_MUT/OWN_INTO_GC_BOX/OWN_RETURN_TO_GC`在Semantic IR、
     ExecBC、AOT C与AOT LLVM保持一致
   - 新source function tree明确不包含legacy `OWN_BORROW/OWN_LOAN/OWN_DETACH`
-  - statement `%using` 继续走 `MARK_TO_BE_CLOSED`
+  - canonical `using` statement 继续走 `MARK_TO_BE_CLOSED`
 - runtime lifecycle
-  - `%detach` 拒绝 multi-owner shared
+  - `intoGc()` 拒绝 multi-owner shared
   - 最后一个 shared drop 后 weak 升级返回 `null`

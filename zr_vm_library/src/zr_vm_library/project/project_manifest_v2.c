@@ -517,6 +517,14 @@ void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
                         project->manifestBuildDependencyCapacity,
                 ZR_MEMORY_NATIVE_TYPE_PROJECT);
     }
+    if (project->manifestDependencyLockEntries != ZR_NULL &&
+        project->manifestDependencyLockStorageSize > 0u) {
+        ZrCore_Memory_RawFreeWithType(
+                global,
+                project->manifestDependencyLockEntries,
+                project->manifestDependencyLockStorageSize,
+                ZR_MEMORY_NATIVE_TYPE_PROJECT);
+    }
     project->manifestAliases = ZR_NULL;
     project->manifestAliasCount = 0u;
     project->manifestAliasCapacity = 0u;
@@ -530,6 +538,9 @@ void library_project_manifest_v2_free_declarations(SZrGlobalState *global,
     project->manifestBuildDependencies = ZR_NULL;
     project->manifestBuildDependencyCount = 0u;
     project->manifestBuildDependencyCapacity = 0u;
+    project->manifestDependencyLockEntries = ZR_NULL;
+    project->manifestDependencyLockEntryCount = 0u;
+    project->manifestDependencyLockStorageSize = 0u;
 }
 
 TZrBool library_project_manifest_v2_parse_declarations(SZrState *state,

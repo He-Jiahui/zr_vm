@@ -163,7 +163,7 @@ static TZrBool test_lsp_hover_surfaces_computed_member_access_at_bracket(SZrStat
     const TZrChar *content =
         "var seed = { value: 1 };\n"
         "var index = 0;\n"
-        "inspect() {\n"
+        "fn inspect() {\n"
         "    seed[index];\n"
         "}\n";
     SZrLspContext *context;

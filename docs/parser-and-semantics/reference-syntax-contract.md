@@ -84,11 +84,15 @@ resolved call fact 在同一条记录中保存 closed callable TypeId、结构�
 把 open `Matrix<T, N>` 错显示为调用点类型。consumer 必须在 `hasResolvedTarget` 为真时才使用
 target identity，不能按 member name 猜测声明。
 
-## Compatibility boundary
+## Removed compatibility boundary
 
-旧 bare/`func` 声明和 `%func` 类型在 plan 06 正式切换前继续可读。仅旧 `%func` 入口兼容
-历史 `=>` 返回分隔符；规范 `fn` 函数类型严格要求 `->`。该兼容只存在于 parser，不进入
-canonical contract，也不得成为 borrow checker 分支条件。
+旧 bare/`func` 声明和 `%func` 类型已从 production parser 移除。规范函数声明使用 `fn`，
+规范 callable TypeRef 使用 `fn(...) -> R`；旧 `=>` 返回分隔符只会得到
+`legacy_syntax_removed` 或普通语法错误，不进入 canonical contract，也不得成为 borrow
+checker 分支条件。production parser 一旦报告已登记的 removed-legacy 诊断，公共 parse
+入口必须释放恢复过程中产生的 partial AST 并返回 `NULL`；只有显式 migration parser
+模式可以保留迁移分析所需的恢复树。回溯探测必须连同 fatal-error 状态一起保存和恢复，
+不能把合法 `import(...)` 等当前语法的失败 probe 误升级为 removed syntax。
 
 新增引用语义时应扩展 canonical contract、Place/CFG/loan 数据流与诊断，不得向
 `EZrParameterPassingMode` 增加新值，也不得按 `:`, `->`, `=>` 重新推导语义。

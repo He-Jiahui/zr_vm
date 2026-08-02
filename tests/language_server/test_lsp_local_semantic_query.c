@@ -740,7 +740,7 @@ static void test_local_expression_query_returns_logical_short_circuit_fact(SZrSt
     const TZrChar *summary = "LSP Local Expression Query Returns Logical Short Circuit Fact";
     const TZrChar *uriText = "file:///local_logical_short_circuit_fact.zr";
     const TZrChar *content =
-        "shorts() {\n"
+        "fn shorts(): void {\n"
         "    var skippedOr = true || false;\n"
         "}\n";
     SZrTestTimer timer;
@@ -809,7 +809,7 @@ static void test_local_expression_query_returns_conditional_branch_fact(SZrState
     const TZrChar *summary = "LSP Local Expression Query Returns Conditional Branch Fact";
     const TZrChar *uriText = "file:///local_conditional_branch_fact.zr";
     const TZrChar *content =
-        "choose() {\n"
+        "fn choose(): void {\n"
         "    var selected = true ? 1 : 2;\n"
         "}\n";
     SZrTestTimer timer;
@@ -888,7 +888,7 @@ static void test_local_expression_query_returns_unary_logical_not_fact(SZrState 
     const TZrChar *summary = "LSP Local Expression Query Returns Unary Logical Not Fact";
     const TZrChar *uriText = "file:///local_unary_logical_not_fact.zr";
     const TZrChar *content =
-        "logic() {\n"
+        "fn logic(): void {\n"
         "    var inverted = !true;\n"
         "}\n";
     SZrTestTimer timer;
@@ -964,7 +964,7 @@ static void test_local_reference_query_returns_write_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_reference_write_fact.zr";
     const TZrChar *content =
         "var counter = 0;\n"
-        "bump() {\n"
+        "fn bump(): void {\n"
         "    counter = counter + 1;\n"
         "}\n";
     SZrTestTimer timer;
@@ -1105,7 +1105,7 @@ static void test_local_reference_query_returns_member_access_fact(SZrState *stat
     const TZrChar *uriText = "file:///local_reference_member_access_fact.zr";
     const TZrChar *content =
         "var seed = { value: 1 };\n"
-        "inspect() {\n"
+        "fn inspect(): void {\n"
         "    seed.value;\n"
         "}\n";
     SZrTestTimer timer;
@@ -1175,7 +1175,7 @@ static void test_local_reference_query_returns_computed_member_access_and_index_
     const TZrChar *content =
         "var seed = { value: 1 };\n"
         "var index = 0;\n"
-        "inspect() {\n"
+        "fn inspect(): void {\n"
         "    seed[index];\n"
         "}\n";
     SZrTestTimer timer;
@@ -1433,7 +1433,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
     const TZrChar *uriText = "file:///local_type_query_operand_facts.zr";
     const TZrChar *content =
         "var owner: Unique<int>;\n"
-        "probe() {\n"
+        "fn probe(): void {\n"
         "    var ownerType = typeof(owner);\n"
         "    var foldedType = typeof(1 + 2);\n"
         "}\n";
@@ -1476,7 +1476,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
         strcmp(test_string_ptr(query.referenceFact->name), "owner") != 0) {
         snprintf(reason,
                  sizeof(reason),
-                 "Expected %typeof(owner) operand read reference; status=%d expr=%p reference=%p kind=%d resolved=%d name=%s",
+                 "Expected typeof(owner) operand read reference; status=%d expr=%p reference=%p kind=%d resolved=%d name=%s",
                  (int)query.status,
                  (void *)query.expressionFact,
                  (void *)query.referenceFact,
@@ -1507,7 +1507,7 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
         query.numericFact->maxValue != 3) {
         snprintf(reason,
                  sizeof(reason),
-                 "Expected %typeof(1 + 2) operand binary numeric fact; status=%d expr=%p kind=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld",
+                 "Expected typeof(1 + 2) operand binary numeric fact; status=%d expr=%p kind=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld",
                  (int)query.status,
                  (void *)query.expressionFact,
                  query.expressionFact != ZR_NULL ? (int)query.expressionFact->kind : -1,

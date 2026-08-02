@@ -517,8 +517,7 @@ void test_function_parameter_handling(void) {
         return;
     }
 
-    // 测试代码：函数声明带参数（不需要function关键字）
-    const char *source = "testFunc(a, b, c) { return a + b + c; }";
+    const char *source = "fn testFunc(a, b, c) { return a + b + c; }";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1204,7 +1203,7 @@ void test_nested_function_scope(void) {
     }
 
     // 测试代码：嵌套函数
-    const char *source = "outer() { inner() { return 42; } return inner(); }";
+    const char *source = "fn outer() { fn inner() { return 42; } return inner(); }";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1347,7 +1346,7 @@ void test_external_variable_analysis(void) {
     }
 
     // 测试代码：嵌套函数引用外部变量
-    const char *source = "outer() { var x = 10; var y = 20; inner() { return x + y; } return inner(); }";
+    const char *source = "fn outer() { var x = 10; var y = 20; fn inner() { return x + y; } return inner(); }";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1490,8 +1489,7 @@ void test_generator_mechanism(void) {
         return;
     }
 
-    // 测试代码：生成器函数（使用双大括号语法）
-    const char *source = "var gen = {{ out 1; out 2; out 3; }};";
+    const char *source = "fn gen(): zr.iteration.Iterator<int> { yield 1; yield 2; yield 3; }";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1538,7 +1536,7 @@ void test_function_call_type_inference(void) {
     }
 
     // 测试代码：函数调用
-    const char *source = "add(a: int, b: int): int { return a + b; } var result = add(1, 2);";
+    const char *source = "fn add(a: int, b: int): int { return a + b; } var result = add(1, 2);";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1728,7 +1726,7 @@ void test_variable_arguments_function(void) {
     }
 
     // 测试代码：可变参数函数
-    const char *source = "sum(...args: int[]): int { return 0; }";
+    const char *source = "fn sum(...args: int[]): int { return 0; }";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -1891,10 +1889,10 @@ void test_using_owner_generic_emits_release_cleanup(void) {
 
     {
         const char *source =
-                "class Box {}\n"
-                "var seed = Unique<Box>(new Box());\n"
-                "var owner = Shared<Box>(seed);\n"
-                "var watcher = Weak<Box>(owner);\n"
+                "resource class Box {}\n"
+                "var seed = own Box();\n"
+                "var owner = seed.share();\n"
+                "var watcher = owner.weak();\n"
                 "using (owner) { var inner = 1; }\n"
                 "var after = watcher.upgrade();\n"
                 "if (after == null && owner == null) { return 1; }\n"
@@ -2002,9 +2000,9 @@ void test_using_owner_generic_release_runs_before_return(void) {
 
     {
         const char *source =
-                "class Box {}\n"
-                "var seed = Unique<Box>(new Box());\n"
-                "var owner = Shared<Box>(seed);\n"
+                "resource class Box {}\n"
+                "var seed = own Box();\n"
+                "var owner = seed.share();\n"
                 "using (owner) {\n"
                 "    return 1;\n"
                 "}\n"
@@ -2066,10 +2064,10 @@ void test_using_owner_generic_release_runs_before_break(void) {
 
     {
         const char *source =
-                "class Box {}\n"
-                "var seed = Unique<Box>(new Box());\n"
-                "var owner = Shared<Box>(seed);\n"
-                "var watcher = Weak<Box>(owner);\n"
+                "resource class Box {}\n"
+                "var seed = own Box();\n"
+                "var owner = seed.share();\n"
+                "var watcher = owner.weak();\n"
                 "while (true) {\n"
                 "    using (owner) { break; }\n"
                 "}\n"
@@ -2134,7 +2132,7 @@ void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
                 "resource class Box {}\n"
                 "var seed = own Box();\n"
                 "var owner = seed.share();\n"
-                "{ var borrowed: ref readonly Box = ref owner; var inner = 1; }\n"
+                "{ var borrowed: ref readonly Box = ref owner; var inner = 1; };\n"
                 "return 1;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "using_borrow_generic_cleanup.zr",
@@ -2183,7 +2181,7 @@ void test_using_borrow_generic_end_borrow_runs_before_return(void) {
                 "{\n"
                 "    var borrowed: ref readonly Box = ref owner;\n"
                 "    return 1;\n"
-                "}\n"
+                "};\n"
                 "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "using_borrow_generic_return_cleanup.zr",
@@ -2230,7 +2228,7 @@ void test_using_loan_generic_returns_loan_to_source_on_scope_exit(void) {
         const char *source =
                 "resource class Cache {}\n"
                 "var owner = own Cache();\n"
-                "{ var loaned: ref Cache = ref owner; var inner = 1; }\n"
+                "{ var loaned: ref Cache = ref owner; var inner = 1; };\n"
                 "if (owner != null) { return 1; }\n"
                 "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -2402,7 +2400,7 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
     {
         const char *source =
             "pub struct FrameProbe { var a: i8; var b: int; }\n"
-            "useProbe(p: FrameProbe) { var n: int = 7; return n; }";
+            "fn useProbe(p: FrameProbe) { var n: int = 7; return n; }";
         const TZrUInt32 expectedStructAlign = ZR_ALIGN_SIZE;
         const TZrUInt32 offsetA = 0;
         const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
@@ -2498,13 +2496,13 @@ void test_function_frame_layout_metadata_keeps_large_struct_arithmetic_temps_pla
             "        this.f = f; this.g = g; this.h = h; this.i = i; this.j = j;\n"
             "    }\n"
             "}\n"
-            "var point: WidePoint = $WidePoint(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);\n"
+            "var point: WidePoint = init WidePoint(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);\n"
             "return (point.a * 1000000) + (point.e * 10000) + point.j;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "large_struct_arithmetic_frame_layout.zr", 39);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
+        const SZrFunctionLocalVariable *pointLocal = ZR_NULL;
         const SZrFunctionFrameSlotLayout *pointLayout;
-        const SZrFunctionFrameSlotLayout *slot4Layout;
         TZrBool sawScalarArithmetic = ZR_FALSE;
 
         if (ast == ZR_NULL) {
@@ -2523,15 +2521,18 @@ void test_function_frame_layout_metadata_keeps_large_struct_arithmetic_temps_pla
         }
 
         TEST_ASSERT_GREATER_OR_EQUAL_UINT32(5u, func->frameSlotLayoutLength);
-        pointLayout = ZrCore_Function_FindFrameSlotLayout(func, 0);
-        slot4Layout = ZrCore_Function_FindFrameSlotLayout(func, 4);
+        for (TZrUInt32 index = 0; index < func->localVariableLength; index++) {
+            const SZrFunctionLocalVariable *local = &func->localVariableList[index];
+            if (local->name != ZR_NULL &&
+                strcmp(ZrCore_String_GetNativeString(local->name), "point") == 0) {
+                pointLocal = local;
+                break;
+            }
+        }
+        TEST_ASSERT_NOT_NULL(pointLocal);
+        pointLayout = ZrCore_Function_FindFrameSlotLayout(func, pointLocal->stackSlot);
         TEST_ASSERT_NOT_NULL(pointLayout);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, pointLayout->slotKind);
-        TEST_ASSERT_NOT_NULL(slot4Layout);
-        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
-                ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
-                slot4Layout->slotKind,
-                "Stack slot 4 is reused by scalar arithmetic and must not inherit stale WidePoint inline metadata");
 
         for (TZrUInt32 index = 0; index < func->instructionsLength; index++) {
             const TZrInstruction *instruction = &func->instructionsList[index];
@@ -2704,7 +2705,7 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
             "    pub @constructor(value: int) { this.value = value; }\n"
             "    pub const fn read(): int { return this.value; }\n"
             "}\n"
-            "useProbe(p: FrameProbe) { var n: int = 7; return n; }\n"
+            "fn useProbe(p: FrameProbe) { var n: int = 7; return n; }\n"
             "var snapshot: Snapshot = init Snapshot(7);\n"
             "return snapshot.read();";
         const char *binaryPath = "function_frame_layout_roundtrip.zro";
@@ -2909,7 +2910,7 @@ void test_owned_field_metadata_serializes_into_prototype_data(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Owned field prototype metadata",
-              "Testing that direct %unique/%shared fields serialize ownership metadata and teardown flags without field-scoped `%using var`");
+              "Testing that direct Unique<T>/Shared<T> fields serialize ownership metadata and teardown flags without field-scoped `%using var`");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3091,33 +3092,9 @@ void test_removed_field_scoped_using_does_not_serialize_metadata(void) {
         const char *source = "class Holder { %using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "static_using_compile_error.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrFunction *func;
-        const SZrCompiledPrototypeInfoView *classProto;
-        const SZrCompiledMemberInfoView *resourceMember;
-
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to parse removed field-scoped using source");
-            destroy_test_state(state);
-            return;
-        }
-
-        func = ZrParser_Compiler_Compile(state, ast);
-        if (func == ZR_NULL) {
-            timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile removed field-scoped using source");
-            destroy_test_state(state);
-            return;
-        }
-
-        TEST_ASSERT_NOT_NULL(func->prototypeData);
-        TEST_ASSERT_EQUAL_UINT32(1, func->prototypeCount);
-        classProto = find_compiled_prototype_by_name(state, func, "Holder");
-        TEST_ASSERT_NOT_NULL(classProto);
-        resourceMember = find_compiled_member_by_name(state, func, classProto, "resource");
-        TEST_ASSERT_NULL(resourceMember);
-
-        ZrCore_Function_Free(state, func);
+        TEST_ASSERT_NULL_MESSAGE(
+                ast,
+                "Removed field-scoped ownership syntax must not expose a recoverable AST to the compiler");
     }
 
     timer.endTime = clock();
@@ -3145,11 +3122,11 @@ void test_advanced_oop_metadata_serializes_override_and_property_chains(void) {
     {
         const char *source =
             "abstract class Base {\n"
-            "    pub abstract ping(): int;\n"
+            "    pub abstract fn ping(): int;\n"
             "    pub abstract property score: int { get; }\n"
             "}\n"
             "final class Derived : Base {\n"
-            "    pub override final ping(): int { return 1; }\n"
+            "    pub override final fn ping(): int { return 1; }\n"
             "    pub override final property score: int { get { return 2; } }\n"
             "}";
         SZrString *sourceName = ZrCore_String_Create(state, "advanced_oop_metadata.zr", 24);
@@ -3335,10 +3312,10 @@ void test_override_of_non_virtual_member_is_rejected_by_compiler(void) {
     {
         const char *source =
             "class Base {\n"
-            "    pub ping(): int { return 0; }\n"
+            "    pub fn ping(): int { return 0; }\n"
             "}\n"
             "class Derived : Base {\n"
-            "    pub override ping(): int { return 1; }\n"
+            "    pub override fn ping(): int { return 1; }\n"
             "}";
         SZrString *sourceName = ZrCore_String_Create(state, "override_non_virtual_error.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3380,10 +3357,10 @@ void test_inherited_same_name_requires_explicit_override_or_shadow(void) {
     {
         const char *source =
             "class Base {\n"
-            "    pub virtual ping(): int { return 0; }\n"
+            "    pub virtual fn ping(): int { return 0; }\n"
             "}\n"
             "class Derived : Base {\n"
-            "    pub ping(): int { return 1; }\n"
+            "    pub fn ping(): int { return 1; }\n"
             "}";
         SZrString *sourceName = ZrCore_String_Create(state, "implicit_override_error.zr", 25);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3425,10 +3402,10 @@ void test_shadow_does_not_satisfy_abstract_base_member(void) {
     {
         const char *source =
             "abstract class Base {\n"
-            "    pub abstract ping(): int;\n"
+            "    pub abstract fn ping(): int;\n"
             "}\n"
             "class Derived : Base {\n"
-            "    pub shadow ping(): int { return 1; }\n"
+            "    pub shadow fn ping(): int { return 1; }\n"
             "}";
         SZrString *sourceName = ZrCore_String_Create(state, "shadow_abstract_requirement_error.zr", 36);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3469,9 +3446,9 @@ void test_interface_plain_member_serializes_interface_contract_slot(void) {
 
     {
         const char *source =
-            "interface Readable { read(): int; }\n"
+            "interface Readable { fn read(): int; }\n"
             "class Device : Readable {\n"
-            "    pub read(): int { return 1; }\n"
+            "    pub fn read(): int { return 1; }\n"
             "}";
         SZrString *sourceName = ZrCore_String_Create(state, "interface_contract_slot.zr", 26);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3540,10 +3517,10 @@ void test_name_matched_iterator_members_without_builtin_interface_do_not_bind_co
                 "class LooseIterator {\n"
                 "    pub var current: int;\n"
                 "    pub @constructor() { this.current = 0; }\n"
-                "    pub moveNext(): bool { return false; }\n"
+                "    pub fn moveNext(): bool { return false; }\n"
                 "}\n"
                 "class LooseIterable {\n"
-                "    pub getIterator(): LooseIterator { return new LooseIterator(); }\n"
+                "    pub fn getIterator(): LooseIterator { return new LooseIterator(); }\n"
                 "}";
         SZrString *sourceName = ZrCore_String_Create(state, "named_iterator_members_without_contracts.zr", 43);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3611,7 +3588,7 @@ void test_interface_missing_member_is_rejected_by_compiler(void) {
 
     {
         const char *source =
-            "interface Readable { read(): int; }\n"
+            "interface Readable { fn read(): int; }\n"
             "class Missing : Readable { }";
         SZrString *sourceName = ZrCore_String_Create(state, "interface_missing_member_error.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3641,7 +3618,7 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership builtin expression lowering",
-              "Testing that owner.share() compiles from a %unique owner into OWN_SHARE without serialized native helper constants");
+              "Testing that owner.share() compiles from a Unique<T> owner into OWN_SHARE without serialized native helper constants");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3652,7 +3629,7 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
 
     {
         const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var owner = own Box();\n"
             "var alias = owner.share();";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -4106,7 +4083,7 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
 
     {
         const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = seed.share();\n"
             "var watcher = owner.weak();\n"
@@ -4161,7 +4138,7 @@ void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void) 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership runtime weak->shared upgrade and explicit release",
-              "Testing that %upgrade(weak) yields a live shared alias while an owner exists, and %release(owner) clears the last shared owner so a later upgrade becomes null");
+              "Testing that weak.upgrade() yields a live shared alias while an owner exists, and drop(owner) clears the last shared owner so a later upgrade becomes null");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4172,7 +4149,7 @@ void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void) 
 
     {
         const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = seed.share();\n"
             "var watcher = owner.weak();\n"
@@ -4267,7 +4244,7 @@ void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(v
             "        return marker + 1;\n"
             "    }\n"
             "}\n"
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var ownerSeed = own Box();\n"
             "var owner = ownerSeed.share();\n"
             "var weak = owner.weak();\n"
@@ -4327,7 +4304,7 @@ void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Using plugin guard share promotion",
-              "Testing that guard-scoped %import handles lower .share() to a native shared-owner promotion instead of dynamic module member lookup");
+              "Testing that guard-scoped import(...) handles lower .share() to a native shared-owner promotion instead of dynamic module member lookup");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4551,30 +4528,22 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
     } cases[] = {
         {
             "weak-from-unique",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var owner = own Box();\n"
             "var watcher = owner.weak();\n",
             "ownership_invalid_weak_unique_compile.zr",
         },
         {
             "upgrade-from-shared",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = seed.share();\n"
             "var alias = owner.upgrade();\n",
             "ownership_invalid_upgrade_shared_compile.zr",
         },
         {
-            "loan-from-shared",
-            "class Box {}\n"
-            "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var alias = ref owner;\n",
-            "ownership_invalid_loan_shared_compile.zr",
-        },
-        {
             "release-borrowed",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = seed.share();\n"
             "var borrowed: ref readonly Box = ref owner;\n"
@@ -4583,13 +4552,13 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "union-default-owner-payload-borrow-release",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "union Resource {\n"
             "    Empty;\n"
             "    Open(handle: Shared<Box>);\n"
             "}\n"
-            "var seed = Unique<Box>(new Box());\n"
-            "var owner = Shared<Box>(seed);\n"
+            "var seed = own Box();\n"
+            "var owner = seed.share();\n"
             "var resource: Resource = Resource.Open(owner);\n"
             "using (var [handle]: Resource.Open = resource) {\n"
             "    var released = drop(handle);\n"
@@ -4609,7 +4578,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "share-shared",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = seed.share();\n"
             "var alias = owner.share();\n",
@@ -4617,15 +4586,15 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "borrow-return-escape",
-            "class Box {}\n"
-            "leak(owner: Shared<Box>): ref readonly Box {\n"
+            "resource class Box {}\n"
+            "fn leak(owner: Shared<Box>): ref readonly Box {\n"
             "    return ref owner;\n"
             "}\n",
             "ownership_invalid_borrow_return_compile.zr",
         },
         {
             "borrow-global-escape",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = seed.share();\n"
             "pub var escaped: ref readonly Box = ref owner;\n",
@@ -4633,14 +4602,14 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "loan-global-escape",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "pub var escaped: ref Box = ref seed;\n",
             "ownership_invalid_loan_global_compile.zr",
         },
         {
             "nested-borrow-global-escape",
-            "class Box {}\n"
+            "resource class Box {}\n"
             "class Holder<T> {}\n"
             "pub var escaped: Holder<ref readonly Box>;\n",
             "ownership_invalid_nested_borrow_global_compile.zr",
@@ -4654,19 +4623,25 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "borrow-closure-escape",
-            "class Box {}\n"
-            "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var borrowed: ref readonly Box = ref owner;\n"
-            "var f = fn() => { borrowed; return 1; };\n",
+            "resource class Box {}\n"
+            "fn leak() {\n"
+            "    var seed = own Box();\n"
+            "    var owner = seed.share();\n"
+            "    var borrowed: ref readonly Box = ref owner;\n"
+            "    return fn() => { borrowed; return 1; };\n"
+            "}\n"
+            "var f = leak();\n",
             "ownership_invalid_borrow_closure_compile.zr",
         },
         {
             "loan-closure-escape",
-            "class Box {}\n"
-            "var seed = own Box();\n"
-            "var loaned = ref seed;\n"
-            "var f = fn() => { loaned; return 1; };\n",
+            "resource class Box {}\n"
+            "fn leak() {\n"
+            "    var seed = own Box();\n"
+            "    var loaned = ref seed;\n"
+            "    return fn() => { loaned; return 1; };\n"
+            "}\n"
+            "var f = leak();\n",
             "ownership_invalid_loan_closure_compile.zr",
         },
         {
@@ -4733,7 +4708,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-call-argument-escape",
-            "sink(value) { return 0; }\n"
+            "fn sink(value) { return 0; }\n"
             "using (var math = import(\"zr.math\")) {\n"
             "    sink(math);\n"
             "} else {\n"
@@ -4757,7 +4732,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-if-call-argument-escape",
-            "sink(value) { return 1; }\n"
+            "fn sink(value) { return 1; }\n"
             "using (var math = import(\"zr.math\")) {\n"
             "    if (sink(math)) {\n"
             "        var observed = 1;\n"
@@ -4769,7 +4744,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         },
         {
             "plugin-guard-switch-case-call-argument-escape",
-            "sink(value) { return 1; }\n"
+            "fn sink(value) { return 1; }\n"
             "using (var math = import(\"zr.math\")) {\n"
             "    switch (1) {\n"
             "        (sink(math)) {\n"
@@ -4811,7 +4786,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
         {
             "plugin-guard-generator-out-escape",
             "using (var math = import(\"zr.math\")) {\n"
-            "    var gen = {{ out math; }};\n"
+            "    fn gen(): zr.iteration.Iterator<Module> { yield math; }\n"
             "} else {\n"
             "    var fallback = 0;\n"
             "}\n",
@@ -4866,7 +4841,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "sink(value) { return 0; }\n"
+            "fn sink(value) { return 0; }\n"
             "using (var [m] = import(\"zr.plugins\")) {\n"
             "    sink(m);\n"
             "} else {\n"
@@ -4906,7 +4881,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Unavailable;\n"
             "    @Available(m: Module);\n"
             "}\n"
-            "leak(flag) {\n"
+            "fn leak(flag) {\n"
             "    using (var [m] = import(\"zr.plugins\")) {\n"
             "        var alias;\n"
             "        if (flag) {\n"
@@ -5712,14 +5687,14 @@ void test_plugin_guard_nested_function_destructured_shadow_allows_local_value(vo
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_detach_runtime_rejects_multi_owner_shared_value(void) {
+void test_ownership_into_gc_compile_rejects_shared_owner(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Detach Runtime Rejects Multi Owner Shared Value";
+    const char *testSummary = "Ownership IntoGc Compile Rejects Shared Owner";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership runtime multi-owner detach",
-              "Testing that %detach(shared) returns null and keeps the existing shared owners alive when strong count exceeds one");
+    ZR_TEST_INFO("Ownership intoGc source restriction",
+              "Testing that intoGc() rejects Shared<T> and remains a consuming Unique<T>-only bridge");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -5730,33 +5705,17 @@ void test_ownership_detach_runtime_rejects_multi_owner_shared_value(void) {
 
     {
         const char *source =
-            "class Box {}\n"
+            "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = seed.share();\n"
-            "var alias = owner;\n"
-            "var detached = owner.intoGc();\n"
-            "if (owner != null && alias != null && detached == null) {\n"
-            "    return 1;\n"
-            "}\n"
-            "return 0;\n";
+            "var detached = owner.intoGc();\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_detach_multi_owner_runtime.zr",
-                                                     strlen("ownership_detach_multi_owner_runtime.zr"));
+                                                     "ownership_into_gc_shared_compile.zr",
+                                                     strlen("ownership_into_gc_shared_compile.zr"));
         SZrFunction *func;
-        TZrInt64 result = 0;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        if (func == ZR_NULL) {
-            timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile multi-owner detach runtime source");
-            destroy_test_state(state);
-            return;
-        }
-
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
-        TEST_ASSERT_EQUAL_INT64(1, result);
-
-        ZrCore_Function_Free(state, func);
+        TEST_ASSERT_NULL_MESSAGE(func, "intoGc() must reject Shared<T> at compile time");
     }
 
     timer.endTime = clock();
@@ -5784,7 +5743,7 @@ void test_function_call_argument_conversion_emits_to_float(void) {
 
     {
         const char *source =
-                "add(lhs: float, rhs: float): float { return lhs + rhs; }\n"
+                "fn add(lhs: float, rhs: float): float { return lhs + rhs; }\n"
                 "var value = add(1, 2.0);";
         SZrString *sourceName = ZrCore_String_Create(state, "typed_call_conversion_test.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -5843,7 +5802,7 @@ void test_intermediate_writer_emits_type_metadata_section(void) {
     {
         const char *source =
                 "pub var numbers = [1, 2, 3];\n"
-                "add(lhs: int, rhs: int): int { return lhs + rhs; }\n"
+                "fn add(lhs: int, rhs: int): int { return lhs + rhs; }\n"
                 "return add(1, 2);";
         const char *intermediatePath = "typed_metadata_intermediate_test.zri";
         SZrString *sourceName = ZrCore_String_Create(state, "typed_metadata_intermediate_test.zr", 34);
@@ -5892,7 +5851,7 @@ void test_intermediate_writer_omits_removed_legacy_test_metadata(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Intermediate writer metadata closure",
-              "Testing that .zri output includes compile-time declarations without legacy test metadata");
+              "Testing that .zri output separates canonical const bindings from comptime functions without legacy test metadata");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -5903,8 +5862,8 @@ void test_intermediate_writer_omits_removed_legacy_test_metadata(void) {
 
     {
         const char *source =
-                "comptime var MAX_SCALE: int = 8;\n"
-                "comptime buildBias(seed: int): int { return seed + MAX_SCALE; }\n"
+                "const MAX_SCALE: int = 8;\n"
+                "comptime fn buildBias(seed: int): int { return seed + MAX_SCALE; }\n"
                 "fn vector_meta(): int { return MAX_SCALE; }\n"
                 "return MAX_SCALE;";
         const char *intermediatePath = "compiletime_metadata_intermediate_test.zri";
@@ -5932,8 +5891,9 @@ void test_intermediate_writer_omits_removed_legacy_test_metadata(void) {
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
         intermediateText = read_text_file_owned(intermediatePath);
         TEST_ASSERT_NOT_NULL(intermediateText);
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_VARIABLES (1):"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "LOCAL_BINDINGS (2):"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "MAX_SCALE: int"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_VARIABLES (0):"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COMPILE_TIME_FUNCTIONS (1):"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "fn buildBias(seed: int): int"));
         TEST_ASSERT_NULL(strstr(intermediateText, "TESTS ("));
@@ -6093,7 +6053,7 @@ void test_fixed_array_lowering_does_not_emit_length_member_write(void) {
 
     {
         const char *source =
-                "read(): int {\n"
+                "fn read(): int {\n"
                 "    var xs: int[3];\n"
                 "    return xs.length;\n"
                 "}\n";
@@ -6152,10 +6112,10 @@ void test_compiler_optimizer_removes_dead_null_clear_streaks(void) {
 
     {
         const char *source =
-                "sum10(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int): int {\n"
+                "fn sum10(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int): int {\n"
                 "    return a + b + c + d + e + f + g + h + i + j;\n"
                 "}\n"
-                "work(seed: int): int {\n"
+                "fn work(seed: int): int {\n"
                 "    var total = sum10(seed + 1,\n"
                 "                      seed + 2,\n"
                 "                      seed + 3,\n"
@@ -6221,7 +6181,7 @@ void test_compiler_optimizer_reuses_temp_slots_in_basic_blocks(void) {
 
     {
         const char *source =
-                "work(input: int): int {\n"
+                "fn work(input: int): int {\n"
                 "    var a = input + 1;\n"
                 "    var b = input + 2;\n"
                 "    var c = input + 3;\n"
@@ -6339,7 +6299,7 @@ void test_type_expression_compiles_to_typeof_opcode(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Type expression lowering",
-              "Testing that %type(expr) lowers to the dedicated TYPEOF opcode instead of a serialized native helper");
+              "Testing that typeof(expr) lowers to the dedicated TYPEOF opcode instead of a serialized native helper");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -6402,7 +6362,7 @@ void test_binary_writer_handles_exported_function_alias_with_unknown_parameter_t
 
     {
         const char *source =
-                "runCallbacksImpl(lin, signal, tensor) {\n"
+                "fn runCallbacksImpl(lin, signal, tensor) {\n"
                 "    return 0;\n"
                 "}\n"
                 "pub var runCallbacks = runCallbacksImpl;";

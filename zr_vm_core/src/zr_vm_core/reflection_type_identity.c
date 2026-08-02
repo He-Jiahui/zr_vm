@@ -114,24 +114,59 @@ static SZrObject *reflection_type_identity_cache(SZrState *state) {
     return cache;
 }
 
-static TZrBool reflection_type_identity_make_cache_key(
+static TZrBool reflection_type_identity_make_lookup_key(
         const SZrReflectionTypeIdentity *identity,
         TZrUInt64 signatureHash,
         TZrChar *buffer,
         TZrSize bufferSize) {
     TZrInt32 written;
 
-    if (identity == ZR_NULL || signatureHash == 0u || buffer == ZR_NULL || bufferSize == 0u) {
+    if (identity == ZR_NULL || signatureHash == 0u ||
+        buffer == ZR_NULL || bufferSize == 0u) {
         return ZR_FALSE;
     }
 
     written = snprintf(
             buffer,
             bufferSize,
-            "g%u:t%u:s%016llx:c%u",
+            "lookup:g%u:t%u:s%016llx:c%u",
             identity->metadataGeneration,
             identity->typeToken,
             (unsigned long long)signatureHash,
+            (TZrUInt32)identity->category);
+    return written > 0 && (TZrSize)written < bufferSize;
+}
+
+static TZrBool reflection_type_identity_make_auth_key(
+        const SZrReflectionTypeIdentity *identity,
+        TZrUInt64 signatureHash,
+        SZrString *canonicalTypeName,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    TZrInt32 written;
+    const TZrChar *typeNameText;
+    TZrUInt64 typeNameHash;
+
+    if (identity == ZR_NULL || signatureHash == 0u ||
+        canonicalTypeName == ZR_NULL || buffer == ZR_NULL || bufferSize == 0u) {
+        return ZR_FALSE;
+    }
+    typeNameText = ZrCore_String_GetNativeString(canonicalTypeName);
+    if (typeNameText == ZR_NULL || typeNameText[0] == '\0') {
+        return ZR_FALSE;
+    }
+    typeNameHash = XXH3_64bits(
+            typeNameText, ZrCore_String_GetByteLength(canonicalTypeName));
+
+    written = snprintf(
+            buffer,
+            bufferSize,
+            "auth:g%u:t%u:i%u:s%016llx:n%016llx:c%u",
+            identity->metadataGeneration,
+            identity->typeToken,
+            identity->canonicalTypeId,
+            (unsigned long long)signatureHash,
+            (unsigned long long)typeNameHash,
             (TZrUInt32)identity->category);
     return written > 0 && (TZrSize)written < bufferSize;
 }
@@ -147,6 +182,8 @@ static TZrBool reflection_type_identity_matches(
 
     return ZrCore_Reflection_ReadTypeIdObject(state, object, &decoded, &decodedName) &&
            decodedName != ZR_NULL && ZrCore_String_Equal(decodedName, canonicalTypeName) &&
+           (identity->canonicalTypeId == 0u ||
+            decoded.canonicalTypeId == identity->canonicalTypeId) &&
            decoded.typeToken == identity->typeToken &&
            decoded.signatureHash == signatureHash &&
            decoded.metadataGeneration == identity->metadataGeneration &&
@@ -177,6 +214,11 @@ TZrBool ZrCore_Reflection_ReadTypeIdObject(
     TZrUInt64 signatureHash;
     TZrUInt64 metadataGeneration;
     TZrUInt64 category;
+    SZrReflectionTypeIdentity decoded;
+    SZrString *canonicalTypeName;
+    SZrObject *cache;
+    const SZrTypeValue *cachedValue;
+    TZrChar cacheKey[ZR_REFLECTION_TYPE_ID_CACHE_KEY_BUFFER_SIZE];
 
     if (outIdentity != ZR_NULL) {
         memset(outIdentity, 0, sizeof(*outIdentity));
@@ -203,13 +245,34 @@ TZrBool ZrCore_Reflection_ReadTypeIdObject(
         return ZR_FALSE;
     }
 
-    outIdentity->canonicalTypeId = (TZrUInt32)canonicalTypeId;
-    outIdentity->typeToken = (TZrMetadataToken)typeToken;
-    outIdentity->signatureHash = signatureHash;
-    outIdentity->metadataGeneration = (TZrUInt32)metadataGeneration;
-    outIdentity->category = (EZrReflectionTypeCategory)category;
+    canonicalTypeName = ZR_CAST_STRING(state, nameValue->value.object);
+    memset(&decoded, 0, sizeof(decoded));
+    decoded.canonicalTypeId = (TZrUInt32)canonicalTypeId;
+    decoded.typeToken = (TZrMetadataToken)typeToken;
+    decoded.signatureHash = signatureHash;
+    decoded.metadataGeneration = (TZrUInt32)metadataGeneration;
+    decoded.category = (EZrReflectionTypeCategory)category;
+    if (!reflection_type_identity_make_auth_key(
+                &decoded,
+                signatureHash,
+                canonicalTypeName,
+                cacheKey,
+                sizeof(cacheKey))) {
+        return ZR_FALSE;
+    }
+    cache = reflection_type_identity_cache(state);
+    cachedValue = cache != ZR_NULL
+                          ? ZrCore_Reflection_ObjectGetFieldValue(
+                                    state, cache, cacheKey)
+                          : ZR_NULL;
+    if (cachedValue == ZR_NULL || cachedValue->type != ZR_VALUE_TYPE_OBJECT ||
+        cachedValue->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(object)) {
+        return ZR_FALSE;
+    }
+
+    *outIdentity = decoded;
     if (outCanonicalTypeName != ZR_NULL) {
-        *outCanonicalTypeName = ZR_CAST_STRING(state, nameValue->value.object);
+        *outCanonicalTypeName = canonicalTypeName;
     }
     return ZR_TRUE;
 }
@@ -224,7 +287,8 @@ SZrObject *ZrCore_Reflection_BuildTypeIdObject(
     const TZrChar *typeNameText;
     SZrTypeValue canonicalNameValue;
     TZrUInt64 signatureHash;
-    TZrChar cacheKey[ZR_REFLECTION_TYPE_ID_CACHE_KEY_BUFFER_SIZE];
+    TZrChar lookupKey[ZR_REFLECTION_TYPE_ID_CACHE_KEY_BUFFER_SIZE];
+    TZrChar authKey[ZR_REFLECTION_TYPE_ID_CACHE_KEY_BUFFER_SIZE];
 
     if (state == ZR_NULL || canonicalTypeName == ZR_NULL || identity == ZR_NULL ||
         !reflection_type_category_is_valid(identity->category)) {
@@ -238,8 +302,17 @@ SZrObject *ZrCore_Reflection_BuildTypeIdObject(
     signatureHash = identity->signatureHash != 0u
                             ? identity->signatureHash
                             : XXH3_64bits(typeNameText, ZrCore_String_GetByteLength(canonicalTypeName));
-    if (!reflection_type_identity_make_cache_key(
-                identity, signatureHash, cacheKey, sizeof(cacheKey))) {
+    if (!reflection_type_identity_make_lookup_key(
+                identity,
+                signatureHash,
+                lookupKey,
+                sizeof(lookupKey)) ||
+        !reflection_type_identity_make_auth_key(
+                identity,
+                signatureHash,
+                canonicalTypeName,
+                authKey,
+                sizeof(authKey))) {
         return ZR_NULL;
     }
 
@@ -247,7 +320,7 @@ SZrObject *ZrCore_Reflection_BuildTypeIdObject(
     if (cache == ZR_NULL) {
         return ZR_NULL;
     }
-    cachedValue = ZrCore_Reflection_ObjectGetFieldValue(state, cache, cacheKey);
+    cachedValue = ZrCore_Reflection_ObjectGetFieldValue(state, cache, lookupKey);
     if (cachedValue != ZR_NULL && cachedValue->type == ZR_VALUE_TYPE_OBJECT &&
         cachedValue->value.object != ZR_NULL) {
         object = ZR_CAST_OBJECT(state, cachedValue->value.object);
@@ -276,7 +349,9 @@ SZrObject *ZrCore_Reflection_BuildTypeIdObject(
                 state, object, kTypeIdGenerationField, identity->metadataGeneration) ||
         !reflection_type_identity_set_uint(state, object, kTypeIdCategoryField, identity->category) ||
         !ZrCore_Reflection_ObjectSetObject(
-                state, cache, cacheKey, object, ZR_VALUE_TYPE_OBJECT)) {
+                state, cache, lookupKey, object, ZR_VALUE_TYPE_OBJECT) ||
+        !ZrCore_Reflection_ObjectSetObject(
+                state, cache, authKey, object, ZR_VALUE_TYPE_OBJECT)) {
         return ZR_NULL;
     }
     return object;
@@ -324,9 +399,11 @@ TZrBool ZrCore_Reflection_BindTypeIdDescriptor(
         SZrObject *typeIdObject,
         SZrObject *descriptor) {
     const SZrTypeValue *currentDescriptor;
+    SZrReflectionTypeIdentity identity;
 
     if (state == ZR_NULL || descriptor == ZR_NULL ||
-        !ZrCore_Reflection_IsTypeIdObject(state, typeIdObject)) {
+        !ZrCore_Reflection_ReadTypeIdObject(
+                state, typeIdObject, &identity, ZR_NULL)) {
         return ZR_FALSE;
     }
     currentDescriptor = ZrCore_Reflection_ObjectGetFieldValue(

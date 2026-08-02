@@ -1,5 +1,5 @@
 //
-// Runtime reflection helpers for `%type`.
+// Runtime reflection helpers for canonical typeid/typeof operations.
 //
 
 #ifndef ZR_VM_CORE_REFLECTION_H

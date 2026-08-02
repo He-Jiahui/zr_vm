@@ -11,6 +11,7 @@
 #include "runtime/runtime.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/common_state.h"
+#include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_library/zrm.h"
 
@@ -1345,6 +1346,8 @@ static void test_cli_compile_emit_zrm_packs_reachable_modules_and_resources(void
     ZrLibrary_Zrm_Close(&archive);
 }
 
+#include "test_cli_comptime_cache_incremental_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -1359,6 +1362,7 @@ int main(void) {
     RUN_TEST(test_cli_compile_emit_aot_c_writes_full_aot_project_c_source);
     RUN_TEST(test_cli_incremental_compiles_dependency_modules_into_package_binary_root);
     RUN_TEST(test_cli_compile_emit_zrm_packs_reachable_modules_and_resources);
+    RUN_TEST(test_cli_incremental_persists_comptime_cache_and_recovers_corruption);
 
     return UNITY_END();
 }

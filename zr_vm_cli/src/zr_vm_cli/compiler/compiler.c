@@ -1,9 +1,16 @@
 #include "compiler/compiler.h"
 #include "compiler/compiler_aot.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "zr_vm_cli/conf.h"
 #include "project/project.h"
@@ -16,6 +23,7 @@
 #include "zr_vm_library/zrm.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/comptime_cache.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/writer.h"
@@ -39,6 +47,113 @@ typedef struct SZrCliModuleCollection {
     TZrSize count;
     TZrSize capacity;
 } SZrCliModuleCollection;
+
+static TZrBool zr_cli_comptime_cache_read(
+        const TZrChar *path,
+        TZrByte **outBytes,
+        TZrSize *outSize) {
+    FILE *file;
+    long length;
+    TZrByte *bytes;
+
+    if (path == ZR_NULL || outBytes == ZR_NULL || outSize == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outBytes = ZR_NULL;
+    *outSize = 0U;
+    if (ZrLibrary_File_Exist((TZrNativeString)path) != ZR_LIBRARY_FILE_IS_FILE) {
+        return ZR_TRUE;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL || fseek(file, 0, SEEK_END) != 0) {
+        if (file != ZR_NULL) {
+            fclose(file);
+        }
+        return ZR_FALSE;
+    }
+    length = ftell(file);
+    if (length < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_FALSE;
+    }
+
+    bytes = (TZrByte *)malloc((size_t)(length > 0 ? length : 1));
+    if (bytes == ZR_NULL ||
+        (length > 0 && fread(bytes, 1U, (size_t)length, file) != (size_t)length)) {
+        free(bytes);
+        fclose(file);
+        return ZR_FALSE;
+    }
+    fclose(file);
+    *outBytes = bytes;
+    *outSize = (TZrSize)length;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_comptime_cache_write_atomically(
+        const TZrChar *path,
+        const TZrByte *bytes,
+        TZrSize size) {
+    TZrChar temporaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    FILE *file = ZR_NULL;
+    TZrBool wrote = ZR_FALSE;
+    TZrUInt32 attempt;
+
+#ifdef _WIN32
+    TZrUInt32 processId = (TZrUInt32)GetCurrentProcessId();
+#else
+    TZrUInt32 processId = (TZrUInt32)getpid();
+#endif
+
+    if (path == ZR_NULL || bytes == ZR_NULL ||
+        !ZrCli_Project_EnsureParentDirectory(path)) {
+        return ZR_FALSE;
+    }
+
+    for (attempt = 0U; attempt < 128U; attempt++) {
+        if (snprintf(temporaryPath,
+                     sizeof(temporaryPath),
+                     "%s.zr-cache-tmp.%u.%u",
+                     path,
+                     processId,
+                     attempt) < 0 ||
+            strlen(temporaryPath) >= sizeof(temporaryPath)) {
+            return ZR_FALSE;
+        }
+        file = fopen(temporaryPath, "wbx");
+        if (file != ZR_NULL) {
+            break;
+        }
+        if (errno != EEXIST) {
+            return ZR_FALSE;
+        }
+    }
+    if (file == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((size == 0U || fwrite(bytes, 1U, size, file) == size) && fflush(file) == 0) {
+        wrote = ZR_TRUE;
+    }
+    fclose(file);
+    if (!wrote) {
+        remove(temporaryPath);
+        return ZR_FALSE;
+    }
+#ifdef _WIN32
+    if (MoveFileExA(temporaryPath, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0) {
+        remove(temporaryPath);
+        return ZR_FALSE;
+    }
+#else
+    if (rename(temporaryPath, path) != 0) {
+        remove(temporaryPath);
+        return ZR_FALSE;
+    }
+#endif
+    return ZR_TRUE;
+}
 
 static void zr_cli_module_collection_init(SZrCliModuleCollection *collection) {
     if (collection == ZR_NULL) {
@@ -731,7 +846,10 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
                                          TZrBool emitIntermediate,
                                          TZrBool emitAotC,
                                          FZrCliProjectGlobalBootstrap bootstrap,
-                                         TZrPtr bootstrapUserData) {
+                                         TZrPtr bootstrapUserData,
+                                         TZrByte **comptimeCacheBytes,
+                                         TZrSize *comptimeCacheSize,
+                                         SZrCliCompileSummary *summary) {
     SZrGlobalState *global;
     SZrState *state;
     TZrChar *source = ZR_NULL;
@@ -740,6 +858,10 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
     SZrFunction *function = ZR_NULL;
     TZrBool success = ZR_FALSE;
     SZrBinaryWriterOptions binaryOptions;
+    SZrParserSourceComptimeCache comptimeCache;
+    TZrBool useComptimeCache;
+    TZrBool hadComptimeCacheInput = ZR_FALSE;
+    TZrByte *nextComptimeCacheBytes = ZR_NULL;
 
     if (project == ZR_NULL || record == ZR_NULL) {
         return ZR_FALSE;
@@ -759,6 +881,10 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
 
     state = global->mainThreadState;
     memset(&binaryOptions, 0, sizeof(binaryOptions));
+    memset(&comptimeCache, 0, sizeof(comptimeCache));
+    useComptimeCache = (TZrBool)(comptimeCacheBytes != ZR_NULL &&
+                                 comptimeCacheSize != ZR_NULL &&
+                                 summary != ZR_NULL);
 
     if (record->hasSourceInput) {
         TZrBool oldEmitCompileTimeRuntimeSupport = ZR_FALSE;
@@ -772,7 +898,16 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
         sourceName = ZrCore_String_CreateFromNative(state, (TZrNativeString)record->sourcePath);
         oldEmitCompileTimeRuntimeSupport = global->emitCompileTimeRuntimeSupport;
         global->emitCompileTimeRuntimeSupport = ZR_TRUE;
-        function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
+        if (useComptimeCache) {
+            comptimeCache.inputSnapshot = *comptimeCacheBytes;
+            comptimeCache.inputSnapshotSize = *comptimeCacheSize;
+            hadComptimeCacheInput = (TZrBool)(*comptimeCacheBytes != ZR_NULL ||
+                                               *comptimeCacheSize != 0U);
+            function = ZrParser_Source_CompileWithComptimeCache(
+                    state, source, sourceLength, sourceName, &comptimeCache);
+        } else {
+            function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
+        }
         global->emitCompileTimeRuntimeSupport = oldEmitCompileTimeRuntimeSupport;
         free(source);
         source = ZR_NULL;
@@ -804,6 +939,23 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
                                                             record->zroPath,
                                                             record->aotCPath);
         }
+        if (success && useComptimeCache) {
+            if (comptimeCache.outputSnapshot == ZR_NULL) {
+                success = ZR_FALSE;
+            } else {
+                nextComptimeCacheBytes = (TZrByte *)malloc(
+                        (size_t)(comptimeCache.outputSnapshotSize > 0U
+                                         ? comptimeCache.outputSnapshotSize
+                                         : 1U));
+                if (nextComptimeCacheBytes == ZR_NULL) {
+                    success = ZR_FALSE;
+                } else if (comptimeCache.outputSnapshotSize > 0U) {
+                    memcpy(nextComptimeCacheBytes,
+                           comptimeCache.outputSnapshot,
+                           comptimeCache.outputSnapshotSize);
+                }
+            }
+        }
     } else {
         if (!zr_cli_load_binary_function(state, record->zroPath, &function)) {
             ZrCore_Log_Error(state, "failed to load binary module: %s\n", record->zroPath);
@@ -825,6 +977,22 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
     if (function != ZR_NULL) {
         ZrCore_Function_Free(state, function);
     }
+    if (comptimeCache.outputSnapshot != ZR_NULL) {
+        ZrParser_ComptimeCache_FreeSnapshot(
+                state, comptimeCache.outputSnapshot, comptimeCache.outputSnapshotSize);
+    }
+    if (success && useComptimeCache && record->hasSourceInput) {
+        free(*comptimeCacheBytes);
+        *comptimeCacheBytes = nextComptimeCacheBytes;
+        *comptimeCacheSize = comptimeCache.outputSnapshotSize;
+        nextComptimeCacheBytes = ZR_NULL;
+        summary->comptimeCacheHitCount += comptimeCache.hitCount;
+        summary->comptimeCacheMissCount += comptimeCache.missCount;
+        if (hadComptimeCacheInput && !comptimeCache.inputSnapshotAccepted) {
+            summary->comptimeCacheRejectedCount++;
+        }
+    }
+    free(nextComptimeCacheBytes);
     if (!success) {
         ZrCore_Log_Error(state, "failed to write outputs for module: %s\n", record->moduleName);
     }
@@ -996,6 +1164,9 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
     SZrCliCompileSummary localSummary = {0};
     TZrChar error[ZR_CLI_ERROR_BUFFER_LENGTH];
     TZrBool success = ZR_TRUE;
+    TZrByte *comptimeCacheBytes = ZR_NULL;
+    TZrSize comptimeCacheSize = 0U;
+    TZrBool comptimeCacheUpdated = ZR_FALSE;
 
     if (command == ZR_NULL || command->projectPath == ZR_NULL) {
         ZrCore_Log_Error(ZR_NULL, "compile mode requires a project path\n");
@@ -1037,6 +1208,16 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
         ZrCore_Log_Error(scanGlobal->mainThreadState, "failed to load manifest: %s\n", project.manifestPath);
         success = ZR_FALSE;
         goto cleanup;
+    }
+    if (command->incremental &&
+        !zr_cli_comptime_cache_read(
+                project.comptimeCachePath, &comptimeCacheBytes, &comptimeCacheSize)) {
+        ZrCore_Log_Metaf(scanGlobal->mainThreadState,
+                         "ignoring unreadable compile-time cache: %s\n",
+                         project.comptimeCachePath);
+        free(comptimeCacheBytes);
+        comptimeCacheBytes = ZR_NULL;
+        comptimeCacheSize = 0U;
     }
 
     for (TZrSize index = 0; index < modules.count; index++) {
@@ -1091,9 +1272,15 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
                                        command->emitIntermediate,
                                        command->emitAotC,
                                        bootstrap,
-                                       userData)) {
+                                       userData,
+                                       command->incremental ? &comptimeCacheBytes : ZR_NULL,
+                                       command->incremental ? &comptimeCacheSize : ZR_NULL,
+                                       command->incremental ? &localSummary : ZR_NULL)) {
             success = ZR_FALSE;
             goto cleanup;
+        }
+        if (command->incremental && record->hasSourceInput) {
+            comptimeCacheUpdated = ZR_TRUE;
         }
 
         if (!zr_cli_reconcile_optional_outputs(scanGlobal->mainThreadState,
@@ -1121,6 +1308,16 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
             localSummary.removedCount++;
         }
 
+        if (comptimeCacheUpdated &&
+            !zr_cli_comptime_cache_write_atomically(
+                    project.comptimeCachePath, comptimeCacheBytes, comptimeCacheSize)) {
+            ZrCore_Log_Error(scanGlobal->mainThreadState,
+                             "failed to update compile-time cache: %s\n",
+                             project.comptimeCachePath);
+            success = ZR_FALSE;
+            goto cleanup;
+        }
+
         if (!zr_cli_build_next_manifest(&modules, &nextManifest) || !ZrCli_Project_SaveManifest(&project, &nextManifest)) {
             ZrCore_Log_Error(scanGlobal->mainThreadState, "failed to update manifest: %s\n", project.manifestPath);
             success = ZR_FALSE;
@@ -1137,10 +1334,13 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
 cleanup:
     if (success) {
         ZrCore_Log_Metaf(scanGlobal != ZR_NULL ? scanGlobal->mainThreadState : ZR_NULL,
-                         "compile summary: compiled=%llu skipped=%llu removed=%llu\n",
+                         "compile summary: compiled=%llu skipped=%llu removed=%llu comptime-cache-hits=%llu comptime-cache-misses=%llu comptime-cache-rejected=%llu\n",
                          (unsigned long long)localSummary.compiledCount,
                          (unsigned long long)localSummary.skippedCount,
-                         (unsigned long long)localSummary.removedCount);
+                         (unsigned long long)localSummary.removedCount,
+                         (unsigned long long)localSummary.comptimeCacheHitCount,
+                         (unsigned long long)localSummary.comptimeCacheMissCount,
+                         (unsigned long long)localSummary.comptimeCacheRejectedCount);
     }
 
     if (summary != ZR_NULL) {
@@ -1150,6 +1350,7 @@ cleanup:
     zr_cli_module_collection_free(&modules);
     ZrCli_Project_Manifest_Free(&previousManifest);
     ZrCli_Project_Manifest_Free(&nextManifest);
+    free(comptimeCacheBytes);
     ZrLibrary_CommonState_CommonGlobalState_Free(scanGlobal);
     return success;
 }

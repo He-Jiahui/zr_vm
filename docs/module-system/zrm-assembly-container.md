@@ -195,7 +195,10 @@ This is intentionally project-assembly scoped. `.zro` execution without an emitt
 - `tests/library/test_project_import_resolver.c` verifies `assembly.output`, project resources, `.zrm` references, `$alias@version/module` resolution, provider-location discovery and AOT load-request planning for `.zrp` and `.zrm` references, provider entry/phase/hash facts, Runtime-versus-CompileTool rejection, and loading a Runtime module `.zro` from inside the container.
 - `tests/library/test_project_import_provider_version_selection.c` verifies multi-version `.zrp` provider exact alias/version selection and strict declared range rejection.
 - `tests/library/test_project_manifest_v2.c` verifies canonical v2 manifest ordering/read-write-read equivalence,
-  migration, local-locator/loopback writer rejection, and separate dependency-lock projection without source locators.
+  migration, local-locator/loopback writer rejection, separate dependency-lock projection without source locators,
+  and atomic admission of a phase-separated lock graph into project-owned storage. The lock reader requires every
+  declared Runtime and CompileTool dependency exactly once, rejects duplicate fields/packages and source-kind drift,
+  and preserves the previous admitted graph when a replacement is invalid.
 - `tests/cli/test_cli_args.c` verifies `--emit-zrm` parsing and compile-only validation.
 - `tests/cli/test_cli_project_incremental.c` verifies `--emit-zrm` packages reachable modules and resources and that the resulting `.zrm` can be opened and read.
 - `tests/cli/test_cli_zrm_fixture.c` builds a provider `.zrm`, references it from a consumer project, runs a consumer module that imports the provider module from the referenced assembly and reads its exported `answer`, then runs a second consumer module that reads the current project `.zrm` resource through `zr.system.assembly`.

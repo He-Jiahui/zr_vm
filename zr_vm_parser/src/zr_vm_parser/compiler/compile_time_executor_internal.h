@@ -2,6 +2,7 @@
 #define ZR_VM_PARSER_COMPILE_TIME_EXECUTOR_INTERNAL_H
 
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/comptime_cache.h"
 #include "zr_vm_core/function.h"
 
 typedef struct SZrCompileTimeBinding {
@@ -72,5 +73,11 @@ TZrBool execute_compile_time_block(SZrCompilerState *cs,
 ZR_PARSER_API TZrBool ZrParser_CompileTime_ExecuteLateChecksInCompilerState(
         SZrCompilerState *cs,
         SZrAstNode *ast);
+TZrBool ZrParser_CompileTime_PrepareBuildFactsWithCache(
+        SZrState *state,
+        SZrAstNode *ast,
+        SZrParserSourceComptimeCache *cache,
+        const TZrChar *source,
+        TZrSize sourceLength);
 
 #endif // ZR_VM_PARSER_COMPILE_TIME_EXECUTOR_INTERNAL_H

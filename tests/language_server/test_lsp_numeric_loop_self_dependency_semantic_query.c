@@ -607,7 +607,7 @@ static TZrBool test_local_expression_query_widens_target_reading_replay_resolved
 static TZrBool test_local_expression_query_widens_target_reading_interleaved_net_negative_delta(
         SZrState *state) {
     const TZrChar *content =
-        "fn main() -> int {\n"
+        "fn main(): int {\n"
         "    var flag: bool = true;\n"
         "    var narrowed: int = 5;\n"
         "    var other: int = 0;\n"

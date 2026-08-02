@@ -1,5 +1,6 @@
 #include "lsp_editor_features_internal.h"
 #include "zr_vm_parser/attribute_contract.h"
+#include "zr_vm_parser/legacy_migration.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,28 @@ static TZrBool lsp_editor_acquire_content_snapshot(SZrState *state,
 
     fileVersion = lsp_editor_get_file_version(context, uri);
     return ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, outSnapshot);
+}
+
+static TZrBool lsp_editor_source_is_current_syntax(
+        SZrState *state,
+        SZrString *uri,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrBool *outIsCurrent) {
+    SZrLegacyMigrationPlan plan = {0};
+
+    if (state == ZR_NULL || uri == ZR_NULL || content == ZR_NULL ||
+        outIsCurrent == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outIsCurrent = ZR_FALSE;
+    if (!ZrParser_LegacyMigration_PlanSource(
+                state, content, contentLength, uri, &plan)) {
+        return ZR_FALSE;
+    }
+    *outIsCurrent = plan.items.length == 0U;
+    ZrParser_LegacyMigration_PlanFree(state, &plan);
+    return ZR_TRUE;
 }
 
 SZrLspPosition lsp_editor_position_from_offset(const TZrChar *content,
@@ -595,6 +618,7 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
     TZrChar *formatted;
     TZrSize formattedLength;
     SZrLspRange range;
+    TZrBool isCurrentSyntax;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -606,6 +630,19 @@ TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
 
     if (!lsp_editor_acquire_content_snapshot(state, context, uri, &snapshot)) {
         return ZR_FALSE;
+    }
+    if (!lsp_editor_source_is_current_syntax(
+                state,
+                uri,
+                snapshot.content,
+                snapshot.contentLength,
+                &isCurrentSyntax)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        return ZR_FALSE;
+    }
+    if (!isCurrentSyntax) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        return ZR_TRUE;
     }
 
     formatted = lsp_editor_format_segment(snapshot.content,
@@ -648,6 +685,7 @@ TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
     TZrChar *formatted;
     TZrSize formattedLength;
     SZrLspRange editRange;
+    TZrBool isCurrentSyntax;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -659,6 +697,19 @@ TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
 
     if (!lsp_editor_acquire_content_snapshot(state, context, uri, &snapshot)) {
         return ZR_FALSE;
+    }
+    if (!lsp_editor_source_is_current_syntax(
+                state,
+                uri,
+                snapshot.content,
+                snapshot.contentLength,
+                &isCurrentSyntax)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        return ZR_FALSE;
+    }
+    if (!isCurrentSyntax) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        return ZR_TRUE;
     }
 
     startOffset = lsp_editor_line_start_offset(snapshot.content, snapshot.contentLength, range.start.line);

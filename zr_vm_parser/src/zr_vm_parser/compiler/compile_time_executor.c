@@ -767,15 +767,63 @@ static TZrBool ct_prepare_build_fact_node_with_context(
 }
 
 TZrBool ZrParser_CompileTime_PrepareBuildFacts(SZrState *state, SZrAstNode *ast) {
+    return ZrParser_CompileTime_PrepareBuildFactsWithCache(
+            state, ast, ZR_NULL, ZR_NULL, 0U);
+}
+
+TZrBool ZrParser_CompileTime_PrepareBuildFactsWithCache(
+        SZrState *state,
+        SZrAstNode *ast,
+        SZrParserSourceComptimeCache *cache,
+        const TZrChar *source,
+        TZrSize sourceLength) {
     SZrCompilerState cs;
     TZrBool succeeded;
+    const TZrByte *inputSnapshot = ZR_NULL;
+    TZrSize inputSnapshotSize = 0U;
+    TZrBool hasInputSnapshot = ZR_FALSE;
 
     if (state == ZR_NULL || ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         return ZR_FALSE;
     }
 
+    if (cache != ZR_NULL) {
+        inputSnapshot = cache->inputSnapshot;
+        inputSnapshotSize = cache->inputSnapshotSize;
+        hasInputSnapshot = (TZrBool)(inputSnapshot != ZR_NULL || inputSnapshotSize != 0U);
+        cache->outputSnapshot = ZR_NULL;
+        cache->outputSnapshotSize = 0U;
+        cache->inputSnapshotAccepted = ZR_FALSE;
+        cache->hitCount = 0U;
+        cache->missCount = 0U;
+    }
+
     ZrParser_CompilerState_Init(&cs, state);
+    if (source != ZR_NULL && sourceLength > 0U) {
+        SZrParserSha256Context sourceHash;
+
+        ZrParser_Sha256_Init(&sourceHash);
+        if (ZrParser_Sha256_Update(
+                    &sourceHash, (const TZrByte *)source, sourceLength)) {
+            ZrParser_Sha256_Final(
+                    &sourceHash, cs.comptimeSourceDigest);
+            cs.hasComptimeSourceDigest = ZR_TRUE;
+        }
+    }
+    if (hasInputSnapshot) {
+        cache->inputSnapshotAccepted = ZrParser_ComptimeCache_ImportSnapshot(
+                &cs, inputSnapshot, inputSnapshotSize);
+    }
     succeeded = ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast);
+
+    if (cache != ZR_NULL) {
+        cache->hitCount = cs.comptimeCacheHitCount;
+        cache->missCount = cs.comptimeCacheMissCount;
+        if (succeeded && !ZrParser_ComptimeCache_ExportSnapshot(
+                                 &cs, &cache->outputSnapshot, &cache->outputSnapshotSize)) {
+            succeeded = ZR_FALSE;
+        }
+    }
 
     ZrParser_CompilerState_Free(&cs);
     return succeeded;

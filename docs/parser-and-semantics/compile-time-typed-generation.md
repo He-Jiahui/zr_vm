@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/attribute_contract.h
   - zr_vm_parser/include/zr_vm_parser/compile_tool.h
+  - zr_vm_parser/include/zr_vm_parser/comptime_cache.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/comptime_contract.h
   - zr_vm_parser/include/zr_vm_parser/declaration_transform_contract.h
@@ -83,6 +84,7 @@ tests:
   - tests/compileTime/test_attribute_contract.c
   - tests/compileTime/test_comptime_contract.c
   - tests/compileTime/test_comptime_runtime_contract.c
+  - tests/compileTime/test_comptime_cache_snapshot_cases.h
   - tests/compileTime/test_compile_tool_artifact_resolution_cases.h
   - tests/compileTime/test_declaration_transform_contract.c
   - tests/compileTime/test_compile_time_execution.c
@@ -95,6 +97,8 @@ tests:
   - tests/acceptance/2026-08-01-syntax-11-m5-build-dependencies.md
   - tests/acceptance/2026-08-01-syntax-11-m5-compile-tool-cache-identity.md
   - tests/acceptance/2026-08-02-syntax-11-m5-compile-tool-artifact-resolution.md
+  - tests/acceptance/2026-08-02-syntax-11-m5-persistent-cache-snapshot.md
+  - tests/acceptance/2026-08-02-syntax-11-m5-cli-persistent-comptime-cache.md
   - tests/acceptance/2026-07-31-syntax-11-m4-typed-patch-diagnostics.md
   - tests/acceptance/2026-07-31-syntax-11-m4-interface-adds.md
   - tests/acceptance/2026-07-29-syntax-upper-gates-audit.md
@@ -178,11 +182,21 @@ printer or leave a partial artifact.
    SHA-256; Runtime lock entries do not enter this graph. The resolver does not
    insert any package into the runtime dependency graph.
    A resolved binding borrows that owned artifact until compiler-state teardown.
-   Cache schema v4 hashes canonical field encodings for the lexical provider
+   Cache schema v5 hashes canonical field encodings for the lexical provider
    contract, package/module, source kind, resolved version, package hash,
    CompileTool lock graph hash, artifact entry/hash, public contract, location,
-   context, and typed arguments. Cache entries retain and compare the complete
-   32-byte SHA-256 digest rather than a truncated 64-bit key.
+   context, typed arguments, and the complete current-module source digest.
+   Same-length body/constant changes therefore invalidate prior results. Cache
+   entries retain and compare the complete 32-byte SHA-256 digest rather than a
+   truncated 64-bit key.
+   `ZrParser_ComptimeCache_ExportSnapshot` emits those entries in complete
+   digest order using a versioned, fixed-width, big-endian representation.
+   `ZrParser_ComptimeCache_ImportSnapshot` requires exact size, magic, value
+   type/payload, whole-snapshot SHA-256, and strictly increasing digest order
+   before it allocates and atomically replaces the in-memory cache. Invalid
+   input leaves the old cache unchanged. Duplicate stores replace the existing
+   digest, so insertion order and repeated evaluation cannot create ambiguous
+   snapshot rows.
 4. Attribute binding validates the schema and target before exposing typed
    AttributeData to a consumer.
 5. A declaration transform receives an immutable view and returns a typed
@@ -238,12 +252,21 @@ properties, and types are intentionally unpublished until each passes the
 public reference gate. The v2 project manifest keeps `buildDependencies`
 separate from runtime dependencies and emits phase-typed CompileTool entries in
 the deterministic lock graph. The compiler-owned artifact resolver and cache
-v4 handoff now close the package/ZRM byte ownership and in-process
+v5 handoff now close the package/ZRM byte ownership and in-process
 content-identity layer.
 The ordinary import path and transform executor do not yet activate an external
-provider from those bytes. Persistent incremental cache integration, formatter
-projection, and the remaining consumers are also open. These gaps keep Gate 11
-M5 and the root Syntax plan open.
+provider from those bytes. The project CLI now reads `.zr_comptime_cache`,
+imports it fail-closed, compiles every source through the cache-aware parser
+entry, exports the merged snapshot, and replaces the file atomically. A corrupt
+snapshot is rejected and repaired; focused coverage proves first-build miss,
+second-build hit, same-length semantic-edit miss, corrupt-input rejection,
+byte-identical first/hit artifacts, a changed semantic-edit artifact, and an
+exact restored-source artifact. The remaining artifact/reflection consumers are
+still open. The LSP formatter now
+uses the migration plan as a fail-closed output gate: removed syntax produces
+no formatting edit, while canonical `comptime fn`, declaration-transform
+metadata, `import(...)`, and ordinary `%`/`%=` expressions remain formatable.
+The remaining gaps keep Gate 11 M5 and the root Syntax plan open.
 
 The old runtime decorator executor and serialized helper callbacks are removed.
 An ordinary `#name#` application must resolve to a registered static metadata
@@ -296,6 +319,12 @@ declaration variants remain absent. The upper-gate ledger records which clauses
 are proven and which remain partial. Gate 11 M4 is proven for the first-version
 GeneratedField-only public surface; passing these focused tests does not
 promote Gate 11 M5 as a whole.
+`test_comptime_cache_snapshot_cases.h` additionally proves duplicate-key
+replacement, negative scalar roundtrip, insertion-order-independent bytes,
+exact roundtrip, full-integrity payload-bit detection,
+malformed/truncated/trailing rejection, and preservation of the previous cache
+after failed import. The CLI incremental suite separately proves the on-disk
+consumer, source-semantic invalidation, and reproducible restored-source output.
 
 The 2026-07-30 WSL GCC isolated build and full 123-test CTest matrix include the
 pre-diagnostic baseline. The 2026-07-31 WSL GCC and Clang focused replays pass

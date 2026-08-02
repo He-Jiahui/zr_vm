@@ -5085,9 +5085,18 @@ static void test_percent_type_module_reflection_exposes_expected_fields(void) {
         const SZrTypeValue *entryValue;
         const SZrTypeValue *membersValue;
         const SZrTypeValue *deviceEntriesValue;
+        const SZrTypeValue *createDeviceEntriesValue;
         SZrObject *deviceEntries;
+        SZrObject *createDeviceEntries;
         SZrObject *deviceReflection;
+        SZrObject *createDeviceReflection;
         const SZrTypeValue *deviceKindValue;
+        const SZrTypeValue *parametersValue;
+        const SZrTypeValue *parameterModesValue;
+        const SZrTypeValue *firstPassingModeValue;
+        SZrObject *parametersArray;
+        SZrObject *parameterModesArray;
+        SZrObject *firstParameter;
         SZrString *resultString;
         SZrObjectModule *module;
 
@@ -5147,6 +5156,31 @@ static void test_percent_type_module_reflection_exposes_expected_fields(void) {
         TEST_ASSERT_NOT_NULL(deviceKindValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, deviceKindValue->type);
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, deviceKindValue->value.object), "class"));
+
+        createDeviceEntriesValue = get_object_field_value(
+                state,
+                ZR_CAST_OBJECT(state, declarationsValue->value.object),
+                "createDevice");
+        TEST_ASSERT_NOT_NULL(createDeviceEntriesValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, createDeviceEntriesValue->type);
+        createDeviceEntries = ZR_CAST_OBJECT(state, createDeviceEntriesValue->value.object);
+        TEST_ASSERT_NOT_NULL(createDeviceEntries);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(createDeviceEntries));
+        createDeviceReflection = get_array_entry_object(state, createDeviceEntries, 0);
+        TEST_ASSERT_NOT_NULL(createDeviceReflection);
+        parametersValue = get_object_field_value(state, createDeviceReflection, "parameters");
+        parameterModesValue = get_object_field_value(state, createDeviceReflection, "parameterModes");
+        TEST_ASSERT_NOT_NULL(parametersValue);
+        TEST_ASSERT_NOT_NULL(parameterModesValue);
+        parametersArray = ZR_CAST_OBJECT(state, parametersValue->value.object);
+        parameterModesArray = ZR_CAST_OBJECT(state, parameterModesValue->value.object);
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(parametersArray));
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(parameterModesArray));
+        firstParameter = get_array_entry_object(state, parametersArray, 0);
+        firstPassingModeValue = get_object_field_value(state, firstParameter, "passingMode");
+        TEST_ASSERT_NOT_NULL(firstPassingModeValue);
+        TEST_ASSERT_TRUE(string_equals_cstring(
+                ZR_CAST_STRING(state, firstPassingModeValue->value.object), "value"));
 
         resultString = ZrCore_Value_ConvertToString(state, &result);
         TEST_ASSERT_NOT_NULL(resultString);
@@ -5933,6 +5967,8 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         SZrObject *firstParameter;
         const SZrTypeValue *firstParameterNameValue;
         const SZrTypeValue *firstParameterTypeValue;
+        const SZrTypeValue *firstParameterModeValue;
+        const SZrTypeValue *firstParameterPassingModeValue;
         SZrString *resultString;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -5980,7 +6016,7 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
         TEST_ASSERT_NOT_NULL(parameterModesArray);
         TEST_ASSERT_NOT_NULL(genericParametersArray);
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(parametersArray));
-        TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(parameterModesArray));
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(parameterModesArray));
         TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)get_array_length(genericParametersArray));
 
         firstParameter = get_array_entry_object(state, parametersArray, 0);
@@ -5988,12 +6024,27 @@ static void test_percent_type_function_type_literal_reflection_exposes_callable_
 
         firstParameterNameValue = get_object_field_value(state, firstParameter, "name");
         firstParameterTypeValue = get_object_field_value(state, firstParameter, "typeName");
+        firstParameterPassingModeValue = get_object_field_value(
+                state, firstParameter, "passingMode");
+        firstParameterModeValue = get_array_entry_value(
+                state, parameterModesArray, 0);
         TEST_ASSERT_NOT_NULL(firstParameterNameValue);
         TEST_ASSERT_NOT_NULL(firstParameterTypeValue);
+        TEST_ASSERT_NOT_NULL(firstParameterPassingModeValue);
+        TEST_ASSERT_NOT_NULL(firstParameterModeValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstParameterNameValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstParameterTypeValue->type);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_VALUE_TYPE_STRING, firstParameterPassingModeValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstParameterModeValue->type);
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstParameterNameValue->value.object), "value"));
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstParameterTypeValue->value.object), "int"));
+        TEST_ASSERT_TRUE(string_equals_cstring(
+                ZR_CAST_STRING(state, firstParameterPassingModeValue->value.object),
+                "ref"));
+        TEST_ASSERT_TRUE(string_equals_cstring(
+                ZR_CAST_STRING(state, firstParameterModeValue->value.object),
+                "ref"));
 
         resultString = ZrCore_Value_ConvertToString(state, &result);
         TEST_ASSERT_NOT_NULL(resultString);

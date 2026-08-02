@@ -2106,15 +2106,7 @@ static void test_field_scoped_using_field_requires_var_keyword(void) {
         const char *source = "struct Broken { %using var handle: Unique<Resource>; }";
         SZrString *sourceName = ZrCore_String_Create(state, "using_missing_var.zr", 20);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_TRUE(ast->data.script.statements->count >= 1);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, ast->data.script.statements->nodes[0]->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]->data.structDeclaration.members);
-        TEST_ASSERT_EQUAL_INT(0, (int)ast->data.script.statements->nodes[0]->data.structDeclaration.members->count);
-        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NULL(ast);
     }
 
     timer.endTime = clock();

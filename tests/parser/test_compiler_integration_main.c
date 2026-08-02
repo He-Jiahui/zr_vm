@@ -82,7 +82,7 @@ extern void test_plugin_guard_foreach_binding_type_reports_escape_boundary(void)
 extern void test_plugin_guard_generic_call_argument_reports_escape_boundary(void);
 extern void test_plugin_guard_nested_function_shadowed_parameter_allows_local_value(void);
 extern void test_plugin_guard_nested_function_destructured_shadow_allows_local_value(void);
-extern void test_ownership_detach_runtime_rejects_multi_owner_shared_value(void);
+extern void test_ownership_into_gc_compile_rejects_shared_owner(void);
 extern void test_class_member_nested_functions_keep_constant_indices_in_range(void);
 extern void test_lambda_create_closure_targets_are_reachable_from_child_function_graph(void);
 extern void test_classes_full_module_compiles_without_static_and_receiver_signature_regressions(void);
@@ -238,7 +238,7 @@ int main(void) {
     RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
     RUN_TEST(test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract);
     RUN_TEST(test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry);
-    RUN_TEST(test_ownership_detach_runtime_rejects_multi_owner_shared_value);
+    RUN_TEST(test_ownership_into_gc_compile_rejects_shared_owner);
 
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

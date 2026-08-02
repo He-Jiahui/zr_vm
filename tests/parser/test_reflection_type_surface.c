@@ -330,6 +330,15 @@ static void test_precise_descriptor_registers_complete_reflection_hierarchy(void
     TEST_ASSERT_NOT_NULL(descriptorPrototype);
     TEST_ASSERT_NOT_NULL(typeOfPrototype);
     TEST_ASSERT_NOT_NULL(typePrototype);
+    TEST_ASSERT_NOT_EQUAL(0u, descriptorPrototype->intrinsicCapabilityId);
+    TEST_ASSERT_NOT_EQUAL(0u, typeOfPrototype->intrinsicCapabilityId);
+    TEST_ASSERT_NOT_EQUAL(0u, typePrototype->intrinsicCapabilityId);
+    TEST_ASSERT_NOT_EQUAL(
+            descriptorPrototype->intrinsicCapabilityId,
+            typeOfPrototype->intrinsicCapabilityId);
+    TEST_ASSERT_NOT_EQUAL(
+            typeOfPrototype->intrinsicCapabilityId,
+            typePrototype->intrinsicCapabilityId);
     TEST_ASSERT_TRUE(prototype_directly_inherits(
             descriptorPrototype, "zr.reflection.TypeOf"));
     TEST_ASSERT_TRUE(prototype_directly_inherits(
@@ -340,20 +349,19 @@ static void test_precise_descriptor_registers_complete_reflection_hierarchy(void
     ZrParser_Ast_Free(g_state, script);
 }
 
-static void test_typeof_null_erases_to_base_reflection_type(void) {
+static void test_typeof_null_is_rejected_until_narrowed_non_null(void) {
     SZrAstNode *script = parse_source("typeof(null);\n");
     SZrCompilerState *compiler = create_compiler_state();
     SZrInferredType descriptorType;
 
     compiler->scriptAst = script;
     ZrParser_InferredType_Init(g_state, &descriptorType, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+    TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(
             compiler, statement_expression(script, 0u), &descriptorType));
-    TEST_ASSERT_NOT_NULL(descriptorType.typeName);
-    TEST_ASSERT_EQUAL_STRING(
-            "zr.reflection.Type",
-            ZrCore_String_GetNativeString(descriptorType.typeName));
-    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)descriptorType.elementTypes.length);
+    TEST_ASSERT_TRUE(compiler->hasError);
+    TEST_ASSERT_NOT_NULL(compiler->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(
+            compiler->errorMessage, "typeof operand must be non-null"));
 
     ZrParser_InferredType_Free(g_state, &descriptorType);
     destroy_compiler_state(compiler);
@@ -954,28 +962,67 @@ static void test_type_identity_and_resolved_descriptor_are_canonical_per_generat
     identity.metadataGeneration++;
     TEST_ASSERT_TRUE(
             firstTypeId != ZrCore_Reflection_BuildTypeIdObject(g_state, typeName, &identity));
+
+    identity.metadataGeneration = 3u;
+    identity.canonicalTypeId = 18u;
+    TEST_ASSERT_NULL_MESSAGE(
+            ZrCore_Reflection_BuildTypeIdObject(g_state, typeName, &identity),
+            "Conflicting non-zero canonical IDs must not alias the cached TypeId");
 }
 
-static void test_type_identity_rejects_forged_category(void) {
+static void test_type_identity_rejects_forged_authenticated_fields(void) {
     SZrReflectionTypeIdentity identity = {0};
     SZrObject *typeId;
-    SZrTypeValue forgedCategory;
+    SZrTypeValue fieldValue;
     SZrReflectionTypeIdentity decoded = {0};
+    SZrString *canonicalName = ZrCore_String_CreateFromNative(
+            g_state, "Authenticated");
 
     identity.canonicalTypeId = 31u;
     identity.metadataGeneration = 2u;
     identity.category = ZR_REFLECTION_TYPE_CATEGORY_STRUCT;
     typeId = ZrCore_Reflection_BuildTypeIdObject(
-            g_state,
-            ZrCore_String_CreateFromNative(g_state, "Forged"),
-            &identity);
+            g_state, canonicalName, &identity);
     TEST_ASSERT_NOT_NULL(typeId);
 
-    ZrCore_Value_InitAsUInt(g_state, &forgedCategory, UINT32_MAX);
-    object_set_field(typeId, "__zr_typeCategory", &forgedCategory);
+    ZrCore_Value_InitAsUInt(
+            g_state, &fieldValue, ZR_REFLECTION_TYPE_CATEGORY_CLASS);
+    object_set_field(typeId, "__zr_typeCategory", &fieldValue);
     TEST_ASSERT_FALSE(ZrCore_Reflection_ReadTypeIdObject(
             g_state, typeId, &decoded, ZR_NULL));
     TEST_ASSERT_NULL(ZrCore_Reflection_ResolveTypeIdObject(g_state, typeId));
+    ZrCore_Value_InitAsUInt(
+            g_state, &fieldValue, ZR_REFLECTION_TYPE_CATEGORY_STRUCT);
+    object_set_field(typeId, "__zr_typeCategory", &fieldValue);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ReadTypeIdObject(
+            g_state, typeId, &decoded, ZR_NULL));
+
+    ZrCore_Value_InitAsUInt(
+            g_state, &fieldValue, identity.canonicalTypeId + 1u);
+    object_set_field(typeId, "__zr_canonicalTypeId", &fieldValue);
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ReadTypeIdObject(
+            g_state, typeId, &decoded, ZR_NULL));
+    ZrCore_Value_InitAsUInt(
+            g_state, &fieldValue, identity.canonicalTypeId);
+    object_set_field(typeId, "__zr_canonicalTypeId", &fieldValue);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ReadTypeIdObject(
+            g_state, typeId, &decoded, ZR_NULL));
+
+    ZrCore_Value_InitAsRawObject(
+            g_state,
+            &fieldValue,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(
+                    ZrCore_String_CreateFromNative(g_state, "Forged")));
+    fieldValue.type = ZR_VALUE_TYPE_STRING;
+    object_set_field(typeId, "__zr_canonicalTypeName", &fieldValue);
+    TEST_ASSERT_FALSE(ZrCore_Reflection_ReadTypeIdObject(
+            g_state, typeId, &decoded, ZR_NULL));
+    ZrCore_Value_InitAsRawObject(
+            g_state, &fieldValue, ZR_CAST_RAW_OBJECT_AS_SUPER(canonicalName));
+    fieldValue.type = ZR_VALUE_TYPE_STRING;
+    object_set_field(typeId, "__zr_canonicalTypeName", &fieldValue);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ReadTypeIdObject(
+            g_state, typeId, &decoded, ZR_NULL));
 
     identity.category = (EZrReflectionTypeCategory)UINT32_MAX;
     TEST_ASSERT_NULL(ZrCore_Reflection_BuildTypeIdObject(
@@ -1071,7 +1118,7 @@ int main(void) {
     RUN_TEST(test_typeof_parses_operand_as_expression);
     RUN_TEST(test_type_queries_infer_generic_identity_and_precise_descriptor_types);
     RUN_TEST(test_precise_descriptor_registers_complete_reflection_hierarchy);
-    RUN_TEST(test_typeof_null_erases_to_base_reflection_type);
+    RUN_TEST(test_typeof_null_is_rejected_until_narrowed_non_null);
     RUN_TEST(test_declaration_facts_drive_precise_reflection_categories);
     RUN_TEST(test_typeid_is_available_to_compile_time_evaluation);
     RUN_TEST(test_typeid_is_a_constant_and_typeof_lowers_once);
@@ -1080,7 +1127,7 @@ int main(void) {
     RUN_TEST(test_reflection_construction_binds_public_constructor_and_rejects_invalid_categories);
     RUN_TEST(test_reflection_constructor_binder_caches_success_and_negative_plans);
     RUN_TEST(test_type_identity_and_resolved_descriptor_are_canonical_per_generation);
-    RUN_TEST(test_type_identity_rejects_forged_category);
+    RUN_TEST(test_type_identity_rejects_forged_authenticated_fields);
     RUN_TEST(test_member_query_reports_stripped_metadata);
     RUN_TEST(test_runtime_typeof_and_static_typeid_share_identity_and_descriptor);
     RUN_TEST(test_runtime_descriptor_members_are_callable_from_source);

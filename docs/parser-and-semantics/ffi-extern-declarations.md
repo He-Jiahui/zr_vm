@@ -79,7 +79,7 @@ tests:
 doc_type: module-detail
 ---
 
-# `native extern` And Legacy `%extern` FFI Declarations
+# `native extern` FFI Declarations
 
 ## Scope
 
@@ -87,9 +87,9 @@ doc_type: module-detail
 canonical `SZrNativeImportContract`，VM、`.zro`、AOT C 和 libffi 共同消费这一份契约，
 不会在静态调用路径临时构造或重新解析 signature object。
 
-`%extern` 仍在 parser 中作为 06B 全仓迁移前的兼容语法。它继续走原有
-`loadLibrary` / `getSymbol(name, descriptor)` 动态 lowering，不代表最终语法已经切换完成。
-06B 完成前两种拼写会并存；新代码和 10F 静态契约验收统一使用 `native extern`。
+旧 `%extern` 不再是兼容语法。production parser 只识别它以产生
+`legacy_syntax_removed` 迁移错误，并且不会创建 `ZR_AST_EXTERN_BLOCK`。需要显式动态加载时，
+使用 `zr.ffi` 的动态 API；源级静态声明统一使用 `native extern`。
 
 当前静态契约支持：
 
@@ -147,12 +147,12 @@ v1 允许的 decorator 面：
 - `#zr.ffi.underlying("u32")#`
 - 参数级 `#zr.ffi.in#` / `#zr.ffi.out#` / `#zr.ffi.inout#`
 
-`delegate` 是具名 FFI 签名类型，不是 prototype，不参与 `$Type(...)`、`new Type(...)` 或普通调用。
+`delegate` 是具名 FFI 签名类型，不是 prototype，不参与 `init Type(...)`、`new Type(...)` 或普通调用。
 
 ## Parser And AST
 
-parser 把 `native extern` 与兼容 `%extern` 都解析成独立的 `ZR_AST_EXTERN_BLOCK`，
-并通过 block 的 native 标记选择静态契约或旧动态 lowering。内部成员节点细分为：
+parser 只把 `native extern` 解析成 `ZR_AST_EXTERN_BLOCK`。旧 `%extern` 在进入该函数前即被
+移除诊断截断。内部成员节点细分为：
 
 - `ZR_AST_EXTERN_FUNCTION_DECLARATION`
 - `ZR_AST_EXTERN_DELEGATE_DECLARATION`
@@ -176,15 +176,15 @@ extern 声明在编译前先经过 `ZrParser_Compiler_PredeclareExternBindings(.
 
 extern `struct` / `enum` 同时具备“zr 类型可见性”和“FFI layout descriptor 可见性”：
 
-- extern struct 支持 `$Type(...)` 值构造和 `new Type(...)` boxed 构造
-- extern enum 支持 `Enum.Member`、`$Enum(value)`、`new Enum(value)`
+- extern struct 支持 `init Type(...)` 值构造和 `new Type(...)` boxed 构造
+- extern enum 支持 `Enum.Member`、`init Enum(value)`、`new Enum(value)`
 - extern delegate 只能当签名类型使用
 
 类型推导消费的是已注册 declaration metadata，不再依赖“普通函数返回匿名 object 充当外部类型”。
 
 ## Boxed Struct Value Model
 
-`%extern struct` 继续代表“值语义聚合”，但运行时实现不再尝试把不定长字段布局直接塞进固定大小的 `SZrValue`。
+`native extern` 中的 `struct` 代表“值语义聚合”，但运行时实现不再尝试把不定长字段布局直接塞进固定大小的 `SZrValue`。
 
 当前模型是：
 
@@ -192,7 +192,7 @@ extern `struct` / `enum` 同时具备“zr 类型可见性”和“FFI layout de
 - struct 对象内部保存 descriptor 和字段存储
 - 普通可复制 struct 的赋值 / 传参会走专门的 deep-clone 路径，而不是普通 object 引用拷贝
 
-这让 `%extern struct` 能继续承担：
+这让 extern struct 能承担：
 
 - by-value argument / return
 - nested extern struct
@@ -206,15 +206,15 @@ extern `struct` / `enum` 同时具备“zr 类型可见性”和“FFI layout de
 - 普通赋值不允许隐式复制
 - 普通按值传参也不允许隐式复制
 
-这条规则对 source struct 和 `%extern struct` 一致成立。
+这条规则对 source struct 和 extern struct 一致成立。
 
 ## FFI Boundary Wrapper Lowering
 
 native resource 不再要求上层透出裸 `Ptr`。当前 v1 采用“wrapper object + FFI 边界 lowering”的分层模型：
 
-- `%extern struct` 仍是 layout/value type
+- extern struct 仍是 layout/value type
 - native handle / pointer wrapper 仍是 class-like object
-- 自动 lowering 只发生在 `%extern` / `zr.ffi` 调用边界
+- 自动 lowering 只发生在 `native extern` / `zr.ffi` 调用边界
 
 普通 zr 语义里保持严格分层：
 
@@ -228,7 +228,7 @@ native resource 不再要求上层透出裸 `Ptr`。当前 v1 采用“wrapper o
 - extern `pointer<T>` 参数接受 `BufferHandle` / `PointerHandle` 风格 wrapper
 - extern 整数 handle 参数接受 `#zr.ffi.lowering("handle_id")#` + `#zr.ffi.underlying("...")#` 标注过的 source wrapper class
 
-这条兼容只在 `%extern` 函数 overload 选择和参数检查里生效；普通类型系统仍把 wrapper 当普通对象类型处理。
+这条兼容只在 `native extern` 函数 overload 选择和参数检查里生效；普通类型系统仍把 wrapper 当普通对象类型处理。
 
 ## Source Wrapper Decorator Surface
 
@@ -255,7 +255,7 @@ class ModeHandle {
 - parser 现在允许顶层声明前连续出现多条 decorator，再统一绑定到后续 class / struct / function
 - `compiler_class.c` 会把这些 `zr.ffi.*` wrapper decorators 直接编译成 type decorator metadata，而不是走普通 runtime decorator expression 执行路径
 - LSP semantic analyzer 会在 class declaration 上校验这些 decorator 的参数和值域
-- `zr.ffi.viewType(...)` 当前要求名字解析到同一 source file 里的 `%extern struct`
+- `zr.ffi.viewType(...)` 当前要求名字解析到同一 source file 里的 extern struct
 
 `zr.ffi.underlying(...)` 当前只在 `lowering("handle_id")` 下有语义。它描述 wrapper 过 FFI 边界时应该降到哪种整数 ABI 类型；source-level decorator 目前只接受固定宽度整数名 `i8/u8/i16/u16/i32/u32/i64/u64`，与 runtime ABI lowering 支持集保持一致。
 
@@ -275,10 +275,10 @@ class ModeHandle {
 
 这条 lowering 不会泄漏到普通 zr 调用：
 
-- 普通函数 `func FlipLocal(mode: i32)` 仍然不能接受 `ModeHandle`
+- 普通函数 `fn FlipLocal(mode: i32): void` 仍然不能接受 `ModeHandle`
 - 普通赋值、容器写入、非 FFI member call 也不会自动把 wrapper 当整数 handle 用
 
-因此 `%extern` / `zr.ffi` 边界继续是唯一发生 implicit lowering 的地方。
+因此 `native extern` / `zr.ffi` 边界继续是唯一发生 implicit lowering 的地方。
 
 ## Canonical Static Contract
 
@@ -308,13 +308,16 @@ AOT C 生成不可变契约表，并通过 ABI 14 的 module/code registration �
 直接进入 native ABI 的类型会在契约构建阶段拒绝；callback 参数必须显式声明生命周期、
 线程和异常策略。
 
-## Legacy Lowering To `zr.ffi`
+## Removed Legacy Lowering
 
-每个兼容 `%extern` block 在 lowering 时都会生成一套模块局部隐藏缓存：
+旧实现曾为每个 `%extern` block 生成一套模块局部隐藏缓存：
 
-1. `%import("zr.ffi")`
+1. `import("zr.ffi")`
 2. `loadLibrary(libraryName)`
 3. 对每个 extern function 调用 `library.getSymbol(entryName, signatureDescriptor)`
+
+该 compiler lowering 已不再由 production parser 到达。需要动态 FFI 时必须显式调用
+`zr.ffi` API；`%extern` 本身只产生移除诊断。
 
 这里保持两条约束：
 
@@ -371,8 +374,8 @@ source extern 的指针形参语法仍写成 `pointer<T>`，但 compile-time 兼
 - callback trampoline
 - `FfiError` 分类
 
-`native extern` 静态路径消费 canonical contract；兼容 `%extern` 和显式动态 FFI API
-仍消费 descriptor object。两条路径最终都进入同一套 libffi marshaller、pin/callback
+`native extern` 静态路径消费 canonical contract；显式动态 FFI API 仍消费 descriptor object。
+两条路径最终都进入同一套 libffi marshaller、pin/callback
 边界和 `FfiError` 分类，没有裸调用帧分支，也不允许跨函数持有裸栈指针。
 
 当前已覆盖的错误分类包括：
@@ -389,8 +392,8 @@ source extern 的指针形参语法仍写成 `pointer<T>`，但 compile-time 兼
 当前回归覆盖的重点：
 
 - `tests/parser/test_parser.c`
-  - `%extern("x") Foo(): u64;`
-  - block 形式 `%extern`
+  - `native extern("x") fn Foo(): u64;`
+  - block 形式 `native extern`
   - extern delegate / struct / decorator 解析
 - `tests/parser/test_type_inference.c`
   - extern function 返回类型推断

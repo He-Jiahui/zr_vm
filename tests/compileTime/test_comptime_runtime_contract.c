@@ -1,5 +1,6 @@
 #include "unity.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "runtime_support.h"
@@ -505,6 +506,7 @@ static void test_patch_diagnostic_default_budget_accepts_1024_and_rejects_1025(v
     ZrParser_CompilerState_Free(&compiler);
 }
 
+#include "test_comptime_cache_snapshot_cases.h"
 #include "test_compile_tool_artifact_resolution_cases.h"
 
 int main(void) {
@@ -520,6 +522,7 @@ int main(void) {
     RUN_TEST(test_patch_diagnostics_preserve_error_message_severity_and_location);
     RUN_TEST(test_patch_warning_uses_warning_log_severity);
     RUN_TEST(test_patch_diagnostic_default_budget_accepts_1024_and_rejects_1025);
+    RUN_TEST(test_comptime_cache_snapshot_is_atomic_and_byte_stable);
     RUN_TEST(test_compile_tool_artifact_resolution_hands_owned_identity_to_cache);
     RUN_TEST(test_compile_tool_artifact_resolution_rejects_untrusted_or_wrong_phase_inputs);
     return UNITY_END();

@@ -177,12 +177,12 @@ doc_type: module-detail
 
 `lsp_editor_features.c` / `lsp_code_actions.c` 是新的公共接口实现文件，避免继续扩大 `lsp_interface.c`。它们只负责编辑器形态的结果建模：
 
-- formatting 生成 `SZrLspTextEdit`，当前使用基于 brace/block 的保守缩进。
+- formatting 生成 `SZrLspTextEdit`，当前使用基于 brace/block 的保守缩进。full/range formatting 在生成 edit 前复用 `ZrParser_LegacyMigration_PlanSource`；文档只要含有已登记的迁移项，就成功返回空 edit 集合，避免 formatter 重新输出已经移除的 `%keyword` 或其他旧表层。普通 `%` / `%=` 运算不产生迁移项；`remainder%value` 和 `remainder %value` 等相邻写法也按前置表达式上下文识别为模运算，不会误报成 legacy directive。
 - code action 使用 `SZrLspCodeAction`，提供 `source.organizeImports`、`source.removeUnused`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`。缺失分号动作只消费`ZrLanguageServer_Lsp_GetDiagnostics`返回的`ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE` structured fix；title、edit range和edit text来自parser fact，LSP不再按`var`/`return`等源码前缀重建。stdio在producer运行前捕获URI/version/generation/open-state/length/hash，producer返回后复验并只序列化captured version；fingerprint以opaque `data.snapshot`随action往返，`codeAction/resolve`发现stale或malformed token时删除edit并返回disabled reason，不按title/kind/source重建。
 - folding / selection range 从当前文档文本结构生成轻量结构范围，包含 block、连续 import/comment region，以及 word -> line -> block selection chain。
-- document link 扫描 `%import("...")` 字面量、`.zrp` 的 `source` / `binary` / `entry` 路径，以及 native virtual declaration 里的 module link；import 优先复用 definition 查询结果作为跳转目标。
+- document link 扫描 `import("...")` 字面量、`.zrp` 的 `source` / `binary` / `entry` 路径，以及 native virtual declaration 里的 module link；import 优先复用 definition 查询结果作为跳转目标。
 - declaration / typeDefinition / implementation 当前复用 definition 查询，保证和已有导航结果一致。
-- code lens 当前为函数/类型提供引用计数，并为 code span 中的 `%test(...)` 提供可运行入口；comment/string 中的 `%test(...)` 文本不会生成 run CodeLens。
+- code lens 当前为函数/类型提供引用计数，并为 AST 中绑定为 test role 的 `#zr.testing.test# fn ...` 提供可运行入口；未绑定的相似 attribute 以及 comment/string 中的文本不会生成 run CodeLens。
 - call hierarchy 当前实现 prepare 和同文件直接 incoming/outgoing calls；incoming/outgoing 的 raw call scan 会先过滤 line comment、block comment 和 string literal 中的 call-looking 文本，例如 `helper(value)`；type hierarchy 当前返回同文件直接继承/派生关系；call/type hierarchy scan 会先获取 opened document owned snapshot，再读取同一份 content bytes。
 - pull diagnostics 复用现有 diagnostics 生成逻辑，不替代 `publishDiagnostics` 推送模型；`publishDiagnostics` / pull diagnostics 都保留 parser 结构化诊断 code/message/suggestion，例如空 `if ()` / `while ()` / `switch ()` 条件会报告 `missing_condition`，`if (ready { ... }`、`while (ready { ... }` 和 `switch (choice { ... }` 会报告 `missing_condition_close`，`func pick(value: int: int { ... }`、`class Box { func read(value: int: int { ... } }`、`interface Readable { read(value: int: int; }`、`interface Callable { @call(value: int: int; }`、`%extern("fixture") { NativeAdd(value: int: int; }` 和 `%extern("fixture") { delegate Callback(value: int: int; }` 会报告 `missing_parameter_list_close`，`return [1 2];` 会报告 `missing_array_element_separator`，`{a: 1 b: 2}` 会报告 `missing_object_property_separator`，`return 1\nvar next = 2;`、`var seed = 1\nvar next = 2;`、`%module "main"\nvar next = 2;`、`break\nvar next = 2;`、`continue\nvar next = 2;`、`throw 1\nvar next = 2;`、`out 1\nvar next = 2;` 和 `%using resource\nvar next = 2;` 会报告 `missing_statement_semicolon`，而不是只暴露 expected-token 信息。
 - pull diagnostics 也保留 interface method signature terminator 的结构化诊断：`interface Readable { read(value: int): int }` 会报告 `missing_statement_semicolon`、`Missing ';' after interface method signature statement` 和补 `;` 的 suggestion，而不是只暴露 expected-token 信息。
@@ -193,8 +193,8 @@ doc_type: module-detail
 - class getter/setter accessor terminator 同样保留结构化诊断：`class Sized { get length: int }` 和 `class Sized { set length(value: int) }` 会报告 `missing_statement_semicolon`、对应的 class getter/setter 问题文本和补 `;` 的 suggestion，而不是只暴露 block/expected-token 信息。
 - class method/meta function terminator 同样保留结构化诊断：`class Box { func read(value: int): int }` 和 `class Callable { @call(value: int): int }` 会报告 `missing_statement_semicolon`、对应的 class method/meta function 问题文本和补 `;` 的 suggestion，而不是只暴露 block/expected-token 信息。
 - class member parameter-list close 同样保留结构化诊断：`class Sized { set length(value: int { return value; } }` 和 `class Callable { @call(value: int: int { return value; } }` 会报告 `missing_parameter_list_close`、declaration parameter list 缺少 closing `)` 的问题文本和补 `)` 的 suggestion，而不是只暴露 expected-token 信息。
-- declaration body opener 同样保留结构化诊断：`class Box`、`interface Sized`、`func pick(): int`、`enum Tone`、`%extern("fixture")` 和 `%test("smoke")` 会报告 `missing_declaration_body_open`，分别给出 class/interface/function/enum/test declaration body 或 extern block body 的问题文本和补 `{` 的 suggestion，而不是只暴露 expected-token 信息。
-- declaration body close 同样保留结构化诊断：`class Box { var id: int;`、`interface Sized { get length: int;`、`enum Tone { warm,`、`%extern("fixture") { NativeAdd(value: int): int;`、`func pick(): int { return 1;` 和 `%test("smoke") { return 1;` 会报告 `missing_declaration_body_close`、分别给出 class/interface/enum/extern/function/test declaration body 缺少 closing `}` 的问题文本和补 `}` 的 suggestion，而不是只暴露 expected-token 信息或过宽的 generic block-close 语义。
+- declaration body opener 同样保留结构化诊断：`class Box`、`interface Sized`、`fn pick(): int`、`enum Tone` 和 `native extern("fixture")` 会报告 `missing_declaration_body_open`，分别给出 class/interface/function/enum/extern declaration body 的问题文本和补 `{` 的 suggestion，而不是只暴露 expected-token 信息。
+- declaration body close 同样保留结构化诊断：`class Box { var id: int;`、`interface Sized { property length: int { get; }`、`enum Tone { warm,`、`native extern("fixture") { fn NativeAdd(value: int): int;` 和 `fn pick(): int { return 1;` 会报告 `missing_declaration_body_close`，而不是只暴露 expected-token 信息或过宽的 generic block-close 语义。
 - extern spec close 同样保留结构化诊断：`%extern("fixture" { NativeAdd(value: int): int; }` 会报告 `missing_extern_spec_close`、`Missing closing ')' in extern block spec` 和在 extern block body 前补 `)` 的 suggestion，而不是只暴露 expected-token 信息。
 - statement body opener 同样保留结构化诊断：`if (ready)\nreturn 1;`、`while (ready)\nreturn 1;`、`for (;;)\nreturn 1;`、`for (var item in items)\nreturn item;`、`switch (choice)\nreturn 1;`、`switch (choice) { (1)\nreturn 1; }`、`switch (choice) { ()\nreturn 1; }`、`if (ready) { return 1; } else\nreturn 2;`、`try\nreturn 1;`、`try { throw 1; } catch (error)\nreturn 2;`、`try { return 1; } finally\nreturn 2;` 和 `%using (resource)\nreturn resource;` 会报告 `missing_statement_body_open`，分别给出 if/while/for/foreach/switch/switch-case/switch-default/else/try/catch/finally/using statement body 的问题文本和补 `{` 的 suggestion，而不是只暴露 expected-token 信息。
 - block close 同样保留结构化诊断：`if (ready) { return 1;` 会报告 `missing_block_close`、`Missing closing '}' for block` 和补 `}` 的 suggestion，而不是让通用 `parse_block` 只暴露 expected-token 信息。
@@ -233,11 +233,11 @@ doc_type: module-detail
 
 `stdio_documents.c` 处理 didOpen/didChange/didClose/didSave 文档生命周期。`textDocument/didChange` 在套用 incremental content changes 前会 acquire owned snapshot 作为旧内容基底，并用 snapshot version 推导默认下一版本，避免增量变更计算期间直接读取 live `fileVersion->content`。
 
-`lsp_source_spans.c` 提供 shared LSP lexical span helper，用于识别 raw document offset 是否位于 line comment、block comment 或 string literal。它也提供 cursor-offset 形式，用于 completion 这类光标位于字符之间的 request。`lsp_semantic_query.c` 在 raw identifier fallback、receiver/member semantic query fallback 和最终 local-symbol fallback 前使用它，避免 `documentHighlight` / hover / definition / references 等语义查询把注释或字面量里的普通单词或 `receiver.member` 文本解析成真实 symbol/member；`lsp_interface.c` 在 completion 进入 token-prefix、import-chain、receiver、generic completion provider 前使用 cursor code-span check，避免 `// @constructor` 或 `"%compileTime"` 触发源码补全；`lsp_token_metadata.c` 在 meta-method hover 的 raw `@...` token scan 后检查 token start code span，避免 comment/string 中的 `@constructor` 渲染成 meta-method hover，并在文档已打开时把 meta-method hover parser range 转为 UTF-16 LSP columns；`%import("...")` string literal 仍走已有 AST/import-chain 语义路径。
+`lsp_source_spans.c` 提供 shared LSP lexical span helper，用于识别 raw document offset 是否位于 line comment、block comment 或 string literal。它也提供 cursor-offset 形式，用于 completion 这类光标位于字符之间的 request。`lsp_semantic_query.c` 在 raw identifier fallback、receiver/member semantic query fallback 和最终 local-symbol fallback 前使用它，避免 `documentHighlight` / hover / definition / references 等语义查询把注释或字面量里的普通单词或 `receiver.member` 文本解析成真实 symbol/member；`lsp_interface.c` 在 completion 进入 token-prefix、import-chain、receiver、generic completion provider 前使用 cursor code-span check，避免 comment/string 中的 directive 文本触发源码补全；`lsp_token_metadata.c` 在 meta-method hover 的 raw `@...` token scan 后检查 token start code span，避免 comment/string 中的 `@constructor` 渲染成 meta-method hover，并在文档已打开时把 meta-method hover parser range 转为 UTF-16 LSP columns；`import("...")` string literal 仍走已有 AST/import-chain 语义路径。
 
 `lsp_hierarchy.c` 为 call hierarchy 的 incoming/outgoing calls 做同文件轻量 call scan。它现在在统计 `name(...)` 候选前复用 editor code-span check，保留真实源码调用，同时避免 `// helper(value)` 或 `"helper(value)"` 这类说明文本被算作调用边。call/type hierarchy 的 raw scan 和 inheritance header scan 会先 acquire `SZrFileVersionContentSnapshot`，再把显式 content/contentLength 传给 helper。
 
-`lsp_editor_features.c` 仍承载 formatting、selection range 和 CodeLens 编排。document/range formatting、selection range 的 word/line/block scan，以及 `%test(...)` run lens 的轻量 raw marker scan 都会先 acquire owned snapshot，再读取同一份 snapshot content/length。run lens 在接受 `%test(` marker 前复用 editor code-span check，保留真实 test block，同时避免 comment/string 中的 `%test(...)` 说明文本生成可运行命令。
+`lsp_editor_features.c` 仍承载 formatting、selection range 和 CodeLens 编排。document/range formatting、selection range 的 word/line/block scan，以及 test-role CodeLens 都会先 acquire owned snapshot，再读取同一份 snapshot content/length。run lens 只消费 parser AST 上由 attribute contract 绑定的 test role，不再扫描旧 `%test(...)` marker。
 
 `lsp_project_navigation.c` 为 project-aware definition、references、documentHighlight 和 external metadata navigation 编排 analyzer refresh 与 import target refinement。打开文档存在时，这两处直接读取文档文本的路径现在都会 acquire owned snapshot；未打开文件仍保留磁盘读取 fallback，避免项目索引刷新必须依赖 live `fileVersion->content`。
 
@@ -252,7 +252,7 @@ doc_type: module-detail
 `lsp_super_navigation.c` 为 `super(...)` 和 constructor declaration 提供 definition / references / documentHighlight 的 constructor-aware navigation。它现在复用 shared lexical span helper：raw `super` token scan 只接受 code span，constructor declaration fallback 也只在 cursor 位于 code span 时返回当前 constructor。这样保留真实 `super(seed)` 到 base constructor 的跳转，同时避免 constructor body 里的 `// super` 或 `"super"` 被当成 constructor target。
 在目标 URI 已打开时，它的 definition / references / documentHighlight range 也会通过 document-aware UTF-16 转换输出，避免 UTF-8 前缀后的 base constructor 或 `super` token range 泄漏 parser byte columns。
 
-`lsp_semantic_tokens.c` 为 source semantic tokens 做轻量文本扫描，补充 keyword/directive、decorator、meta-method 和 import-chain member token。该扫描现在和其它 raw-token LSP feature 保持一致：跳过 line comment、block comment、double/single quoted string 和 backtick/template string 后才生成 token entry。真实 source `%import`、`@constructor`、`#decorator#` 和 import-chain member 仍会被标记；template string 里的 `%import(...)`、`@constructor`、`#trace#` 不会被当成 source token 上色。
+`lsp_semantic_tokens.c` 为 source semantic tokens 做轻量文本扫描，补充 keyword、decorator、meta-method 和 import-chain member token。该扫描现在和其它 raw-token LSP feature 保持一致：跳过 line comment、block comment、double/single quoted string 和 backtick/template string 后才生成 token entry。真实 source `import(...)`、`@constructor`、`#decorator#` 和 import-chain member 仍会被标记；template string 里的相同文本不会被当成 source token 上色。
 
 `lsp_signature_help.c` 仍以 AST call context 和 semantic signature resolution 为主；进入 AST call-context 匹配前会复用 `lsp_source_spans.c` 的 cursor code-span 判定。真实 call argument 仍返回 signature help，但 call argument list 里的 comment/string 正文不会因为落在 call AST range 内而触发签名。
 
@@ -289,13 +289,13 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 
 ## 当前限制
 
-- formatting 仍是保守文本缩进器，不是 AST pretty-printer；它不会重排表达式、参数列表或注释。
+- formatting 仍是保守文本缩进器，不是 AST pretty-printer；它不会重排表达式、参数列表或注释。旧语法改写由 migration code action/CLI 独占，formatter 对这类文档不生成 edit。
 - code action 稳定输出 organize imports、缺失 import quickfix 和缺失分号 quickfix。缺失 import仍使用owned snapshot做alias/insert-offset/code-span检查；缺失分号已收敛到parser structured diagnostic fix，支持EOF和line-comment前精确插入并跳过placeholder/maybe fix。delimiter及其他diagnostic fix仍需按同一fact-first边界接入。
 - declaration / typeDefinition / implementation 目前复用 definition 查询；后续如果 class/interface/extern 语义拆分，需要在统一语义查询层细化，不要在 stdio 层分叉。
 - workspace diagnostic 会为当前增量解析器已知文档返回 full report；document pull diagnostics 复用现有单文档诊断。
 - linked editing 仍优先依赖语义 references；fallback 是文档级 token 扫描，只用于语义 references 不足时的保守体验，不声明声明解析或跨文件 rename。
 - moniker 目前只提供文档内稳定 identity，不声明跨文档解析或 workspace symbol 绑定；comment/string 过滤来自 stdio 层轻量 scanner，不替代 parser token stream。
-- CodeLens 的 `%test(...)` run command 仍是轻量 marker scan，不声明 parser-backed test discovery；code-span guard 只阻止 comment/string 中的 `%test(...)` 文本生成 run command，不改变真实 test block 的 CodeLens。
+- CodeLens 的 run command 由 parser AST 上绑定的 `ZR_PARSER_ATTRIBUTE_ROLE_TEST` 驱动；它不把未绑定 attribute 或 comment/string 文本提升为测试入口。
 - `documentHighlight` 仍由 shared semantic query/reference graph 驱动；新增 lexical span helper 只约束 raw identifier fallback，避免把 comment/string 中的普通文本提升为 symbol target，不替代 parser token stream 或 import-literal AST navigation。
 - receiver/member navigation 仍走 shared semantic query 和 existing member resolver；code-span guard 只阻止 comment/string 中的 `box.value` 这类 raw text 触发 definition/hover/references，不替代 parser token stream，不改变真实 `return box.value;` 的 member definition 解析。
 - call hierarchy 仍是同文件 lightweight raw call scan，不声明 parser-backed call graph；code-span guard 只阻止 comment/string 中的 `helper(value)` 这类说明文本成为 incoming/outgoing edge，不改变真实 `return helper(value);` 的直接调用关系。
@@ -314,11 +314,11 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 - `tests/language_server/test_lsp_advanced_editor_features.c`
   - formatting full-document edit
   - folding range 和 selection range
-  - `%import(...)` document link
+  - `import(...)` document link
   - organize imports code action
   - missing semicolon quickfix keeps insertion before line comments and skips block-comment bodies
   - missing semicolon quickfix consumes only machine-applicable diagnostic fixes, preserves exact token-end edit range, rejects placeholder fixes, disables stale resolve and clears the diagnostic after apply/rebind
-  - reference count 和 `%test(...)` CodeLens command
+  - reference count 和 test-role CodeLens command
   - call hierarchy / type hierarchy prepare item
 - `tests/language_server/test_lsp_position_mapping.c`
   - UTF-16 LSP position 到 UTF-8 byte offset 的 focused regression：BMP UTF-8、emoji surrogate pair、中文标识符、ASCII+emoji、CRLF、tab、EOF 无换行
@@ -364,7 +364,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
   - `zr-decompiled:` virtual declaration lookup after a BMP UTF-8 module-link name no longer extends the declaration hit past the name
   - `textDocument/completion` keeps directive/meta-method completions for real `%` / `@` code prefixes, but returns an empty list for the same prefixes inside comments or string literals
   - `textDocument/hover` keeps meta-method hover for real `@constructor` declarations, but does not render meta-method documentation for `@constructor` text inside comments or string literals
-  - `textDocument/semanticTokens/full` keeps classifying real source `%import` directives, but does not classify `%import(...)`, `@constructor`, or `#trace#` text inside backtick/template strings as keyword, meta-method, or decorator tokens
+  - `textDocument/semanticTokens/full` keeps classifying real source `import(...)`, but does not classify `import(...)`, `@constructor`, or `#trace#` text inside backtick/template strings as keyword, meta-method, or decorator tokens
 - `tests/language_server/stdio_inline_value_semantic_smoke.js`
   - identifier-led expression statement `seed + 3;`
   - fact-backed inline text `range 5..5` on the expression range

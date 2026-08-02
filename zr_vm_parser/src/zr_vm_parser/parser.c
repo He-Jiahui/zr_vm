@@ -8,6 +8,7 @@ void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *sou
 
     ps->state = state;
     ps->hasError = ZR_FALSE;
+    ps->hasFatalError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
     ps->errorCallback = ZR_NULL;
     ps->structuredErrorCallback = ZR_NULL;
@@ -163,11 +164,20 @@ SZrAstNode *parse_script(SZrParserState *ps) {
 }
 
 SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps) {
+    SZrAstNode *ast;
+
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL || ps->hasError) {
         return ZR_NULL;
     }
 
-    return parse_script(ps);
+    ast = parse_script(ps);
+    if (ps->hasFatalError && !ps->enableLegacyMigrationParsing) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, ast);
+        }
+        return ZR_NULL;
+    }
+    return ast;
 }
 
 // 解析源代码，返回 AST 根节点

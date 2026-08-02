@@ -10,6 +10,7 @@
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
 #include "type_inference_constant_eval.h"
+#include "type_inference_reflection_surface.h"
 #include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
 
@@ -781,40 +782,6 @@ static void type_inference_apply_default_builtin_root(SZrCompilerState *cs,
     native_module_info_add_inherit(cs->state, info, defaultRootName);
 }
 
-static TZrBool type_inference_is_builtin_reflection_compile_type_name(SZrString *typeName) {
-    const TZrChar *typeNameText;
-
-    if (typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    typeNameText = ZrCore_String_GetNativeString(typeName);
-    if (typeNameText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return strcmp(typeNameText, "Class") == 0 ||
-           strcmp(typeNameText, "Struct") == 0 ||
-           strcmp(typeNameText, "Function") == 0 ||
-           strcmp(typeNameText, "Field") == 0 ||
-           strcmp(typeNameText, "Method") == 0 ||
-           strcmp(typeNameText, "Property") == 0 ||
-           strcmp(typeNameText, "Parameter") == 0 ||
-           strcmp(typeNameText, "Object") == 0 ||
-           strcmp(typeNameText, "zr.builtin.TypeInfo") == 0 ||
-           strcmp(typeNameText, "zr.reflection.Type") == 0 ||
-           strcmp(typeNameText, "zr.reflection.TypeId") == 0 ||
-           strcmp(typeNameText, "zr.reflection.TypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.ClassTypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.ConcreteClassTypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.InstanceClassTypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.StructTypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.InterfaceTypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.ResourceClassTypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.RefStructTypeOf") == 0 ||
-           strcmp(typeNameText, "zr.reflection.declaration.EnumTypeOf") == 0;
-}
-
 static SZrString *type_inference_builtin_reflection_string(SZrCompilerState *cs, const TZrChar *text) {
     if (cs == ZR_NULL || text == ZR_NULL) {
         return ZR_NULL;
@@ -1016,34 +983,23 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     SZrTypePrototypeInfo *targetInfo;
     const TZrChar *typeNameText;
     const TZrChar *parentTypeName = ZR_NULL;
-    static const TZrChar *kBuiltinTypeInfoName = "zr.builtin.TypeInfo";
-    static const TZrChar *kReflectionTypeName = "zr.reflection.Type";
-    static const TZrChar *kReflectionTypeOfName = "zr.reflection.TypeOf";
+    const SZrParserReflectionCompileTypeDescriptor *descriptor;
+    const SZrParserReflectionCompileTypeDescriptor *parentDescriptor;
 
-    if (cs == ZR_NULL || typeName == ZR_NULL || !type_inference_is_builtin_reflection_compile_type_name(typeName)) {
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
         return;
     }
 
     typeNameText = ZrCore_String_GetNativeString(typeName);
-    if (typeNameText == ZR_NULL) {
+    descriptor = ZrParser_ReflectionCompileSurface_Find(typeNameText);
+    if (descriptor == ZR_NULL) {
         return;
     }
-
-    if (strcmp(typeNameText, kReflectionTypeOfName) == 0) {
-        parentTypeName = kReflectionTypeName;
-    } else if (strcmp(typeNameText, "zr.reflection.declaration.ConcreteClassTypeOf") == 0) {
-        parentTypeName = "zr.reflection.declaration.ClassTypeOf";
-    } else if (strcmp(typeNameText, "zr.reflection.declaration.InstanceClassTypeOf") == 0) {
-        parentTypeName = "zr.reflection.declaration.ConcreteClassTypeOf";
-    } else if (strncmp(
-                       typeNameText,
-                       "zr.reflection.declaration.",
-                       strlen("zr.reflection.declaration.")) == 0) {
-        parentTypeName = kReflectionTypeOfName;
-    } else if (strcmp(typeNameText, kBuiltinTypeInfoName) != 0 &&
-               strncmp(typeNameText, "zr.reflection.", strlen("zr.reflection.")) != 0) {
-        parentTypeName = kBuiltinTypeInfoName;
-    }
+    parentDescriptor = ZrParser_ReflectionCompileSurface_FindByCapability(
+            descriptor->parentCapability);
+    parentTypeName = parentDescriptor != ZR_NULL
+                             ? parentDescriptor->canonicalName
+                             : ZR_NULL;
 
     if (parentTypeName != ZR_NULL) {
         ensure_builtin_reflection_compile_type(cs,
@@ -1063,6 +1019,7 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     }
 
     targetInfo->type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
+    targetInfo->intrinsicCapabilityId = (TZrUInt32)descriptor->capability;
     targetInfo->allowValueConstruction = ZR_FALSE;
     targetInfo->allowBoxedConstruction = ZR_FALSE;
 
@@ -1070,16 +1027,21 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
         type_inference_builtin_reflection_add_inherit(cs, targetInfo, parentTypeName);
     }
 
-    if (strcmp(typeNameText, kBuiltinTypeInfoName) == 0) {
+    if ((descriptor->surfaceFlags &
+         ZR_PARSER_REFLECTION_COMPILE_SURFACE_METADATA_MEMBERS) != 0U) {
         type_inference_builtin_reflection_add_compile_metadata_members(cs, targetInfo);
-    } else if (strcmp(typeNameText, kReflectionTypeName) == 0) {
+    }
+    if ((descriptor->surfaceFlags &
+         ZR_PARSER_REFLECTION_COMPILE_SURFACE_RUNTIME_TYPE_MEMBERS) != 0U) {
         type_inference_builtin_reflection_add_runtime_type_members(cs, targetInfo);
-    } else if (strcmp(typeNameText, kReflectionTypeOfName) == 0) {
+    }
+    if ((descriptor->surfaceFlags &
+         ZR_PARSER_REFLECTION_COMPILE_SURFACE_REPRESENTED_TYPE_ID) != 0U) {
         type_inference_builtin_reflection_add_field(
                 cs, targetInfo, "representedTypeId", "zr.reflection.TypeId");
     }
-    if (strcmp(typeNameText, "zr.reflection.declaration.ConcreteClassTypeOf") == 0 ||
-        strcmp(typeNameText, "zr.reflection.declaration.StructTypeOf") == 0) {
+    if ((descriptor->surfaceFlags &
+         ZR_PARSER_REFLECTION_COMPILE_SURFACE_CONSTRUCTIBLE) != 0U) {
         type_inference_builtin_reflection_add_method(
                 cs,
                 targetInfo,
@@ -1088,7 +1050,8 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
                 ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
                 0u);
     }
-    if (strcmp(typeNameText, "Function") == 0 || strcmp(typeNameText, "Method") == 0) {
+    if ((descriptor->surfaceFlags &
+         ZR_PARSER_REFLECTION_COMPILE_SURFACE_CALLABLE_MEMBERS) != 0U) {
         type_inference_builtin_reflection_add_callable_members(cs, targetInfo);
     }
 }
@@ -2814,34 +2777,13 @@ ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInfe
 
 ZR_PARSER_API const TZrChar *ZrParser_ReflectionDescriptorTypeName(
         EZrReflectionTypeCategory category) {
-    switch (category) {
-        case ZR_REFLECTION_TYPE_CATEGORY_CLASS:
-            return "zr.reflection.declaration.ClassTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS:
-            return "zr.reflection.declaration.ConcreteClassTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS:
-            return "zr.reflection.declaration.InstanceClassTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_STRUCT:
-            return "zr.reflection.declaration.StructTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_INTERFACE:
-            return "zr.reflection.declaration.InterfaceTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS:
-            return "zr.reflection.declaration.ResourceClassTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT:
-            return "zr.reflection.declaration.RefStructTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_ENUM:
-            return "zr.reflection.declaration.EnumTypeOf";
-        case ZR_REFLECTION_TYPE_CATEGORY_ERASED:
-        default:
-            return "zr.reflection.Type";
-    }
+    return ZrParser_ReflectionCompileSurface_DescriptorName(category);
 }
 
 TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
                                          SZrAstNode *node,
                                          SZrInferredType *result) {
     SZrString *reflectionTypeName;
-    static const TZrChar *kBuiltinTypeInfoName = "zr.builtin.TypeInfo";
     SZrInferredType operandType;
     const TZrChar *resultTypeName;
     EZrReflectionTypeCategory category;
@@ -2888,6 +2830,15 @@ TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
             ZrParser_InferredType_Free(cs->state, &operandType);
             return ZR_FALSE;
         }
+    }
+
+    if (operandType.isNullable || ZR_VALUE_IS_TYPE_NULL(operandType.baseType)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "typeof operand must be non-null; narrow the value before reflection",
+                node->data.typeQueryExpression.operand->location);
+        ZrParser_InferredType_Free(cs->state, &operandType);
+        return ZR_FALSE;
     }
 
     category = ZrParser_ReflectionTypeCategory_FromInferred(cs, &operandType);

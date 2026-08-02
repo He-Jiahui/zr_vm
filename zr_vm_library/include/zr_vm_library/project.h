@@ -246,6 +246,9 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrLibrary_ProjectManifestDependency *manifestBuildDependencies;
     TZrSize manifestBuildDependencyCount;
     TZrSize manifestBuildDependencyCapacity;
+    SZrLibrary_ProjectManifestDependencyLockEntry *manifestDependencyLockEntries;
+    TZrSize manifestDependencyLockEntryCount;
+    TZrSize manifestDependencyLockStorageSize;
     SZrLibrary_ProjectResource *resources;
     TZrSize resourceCount;
     TZrSize resourceCapacity;
@@ -309,6 +312,13 @@ ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_WriteDependencyLock(
         TZrSize entryCount,
         TZrChar *outLock,
         TZrSize outLockSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_ProjectManifestV2_ReadDependencyLock(
+        SZrState *state,
+        SZrLibrary_Project *project,
+        const TZrChar *rawLock,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_NormalizeModuleKey(const TZrChar *modulePath,
                                                             TZrChar *buffer,

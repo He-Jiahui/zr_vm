@@ -3005,7 +3005,8 @@ static TZrBool inferred_type_contains_borrow_escape_ownership(const SZrInferredT
         return ZR_FALSE;
     }
 
-    if (ownership_qualifier_is_borrow_escape(type->ownershipQualifier)) {
+    if (ownership_qualifier_is_borrow_escape(type->ownershipQualifier) ||
+        type->referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
         return ZR_TRUE;
     }
 

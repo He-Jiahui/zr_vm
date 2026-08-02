@@ -20,10 +20,16 @@
 > phase lock graph 基础。compiler-owned artifact resolver 现只接受 CompileTool
 > lock/ZRM，从同一份 compiler-owned bytes 校验 package/version/public contract、
 > 实际条目与整包 SHA-256，并把规范 CompileTool lock-section SHA-256 交给
-> comptime cache v4；cache entry 比较完整 32-byte digest，不再压缩为 64-bit FNV。
+> comptime cache v5；cache entry 比较完整 32-byte digest，不再压缩为 64-bit FNV，
+> 并把当前模块完整 source SHA-256 纳入 identity。
 > runtime dependency graph 不接收该 provider。外部 provider 的 import/执行激活、
-> 实际传递 provider 图验证、persistent incremental cache、formatter 与其余
-> consumers 仍未完成，不能据此
+> 实际传递 provider 图验证仍未完成。comptime cache 现有版本化、规范排序、
+> 固定大端编码且带全快照 SHA-256 的 snapshot export/import，损坏输入不会替换旧缓存；
+> project CLI 已接入 `.zr_comptime_cache` 原子读写，并证明 miss/hit、同长度语义修改
+> miss、损坏拒绝修复和恢复原源码后的 artifact byte-identical。其余
+> artifact/reflection consumers 仍未完成。formatter 已复用 migration plan
+> 作为 fail-closed 输出门：旧语法不产生 edit，当前 CompileTool 表层和合法
+> `%`/`%=` 运算继续格式化；仍不能据此
 > 提升整门 Gate。
 >
 > 上游契约：[01 Canonical TypeRef、Place、CFG与artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[03 `init TypeRef`与layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[05 property](./2026-07-18-05-property-unified-ast-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[08 reflection metadata](./2026-07-19-08-reflection-library-type-system-design.md)、[10R module/package foundation](./2026-07-19-10-native-ffi-module-package-design.md)。本计划不依赖 06B 最终仓库切换。

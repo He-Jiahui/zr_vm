@@ -2472,7 +2472,7 @@ static void test_execute_get_member_materializes_global_prototype_with_aliased_d
     SZrTestTimer timer;
     const char *testSummary = "GET_MEMBER Materializes Global Prototype With Aliased Destination";
     const char *source =
-        "module \"static_retry\";\n"
+        "module static_retry;\n"
         "class StaticHolder {\n"
         "    pub static var value: int = 42;\n"
         "}\n"

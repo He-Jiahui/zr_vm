@@ -12,6 +12,11 @@ persistent incremental cache is integrated, or that Gate 11 M5 is promoted.
 - Only a v2 package specifier declared uniquely in `buildDependencies` can
   enter this resolver. Runtime `dependencies` cannot satisfy the request even
   when they use the same package name.
+- Ordinary compiler callers can use
+  `ZrParser_CompileToolArtifact_OpenProjectBuildDependency`, which consumes the
+  lock graph previously admitted into `SZrLibrary_Project`. The older explicit
+  lock-array entry remains available for lock producer/tests, but compiler
+  integration no longer needs to manufacture a parallel temporary lock graph.
 - The lock match is package-root based, so both `@derive` and
   `@derive.tools.derive` use the same CompileTool package lock. Missing,
   duplicate, wrong-phase, wrong-source, non-canonical hash, or manifest-version
@@ -40,10 +45,10 @@ persistent incremental cache is integrated, or that Gate 11 M5 is promoted.
   runtime provider resolver cannot observe the resolved CompileTool archive.
 - A descriptor may bind a resolved artifact only when both phases are
   CompileTool and the descriptor public-contract hash exactly matches the ZRM.
-  Cache schema v4 hashes package/module identity, source kind, version, package
-  hash, lock-section hash, entry name/hash, and public contract in addition to
-  the lexical provider contract. Cache lookup compares the complete 32-byte
-  SHA-256 digest.
+  Cache schema v5 hashes package/module identity, source kind, version, package
+  hash, lock-section hash, entry name/hash, public contract, and current-module
+  source digest in addition to the lexical provider contract. Cache lookup
+  compares the complete 32-byte SHA-256 digest.
 
 ## Failure inventory
 
@@ -79,6 +84,11 @@ identity. Review then found that a package submodule was incorrectly
 compared as a full module identity against the package-root manifest entry;
 the resolver now matches the package domain/name and retains module segments
 only for ZRM entry selection.
+
+The project-owned bridge RED then failed because the artifact resolver had no
+entry that consumed the admitted project lock. GREEN delegates directly to the
+existing resolver with the project-owned entry pointer/count; it does not copy
+or weaken any identity, phase, version, archive, or hash validation.
 
 Independent review then found a path re-open race, absent version-requirement
 validation, untrusted transitive labels, output initialization gaps, FNV-only
@@ -119,7 +129,9 @@ language.
   executables pass 93/93: compile-time execution 69, comptime contract 2,
   attribute contract 3, declaration transform 6, and comptime runtime 13.
 - The resolver-focused runtime executable passes 13/13 after the final lock
-  graph and base64url canonicalization changes. ZRM container coverage passes
+  graph and base64url canonicalization changes. The expanded 13/13 replay under
+  WSL GCC also exercises project-owned lock admission and resolver handoff.
+  ZRM container coverage passes
   7/7, including the memory-reader lifetime/error-cleanup case.
 - The strict percent cutover executable remains 6/6, and the milestone census
   remains 55 canonical records, 55 completion markers, 0 missing; the separate
@@ -131,6 +143,11 @@ language.
   AddressSanitizer or undefined-runtime error. Leak detection is not promotion
   evidence because the existing compiler/test harness baseline reports
   unrelated retained allocations outside this resolver slice.
+- The Gate 11 formatter RED produced one failure because full/range formatting
+  returned an edit containing `%compileTime` and `%func`. The WSL GCC GREEN
+  replay passes the complete advanced-editor executable with zero failures:
+  removed syntax produces no edit, while canonical declaration-transform
+  metadata, `comptime fn`, `import("@derive")`, `%`, and `%=` are preserved.
 
 ## Remaining M5 work
 
@@ -138,10 +155,7 @@ language.
   transform execution;
 - load and verify the actual transitive provider artifact graph rather than
   treating the lock producer's transitive assertion as artifact proof;
-- integrate cache v4 facts with the persistent incremental cache and prove
-  byte-identical clean/incremental output;
-- complete formatter and remaining artifact/reflection/LSP consumer
-  acceptance.
+- complete remaining artifact/reflection consumer acceptance.
 
 Until those items close, Gate 11 M5 remains `indirect` in the upper-gate ledger
 and the root Syntax redesign remains open.

@@ -306,6 +306,114 @@ static void test_project_manifest_v2_keeps_build_dependencies_phase_separated(vo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static const SZrLibrary_ProjectManifestDependencyLockEntry *find_project_lock_entry(
+        const SZrLibrary_Project *project,
+        const TZrChar *packageName,
+        EZrLibrary_ProviderPhase providerPhase) {
+    for (TZrSize index = 0u; index < project->manifestDependencyLockEntryCount; index++) {
+        const SZrLibrary_ProjectManifestDependencyLockEntry *entry =
+                &project->manifestDependencyLockEntries[index];
+
+        if (entry->providerPhase == providerPhase &&
+            strcmp(entry->packageIdentity.packageName, packageName) == 0) {
+            return entry;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void test_project_manifest_v2_reads_owned_phase_separated_dependency_lock(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrLibrary_Project *project;
+    const SZrLibrary_ProjectManifestDependencyLockEntry *runtimeEntry;
+    const SZrLibrary_ProjectManifestDependencyLockEntry *compileEntry;
+    TZrChar error[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar validLock[] =
+            "{\"lockVersion\":1,\"dependencies\":{"
+            "\"@shared\":{\"version\":\"1.2.0\","
+            "\"contentHash\":\"sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\","
+            "\"transitiveIdentity\":\"sha256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA\","
+            "\"provider\":\"path\"}},\"buildDependencies\":{"
+            "\"@derive\":{\"version\":\"1.4.0\","
+            "\"contentHash\":\"sha256:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA\","
+            "\"transitiveIdentity\":\"sha256:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA\","
+            "\"provider\":\"registry\"}}}";
+    static const TZrChar manifest[] =
+            "{\"manifestVersion\":2,\"name\":\"app\",\"version\":\"1.0.0\","
+            "\"kind\":\"library\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\","
+            "\"dependencies\":{\"@shared\":{\"version\":\"^1.0.0\",\"path\":\"../shared\"}},"
+            "\"buildDependencies\":{\"@derive\":{\"version\":\"1.4.0\",\"registry\":\"central\"}}}";
+    static const TZrChar *invalidLocks[] = {
+            "{\"lockVersion\":2,\"dependencies\":{},\"buildDependencies\":{}}",
+            "{\"lockVersion\":1,\"dependencies\":{},\"buildDependencies\":{"
+            "\"@derive\":{\"version\":\"1.4.0\",\"contentHash\":\"hash\","
+            "\"transitiveIdentity\":\"graph\",\"provider\":\"registry\"}}}",
+            "{\"lockVersion\":1,\"dependencies\":{"
+            "\"@shared\":{\"version\":\"1.2.0\",\"contentHash\":\"hash\","
+            "\"transitiveIdentity\":\"graph\",\"provider\":\"git\"}},"
+            "\"buildDependencies\":{\"@derive\":{\"version\":\"1.4.0\","
+            "\"contentHash\":\"hash\",\"transitiveIdentity\":\"graph\","
+            "\"provider\":\"registry\"}}}",
+            "{\"lockVersion\":1,\"dependencies\":{"
+            "\"@shared\":{\"version\":\"1.2.0\",\"version\":\"1.3.0\","
+            "\"contentHash\":\"hash\",\"transitiveIdentity\":\"graph\","
+            "\"provider\":\"path\"}},\"buildDependencies\":{"
+            "\"@derive\":{\"version\":\"1.4.0\",\"contentHash\":\"hash\","
+            "\"transitiveIdentity\":\"graph\",\"provider\":\"registry\"}}}",
+            "{\"lockVersion\":1,\"dependencies\":{"
+            "\"@shared\":{\"version\":\"1.2.0\",\"contentHash\":\"hash\","
+            "\"transitiveIdentity\":\"graph\",\"provider\":\"path\"}},"
+            "\"buildDependencies\":{\"@other\":{\"version\":\"1.0.0\","
+            "\"contentHash\":\"hash\",\"transitiveIdentity\":\"graph\","
+            "\"provider\":\"registry\"}}}",
+            "{\"lockVersion\":1,\"dependencies\":{"
+            "\"@shared\":{\"version\":\"1.2.0\",\"contentHash\":\"hash\","
+            "\"transitiveIdentity\":\"graph\",\"provider\":\"path\"}},"
+            "\"buildDependencies\":{\"@derive\":{\"version\":\"1.4.0\","
+            "\"contentHash\":\"hash\",\"transitiveIdentity\":\"graph\","
+            "\"provider\":\"registry\"}}} trailing"
+    };
+
+    TEST_ASSERT_NOT_NULL(state);
+    project = new_project(state, manifest);
+    TEST_ASSERT_NOT_NULL(project);
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_TRUE(ZrLibrary_ProjectManifestV2_ReadDependencyLock(
+            state, project, validLock, error, sizeof(error)));
+    TEST_ASSERT_EQUAL_UINT32(2u, project->manifestDependencyLockEntryCount);
+    memset(validLock, 0, sizeof(validLock));
+
+    runtimeEntry = find_project_lock_entry(
+            project, "shared", ZR_LIBRARY_PROVIDER_PHASE_RUNTIME);
+    compileEntry = find_project_lock_entry(
+            project, "derive", ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL);
+    TEST_ASSERT_NOT_NULL(runtimeEntry);
+    TEST_ASSERT_NOT_NULL(compileEntry);
+    TEST_ASSERT_EQUAL_STRING("1.2.0", runtimeEntry->resolvedVersion);
+    TEST_ASSERT_EQUAL_STRING("sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                             runtimeEntry->contentHash);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_PATH,
+                          runtimeEntry->providerSourceKind);
+    TEST_ASSERT_EQUAL_STRING("1.4.0", compileEntry->resolvedVersion);
+    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_PROJECT_MANIFEST_DEPENDENCY_SOURCE_REGISTRY,
+                          compileEntry->providerSourceKind);
+
+    for (TZrSize index = 0u; index < ZR_ARRAY_COUNT(invalidLocks); index++) {
+        memset(error, 0, sizeof(error));
+        TEST_ASSERT_FALSE(ZrLibrary_ProjectManifestV2_ReadDependencyLock(
+                state, project, invalidLocks[index], error, sizeof(error)));
+        TEST_ASSERT_TRUE(error[0] != '\0');
+        TEST_ASSERT_EQUAL_UINT32(2u, project->manifestDependencyLockEntryCount);
+        TEST_ASSERT_EQUAL_STRING(
+                "1.4.0",
+                find_project_lock_entry(
+                        project, "derive", ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL)->resolvedVersion);
+    }
+
+    ZrLibrary_Project_Free(state, project);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_project_manifest_v2_rejects_legacy_or_ambiguous_declarations(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     static const TZrChar *invalidManifests[] = {
@@ -546,6 +654,7 @@ int main(void) {
     RUN_TEST(test_project_manifest_v1_remains_an_explicit_migration_input);
     RUN_TEST(test_project_manifest_v2_reads_structured_alias_package_and_dependency_declarations);
     RUN_TEST(test_project_manifest_v2_keeps_build_dependencies_phase_separated);
+    RUN_TEST(test_project_manifest_v2_reads_owned_phase_separated_dependency_lock);
     RUN_TEST(test_project_manifest_v2_rejects_legacy_or_ambiguous_declarations);
     RUN_TEST(test_project_manifest_v2_writes_canonical_declarations);
     RUN_TEST(test_project_manifest_v2_writer_rejects_migration_and_absolute_path_inputs);

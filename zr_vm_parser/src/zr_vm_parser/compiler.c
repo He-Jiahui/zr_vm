@@ -20,6 +20,18 @@ static void zr_parser_source_compile_capture_error(TZrPtr userData,
                                                    const TZrChar *message,
                                                    EZrToken token);
 
+static void zr_parser_source_compile_discard_cache(
+        SZrState *state,
+        SZrParserSourceComptimeCache *cache) {
+    if (state == ZR_NULL || cache == ZR_NULL || cache->outputSnapshot == ZR_NULL) {
+        return;
+    }
+    ZrParser_ComptimeCache_FreeSnapshot(
+            state, cache->outputSnapshot, cache->outputSnapshotSize);
+    cache->outputSnapshot = ZR_NULL;
+    cache->outputSnapshotSize = 0U;
+}
+
 static TZrBool compiler_refresh_borrowed_child_function_graph(SZrState *state,
                                                               SZrFunction *function,
                                                               const SZrFunction *sourceRoot) {
@@ -1099,7 +1111,8 @@ static struct SZrFunction *zr_parser_source_compile_mode(
         const TZrChar *source,
         TZrSize sourceLength,
         struct SZrString *sourceName,
-        TZrBool emitTestManifest) {
+        TZrBool emitTestManifest,
+        SZrParserSourceComptimeCache *comptimeCache) {
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
     SZrFileRange importErrorLocation;
     SZrString *currentModuleKey = ZR_NULL;
@@ -1108,6 +1121,13 @@ static struct SZrFunction *zr_parser_source_compile_mode(
     SZrAstNode *ast;
     SZrFunction *func;
 
+    if (comptimeCache != ZR_NULL) {
+        comptimeCache->outputSnapshot = ZR_NULL;
+        comptimeCache->outputSnapshotSize = 0U;
+        comptimeCache->inputSnapshotAccepted = ZR_FALSE;
+        comptimeCache->hitCount = 0U;
+        comptimeCache->missCount = 0U;
+    }
     if (state == ZR_NULL || source == ZR_NULL || sourceLength == 0) {
         return ZR_NULL;
     }
@@ -1138,7 +1158,12 @@ static struct SZrFunction *zr_parser_source_compile_mode(
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (void *)ast);
 
-    if (!ZrParser_CompileTime_PrepareBuildFacts(state, ast)) {
+    if (!ZrParser_CompileTime_PrepareBuildFactsWithCache(
+                state,
+                ast,
+                comptimeCache,
+                source,
+                sourceLength)) {
         ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
         ZrParser_Ast_Free(state, ast);
         return ZR_NULL;
@@ -1156,6 +1181,7 @@ static struct SZrFunction *zr_parser_source_compile_mode(
                                ZR_OUTPUT_CHANNEL_STDERR,
                                "%s\n",
                                importError[0] != '\0' ? importError : "failed to canonicalize project imports");
+        zr_parser_source_compile_discard_cache(state, comptimeCache);
         ZrParser_Ast_Free(state, ast);
         return ZR_NULL;
     }
@@ -1163,6 +1189,7 @@ static struct SZrFunction *zr_parser_source_compile_mode(
     if (!ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, currentModuleKey, ast)) {
         zr_parser_compile_trace("prepare current source module failed name='%s'",
                                 sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
+        zr_parser_source_compile_discard_cache(state, comptimeCache);
         ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
         ZrParser_Ast_Free(state, ast);
         return ZR_NULL;
@@ -1182,6 +1209,10 @@ static struct SZrFunction *zr_parser_source_compile_mode(
     ZrParser_Ast_Free(state, ast);
     zr_parser_compile_trace("source compile cleanup name='%s'",
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
+
+    if (func == ZR_NULL) {
+        zr_parser_source_compile_discard_cache(state, comptimeCache);
+    }
     
     return func;
 }
@@ -1192,7 +1223,17 @@ struct SZrFunction *ZrParser_Source_Compile(
         TZrSize sourceLength,
         struct SZrString *sourceName) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_FALSE);
+            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL);
+}
+
+struct SZrFunction *ZrParser_Source_CompileWithComptimeCache(
+        struct SZrState *state,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        struct SZrString *sourceName,
+        SZrParserSourceComptimeCache *cache) {
+    return zr_parser_source_compile_mode(
+            state, source, sourceLength, sourceName, ZR_FALSE, cache);
 }
 
 struct SZrFunction *ZrParser_Source_CompileTest(
@@ -1201,7 +1242,7 @@ struct SZrFunction *ZrParser_Source_CompileTest(
         TZrSize sourceLength,
         struct SZrString *sourceName) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_TRUE);
+            state, source, sourceLength, sourceName, ZR_TRUE, ZR_NULL);
 }
 
 // 注册 compileSource 函数到 globalState

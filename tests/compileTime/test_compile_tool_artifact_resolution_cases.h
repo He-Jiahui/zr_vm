@@ -238,6 +238,7 @@ static void test_compile_tool_artifact_resolution_hands_owned_identity_to_cache(
     SZrLibrary_ProjectManifestDependencyLockEntry changedLocks[2];
     SZrLibrary_ProjectManifestDependencyLockEntry locksWithRuntime[3];
     SZrParserCompileToolResolvedArtifact firstArtifact = {0};
+    SZrParserCompileToolResolvedArtifact projectOwnedArtifact = {0};
     SZrParserCompileToolResolvedArtifact secondArtifact = {0};
     SZrParserCompileToolResolvedArtifact submoduleArtifact = {0};
     SZrParserCompileToolResolvedArtifact orderedArtifact = {0};
@@ -256,6 +257,8 @@ static void test_compile_tool_artifact_resolution_hands_owned_identity_to_cache(
     TZrChar knownVectorHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
     TZrChar resolvedModuleKey[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
+    TZrChar projectLock[1024];
+    int projectLockLength;
     SZrComptimeCacheKey firstKey;
     SZrComptimeCacheKey secondKey;
 
@@ -280,6 +283,40 @@ static void test_compile_tool_artifact_resolution_hands_owned_identity_to_cache(
             sizeof(archiveHash)));
     firstLock = compile_tool_fixture_lock(
             project, archiveHash, ZR_TEST_TRANSITIVE_IDENTITY_A);
+    projectLockLength = snprintf(
+            projectLock,
+            sizeof(projectLock),
+            "{\"lockVersion\":1,\"dependencies\":{\"@derive\":{"
+            "\"version\":\"1.4.0\",\"contentHash\":\"%s\","
+            "\"transitiveIdentity\":\"%s\",\"provider\":\"path\"}},"
+            "\"buildDependencies\":{\"@derive\":{\"version\":\"1.4.0\","
+            "\"contentHash\":\"%s\",\"transitiveIdentity\":\"%s\","
+            "\"provider\":\"path\"}}}",
+            archiveHash,
+            ZR_TEST_TRANSITIVE_IDENTITY_A,
+            archiveHash,
+            ZR_TEST_TRANSITIVE_IDENTITY_A);
+    TEST_ASSERT_TRUE(projectLockLength > 0);
+    TEST_ASSERT_TRUE((TZrSize)projectLockLength < sizeof(projectLock));
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_ProjectManifestV2_ReadDependencyLock(
+                    g_state,
+                    project,
+                    projectLock,
+                    error,
+                    sizeof(error)),
+            error);
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrParser_CompileToolArtifact_OpenProjectBuildDependency(
+                    project,
+                    "@derive",
+                    archivePath,
+                    &projectOwnedArtifact,
+                    error,
+                    sizeof(error)),
+            error);
+    TEST_ASSERT_EQUAL_STRING(
+            archiveHash, projectOwnedArtifact.packageContentHash);
     secondLock = compile_tool_fixture_lock(
             project, archiveHash, ZR_TEST_TRANSITIVE_IDENTITY_B);
     helperLock = firstLock;
@@ -436,6 +473,7 @@ static void test_compile_tool_artifact_resolution_hands_owned_identity_to_cache(
     ZrParser_CompileToolArtifact_Close(&submoduleArtifact);
     ZrParser_CompileToolArtifact_Close(&secondArtifact);
     ZrParser_CompileToolArtifact_Close(&firstArtifact);
+    ZrParser_CompileToolArtifact_Close(&projectOwnedArtifact);
     TEST_ASSERT_NULL(firstArtifact.artifactBytes);
     TEST_ASSERT_EQUAL_UINT64(0U, firstArtifact.signature);
     ZrLibrary_Project_Free(g_state, project);
