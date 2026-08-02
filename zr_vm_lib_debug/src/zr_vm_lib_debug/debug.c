@@ -1,4 +1,5 @@
 #include "debug_internal.h"
+#include "debug_breakpoint_condition.h"
 
 #include <ctype.h>
 
@@ -1313,51 +1314,22 @@ static TZrBool zr_debug_hit_condition_satisfied(const TZrChar *expression, TZrUI
     return ZR_FALSE;
 }
 
-static TZrBool zr_debug_value_truthy(const SZrTypeValue *value) {
-    if (value == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    switch (value->type) {
-        case ZR_VALUE_TYPE_NULL:
-            return ZR_FALSE;
-        case ZR_VALUE_TYPE_BOOL:
-            return value->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
-        case ZR_VALUE_TYPE_INT8:
-        case ZR_VALUE_TYPE_INT16:
-        case ZR_VALUE_TYPE_INT32:
-        case ZR_VALUE_TYPE_INT64:
-        case ZR_VALUE_TYPE_UINT8:
-        case ZR_VALUE_TYPE_UINT16:
-        case ZR_VALUE_TYPE_UINT32:
-        case ZR_VALUE_TYPE_UINT64:
-            return value->value.nativeObject.nativeInt64 != 0 ? ZR_TRUE : ZR_FALSE;
-        case ZR_VALUE_TYPE_FLOAT:
-        case ZR_VALUE_TYPE_DOUBLE:
-            return value->value.nativeObject.nativeDouble != 0.0 ? ZR_TRUE : ZR_FALSE;
-        case ZR_VALUE_TYPE_STRING:
-            return value->value.object != ZR_NULL ? ZR_TRUE : ZR_FALSE;
-        default:
-            return value->value.object != ZR_NULL ? ZR_TRUE : ZR_FALSE;
-    }
-}
-
 static TZrBool zr_debug_breakpoint_condition_satisfied(ZrDebugAgent *agent, const ZrDebugBreakpoint *breakpoint) {
-    SZrTypeValue value;
     TZrChar error[256];
+    TZrBool satisfied = ZR_FALSE;
 
     if (agent == ZR_NULL || breakpoint == ZR_NULL || breakpoint->condition[0] == '\0') {
         return ZR_TRUE;
     }
 
-    memset(&value, 0, sizeof(value));
-    if (!zr_debug_evaluate_expression(agent, 1, breakpoint->condition, &value, error, sizeof(error), ZR_NULL, 0)) {
+    if (!zr_debug_breakpoint_condition_evaluate(
+                agent, breakpoint->condition, &satisfied, error, sizeof(error))) {
         zr_debug_agent_emit_output(agent, "stderr", error);
         zr_debug_agent_emit_output(agent, "stderr", "\n");
         return ZR_FALSE;
     }
 
-    return zr_debug_value_truthy(&value);
+    return satisfied;
 }
 
 static void zr_debug_append_text_segment(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text) {

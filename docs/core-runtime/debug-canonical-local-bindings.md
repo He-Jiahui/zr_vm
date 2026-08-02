@@ -18,6 +18,9 @@ related_code:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_evaluation_effect.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.h
@@ -53,6 +56,9 @@ implementation_files:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_evaluation_effect.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.h
@@ -80,6 +86,7 @@ tests:
   - tests/debug/test_debug_metadata.c
   - tests/debug/test_debug_introspection.c
   - tests/debug/test_debug_expression_diagnostics.c
+  - tests/debug/test_debug_breakpoint_condition_cases.h
   - tests/debug/test_debug_agent_protocol.c
   - tests/debug/test_debug_evaluation_effect_policy_cases.h
   - tests/module/test_reflection_dynamic_generic_instance_interpreter.h
@@ -95,6 +102,7 @@ tests:
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6b-generation-checked-paused-frame-closure-resolver.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6c-closure-capture-origin-token-facts.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3a-dap-evaluate-capability-context.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3b-conditional-breakpoint-pure-policy.md
 doc_type: module-detail
 ---
 
@@ -270,6 +278,22 @@ Consequently an array literal is rejected in `hover` and `watch`, while the
 same canonical expression can be evaluated in `repl` only because `repl`
 explicitly grants allocation. This mapping does not weaken borrow, readonly,
 ref-like, native-capability, or paused-frame generation checks.
+
+## Conditional Breakpoint Effect Policy
+
+Conditional breakpoints are a separate effect-policy consumer. The breakpoint
+orchestrator delegates non-empty conditions to
+`zr_debug_breakpoint_condition_evaluate`, which uses the formal evaluator with
+the empty capability set and `allowLegacyCompatibility` disabled. A condition
+therefore cannot allocate, call a function or native entry, invoke a property
+getter, mutate a value, or mutate an owner. An unsupported condition is an
+evaluation error and does not satisfy the breakpoint; the existing breakpoint
+output path reports that structured error.
+
+An empty condition remains an unconditional breakpoint and is satisfied
+without evaluation. Truthiness is applied only after formal evaluation
+succeeds. The condition path does not select an evaluator by member spelling,
+AST shape, expression text, or compatibility syntax.
 
 ## Consumer Boundary
 

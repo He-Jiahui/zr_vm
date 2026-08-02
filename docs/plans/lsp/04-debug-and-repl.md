@@ -50,6 +50,10 @@ E3a 让 DAP `evaluate.context` 成为 formal evaluation capability 的唯一入�
 或未知 context 只授予 pure query，`watch` 仅额外授予 property getter，`repl` 显式授予
 getter/allocation/call/native-call。所有 context 都拒绝 mutation 和 owner mutation；请求必须
 经 `ZrDebug_EvaluateWithCapabilities`，不能以 context、member name、AST 或文本选择兼容执行器。
+E3b 将 conditional breakpoint 收敛到同一 formal policy，但其允许效果始终为空且关闭
+legacy compatibility。非空条件只能进行纯读取；getter、allocation、call、native call、mutation
+和 owner mutation 都 fail closed。空条件仍表示无条件命中；失败条件不命中并通过既有断点错误
+输出路径报告，不能按表达式文本、member name 或 AST 选择替代执行器。
 
 ## 实施与安全矩阵
 
