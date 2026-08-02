@@ -181,38 +181,13 @@ static void pooling_runtime_clear_value(
     pooling_runtime_array_set(state, values, slotIndex, &nullValue);
 }
 
-static TZrBool pooling_value_initialize(
-        void *destination,
-        const void *source,
-        void *context) {
-    SZrPoolingRuntime *runtime = (SZrPoolingRuntime *)context;
-    SZrTypeValue *target = (SZrTypeValue *)destination;
-
-    if (runtime == ZR_NULL || runtime->state == ZR_NULL ||
-        target == ZR_NULL || source == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_ResetAsNull(target);
-    ZrCore_Value_Copy(
-            runtime->state, target, (const SZrTypeValue *)source);
-    return runtime->state->threadStatus == ZR_THREAD_STATUS_FINE;
-}
-
-static void pooling_value_drop(void *element, void *context) {
-    SZrPoolingRuntime *runtime = (SZrPoolingRuntime *)context;
-    SZrTypeValue *value = (SZrTypeValue *)element;
-
-    if (runtime == ZR_NULL || runtime->state == ZR_NULL || value == ZR_NULL) {
-        return;
-    }
-    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(
-            runtime->state, value);
-    ZrCore_Value_ResetAsNullNoProfile(value);
-}
-
-static void pooling_value_scan(void *element, void *context) {
-    ZR_UNUSED_PARAMETER(element);
-    ZR_UNUSED_PARAMETER(context);
+static void pooling_value_scan(
+        SZrState *state,
+        SZrTypeValue *value,
+        TZrPtr userData) {
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(value);
+    ZR_UNUSED_PARAMETER(userData);
 }
 
 static void pooling_pool_finalize(SZrState *state, SZrRawObject *rawObject) {
@@ -245,7 +220,7 @@ static SZrPoolingRuntime *pooling_runtime_require(
     SZrPoolingRuntime *runtime;
     SZrObject *values;
     ZrLibTempValueRoot valuesRoot;
-    SZrPoolTypeLayout layout;
+    SZrTypeLayout layout;
     SZrPoolConfig config;
 
     if (outOwner != ZR_NULL) {
@@ -284,19 +259,19 @@ static SZrPoolingRuntime *pooling_runtime_require(
         return ZR_NULL;
     }
     runtime->state = context->state;
-    memset(&layout, 0, sizeof(layout));
-    layout.elementSize = sizeof(SZrTypeValue);
-    layout.elementAlignment = _Alignof(SZrTypeValue);
-    layout.gcScanKind = ZR_POOL_GC_SCAN_MAPPED;
-    layout.initialize = pooling_value_initialize;
-    layout.drop = pooling_value_drop;
-    layout.scan = pooling_value_scan;
-    layout.context = runtime;
+    ZrCore_TypeLayout_InitValue(&layout);
     memset(&config, 0, sizeof(config));
     config.slabCapacity = 64u;
     config.generationLimit = UINT64_MAX;
     config.concurrencyMode = ZR_POOL_CONCURRENCY_THREAD_LOCAL;
-    if (ZrPool_Create(&layout, &config, &runtime->pool) !=
+    if (ZrPool_CreateFromTypeLayout(
+                context->state,
+                &layout,
+                ZR_NULL,
+                pooling_value_scan,
+                runtime,
+                &config,
+                &runtime->pool) !=
         ZR_POOL_STATUS_OK) {
         free(runtime);
         ZrLib_TempValueRoot_End(&valuesRoot);

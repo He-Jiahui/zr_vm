@@ -1,4 +1,4 @@
-#include "zr_vm_lib_container/generational_pool.h"
+#include "generational_pool_internal.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -11,38 +11,6 @@
 
 #define ZR_POOL_NO_SLOT ((TZrSize)SIZE_MAX)
 #define ZR_POOL_DEFAULT_SLAB_CAPACITY ((TZrSize)256u)
-
-typedef struct SZrPoolSlot {
-    uint64_t generation;
-    TZrSize nextFree;
-    TZrSize readerCount;
-    EZrPoolSlotState state;
-    TZrBool writerActive;
-    TZrBool initialized;
-    TZrBool reused;
-    TZrBool dirty;
-} SZrPoolSlot;
-
-typedef struct SZrPoolSlab {
-    void *allocation;
-    unsigned char *storage;
-    SZrPoolSlot *slots;
-    TZrSize baseIndex;
-} SZrPoolSlab;
-
-struct SZrPool {
-    SZrPoolTypeLayout layout;
-    SZrPoolConfig config;
-    SZrPoolSlab **slabs;
-    TZrSize slabCount;
-    TZrSize slabCapacity;
-    TZrSize elementStride;
-    TZrSize freeHead;
-    uint64_t id;
-    volatile long lockWord;
-    TZrBool destroying;
-    SZrPoolStats stats;
-};
 
 static uint64_t gNextPoolId = 1u;
 static volatile long gPoolIdLockWord = 0L;

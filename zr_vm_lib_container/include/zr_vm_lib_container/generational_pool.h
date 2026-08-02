@@ -3,6 +3,8 @@
 
 #include "zr_vm_lib_container/conf.h"
 
+#include "zr_vm_core/type_layout.h"
+
 #include <stdint.h>
 
 #define ZR_POOL_STABLE_SLOT_CONTRACT_HASH UINT64_C(0x5a52504f4f4c0002)
@@ -112,6 +114,16 @@ typedef struct SZrPoolStats {
 
 ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_Create(
         const SZrPoolTypeLayout *layout,
+        const SZrPoolConfig *config,
+        SZrPool **outPool);
+
+/* State, nested layouts, metadata tables, registry, and callback data are borrowed. */
+ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_CreateFromTypeLayout(
+        struct SZrState *state,
+        const SZrTypeLayout *layout,
+        const SZrTypeLayoutRegistryView *registry,
+        FZrTypeLayoutGcValueVisitor visitor,
+        TZrPtr visitorUserData,
         const SZrPoolConfig *config,
         SZrPool **outPool);
 

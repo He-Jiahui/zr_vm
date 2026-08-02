@@ -96,6 +96,22 @@ remaining owner gates are open.
   LLVM runtime-loading case ignored. The 55-record selector remains
   `TOTAL=55 COMPLETE=55 MISSING=0`.
 
+## 2026-08-03 Gate 09 canonical-layout review
+
+- The native generational pool now accepts canonical `SZrTypeLayout` and derives
+  element size/alignment, copy, Drop, and scan behavior from it. Production
+  erased-value `Pool<T>` no longer owns handwritten value copy/drop callbacks.
+- Admission fails closed for move-only or missing copy paths, dangling nested
+  registries, managed layouts without a GC visitor, and value/value-slot layouts
+  without a VM state. Copy errors roll back without publishing a handle.
+- Focused WSL GCC evidence is canonical TypeLayout 14/14, pool 13/13, GC stress
+  3/3, and artifact 3/3. Exactly-once deferred Drop and canonical mapped visitor
+  routing are direct tests. The canonical target is also 14/14 under Clang 14 and
+  MSVC 19.44 with no warning attributed to the new pool sources.
+- This is a bounded M3 slice. The production provider's hidden value array is
+  still the actual GC root owner; compact-safe closed-`T` moving slabs and
+  language-level early-exit cleanup remain open.
+
 ## Gate ledger
 
 | Gate | Current evidence | State | Remaining proof/work |
@@ -103,7 +119,7 @@ remaining owner gates are open.
 | 08 M1-M5 | reflection behavior is routed through the canonical capability registry; nullable `typeof` is rejected until narrowed; TypeId fields are authenticated against the per-generation registry; callable by-ref modes survive runtime projection; focused reflection surface 18/18 | indirect | add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
 | 09 M1 | source-callable `Pool<T>` identity/recycle plus C state-machine, million-handle, ABA, exhaustion, alignment and concurrency evidence; pool 13/13 | proven | preserve scalar handle identity and ABI v4 descriptor contract |
 | 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, storage/escape rejection and no-repeat-validation counter | indirect | complete the full local/return/container/closure/suspension matrix and view replacement/early-exit ordering |
-| 09 M3 | deferred reclaim, partial-init rollback, GcFree/GcMapped/GcBarriered accounting and cards are covered by pool 13/13 plus GC stress 3/3 | indirect | derive the native runtime scan directly from closed canonical TypeLayout, prove exactly-once resource Drop and language early-exit cleanup, and implement compact-safe moving slabs |
+| 09 M3 | deferred reclaim, partial-init rollback, GcFree/GcMapped/GcBarriered accounting and cards are covered by pool 13/13 plus GC stress 3/3; canonical TypeLayout admission/scan, direct/nested lifecycle consistency, copy-error rollback, state/concurrency fail-closed checks, and exactly-once deferred Drop are covered by TypeLayout 14/14 | indirect | replace the production erased-value mirror with compact-safe closed-`T` moving slabs and prove language early-exit cleanup |
 | 09 M4 | native/binary/reflection contract hash parity and corrupt/missing/unknown rejection are covered by artifact 3/3; runtime-only/readonly/property-reference facts cross native import | indirect | finish dedicated LSP facts and full reflection non-boxing/lifetime evidence |
 | 09 M5 | million-handle and churn/hot-access counters are separated | indirect | add final pause/allocation/scan-byte promotion matrix after M2-M4 close |
 | 10F M3 | schema v4 persists independent canonical callable and ABI vectors; TypeLayout/capability-driven admission; `.zro`, C AOT, and LLVM AOT consumers; native extern 29/29 and AOT stripping 37/37 focused evidence | proven | preserve in final matrix |

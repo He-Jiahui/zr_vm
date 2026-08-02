@@ -4249,6 +4249,11 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_generational_pool_type_layout_test
+            ${CMAKE_SOURCE_DIR}/tests/container/test_generational_pool_type_layout.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_generational_pool_artifact_test
             ${CMAKE_SOURCE_DIR}/tests/container/test_generational_pool_artifact.c
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
@@ -4307,6 +4312,23 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             target_link_libraries(${container_target} PRIVATE zr_vm_lib_iteration_static)
         endif ()
     endforeach ()
+
+    target_include_directories(zr_vm_generational_pool_type_layout_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+    )
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_generational_pool_type_layout_test PRIVATE
+                zr_vm_core_shared
+                zr_vm_lib_container_shared
+        )
+    else ()
+        target_link_libraries(zr_vm_generational_pool_type_layout_test PRIVATE
+                zr_vm_core_static
+                zr_vm_lib_container_static
+        )
+    endif ()
 
     target_include_directories(zr_vm_task_runtime_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -6202,9 +6224,10 @@ if (TARGET zr_vm_container_runtime_test AND
         TARGET zr_vm_container_temp_value_root_test AND
         TARGET zr_vm_generational_pool_test AND
         TARGET zr_vm_generational_pool_gc_stress_test AND
+        TARGET zr_vm_generational_pool_type_layout_test AND
         TARGET zr_vm_generational_pool_artifact_test)
     set(container_executables
-            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_metadata_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>;$<TARGET_FILE:zr_vm_generational_pool_test>;$<TARGET_FILE:zr_vm_generational_pool_gc_stress_test>;$<TARGET_FILE:zr_vm_generational_pool_artifact_test>"
+            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_metadata_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>;$<TARGET_FILE:zr_vm_generational_pool_test>;$<TARGET_FILE:zr_vm_generational_pool_gc_stress_test>;$<TARGET_FILE:zr_vm_generational_pool_type_layout_test>;$<TARGET_FILE:zr_vm_generational_pool_artifact_test>"
     )
     set(container_smoke_executables
             "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>"

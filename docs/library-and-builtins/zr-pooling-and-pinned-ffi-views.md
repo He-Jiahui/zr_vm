@@ -8,6 +8,8 @@ related_code:
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.h
   - zr_vm_lib_container/include/zr_vm_lib_container/generational_pool.h
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_internal.h
+  - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_type_layout.c
   - zr_vm_lib_ffi/include/zr_vm_lib_ffi/runtime.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
@@ -29,6 +31,7 @@ implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.h
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
+  - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_type_layout.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
@@ -40,6 +43,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
 plan_sources:
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
+  - user: 2026-08-03 严格按设计完成一次性破坏性切换并重新验收
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
   - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
 tests:
@@ -48,7 +52,9 @@ tests:
   - tests/parser/test_span_semantic_ir_cases.c
   - tests/container/test_generational_pool.c
   - tests/container/test_generational_pool_gc_stress.c
+  - tests/container/test_generational_pool_type_layout.c
   - tests/container/test_generational_pool_artifact.c
+  - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
 doc_type: module-detail
 ---
 
@@ -129,6 +135,27 @@ drop, validation, barrier, dirty-slot, scan-pass, slot and byte counters remain
 separate. The StableSlotSource contract hash is version 2 after adding this
 rollback/barrier contract.
 
+The native pool also accepts canonical `SZrTypeLayout` through
+`ZrPool_CreateFromTypeLayout`. Element size, alignment, GC scan class, copy,
+Drop, and scan traversal are derived from that one layout instead of a second
+handwritten `SZrPoolTypeLayout`. Admission validates the complete copy path,
+rejects move-only or dangling nested layouts, rejects root scan/Drop facts that
+would hide a stronger nested lifecycle, requires a GC visitor for managed
+layouts, and requires a live VM state for `SZrTypeValue` or value-slot storage.
+A VM copy error rolls back canonical storage and never publishes a handle.
+The VM state, nested layouts, registry pointer arrays, every field/offset table,
+and callback user data referenced by their layouts are borrowed and must remain
+valid until the pool is destroyed. The root layout value itself is copied.
+Stateful canonical layouts are currently thread-local; concurrent admission is
+rejected until operations can receive an isolation-domain-safe state per call.
+
+The production erased-value `Pool<T>` provider now enters through this canonical
+bridge. Its hidden `__zr_pool_values` array remains the current managed root
+owner, so its canonical visitor intentionally does not mark a second copy of the
+same values. Direct `ZrPool_Scan` tests prove layout-driven visitor routing for
+native closed layouts; they do not yet claim that the production provider stores
+closed `T` values only in compacting GC-owned slabs.
+
 The native module publishes that hash as a descriptor constant. The generic
 artifact projection maps it to the StableSlotSource layout capability by
 protocol id, not provider name. Source import, native metadata, binary artifact,
@@ -196,12 +223,17 @@ card retention during a write guard, one million direct-field accesses without
 another generation validation, and 100,000 reuse cycles.
 `zr_vm_generational_pool_artifact_test` executes the source constant and proves
 native/binary/reflection hash parity plus corrupt-layout rejection.
+`zr_vm_generational_pool_type_layout_test` covers canonical GcFree and GcMapped
+admission, visitor routing, exactly-once deferred Drop, managed-state and visitor
+requirements, VM copy-error rollback, stateful-concurrency rejection, successful
+nested managed scan/Drop, missing copy paths, raw-copy bypass, and nested
+scan/Drop downgrade rejection.
 
 ## Follow-up Boundary
 
 This milestone provides exact-length reusable arrays and pinned byte-buffer views.
 Size-class pooling, arbitrary typed native slices, custom marshallers, managed
-moving-slab compaction, and language-level early-exit cleanup for native pool
-guards remain separate work. They must
+moving-slab compaction, closed-`T` production storage, and language-level
+early-exit cleanup for native pool guards remain separate work. They must
 extend the structured protocol, TypeLayout, and artifact contracts rather than
 adding provider-name recognition.
