@@ -8,11 +8,14 @@
 #include "compile_expression_internal.h"
 #include "compile_time_binding_metadata.h"
 #include "compile_time_executor_internal.h"
+#include "compile_time_import.h"
 #include "compile_statement_internal.h"
+#include "compile_tool_execution_scope.h"
 #include "compiler_using_plugin_guard_escape.h"
 #include "type_inference_internal.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include "zr_vm_core/function.h"
@@ -28,6 +31,47 @@
 
 static TZrBool compile_statement_trace_enabled(void);
 static void compile_statement_trace(const TZrChar *format, ...);
+
+static SZrAstNode *compile_statement_find_transitive_build_dependency_import(
+        const SZrCompilerState *cs,
+        SZrAstNode *scriptAst) {
+    SZrAstNodeArray *statements;
+
+    if (cs == ZR_NULL || scriptAst == ZR_NULL ||
+        scriptAst->type != ZR_AST_SCRIPT) {
+        return ZR_NULL;
+    }
+    statements = scriptAst->data.script.statements;
+    for (TZrSize index = 0U;
+         statements != ZR_NULL && index < statements->count;
+         index++) {
+        SZrAstNode *statement = statements->nodes[index];
+        SZrAstNode *modulePath;
+        const TZrChar *specifier;
+
+        if (statement == ZR_NULL ||
+            statement->type != ZR_AST_VARIABLE_DECLARATION ||
+            statement->data.variableDeclaration.value == ZR_NULL ||
+            statement->data.variableDeclaration.value->type !=
+                    ZR_AST_IMPORT_EXPRESSION) {
+            continue;
+        }
+        modulePath = statement->data.variableDeclaration.value
+                             ->data.importExpression.modulePath;
+        if (modulePath == ZR_NULL ||
+            modulePath->type != ZR_AST_STRING_LITERAL ||
+            modulePath->data.stringLiteral.value == ZR_NULL) {
+            continue;
+        }
+        specifier = ZrCore_String_GetNativeString(
+                modulePath->data.stringLiteral.value);
+        if (ZrParser_ProjectImports_IsBuildDependencySpecifier(
+                    cs->state, specifier)) {
+            return statement;
+        }
+    }
+    return ZR_NULL;
+}
 void emit_type_conversion(SZrCompilerState *cs,
                           TZrUInt32 destSlot,
                           TZrUInt32 srcSlot,
@@ -564,6 +608,63 @@ static void compile_statement_free_imported_compile_time_variables(SZrState *sta
     ZrCore_Array_Free(state, &module->compileTimeVariables);
 }
 
+static void compile_statement_free_imported_compile_time_functions(
+        SZrState *state,
+        SZrImportedCompileTimeModule *module) {
+    if (state == ZR_NULL || module == ZR_NULL ||
+        !module->compileTimeFunctions.isValid ||
+        module->compileTimeFunctions.head == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0U;
+         index < module->compileTimeFunctions.length;
+         index++) {
+        SZrCompileTimeFunction **functionPointer =
+                (SZrCompileTimeFunction **)ZrCore_Array_Get(
+                        &module->compileTimeFunctions, index);
+        SZrCompileTimeFunction *function;
+
+        if (functionPointer == ZR_NULL || *functionPointer == ZR_NULL) {
+            continue;
+        }
+        function = *functionPointer;
+        ZrParser_InferredType_Free(state, &function->returnType);
+        if (function->paramTypes.isValid &&
+            function->paramTypes.head != ZR_NULL) {
+            for (TZrSize parameterIndex = 0U;
+                 parameterIndex < function->paramTypes.length;
+                 parameterIndex++) {
+                SZrInferredType *parameterType =
+                        (SZrInferredType *)ZrCore_Array_Get(
+                                &function->paramTypes, parameterIndex);
+                if (parameterType != ZR_NULL) {
+                    ZrParser_InferredType_Free(state, parameterType);
+                }
+            }
+            ZrCore_Array_Free(state, &function->paramTypes);
+        }
+        if (function->paramNames.isValid &&
+            function->paramNames.head != ZR_NULL) {
+            ZrCore_Array_Free(state, &function->paramNames);
+        }
+        if (function->paramHasDefaultValues.isValid &&
+            function->paramHasDefaultValues.head != ZR_NULL) {
+            ZrCore_Array_Free(state, &function->paramHasDefaultValues);
+        }
+        if (function->paramDefaultValues.isValid &&
+            function->paramDefaultValues.head != ZR_NULL) {
+            ZrCore_Array_Free(state, &function->paramDefaultValues);
+        }
+        ZrCore_Memory_RawFreeWithType(
+                state->global,
+                function,
+                sizeof(*function),
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    ZrCore_Array_Free(state, &module->compileTimeFunctions);
+}
+
 static SZrCompileTimeBindingSourceVariable *compile_statement_find_imported_binding_source_variable(
         TZrPtr userData,
         SZrString *name) {
@@ -601,6 +702,18 @@ static SZrCompileTimeFunction *compile_statement_find_imported_compile_time_func
     }
 
     return ZR_NULL;
+}
+
+static SZrCompileTimeFunction *
+compile_statement_find_exported_compile_time_function(
+        const SZrImportedCompileTimeModule *module,
+        SZrString *name) {
+    SZrCompileTimeFunction *function =
+            compile_statement_find_imported_compile_time_function(
+                    module, name);
+    return function != ZR_NULL && function->isExported
+                   ? function
+                   : ZR_NULL;
 }
 
 static SZrCompileTimeFunction *compile_statement_find_imported_compile_time_function_callback(
@@ -652,6 +765,11 @@ static SZrCompileTimeFunction *compile_statement_create_imported_compile_time_fu
 
     func->name = funcDecl->name->name;
     func->declaration = node;
+    func->isExported =
+            (funcDecl->accessModifier == ZR_ACCESS_PUBLIC ||
+             funcDecl->accessModifier == ZR_ACCESS_PROTECTED)
+                    ? ZR_TRUE
+                    : ZR_FALSE;
     func->location = location;
 
     if (funcDecl->returnType != ZR_NULL &&
@@ -909,6 +1027,7 @@ static SZrCompileTimeFunction *compile_statement_create_imported_compile_time_fu
     func->runtimeProjectionModuleName = moduleName;
     func->runtimeProjectionExportName = info->name;
     func->isRuntimeProjection = ZR_TRUE;
+    func->isExported = ZR_TRUE;
 
     compile_statement_io_typed_type_ref_to_inferred(cs, &info->returnType, &func->returnType);
     for (TZrSize index = 0; index < info->parameterCount; index++) {
@@ -1002,6 +1121,9 @@ static TZrBool compile_statement_register_imported_compile_time_function_alias(
     func->runtimeProjectionModuleName = sourceFunc->runtimeProjectionModuleName;
     func->runtimeProjectionExportName = sourceFunc->runtimeProjectionExportName;
     func->isRuntimeProjection = sourceFunc->isRuntimeProjection;
+    func->isDeclarationTransform = sourceFunc->isDeclarationTransform;
+    func->isExported = sourceFunc->isExported;
+    func->ownerModule = sourceFunc->ownerModule;
     ZrParser_InferredType_Copy(cs->state, &func->returnType, &sourceFunc->returnType);
 
     for (TZrSize index = 0; index < sourceFunc->paramTypes.length; index++) {
@@ -1084,6 +1206,15 @@ static TZrBool compile_statement_collect_imported_compile_time_declarations(SZrC
                 ZrCore_Array_Free(cs->state, &bindingSources);
                 return ZR_FALSE;
             }
+            if (!ZrParser_Metadata_FunctionHasRole(
+                        cs,
+                        declaration,
+                        ZR_PARSER_ATTRIBUTE_ROLE_DECLARATION_TRANSFORM,
+                        &functionInfo->isDeclarationTransform)) {
+                ZrCore_Array_Free(cs->state, &bindingSources);
+                return ZR_FALSE;
+            }
+            functionInfo->ownerModule = module;
             ZrCore_Array_Push(cs->state, &module->compileTimeFunctions, &functionInfo);
         } else if (declaration->type == ZR_AST_VARIABLE_DECLARATION) {
             SZrFunctionCompileTimeVariableInfo *variableInfo =
@@ -1151,9 +1282,174 @@ static TZrBool compile_statement_collect_imported_compile_time_declarations_from
             return ZR_FALSE;
         }
 
+        functionInfo->ownerModule = module;
+
         ZrCore_Array_Push(cs->state, &module->compileTimeFunctions, &functionInfo);
     }
 
+    return ZR_TRUE;
+}
+
+SZrImportedCompileTimeModule *ZrParser_CompileTimeImport_LoadSourceModule(
+        SZrCompilerState *cs,
+        SZrString *moduleName,
+        const TZrByte *sourceBytes,
+        TZrSize sourceByteCount,
+        TZrBool canonicalizeImports) {
+    SZrImportedCompileTimeModule *module;
+    SZrAstNode *scriptAst;
+    SZrCompileToolExecutionScope executionScope;
+    SZrAstNode *transitiveImport;
+    TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH] = {0};
+    SZrFileRange importErrorLocation =
+            {{0, 0, 0}, {0, 0, 0}, ZR_NULL};
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL ||
+        cs->state->global == ZR_NULL || moduleName == ZR_NULL ||
+        sourceBytes == ZR_NULL || sourceByteCount == 0U) {
+        return ZR_NULL;
+    }
+    module = compile_statement_find_imported_compile_time_module(
+            cs, moduleName);
+    if (module != ZR_NULL) {
+        return module;
+    }
+
+    scriptAst = ZrParser_Parse(
+            cs->state,
+            (const TZrChar *)sourceBytes,
+            sourceByteCount,
+            moduleName);
+    transitiveImport = !canonicalizeImports
+                               ? compile_statement_find_transitive_build_dependency_import(
+                                         cs, scriptAst)
+                               : ZR_NULL;
+    if (transitiveImport != ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs,
+                "compiletool.provider.transitive_not_promoted: external provider build-dependency imports require the phase-cycle graph gate",
+                transitiveImport->location);
+        ZrParser_Ast_Free(cs->state, scriptAst);
+        return ZR_NULL;
+    }
+    if (scriptAst == ZR_NULL ||
+        !ZrParser_CompileTime_PrepareBuildFacts(cs->state, scriptAst)) {
+        if (scriptAst != ZR_NULL) {
+            ZrParser_Ast_Free(cs->state, scriptAst);
+        }
+        return ZR_NULL;
+    }
+    if (canonicalizeImports &&
+        !ZrParser_ProjectImports_CanonicalizeAst(
+                cs->state,
+                scriptAst,
+                moduleName,
+                ZR_NULL,
+                importError,
+                sizeof(importError),
+                &importErrorLocation)) {
+        ZrParser_Compiler_Error(
+                cs,
+                importError[0] != '\0'
+                        ? importError
+                        : "failed to canonicalize imported module imports",
+                importErrorLocation);
+        ZrParser_Ast_Free(cs->state, scriptAst);
+        return ZR_NULL;
+    }
+
+    module = (SZrImportedCompileTimeModule *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            sizeof(*module),
+            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (module == ZR_NULL) {
+        ZrParser_Ast_Free(cs->state, scriptAst);
+        return ZR_NULL;
+    }
+    ZrCore_Memory_RawSet(module, 0, sizeof(*module));
+    module->moduleName = moduleName;
+    module->scriptAst = scriptAst;
+    ZrCore_Array_Init(
+            cs->state,
+            &module->compileTimeVariables,
+            sizeof(SZrFunctionCompileTimeVariableInfo *),
+            ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(
+            cs->state,
+            &module->compileTimeFunctions,
+            sizeof(SZrCompileTimeFunction *),
+            ZR_PARSER_INITIAL_CAPACITY_TINY);
+
+    if (!ZrParser_CompileToolExecutionScope_EnterAst(
+                cs, scriptAst, module, &executionScope) ||
+        !compile_statement_collect_imported_compile_time_declarations(
+                cs, module, scriptAst)) {
+        ZrParser_CompileToolExecutionScope_Leave(cs, &executionScope);
+        compile_statement_free_imported_compile_time_variables(
+                cs->state, module);
+        compile_statement_free_imported_compile_time_functions(
+                cs->state, module);
+        ZrParser_Ast_Free(cs->state, scriptAst);
+        ZrCore_Memory_RawFreeWithType(
+                cs->state->global,
+                module,
+                sizeof(*module),
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        return ZR_NULL;
+    }
+    ZrParser_CompileToolExecutionScope_Leave(cs, &executionScope);
+    ZrCore_Array_Push(
+            cs->state, &cs->importedCompileTimeModules, &module);
+    return module;
+}
+
+TZrBool ZrParser_CompileTimeImport_RegisterModuleAlias(
+        SZrCompilerState *cs,
+        SZrString *aliasName,
+        SZrImportedCompileTimeModule *module,
+        SZrFileRange location,
+        TZrBool exposeUnqualifiedFunctions) {
+    SZrImportedCompileTimeModuleAlias alias;
+
+    if (cs == ZR_NULL || aliasName == ZR_NULL || module == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U;
+         index < cs->importedCompileTimeModuleAliases.length;
+         index++) {
+        SZrImportedCompileTimeModuleAlias *existing =
+                (SZrImportedCompileTimeModuleAlias *)ZrCore_Array_Get(
+                        &cs->importedCompileTimeModuleAliases, index);
+        if (existing != ZR_NULL && existing->aliasName != ZR_NULL &&
+            ZrCore_String_Equal(existing->aliasName, aliasName)) {
+            existing->module = module;
+            return ZR_TRUE;
+        }
+    }
+
+    alias.aliasName = aliasName;
+    alias.module = module;
+    ZrCore_Array_Push(
+            cs->state, &cs->importedCompileTimeModuleAliases, &alias);
+    if (!exposeUnqualifiedFunctions) {
+        return ZR_TRUE;
+    }
+    for (TZrSize index = 0U;
+         index < module->compileTimeFunctions.length;
+         index++) {
+        SZrCompileTimeFunction **function =
+                (SZrCompileTimeFunction **)ZrCore_Array_Get(
+                        &module->compileTimeFunctions, index);
+        if (function != ZR_NULL && *function != ZR_NULL &&
+            (*function)->name != ZR_NULL && (*function)->isExported &&
+            !compile_statement_register_imported_compile_time_function_alias(
+                    cs,
+                    (*function)->name,
+                    *function,
+                    location)) {
+            return ZR_FALSE;
+        }
+    }
     return ZR_TRUE;
 }
 
@@ -1162,11 +1458,8 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
         SZrString *moduleName) {
     SZrGlobalState *global;
     SZrIo io;
-    TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
-    SZrFileRange importErrorLocation;
     TZrBytePtr sourceBuffer = ZR_NULL;
     TZrSize sourceSize = 0;
-    SZrAstNode *scriptAst = ZR_NULL;
     SZrImportedCompileTimeModule *module = ZR_NULL;
     TZrNativeString moduleNameText;
 
@@ -1225,9 +1518,8 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
                                                                                       module,
                                                                                       source->modules[0].entryFunction)) {
             compile_statement_free_imported_compile_time_variables(cs->state, module);
-            if (module->compileTimeFunctions.isValid && module->compileTimeFunctions.head != ZR_NULL) {
-                ZrCore_Array_Free(cs->state, &module->compileTimeFunctions);
-            }
+            compile_statement_free_imported_compile_time_functions(
+                    cs->state, module);
             ZrCore_Memory_RawFreeWithType(global,
                                           module,
                                           sizeof(SZrImportedCompileTimeModule),
@@ -1253,65 +1545,12 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
         return ZR_NULL;
     }
 
-    scriptAst = ZrParser_Parse(cs->state, (const TZrChar *)sourceBuffer, sourceSize, moduleName);
+    module = ZrParser_CompileTimeImport_LoadSourceModule(
+            cs, moduleName, sourceBuffer, sourceSize, ZR_TRUE);
     ZrCore_Memory_RawFreeWithType(global,
                                   sourceBuffer,
                                   sourceSize + 1,
                                   ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-    if (scriptAst == ZR_NULL) {
-        return ZR_NULL;
-    }
-    if (!ZrParser_CompileTime_PrepareBuildFacts(cs->state, scriptAst)) {
-        ZrParser_Ast_Free(cs->state, scriptAst);
-        return ZR_NULL;
-    }
-    if (!ZrParser_ProjectImports_CanonicalizeAst(cs->state,
-                                                 scriptAst,
-                                                 moduleName,
-                                                 ZR_NULL,
-                                                 importError,
-                                                 sizeof(importError),
-                                                 &importErrorLocation)) {
-        ZrParser_Compiler_Error(cs,
-                                importError[0] != '\0' ? importError : "failed to canonicalize imported module imports",
-                                importErrorLocation);
-        ZrParser_Ast_Free(cs->state, scriptAst);
-        return ZR_NULL;
-    }
-
-    module = (SZrImportedCompileTimeModule *)ZrCore_Memory_RawMallocWithType(global,
-                                                                              sizeof(SZrImportedCompileTimeModule),
-                                                                              ZR_MEMORY_NATIVE_TYPE_ARRAY);
-    if (module == ZR_NULL) {
-        ZrParser_Ast_Free(cs->state, scriptAst);
-        return ZR_NULL;
-    }
-
-    ZrCore_Memory_RawSet(module, 0, sizeof(*module));
-    module->moduleName = moduleName;
-    module->scriptAst = scriptAst;
-    ZrCore_Array_Init(cs->state,
-                      &module->compileTimeVariables,
-                      sizeof(SZrFunctionCompileTimeVariableInfo *),
-                      ZR_PARSER_INITIAL_CAPACITY_TINY);
-    ZrCore_Array_Init(cs->state,
-                      &module->compileTimeFunctions,
-                      sizeof(SZrCompileTimeFunction *),
-                      ZR_PARSER_INITIAL_CAPACITY_TINY);
-    if (!compile_statement_collect_imported_compile_time_declarations(cs, module, scriptAst)) {
-        compile_statement_free_imported_compile_time_variables(cs->state, module);
-        if (module->compileTimeFunctions.isValid && module->compileTimeFunctions.head != ZR_NULL) {
-            ZrCore_Array_Free(cs->state, &module->compileTimeFunctions);
-        }
-        ZrParser_Ast_Free(cs->state, scriptAst);
-        ZrCore_Memory_RawFreeWithType(global,
-                                      module,
-                                      sizeof(SZrImportedCompileTimeModule),
-                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        return ZR_NULL;
-    }
-
-    ZrCore_Array_Push(cs->state, &cs->importedCompileTimeModules, &module);
     return module;
 }
 
@@ -1381,7 +1620,8 @@ static TZrBool compile_statement_try_register_imported_compile_time_module_alias
     for (TZrSize index = 0; index < module->compileTimeFunctions.length; index++) {
         SZrCompileTimeFunction **funcPtr =
                 (SZrCompileTimeFunction **)ZrCore_Array_Get(&module->compileTimeFunctions, index);
-        if (funcPtr == ZR_NULL || *funcPtr == ZR_NULL || (*funcPtr)->name == ZR_NULL) {
+        if (funcPtr == ZR_NULL || *funcPtr == ZR_NULL ||
+            (*funcPtr)->name == ZR_NULL || !(*funcPtr)->isExported) {
             continue;
         }
         if (!compile_statement_register_imported_compile_time_function_alias(cs,
@@ -1441,7 +1681,8 @@ static TZrBool compile_statement_try_register_imported_compile_time_member_alias
         return ZR_TRUE;
     }
 
-    functionInfo = compile_statement_find_imported_compile_time_function(module, memberName);
+    functionInfo = compile_statement_find_exported_compile_time_function(
+            module, memberName);
     if (functionInfo != ZR_NULL) {
         return compile_statement_register_imported_compile_time_function_alias(cs,
                                                                               aliasName,
@@ -1468,7 +1709,8 @@ static TZrBool compile_statement_try_register_imported_compile_time_member_alias
     }
 
     if (bindingInfo->targetKind == ZR_COMPILE_TIME_BINDING_TARGET_FUNCTION) {
-        functionInfo = compile_statement_find_imported_compile_time_function(module, bindingInfo->targetName);
+        functionInfo = compile_statement_find_exported_compile_time_function(
+                module, bindingInfo->targetName);
         return functionInfo != ZR_NULL
                        ? compile_statement_register_imported_compile_time_function_alias(cs,
                                                                                          aliasName,

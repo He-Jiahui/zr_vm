@@ -2167,7 +2167,7 @@ static void module_init_collect_static_imports(SZrState *state,
         return;
     }
 
-    if (compiler_is_compile_tool_import_declaration(node)) {
+    if (compiler_is_compile_tool_import_declaration(state, node)) {
         return;
     }
 
@@ -2405,7 +2405,7 @@ static TZrBool module_init_prescan_source_summary(SZrState *state,
             continue;
         }
 
-        if (compiler_is_compile_tool_import_declaration(statement)) {
+        if (compiler_is_compile_tool_import_declaration(state, statement)) {
             continue;
         }
 
@@ -2435,11 +2435,16 @@ static TZrBool module_init_prescan_source_summary(SZrState *state,
 
         if (statement->type == ZR_AST_FUNCTION_DECLARATION &&
             statement->data.functionDeclaration.name != ZR_NULL &&
-            statement->data.functionDeclaration.name->name != ZR_NULL) {
+            statement->data.functionDeclaration.name->name != ZR_NULL &&
+            (statement->data.functionDeclaration.accessModifier ==
+                     ZR_ACCESS_PUBLIC ||
+             statement->data.functionDeclaration.accessModifier ==
+                     ZR_ACCESS_PROTECTED)) {
             SZrModuleInitExportInfo exportInfo;
             ZrCore_Memory_RawSet(&exportInfo, 0, sizeof(exportInfo));
             exportInfo.name = statement->data.functionDeclaration.name->name;
-            exportInfo.accessModifier = ZR_ACCESS_PUBLIC;
+            exportInfo.accessModifier =
+                    statement->data.functionDeclaration.accessModifier;
             exportInfo.exportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
             exportInfo.readiness = ZR_MODULE_EXPORT_READY_DECLARATION;
             exportInfo.symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
@@ -3400,7 +3405,7 @@ static void module_init_register_import_binding_from_variable(SZrParserInitAnaly
         return;
     }
 
-    if (compiler_is_compile_tool_import_declaration(node)) {
+    if (compiler_is_compile_tool_import_declaration(context->cs->state, node)) {
         return;
     }
 
@@ -3848,7 +3853,7 @@ static TZrBool module_init_analyze_statement(SZrParserInitAnalysisContext *conte
             context->bindings.length = scopeBindingsLength;
             return ZR_TRUE;
         case ZR_AST_VARIABLE_DECLARATION:
-            if (compiler_is_compile_tool_import_declaration(node)) {
+            if (compiler_is_compile_tool_import_declaration(context->cs->state, node)) {
                 return ZR_TRUE;
             }
             if (!module_init_analyze_expression(context, node->data.variableDeclaration.value, effects, ZR_NULL)) {

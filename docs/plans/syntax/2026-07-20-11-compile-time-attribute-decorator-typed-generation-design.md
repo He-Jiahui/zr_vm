@@ -22,8 +22,9 @@
 > 实际条目与整包 SHA-256，并把规范 CompileTool lock-section SHA-256 交给
 > comptime cache v5；cache entry 比较完整 32-byte digest，不再压缩为 64-bit FNV，
 > 并把当前模块完整 source SHA-256 纳入 identity。
-> runtime dependency graph 不接收该 provider。外部 provider 的 import/执行激活、
-> 实际传递 provider 图验证仍未完成。comptime cache 现有版本化、规范排序、
+> runtime dependency graph 不接收该 provider。外部 `.zrs` source provider 的
+> import/执行激活已有独立验收；实际传递 provider 图未晋级，provider-to-provider
+> build-dependency import 当前在递归准备前 fail-closed。comptime cache 现有版本化、规范排序、
 > 固定大端编码且带全快照 SHA-256 的 snapshot export/import，损坏输入不会替换旧缓存；
 > project CLI 已接入 `.zr_comptime_cache` 原子读写，并证明 miss/hit、同长度语义修改
 > miss、损坏拒绝修复和恢复原源码后的 artifact byte-identical。其余

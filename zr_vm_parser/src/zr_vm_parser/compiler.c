@@ -494,7 +494,7 @@ static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNod
         return;
     }
 
-    if (compiler_is_compile_tool_import_declaration(statement)) {
+    if (compiler_is_compile_tool_import_declaration(cs->state, statement)) {
         return;
     }
 

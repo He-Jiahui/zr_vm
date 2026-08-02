@@ -149,6 +149,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange fnKeywordLoc;
     SZrFileRange returnDelimiterLoc;
+    EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
     TZrBool isAsync = ZR_FALSE;
 
     memset(&fnKeywordLoc, 0, sizeof(fnKeywordLoc));
@@ -166,7 +167,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || ps->lexer->t.token == ZR_TK_PRO) {
-        parse_access_modifier(ps);
+        accessModifier = parse_access_modifier(ps);
     }
 
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
@@ -326,6 +327,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     node->data.functionDeclaration.decorators = decorators;
     node->data.functionDeclaration.fnKeywordLocation = fnKeywordLoc;
     node->data.functionDeclaration.returnDelimiterLocation = returnDelimiterLoc;
+    node->data.functionDeclaration.accessModifier = accessModifier;
     node->data.functionDeclaration.isAsync = isAsync;
     return node;
 }

@@ -7,6 +7,10 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
+ZR_PARSER_API TZrBool ZrParser_ProjectImports_IsBuildDependencySpecifier(
+        const SZrState *state,
+        const TZrChar *rawSpecifier);
+
 ZR_PARSER_API TZrBool ZrParser_ProjectImports_CanonicalizeAst(SZrState *state,
                                                               SZrAstNode *ast,
                                                               SZrString *sourceName,

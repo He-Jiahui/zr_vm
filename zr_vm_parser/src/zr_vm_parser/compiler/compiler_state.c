@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compile_tool_project_provider.h"
 #include "comptime_runtime_contract.h"
 #include "zr_vm_parser/parser.h"
 
@@ -177,6 +178,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->importedCompileTimeModuleAliases,
                       sizeof(SZrImportedCompileTimeModuleAlias),
                       ZR_PARSER_INITIAL_CAPACITY_TINY);
+    cs->activeImportedCompileTimeModule = ZR_NULL;
     ZrCore_Array_Init(state,
                       &cs->typeValueAliases,
                       sizeof(SZrTypeBinding),
@@ -210,6 +212,10 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->constructorInitializedConstFields,
                       sizeof(SZrString *),
                       ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &cs->ownedCompileToolProviders,
+                      sizeof(SZrCompileToolProjectProvider *),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
 }
 
 // 清理解译器状态
@@ -572,6 +578,7 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         ZrCore_Array_Free(state, &cs->importedCompileTimeModuleAliases);
     }
 
+    ZrParser_CompileToolProjectProvider_FreeAll(cs);
     if (cs->compileToolBindings.isValid &&
         cs->compileToolBindings.head != ZR_NULL &&
         cs->compileToolBindings.capacity > 0 &&

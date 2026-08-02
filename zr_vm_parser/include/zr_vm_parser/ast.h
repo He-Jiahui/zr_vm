@@ -630,6 +630,7 @@ typedef struct SZrFunctionDeclaration {
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
     SZrFileRange fnKeywordLocation;
     SZrFileRange returnDelimiterLocation;
+    EZrAccessModifier accessModifier;
     TZrBool isAsync;
 } SZrFunctionDeclaration;
 

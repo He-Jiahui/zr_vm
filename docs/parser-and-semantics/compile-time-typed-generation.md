@@ -4,6 +4,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/compile_tool.h
   - zr_vm_parser/include/zr_vm_parser/comptime_cache.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/project_imports.h
   - zr_vm_parser/include/zr_vm_parser/comptime_contract.h
   - zr_vm_parser/include/zr_vm_parser/declaration_transform_contract.h
   - zr_vm_parser/src/zr_vm_parser/attribute_contract.c
@@ -11,6 +12,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/declaration_transform_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_import.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_interfaces.c
@@ -27,6 +29,17 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_execution_scope.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_execution_scope.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_project_provider.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_project_provider.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_state.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/project_imports.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface_contracts.c
@@ -43,10 +56,12 @@ related_code:
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/compile_tool.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
+  - zr_vm_parser/include/zr_vm_parser/project_imports.h
   - zr_vm_parser/src/zr_vm_parser/attribute_contract.c
   - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
   - zr_vm_parser/src/zr_vm_parser/declaration_transform_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_import.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_diagnostics.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_interfaces.c
@@ -63,6 +78,17 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_execution_scope.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_execution_scope.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_project_provider.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_project_provider.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_state.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/project_imports.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate_generated_source_map.h
@@ -90,6 +116,7 @@ tests:
   - tests/compileTime/test_compile_time_execution.c
   - tests/compileTime/test_compile_time_declaration_patch_transaction_cases.h
   - tests/compileTime/test_compile_time_declaration_patch_transaction_hash_cases.h
+  - tests/parser/test_compile_tool_project_import.c
   - tests/library/test_project_manifest_v2.c
   - tests/library/test_zrm_container.c
   - tests/acceptance/2026-08-01-syntax-11-m4-patch-transaction.md
@@ -99,6 +126,7 @@ tests:
   - tests/acceptance/2026-08-02-syntax-11-m5-compile-tool-artifact-resolution.md
   - tests/acceptance/2026-08-02-syntax-11-m5-persistent-cache-snapshot.md
   - tests/acceptance/2026-08-02-syntax-11-m5-cli-persistent-comptime-cache.md
+  - tests/acceptance/2026-08-02-syntax-11-m5-external-provider-activation.md
   - tests/acceptance/2026-07-31-syntax-11-m4-typed-patch-diagnostics.md
   - tests/acceptance/2026-07-31-syntax-11-m4-interface-adds.md
   - tests/acceptance/2026-07-29-syntax-upper-gates-audit.md
@@ -182,6 +210,19 @@ printer or leave a partial artifact.
    SHA-256; Runtime lock entries do not enter this graph. The resolver does not
    insert any package into the runtime dependency graph.
    A resolved binding borrows that owned artifact until compiler-state teardown.
+   The ordinary module-level import path recognizes a package declared in v2
+   `buildDependencies` as CompileTool-only. Project canonicalization preserves
+   that package specifier, module-init analysis excludes it from the runtime
+   graph, and the project-provider layer opens only a materialized path ZRM.
+   The selected `.zrs` entry is parsed into a compiler-owned imported module.
+   Only `pub`/`pro` comptime functions are visible through the consumer alias;
+   private functions remain callable only while the provider execution scope is
+   active. Provider imports and private helpers are restored at scope exit, so
+   they cannot leak into the consumer lexical binding table. Repeated provider
+   declaration uses a binding mark and restores it on failure. Until the
+   transitive phase-cycle graph is promoted, an external source provider that
+   imports another build dependency is rejected before recursive build-fact
+   preparation with `compiletool.provider.transitive_not_promoted`.
    Cache schema v5 hashes canonical field encodings for the lexical provider
    contract, package/module, source kind, resolved version, package hash,
    CompileTool lock graph hash, artifact entry/hash, public contract, location,
@@ -254,8 +295,13 @@ separate from runtime dependencies and emits phase-typed CompileTool entries in
 the deterministic lock graph. The compiler-owned artifact resolver and cache
 v5 handoff now close the package/ZRM byte ownership and in-process
 content-identity layer.
-The ordinary import path and transform executor do not yet activate an external
-provider from those bytes. The project CLI now reads `.zr_comptime_cache`,
+The ordinary import path and transform executor now activate a materialized
+external source provider from the verified bytes. This is deliberately a
+compiler-owned `.zrs` projection, not a claim that the final versioned
+compile-tool executable section is implemented. Artifact/reflection consumers,
+an explicit executable-section schema, and full transitive provider-graph
+acceptance remain open; transitive provider imports currently fail closed at
+the source-module boundary. The project CLI now reads `.zr_comptime_cache`,
 imports it fail-closed, compiles every source through the cache-aware parser
 entry, exports the merged snapshot, and replaces the file atomically. A corrupt
 snapshot is rejected and repaired; focused coverage proves first-build miss,
@@ -325,6 +371,13 @@ exact roundtrip, full-integrity payload-bit detection,
 malformed/truncated/trailing rejection, and preservation of the previous cache
 after failed import. The CLI incremental suite separately proves the on-disk
 consumer, source-semantic invalidation, and reproducible restored-source output.
+`test_compile_tool_project_import.c` covers project canonicalization for root
+and package submodules, unknown-package rejection, runtime-graph isolation,
+missing-lock rejection, ordinary-function visibility retention, compiler-owned
+provider lifetime, private external transform rejection, private provider-local
+helper execution, public transform execution, generated-field layout/readback,
+the absence of runtime dependency insertion, and fail-closed rejection of an
+unpromoted transitive build-dependency import.
 
 The 2026-07-30 WSL GCC isolated build and full 123-test CTest matrix include the
 pre-diagnostic baseline. The 2026-07-31 WSL GCC and Clang focused replays pass
@@ -346,6 +399,13 @@ transform registration each have named source files and narrow internal APIs.
 External CompileTool package/ZRM resolution is isolated in
 `compile_tool_artifact.c`; fixture-heavy resolver cases live in a dedicated
 test header so the general runtime-contract test remains an orchestration file.
+`compile_tool_project_provider.c` owns materialized project-provider lifetime
+and its resolved descriptor. `compile_tool_execution_scope.c` owns the
+temporary provider import/helper binding scope. `compile_statement.c` owns the
+shared source-module loader because both ordinary imported comptime modules and
+external source providers require the same declaration collection and cleanup
+rules. `compile_time_import.h` is the narrow internal bridge between those
+modules.
 Patch diagnostic decoding is also isolated behind one internal function rather
 than adding more field/schema helpers to `compile_time_executor.c`.
 Patch interface decoding and value-type interface contract validation are

@@ -113,13 +113,13 @@ write_known_call_source() {
     local group_index
 
     {
-        echo 'var benchConfig = %import("bench_config");'
+        echo 'let benchConfig = import("bench_config");'
         echo
-        echo "answer(): int {"
+        echo "fn answer(): int {"
         echo "    return 11;"
         echo "}"
         echo
-        echo "bonus(): int {"
+        echo "fn bonus(): int {"
         echo "    return 17;"
         echo "}"
         echo

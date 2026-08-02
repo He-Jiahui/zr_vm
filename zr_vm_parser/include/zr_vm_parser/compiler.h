@@ -184,6 +184,7 @@ typedef struct SZrCompilerState {
     SZrArray compileTimeFunctions;            // 编译期函数表（SZrCompileTimeFunction*）
     SZrArray importedCompileTimeModules;      // 跨文件导入模块的 compile-time 元数据（SZrImportedCompileTimeModule*）
     SZrArray importedCompileTimeModuleAliases; // 模块别名表（SZrImportedCompileTimeModuleAlias）
+    struct SZrImportedCompileTimeModule *activeImportedCompileTimeModule; // 当前 compiler-only provider 执行域
     SZrArray typeValueAliases;                // 类型值别名表（SZrTypeBinding）
     SZrArray compileToolBindings;             // phase-tagged lexical CompileTool bindings
     SZrArray attributeSchemas;                // bound readonly-struct attribute schemas
@@ -212,6 +213,7 @@ typedef struct SZrCompilerState {
     SZrArray constLocalVars;                   // const 局部变量名数组（SZrString*）
     SZrArray constParameters;                  // const 参数名数组（SZrString*）
     SZrArray constructorInitializedConstFields; // 构造函数中已初始化的 const 成员名数组（SZrString*）
+    SZrArray ownedCompileToolProviders;         // SZrCompileToolProjectProvider*; compiler-only artifact owners
 } SZrCompilerState;
 
 // 编译期变量信息
@@ -238,6 +240,8 @@ typedef struct SZrCompileTimeFunction {
     SZrString *runtimeProjectionExportName; // binary import 时回落到的 pro export 名称
     TZrBool isRuntimeProjection;            // 是否为 runtime callable projection
     TZrBool isDeclarationTransform;         // declarationTransform role; never a runtime decorator
+    TZrBool isExported;                     // visible through an imported module alias
+    struct SZrImportedCompileTimeModule *ownerModule; // compiler-only source provider owner
     SZrFileRange location;                  // 声明位置
 } SZrCompileTimeFunction;
 

@@ -8,8 +8,10 @@
 #include "compiler_attribute_binding.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_parser/compile_tool.h"
+#include "zr_vm_parser/project_imports.h"
 
-TZrBool compiler_is_compile_tool_import_declaration(const SZrAstNode *node) {
+TZrBool compiler_is_compile_tool_import_declaration(const SZrState *state,
+                                                     const SZrAstNode *node) {
     const SZrVariableDeclaration *declaration;
     const SZrAstNode *modulePath;
     const TZrChar *moduleName;
@@ -34,7 +36,8 @@ TZrBool compiler_is_compile_tool_import_declaration(const SZrAstNode *node) {
     }
 
     moduleName = ZrCore_String_GetNativeString(modulePath->data.stringLiteral.value);
-    return ZrParser_CompileTool_IsModuleName(moduleName);
+    return ZrParser_CompileTool_IsModuleName(moduleName) ||
+           ZrParser_ProjectImports_IsBuildDependencySpecifier(state, moduleName);
 }
 
 static void compiler_free_collected_generic_parameters(SZrState *state, SZrArray *genericParameters) {
@@ -997,7 +1000,7 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
             continue;
         }
 
-        if (compiler_is_compile_tool_import_declaration(stmt)) {
+        if (compiler_is_compile_tool_import_declaration(cs->state, stmt)) {
             continue;
         }
 

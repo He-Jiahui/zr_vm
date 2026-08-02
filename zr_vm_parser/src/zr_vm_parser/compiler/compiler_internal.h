@@ -530,7 +530,8 @@ TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name)
 
 ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
 
-TZrBool compiler_is_compile_tool_import_declaration(const SZrAstNode *node) ;
+TZrBool compiler_is_compile_tool_import_declaration(const SZrState *state,
+                                                     const SZrAstNode *node) ;
 
 TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) ;
 void emit_object_field_assignment_from_expression(SZrCompilerState *cs,

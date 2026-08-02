@@ -83,6 +83,47 @@ static TZrBool project_imports_replace_string_literal_value(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool project_imports_is_build_dependency(
+        const SZrLibrary_Project *project,
+        const TZrChar *rawSpecifier) {
+    SZrLibrary_ModuleSpecifier specifier;
+
+    if (project == ZR_NULL || project->manifestVersion != 2U ||
+        rawSpecifier == ZR_NULL ||
+        !ZrLibrary_ModuleSpecifier_Parse(
+                rawSpecifier, &specifier, ZR_NULL, 0U) ||
+        specifier.kind != ZR_LIBRARY_MODULE_SPECIFIER_KIND_PACKAGE) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0U;
+         index < project->manifestBuildDependencyCount;
+         index++) {
+        const SZrLibrary_ModuleIdentity *dependencyIdentity =
+                &project->manifestBuildDependencies[index].packageIdentity;
+        if (dependencyIdentity->domain == ZR_LIBRARY_MODULE_DOMAIN_PACKAGE &&
+            specifier.identity.domain == ZR_LIBRARY_MODULE_DOMAIN_PACKAGE &&
+            strcmp(
+                    dependencyIdentity->packageName,
+                    specifier.identity.packageName) == 0) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+ZR_PARSER_API TZrBool ZrParser_ProjectImports_IsBuildDependencySpecifier(
+        const SZrState *state,
+        const TZrChar *rawSpecifier) {
+    const SZrLibrary_Project *project;
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    project = ZrLibrary_Project_GetFromGlobal(state->global);
+    return project_imports_is_build_dependency(project, rawSpecifier);
+}
+
 static const TZrChar *project_imports_extract_explicit_module_key(SZrAstNode *ast, SZrAstNode **outNameNode) {
     SZrAstNode *moduleNode;
     SZrAstNode *nameNode;
@@ -168,6 +209,10 @@ static TZrBool project_imports_canonicalize_import_expression(SZrState *state,
 
     rawSpecifier = project_imports_string_text(modulePathNode->data.stringLiteral.value);
     if (rawSpecifier == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (project_imports_is_build_dependency(project, rawSpecifier)) {
         return ZR_TRUE;
     }
 

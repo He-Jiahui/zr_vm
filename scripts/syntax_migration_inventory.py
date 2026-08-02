@@ -948,9 +948,24 @@ _EMBEDDED_HOST_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".js", ".ts"}
 _REPOSITORY_FINDING_ALLOWLIST = {
     (
         "tests/parser/test_percent_syntax_cutover.c",
-        175,
+        172,
         "unrecognizedPercentDirective",
     ): "expectedUnknownPercentNegative",
+    (
+        "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+        11,
+        "percentCompileTime",
+    ): "expectedRemovedSyntaxFormattingNegative",
+    (
+        "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+        14,
+        "percentFunc",
+    ): "expectedRemovedSyntaxFormattingNegative",
+    (
+        "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+        14,
+        "legacyFunctionTypeArrow",
+    ): "expectedRemovedSyntaxFormattingNegative",
     (
         "tests/task/test_task_runtime.c",
         862,

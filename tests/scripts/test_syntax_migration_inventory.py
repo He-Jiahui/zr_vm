@@ -288,8 +288,23 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
         self.assertEqual(
             [
                 (
+                    "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+                    11,
+                    "percentCompileTime",
+                ),
+                (
+                    "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+                    14,
+                    "percentFunc",
+                ),
+                (
+                    "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+                    14,
+                    "legacyFunctionTypeArrow",
+                ),
+                (
                     "tests/parser/test_percent_syntax_cutover.c",
-                    175,
+                    172,
                     "unrecognizedPercentDirective",
                 ),
                 (

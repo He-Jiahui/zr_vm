@@ -250,6 +250,20 @@ SZrCompileTimeFunction *find_compile_time_function(SZrCompilerState *cs, SZrStri
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_NULL;
     }
+    if (cs->activeImportedCompileTimeModule != ZR_NULL) {
+        SZrArray *functions =
+                &cs->activeImportedCompileTimeModule->compileTimeFunctions;
+        for (TZrSize index = 0U; index < functions->length; index++) {
+            SZrCompileTimeFunction **function =
+                    (SZrCompileTimeFunction **)ZrCore_Array_Get(
+                            functions, index);
+            if (function != ZR_NULL && *function != ZR_NULL &&
+                (*function)->name != ZR_NULL &&
+                ZrCore_String_Equal((*function)->name, name)) {
+                return *function;
+            }
+        }
+    }
     for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
         SZrCompileTimeFunction **funcPtr = (SZrCompileTimeFunction **)ZrCore_Array_Get(&cs->compileTimeFunctions, i);
         if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (*funcPtr)->name != ZR_NULL &&
@@ -296,6 +310,8 @@ static void ct_compile_time_function_reset_signature(SZrCompilerState *cs, SZrCo
     func->runtimeProjectionExportName = ZR_NULL;
     func->isRuntimeProjection = ZR_FALSE;
     func->isDeclarationTransform = ZR_FALSE;
+    func->isExported = ZR_FALSE;
+    func->ownerModule = ZR_NULL;
 }
 
 static TZrBool ct_compile_time_function_append_parameter(SZrCompilerState *cs,
@@ -533,6 +549,11 @@ TZrBool register_compile_time_function_declaration(SZrCompilerState *cs,
 
     func->name = funcDecl->name->name;
     func->declaration = node;
+    func->isExported =
+            (funcDecl->accessModifier == ZR_ACCESS_PUBLIC ||
+             funcDecl->accessModifier == ZR_ACCESS_PROTECTED)
+                    ? ZR_TRUE
+                    : ZR_FALSE;
     func->location = location;
 
     if (funcDecl->returnType != ZR_NULL &&
@@ -586,6 +607,11 @@ TZrBool register_compile_time_function_alias(SZrCompilerState *cs,
 
     func->name = aliasName;
     func->declaration = node;
+    func->isExported =
+            (funcDecl->accessModifier == ZR_ACCESS_PUBLIC ||
+             funcDecl->accessModifier == ZR_ACCESS_PROTECTED)
+                    ? ZR_TRUE
+                    : ZR_FALSE;
     func->location = location;
 
     if (funcDecl->returnType != ZR_NULL &&

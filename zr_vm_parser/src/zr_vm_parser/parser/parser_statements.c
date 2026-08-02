@@ -1700,6 +1700,7 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
     SZrParserCursor cursor;
     SZrAstNodeArray *decorators;
     SZrAstNode *node;
+    EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
 
     if (handled != ZR_NULL) {
         *handled = ZR_FALSE;
@@ -1716,7 +1717,7 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
     if (ps->lexer->t.token == ZR_TK_PUB ||
         ps->lexer->t.token == ZR_TK_PRI ||
         ps->lexer->t.token == ZR_TK_PRO) {
-        (void)parse_access_modifier(ps);
+        accessModifier = parse_access_modifier(ps);
     }
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "comptime")) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
@@ -1742,6 +1743,8 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
             ZrParser_AstNodeArray_Free(ps->state, existing);
         }
         node->data.compileTimeDeclaration.declaration->data.functionDeclaration.decorators = decorators;
+        node->data.compileTimeDeclaration.declaration->data.functionDeclaration.accessModifier =
+                accessModifier;
         return node;
     }
 
@@ -1796,7 +1799,24 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             save_parser_cursor(ps, &cursor);
             accessModifier = parse_access_modifier(ps);
             if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
-                return parse_compile_time_declaration(ps);
+                SZrAstNode *compileTimeDeclaration =
+                        parse_compile_time_declaration(ps);
+                if (compileTimeDeclaration != ZR_NULL &&
+                    compileTimeDeclaration->type ==
+                            ZR_AST_COMPILE_TIME_DECLARATION &&
+                    compileTimeDeclaration->data.compileTimeDeclaration
+                                    .declarationType ==
+                            ZR_COMPILE_TIME_FUNCTION &&
+                    compileTimeDeclaration->data.compileTimeDeclaration
+                                    .declaration != ZR_NULL &&
+                    compileTimeDeclaration->data.compileTimeDeclaration
+                                    .declaration->type ==
+                            ZR_AST_FUNCTION_DECLARATION) {
+                    compileTimeDeclaration->data.compileTimeDeclaration
+                            .declaration->data.functionDeclaration
+                            .accessModifier = accessModifier;
+                }
+                return compileTimeDeclaration;
             }
             if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                 current_identifier_equals(ps, "resource") &&

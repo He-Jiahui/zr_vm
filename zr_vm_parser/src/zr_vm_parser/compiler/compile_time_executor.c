@@ -12,7 +12,9 @@
 #include "compile_time_decorator_identity.h"
 #include "compile_time_executor_internal.h"
 #include "compile_tool_binding.h"
+#include "compile_tool_execution_scope.h"
 #include "compile_tool_evaluator.h"
+#include "compile_tool_project_provider.h"
 #include "compiler_attribute_binding.h"
 #include "compiler_decorator_contract.h"
 #include "comptime_runtime_contract.h"
@@ -62,6 +64,7 @@ static TZrBool ct_prepare_build_fact_module_bindings(
         SZrAstNodeArray *nodes);
 
 static const SZrParserCompileToolModuleDescriptor *ct_compile_tool_import_descriptor(
+        const SZrState *state,
         const SZrAstNode *node);
 
 static TZrBool ct_prepare_build_fact_array(
@@ -74,6 +77,42 @@ static TZrBool ct_prepare_build_fact_array(
         }
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_CompileToolExecution_DeclareImport(
+        SZrCompilerState *cs,
+        SZrAstNode *node) {
+    const SZrParserCompileToolModuleDescriptor *provider;
+    const SZrCompileToolBinding *existing;
+    SZrString *aliasName;
+    const TZrChar *moduleName;
+
+    if (cs == ZR_NULL || node == ZR_NULL ||
+        !compiler_is_compile_tool_import_declaration(cs->state, node)) {
+        return ZR_FALSE;
+    }
+    provider = ct_compile_tool_import_descriptor(cs->state, node);
+    aliasName = node->data.variableDeclaration.pattern->data.identifier.name;
+    moduleName = ZrCore_String_GetNativeString(
+            node->data.variableDeclaration.value->data.importExpression
+                    .modulePath->data.stringLiteral.value);
+    existing = ZrParser_CompileToolBinding_Resolve(cs, aliasName);
+    if (existing != ZR_NULL &&
+        (existing->kind == ZR_COMPILE_TOOL_BINDING_SHADOW ||
+         (existing->kind == ZR_COMPILE_TOOL_BINDING_PROVIDER &&
+          ((existing->provider == provider && provider != ZR_NULL) ||
+           (provider == ZR_NULL && existing->provider != ZR_NULL &&
+            existing->provider->moduleName != ZR_NULL &&
+            strcmp(existing->provider->moduleName, moduleName) == 0 &&
+            existing->resolvedArtifact != ZR_NULL))))) {
+        return ZR_TRUE;
+    }
+    if (provider != ZR_NULL) {
+        return ZrParser_CompileToolBinding_DeclareProvider(
+                cs, aliasName, provider);
+    }
+    return ZrParser_CompileToolProjectProvider_Declare(
+            cs, aliasName, moduleName, node->location);
 }
 
 static TZrBool ct_prepare_build_fact_module_array(
@@ -209,10 +248,11 @@ static TZrBool ct_prepare_build_fact_parameters(
 }
 
 static const SZrParserCompileToolModuleDescriptor *ct_compile_tool_import_descriptor(
+        const SZrState *state,
         const SZrAstNode *node) {
     const SZrAstNode *modulePath;
 
-    if (!compiler_is_compile_tool_import_declaration(node)) {
+    if (!compiler_is_compile_tool_import_declaration(state, node)) {
         return ZR_NULL;
     }
 
@@ -237,22 +277,8 @@ static TZrBool ct_prepare_build_fact_module_bindings(
         if (node == ZR_NULL) {
             continue;
         }
-        if (compiler_is_compile_tool_import_declaration(node)) {
-            const SZrParserCompileToolModuleDescriptor *provider =
-                    ct_compile_tool_import_descriptor(node);
-            SZrString *aliasName =
-                    node->data.variableDeclaration.pattern->data.identifier.name;
-            const SZrCompileToolBinding *existing =
-                    ZrParser_CompileToolBinding_Resolve(cs, aliasName);
-
-            if (existing != ZR_NULL &&
-                (existing->kind == ZR_COMPILE_TOOL_BINDING_SHADOW ||
-                 (existing->kind == ZR_COMPILE_TOOL_BINDING_PROVIDER &&
-                  existing->provider == provider))) {
-                continue;
-            }
-            if (!ZrParser_CompileToolBinding_DeclareProvider(
-                        cs, aliasName, provider)) {
+        if (compiler_is_compile_tool_import_declaration(cs->state, node)) {
+            if (!ZrParser_CompileToolExecution_DeclareImport(cs, node)) {
                 return ZR_FALSE;
             }
             continue;
@@ -569,18 +595,16 @@ static TZrBool ct_prepare_build_fact_node_with_context(
                     ZR_NULL,
                     node->data.lambdaExpression.block);
         case ZR_AST_VARIABLE_DECLARATION:
-            if (compiler_is_compile_tool_import_declaration(node)) {
-                const SZrParserCompileToolModuleDescriptor *provider =
-                        ct_compile_tool_import_descriptor(node);
+            if (compiler_is_compile_tool_import_declaration(cs->state, node)) {
                 SZrString *aliasName = node->data.variableDeclaration.pattern->data.identifier.name;
-                if (moduleDeclarationList && provider != ZR_NULL) {
+                if (moduleDeclarationList) {
                     const SZrCompileToolBinding *existing =
                             ZrParser_CompileToolBinding_Resolve(cs, aliasName);
                     if (existing != ZR_NULL &&
                         existing->kind == ZR_COMPILE_TOOL_BINDING_SHADOW) {
                         return ZR_TRUE;
                     }
-                    return ZrParser_CompileToolBinding_DeclareProvider(cs, aliasName, provider);
+                    return ZrParser_CompileToolExecution_DeclareImport(cs, node);
                 }
                 ZrParser_CompileTime_Error(cs,
                                            ZR_COMPILE_TIME_ERROR_ERROR,
@@ -1139,6 +1163,7 @@ static SZrCompileTimeFunction *ct_find_imported_compile_time_function(const SZrI
         SZrCompileTimeFunction **funcPtr =
                 (SZrCompileTimeFunction **)ZrCore_Array_Get((SZrArray *)&module->compileTimeFunctions, index);
         if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (*funcPtr)->name != ZR_NULL &&
+            (*funcPtr)->isExported &&
             ZrCore_String_Equal((*funcPtr)->name, name)) {
             return *funcPtr;
         }
@@ -2456,6 +2481,7 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
     TZrBool didReturn = ZR_FALSE;
     TZrSize expectedArgumentCount = 0;
     EZrParserComptimeContext oldComptimeContext;
+    SZrCompileToolExecutionScope executionScope;
 
     if (cs == ZR_NULL || decoratorFunction == ZR_NULL || targetSnapshot == ZR_NULL || patchResult == ZR_NULL) {
         return ZR_FALSE;
@@ -2503,6 +2529,11 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    if (!ZrParser_CompileToolExecutionScope_EnterFunction(
+                cs, decoratorFunction, &executionScope)) {
+        return ZR_FALSE;
+    }
+
     ct_frame_init(cs, &frame, ZR_NULL);
     if (!ct_frame_set(cs,
                       &frame,
@@ -2511,6 +2542,7 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
                               : ZR_NULL,
                       targetSnapshot)) {
         ct_frame_free(cs, &frame);
+        ZrParser_CompileToolExecutionScope_Leave(cs, &executionScope);
         return ZR_FALSE;
     }
 
@@ -2528,6 +2560,7 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
             !ct_eval_call_arg(cs, constructorCall, param, paramIndex - 1, &frame, &argValue) ||
             !ct_frame_set(cs, &frame, param->name->name, &argValue)) {
             ct_frame_free(cs, &frame);
+            ZrParser_CompileToolExecutionScope_Leave(cs, &executionScope);
             return ZR_FALSE;
         }
     }
@@ -2538,6 +2571,7 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
                                    "Compile-time decorator function body is null",
                                    location);
         ct_frame_free(cs, &frame);
+        ZrParser_CompileToolExecutionScope_Leave(cs, &executionScope);
         return ZR_FALSE;
     }
 
@@ -2556,6 +2590,7 @@ static TZrBool ct_execute_compile_time_decorator_function(SZrCompilerState *cs,
     }
 
     ct_frame_free(cs, &frame);
+    ZrParser_CompileToolExecutionScope_Leave(cs, &executionScope);
     return success;
 }
 
@@ -3726,6 +3761,8 @@ static TZrBool ct_call_function(SZrCompilerState *cs,
     TZrBool cacheable;
     SZrComptimeCacheKey cacheKey;
     TZrUInt64 diagnosticCountBefore;
+    SZrCompileToolExecutionScope executionScope;
+    TZrBool enteredExecutionScope = ZR_FALSE;
 
     if (cs == ZR_NULL || func == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -3738,6 +3775,12 @@ static TZrBool ct_call_function(SZrCompilerState *cs,
     if (func->declaration == ZR_NULL || func->declaration->type != ZR_AST_FUNCTION_DECLARATION) {
         return ZR_FALSE;
     }
+
+    if (!ZrParser_CompileToolExecutionScope_EnterFunction(
+                cs, func, &executionScope)) {
+        return ZR_FALSE;
+    }
+    enteredExecutionScope = ZR_TRUE;
 
     decl = &func->declaration->data.functionDeclaration;
     ct_frame_init(cs, &frame, parentFrame);
@@ -3811,6 +3854,9 @@ cleanup:
         ZrParser_ComptimeRuntime_LeaveCall(cs);
     }
     ct_frame_free(cs, &frame);
+    if (enteredExecutionScope) {
+        ZrParser_CompileToolExecutionScope_Leave(cs, &executionScope);
+    }
     return success;
 }
 

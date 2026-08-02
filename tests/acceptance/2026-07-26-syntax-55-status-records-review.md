@@ -39,8 +39,9 @@ TypeRef 与普通 `%`/`%=` 运算保持当前语法。internal intermediate text
 
 全新 WSL GCC 11.4 Debug 隔离快照的本轮定向结果为：parser 74/74、percent cutover
 6/6、reflection surface 18/18、module system 78/78、project manifest v2 10/10、
-comptime runtime 14/14、CLI project incremental 12/12，LSP advanced editor features
-0 failure。CLI cache 用例明确证明首轮 miss、二轮 hit、同长度语义修改 miss、损坏
+comptime runtime 14/14、external source provider 8/8、CLI project incremental
+12/12，LSP advanced editor features 0 failure。CLI cache 用例明确证明首轮 miss、
+二轮 hit、同长度语义修改 miss、损坏
 snapshot rejection/repair；首次与 hit 产物相同，语义修改产物不同，恢复原源码后再次
 逐字节复现首次 `.zro`。
 
@@ -59,6 +60,21 @@ fail closed；callable 两套 mode 投影同步；spaced/adjacent 模运算均�
 完整性和事务性。MSVC 19.44 Debug 共享库目标成功链接并运行 14/14；WSL GCC 同目标也为
 14/14。
 
+本次追加 provider review 又关闭四项边界问题：function access modifier 曾被 parser
+消费后丢弃；部分导入失败只释放 pointer array；重复 provider alias 失败后可能遗留
+binding；传递 provider 图未晋级时 provider source 仍可能递归激活 build dependency。
+当前仅 `pub`/`pro` transform 对 consumer 可见，private helper 保持 provider-local，
+失败路径完整回滚；传递 build-dependency import 在递归准备前以
+`compiletool.provider.transitive_not_promoted` fail closed。GCC、Clang、MSVC 均为
+provider 8/8。
+
+clean intended snapshot 的 syntax migration inventory 协议为 9/9；最终报告为
+`machineApplicable=0`、`maybeIncorrect=0`、`blocked=0`、
+`targetNotPromoted=0`、`unknown=0`。649 条 `requiresReview` 均为保留的
+文档/测试语义分类，不是 production parser 兼容规则；6 条 allowlist 是精确的
+删除/未知语法负例。benchmark source generator 中最后一条可执行旧语法已迁到
+`import(...)` 与 `fn`。
+
 严格切换还暴露并关闭了旧 fixture 的假绿：compiler integration 的自定义 `ZR_TEST_FAIL`
 会提前返回但被 Unity 记为 PASS。正向 fixture 已全部迁到 `fn`、`init`、`resource class`、
 `own`/`share`/`weak`/`ref`/`intoGc`、fully-qualified Iterator 和 canonical `const`/`comptime
@@ -67,9 +83,10 @@ fn`；负向 fixture 改为验证当前真实拒绝边界。导出全局 referen
 
 最终 WSL GCC 11.4 Debug 隔离树全目标 Ninja 构建成功。焦点矩阵保持 parser 74/74、
 percent cutover 6/6、reflection 18/18、module 78/78、manifest 10/10、comptime 14/14、
-CLI cache 12/12、LSP advanced 0 failure。完整 CTest 为 121/126；`language_server` 已通过，
-五个残余失败是已知上层基线：`language_pipeline` 仅剩 AOT Span artifact 等价 smoke，
-另四项为本次隔离树未带入并行 Debug 工作的 `debug_agent`、`debug_truncation`、
+provider 8/8、CLI cache 12/12、LSP advanced 0 failure。完整 CTest 为 121/126；
+`language_server` 已通过。五个残余失败是已知上层基线：`language_pipeline` 在
+60 秒 suite 上限前暴露 4 条既有 AOT C source-contract 文本断言失败，另四项为本次
+隔离树未带入并行 Debug 工作的 `debug_agent`、`debug_truncation`、
 `debug_variable_child_shape`、`debug_library`。这些失败不属于 55 份叶子或严格 parser
 切换的完成证据，也继续阻止宣称根 Syntax redesign 全绿。
 

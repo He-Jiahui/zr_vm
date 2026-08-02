@@ -532,12 +532,11 @@ TZrBool ZrParser_CompileToolArtifact_OpenBuildDependency(
         memset(outArtifact, 0, sizeof(*outArtifact));
     }
     if (project == ZR_NULL || project->manifestVersion != 2U ||
-        rawSpecifier == ZR_NULL || lockEntries == ZR_NULL ||
-        lockEntryCount == 0U || archivePath == ZR_NULL ||
+        rawSpecifier == ZR_NULL || archivePath == ZR_NULL ||
         outArtifact == ZR_NULL) {
         compile_tool_artifact_set_error(
                 errorBuffer, errorBufferSize,
-                "compiletool.artifact.invalid_argument: v2 project, lock graph, archive path, and output are required");
+                "compiletool.artifact.invalid_argument: v2 project, archive path, and output are required");
         return ZR_FALSE;
     }
 

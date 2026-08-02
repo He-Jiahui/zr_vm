@@ -1,10 +1,31 @@
 {
   "allowlistedFindings": [
     {
+      "column": 14,
+      "file": "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+      "legacyForm": "percentCompileTime",
+      "line": 11,
+      "reason": "expectedRemovedSyntaxFormattingNegative"
+    },
+    {
+      "column": 28,
+      "file": "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+      "legacyForm": "percentFunc",
+      "line": 14,
+      "reason": "expectedRemovedSyntaxFormattingNegative"
+    },
+    {
+      "column": 39,
+      "file": "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+      "legacyForm": "legacyFunctionTypeArrow",
+      "line": 14,
+      "reason": "expectedRemovedSyntaxFormattingNegative"
+    },
+    {
       "column": 42,
       "file": "tests/parser/test_percent_syntax_cutover.c",
       "legacyForm": "unrecognizedPercentDirective",
-      "line": 175,
+      "line": 172,
       "reason": "expectedUnknownPercentNegative"
     },
     {
@@ -26,7 +47,7 @@
     "blocked": 0,
     "machineApplicable": 0,
     "maybeIncorrect": 0,
-    "requiresReview": 645,
+    "requiresReview": 649,
     "targetNotPromoted": 0
   },
   "exclusions": [
@@ -103,7 +124,15 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-callable-return-type-projection.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/plans/aot/07-codegen/2026-08-01-constructor-bitmap-layout-verifier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-direct-inline-return-layout-projection.md",
       "reason": "historicalPlan"
     },
     {
@@ -112,6 +141,14 @@
     },
     {
       "file": "docs/plans/aot/07-codegen/2026-08-01-parameter-binding-identity-verifier.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-parameter-default-declaration-projection.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-01-parameter-source-passing-form-projection.md",
       "reason": "historicalPlan"
     },
     {
@@ -124,6 +161,14 @@
     },
     {
       "file": "docs/plans/aot/07-codegen/2026-08-01-value-semir-parameter-layout-consumption.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-02-direct-core-frame-identity-parity.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/aot/07-codegen/2026-08-02-static-direct-call-frame-identity-guard.md",
       "reason": "historicalPlan"
     },
     {
@@ -576,6 +621,42 @@
     },
     {
       "file": "docs/plans/lsp/04-debug-and-repl/2026-08-01-e2b5-generation-checked-runtime-root-consumer.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6a-canonical-closure-capture-artifact-identity.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6b-generation-checked-paused-frame-closure-resolver.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6c-closure-capture-origin-token-facts.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6d-closure-capture-formal-consumer.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e3a-dap-evaluate-capability-context.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e3b-conditional-breakpoint-pure-policy.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e3c-logpoint-pure-policy.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e4a-canonical-evaluate-result-transport.md",
+      "reason": "historicalPlan"
+    },
+    {
+      "file": "docs/plans/lsp/04-debug-and-repl/2026-08-02-e4b-structured-evaluate-failure-transport.md",
       "reason": "historicalPlan"
     },
     {
@@ -1755,11 +1836,11 @@
       "range": {
         "end": {
           "column": 15,
-          "line": 1004
+          "line": 1012
         },
         "start": {
           "column": 6,
-          "line": 1004
+          "line": 1012
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2115,11 +2196,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 1147
+          "line": 1148
         },
         "start": {
           "column": 42,
-          "line": 1147
+          "line": 1148
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2344,16 +2425,70 @@
     },
     {
       "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 61,
+          "line": 580
+        },
+        "start": {
+          "column": 47,
+          "line": 580
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 62,
+          "line": 584
+        },
+        "start": {
+          "column": 48,
+          "line": 584
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 588
+        },
+        "start": {
+          "column": 42,
+          "line": 588
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
       "file": "tests/compileTime/test_compile_time_execution.c",
       "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
           "column": 28,
-          "line": 524
+          "line": 528
         },
         "start": {
           "column": 18,
-          "line": 524
+          "line": 528
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2367,11 +2502,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 2786
+          "line": 2790
         },
         "start": {
           "column": 42,
-          "line": 2786
+          "line": 2790
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2385,11 +2520,11 @@
       "range": {
         "end": {
           "column": 62,
-          "line": 2811
+          "line": 2815
         },
         "start": {
           "column": 48,
-          "line": 2811
+          "line": 2815
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2403,11 +2538,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 2817
+          "line": 2821
         },
         "start": {
           "column": 42,
-          "line": 2817
+          "line": 2821
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2421,11 +2556,11 @@
       "range": {
         "end": {
           "column": 40,
-          "line": 2822
+          "line": 2826
         },
         "start": {
           "column": 35,
-          "line": 2822
+          "line": 2826
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2439,11 +2574,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 2849
+          "line": 2853
         },
         "start": {
           "column": 42,
-          "line": 2849
+          "line": 2853
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2457,11 +2592,11 @@
       "range": {
         "end": {
           "column": 53,
-          "line": 2856
+          "line": 2860
         },
         "start": {
           "column": 49,
-          "line": 2856
+          "line": 2860
         }
       },
       "reason": "new_struct_binding_required",
@@ -2475,11 +2610,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 2949
+          "line": 2953
         },
         "start": {
           "column": 42,
-          "line": 2949
+          "line": 2953
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2493,11 +2628,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 2991
+          "line": 2995
         },
         "start": {
           "column": 42,
-          "line": 2991
+          "line": 2995
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2511,11 +2646,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 3062
+          "line": 3066
         },
         "start": {
           "column": 42,
-          "line": 3062
+          "line": 3066
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2529,11 +2664,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 3128
+          "line": 3132
         },
         "start": {
           "column": 42,
-          "line": 3128
+          "line": 3132
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2547,11 +2682,11 @@
       "range": {
         "end": {
           "column": 62,
-          "line": 3417
+          "line": 3421
         },
         "start": {
           "column": 48,
-          "line": 3417
+          "line": 3421
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2565,11 +2700,11 @@
       "range": {
         "end": {
           "column": 66,
-          "line": 3423
+          "line": 3427
         },
         "start": {
           "column": 49,
-          "line": 3423
+          "line": 3427
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2583,11 +2718,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 3428
+          "line": 3432
         },
         "start": {
           "column": 42,
-          "line": 3428
+          "line": 3432
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2601,11 +2736,11 @@
       "range": {
         "end": {
           "column": 40,
-          "line": 3437
+          "line": 3441
         },
         "start": {
           "column": 35,
-          "line": 3437
+          "line": 3441
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2619,11 +2754,11 @@
       "range": {
         "end": {
           "column": 62,
-          "line": 3463
+          "line": 3467
         },
         "start": {
           "column": 48,
-          "line": 3463
+          "line": 3467
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2637,11 +2772,11 @@
       "range": {
         "end": {
           "column": 64,
-          "line": 3469
+          "line": 3473
         },
         "start": {
           "column": 47,
-          "line": 3469
+          "line": 3473
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2655,11 +2790,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 3474
+          "line": 3478
         },
         "start": {
           "column": 42,
-          "line": 3474
+          "line": 3478
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2673,11 +2808,11 @@
       "range": {
         "end": {
           "column": 62,
-          "line": 3502
+          "line": 3506
         },
         "start": {
           "column": 48,
-          "line": 3502
+          "line": 3506
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2691,11 +2826,11 @@
       "range": {
         "end": {
           "column": 64,
-          "line": 3508
+          "line": 3512
         },
         "start": {
           "column": 47,
-          "line": 3508
+          "line": 3512
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2709,11 +2844,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 3513
+          "line": 3517
         },
         "start": {
           "column": 42,
-          "line": 3513
+          "line": 3517
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2727,11 +2862,11 @@
       "range": {
         "end": {
           "column": 61,
-          "line": 3572
+          "line": 3576
         },
         "start": {
           "column": 47,
-          "line": 3572
+          "line": 3576
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2745,28 +2880,10 @@
       "range": {
         "end": {
           "column": 62,
-          "line": 3576
+          "line": 3580
         },
         "start": {
           "column": 48,
-          "line": 3576
-        }
-      },
-      "reason": "call_vs_constructor_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/compileTime/test_compile_time_execution.c",
-      "legacyForm": "legacyBareTypeCall",
-      "range": {
-        "end": {
-          "column": 47,
-          "line": 3580
-        },
-        "start": {
-          "column": 42,
           "line": 3580
         }
       },
@@ -2781,11 +2898,29 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 3634
+          "line": 3584
         },
         "start": {
           "column": 42,
-          "line": 3634
+          "line": 3584
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/compileTime/test_compile_time_execution.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 47,
+          "line": 3641
+        },
+        "start": {
+          "column": 42,
+          "line": 3641
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2799,11 +2934,11 @@
       "range": {
         "end": {
           "column": 60,
-          "line": 3962
+          "line": 3969
         },
         "start": {
           "column": 47,
-          "line": 3962
+          "line": 3969
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2817,11 +2952,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 3966
+          "line": 3973
         },
         "start": {
           "column": 42,
-          "line": 3966
+          "line": 3973
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2835,11 +2970,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 4083
+          "line": 4090
         },
         "start": {
           "column": 25,
-          "line": 4083
+          "line": 4090
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2853,11 +2988,11 @@
       "range": {
         "end": {
           "column": 29,
-          "line": 4084
+          "line": 4091
         },
         "start": {
           "column": 25,
-          "line": 4084
+          "line": 4091
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2871,11 +3006,11 @@
       "range": {
         "end": {
           "column": 29,
-          "line": 4085
+          "line": 4092
         },
         "start": {
           "column": 25,
-          "line": 4085
+          "line": 4092
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2889,11 +3024,11 @@
       "range": {
         "end": {
           "column": 35,
-          "line": 4769
+          "line": 4776
         },
         "start": {
           "column": 27,
-          "line": 4769
+          "line": 4776
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2907,11 +3042,11 @@
       "range": {
         "end": {
           "column": 43,
-          "line": 4773
+          "line": 4780
         },
         "start": {
           "column": 27,
-          "line": 4773
+          "line": 4780
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -2961,11 +3096,11 @@
       "range": {
         "end": {
           "column": 30,
-          "line": 712
+          "line": 809
         },
         "start": {
           "column": 26,
-          "line": 712
+          "line": 809
         }
       },
       "reason": "new_struct_binding_required",
@@ -7767,11 +7902,11 @@
       "range": {
         "end": {
           "column": 30,
-          "line": 5183
+          "line": 5217
         },
         "start": {
           "column": 26,
-          "line": 5183
+          "line": 5217
         }
       },
       "reason": "new_struct_binding_required",
@@ -7785,11 +7920,11 @@
       "range": {
         "end": {
           "column": 42,
-          "line": 7260
+          "line": 7311
         },
         "start": {
           "column": 39,
-          "line": 7260
+          "line": 7311
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -7821,11 +7956,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 427
+          "line": 429
         },
         "start": {
           "column": 42,
-          "line": 427
+          "line": 429
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -7839,11 +7974,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 560
+          "line": 562
         },
         "start": {
           "column": 42,
-          "line": 560
+          "line": 562
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -7857,11 +7992,11 @@
       "range": {
         "end": {
           "column": 47,
-          "line": 695
+          "line": 697
         },
         "start": {
           "column": 42,
-          "line": 695
+          "line": 697
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8285,69 +8420,15 @@
     {
       "classification": "requiresReview",
       "file": "tests/parser/test_compiler_features.c",
-      "legacyForm": "legacyNewStruct",
-      "range": {
-        "end": {
-          "column": 45,
-          "line": 1895
-        },
-        "start": {
-          "column": 41,
-          "line": 1895
-        }
-      },
-      "reason": "new_struct_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/parser/test_compiler_features.c",
-      "legacyForm": "legacyNewStruct",
-      "range": {
-        "end": {
-          "column": 45,
-          "line": 2006
-        },
-        "start": {
-          "column": 41,
-          "line": 2006
-        }
-      },
-      "reason": "new_struct_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/parser/test_compiler_features.c",
-      "legacyForm": "legacyNewStruct",
-      "range": {
-        "end": {
-          "column": 45,
-          "line": 2070
-        },
-        "start": {
-          "column": 41,
-          "line": 2070
-        }
-      },
-      "reason": "new_struct_binding_required",
-      "sourceKind": "embeddedZrFixture",
-      "targetPlan": "06A"
-    },
-    {
-      "classification": "requiresReview",
-      "file": "tests/parser/test_compiler_features.c",
       "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
           "column": 36,
-          "line": 2135
+          "line": 1893
         },
         "start": {
           "column": 33,
-          "line": 2135
+          "line": 1893
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8361,11 +8442,65 @@
       "range": {
         "end": {
           "column": 36,
-          "line": 2181
+          "line": 2004
         },
         "start": {
           "column": 33,
-          "line": 2181
+          "line": 2004
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/parser/test_compiler_features.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 36,
+          "line": 2068
+        },
+        "start": {
+          "column": 33,
+          "line": 2068
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/parser/test_compiler_features.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 36,
+          "line": 2133
+        },
+        "start": {
+          "column": 33,
+          "line": 2133
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/parser/test_compiler_features.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 36,
+          "line": 2179
+        },
+        "start": {
+          "column": 33,
+          "line": 2179
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8379,11 +8514,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 2232
+          "line": 2230
         },
         "start": {
           "column": 34,
-          "line": 2232
+          "line": 2230
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8397,11 +8532,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 2287
+          "line": 2285
         },
         "start": {
           "column": 34,
-          "line": 2287
+          "line": 2285
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8415,11 +8550,11 @@
       "range": {
         "end": {
           "column": 46,
-          "line": 2613
+          "line": 2614
         },
         "start": {
           "column": 41,
-          "line": 2613
+          "line": 2614
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8433,11 +8568,11 @@
       "range": {
         "end": {
           "column": 52,
-          "line": 2708
+          "line": 2709
         },
         "start": {
           "column": 44,
-          "line": 2708
+          "line": 2709
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8451,11 +8586,11 @@
       "range": {
         "end": {
           "column": 52,
-          "line": 3091
+          "line": 3092
         },
         "start": {
           "column": 46,
-          "line": 3091
+          "line": 3092
         }
       },
       "reason": "using_role_resolution_required",
@@ -8469,11 +8604,11 @@
       "range": {
         "end": {
           "column": 74,
-          "line": 3091
+          "line": 3092
         },
         "start": {
           "column": 67,
-          "line": 3091
+          "line": 3092
         }
       },
       "reason": "fresh_resource_proof_required",
@@ -8486,12 +8621,12 @@
       "legacyForm": "legacyNewStruct",
       "range": {
         "end": {
-          "column": 68,
-          "line": 3546
+          "column": 71,
+          "line": 3523
         },
         "start": {
-          "column": 64,
-          "line": 3546
+          "column": 67,
+          "line": 3523
         }
       },
       "reason": "new_struct_binding_required",
@@ -8505,11 +8640,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 3656
+          "line": 3633
         },
         "start": {
           "column": 30,
-          "line": 3656
+          "line": 3633
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8523,11 +8658,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 3702
+          "line": 3679
         },
         "start": {
           "column": 30,
-          "line": 3702
+          "line": 3679
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8541,11 +8676,11 @@
       "range": {
         "end": {
           "column": 38,
-          "line": 3705
+          "line": 3682
         },
         "start": {
           "column": 35,
-          "line": 3705
+          "line": 3682
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8559,11 +8694,11 @@
       "range": {
         "end": {
           "column": 43,
-          "line": 3756
+          "line": 3733
         },
         "start": {
           "column": 36,
-          "line": 3756
+          "line": 3733
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8577,11 +8712,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 3764
+          "line": 3741
         },
         "start": {
           "column": 34,
-          "line": 3764
+          "line": 3741
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8595,11 +8730,11 @@
       "range": {
         "end": {
           "column": 44,
-          "line": 3770
+          "line": 3747
         },
         "start": {
           "column": 37,
-          "line": 3770
+          "line": 3747
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8613,11 +8748,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 3841
+          "line": 3818
         },
         "start": {
           "column": 30,
-          "line": 3841
+          "line": 3818
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8631,11 +8766,11 @@
       "range": {
         "end": {
           "column": 38,
-          "line": 3844
+          "line": 3821
         },
         "start": {
           "column": 35,
-          "line": 3844
+          "line": 3821
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8649,11 +8784,11 @@
       "range": {
         "end": {
           "column": 40,
-          "line": 3846
+          "line": 3823
         },
         "start": {
           "column": 37,
-          "line": 3846
+          "line": 3823
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8667,11 +8802,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 3897
+          "line": 3874
         },
         "start": {
           "column": 30,
-          "line": 3897
+          "line": 3874
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8685,11 +8820,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 3949
+          "line": 3926
         },
         "start": {
           "column": 30,
-          "line": 3949
+          "line": 3926
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8703,11 +8838,11 @@
       "range": {
         "end": {
           "column": 38,
-          "line": 3957
+          "line": 3934
         },
         "start": {
           "column": 35,
-          "line": 3957
+          "line": 3934
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8721,11 +8856,11 @@
       "range": {
         "end": {
           "column": 40,
-          "line": 3963
+          "line": 3940
         },
         "start": {
           "column": 37,
-          "line": 3963
+          "line": 3940
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8739,11 +8874,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 4110
+          "line": 4087
         },
         "start": {
           "column": 29,
-          "line": 4110
+          "line": 4087
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8757,11 +8892,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 4176
+          "line": 4153
         },
         "start": {
           "column": 29,
-          "line": 4176
+          "line": 4153
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8775,11 +8910,11 @@
       "range": {
         "end": {
           "column": 37,
-          "line": 4271
+          "line": 4248
         },
         "start": {
           "column": 34,
-          "line": 4271
+          "line": 4248
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8793,11 +8928,11 @@
       "range": {
         "end": {
           "column": 29,
-          "line": 4275
+          "line": 4252
         },
         "start": {
           "column": 25,
-          "line": 4275
+          "line": 4252
         }
       },
       "reason": "new_struct_binding_required",
@@ -8811,11 +8946,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 4343
+          "line": 4320
         },
         "start": {
           "column": 19,
-          "line": 4343
+          "line": 4320
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8829,11 +8964,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 4418
+          "line": 4395
         },
         "start": {
           "column": 19,
-          "line": 4418
+          "line": 4395
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -8847,11 +8982,11 @@
       "range": {
         "end": {
           "column": 32,
-          "line": 5734
+          "line": 5709
         },
         "start": {
           "column": 29,
-          "line": 5734
+          "line": 5709
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9099,11 +9234,11 @@
       "range": {
         "end": {
           "column": 52,
-          "line": 2378
+          "line": 2370
         },
         "start": {
           "column": 46,
-          "line": 2378
+          "line": 2370
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9135,11 +9270,11 @@
       "range": {
         "end": {
           "column": 55,
-          "line": 279
+          "line": 276
         },
         "start": {
           "column": 40,
-          "line": 279
+          "line": 276
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9423,11 +9558,11 @@
       "range": {
         "end": {
           "column": 36,
-          "line": 1047
+          "line": 1094
         },
         "start": {
           "column": 31,
-          "line": 1047
+          "line": 1094
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9567,11 +9702,11 @@
       "range": {
         "end": {
           "column": 37,
-          "line": 365
+          "line": 398
         },
         "start": {
           "column": 34,
-          "line": 365
+          "line": 398
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9585,11 +9720,11 @@
       "range": {
         "end": {
           "column": 37,
-          "line": 417
+          "line": 450
         },
         "start": {
           "column": 34,
-          "line": 417
+          "line": 450
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9603,11 +9738,11 @@
       "range": {
         "end": {
           "column": 43,
-          "line": 464
+          "line": 497
         },
         "start": {
           "column": 38,
-          "line": 464
+          "line": 497
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9621,11 +9756,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 516
+          "line": 549
         },
         "start": {
           "column": 45,
-          "line": 516
+          "line": 549
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9639,11 +9774,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 573
+          "line": 606
         },
         "start": {
           "column": 46,
-          "line": 573
+          "line": 606
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9657,11 +9792,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 576
+          "line": 609
         },
         "start": {
           "column": 45,
-          "line": 576
+          "line": 609
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9675,11 +9810,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 638
+          "line": 671
         },
         "start": {
           "column": 45,
-          "line": 638
+          "line": 671
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9693,11 +9828,11 @@
       "range": {
         "end": {
           "column": 50,
-          "line": 715
+          "line": 748
         },
         "start": {
           "column": 45,
-          "line": 715
+          "line": 748
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9711,11 +9846,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 788
+          "line": 821
         },
         "start": {
           "column": 46,
-          "line": 788
+          "line": 821
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -9729,11 +9864,29 @@
       "range": {
         "end": {
           "column": 37,
-          "line": 897
+          "line": 1053
         },
         "start": {
           "column": 34,
-          "line": 897
+          "line": 1053
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/parser/test_semir_pipeline.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 317,
+          "line": 1129
+        },
+        "start": {
+          "column": 177,
+          "line": 1129
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -14081,6 +14234,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/cli/test_cli_comptime_cache_incremental_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/cli/test_cli_debug_e2e.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -14109,11 +14266,27 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/compileTime/test_compile_time_declaration_patch_transaction_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/compileTime/test_compile_time_declaration_patch_transaction_hash_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/compileTime/test_compile_time_decorator_shape_retention_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
       "file": "tests/compileTime/test_compile_time_execution.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/compileTime/test_compile_tool_artifact_resolution_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/compileTime/test_comptime_cache_snapshot_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -14289,11 +14462,27 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/debug/test_debug_breakpoint_condition_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/debug/test_debug_breakpoint_logpoint_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/debug/test_debug_canonical_binding_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
       "file": "tests/debug/test_debug_data_breakpoint.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/debug/test_debug_evaluate_failure_transport_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/debug/test_debug_evaluate_result_transport_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -15349,6 +15538,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/language_server/test_lsp_declaration_parser_diagnostics.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -15733,6 +15926,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/module/test_aot_runtime_direct_core_identity_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/module/test_aot_runtime_typed_direct_call_compatibility.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -15925,6 +16122,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_aot_c_direct_inline_return_layout_projection_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_aot_c_dynamic_deopt_bridge_smoke.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -15950,6 +16151,10 @@
     },
     {
       "file": "tests/parser/test_aot_c_generic_call_typed.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/parser/test_aot_c_generic_call_typed_default_declaration_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -16029,6 +16234,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_aot_c_method_info_return_projection_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_aot_c_method_info_signature.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -16038,6 +16247,10 @@
     },
     {
       "file": "tests/parser/test_aot_c_ownership_shared_library_smoke.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/parser/test_aot_c_parameter_passing_form_projection_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -16197,7 +16410,15 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/parser/test_aot_parameter_passing_form_roundtrip_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/parser/test_aot_reachability.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/parser/test_aot_static_direct_call_identity_source_contract_cases.h",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -16354,6 +16575,10 @@
     },
     {
       "file": "tests/parser/test_closure_capture_runtime.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/parser/test_compile_tool_project_import.c",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -16898,7 +17123,7 @@
   "targetPlanCounts": {
     "04": 1,
     "05": 4,
-    "06A": 615,
+    "06A": 619,
     "14": 25
   },
   "unknownCount": 0

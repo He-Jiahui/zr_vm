@@ -42,13 +42,16 @@ remaining owner gates are open.
   split properties, and comptime decorator types, are rejected.
 - The syntax-reference manifest has 29 features: 15 `current`, 1 `negative`,
   and 13 `design-pending`. Those 13 entries keep 07B open.
-- The repository migration inventory is deterministic at 890 scanned files,
-  420 structured exclusions, 645 findings, and 3 allowlisted negative
+- The repository migration inventory is deterministic at 908 scanned files,
+  435 structured exclusions, 649 findings, and 6 allowlisted negative
   findings. Classification is `machineApplicable=0`, `maybeIncorrect=0`,
-  `blocked=0`, `targetNotPromoted=0`, `requiresReview=645`, and
+  `blocked=0`, `targetNotPromoted=0`, `requiresReview=649`, and
   `unknown=0`. The review findings are retained source/embedded examples that
   require semantic classification; they are not accepted parser rules.
-- Focused GCC evidence includes the seven registered cutover/reference/provider
+- The inventory protocol is 9/9 on the clean intended snapshot. Its six exact
+  allowlist entries are deletion/unknown-syntax negative fixtures; three cover
+  the LSP formatter's fail-closed behavior and none enables production parsing.
+- Focused GCC evidence includes the eight registered cutover/reference/provider
   CTests, type inference 122/122, official provider convergence 4/4, artifact
   TestManifest roundtrip/corruption 1/1, SemIR 10/10, and the LSP CompileTool
   projection assertion. The final clean multi-toolchain result is recorded in
@@ -94,7 +97,7 @@ remaining owner gates are open.
 | 11 M1-M2 | build facts, typed diagnostics/effects, deterministic limits/cache | proven | preserve |
 | 11 M3 | typed AttributeUsage/AttributeData, Conditional elision, static decorator shape coverage, runtime decorator executor/helper removal | proven | preserve retained-data consumers |
 | 11 M4 | first-version public contract is GeneratedField-only; typed diagnostics, interfaceAdds, attributeAdds, normal rebind/layout, provenance, `.zri` generated source maps, artifact/reflection retention, and atomic cross-kind Patch commit with allocator-failure rollback are covered across GCC/Clang/MSVC/MSVC-ASan | proven | preserve; GeneratedType/Method/Property remain unpublished unless separately admitted through the reference gate |
-| 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; v2 buildDependencies are phase-separated in canonical manifest/lock output; project-owned lock admission is strict/atomic and feeds the compiler resolver without a parallel caller-owned lock graph; the resolver validates version range and CompileTool lock/ZRM package from one owned byte snapshot, checks actual package/entry SHA-256, hashes the canonical CompileTool lock section, and preserves runtime isolation; comptime cache v5 compares the full canonical 32-byte digest, includes current-module source identity, and has a versioned, deterministic, fixed-endian, whole-snapshot-authenticated format with atomic fail-closed import; the project CLI atomically persists `.zr_comptime_cache` and proves miss/hit/same-length semantic-edit miss/corrupt repair; formatter uses the migration plan as a fail-closed output gate, preserves canonical CompileTool syntax plus spaced/adjacent `%` and `%=` operators, and emits no edit for removed syntax | indirect | activate and validate the external provider graph through ordinary compile-only import/transform execution, and complete remaining artifact/reflection consumer acceptance |
+| 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; v2 buildDependencies are phase-separated in canonical manifest/lock output; project-owned lock admission is strict/atomic and feeds the compiler resolver without a parallel caller-owned lock graph; the resolver validates version range and CompileTool lock/ZRM package from one owned byte snapshot, checks actual package/entry SHA-256, hashes the canonical CompileTool lock section, and preserves runtime isolation; ordinary import now activates a materialized compiler-owned `.zrs` provider, keeps private helpers provider-local, exports only `pub`/`pro` transforms, executes a public typed Patch, and keeps the dependency out of the runtime graph; provider-to-provider build-dependency imports fail closed before recursion until the transitive phase-cycle graph is promoted; comptime cache v5 compares the full canonical 32-byte digest, includes current-module source identity, and has a versioned, deterministic, fixed-endian, whole-snapshot-authenticated format with atomic fail-closed import; the project CLI atomically persists `.zr_comptime_cache` and proves miss/hit/same-length semantic-edit miss/corrupt repair; formatter uses the migration plan as a fail-closed output gate, preserves canonical CompileTool syntax plus spaced/adjacent `%` and `%=` operators, and emits no edit for removed syntax | indirect | define and consume the final versioned compile-tool executable section, validate the actual transitive provider graph, and complete remaining artifact/reflection/LSP consumer acceptance |
 | 14 M1 | ordinary function test/case/skip roles, typed TestManifest, production typecheck-and-trim | proven | preserve |
 | 14 M2 | official Test-phase `zr.testing` provider with assert/equal/throws and bounded structured failure | proven | preserve |
 | 14 M3 | deterministic discovery/filter/list/run, process isolation, jobs, timeout, output and exit codes | proven | preserve sync/async reference matrix |

@@ -45,6 +45,9 @@ TZrBool register_compile_time_function_alias(SZrCompilerState *cs,
                                              SZrString *aliasName,
                                              SZrAstNode *node,
                                              SZrFileRange location);
+TZrBool ZrParser_CompileToolExecution_DeclareImport(
+        SZrCompilerState *cs,
+        SZrAstNode *node);
 TZrBool ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(SZrCompilerState *cs,
                                                                   SZrAstNode *node,
                                                                   SZrFileRange location);
