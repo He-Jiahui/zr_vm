@@ -46,6 +46,10 @@ E2b6d 已让 formal Debug consumer 只消费该 reference fact：它重验source
 token、SymbolId、TypeId和whole declaration range后调用generation-checked resolver。任何
 不匹配都使formal execution unavailable；LSP/DAP consumer 不得按 capture name、slot、AST
 或文本回退。
+E3a 让 DAP `evaluate.context` 成为 formal evaluation capability 的唯一入口：`hover`、缺失
+或未知 context 只授予 pure query，`watch` 仅额外授予 property getter，`repl` 显式授予
+getter/allocation/call/native-call。所有 context 都拒绝 mutation 和 owner mutation；请求必须
+经 `ZrDebug_EvaluateWithCapabilities`，不能以 context、member name、AST 或文本选择兼容执行器。
 
 ## 实施与安全矩阵
 

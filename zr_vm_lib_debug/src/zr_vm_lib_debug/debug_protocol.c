@@ -1,4 +1,5 @@
 #include "debug_internal.h"
+#include "debug_protocol_evaluate.h"
 
 #include <stdio.h>
 
@@ -1023,48 +1024,6 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent, TZrUIn
     return result;
 }
 
-static cJSON *zr_debug_agent_make_evaluate_result(ZrDebugAgent *agent,
-                                                  TZrUInt32 threadId,
-                                                  TZrUInt32 frameId,
-                                                  const TZrChar *expression,
-                                                  TZrChar *errorBuffer,
-                                                  TZrSize errorBufferSize) {
-    ZrDebugEvaluateResult evaluateResult;
-    cJSON *result;
-    SZrState *previousState = ZR_NULL;
-    TZrUInt32 previousThreadId = 0;
-    TZrUInt32 resolvedThreadId = 0;
-
-    memset(&evaluateResult, 0, sizeof(evaluateResult));
-    if (zr_debug_agent_begin_thread_access(agent, threadId, &resolvedThreadId, &previousState, &previousThreadId) ==
-        ZR_NULL) {
-        zr_debug_copy_text(errorBuffer, errorBufferSize, "unknown threadId");
-        return ZR_NULL;
-    }
-    if (!ZrDebug_Evaluate(agent, frameId, expression, &evaluateResult, errorBuffer, errorBufferSize)) {
-        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
-        return ZR_NULL;
-    }
-
-    result = cJSON_CreateObject();
-    if (result == ZR_NULL) {
-        zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
-        zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to allocate evaluate result");
-        return ZR_NULL;
-    }
-
-    cJSON_AddNumberToObject(result, "threadId", resolvedThreadId);
-    cJSON_AddStringToObject(result, "type", evaluateResult.type_name);
-    cJSON_AddStringToObject(result, "value", evaluateResult.value_text);
-    cJSON_AddStringToObject(result, "semanticSummary", evaluateResult.semantic_summary);
-    cJSON_AddStringToObject(result, "referenceSummary", evaluateResult.reference_summary);
-    cJSON_AddNumberToObject(result, "variablesReference", evaluateResult.variables_reference);
-    cJSON_AddNumberToObject(result, "namedVariables", (double)evaluateResult.named_variables);
-    cJSON_AddNumberToObject(result, "indexedVariables", (double)evaluateResult.indexed_variables);
-    zr_debug_agent_end_thread_access(agent, previousState, previousThreadId);
-    return result;
-}
-
 static cJSON *zr_debug_agent_make_scopes_result(ZrDebugAgent *agent, TZrUInt32 threadId, TZrUInt32 frameId) {
     ZrDebugScopeSnapshot *scopes = ZR_NULL;
     TZrSize count = 0;
@@ -1261,6 +1220,7 @@ static void zr_debug_agent_process_variables(ZrDebugAgent *agent, const cJSON *r
 static void zr_debug_agent_process_evaluate(ZrDebugAgent *agent, const cJSON *requestId, const cJSON *params) {
     cJSON *expressionItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "expression") : ZR_NULL;
     cJSON *frameIdItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "frameId") : ZR_NULL;
+    cJSON *contextItem = params != ZR_NULL ? cJSON_GetObjectItemCaseSensitive((cJSON *)params, "context") : ZR_NULL;
     TZrUInt32 threadId = zr_debug_agent_thread_id_from_params(agent, params);
     TZrUInt32 frameId = cJSON_IsNumber(frameIdItem) ? (TZrUInt32)frameIdItem->valuedouble : 1u;
     TZrChar errorBuffer[256];
@@ -1272,12 +1232,14 @@ static void zr_debug_agent_process_evaluate(ZrDebugAgent *agent, const cJSON *re
         return;
     }
 
-    result = zr_debug_agent_make_evaluate_result(agent,
-                                                 threadId,
-                                                 frameId,
-                                                 expressionItem->valuestring,
-                                                 errorBuffer,
-                                                 sizeof(errorBuffer));
+    result = zr_debug_protocol_make_evaluate_result(
+            agent,
+            threadId,
+            frameId,
+            expressionItem->valuestring,
+            zr_debug_protocol_evaluate_allowed_effect_flags(contextItem),
+            errorBuffer,
+            sizeof(errorBuffer));
     if (result == ZR_NULL) {
         zr_debug_agent_send_error(agent,
                                   requestId,

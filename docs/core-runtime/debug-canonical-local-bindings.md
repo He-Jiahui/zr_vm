@@ -16,7 +16,13 @@ related_code:
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_evaluation_effect.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
@@ -45,7 +51,13 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_evaluation_effect.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_bindings.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
@@ -68,6 +80,8 @@ tests:
   - tests/debug/test_debug_metadata.c
   - tests/debug/test_debug_introspection.c
   - tests/debug/test_debug_expression_diagnostics.c
+  - tests/debug/test_debug_agent_protocol.c
+  - tests/debug/test_debug_evaluation_effect_policy_cases.h
   - tests/module/test_reflection_dynamic_generic_instance_interpreter.h
   - tests/module/test_reflection_dynamic_generic_method_context.h
   - tests/parser/test_semir_pipeline.c
@@ -80,6 +94,7 @@ tests:
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6a-canonical-closure-capture-artifact-identity.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6b-generation-checked-paused-frame-closure-resolver.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6c-closure-capture-origin-token-facts.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3a-dap-evaluate-capability-context.md
 doc_type: module-detail
 ---
 
@@ -230,6 +245,31 @@ capture name to discover a slot, or use a captured value before the full
 identity comparison. A mismatched index, token, ID, range, source, stale frame,
 or unavailable resolver result leaves formal evaluation unsupported. This makes
 the capture a read-only formal value while retaining the existing effect policy.
+
+## DAP Evaluate Capability Contexts
+
+The DAP `evaluate` request is a policy consumer, not an alternate evaluator.
+`debug_protocol.c` passes the request `context` through
+`zr_debug_protocol_evaluate_allowed_effect_flags`, then
+`debug_protocol_make_evaluate_result` enters the requested paused thread and
+calls `ZrDebug_EvaluateWithCapabilities`. The request uses the same formal
+parser, binder, canonical facts, effect classification, and structured result
+transport as all other Debug expression consumers.
+
+The mapping is deliberately narrow:
+
+- absent, malformed, `hover`, and every unknown context grant no effects;
+- `watch` grants only `PROPERTY_GETTER`;
+- `repl` grants `PROPERTY_GETTER`, `ALLOCATION`, `CALL`, and `NATIVE_CALL`;
+- no DAP context grants `MUTATION` or `OWNER_MUTATION`.
+
+An expression whose canonical effect set exceeds the selected capability set
+returns the existing structured protocol error instead of falling back to a
+legacy parser, direct evaluator, member spelling, or source text heuristic.
+Consequently an array literal is rejected in `hover` and `watch`, while the
+same canonical expression can be evaluated in `repl` only because `repl`
+explicitly grants allocation. This mapping does not weaken borrow, readonly,
+ref-like, native-capability, or paused-frame generation checks.
 
 ## Consumer Boundary
 
