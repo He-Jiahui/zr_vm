@@ -57,6 +57,10 @@ legacy compatibility。非空条件只能进行纯读取；getter、allocation�
 E3c 对每个 logpoint `{expression}` 应用相同的 zero-capability formal policy：纯表达式格式化为
 console 插值值，任何需要 getter/allocation/call/native-call/mutation/owner mutation 的表达式保留既有
 `<error:...>` 插值结果。模板格式器禁用legacy compatibility，断点分发层只发送完成格式化的输出。
+E4a 将 formal evaluate 的 canonical result transport 显式化：结果和协议响应携带当前 paused
+`stateId`，并只在 exact root-expression semantic query 返回有效TypeId时发布
+`hasCanonicalType`与`canonicalTypeId`。变量handle与结果共享state generation；legacy compatibility
+执行不伪造TypeId，保持identity unavailable。
 
 ## 实施与安全矩阵
 

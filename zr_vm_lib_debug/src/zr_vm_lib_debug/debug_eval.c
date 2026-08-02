@@ -911,6 +911,7 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
         TZrUInt32 allowedEffectFlags,
         TZrBool allowLegacyCompatibility,
         SZrTypeValue *outValue,
+        TZrUInt32 *outCanonicalTypeId,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize,
         TZrChar *referenceBuffer,
@@ -921,6 +922,9 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
 
     if (outValue != ZR_NULL) {
         ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (outCanonicalTypeId != ZR_NULL) {
+        *outCanonicalTypeId = ZR_DEBUG_CANONICAL_TYPE_ID_INVALID;
     }
     if (referenceBuffer != ZR_NULL && referenceBufferSize > 0) {
         referenceBuffer[0] = '\0';
@@ -934,6 +938,7 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
                                              expression,
                                              allowedEffectFlags,
                                              outValue,
+                                             outCanonicalTypeId,
                                              errorBuffer,
                                              errorBufferSize,
                                              &formalHandled,
@@ -947,6 +952,9 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
     }
     if (formalHandled) {
         return ZR_TRUE;
+    }
+    if (outCanonicalTypeId != ZR_NULL) {
+        *outCanonicalTypeId = ZR_DEBUG_CANONICAL_TYPE_ID_INVALID;
     }
     if (!allowLegacyCompatibility) {
         if (errorBuffer == ZR_NULL || errorBufferSize == 0u || errorBuffer[0] == '\0') {
@@ -1004,6 +1012,7 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
             ZR_DEBUG_EVALUATION_EFFECT_NONE,
             ZR_TRUE,
             outValue,
+            ZR_NULL,
             errorBuffer,
             errorBufferSize,
             referenceBuffer,

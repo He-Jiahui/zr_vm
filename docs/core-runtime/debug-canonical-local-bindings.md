@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/debug.h
   - zr_vm_core/include/zr_vm_core/call_info.h
   - zr_vm_core/include/zr_vm_core/debug.h
   - zr_vm_core/include/zr_vm_core/function.h
@@ -17,6 +18,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_evaluation_effect.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.c
@@ -40,6 +42,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
 implementation_files:
+  - zr_vm_lib_debug/include/zr_vm_lib_debug/debug.h
   - zr_vm_core/include/zr_vm_core/call_info.h
   - zr_vm_core/include/zr_vm_core/debug.h
   - zr_vm_core/include/zr_vm_core/function.h
@@ -57,6 +60,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation_execute.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_evaluation_effect.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.c
@@ -92,6 +96,7 @@ tests:
   - tests/debug/test_debug_expression_diagnostics.c
   - tests/debug/test_debug_breakpoint_condition_cases.h
   - tests/debug/test_debug_breakpoint_logpoint_cases.h
+  - tests/debug/test_debug_evaluate_result_transport_cases.h
   - tests/debug/test_debug_agent_protocol.c
   - tests/debug/test_debug_evaluation_effect_policy_cases.h
   - tests/module/test_reflection_dynamic_generic_instance_interpreter.h
@@ -109,6 +114,7 @@ tests:
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3a-dap-evaluate-capability-context.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3b-conditional-breakpoint-pure-policy.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3c-logpoint-pure-policy.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-02-e4a-canonical-evaluate-result-transport.md
 doc_type: module-detail
 ---
 
@@ -314,6 +320,21 @@ mutation, or owner-mutation effects. It does not choose a compatibility path
 from template text, member spelling, or AST shape. `debug.c` only emits the
 already formatted console message, so breakpoint dispatch cannot bypass the
 policy.
+
+## Canonical Evaluate Result Transport
+
+Successful formal evaluation returns the current `state_id`, a
+`has_canonical_type` flag, and `canonical_type_id` alongside its display text
+and expandable value handle. The TypeId is queried from the exact root
+expression range through `ZrParser_SemanticQuery_CanonicalTypeAt`; it is not
+derived from the display type name or runtime value tag. The transport token is
+the same stop-state generation recorded on every variable handle, so a client
+can tie an evaluate result and its `variablesReference` to one paused state.
+
+The protocol emits `stateId` and `hasCanonicalType` for every successful
+evaluate result, and emits `canonicalTypeId` only when the formal query
+published a valid identity. A legacy compatibility fallback clears the TypeId
+and leaves the flag false rather than manufacturing a canonical result.
 
 ## Consumer Boundary
 

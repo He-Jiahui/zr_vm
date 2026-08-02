@@ -2469,6 +2469,7 @@ static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
         zr_debug_copy_text(errorBuffer, errorBufferSize, "evaluate is only available while paused");
         return ZR_FALSE;
     }
+    outResult->state_id = agent->stopStateId;
     if (allowLegacyCompatibility &&
         zr_debug_try_evaluate_index_window(agent,
                                            frameId == 0 ? 1u : frameId,
@@ -2487,12 +2488,15 @@ static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
                 allowedEffectFlags,
                 allowLegacyCompatibility,
                 &value,
+                &outResult->canonical_type_id,
                 errorBuffer,
                 errorBufferSize,
                 outResult->reference_summary,
                 sizeof(outResult->reference_summary))) {
         return ZR_FALSE;
     }
+    outResult->has_canonical_type =
+            outResult->canonical_type_id != ZR_DEBUG_CANONICAL_TYPE_ID_INVALID ? ZR_TRUE : ZR_FALSE;
 
     if (zr_debug_value_is_union_carrier(agent->state, &value)) {
         ZrDebugUnionView view;

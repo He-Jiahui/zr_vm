@@ -61,6 +61,11 @@ cJSON *zr_debug_protocol_make_evaluate_result(ZrDebugAgent *agent,
     }
 
     cJSON_AddNumberToObject(result, "threadId", resolvedThreadId);
+    cJSON_AddNumberToObject(result, "stateId", (double)evaluateResult.state_id);
+    cJSON_AddBoolToObject(result, "hasCanonicalType", evaluateResult.has_canonical_type ? 1 : 0);
+    if (evaluateResult.has_canonical_type) {
+        cJSON_AddNumberToObject(result, "canonicalTypeId", (double)evaluateResult.canonical_type_id);
+    }
     cJSON_AddStringToObject(result, "type", evaluateResult.type_name);
     cJSON_AddStringToObject(result, "value", evaluateResult.value_text);
     cJSON_AddStringToObject(result, "semanticSummary", evaluateResult.semantic_summary);

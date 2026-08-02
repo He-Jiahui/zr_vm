@@ -449,6 +449,12 @@ variables 目前是只读快照，不支持变量写回或带副作用求值。s
 
 同一协议层还输出 `referenceSummary`。它是 adapter-facing 的引用来源提示，不是完整的 parser reference fact：稳定可解析的顶层 scope 引用会显示为 `argument <name>`、`local <name>`、`closure <name>` 或 `global <name>`；`evaluate` 会累计 safe evaluator 实际解析并读取的 identifier，例如 `evaluate("zr")` 返回 `global zr`，`evaluate("inside + 1")` 返回 `local inside` 或 MSVC fixture 下的 `argument inside`，`evaluate("zr ? loadedModules : missingLocal")` 返回 `global zr, global loadedModules`。debug index-window evaluate 会沿用 base expression 的实际读取归因，例如 `evaluate("zr[1..3]")` 在 indexed-window `semanticSummary` 旁返回 `referenceSummary: global zr`。短路 RHS 和未选中的 `?:` branch 只被语法消费，不会因为里面出现可解析 identifier 就填充 `referenceSummary`；`true || inside`、`false ? inside : 2` 和前述 `missingLocal` 都不会被误报。计算结果、调试器合成入口、展开对象子字段和 member declaration 仍不会伪造 parser source facts。
 
+成功的 `evaluate` 响应还带 `stateId`、`hasCanonicalType`，并且只在后者为 true 时带
+`canonicalTypeId`。`stateId` 与同一暂停态中产生的 `variablesReference` handle 绑定；恢复、再次
+停止或状态改变后，旧 handle 不可继续使用。`canonicalTypeId` 只能来自该表达式根 range 的
+canonical semantic query，不能由 `type` 显示字符串或 runtime value tag 重新推断。兼容 fallback
+明确返回 `hasCanonicalType: false`，而不是伪造 identity。
+
 这符合 v1 的安全边界，避免把脚本侧的 pause/breakpoint 控制重新暴露回脚本运行时本身。
 
 ### Union Values

@@ -30,6 +30,7 @@ typedef struct SZrAstNode SZrAstNode;
 #define ZR_DEBUG_MAIN_THREAD_ID ((TZrUInt32)1u)
 #define ZR_DEBUG_VARIABLE_HANDLE_BASE ((TZrUInt32)1000u)
 #define ZR_DEBUG_INSTANCE_SYNTHETIC_FIELD_COUNT ((TZrSize)1u)
+#define ZR_DEBUG_CANONICAL_TYPE_ID_INVALID ((TZrUInt32)0u)
 
 static ZR_FORCE_INLINE void zr_debug_memory_barrier(void) {
 #if defined(_WIN32)
@@ -305,6 +306,7 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
                                             const TZrChar *expression,
                                             TZrUInt32 allowedEffectFlags,
                                             SZrTypeValue *outValue,
+                                            TZrUInt32 *outCanonicalTypeId,
                                             TZrChar *errorBuffer,
                                             TZrSize errorBufferSize,
                                             TZrBool *outHandled,
@@ -405,6 +407,7 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
         TZrUInt32 allowedEffectFlags,
         TZrBool allowLegacyCompatibility,
         SZrTypeValue *outValue,
+        TZrUInt32 *outCanonicalTypeId,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize,
         TZrChar *referenceBuffer,

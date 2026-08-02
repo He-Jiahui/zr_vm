@@ -127,6 +127,9 @@ typedef struct ZrDebugValuePreview {
 } ZrDebugValuePreview;
 
 typedef struct ZrDebugEvaluateResult {
+    TZrUInt64 state_id;
+    TZrUInt32 canonical_type_id;
+    TZrBool has_canonical_type;
     TZrUInt32 variables_reference;
     TZrSize named_variables;
     TZrSize indexed_variables;

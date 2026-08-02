@@ -2,6 +2,7 @@
 
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include <string.h>
@@ -191,6 +192,7 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
                                             const TZrChar *expression,
                                             TZrUInt32 allowedEffectFlags,
                                             SZrTypeValue *outValue,
+                                            TZrUInt32 *outCanonicalTypeId,
                                             TZrChar *errorBuffer,
                                             TZrSize errorBufferSize,
                                             TZrBool *outHandled,
@@ -199,12 +201,17 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
     TZrBool supported = ZR_FALSE;
     TZrBool ok = ZR_TRUE;
     TZrUInt32 effectFlags = ZR_DEBUG_EVALUATION_EFFECT_NONE;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticTypeQuery typeQuery;
 
     if (outHandled != ZR_NULL) {
         *outHandled = ZR_FALSE;
     }
     if (outParserFailure != ZR_NULL) {
         *outParserFailure = ZR_FALSE;
+    }
+    if (outCanonicalTypeId != ZR_NULL) {
+        *outCanonicalTypeId = ZR_DEBUG_CANONICAL_TYPE_ID_INVALID;
     }
     if (agent == ZR_NULL || agent->state == ZR_NULL || expression == ZR_NULL ||
         outValue == ZR_NULL || outHandled == ZR_NULL) {
@@ -260,6 +267,16 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
                            "canonical semantic facts are unavailable for debug evaluation");
         ok = ZR_FALSE;
         goto cleanup;
+    }
+    if (outCanonicalTypeId != ZR_NULL) {
+        ZrParser_SemanticQueryScope_Node(&scope, context.expression);
+        memset(&typeQuery, 0, sizeof(typeQuery));
+        if (ZrParser_SemanticQuery_CanonicalTypeAt(context.compilerState.semanticContext,
+                                                    context.expression->location,
+                                                    &scope,
+                                                    &typeQuery)) {
+            *outCanonicalTypeId = typeQuery.typeId;
+        }
     }
     if ((effectFlags & ~allowedEffectFlags) != 0u) {
         zr_debug_copy_text(errorBuffer,

@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-02 10:34 +08:00
+updated_at: 2026-08-02 10:50 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -67,10 +67,11 @@ source_plans:
 | 2026-08-02 10:02 +08:00 | 已完成 | LSP 04 E3a DAP evaluate capability context：`hover`/缺失/未知context只允许pure，`watch`仅允许getter，`repl`显式允许getter/allocation/call/native-call；无context允许mutation或owner mutation，统一经formal capability API且无名称/AST/文本回退；GCC/Clang/MSVC protocol runner均6/6、GCC/Clang formal diagnostics均52/52真实exit 0 | [DAP evaluate capability context](../04-debug-and-repl/2026-08-02-e3a-dap-evaluate-capability-context.md) |
 | 2026-08-02 10:22 +08:00 | 已完成 | LSP 04 E3b conditional breakpoint pure policy：非空条件统一经formal evaluator、零capability与关闭legacy compatibility；getter/allocation/call/native-call/mutation/owner mutation均fail closed，空条件保持无条件命中，失败不命中并复用structured error输出；GCC/Clang formal diagnostics均53/53、MSVC static runner真实exit 0 | [Conditional breakpoint pure policy](../04-debug-and-repl/2026-08-02-e3b-conditional-breakpoint-pure-policy.md) |
 | 2026-08-02 10:34 +08:00 | 已完成 | LSP 04 E3c logpoint pure policy：每个`{expression}`统一经formal evaluator、零capability与关闭legacy compatibility；纯值格式化为console插值，getter/allocation/call/native-call/mutation/owner mutation均保留`<error:...>`且无文本/member/AST回退；GCC/Clang formal diagnostics均54/54、MSVC static runner真实exit 0 | [Logpoint pure policy](../04-debug-and-repl/2026-08-02-e3c-logpoint-pure-policy.md) |
+| 2026-08-02 10:50 +08:00 | 已完成 | LSP 04 E4a canonical evaluate result transport：formal root range仅经`CanonicalTypeAt`发布nonzero TypeId；result/protocol携带同变量handle generation的`stateId`、`hasCanonicalType`和可用时`canonicalTypeId`，legacy fallback保持identity unavailable；GCC/Clang/MSVC formal diagnostics均55/55真实exit 0 | [Canonical evaluate result transport](../04-debug-and-repl/2026-08-02-e4a-canonical-evaluate-result-transport.md) |
 
 ## 当前状态
 
-- 总体目标进行中。当前记录只表示四十六个子里程碑完成，不表示L1-L8整体完成。
+- 总体目标进行中。当前记录只表示四十七个子里程碑完成，不表示L1-L8整体完成。
 - LSP 04 E1 已完成计划要求的 module、scope、receiver、generic context和visible SymbolId reconstruction；没有稳定canonical fact时不伪造source `TypeId`或const-generic runtime carrier。下一步是E2b，以E2a正式fragment parser绑定只读debug context并复用Canonical TypeRef/Place query；随后继续E3-E5，以及property/constructor/meta callable target identity、native generic constraint/effectful method contract、public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
-- LSP 04 E2a formal fragment parser、E2b0/E2b1 binding injection、E2b2 canonical Place、E2b3-E2b5 runtime-root carrier/consumer、E2b6a-E2b6d closure artifact/resolver/origin facts/formal consumer，以及E3a DAP capability context、E3b conditional breakpoint和E3c logpoint pure policy已完成。下一步进入E4 result transport；后续Debug/LSP consumer继续只能消费已经发布的 canonical facts。任何 stale、trimmed、missing 或 duplicate identity 必须 fail closed。
+- LSP 04 E2a formal fragment parser、E2b0/E2b1 binding injection、E2b2 canonical Place、E2b3-E2b5 runtime-root carrier/consumer、E2b6a-E2b6d closure artifact/resolver/origin facts/formal consumer，以及E3a DAP capability context、E3b conditional breakpoint、E3c logpoint pure policy和E4a canonical evaluate result transport已完成。下一步继续E4 children-handle/structured-error transport；后续Debug/LSP consumer继续只能消费已经发布的 canonical facts。任何 stale、trimmed、missing 或 duplicate identity 必须 fail closed。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。
