@@ -369,7 +369,7 @@ v1 事件集：
 
 ## Safe Evaluate And Conditions
 
-`evaluate`、条件断点和 logpoint 插值共用 `zr_debug_evaluate_expression(...)` 的安全表达式子集。该子集只允许无副作用读取和计算：
+`evaluate`、条件断点和 logpoint 插值共用正式 parser/binder/canonical fact 的安全表达式子集。条件断点和 logpoint 插值以零 capability 且禁用 legacy compatibility 执行；DAP `evaluate` 另按显式 context 授予能力。三者都不建立兼容表达式执行器或按文本回退。该子集只允许无副作用读取和计算：
 
 - literal、局部变量、参数、`this` / `self`
 - member access、index access、debug index window

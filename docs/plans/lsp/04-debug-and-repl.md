@@ -54,6 +54,9 @@ E3b 将 conditional breakpoint 收敛到同一 formal policy，但其允许效�
 legacy compatibility。非空条件只能进行纯读取；getter、allocation、call、native call、mutation
 和 owner mutation 都 fail closed。空条件仍表示无条件命中；失败条件不命中并通过既有断点错误
 输出路径报告，不能按表达式文本、member name 或 AST 选择替代执行器。
+E3c 对每个 logpoint `{expression}` 应用相同的 zero-capability formal policy：纯表达式格式化为
+console 插值值，任何需要 getter/allocation/call/native-call/mutation/owner mutation 的表达式保留既有
+`<error:...>` 插值结果。模板格式器禁用legacy compatibility，断点分发层只发送完成格式化的输出。
 
 ## 实施与安全矩阵
 

@@ -21,6 +21,8 @@ related_code:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_logpoint.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_logpoint.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.h
@@ -59,6 +61,8 @@ implementation_files:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_condition.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_logpoint.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_breakpoint_logpoint.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.h
@@ -87,6 +91,7 @@ tests:
   - tests/debug/test_debug_introspection.c
   - tests/debug/test_debug_expression_diagnostics.c
   - tests/debug/test_debug_breakpoint_condition_cases.h
+  - tests/debug/test_debug_breakpoint_logpoint_cases.h
   - tests/debug/test_debug_agent_protocol.c
   - tests/debug/test_debug_evaluation_effect_policy_cases.h
   - tests/module/test_reflection_dynamic_generic_instance_interpreter.h
@@ -103,6 +108,7 @@ tests:
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e2b6c-closure-capture-origin-token-facts.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3a-dap-evaluate-capability-context.md
   - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3b-conditional-breakpoint-pure-policy.md
+  - docs/plans/lsp/04-debug-and-repl/2026-08-02-e3c-logpoint-pure-policy.md
 doc_type: module-detail
 ---
 
@@ -294,6 +300,20 @@ An empty condition remains an unconditional breakpoint and is satisfied
 without evaluation. Truthiness is applied only after formal evaluation
 succeeds. The condition path does not select an evaluator by member spelling,
 AST shape, expression text, or compatibility syntax.
+
+## Logpoint Interpolation Effect Policy
+
+Logpoint templates use the same pure policy for every `{expression}` segment.
+`zr_debug_breakpoint_logpoint_format` calls the formal evaluator with no
+capabilities and disables legacy compatibility before it formats a resulting
+value. A pure expression is substituted into the console template; an
+unsupported expression retains the existing `<error:...>` interpolation text.
+
+The formatter does not grant property getter, allocation, call, native-call,
+mutation, or owner-mutation effects. It does not choose a compatibility path
+from template text, member spelling, or AST shape. `debug.c` only emits the
+already formatted console message, so breakpoint dispatch cannot bypass the
+policy.
 
 ## Consumer Boundary
 

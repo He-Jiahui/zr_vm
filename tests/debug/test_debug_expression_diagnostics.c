@@ -4,6 +4,7 @@
 #include "runtime_support.h"
 #include "debug_internal.h"
 #include "debug_breakpoint_condition.h"
+#include "debug_breakpoint_logpoint.h"
 #include "debug_evaluation_effect_internal.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/string.h"
@@ -817,6 +818,7 @@ static void test_debug_evaluate_reports_unsupported_string_escape_with_cause_and
 
 #include "test_debug_evaluation_effect_policy_cases.h"
 #include "test_debug_breakpoint_condition_cases.h"
+#include "test_debug_breakpoint_logpoint_cases.h"
 
 void setUp(void) {}
 
@@ -868,6 +870,7 @@ int main(void) {
     RUN_TEST(test_debug_evaluation_effect_policy_marks_resolved_property_getter);
     RUN_TEST(test_debug_evaluation_effect_policy_marks_resolved_ownership_member);
     RUN_TEST(test_debug_breakpoint_condition_requires_pure_formal_evaluation);
+    RUN_TEST(test_debug_breakpoint_logpoint_requires_pure_formal_evaluation);
     RUN_TEST(test_debug_semantic_binding_preserves_paused_frame_canonical_identity);
     RUN_TEST(test_debug_semantic_binding_rejects_missing_paused_place);
     RUN_TEST(test_debug_source_binding_shadows_runtime_root_spelling);

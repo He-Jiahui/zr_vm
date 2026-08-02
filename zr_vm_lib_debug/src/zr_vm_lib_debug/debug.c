@@ -1,5 +1,6 @@
 #include "debug_internal.h"
 #include "debug_breakpoint_condition.h"
+#include "debug_breakpoint_logpoint.h"
 
 #include <ctype.h>
 
@@ -1332,84 +1333,17 @@ static TZrBool zr_debug_breakpoint_condition_satisfied(ZrDebugAgent *agent, cons
     return satisfied;
 }
 
-static void zr_debug_append_text_segment(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text) {
-    TZrSize length;
-
-    if (buffer == ZR_NULL || bufferSize == 0 || text == ZR_NULL) {
-        return;
-    }
-
-    length = strlen(buffer);
-    if (length >= bufferSize - 1u) {
-        return;
-    }
-
-    snprintf(buffer + length, bufferSize - length, "%s", text);
-    buffer[bufferSize - 1u] = '\0';
-}
-
 static void zr_debug_breakpoint_emit_logpoint(ZrDebugAgent *agent, const ZrDebugBreakpoint *breakpoint) {
     TZrChar output[ZR_DEBUG_TEXT_CAPACITY];
-    const TZrChar *cursor;
 
     if (agent == ZR_NULL || breakpoint == ZR_NULL || breakpoint->log_message[0] == '\0') {
         return;
     }
 
-    output[0] = '\0';
-    cursor = breakpoint->log_message;
-    while (*cursor != '\0') {
-        const TZrChar *openBrace = strchr(cursor, '{');
-        if (openBrace == ZR_NULL) {
-            zr_debug_append_text_segment(output, sizeof(output), cursor);
-            break;
-        }
-
-        if (openBrace > cursor) {
-            TZrChar chunk[ZR_DEBUG_TEXT_CAPACITY];
-            TZrSize length = (TZrSize)(openBrace - cursor);
-            if (length >= sizeof(chunk)) {
-                length = sizeof(chunk) - 1u;
-            }
-            memcpy(chunk, cursor, length);
-            chunk[length] = '\0';
-            zr_debug_append_text_segment(output, sizeof(output), chunk);
-        }
-
-        {
-            const TZrChar *closeBrace = strchr(openBrace + 1, '}');
-            if (closeBrace == ZR_NULL) {
-                zr_debug_append_text_segment(output, sizeof(output), openBrace);
-                break;
-            }
-
-            TZrChar expression[ZR_DEBUG_TEXT_CAPACITY];
-            SZrTypeValue value;
-            TZrChar valueText[ZR_DEBUG_TEXT_CAPACITY];
-            TZrChar error[256];
-            TZrSize expressionLength = (TZrSize)(closeBrace - (openBrace + 1));
-
-            if (expressionLength >= sizeof(expression)) {
-                expressionLength = sizeof(expression) - 1u;
-            }
-            memcpy(expression, openBrace + 1, expressionLength);
-            expression[expressionLength] = '\0';
-
-            memset(&value, 0, sizeof(value));
-            if (zr_debug_evaluate_expression(agent, 1, expression, &value, error, sizeof(error), ZR_NULL, 0)) {
-                zr_debug_format_value_text_safe(agent->state, &value, valueText, sizeof(valueText));
-                zr_debug_append_text_segment(output, sizeof(output), valueText);
-            } else {
-                snprintf(valueText, sizeof(valueText), "<error:%.*s>", (int)(sizeof(valueText) - 9u), error);
-                zr_debug_append_text_segment(output, sizeof(output), valueText);
-            }
-
-            cursor = closeBrace + 1;
-        }
+    if (zr_debug_breakpoint_logpoint_format(
+                agent, breakpoint->log_message, output, sizeof(output))) {
+        zr_debug_agent_emit_output(agent, "console", output);
     }
-
-    zr_debug_append_text_segment(output, sizeof(output), "\n");
-    zr_debug_agent_emit_output(agent, "console", output);
 }
 
 static TZrBool zr_debug_agent_should_stop_for_breakpoint(ZrDebugAgent *agent,
