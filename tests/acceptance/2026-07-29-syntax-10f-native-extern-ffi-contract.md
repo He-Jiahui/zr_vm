@@ -6,8 +6,11 @@ related_code:
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_parser/include/zr_vm_parser/ffi_contract.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_contract.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_ffi_contract.h
@@ -16,9 +19,12 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/state.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_contract.c
@@ -39,12 +45,13 @@ doc_type: acceptance-record
 ## Scope
 
 This record accepts the Syntax 10F M3 native contract gate. The accepted source surface is
-`native extern`; `%extern` remains a 06B migration compatibility path and is not used as the
-static contract spelling.
+`native extern`. `%extern` is not a compatibility spelling: production parser recognition is
+diagnostic-only, returns `legacy_syntax_removed`, and cannot create the old AST/lowering.
 
 Each static function owns a persistent `SZrNativeImportContract` containing stable symbol and
 module identities, library/entry identity, availability and capabilities, source mapping,
-target ABI, policy fields, and a canonical FFI signature. The signature covers scalar,
+target ABI, policy fields, a canonical FFI signature, and an independent canonical language
+callable contract. The two hashes cover different facts. The signature covers scalar,
 pointer, enum, aggregate/union field layout, callback, parameter direction, marshalling,
 ownership, and nullability. Common validation and hashes are shared by compiler, `.zro`, VM,
 AOT, loader, and libffi.
@@ -59,9 +66,9 @@ AOT, loader, and libffi.
   registration descriptors; runtime admission requires pointer/count agreement.
 - libffi lowers the canonical vector only after availability, capability, target pointer size,
   endianness, ABI hash, aggregate range, and signature hash validation.
-- Callback types require explicit lifetime, thread, and exception policy. Ref-like, `Span`,
+- Callback types require explicit lifetime, thread, and exception policy. Ref-like,
   owner/resource, GC-reference, unsupported ABI, and other non-blittable implicit shapes fail
-  closed unless a supported explicit contract exists.
+  closed by capability/layout facts, not by a concrete type-name blacklist.
 - Union values are admitted only as by-value inputs. Marshalling requires exactly one
   non-default field to identify the active member; zero or multiple candidates fail closed.
   Union returns and union `ref/out` parameters are rejected by both compiler construction and
@@ -133,8 +140,31 @@ extern code generation could emit `RESET_STACK_NULL`, `RESET_STACK_NULL2`, and
 The dedicated runtime calls are now emitted, and the LLVM code-registration case moves from the
 reproduced 26/27 failure back to 27/27.
 
+## 2026-08-03 schema v4 revalidation
+
+Final review reopened the earlier M3 implementation even though the behavioral suite was green.
+The persisted native-import row stored `callableContractHash` as a copy of `signatureHash`, so it
+did not retain language passing, escape, initialization, temporary, call-site, receiver, or effect
+facts. The builder also rejected concrete names such as `Span`, `Task`, and `Unique`, and aggregate
+layout hashing was not anchored to canonical `SZrTypeLayout`.
+
+The repair bumps the native FFI schema to v4 and replaces the copied scalar with a structured
+`SZrFfiCallableContract`. `ZrParser_FfiContract_Build` now requires the compiler semantic context,
+normalizes every parameter through the canonical syntax contract, interns the callable, and
+persists an independently hashed vector. Common admission validates the vector and its
+`in/ref/out` cross-contract mapping. Aggregate and union hashes are rebuilt from validated
+canonical `SZrTypeLayout`; admission is capability/layout driven, so a local blittable struct named
+`Span` succeeds while ownership and unsupported generic shapes fail closed.
+
+The complete callable vector round-trips through `.zro` and is emitted by both C and LLVM AOT.
+Focused revalidation is identical under WSL GCC 11.4 and Clang 14: native extern 29/29, AOT C
+stripping 37/37, and strict percent cutover 6/6. MSVC 19.44 reports the same 29/29, 37/37, and 6/6;
+the one LLVM runtime-loading case in the native suite is explicitly Unix-only and therefore ignored
+on Windows. The migration inventory remains on its existing 649-item review baseline after the new
+fixture functions were named to avoid false constructor-call classification.
+
 ## Outcome
 
-Syntax 10F is accepted for its M3 native extern/FFI ABI scope. This does not complete 10C
-provider convergence or 06B repository cutover; legacy `%extern` remains expected until those
-dependent gates close.
+Syntax 10F is accepted for its M3 native extern/FFI ABI scope. The strict 06B production parser
+cutover is also complete, but this does not complete 10C provider convergence or the root Syntax
+redesign.

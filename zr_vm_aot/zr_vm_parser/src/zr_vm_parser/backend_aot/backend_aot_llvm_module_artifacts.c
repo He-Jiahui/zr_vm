@@ -65,6 +65,53 @@ static void backend_aot_llvm_write_ffi_parameter(
             (unsigned)parameter->flags);
 }
 
+static void backend_aot_llvm_write_ffi_callable_parameter(
+        FILE *file,
+        const SZrFfiCallableParameterContract *parameter) {
+    fprintf(
+            file,
+            "%%SZrFfiCallableParameterContract { i64 %llu, i32 %u, "
+            "i32 %u, i32 %u, i32 %u, i8 %u, i32 %u }",
+            (unsigned long long)parameter->canonicalTypeHash,
+            (unsigned)parameter->passingForm,
+            (unsigned)parameter->escapeUpperBound,
+            (unsigned)parameter->entryInitialization,
+            (unsigned)parameter->exitInitialization,
+            parameter->acceptsTemporary ? 1u : 0u,
+            (unsigned)parameter->callSiteMarker);
+}
+
+static void backend_aot_llvm_write_ffi_callable(
+        FILE *file,
+        const SZrFfiCallableContract *callable) {
+    fprintf(
+            file,
+            "%%SZrFfiCallableContract { i32 %u, "
+            "[32 x %%SZrFfiCallableParameterContract] [",
+            (unsigned)callable->parameterCount);
+    for (TZrUInt32 index = 0u;
+         index < ZR_FFI_CONTRACT_MAX_PARAMETERS;
+         index++) {
+        if (index > 0u) {
+            fputs(", ", file);
+        }
+        if (index < callable->parameterCount) {
+            backend_aot_llvm_write_ffi_callable_parameter(
+                    file, &callable->parameters[index]);
+        } else {
+            fputs("%SZrFfiCallableParameterContract zeroinitializer", file);
+        }
+    }
+    fprintf(
+            file,
+            "], i64 %llu, i32 %u, i32 %u, i8 %u, i64 %llu }",
+            (unsigned long long)callable->returnTypeHash,
+            (unsigned)callable->receiverEffect,
+            (unsigned)callable->effectFlags,
+            callable->isVariadic ? 1u : 0u,
+            (unsigned long long)callable->contractHash);
+}
+
 static void backend_aot_llvm_write_ffi_aggregate_field(
         FILE *file,
         const SZrFfiAggregateFieldContract *field) {
@@ -161,11 +208,13 @@ static void backend_aot_llvm_write_native_import(
             file, contract->entryPoint, ZR_FFI_CONTRACT_ENTRY_CAPACITY);
     fprintf(
             file,
-            ", i64 %llu, i64 %llu, i64 %llu, i32 %u, i64 %llu, "
-            "%%SZrFfiSourceMapping { [512 x i8] ",
+            ", i64 %llu, i64 %llu, ",
             (unsigned long long)contract->symbolId,
-            (unsigned long long)contract->declaringModuleId,
-            (unsigned long long)contract->callableContractHash,
+            (unsigned long long)contract->declaringModuleId);
+    backend_aot_llvm_write_ffi_callable(file, &contract->callable);
+    fprintf(
+            file,
+            ", i32 %u, i64 %llu, %%SZrFfiSourceMapping { [512 x i8] ",
             (unsigned)contract->availability,
             (unsigned long long)contract->requiredCapabilities);
     backend_aot_llvm_write_fixed_string(

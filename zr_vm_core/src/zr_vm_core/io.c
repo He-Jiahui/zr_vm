@@ -1200,6 +1200,54 @@ static void io_read_ffi_type_contract(
     ZR_IO_READ_NATIVE_TYPE(io, type->aggregateFieldCount, TZrUInt32);
 }
 
+static void io_read_ffi_callable_contract(
+        SZrIo *io,
+        SZrFfiCallableContract *callable) {
+    TZrUInt8 isVariadic = 0u;
+    TZrUInt32 receiverEffect = 0u;
+
+    ZR_IO_READ_NATIVE_TYPE(io, callable->parameterCount, TZrUInt32);
+    if (callable->parameterCount > ZR_FFI_CONTRACT_MAX_PARAMETERS) {
+        io->hasReadError = ZR_TRUE;
+        return;
+    }
+    for (TZrUInt32 index = 0u; index < callable->parameterCount; index++) {
+        SZrFfiCallableParameterContract *parameter =
+                &callable->parameters[index];
+        TZrUInt32 passingForm = 0u;
+        TZrUInt32 escapeUpperBound = 0u;
+        TZrUInt32 entryInitialization = 0u;
+        TZrUInt32 exitInitialization = 0u;
+        TZrUInt8 acceptsTemporary = 0u;
+        TZrUInt32 callSiteMarker = 0u;
+
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->canonicalTypeHash, TZrUInt64);
+        ZR_IO_READ_NATIVE_TYPE(io, passingForm, TZrUInt32);
+        parameter->passingForm = (EZrFfiCallablePassingForm)passingForm;
+        ZR_IO_READ_NATIVE_TYPE(io, escapeUpperBound, TZrUInt32);
+        parameter->escapeUpperBound =
+                (EZrFfiCallableEscapeUpperBound)escapeUpperBound;
+        ZR_IO_READ_NATIVE_TYPE(io, entryInitialization, TZrUInt32);
+        parameter->entryInitialization =
+                (EZrFfiCallableEntryInitialization)entryInitialization;
+        ZR_IO_READ_NATIVE_TYPE(io, exitInitialization, TZrUInt32);
+        parameter->exitInitialization =
+                (EZrFfiCallableExitInitialization)exitInitialization;
+        ZR_IO_READ_NATIVE_TYPE(io, acceptsTemporary, TZrUInt8);
+        parameter->acceptsTemporary = acceptsTemporary ? ZR_TRUE : ZR_FALSE;
+        ZR_IO_READ_NATIVE_TYPE(io, callSiteMarker, TZrUInt32);
+        parameter->callSiteMarker =
+                (EZrFfiCallableCallSiteMarker)callSiteMarker;
+    }
+    ZR_IO_READ_NATIVE_TYPE(io, callable->returnTypeHash, TZrUInt64);
+    ZR_IO_READ_NATIVE_TYPE(io, receiverEffect, TZrUInt32);
+    callable->receiverEffect = (EZrFfiCallableReceiverEffect)receiverEffect;
+    ZR_IO_READ_NATIVE_TYPE(io, callable->effectFlags, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, isVariadic, TZrUInt8);
+    callable->isVariadic = isVariadic ? ZR_TRUE : ZR_FALSE;
+    ZR_IO_READ_NATIVE_TYPE(io, callable->contractHash, TZrUInt64);
+}
+
 static void io_read_function_native_import_contracts(
         SZrIo *io,
         SZrIoFunction *function) {
@@ -1248,7 +1296,10 @@ static void io_read_function_native_import_contracts(
         ZrCore_Io_Read(io, (TZrBytePtr)contract->entryPoint, sizeof(contract->entryPoint));
         ZR_IO_READ_NATIVE_TYPE(io, contract->symbolId, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, contract->declaringModuleId, TZrUInt64);
-        ZR_IO_READ_NATIVE_TYPE(io, contract->callableContractHash, TZrUInt64);
+        io_read_ffi_callable_contract(io, &contract->callable);
+        if (io->hasReadError) {
+            return;
+        }
         ZR_IO_READ_NATIVE_TYPE(io, contract->availability, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, contract->requiredCapabilities, TZrUInt64);
         ZrCore_Io_Read(

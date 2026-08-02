@@ -191,7 +191,7 @@ TypeId or conflicting layout IDs for one TypeId also fails writer output. Type t
 this baseline, not dictionary instance identity.
 
 Native import contract nodes use canonical contract fields already produced by binding: `symbolId`,
-`callableContractHash`, and the complete validated `FfiSignature`. The C writer validates every row in the original
+`callable.contractHash`, and the complete validated `FfiSignature`. The C writer validates every row in the original
 function tree before ExecIR construction, including contracts on functions that code stripping would later remove.
 A nonempty/null table, per-function count overflow, function-table index space larger than capacity,
 schema/hash/ABI corruption, or invalid policy therefore fails closed instead of disappearing with an unreachable
@@ -249,7 +249,7 @@ The native import contract manifest follows the same owner/predecessor rule:
 ```text
 /* reachability.nativeImportManifest.version = 1 */
 /* reachability.nativeImportManifest.count = 1 */
-/* reachability.nativeImportManifest.node[0] = ownerFunction=0 contractIndex=0 symbolId=0x0000000000000101 callableContractHash=0x4478327a8def8f8b reason=edge.native_import predecessor=0 */
+/* reachability.nativeImportManifest.node[0] = ownerFunction=0 contractIndex=0 symbolId=0x0000000000000101 callableHash=0x4478327a8def8f8b reason=edge.native_import predecessor=0 */
 ```
 
 `code_stripping.nativeImportsBefore`, `nativeImportsAfter`, and `nativeImportsRemoved` report contract-node trimming

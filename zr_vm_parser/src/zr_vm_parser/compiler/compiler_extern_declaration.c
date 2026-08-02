@@ -826,7 +826,11 @@ static TZrBool compiler_append_native_import_contract(
     }
     ZrCore_Memory_RawSet(&diagnostic, 0, sizeof(diagnostic));
     status = ZrParser_FfiContract_Build(
-            externBlock, declaration, &contract, &diagnostic);
+            cs->semanticContext,
+            externBlock,
+            declaration,
+            &contract,
+            &diagnostic);
     if (status != ZR_FFI_CONTRACT_STATUS_OK) {
         ZrParser_Compiler_Error(
                 cs,

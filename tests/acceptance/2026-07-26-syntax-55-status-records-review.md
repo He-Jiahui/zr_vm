@@ -94,6 +94,26 @@ provider 8/8、CLI cache 12/12、LSP advanced 0 failure。完整 CTest 为 121/1
 切换已完成；root Syntax redesign 仍因 07B 的 13 个 design-pending 项，以及
 08/09/10C/11/14 的剩余 promotion 证据而未完成。
 
+## 2026-08-03 callable contract review 补充验收
+
+同一机械 selector 再次得到 `TOTAL=55 COMPLETE=55 MISSING=0`，目录分布仍为
+01=5、02=6、03=5、04=7、05=6、06=2、07=1、10=5、12=15、13=3。严格百分号切换
+定向测试保持 6/6：旧 `%module/%compileTime/%extern/%test/%owned/%import/%borrow/%func`
+等拼写只进入 fatal `legacy_syntax_removed` 诊断，不再产生旧 AST 或 lowering；算术 `%` 与
+`%=` 保持有效。
+
+本轮 review 重新打开并修复了 Gate 10F 的一项实质问题：旧 schema 把 callable hash 直接
+等同于 ABI signature hash，且类型准入包含具体名字 blacklist。schema v4 现持久化独立的
+canonical callable vector，并通过 `.zro`、C AOT、LLVM AOT 传播；aggregate/union layout
+由 canonical `SZrTypeLayout` 验证，类型准入改为 capability/layout facts。WSL GCC 11.4
+与 Clang 14 的新鲜定向证据均为 native extern 29/29、AOT C stripping 37/37、percent
+cutover 6/6；MSVC 19.44 同为 29/29、37/37、6/6，其中一项 Unix-only LLVM runtime
+loading case 按平台忽略。
+
+该修复加强了 10F 叶子完成证据，但不改变验收边界：55/55 仍是叶子记录结论，root
+Syntax redesign 仍因 07B 的 13 个 `design-pending` 项与 08/09/10C/11/14 剩余 promotion
+证据保持未完成。
+
 ## 2026-07-28 上层 Gate 补充复验
 
 本次复验重新按同一规则独立清点状态记录，机器计数为：总数 55、完成状态 55、

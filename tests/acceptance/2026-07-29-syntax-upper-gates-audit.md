@@ -9,7 +9,7 @@ scope:
   - Syntax 11
   - Syntax 14
 status: in-progress
-last_verified: 2026-08-02
+last_verified: 2026-08-03
 ---
 
 # Syntax upper gates requirement-to-evidence ledger
@@ -82,6 +82,20 @@ remaining owner gates are open.
   changing Debug suites. They are retained as root-promotion blockers and are
   not attributed to the strict parser cutover.
 
+## 2026-08-03 Gate 10F canonical-contract review
+
+- Review reopened 10F because schema v3 aliased the language callable identity to the ABI
+  signature hash and used a concrete managed-type name blacklist.
+- Schema v4 now persists independently hashed canonical passing/escape/initialization/call-site
+  facts, validates their mapping to FFI directions, and round-trips them through `.zro`, C AOT,
+  and LLVM AOT.
+- Aggregate/union hashes are derived from validated canonical `SZrTypeLayout`. A local blittable
+  type named `Span` is accepted, proving admission no longer dispatches on that concrete name.
+- Fresh WSL GCC 11.4 and Clang 14 focused evidence is native extern 29/29, AOT C stripping 37/37,
+  and strict percent cutover 6/6. MSVC 19.44 has the same counts, with one explicitly Unix-only
+  LLVM runtime-loading case ignored. The 55-record selector remains
+  `TOTAL=55 COMPLETE=55 MISSING=0`.
+
 ## Gate ledger
 
 | Gate | Current evidence | State | Remaining proof/work |
@@ -92,7 +106,7 @@ remaining owner gates are open.
 | 09 M3 | deferred reclaim, partial-init rollback, GcFree/GcMapped/GcBarriered accounting and cards are covered by pool 13/13 plus GC stress 3/3 | indirect | derive the native runtime scan directly from closed canonical TypeLayout, prove exactly-once resource Drop and language early-exit cleanup, and implement compact-safe moving slabs |
 | 09 M4 | native/binary/reflection contract hash parity and corrupt/missing/unknown rejection are covered by artifact 3/3; runtime-only/readonly/property-reference facts cross native import | indirect | finish dedicated LSP facts and full reflection non-boxing/lifetime evidence |
 | 09 M5 | million-handle and churn/hot-access counters are separated | indirect | add final pause/allocation/scan-byte promotion matrix after M2-M4 close |
-| 10F M3 | native extern 27/27 and FFI 29/29 focused evidence | proven | preserve in final matrix |
+| 10F M3 | schema v4 persists independent canonical callable and ABI vectors; TypeLayout/capability-driven admission; `.zro`, C AOT, and LLVM AOT consumers; native extern 29/29 and AOT stripping 37/37 focused evidence | proven | preserve in final matrix |
 | 10C | frozen 25-module N0-N3 inventory; phase-typed owners; distinct official provider descriptors rejected; LSP CompileTool phase/hash convergence | indirect | prove artifact/reflection/debug identity and every owner provider before global promotion |
 | 11 M1-M2 | build facts, typed diagnostics/effects, deterministic limits/cache | proven | preserve |
 | 11 M3 | typed AttributeUsage/AttributeData, Conditional elision, static decorator shape coverage, runtime decorator executor/helper removal | proven | preserve retained-data consumers |

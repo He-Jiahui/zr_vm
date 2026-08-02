@@ -1413,6 +1413,45 @@ static void write_ffi_type_contract(
            file);
 }
 
+static void write_ffi_callable_contract(
+        FILE *file,
+        const SZrFfiCallableContract *callable) {
+    TZrUInt8 isVariadic = callable->isVariadic ? 1u : 0u;
+
+    fwrite(&callable->parameterCount, sizeof(callable->parameterCount), 1, file);
+    for (TZrUInt32 index = 0u; index < callable->parameterCount; index++) {
+        const SZrFfiCallableParameterContract *parameter =
+                &callable->parameters[index];
+        TZrUInt32 passingForm = (TZrUInt32)parameter->passingForm;
+        TZrUInt32 escapeUpperBound = (TZrUInt32)parameter->escapeUpperBound;
+        TZrUInt32 entryInitialization =
+                (TZrUInt32)parameter->entryInitialization;
+        TZrUInt32 exitInitialization =
+                (TZrUInt32)parameter->exitInitialization;
+        TZrUInt8 acceptsTemporary = parameter->acceptsTemporary ? 1u : 0u;
+        TZrUInt32 callSiteMarker = (TZrUInt32)parameter->callSiteMarker;
+
+        fwrite(&parameter->canonicalTypeHash,
+               sizeof(parameter->canonicalTypeHash),
+               1,
+               file);
+        fwrite(&passingForm, sizeof(passingForm), 1, file);
+        fwrite(&escapeUpperBound, sizeof(escapeUpperBound), 1, file);
+        fwrite(&entryInitialization, sizeof(entryInitialization), 1, file);
+        fwrite(&exitInitialization, sizeof(exitInitialization), 1, file);
+        fwrite(&acceptsTemporary, sizeof(acceptsTemporary), 1, file);
+        fwrite(&callSiteMarker, sizeof(callSiteMarker), 1, file);
+    }
+    fwrite(&callable->returnTypeHash, sizeof(callable->returnTypeHash), 1, file);
+    {
+        TZrUInt32 receiverEffect = (TZrUInt32)callable->receiverEffect;
+        fwrite(&receiverEffect, sizeof(receiverEffect), 1, file);
+    }
+    fwrite(&callable->effectFlags, sizeof(callable->effectFlags), 1, file);
+    fwrite(&isVariadic, sizeof(isVariadic), 1, file);
+    fwrite(&callable->contractHash, sizeof(callable->contractHash), 1, file);
+}
+
 static void write_function_native_import_contracts(
         FILE *file,
         const SZrFunction *function) {
@@ -1444,7 +1483,7 @@ static void write_function_native_import_contracts(
         fwrite(contract->entryPoint, 1u, sizeof(contract->entryPoint), file);
         fwrite(&contract->symbolId, sizeof(contract->symbolId), 1, file);
         fwrite(&contract->declaringModuleId, sizeof(contract->declaringModuleId), 1, file);
-        fwrite(&contract->callableContractHash, sizeof(contract->callableContractHash), 1, file);
+        write_ffi_callable_contract(file, &contract->callable);
         fwrite(&contract->availability, sizeof(contract->availability), 1, file);
         fwrite(&contract->requiredCapabilities,
                sizeof(contract->requiredCapabilities),

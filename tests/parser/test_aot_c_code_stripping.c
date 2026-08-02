@@ -1299,7 +1299,9 @@ static void add_native_import_contract(SZrState *state,
     contract->signature.returnType.typeKind = ZR_FFI_CONTRACT_TYPE_VOID;
     contract->signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(&contract->signature);
-    contract->callableContractHash = contract->signature.signatureHash;
+    contract->callable.returnTypeHash = 1u;
+    contract->callable.contractHash =
+            ZrCommon_FfiCallableContract_ComputeHash(&contract->callable);
     TEST_ASSERT_TRUE(ZrCommon_NativeImportContract_Validate(contract));
     if (previousContracts != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(
@@ -3614,17 +3616,23 @@ static void test_aot_c_code_stripping_reports_native_import_contract_reachabilit
     assert_text_contains(generatedCText, "/* code_stripping.nativeImportsBefore = 4 */");
     assert_text_contains(generatedCText, "/* code_stripping.nativeImportsAfter = 3 */");
     assert_text_contains(generatedCText, "/* code_stripping.nativeImportsRemoved = 1 */");
+    assert_text_contains(
+            generatedCText,
+            ".callable = { .parameterCount = 0u, .parameters = {}, "
+            ".returnTypeHash = UINT64_C(0x0000000000000001), "
+            ".receiverEffect = 0, .effectFlags = 0x00000000u, "
+            ".isVariadic = 0, .contractHash = UINT64_C(");
     assert_text_contains(generatedCText, "/* reachability.nativeImportManifest.version = 1 */");
     assert_text_contains(generatedCText, "/* reachability.nativeImportManifest.count = 3 */");
     manifestNode0 = strstr(
             generatedCText,
-            "/* reachability.nativeImportManifest.node[0] = ownerFunction=0 contractIndex=0 symbolId=0x0000000000000101 callableContractHash=");
+            "/* reachability.nativeImportManifest.node[0] = ownerFunction=0 contractIndex=0 symbolId=0x0000000000000101 callableHash=");
     manifestNode1 = strstr(
             generatedCText,
-            "/* reachability.nativeImportManifest.node[1] = ownerFunction=0 contractIndex=1 symbolId=0x0000000000000102 callableContractHash=");
+            "/* reachability.nativeImportManifest.node[1] = ownerFunction=0 contractIndex=1 symbolId=0x0000000000000102 callableHash=");
     manifestNode2 = strstr(
             generatedCText,
-            "/* reachability.nativeImportManifest.node[2] = ownerFunction=2 contractIndex=0 symbolId=0x0000000000000301 callableContractHash=");
+            "/* reachability.nativeImportManifest.node[2] = ownerFunction=2 contractIndex=0 symbolId=0x0000000000000301 callableHash=");
     TEST_ASSERT_NOT_NULL(manifestNode0);
     TEST_ASSERT_NOT_NULL(manifestNode1);
     TEST_ASSERT_NOT_NULL(manifestNode2);

@@ -21,7 +21,7 @@ evidence_scope: sub-milestone
 - 完成项目：AOT C writer 在 ExecIR 与 code stripping 前递归校验完整 function tree 的 native import contract；
   不可达 owner 上的损坏 schema/hash/ABI/policy、nonempty/null table 与 count overflow 均 fail closed。
 - 完成项目：裁剪后按 stable flat function index 与 contract index 发布版本 1 `nativeImportManifest`，包含
-  `symbolId`、`callableContractHash`、owner、`edge.native_import` 与 predecessor。
+  `symbolId`、`callable.contractHash`、owner、`edge.native_import` 与 predecessor。
 - 完成项目：独立报告 `nativeImportsBefore/After/Removed`；验收 fixture 证明四个原始 contract 裁剪为三个，
   owner 0 的两个 contract 与 sparse owner 2 的一个 contract 保持稳定顺序，owner 1 的 unreachable entry point
   不进入最终 contract table。

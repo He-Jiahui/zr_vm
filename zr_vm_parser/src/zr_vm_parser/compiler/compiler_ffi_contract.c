@@ -1,4 +1,5 @@
 #include "compiler_internal.h"
+#include "compiler_ffi_callable_contract.h"
 
 #include "zr_vm_parser/ffi_contract.h"
 #include "zr_vm_common/zr_io_conf.h"
@@ -156,20 +157,6 @@ static TZrBool ffi_contract_text_equals(
         const TZrChar *expected) {
     return (TZrBool)(actual != ZR_NULL && expected != ZR_NULL &&
                      strcmp(actual, expected) == 0);
-}
-
-static TZrBool ffi_contract_is_forbidden_managed_name(const TZrChar *typeName) {
-    static const TZrChar *const names[] = {
-            "Span", "ReadOnlySpan", "string", "object", "Resource",
-            "Owner", "Unique", "Shared", "Weak", "Borrow", "Loan",
-            "Array", "Map", "Set", "Task"};
-
-    for (TZrSize index = 0u; index < sizeof(names) / sizeof(names[0]); index++) {
-        if (ffi_contract_text_equals(typeName, names[index])) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
 }
 
 static void ffi_contract_init_type(
@@ -845,17 +832,12 @@ static EZrFfiContractStatus ffi_contract_build_type(
                     ZR_FFI_CONTRACT_FNV_OFFSET, &pointee);
             return ZR_FFI_CONTRACT_STATUS_OK;
         }
-        return ffi_contract_is_forbidden_managed_name(typeName)
-                       ? ZR_FFI_CONTRACT_STATUS_FORBIDDEN_MANAGED_TYPE
-                       : ZR_FFI_CONTRACT_STATUS_UNSUPPORTED_TYPE;
+        return ZR_FFI_CONTRACT_STATUS_UNSUPPORTED_TYPE;
     }
 
     status = ffi_contract_init_primitive_type(typeName, outType);
     if (status == ZR_FFI_CONTRACT_STATUS_OK) {
         return status;
-    }
-    if (ffi_contract_is_forbidden_managed_name(typeName)) {
-        return ZR_FFI_CONTRACT_STATUS_FORBIDDEN_MANAGED_TYPE;
     }
     if (externBlock != ZR_NULL && syntaxType->name->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *name = syntaxType->name->data.identifier.name;
@@ -889,6 +871,7 @@ static EZrFfiContractStatus ffi_contract_build_type(
 }
 
 EZrFfiContractStatus ZrParser_FfiContract_Build(
+        SZrSemanticContext *semanticContext,
         const SZrExternBlock *externBlock,
         const SZrAstNode *declaration,
         SZrNativeImportContract *outContract,
@@ -899,7 +882,7 @@ EZrFfiContractStatus ZrParser_FfiContract_Build(
     SZrString *entryOverride;
     EZrFfiContractStatus status;
 
-    if (externBlock == ZR_NULL || declaration == ZR_NULL ||
+    if (semanticContext == ZR_NULL || externBlock == ZR_NULL || declaration == ZR_NULL ||
         outContract == ZR_NULL ||
         declaration->type != ZR_AST_EXTERN_FUNCTION_DECLARATION ||
         externBlock->libraryName == ZR_NULL ||
@@ -963,7 +946,17 @@ EZrFfiContractStatus ZrParser_FfiContract_Build(
         return status;
     }
 
-    outContract->callableContractHash = outContract->signature.signatureHash;
+    status = compiler_ffi_callable_contract_build(
+            semanticContext,
+            externBlock,
+            declaration,
+            &outContract->signature,
+            &outContract->callable);
+    if (status != ZR_FFI_CONTRACT_STATUS_OK) {
+        ffi_contract_set_diagnostic(
+                diagnostic, status, 0u, declaration->location);
+        return status;
+    }
     outContract->symbolId = ffi_contract_hash_text(
             ffi_contract_hash_text(
                     ZR_FFI_CONTRACT_FNV_OFFSET, libraryText),

@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#define ZR_FFI_CONTRACT_SCHEMA_VERSION ((TZrUInt32)3u)
+#define ZR_FFI_CONTRACT_SCHEMA_VERSION ((TZrUInt32)4u)
 #define ZR_FFI_CONTRACT_ABI_MODEL_VERSION ((TZrUInt32)3u)
 #define ZR_FFI_CONTRACT_MAX_PARAMETERS ((TZrUInt32)32u)
 #define ZR_FFI_CONTRACT_MAX_AGGREGATE_FIELDS ((TZrUInt32)64u)
@@ -37,6 +37,52 @@ typedef enum EZrFfiDirection {
     ZR_FFI_CONTRACT_DIRECTION_REF,
     ZR_FFI_CONTRACT_DIRECTION_OUT
 } EZrFfiDirection;
+
+typedef enum EZrFfiCallablePassingForm {
+    ZR_FFI_CALLABLE_PASSING_VALUE = 0,
+    ZR_FFI_CALLABLE_PASSING_IN,
+    ZR_FFI_CALLABLE_PASSING_REF,
+    ZR_FFI_CALLABLE_PASSING_REF_READONLY,
+    ZR_FFI_CALLABLE_PASSING_OUT
+} EZrFfiCallablePassingForm;
+
+typedef enum EZrFfiCallableEscapeUpperBound {
+    ZR_FFI_CALLABLE_ESCAPE_BLOCK = 0,
+    ZR_FFI_CALLABLE_ESCAPE_FUNCTION,
+    ZR_FFI_CALLABLE_ESCAPE_CALLER,
+    ZR_FFI_CALLABLE_ESCAPE_HEAP_STATIC,
+    ZR_FFI_CALLABLE_ESCAPE_UNKNOWN
+} EZrFfiCallableEscapeUpperBound;
+
+typedef enum EZrFfiCallableEntryInitialization {
+    ZR_FFI_CALLABLE_ENTRY_INITIALIZED = 0,
+    ZR_FFI_CALLABLE_ENTRY_UNINITIALIZED
+} EZrFfiCallableEntryInitialization;
+
+typedef enum EZrFfiCallableExitInitialization {
+    ZR_FFI_CALLABLE_EXIT_UNCHANGED = 0,
+    ZR_FFI_CALLABLE_EXIT_DEFINITELY_INITIALIZED
+} EZrFfiCallableExitInitialization;
+
+typedef enum EZrFfiCallableCallSiteMarker {
+    ZR_FFI_CALLABLE_CALL_SITE_NONE = 0,
+    ZR_FFI_CALLABLE_CALL_SITE_REF,
+    ZR_FFI_CALLABLE_CALL_SITE_OUT
+} EZrFfiCallableCallSiteMarker;
+
+typedef enum EZrFfiCallableReceiverEffect {
+    ZR_FFI_CALLABLE_RECEIVER_NONE = 0,
+    ZR_FFI_CALLABLE_RECEIVER_READONLY,
+    ZR_FFI_CALLABLE_RECEIVER_MUTABLE
+} EZrFfiCallableReceiverEffect;
+
+#define ZR_FFI_CALLABLE_EFFECT_NONE ((TZrUInt32)0u)
+#define ZR_FFI_CALLABLE_EFFECT_THROWS ((TZrUInt32)1u << 0u)
+#define ZR_FFI_CALLABLE_EFFECT_ASYNC ((TZrUInt32)1u << 1u)
+#define ZR_FFI_CALLABLE_EFFECT_GENERATOR ((TZrUInt32)1u << 2u)
+#define ZR_FFI_CALLABLE_EFFECT_MASK                                      \
+    (ZR_FFI_CALLABLE_EFFECT_THROWS | ZR_FFI_CALLABLE_EFFECT_ASYNC |      \
+     ZR_FFI_CALLABLE_EFFECT_GENERATOR)
 
 typedef enum EZrFfiTypeKind {
     ZR_FFI_CONTRACT_TYPE_VOID = 0,
@@ -180,6 +226,26 @@ typedef struct SZrFfiSignatureContract {
     TZrUInt64 signatureHash;
 } SZrFfiSignatureContract;
 
+typedef struct SZrFfiCallableParameterContract {
+    TZrUInt64 canonicalTypeHash;
+    EZrFfiCallablePassingForm passingForm;
+    EZrFfiCallableEscapeUpperBound escapeUpperBound;
+    EZrFfiCallableEntryInitialization entryInitialization;
+    EZrFfiCallableExitInitialization exitInitialization;
+    TZrBool acceptsTemporary;
+    EZrFfiCallableCallSiteMarker callSiteMarker;
+} SZrFfiCallableParameterContract;
+
+typedef struct SZrFfiCallableContract {
+    TZrUInt32 parameterCount;
+    SZrFfiCallableParameterContract parameters[ZR_FFI_CONTRACT_MAX_PARAMETERS];
+    TZrUInt64 returnTypeHash;
+    EZrFfiCallableReceiverEffect receiverEffect;
+    TZrUInt32 effectFlags;
+    TZrBool isVariadic;
+    TZrUInt64 contractHash;
+} SZrFfiCallableContract;
+
 typedef struct SZrFfiSourceMapping {
     TZrChar document[ZR_FFI_CONTRACT_SOURCE_DOCUMENT_CAPACITY];
     TZrUInt64 startOffset;
@@ -196,7 +262,7 @@ typedef struct SZrNativeImportContract {
     TZrChar entryPoint[ZR_FFI_CONTRACT_ENTRY_CAPACITY];
     TZrUInt64 symbolId;
     TZrUInt64 declaringModuleId;
-    TZrUInt64 callableContractHash;
+    SZrFfiCallableContract callable;
     TZrUInt32 availability;
     TZrUInt64 requiredCapabilities;
     SZrFfiSourceMapping sourceMapping;
@@ -230,6 +296,40 @@ static inline TZrUInt64 ZrCommon_FfiContract_HashU64(
                 hash, (TZrUInt8)(value >> (index * 8u)));
     }
     return hash;
+}
+
+static inline TZrUInt64 ZrCommon_FfiCallableContract_ComputeHash(
+        const SZrFfiCallableContract *contract) {
+    TZrUInt64 hash = ZR_FFI_CONTRACT_FNV_OFFSET;
+
+    if (contract == ZR_NULL ||
+        contract->parameterCount > ZR_FFI_CONTRACT_MAX_PARAMETERS) {
+        return 0u;
+    }
+    hash = ZrCommon_FfiContract_HashU32(hash, contract->parameterCount);
+    for (TZrUInt32 index = 0u; index < contract->parameterCount; index++) {
+        const SZrFfiCallableParameterContract *parameter =
+                &contract->parameters[index];
+
+        hash = ZrCommon_FfiContract_HashU64(hash, parameter->canonicalTypeHash);
+        hash = ZrCommon_FfiContract_HashU32(hash, (TZrUInt32)parameter->passingForm);
+        hash = ZrCommon_FfiContract_HashU32(
+                hash, (TZrUInt32)parameter->escapeUpperBound);
+        hash = ZrCommon_FfiContract_HashU32(
+                hash, (TZrUInt32)parameter->entryInitialization);
+        hash = ZrCommon_FfiContract_HashU32(
+                hash, (TZrUInt32)parameter->exitInitialization);
+        hash = ZrCommon_FfiContract_HashU32(
+                hash, parameter->acceptsTemporary ? 1u : 0u);
+        hash = ZrCommon_FfiContract_HashU32(
+                hash, (TZrUInt32)parameter->callSiteMarker);
+    }
+    hash = ZrCommon_FfiContract_HashU64(hash, contract->returnTypeHash);
+    hash = ZrCommon_FfiContract_HashU32(
+            hash, (TZrUInt32)contract->receiverEffect);
+    hash = ZrCommon_FfiContract_HashU32(hash, contract->effectFlags);
+    return ZrCommon_FfiContract_HashU32(
+            hash, contract->isVariadic ? 1u : 0u);
 }
 
 static inline const TZrChar *ZrCommon_FfiContract_GetHostTargetTriple(void) {
@@ -503,6 +603,96 @@ static inline TZrBool ZrCommon_FfiReturnCodeType_Validate(
             type->typeKind == ZR_FFI_CONTRACT_TYPE_ENUM);
 }
 
+static inline TZrBool ZrCommon_FfiCallableParameterContract_Validate(
+        const SZrFfiCallableParameterContract *parameter) {
+    if (parameter == ZR_NULL || parameter->canonicalTypeHash == 0u ||
+        (TZrUInt32)parameter->passingForm >
+                (TZrUInt32)ZR_FFI_CALLABLE_PASSING_OUT ||
+        (TZrUInt32)parameter->escapeUpperBound >
+                (TZrUInt32)ZR_FFI_CALLABLE_ESCAPE_UNKNOWN ||
+        (TZrUInt32)parameter->entryInitialization >
+                (TZrUInt32)ZR_FFI_CALLABLE_ENTRY_UNINITIALIZED ||
+        (TZrUInt32)parameter->exitInitialization >
+                (TZrUInt32)ZR_FFI_CALLABLE_EXIT_DEFINITELY_INITIALIZED ||
+        (TZrUInt32)parameter->callSiteMarker >
+                (TZrUInt32)ZR_FFI_CALLABLE_CALL_SITE_OUT) {
+        return ZR_FALSE;
+    }
+    switch (parameter->passingForm) {
+        case ZR_FFI_CALLABLE_PASSING_VALUE:
+            return (TZrBool)(
+                    parameter->escapeUpperBound ==
+                            ZR_FFI_CALLABLE_ESCAPE_FUNCTION &&
+                    parameter->entryInitialization ==
+                            ZR_FFI_CALLABLE_ENTRY_INITIALIZED &&
+                    parameter->exitInitialization ==
+                            ZR_FFI_CALLABLE_EXIT_UNCHANGED &&
+                    parameter->acceptsTemporary &&
+                    parameter->callSiteMarker ==
+                            ZR_FFI_CALLABLE_CALL_SITE_NONE);
+        case ZR_FFI_CALLABLE_PASSING_IN:
+            return (TZrBool)(
+                    parameter->escapeUpperBound ==
+                            ZR_FFI_CALLABLE_ESCAPE_FUNCTION &&
+                    parameter->entryInitialization ==
+                            ZR_FFI_CALLABLE_ENTRY_INITIALIZED &&
+                    parameter->exitInitialization ==
+                            ZR_FFI_CALLABLE_EXIT_UNCHANGED &&
+                    parameter->acceptsTemporary &&
+                    parameter->callSiteMarker ==
+                            ZR_FFI_CALLABLE_CALL_SITE_NONE);
+        case ZR_FFI_CALLABLE_PASSING_REF:
+        case ZR_FFI_CALLABLE_PASSING_REF_READONLY:
+            return (TZrBool)(
+                    (parameter->escapeUpperBound ==
+                             ZR_FFI_CALLABLE_ESCAPE_FUNCTION ||
+                     parameter->escapeUpperBound ==
+                             ZR_FFI_CALLABLE_ESCAPE_CALLER) &&
+                    parameter->entryInitialization ==
+                            ZR_FFI_CALLABLE_ENTRY_INITIALIZED &&
+                    parameter->exitInitialization ==
+                            ZR_FFI_CALLABLE_EXIT_UNCHANGED &&
+                    !parameter->acceptsTemporary &&
+                    parameter->callSiteMarker ==
+                            ZR_FFI_CALLABLE_CALL_SITE_REF);
+        case ZR_FFI_CALLABLE_PASSING_OUT:
+            return (TZrBool)(
+                    parameter->escapeUpperBound ==
+                            ZR_FFI_CALLABLE_ESCAPE_FUNCTION &&
+                    parameter->entryInitialization ==
+                            ZR_FFI_CALLABLE_ENTRY_UNINITIALIZED &&
+                    parameter->exitInitialization ==
+                            ZR_FFI_CALLABLE_EXIT_DEFINITELY_INITIALIZED &&
+                    !parameter->acceptsTemporary &&
+                    parameter->callSiteMarker ==
+                            ZR_FFI_CALLABLE_CALL_SITE_OUT);
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static inline TZrBool ZrCommon_FfiCallableContract_Validate(
+        const SZrFfiCallableContract *contract) {
+    if (contract == ZR_NULL ||
+        contract->parameterCount > ZR_FFI_CONTRACT_MAX_PARAMETERS ||
+        contract->returnTypeHash == 0u ||
+        (TZrUInt32)contract->receiverEffect >
+                (TZrUInt32)ZR_FFI_CALLABLE_RECEIVER_MUTABLE ||
+        (contract->effectFlags & ~ZR_FFI_CALLABLE_EFFECT_MASK) != 0u) {
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 index = 0u; index < contract->parameterCount; index++) {
+        if (!ZrCommon_FfiCallableParameterContract_Validate(
+                    &contract->parameters[index])) {
+            return ZR_FALSE;
+        }
+    }
+    return (TZrBool)(
+            contract->contractHash != 0u &&
+            contract->contractHash ==
+                    ZrCommon_FfiCallableContract_ComputeHash(contract));
+}
+
 static inline TZrBool ZrCommon_NativeImportContract_Validate(
         const SZrNativeImportContract *contract) {
     TZrUInt64 expectedHash;
@@ -517,8 +707,12 @@ static inline TZrBool ZrCommon_NativeImportContract_Validate(
         contract->declaringModuleId == 0u ||
         contract->availability == 0u ||
         (contract->availability & ~ZR_FFI_CONTRACT_AVAILABILITY_ALL) != 0u ||
-        (contract->requiredCapabilities &
-         ZR_FFI_CONTRACT_CAPABILITY_FFI_RUNTIME) == 0u ||
+         (contract->requiredCapabilities &
+          ZR_FFI_CONTRACT_CAPABILITY_FFI_RUNTIME) == 0u ||
+        !ZrCommon_FfiCallableContract_Validate(&contract->callable) ||
+        contract->callable.parameterCount !=
+                contract->signature.parameterCount ||
+        contract->callable.isVariadic != contract->signature.isVariadic ||
         contract->sourceMapping.startOffset > contract->sourceMapping.endOffset ||
         contract->sourceMapping.startLine > contract->sourceMapping.endLine ||
         (TZrUInt32)contract->signature.abi > (TZrUInt32)ZR_FFI_CONTRACT_ABI_STDCALL ||
@@ -563,6 +757,8 @@ static inline TZrBool ZrCommon_NativeImportContract_Validate(
     }
     for (TZrUInt32 index = 0u; index < contract->signature.parameterCount; index++) {
         const SZrFfiParameterContract *parameter = &contract->signature.parameters[index];
+        const SZrFfiCallableParameterContract *callableParameter =
+                &contract->callable.parameters[index];
 
         if (!ZrCommon_FfiTypeContract_Validate(&parameter->type, ZR_FALSE) ||
             !ZrCommon_FfiTypeAggregateRange_Validate(
@@ -571,7 +767,16 @@ static inline TZrBool ZrCommon_NativeImportContract_Validate(
             (parameter->type.typeKind == ZR_FFI_CONTRACT_TYPE_UNION &&
              parameter->direction != ZR_FFI_CONTRACT_DIRECTION_IN) ||
             (TZrUInt32)parameter->marshalling > (TZrUInt32)ZR_FFI_CONTRACT_MARSHALLING_REGISTERED ||
-            (TZrUInt32)parameter->ownership > (TZrUInt32)ZR_FFI_CONTRACT_OWNERSHIP_PINNED) {
+            (TZrUInt32)parameter->ownership > (TZrUInt32)ZR_FFI_CONTRACT_OWNERSHIP_PINNED ||
+            (parameter->direction == ZR_FFI_CONTRACT_DIRECTION_IN &&
+             callableParameter->passingForm != ZR_FFI_CALLABLE_PASSING_VALUE &&
+             callableParameter->passingForm != ZR_FFI_CALLABLE_PASSING_IN) ||
+            (parameter->direction == ZR_FFI_CONTRACT_DIRECTION_REF &&
+             callableParameter->passingForm != ZR_FFI_CALLABLE_PASSING_REF &&
+             callableParameter->passingForm !=
+                     ZR_FFI_CALLABLE_PASSING_REF_READONLY) ||
+            (parameter->direction == ZR_FFI_CONTRACT_DIRECTION_OUT &&
+             callableParameter->passingForm != ZR_FFI_CALLABLE_PASSING_OUT)) {
             return ZR_FALSE;
         }
         if (parameter->type.typeKind == ZR_FFI_CONTRACT_TYPE_CALLBACK &&
@@ -586,8 +791,7 @@ static inline TZrBool ZrCommon_NativeImportContract_Validate(
     }
     expectedHash = ZrCommon_FfiSignatureContract_ComputeHash(&contract->signature);
     return (TZrBool)(expectedHash != 0u &&
-                     expectedHash == contract->signature.signatureHash &&
-                     expectedHash == contract->callableContractHash);
+                     expectedHash == contract->signature.signatureHash);
 }
 
 #endif // ZR_FFI_CONTRACT_H

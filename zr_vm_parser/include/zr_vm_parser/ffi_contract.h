@@ -31,7 +31,10 @@ typedef struct SZrFfiContractDiagnostic {
     SZrFileRange sourceRange;
 } SZrFfiContractDiagnostic;
 
+struct SZrSemanticContext;
+
 ZR_PARSER_API EZrFfiContractStatus ZrParser_FfiContract_Build(
+        struct SZrSemanticContext *semanticContext,
         const SZrExternBlock *externBlock,
         const SZrAstNode *declaration,
         SZrNativeImportContract *outContract,

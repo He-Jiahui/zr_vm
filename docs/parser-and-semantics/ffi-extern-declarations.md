@@ -9,6 +9,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
@@ -22,6 +23,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
@@ -39,6 +42,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
@@ -51,6 +55,8 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_native_imports.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
@@ -282,9 +288,12 @@ class ModeHandle {
 
 ## Canonical Static Contract
 
-每个 `native extern` function 产生一项 `SZrNativeImportContract`，核心字段包括：
+每个 `native extern` function 产生一项 schema v4 `SZrNativeImportContract`，核心字段包括：
 
-- schema version、稳定 `symbolId`、`declaringModuleId` 和 callable hash
+- schema version、稳定 `symbolId`、`declaringModuleId`
+- 独立的 ABI `signatureHash` 与结构化 `callable.contractHash`
+- callable 参数的 canonical type hash、passing form、escape 上界、入口/出口初始化状态、
+  temporary admission 和 call-site marker
 - library locator、entry point、platform availability 和 required capabilities
 - target pointer size、endianness、ABI hash、calling convention 和 variadic 标记
 - return/parameter type kind、size、alignment、canonical/layout hash
@@ -292,20 +301,30 @@ class ModeHandle {
 - charset、error/cleanup policy、callback lifetime/thread/exception policy
 - document、offset、行列范围等 source mapping
 
+ABI signature 与 language callable contract 是两个不同的 canonical vector。例如 `value i32`
+和 `in i32` 可以具有相同 ABI signature hash，但必须具有不同 callable hash。common 层会分别
+校验两个 hash，并检查 `in/ref/out` 与 passing form 的交叉约束，禁止重新计算单侧 hash 后绕过
+方向语义。
+
+aggregate/union 的 layout hash 由 canonical `SZrTypeLayout` 构造和验证，不再由 FFI builder
+维护第二套临时布局算法。类型准入依赖 canonical capability 与实际 layout facts，而不是
+`Span`、`Task`、`Unique` 等具体名字：名为 `Span` 的本地 blittable struct 可以进入 ABI；带
+ownership/ref-like/resource/GC-reference 能力或不受支持的 generic shape 仍 fail closed。
+
 common 层对契约和值域执行统一校验并计算稳定 little-endian FNV hash。compiler 把契约
 挂到 `SZrFunction.nativeImportContracts`；`.zro` 按显式字段序列化，不依赖宿主结构体布局。
-AOT C 生成不可变契约表，并通过 ABI 14 的 module/code registration 同时发布表指针和
-数量；loader 拒绝两侧不一致或损坏的表。
+AOT C 与 LLVM 都生成完整的结构化 callable vector，并通过 ABI 14 的 module/code
+registration 同时发布表指针和数量；loader 拒绝两侧不一致或损坏的表。
 
 启用 AOT code stripping 时，writer 在 ExecIR 之前校验完整 function tree 上的每个 canonical contract，
 不可达 owner 上的损坏 row 也会使输出 fail closed。裁剪后只发布 retained owner 的 contract table，并输出
 `nativeImportsBefore/After/Removed` 以及版本化 `nativeImportManifest`。清单 identity 使用 `symbolId` 和
-`callableContractHash`，owner/predecessor 使用 stable flat function index；library/entry 字符串不参与可达性推断。
+`callable.contractHash`，owner/predecessor 使用 stable flat function index；library/entry 字符串不参与可达性推断。
 
 静态调用执行到 `LibraryHandle.getContractSymbol(contractIndex)`。runtime 从当前调用链定位
 声明函数持有的 canonical contract，校验 library/availability/capability/target ABI，直接
-把同一份 `FfiSignature` 降到 libffi。`Span`、ref-like、owner/resource/GC reference 等不能
-直接进入 native ABI 的类型会在契约构建阶段拒绝；callback 参数必须显式声明生命周期、
+把同一份 `FfiSignature` 降到 libffi。ref-like、owner/resource/GC reference 等不能
+直接进入 native ABI 的类型会按 capability/layout facts 在契约构建阶段拒绝；callback 参数必须显式声明生命周期、
 线程和异常策略。
 
 ## Removed Legacy Lowering
@@ -408,10 +427,12 @@ source extern 的指针形参语法仍写成 `pointer<T>`，但 compile-time 兼
   - runtime error classification
 - `tests/ffi/test_native_extern_contract.c`
   - scalar、aggregate/union、`in/ref/out`、callback 与拒绝类型契约
+  - ABI signature hash 与 callable hash 独立，方向交叉约束不可被重新哈希绕过
+  - 类型名无关的 blittable admission 与 canonical `SZrTypeLayout` hash
   - availability/capability、target ABI、error/cleanup 与 corrupt contract
   - 当前语法静态符号实际调用
-  - `.zro` roundtrip 与截断输入拒绝
-  - AOT canonical table 生成、C 编译、共享库加载及 VM/libffi 共用 golden vectors
+  - schema v4 callable vector 的 `.zro` roundtrip 与截断输入拒绝
+  - C/LLVM AOT canonical table 生成、共享库加载及 VM/libffi 共用 golden vectors
 
 如果后续继续扩展 extern `class`、extern `interface` 或 source-level version predicates，优先保持同一个原则：
 

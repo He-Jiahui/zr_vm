@@ -11,6 +11,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 #include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
@@ -21,6 +22,7 @@
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/ffi_contract.h"
+#include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/writer.h"
 
 #if defined(ZR_PLATFORM_UNIX)
@@ -231,6 +233,27 @@ static SZrAstNode *parse_source(
     return ZrParser_Parse(state, source, strlen(source), sourceName);
 }
 
+static EZrFfiContractStatus native_extern_build_contract(
+        SZrState *state,
+        const SZrExternBlock *externBlock,
+        const SZrAstNode *declaration,
+        SZrNativeImportContract *outContract,
+        SZrFfiContractDiagnostic *diagnostic) {
+    SZrSemanticContext *semanticContext =
+            ZrParser_SemanticContext_New(state);
+    EZrFfiContractStatus status;
+
+    TEST_ASSERT_NOT_NULL(semanticContext);
+    status = ZrParser_FfiContract_Build(
+            semanticContext,
+            externBlock,
+            declaration,
+            outContract,
+            diagnostic);
+    ZrParser_SemanticContext_Free(semanticContext);
+    return status;
+}
+
 static SZrAstNode *first_extern_function(SZrAstNode *script) {
     SZrAstNode *block;
 
@@ -247,6 +270,52 @@ static SZrAstNode *first_extern_function(SZrAstNode *script) {
             ZR_AST_EXTERN_FUNCTION_DECLARATION,
             block->data.externBlock.declarations->nodes[0]->type);
     return block->data.externBlock.declarations->nodes[0];
+}
+
+static TZrUInt64 native_extern_canonical_layout_hash(
+        const SZrFfiSignatureContract *signature,
+        const SZrFfiTypeContract *type) {
+    SZrTypeLayoutField fields[ZR_FFI_CONTRACT_MAX_AGGREGATE_FIELDS];
+    SZrTypeLayout layout;
+
+    TEST_ASSERT_NOT_NULL(signature);
+    TEST_ASSERT_NOT_NULL(type);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, type->aggregateFieldCount);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(
+            signature->aggregateFieldCount,
+            type->aggregateFieldStart + type->aggregateFieldCount);
+    memset(fields, 0, sizeof(fields));
+    for (TZrUInt32 index = 0u; index < type->aggregateFieldCount; index++) {
+        const SZrFfiAggregateFieldContract *field =
+                &signature->aggregateFields[type->aggregateFieldStart + index];
+
+        fields[index].byteOffset = field->offset;
+        fields[index].byteSize = field->size;
+    }
+    if (type->typeKind == ZR_FFI_CONTRACT_TYPE_UNION) {
+        ZrCore_TypeLayout_InitUnion(
+                &layout,
+                type->size,
+                type->alignment,
+                0u,
+                0u,
+                ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+                ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+                fields,
+                type->aggregateFieldCount);
+    } else {
+        ZrCore_TypeLayout_InitStruct(
+                &layout,
+                type->size,
+                type->alignment,
+                ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+                ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+                fields,
+                type->aggregateFieldCount);
+    }
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+    TEST_ASSERT_TRUE(layout.blittable);
+    return layout.layoutHash;
 }
 
 static SZrAstNode *find_extern_function(
@@ -306,7 +375,7 @@ static void test_native_extern_builds_persistent_scalar_contract(void) {
             declaration->data.externFunctionDeclaration.accessModifier);
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_OK,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     declaration,
                     &contract,
@@ -323,7 +392,10 @@ static void test_native_extern_builds_persistent_scalar_contract(void) {
             ZR_FFI_CONTRACT_DIRECTION_IN, contract.signature.parameters[0].direction);
     TEST_ASSERT_EQUAL_HEX64(
             ZR_NATIVE_EXTERN_SCALAR_CONTRACT_HASH,
-            contract.callableContractHash);
+            contract.signature.signatureHash);
+    TEST_ASSERT_NOT_EQUAL_UINT64(
+            contract.signature.signatureHash,
+            contract.callable.contractHash);
     TEST_ASSERT_EQUAL_UINT32(
             ZR_FFI_CONTRACT_AVAILABILITY_ALL, contract.availability);
     TEST_ASSERT_BITS_HIGH(
@@ -360,7 +432,7 @@ static void test_native_extern_preserves_ref_and_out_directions(void) {
     block = script->data.script.statements->nodes[0];
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_OK,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     first_extern_function(script),
                     &contract,
@@ -371,6 +443,22 @@ static void test_native_extern_preserves_ref_and_out_directions(void) {
             ZR_FFI_CONTRACT_DIRECTION_OUT, contract.signature.parameters[1].direction);
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_TYPE_BOOL, contract.signature.returnType.typeKind);
+    {
+        SZrNativeImportContract corrupt = contract;
+
+        corrupt.callable.parameters[0].passingForm =
+                ZR_FFI_CALLABLE_PASSING_VALUE;
+        corrupt.callable.parameters[0].escapeUpperBound =
+                ZR_FFI_CALLABLE_ESCAPE_FUNCTION;
+        corrupt.callable.parameters[0].acceptsTemporary = ZR_TRUE;
+        corrupt.callable.parameters[0].callSiteMarker =
+                ZR_FFI_CALLABLE_CALL_SITE_NONE;
+        corrupt.callable.contractHash =
+                ZrCommon_FfiCallableContract_ComputeHash(&corrupt.callable);
+        TEST_ASSERT_TRUE(
+                ZrCommon_FfiCallableContract_Validate(&corrupt.callable));
+        TEST_ASSERT_FALSE(ZrCommon_NativeImportContract_Validate(&corrupt));
+    }
 
     ZrParser_Ast_Free(state, script);
     native_extern_destroy_state(state);
@@ -420,7 +508,9 @@ static void test_native_extern_rejects_corrupt_persistent_contract(void) {
     contract.signature.returnType.typeKind = ZR_FFI_CONTRACT_TYPE_VOID;
     contract.signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-    contract.callableContractHash = contract.signature.signatureHash;
+    contract.callable.returnTypeHash = 1u;
+    contract.callable.contractHash =
+            ZrCommon_FfiCallableContract_ComputeHash(&contract.callable);
     TEST_ASSERT_TRUE(ZrCommon_NativeImportContract_Validate(&contract));
 
     contract.signature.abi = (EZrFfiAbi)(TZrUInt32)UINT32_MAX;
@@ -445,7 +535,6 @@ static void test_native_extern_rejects_corrupt_persistent_contract(void) {
                     contract.signature.targetTriple);
     contract.signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-    contract.callableContractHash = contract.signature.signatureHash;
     TEST_ASSERT_FALSE(ZrCommon_NativeImportContract_Validate(&contract));
     strcpy(
             contract.signature.targetTriple,
@@ -499,7 +588,7 @@ static void test_native_extern_persists_availability_and_capabilities(void) {
         block = script->data.script.statements->nodes[0];
         TEST_ASSERT_EQUAL_INT(
                 ZR_FFI_CONTRACT_STATUS_OK,
-                ZrParser_FfiContract_Build(
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         first_extern_function(script),
                         &contract,
@@ -526,7 +615,7 @@ static void test_native_extern_persists_availability_and_capabilities(void) {
         block = script->data.script.statements->nodes[0];
         TEST_ASSERT_EQUAL_INT(
                 ZR_FFI_CONTRACT_STATUS_INVALID_POLICY,
-                ZrParser_FfiContract_Build(
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         first_extern_function(script),
                         &contract,
@@ -564,7 +653,7 @@ static void test_native_extern_classifies_aggregate_union_and_target_contract(vo
     block = script->data.script.statements->nodes[0];
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_OK,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     find_extern_function(script, "SumPoint"),
                     &structContract,
@@ -576,6 +665,11 @@ static void test_native_extern_classifies_aggregate_union_and_target_contract(vo
     TEST_ASSERT_EQUAL_UINT32(4u, structContract.signature.parameters[0].type.alignment);
     TEST_ASSERT_NOT_EQUAL_UINT64(
             0u, structContract.signature.parameters[0].type.layoutHash);
+    TEST_ASSERT_EQUAL_UINT64(
+            native_extern_canonical_layout_hash(
+                    &structContract.signature,
+                    &structContract.signature.parameters[0].type),
+            structContract.signature.parameters[0].type.layoutHash);
     TEST_ASSERT_EQUAL_UINT32(
             2u,
             structContract.signature.parameters[0].type.aggregateFieldCount);
@@ -617,7 +711,7 @@ static void test_native_extern_classifies_aggregate_union_and_target_contract(vo
 
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_OK,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     find_extern_function(script, "ReadValue"),
                     &unionContract,
@@ -630,6 +724,11 @@ static void test_native_extern_classifies_aggregate_union_and_target_contract(vo
     TEST_ASSERT_EQUAL_UINT32(
             2u,
             unionContract.signature.parameters[0].type.aggregateFieldCount);
+    TEST_ASSERT_EQUAL_UINT64(
+            native_extern_canonical_layout_hash(
+                    &unionContract.signature,
+                    &unionContract.signature.parameters[0].type),
+            unionContract.signature.parameters[0].type.layoutHash);
     TEST_ASSERT_EQUAL_UINT32(
             0u,
             unionContract.signature.aggregateFields[
@@ -647,8 +746,6 @@ static void test_native_extern_classifies_aggregate_union_and_target_contract(vo
     misalignedContract.signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(
                     &misalignedContract.signature);
-    misalignedContract.callableContractHash =
-            misalignedContract.signature.signatureHash;
     TEST_ASSERT_TRUE(
             ZrCommon_NativeImportContract_Validate(&misalignedContract));
     TEST_ASSERT_FALSE(
@@ -688,7 +785,7 @@ static void test_native_extern_requires_explicit_callback_policy(void) {
     block = script->data.script.statements->nodes[0];
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_CALLBACK_POLICY_REQUIRED,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     find_extern_function(script, "Apply"),
                     &contract,
@@ -700,7 +797,7 @@ static void test_native_extern_requires_explicit_callback_policy(void) {
     block = script->data.script.statements->nodes[0];
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_OK,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     find_extern_function(script, "Apply"),
                     &contract,
@@ -746,7 +843,7 @@ static void test_native_extern_policy_contract_admission(void) {
     block = script->data.script.statements->nodes[0];
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_OK,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     find_extern_function(script, "Apply"),
                     &contract,
@@ -755,7 +852,6 @@ static void test_native_extern_policy_contract_admission(void) {
             ZR_FFI_CONTRACT_CALLBACK_THREAD_ATTACH;
     contract.signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-    contract.callableContractHash = contract.signature.signatureHash;
     TEST_ASSERT_TRUE(ZrCommon_NativeImportContract_Validate(&contract));
     TEST_ASSERT_FALSE(ZrVmLibFfi_ValidateNativeImportContract(
             &contract, errorBuffer, sizeof(errorBuffer)));
@@ -767,7 +863,7 @@ static void test_native_extern_policy_contract_admission(void) {
     block = script->data.script.statements->nodes[0];
     TEST_ASSERT_EQUAL_INT(
             ZR_FFI_CONTRACT_STATUS_OK,
-            ZrParser_FfiContract_Build(
+            native_extern_build_contract(state,
                     &block->data.externBlock,
                     find_extern_function(script, "Run"),
                     &contract,
@@ -775,7 +871,6 @@ static void test_native_extern_policy_contract_admission(void) {
     contract.signature.cleanupPolicy = ZR_FFI_CONTRACT_CLEANUP_REGISTERED;
     contract.signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-    contract.callableContractHash = contract.signature.signatureHash;
     TEST_ASSERT_FALSE(ZrCommon_NativeImportContract_Validate(&contract));
     TEST_ASSERT_FALSE(ZrVmLibFfi_ValidateNativeImportContract(
             &contract, errorBuffer, sizeof(errorBuffer)));
@@ -785,7 +880,6 @@ static void test_native_extern_policy_contract_admission(void) {
     contract.signature.errorPolicy = ZR_FFI_CONTRACT_ERROR_THROWS;
     contract.signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-    contract.callableContractHash = contract.signature.signatureHash;
     TEST_ASSERT_FALSE(ZrCommon_NativeImportContract_Validate(&contract));
     TEST_ASSERT_FALSE(ZrVmLibFfi_ValidateNativeImportContract(
             &contract, errorBuffer, sizeof(errorBuffer)));
@@ -795,7 +889,6 @@ static void test_native_extern_policy_contract_admission(void) {
     contract.signature.cleanupPolicy = ZR_FFI_CONTRACT_CLEANUP_CALLEE;
     contract.signature.signatureHash =
             ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-    contract.callableContractHash = contract.signature.signatureHash;
     TEST_ASSERT_TRUE(ZrCommon_NativeImportContract_Validate(&contract));
     TEST_ASSERT_TRUE(ZrVmLibFfi_ValidateNativeImportContract(
             &contract, errorBuffer, sizeof(errorBuffer)));
@@ -817,6 +910,9 @@ static void test_native_extern_rejects_managed_types_and_invalid_abi(void) {
     static const TZrChar *voidSource =
             "native extern(\"fixture\") { fn Notify(value: i32); }\n";
     const TZrChar *sources[] = {spanSource, ownerSource};
+    const EZrFfiContractStatus expectedStatuses[] = {
+            ZR_FFI_CONTRACT_STATUS_UNSUPPORTED_TYPE,
+            ZR_FFI_CONTRACT_STATUS_FORBIDDEN_MANAGED_TYPE};
     SZrState *state = native_extern_create_state();
     SZrNativeImportContract contract;
     SZrFfiContractDiagnostic diagnostic;
@@ -829,8 +925,8 @@ static void test_native_extern_rejects_managed_types_and_invalid_abi(void) {
         TEST_ASSERT_NOT_NULL(script);
         block = script->data.script.statements->nodes[0];
         TEST_ASSERT_EQUAL_INT(
-                ZR_FFI_CONTRACT_STATUS_FORBIDDEN_MANAGED_TYPE,
-                ZrParser_FfiContract_Build(
+                expectedStatuses[index],
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         find_extern_function(script, "Bad"),
                         &contract,
@@ -845,7 +941,7 @@ static void test_native_extern_rejects_managed_types_and_invalid_abi(void) {
         block = script->data.script.statements->nodes[0];
         TEST_ASSERT_EQUAL_INT(
                 ZR_FFI_CONTRACT_STATUS_INVALID_ABI,
-                ZrParser_FfiContract_Build(
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         find_extern_function(script, "Bad"),
                         &contract,
@@ -860,7 +956,7 @@ static void test_native_extern_rejects_managed_types_and_invalid_abi(void) {
         block = script->data.script.statements->nodes[0];
         TEST_ASSERT_EQUAL_INT(
                 ZR_FFI_CONTRACT_STATUS_OK,
-                ZrParser_FfiContract_Build(
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         find_extern_function(script, "Notify"),
                         &contract,
@@ -869,6 +965,83 @@ static void test_native_extern_rejects_managed_types_and_invalid_abi(void) {
                 ZR_FFI_CONTRACT_TYPE_VOID, contract.signature.returnType.typeKind);
         ZrParser_Ast_Free(state, script);
     }
+    native_extern_destroy_state(state);
+}
+
+static void test_native_extern_accepts_blittable_local_type_regardless_of_name(void) {
+    static const TZrChar *source =
+            "native extern(\"fixture\") {\n"
+            "  struct Span { var value: i32; }\n"
+            "  fn read(value: Span): i32;\n"
+            "}\n";
+    SZrState *state = native_extern_create_state();
+    SZrAstNode *script;
+    SZrAstNode *block;
+    SZrNativeImportContract contract;
+    SZrFfiContractDiagnostic diagnostic;
+
+    TEST_ASSERT_NOT_NULL(state);
+    script = parse_source(state, source, "native_extern_local_span.zr");
+    TEST_ASSERT_NOT_NULL(script);
+    block = script->data.script.statements->nodes[0];
+    TEST_ASSERT_EQUAL_INT(
+            ZR_FFI_CONTRACT_STATUS_OK,
+            native_extern_build_contract(state,
+                    &block->data.externBlock,
+                    find_extern_function(script, "read"),
+                    &contract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_FFI_CONTRACT_TYPE_STRUCT,
+            contract.signature.parameters[0].type.typeKind);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_FFI_CONTRACT_TYPE_FLAG_BLITTABLE,
+            contract.signature.parameters[0].type.flags &
+                    ZR_FFI_CONTRACT_TYPE_FLAG_BLITTABLE);
+
+    ZrParser_Ast_Free(state, script);
+    native_extern_destroy_state(state);
+}
+
+static void test_native_extern_callable_hash_preserves_passing_semantics(void) {
+    static const TZrChar *source =
+            "native extern(\"fixture\") {\n"
+            "  fn byValue(value: i32): i32;\n"
+            "  fn byIn(value: in i32): i32;\n"
+            "}\n";
+    SZrState *state = native_extern_create_state();
+    SZrAstNode *script;
+    SZrAstNode *block;
+    SZrNativeImportContract valueContract;
+    SZrNativeImportContract inContract;
+    SZrFfiContractDiagnostic diagnostic;
+
+    TEST_ASSERT_NOT_NULL(state);
+    script = parse_source(state, source, "native_extern_callable_semantics.zr");
+    TEST_ASSERT_NOT_NULL(script);
+    block = script->data.script.statements->nodes[0];
+    TEST_ASSERT_EQUAL_INT(
+            ZR_FFI_CONTRACT_STATUS_OK,
+            native_extern_build_contract(state,
+                    &block->data.externBlock,
+                    find_extern_function(script, "byValue"),
+                    &valueContract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_FFI_CONTRACT_STATUS_OK,
+            native_extern_build_contract(state,
+                    &block->data.externBlock,
+                    find_extern_function(script, "byIn"),
+                    &inContract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_UINT64(
+            valueContract.signature.signatureHash,
+            inContract.signature.signatureHash);
+    TEST_ASSERT_NOT_EQUAL_UINT64(
+            valueContract.callable.contractHash,
+            inContract.callable.contractHash);
+
+    ZrParser_Ast_Free(state, script);
     native_extern_destroy_state(state);
 }
 
@@ -899,9 +1072,9 @@ static void test_native_extern_current_syntax_executes_static_symbol(void) {
     TEST_ASSERT_EQUAL_STRING(
             "zr_ffi_add_i32",
             function->nativeImportContracts[0].entryPoint);
-    TEST_ASSERT_EQUAL_UINT64(
+    TEST_ASSERT_NOT_EQUAL_UINT64(
             function->nativeImportContracts[0].signature.signatureHash,
-            function->nativeImportContracts[0].callableContractHash);
+            function->nativeImportContracts[0].callable.contractHash);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
     TEST_ASSERT_TRUE(
             ZR_VALUE_IS_TYPE_SIGNED_INT(result.type) ||
@@ -1391,7 +1564,7 @@ static void test_native_extern_rejects_union_return_and_writeback(void) {
         block = script->data.script.statements->nodes[0];
         TEST_ASSERT_EQUAL_INT(
                 expectedStatuses[index],
-                ZrParser_FfiContract_Build(
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         find_extern_function(script, "Bad"),
                         &contract,
@@ -1407,7 +1580,7 @@ static void test_native_extern_rejects_union_return_and_writeback(void) {
         block = script->data.script.statements->nodes[0];
         TEST_ASSERT_EQUAL_INT(
                 ZR_FFI_CONTRACT_STATUS_OK,
-                ZrParser_FfiContract_Build(
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         find_extern_function(script, "Read"),
                         &contract,
@@ -1415,12 +1588,11 @@ static void test_native_extern_rejects_union_return_and_writeback(void) {
         contract.signature.returnType = contract.signature.parameters[0].type;
         contract.signature.signatureHash =
                 ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-        contract.callableContractHash = contract.signature.signatureHash;
         TEST_ASSERT_FALSE(ZrCommon_NativeImportContract_Validate(&contract));
 
         TEST_ASSERT_EQUAL_INT(
                 ZR_FFI_CONTRACT_STATUS_OK,
-                ZrParser_FfiContract_Build(
+                native_extern_build_contract(state,
                         &block->data.externBlock,
                         find_extern_function(script, "Read"),
                         &contract,
@@ -1429,7 +1601,6 @@ static void test_native_extern_rejects_union_return_and_writeback(void) {
                 ZR_FFI_CONTRACT_DIRECTION_REF;
         contract.signature.signatureHash =
                 ZrCommon_FfiSignatureContract_ComputeHash(&contract.signature);
-        contract.callableContractHash = contract.signature.signatureHash;
         TEST_ASSERT_FALSE(ZrCommon_NativeImportContract_Validate(&contract));
         ZrParser_Ast_Free(state, script);
     }
@@ -2111,6 +2282,20 @@ static void test_native_extern_contract_roundtrips_through_zro(void) {
     TEST_ASSERT_EQUAL_UINT64(
             function->nativeImportContracts[0].signature.signatureHash,
             loadedFunction->nativeImportContracts[0].signature.signatureHash);
+    TEST_ASSERT_EQUAL_UINT64(
+            function->nativeImportContracts[0].callable.contractHash,
+            loadedFunction->nativeImportContracts[0].callable.contractHash);
+    TEST_ASSERT_EQUAL_UINT32(
+            function->nativeImportContracts[0].callable.parameterCount,
+            loadedFunction->nativeImportContracts[0].callable.parameterCount);
+    TEST_ASSERT_EQUAL_MEMORY(
+            function->nativeImportContracts[0].callable.parameters,
+            loadedFunction->nativeImportContracts[0].callable.parameters,
+            sizeof(SZrFfiCallableParameterContract) *
+                    function->nativeImportContracts[0].callable.parameterCount);
+    TEST_ASSERT_EQUAL_UINT64(
+            function->nativeImportContracts[0].callable.returnTypeHash,
+            loadedFunction->nativeImportContracts[0].callable.returnTypeHash);
     TEST_ASSERT_EQUAL_STRING(
             function->nativeImportContracts[0].signature.targetTriple,
             loadedFunction->nativeImportContracts[0].signature.targetTriple);
@@ -2171,6 +2356,8 @@ int main(void) {
     RUN_TEST(test_native_extern_requires_explicit_callback_policy);
     RUN_TEST(test_native_extern_policy_contract_admission);
     RUN_TEST(test_native_extern_rejects_managed_types_and_invalid_abi);
+    RUN_TEST(test_native_extern_accepts_blittable_local_type_regardless_of_name);
+    RUN_TEST(test_native_extern_callable_hash_preserves_passing_semantics);
     RUN_TEST(test_native_extern_current_syntax_executes_static_symbol);
     RUN_TEST(test_native_extern_current_syntax_executes_callback_contract);
     RUN_TEST(test_native_extern_callback_exception_returns_default);

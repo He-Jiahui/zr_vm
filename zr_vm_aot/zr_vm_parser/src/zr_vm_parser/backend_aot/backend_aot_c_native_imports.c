@@ -50,6 +50,43 @@ static void backend_aot_c_write_ffi_type(
             (unsigned)type->aggregateFieldCount);
 }
 
+static void backend_aot_c_write_ffi_callable(
+        FILE *file,
+        const SZrFfiCallableContract *callable) {
+    fprintf(file,
+            "{ .parameterCount = %uu, .parameters = {",
+            (unsigned)callable->parameterCount);
+    for (TZrUInt32 index = 0u; index < callable->parameterCount; index++) {
+        const SZrFfiCallableParameterContract *parameter =
+                &callable->parameters[index];
+
+        if (index > 0u) {
+            fputs(", ", file);
+        }
+        fprintf(file,
+                "{ .canonicalTypeHash = UINT64_C(0x%016llx), "
+                ".passingForm = %u, .escapeUpperBound = %u, "
+                ".entryInitialization = %u, .exitInitialization = %u, "
+                ".acceptsTemporary = %u, .callSiteMarker = %u }",
+                (unsigned long long)parameter->canonicalTypeHash,
+                (unsigned)parameter->passingForm,
+                (unsigned)parameter->escapeUpperBound,
+                (unsigned)parameter->entryInitialization,
+                (unsigned)parameter->exitInitialization,
+                parameter->acceptsTemporary ? 1u : 0u,
+                (unsigned)parameter->callSiteMarker);
+    }
+    fprintf(file,
+            "}, .returnTypeHash = UINT64_C(0x%016llx), "
+            ".receiverEffect = %u, .effectFlags = 0x%08xu, "
+            ".isVariadic = %u, .contractHash = UINT64_C(0x%016llx) }",
+            (unsigned long long)callable->returnTypeHash,
+            (unsigned)callable->receiverEffect,
+            (unsigned)callable->effectFlags,
+            callable->isVariadic ? 1u : 0u,
+            (unsigned long long)callable->contractHash);
+}
+
 static void backend_aot_c_write_native_import(
         FILE *file,
         const SZrNativeImportContract *contract) {
@@ -61,14 +98,15 @@ static void backend_aot_c_write_native_import(
     fprintf(file,
             ",\n        .symbolId = UINT64_C(0x%016llx),\n"
             "        .declaringModuleId = UINT64_C(0x%016llx),\n"
-            "        .callableContractHash = UINT64_C(0x%016llx),\n"
-            "        .availability = 0x%08xu,\n"
+            "        .callable = ",
+            (unsigned long long)contract->symbolId,
+            (unsigned long long)contract->declaringModuleId);
+    backend_aot_c_write_ffi_callable(file, &contract->callable);
+    fprintf(file,
+            ",\n        .availability = 0x%08xu,\n"
             "        .requiredCapabilities = UINT64_C(0x%016llx),\n"
             "        .sourceMapping = {\n"
             "            .document = ",
-            (unsigned long long)contract->symbolId,
-            (unsigned long long)contract->declaringModuleId,
-            (unsigned long long)contract->callableContractHash,
             (unsigned)contract->availability,
             (unsigned long long)contract->requiredCapabilities);
     backend_aot_c_write_native_string(file, contract->sourceMapping.document);
@@ -286,13 +324,13 @@ TZrBool backend_aot_c_native_import_write_reachability_manifest(
             if (fprintf(file,
                         "/* reachability.nativeImportManifest.node[%u] = "
                         "ownerFunction=%u contractIndex=%u "
-                        "symbolId=0x%016llx callableContractHash=0x%016llx "
+                        "symbolId=0x%016llx callableHash=0x%016llx "
                         "reason=%s predecessor=%u */\n",
                         (unsigned)nodeIndex,
                         (unsigned)entry->flatIndex,
                         (unsigned)contractIndex,
                         (unsigned long long)contract->symbolId,
-                        (unsigned long long)contract->callableContractHash,
+                        (unsigned long long)contract->callable.contractHash,
                         reasonName,
                         (unsigned)entry->flatIndex) < 0) {
                 return ZR_FALSE;

@@ -332,8 +332,10 @@ void backend_aot_llvm_write_module_prelude(FILE *file,
             "%%SZrFfiTypeContract = type { i32, i32, i32, i64, i64, i32, i32, i32 }\n"
             "%%SZrFfiParameterContract = type { %%SZrFfiTypeContract, i32, i32, i32, i8, i32 }\n"
             "%%SZrFfiSignatureContract = type { i32, i32, i32, [64 x i8], i64, i32, i32, i32, i32, i32, i32, i8, i32, %%SZrFfiTypeContract, [32 x %%SZrFfiParameterContract], i32, [64 x %%SZrFfiAggregateFieldContract], i64 }\n"
+            "%%SZrFfiCallableParameterContract = type { i64, i32, i32, i32, i32, i8, i32 }\n"
+            "%%SZrFfiCallableContract = type { i32, [32 x %%SZrFfiCallableParameterContract], i64, i32, i32, i8, i64 }\n"
             "%%SZrFfiSourceMapping = type { [512 x i8], i64, i64, i32, i32, i32, i32 }\n"
-            "%%SZrNativeImportContract = type { i32, [512 x i8], [128 x i8], i64, i64, i64, i32, i64, %%SZrFfiSourceMapping, %%SZrFfiSignatureContract }\n"
+            "%%SZrNativeImportContract = type { i32, [512 x i8], [128 x i8], i64, i64, %%SZrFfiCallableContract, i32, i64, %%SZrFfiSourceMapping, %%SZrFfiSignatureContract }\n"
             "%%SZrAotNativeImportRange = type { i32, i32 }\n"
             "%%SZrAotCodeRegistration = type { i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32 }\n"
             "%%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr }\n");
