@@ -307,6 +307,7 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
                                             TZrUInt32 allowedEffectFlags,
                                             SZrTypeValue *outValue,
                                             TZrUInt32 *outCanonicalTypeId,
+                                            ZrDebugEvaluateFailure *outFailure,
                                             TZrChar *errorBuffer,
                                             TZrSize errorBufferSize,
                                             TZrBool *outHandled,
@@ -408,9 +409,16 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
         TZrBool allowLegacyCompatibility,
         SZrTypeValue *outValue,
         TZrUInt32 *outCanonicalTypeId,
+        ZrDebugEvaluateFailure *outFailure,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize,
         TZrChar *referenceBuffer,
         TZrSize referenceBufferSize);
+void zr_debug_evaluate_failure_clear(ZrDebugEvaluateFailure *failure);
+void zr_debug_evaluate_failure_set(ZrDebugEvaluateFailure *failure,
+                                   EZrDebugEvaluateFailureKind kind,
+                                   TZrUInt64 stateId,
+                                   const TZrChar *code,
+                                   const TZrChar *message);
 
 #endif

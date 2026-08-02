@@ -398,6 +398,14 @@ v1 事件集：
 
 这条消息会同时覆盖 VS Code/DAP adapter 未来会转发的 `evaluate` 失败响应，以及条件断点失败时写到 `stderr` 的输出事件。当前实现仍是调试时的安全求值器，不承诺完整语言表达式执行，也不替代 parser/LSP 的编译期语义事实层。
 
+`evaluate` 的 JSON-RPC failure 在顶层 `error.code`/`error.message` 之外包含
+`error.data`。该对象有稳定的 `kind`、当前暂停代际 `stateId`、canonical
+`code`、`message`和range offsets；parser/compiler structured diagnostic可额外
+携带`descriptorId`、`cause`和`suggestion`。adapter应直接转发这些字段，不能从
+message、表达式文本、accessor/member name或AST猜测诊断。权限不足、canonical facts
+不可用和formal execution不可用同样有稳定的 Debug failure code；legacy compatibility
+失败单列，不能伪装为parser error。
+
 ## Snapshot Model
 
 调试代理维护一个 `SZrState -> threadId` 注册表。主执行体稳定映射为 `threadId=1` / `main`，

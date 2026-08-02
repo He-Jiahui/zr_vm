@@ -2451,6 +2451,7 @@ static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
                                              TZrUInt32 allowedEffectFlags,
                                              TZrBool allowLegacyCompatibility,
                                              ZrDebugEvaluateResult *outResult,
+                                             ZrDebugEvaluateFailure *outFailure,
                                              TZrChar *errorBuffer,
                                              TZrSize errorBufferSize) {
     SZrTypeValue value;
@@ -2458,18 +2459,32 @@ static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
     if (outResult != ZR_NULL) {
         memset(outResult, 0, sizeof(*outResult));
     }
+    zr_debug_evaluate_failure_clear(outFailure);
     if (errorBuffer != ZR_NULL && errorBufferSize > 0) {
         errorBuffer[0] = '\0';
     }
     if (agent == ZR_NULL || outResult == ZR_NULL || expression == ZR_NULL) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "invalid evaluate request");
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_REQUEST,
+                                      agent != ZR_NULL ? agent->stopStateId : 0u,
+                                      "debug_evaluation_invalid_request",
+                                      "invalid evaluate request");
         return ZR_FALSE;
     }
     if (agent->runMode != ZR_DEBUG_RUN_MODE_PAUSED) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "evaluate is only available while paused");
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_REQUEST,
+                                      agent->stopStateId,
+                                      "debug_evaluation_not_paused",
+                                      "evaluate is only available while paused");
         return ZR_FALSE;
     }
     outResult->state_id = agent->stopStateId;
+    if (outFailure != ZR_NULL) {
+        outFailure->state_id = agent->stopStateId;
+    }
     if (allowLegacyCompatibility &&
         zr_debug_try_evaluate_index_window(agent,
                                            frameId == 0 ? 1u : frameId,
@@ -2489,6 +2504,7 @@ static TZrBool zr_debug_evaluate_with_policy(ZrDebugAgent *agent,
                 allowLegacyCompatibility,
                 &value,
                 &outResult->canonical_type_id,
+                outFailure,
                 errorBuffer,
                 errorBufferSize,
                 outResult->reference_summary,
@@ -2556,6 +2572,7 @@ TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
                                          ZR_DEBUG_EVALUATION_EFFECT_NONE,
                                          ZR_TRUE,
                                          outResult,
+                                         ZR_NULL,
                                          errorBuffer,
                                          errorBufferSize);
 }
@@ -2567,12 +2584,31 @@ TZrBool ZrDebug_EvaluateWithCapabilities(ZrDebugAgent *agent,
                                          ZrDebugEvaluateResult *outResult,
                                          TZrChar *errorBuffer,
                                          TZrSize errorBufferSize) {
+    return ZrDebug_EvaluateWithCapabilitiesDetailed(agent,
+                                                     frameId,
+                                                     expression,
+                                                     allowedEffectFlags,
+                                                     outResult,
+                                                     ZR_NULL,
+                                                     errorBuffer,
+                                                     errorBufferSize);
+}
+
+TZrBool ZrDebug_EvaluateWithCapabilitiesDetailed(ZrDebugAgent *agent,
+                                                 TZrUInt32 frameId,
+                                                 const TZrChar *expression,
+                                                 TZrUInt32 allowedEffectFlags,
+                                                 ZrDebugEvaluateResult *outResult,
+                                                 ZrDebugEvaluateFailure *outFailure,
+                                                 TZrChar *errorBuffer,
+                                                 TZrSize errorBufferSize) {
     return zr_debug_evaluate_with_policy(agent,
                                          frameId,
                                          expression,
                                          allowedEffectFlags,
                                          ZR_FALSE,
                                          outResult,
+                                         outFailure,
                                          errorBuffer,
                                          errorBufferSize);
 }

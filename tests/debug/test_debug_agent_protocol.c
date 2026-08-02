@@ -575,10 +575,15 @@ static void test_debug_agent_evaluate_context_enforces_capabilities(void) {
     cJSON_AddStringToObject(params, "context", "hover");
     debug_client_send_request(&client, 2, "evaluate", params);
     message = debug_client_expect_error(&client, 2);
+    result = cJSON_GetObjectItemCaseSensitive(message, "error");
     TEST_ASSERT_EQUAL_INT(-32003,
-                          debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "error"), "code"));
-    TEST_ASSERT_NOT_NULL(strstr(debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "error"), "message"),
+                          debug_json_int(result, "code"));
+    TEST_ASSERT_NOT_NULL(strstr(debug_json_string(result, "message"),
                                 "explicit capability"));
+    result = cJSON_GetObjectItemCaseSensitive(result, "data");
+    TEST_ASSERT_EQUAL_STRING("capability", debug_json_string(result, "kind"));
+    TEST_ASSERT_EQUAL_STRING("debug_evaluation_capability_denied", debug_json_string(result, "code"));
+    TEST_ASSERT_TRUE(debug_json_int(result, "stateId") > 0);
     cJSON_Delete(message);
 
     params = cJSON_CreateObject();
@@ -595,17 +600,31 @@ static void test_debug_agent_evaluate_context_enforces_capabilities(void) {
 
     params = cJSON_CreateObject();
     TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "expression", "1 +");
+    debug_client_send_request(&client, 4, "evaluate", params);
+    message = debug_client_expect_error(&client, 4);
+    result = cJSON_GetObjectItemCaseSensitive(message, "error");
+    TEST_ASSERT_EQUAL_INT(-32003, debug_json_int(result, "code"));
+    result = cJSON_GetObjectItemCaseSensitive(result, "data");
+    TEST_ASSERT_EQUAL_STRING("parser", debug_json_string(result, "kind"));
+    TEST_ASSERT_EQUAL_STRING("missing_right_operand", debug_json_string(result, "code"));
+    TEST_ASSERT_NOT_NULL(strstr(debug_json_string(result, "cause"), "right-hand expression"));
+    TEST_ASSERT_NOT_NULL(strstr(debug_json_string(result, "suggestion"), "Add the right-hand expression"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
     cJSON_AddStringToObject(params, "expression", "[1 + 2, 4]");
     cJSON_AddStringToObject(params, "context", "repl");
-    debug_client_send_request(&client, 4, "evaluate", params);
-    message = debug_client_expect_response(&client, 4);
+    debug_client_send_request(&client, 5, "evaluate", params);
+    message = debug_client_expect_response(&client, 5);
     result = cJSON_GetObjectItemCaseSensitive(message, "result");
     TEST_ASSERT_TRUE(debug_json_int(result, "variablesReference") > 0);
     TEST_ASSERT_EQUAL_INT(2, debug_json_int(result, "indexedVariables"));
     cJSON_Delete(message);
 
-    debug_client_send_request(&client, 5, "continue", ZR_NULL);
-    message = debug_client_expect_response(&client, 5);
+    debug_client_send_request(&client, 6, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 6);
     cJSON_Delete(message);
     message = debug_client_expect_event(&client, "continued");
     cJSON_Delete(message);

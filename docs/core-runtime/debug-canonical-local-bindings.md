@@ -336,6 +336,30 @@ evaluate result, and emits `canonicalTypeId` only when the formal query
 published a valid identity. A legacy compatibility fallback clears the TypeId
 and leaves the flag false rather than manufacturing a canonical result.
 
+## Structured Evaluate Failure Transport
+
+`ZrDebug_EvaluateWithCapabilitiesDetailed` reports a `ZrDebugEvaluateFailure`
+beside the existing text error. It carries a stable failure kind, the paused
+`state_id`, exact diagnostic descriptor/range where available, and bounded
+code/message/cause/suggestion text. The existing
+`ZrDebug_EvaluateWithCapabilities` ABI remains a wrapper that requests no
+failure object.
+
+Formal parsing installs the parser's structured-error callback before parsing
+and deep-copies the received diagnostic before the parser state is freed. This
+preserves exact parser-owned `code`, descriptor, range, cause and suggestion.
+Semantic errors use the compiler structured diagnostic when one exists.
+Capability, unavailable-canonical-fact and formal-execution failures instead
+use stable Debug-owned kinds and codes derived from the canonical evaluation
+path. They are not inferred from a human-readable error message, expression
+text, member spelling or AST shape.
+
+The `zrdbg/1` `evaluate` handler serializes a failure as JSON-RPC `error.data`
+with `kind`, `stateId`, `code`, `message`, range offsets and, when present,
+descriptor/cause/suggestion. Legacy compatibility errors remain explicitly
+classified as legacy compatibility failures and cannot claim parser diagnostic
+identity.
+
 ## Consumer Boundary
 
 The E1a metadata carrier and E1b1 paused-frame query form the only current

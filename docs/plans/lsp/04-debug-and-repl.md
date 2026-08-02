@@ -61,6 +61,11 @@ E4a 将 formal evaluate 的 canonical result transport 显式化：结果和协�
 `stateId`，并只在 exact root-expression semantic query 返回有效TypeId时发布
 `hasCanonicalType`与`canonicalTypeId`。变量handle与结果共享state generation；legacy compatibility
 执行不伪造TypeId，保持identity unavailable。
+E4b 将 evaluate failure transport 收敛为同一state-scoped structured contract：formal parser
+通过 structured diagnostic callback 深拷贝 exact code、descriptor、range、message、cause和
+suggestion；semantic、canonical-fact、capability和formal-execution拒绝只发布稳定failure kind/code。
+JSON-RPC `error.data`投影这些字段和`stateId`，不从错误message、expression文本、member name
+或AST重建诊断。legacy compatibility失败保持独立kind，不能伪造成parser diagnostic。
 
 ## 实施与安全矩阵
 

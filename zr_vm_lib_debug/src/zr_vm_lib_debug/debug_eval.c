@@ -1,5 +1,26 @@
 #include "debug_eval_internal.h"
 
+void zr_debug_evaluate_failure_clear(ZrDebugEvaluateFailure *failure) {
+    if (failure != ZR_NULL) {
+        memset(failure, 0, sizeof(*failure));
+    }
+}
+
+void zr_debug_evaluate_failure_set(ZrDebugEvaluateFailure *failure,
+                                   EZrDebugEvaluateFailureKind kind,
+                                   TZrUInt64 stateId,
+                                   const TZrChar *code,
+                                   const TZrChar *message) {
+    if (failure == ZR_NULL) {
+        return;
+    }
+    zr_debug_evaluate_failure_clear(failure);
+    failure->kind = kind;
+    failure->state_id = stateId;
+    zr_debug_copy_text(failure->code, sizeof(failure->code), code);
+    zr_debug_copy_text(failure->message, sizeof(failure->message), message);
+}
+
 static void zr_debug_eval_skip_ws(ZrDebugEvalParser *parser) {
     while (parser != ZR_NULL && parser->cursor != ZR_NULL &&
            (*parser->cursor == ' ' || *parser->cursor == '\t' || *parser->cursor == '\r' || *parser->cursor == '\n')) {
@@ -912,6 +933,7 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
         TZrBool allowLegacyCompatibility,
         SZrTypeValue *outValue,
         TZrUInt32 *outCanonicalTypeId,
+        ZrDebugEvaluateFailure *outFailure,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize,
         TZrChar *referenceBuffer,
@@ -920,6 +942,7 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
     TZrBool formalHandled = ZR_FALSE;
     TZrBool formalParserFailure = ZR_FALSE;
 
+    zr_debug_evaluate_failure_clear(outFailure);
     if (outValue != ZR_NULL) {
         ZrCore_Value_ResetAsNull(outValue);
     }
@@ -931,6 +954,11 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
     }
     if (agent == ZR_NULL || expression == ZR_NULL || outValue == ZR_NULL) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "invalid debug evaluate request");
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_REQUEST,
+                                      agent != ZR_NULL ? agent->stopStateId : 0u,
+                                      "debug_evaluation_invalid_request",
+                                      "invalid debug evaluate request");
         return ZR_FALSE;
     }
     if (!zr_debug_formal_evaluate_expression(agent,
@@ -939,12 +967,17 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
                                              allowedEffectFlags,
                                              outValue,
                                              outCanonicalTypeId,
+                                             outFailure,
                                              errorBuffer,
                                              errorBufferSize,
                                              &formalHandled,
                                              &formalParserFailure)) {
         if (!allowLegacyCompatibility || !formalParserFailure) {
             return ZR_FALSE;
+        }
+        zr_debug_evaluate_failure_clear(outFailure);
+        if (outFailure != ZR_NULL) {
+            outFailure->state_id = agent->stopStateId;
         }
         if (errorBuffer != ZR_NULL && errorBufferSize > 0u) {
             errorBuffer[0] = '\0';
@@ -961,6 +994,13 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
             zr_debug_copy_text(errorBuffer,
                                errorBufferSize,
                                "formal execution is unavailable for the authorized debug evaluation");
+        }
+        if (outFailure != ZR_NULL && outFailure->kind == ZR_DEBUG_EVALUATE_FAILURE_NONE) {
+            zr_debug_evaluate_failure_set(outFailure,
+                                          ZR_DEBUG_EVALUATE_FAILURE_FORMAL_EXECUTION,
+                                          agent->stopStateId,
+                                          "debug_evaluation_formal_execution_unavailable",
+                                          "formal execution is unavailable for the authorized debug evaluation");
         }
         return ZR_FALSE;
     }
@@ -981,6 +1021,11 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
         if (errorBuffer != ZR_NULL && errorBuffer[0] == '\0') {
             zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to parse debug evaluate expression");
         }
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_LEGACY_COMPATIBILITY,
+                                      agent->stopStateId,
+                                      "debug_evaluation_legacy_parse_failure",
+                                      "legacy debug evaluate parsing failed");
         return ZR_FALSE;
     }
 
@@ -991,6 +1036,11 @@ TZrBool zr_debug_evaluate_expression_with_capabilities(
         } else {
             zr_debug_copy_text(errorBuffer, errorBufferSize, "unexpected trailing tokens in debug evaluate");
         }
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_LEGACY_COMPATIBILITY,
+                                      agent->stopStateId,
+                                      "debug_evaluation_legacy_parse_failure",
+                                      "legacy debug evaluate parsing failed");
         return ZR_FALSE;
     }
 
@@ -1012,6 +1062,7 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
             ZR_DEBUG_EVALUATION_EFFECT_NONE,
             ZR_TRUE,
             outValue,
+            ZR_NULL,
             ZR_NULL,
             errorBuffer,
             errorBufferSize,

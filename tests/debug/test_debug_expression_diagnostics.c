@@ -821,6 +821,7 @@ static void test_debug_evaluate_reports_unsupported_string_escape_with_cause_and
 #include "test_debug_breakpoint_condition_cases.h"
 #include "test_debug_breakpoint_logpoint_cases.h"
 #include "test_debug_evaluate_result_transport_cases.h"
+#include "test_debug_evaluate_failure_transport_cases.h"
 
 void setUp(void) {}
 
@@ -874,6 +875,7 @@ int main(void) {
     RUN_TEST(test_debug_breakpoint_condition_requires_pure_formal_evaluation);
     RUN_TEST(test_debug_breakpoint_logpoint_requires_pure_formal_evaluation);
     RUN_TEST(test_debug_evaluate_result_publishes_canonical_type_and_stop_state);
+    RUN_TEST(test_debug_evaluate_failure_preserves_structured_diagnostic);
     RUN_TEST(test_debug_semantic_binding_preserves_paused_frame_canonical_identity);
     RUN_TEST(test_debug_semantic_binding_rejects_missing_paused_place);
     RUN_TEST(test_debug_source_binding_shadows_runtime_root_spelling);

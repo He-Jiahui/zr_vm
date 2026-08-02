@@ -11,5 +11,15 @@ cJSON *zr_debug_protocol_make_evaluate_result(ZrDebugAgent *agent,
                                                TZrUInt32 allowedEffectFlags,
                                                TZrChar *errorBuffer,
                                                TZrSize errorBufferSize);
+cJSON *zr_debug_protocol_make_evaluate_result_detailed(
+                                               ZrDebugAgent *agent,
+                                               TZrUInt32 threadId,
+                                               TZrUInt32 frameId,
+                                               const TZrChar *expression,
+                                               TZrUInt32 allowedEffectFlags,
+                                               ZrDebugEvaluateFailure *outFailure,
+                                               TZrChar *errorBuffer,
+                                               TZrSize errorBufferSize);
+cJSON *zr_debug_protocol_make_evaluate_failure_data(const ZrDebugEvaluateFailure *failure);
 
 #endif // ZR_VM_DEBUG_PROTOCOL_EVALUATE_H

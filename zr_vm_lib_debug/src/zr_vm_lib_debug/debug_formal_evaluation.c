@@ -97,6 +97,56 @@ static TZrBool zr_debug_formal_allows_legacy_live_scope_compatibility(
     return hasCompatibleReference;
 }
 
+static const TZrChar *zr_debug_formal_diagnostic_text(const SZrString *text) {
+    return text != ZR_NULL ? ZrCore_String_GetNativeString((SZrString *)text) : "";
+}
+
+static void zr_debug_formal_capture_parser_diagnostic(
+        TZrPtr userData,
+        const SZrStructuredDiagnostic *diagnostic,
+        EZrToken token) {
+    SZrDebugFormalEvaluationContext *context = (SZrDebugFormalEvaluationContext *)userData;
+
+    (void)token;
+    if (context == ZR_NULL || context->parserState.state == ZR_NULL || diagnostic == ZR_NULL) {
+        return;
+    }
+    if (context->hasParserDiagnostic) {
+        ZrParser_StructuredDiagnostic_Free(context->parserState.state, &context->parserDiagnostic);
+        context->hasParserDiagnostic = ZR_FALSE;
+    }
+    if (ZrParser_StructuredDiagnostic_Copy(
+                context->parserState.state,
+                &context->parserDiagnostic,
+                diagnostic)) {
+        context->hasParserDiagnostic = ZR_TRUE;
+    }
+}
+
+static void zr_debug_formal_copy_diagnostic_failure(
+        const SZrStructuredDiagnostic *diagnostic,
+        EZrDebugEvaluateFailureKind kind,
+        TZrUInt64 stateId,
+        ZrDebugEvaluateFailure *outFailure) {
+    if (outFailure == ZR_NULL || diagnostic == ZR_NULL) {
+        return;
+    }
+    zr_debug_evaluate_failure_set(outFailure,
+                                  kind,
+                                  stateId,
+                                  zr_debug_formal_diagnostic_text(diagnostic->code),
+                                  zr_debug_formal_diagnostic_text(diagnostic->message));
+    outFailure->descriptor_id = diagnostic->descriptorId;
+    outFailure->range_start_offset = diagnostic->location.start.offset;
+    outFailure->range_end_offset = diagnostic->location.end.offset;
+    zr_debug_copy_text(outFailure->cause,
+                       sizeof(outFailure->cause),
+                       zr_debug_formal_diagnostic_text(diagnostic->cause));
+    zr_debug_copy_text(outFailure->suggestion,
+                       sizeof(outFailure->suggestion),
+                       zr_debug_formal_diagnostic_text(diagnostic->suggestion));
+}
+
 void zr_debug_formal_free_prepared_expression(SZrDebugFormalEvaluationContext *context) {
     if (context == ZR_NULL) {
         return;
@@ -110,18 +160,23 @@ void zr_debug_formal_free_prepared_expression(SZrDebugFormalEvaluationContext *c
     if (context->expression != ZR_NULL) {
         ZrParser_Ast_Free(context->parserState.state, context->expression);
     }
+    if (context->hasParserDiagnostic) {
+        ZrParser_StructuredDiagnostic_Free(context->parserState.state, &context->parserDiagnostic);
+    }
     if (context->parserStateInitialized) {
         ZrParser_State_Free(&context->parserState);
     }
     memset(context, 0, sizeof(*context));
 }
 
-TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
-                                           TZrUInt32 frameId,
-                                           const TZrChar *expression,
-                                           SZrDebugFormalEvaluationContext *outContext,
-                                           TZrChar *errorBuffer,
-                                           TZrSize errorBufferSize) {
+TZrBool zr_debug_formal_prepare_expression_with_failure(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const TZrChar *expression,
+        SZrDebugFormalEvaluationContext *outContext,
+        ZrDebugEvaluateFailure *outFailure,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize) {
     SZrString *sourceName;
 
     if (outContext == ZR_NULL) {
@@ -130,6 +185,11 @@ TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
     memset(outContext, 0, sizeof(*outContext));
     if (agent == ZR_NULL || agent->state == ZR_NULL || expression == ZR_NULL) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "invalid debug formal evaluation request");
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_REQUEST,
+                                      agent != ZR_NULL ? agent->stopStateId : 0u,
+                                      "debug_evaluation_invalid_request",
+                                      "invalid debug formal evaluation request");
         return ZR_FALSE;
     }
 
@@ -141,6 +201,9 @@ TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
                         sourceName);
     outContext->parserStateInitialized = ZR_TRUE;
     outContext->parserState.suppressErrorOutput = ZR_TRUE;
+    ZrParser_StructuredDiagnostic_Init(&outContext->parserDiagnostic);
+    outContext->parserState.structuredErrorCallback = zr_debug_formal_capture_parser_diagnostic;
+    outContext->parserState.errorUserData = outContext;
     outContext->expression = ZrParser_ParseExpressionWithState(&outContext->parserState);
     if (outContext->parserState.hasError || outContext->expression == ZR_NULL) {
         zr_debug_copy_text(errorBuffer,
@@ -148,6 +211,18 @@ TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
                            outContext->parserState.errorMessage != ZR_NULL
                                    ? outContext->parserState.errorMessage
                                    : "failed to parse debug evaluation expression");
+        if (outContext->hasParserDiagnostic) {
+            zr_debug_formal_copy_diagnostic_failure(&outContext->parserDiagnostic,
+                                                    ZR_DEBUG_EVALUATE_FAILURE_PARSER,
+                                                    agent->stopStateId,
+                                                    outFailure);
+        } else {
+            zr_debug_evaluate_failure_set(outFailure,
+                                          ZR_DEBUG_EVALUATE_FAILURE_PARSER,
+                                          agent->stopStateId,
+                                          "debug_evaluation_parser_failure",
+                                          "failed to parse debug evaluation expression");
+        }
         zr_debug_formal_free_prepared_expression(outContext);
         return ZR_FALSE;
     }
@@ -187,12 +262,28 @@ TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
     return ZR_TRUE;
 }
 
+TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
+                                           TZrUInt32 frameId,
+                                           const TZrChar *expression,
+                                           SZrDebugFormalEvaluationContext *outContext,
+                                           TZrChar *errorBuffer,
+                                           TZrSize errorBufferSize) {
+    return zr_debug_formal_prepare_expression_with_failure(agent,
+                                                           frameId,
+                                                           expression,
+                                                           outContext,
+                                                           ZR_NULL,
+                                                           errorBuffer,
+                                                           errorBufferSize);
+}
+
 TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
                                             TZrUInt32 frameId,
                                             const TZrChar *expression,
                                             TZrUInt32 allowedEffectFlags,
                                             SZrTypeValue *outValue,
                                             TZrUInt32 *outCanonicalTypeId,
+                                            ZrDebugEvaluateFailure *outFailure,
                                             TZrChar *errorBuffer,
                                             TZrSize errorBufferSize,
                                             TZrBool *outHandled,
@@ -219,17 +310,35 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
     }
 
     memset(&context, 0, sizeof(context));
-    if (!zr_debug_formal_prepare_expression(agent,
-                                            frameId,
-                                            expression,
-                                            &context,
-                                            errorBuffer,
-                                            errorBufferSize)) {
+    if (!zr_debug_formal_prepare_expression_with_failure(agent,
+                                                         frameId,
+                                                         expression,
+                                                         &context,
+                                                         outFailure,
+                                                         errorBuffer,
+                                                         errorBufferSize)) {
         /* The caller may select the legacy syntax-compatibility route explicitly. */
         if (outParserFailure != ZR_NULL) {
             *outParserFailure = ZR_TRUE;
         }
         return ZR_FALSE;
+    }
+
+    if (context.compilerState.hasError) {
+        if (context.compilerState.hasStructuredError) {
+            zr_debug_formal_copy_diagnostic_failure(&context.compilerState.structuredError,
+                                                    ZR_DEBUG_EVALUATE_FAILURE_SEMANTIC,
+                                                    agent->stopStateId,
+                                                    outFailure);
+        } else {
+            zr_debug_evaluate_failure_set(outFailure,
+                                          ZR_DEBUG_EVALUATE_FAILURE_SEMANTIC,
+                                          agent->stopStateId,
+                                          "debug_evaluation_semantic_failure",
+                                          "canonical semantic analysis rejected debug evaluation");
+        }
+        ok = ZR_FALSE;
+        goto cleanup;
     }
 
     zr_debug_evaluation_effect_classify_structure(context.expression, &effectFlags);
@@ -246,6 +355,11 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
                 "Assignment is not allowed in safe debug evaluate. Cause: debug evaluate and conditional "
                 "breakpoints are read-only and must not mutate program state. Suggestion: inspect an "
                 "expression without '=' or change the program state from source code instead.");
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_CAPABILITY,
+                                      agent->stopStateId,
+                                      "debug_evaluation_capability_denied",
+                                      "debug evaluation requires a read-only expression");
         ok = ZR_FALSE;
         goto cleanup;
     }
@@ -265,6 +379,11 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
         zr_debug_copy_text(errorBuffer,
                            errorBufferSize,
                            "canonical semantic facts are unavailable for debug evaluation");
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_CANONICAL_FACTS,
+                                      agent->stopStateId,
+                                      "debug_evaluation_canonical_facts_unavailable",
+                                      "canonical semantic facts are unavailable for debug evaluation");
         ok = ZR_FALSE;
         goto cleanup;
     }
@@ -282,6 +401,11 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
         zr_debug_copy_text(errorBuffer,
                            errorBufferSize,
                            "debug evaluation requires an explicit capability for canonical effects");
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_CAPABILITY,
+                                      agent->stopStateId,
+                                      "debug_evaluation_capability_denied",
+                                      "debug evaluation requires an explicit capability for canonical effects");
         ok = ZR_FALSE;
         goto cleanup;
     }
@@ -295,6 +419,13 @@ TZrBool zr_debug_formal_evaluate_expression(ZrDebugAgent *agent,
                                        errorBuffer,
                                        errorBufferSize);
     *outHandled = supported;
+    if (!ok && outFailure != ZR_NULL && outFailure->kind == ZR_DEBUG_EVALUATE_FAILURE_NONE) {
+        zr_debug_evaluate_failure_set(outFailure,
+                                      ZR_DEBUG_EVALUATE_FAILURE_FORMAL_EXECUTION,
+                                      agent->stopStateId,
+                                      "debug_evaluation_formal_execution_failed",
+                                      "formal debug evaluation failed");
+    }
 
 cleanup:
     zr_debug_formal_free_prepared_expression(&context);

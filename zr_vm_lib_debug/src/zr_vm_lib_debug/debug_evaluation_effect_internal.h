@@ -11,11 +11,13 @@ typedef struct SZrDebugFormalEvaluationContext {
     SZrParserState parserState;
     SZrCompilerState compilerState;
     SZrInferredType inferredType;
+    SZrStructuredDiagnostic parserDiagnostic;
     SZrAstNode *expression;
     const SZrSemanticExpressionFact *expressionFact;
     TZrBool parserStateInitialized;
     TZrBool compilerStateInitialized;
     TZrBool inferredTypeInitialized;
+    TZrBool hasParserDiagnostic;
     TZrBool hasCanonicalFacts;
 } SZrDebugFormalEvaluationContext;
 
@@ -33,6 +35,14 @@ TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
                                            SZrDebugFormalEvaluationContext *outContext,
                                            TZrChar *errorBuffer,
                                            TZrSize errorBufferSize);
+TZrBool zr_debug_formal_prepare_expression_with_failure(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const TZrChar *expression,
+        SZrDebugFormalEvaluationContext *outContext,
+        ZrDebugEvaluateFailure *outFailure,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
 void zr_debug_formal_free_prepared_expression(SZrDebugFormalEvaluationContext *context);
 TZrBool zr_debug_formal_has_paused_array_index_facts(
         ZrDebugAgent *agent,

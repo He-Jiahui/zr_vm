@@ -139,6 +139,29 @@ typedef struct ZrDebugEvaluateResult {
     TZrChar reference_summary[ZR_DEBUG_TEXT_CAPACITY];
 } ZrDebugEvaluateResult;
 
+typedef enum EZrDebugEvaluateFailureKind {
+    ZR_DEBUG_EVALUATE_FAILURE_NONE = 0,
+    ZR_DEBUG_EVALUATE_FAILURE_REQUEST,
+    ZR_DEBUG_EVALUATE_FAILURE_PARSER,
+    ZR_DEBUG_EVALUATE_FAILURE_SEMANTIC,
+    ZR_DEBUG_EVALUATE_FAILURE_CAPABILITY,
+    ZR_DEBUG_EVALUATE_FAILURE_CANONICAL_FACTS,
+    ZR_DEBUG_EVALUATE_FAILURE_FORMAL_EXECUTION,
+    ZR_DEBUG_EVALUATE_FAILURE_LEGACY_COMPATIBILITY
+} EZrDebugEvaluateFailureKind;
+
+typedef struct ZrDebugEvaluateFailure {
+    EZrDebugEvaluateFailureKind kind;
+    TZrUInt64 state_id;
+    TZrUInt32 descriptor_id;
+    TZrSize range_start_offset;
+    TZrSize range_end_offset;
+    TZrChar code[ZR_DEBUG_NAME_CAPACITY];
+    TZrChar message[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar cause[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar suggestion[ZR_DEBUG_TEXT_CAPACITY];
+} ZrDebugEvaluateFailure;
+
 typedef enum EZrDebugEvaluationEffect {
     ZR_DEBUG_EVALUATION_EFFECT_NONE = 0u,
     ZR_DEBUG_EVALUATION_EFFECT_PROPERTY_GETTER = 1u << 0u,
@@ -200,6 +223,15 @@ ZR_DEBUG_API TZrBool ZrDebug_EvaluateWithCapabilities(
         const TZrChar *expression,
         TZrUInt32 allowedEffectFlags,
         ZrDebugEvaluateResult *outResult,
+        TZrChar *errorBuffer,
+        TZrSize errorBufferSize);
+ZR_DEBUG_API TZrBool ZrDebug_EvaluateWithCapabilitiesDetailed(
+        ZrDebugAgent *agent,
+        TZrUInt32 frameId,
+        const TZrChar *expression,
+        TZrUInt32 allowedEffectFlags,
+        ZrDebugEvaluateResult *outResult,
+        ZrDebugEvaluateFailure *outFailure,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize);
 ZR_DEBUG_API TZrBool ZrDebug_ClassifyEvaluationEffect(ZrDebugAgent *agent,

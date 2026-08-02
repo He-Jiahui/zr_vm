@@ -92,10 +92,11 @@ static void zr_debug_agent_send_response(ZrDebugAgent *agent, const cJSON *reque
     cJSON_Delete(message);
 }
 
-static void zr_debug_agent_send_error(ZrDebugAgent *agent,
-                                      const cJSON *requestId,
-                                      TZrInt32 code,
-                                      const TZrChar *messageText) {
+static void zr_debug_agent_send_error_with_data(ZrDebugAgent *agent,
+                                                const cJSON *requestId,
+                                                TZrInt32 code,
+                                                const TZrChar *messageText,
+                                                cJSON *data) {
     cJSON *message = cJSON_CreateObject();
     cJSON *errorObject = cJSON_CreateObject();
 
@@ -106,6 +107,9 @@ static void zr_debug_agent_send_error(ZrDebugAgent *agent,
         if (errorObject != ZR_NULL) {
             cJSON_Delete(errorObject);
         }
+        if (data != ZR_NULL) {
+            cJSON_Delete(data);
+        }
         return;
     }
 
@@ -113,9 +117,19 @@ static void zr_debug_agent_send_error(ZrDebugAgent *agent,
     cJSON_AddItemToObject(message, "id", zr_debug_json_make_message_id(requestId));
     cJSON_AddNumberToObject(errorObject, "code", code);
     cJSON_AddStringToObject(errorObject, "message", messageText != ZR_NULL ? messageText : "debug error");
+    if (data != ZR_NULL) {
+        cJSON_AddItemToObject(errorObject, "data", data);
+    }
     cJSON_AddItemToObject(message, "error", errorObject);
     zr_debug_agent_send_json(agent, message);
     cJSON_Delete(message);
+}
+
+static void zr_debug_agent_send_error(ZrDebugAgent *agent,
+                                      const cJSON *requestId,
+                                      TZrInt32 code,
+                                      const TZrChar *messageText) {
+    zr_debug_agent_send_error_with_data(agent, requestId, code, messageText, ZR_NULL);
 }
 
 void zr_debug_agent_close_client(ZrDebugAgent *agent) {
@@ -1224,27 +1238,34 @@ static void zr_debug_agent_process_evaluate(ZrDebugAgent *agent, const cJSON *re
     TZrUInt32 threadId = zr_debug_agent_thread_id_from_params(agent, params);
     TZrUInt32 frameId = cJSON_IsNumber(frameIdItem) ? (TZrUInt32)frameIdItem->valuedouble : 1u;
     TZrChar errorBuffer[256];
+    ZrDebugEvaluateFailure failure;
     cJSON *result;
 
     errorBuffer[0] = '\0';
+    memset(&failure, 0, sizeof(failure));
     if (!cJSON_IsString(expressionItem)) {
         zr_debug_agent_send_error(agent, requestId, -32602, "evaluate requires expression");
         return;
     }
 
-    result = zr_debug_protocol_make_evaluate_result(
+    result = zr_debug_protocol_make_evaluate_result_detailed(
             agent,
             threadId,
             frameId,
             expressionItem->valuestring,
             zr_debug_protocol_evaluate_allowed_effect_flags(contextItem),
+            &failure,
             errorBuffer,
             sizeof(errorBuffer));
     if (result == ZR_NULL) {
-        zr_debug_agent_send_error(agent,
-                                  requestId,
-                                  -32003,
-                                  errorBuffer[0] != '\0' ? errorBuffer : "failed to evaluate expression");
+        zr_debug_agent_send_error_with_data(
+                agent,
+                requestId,
+                -32003,
+                failure.message[0] != '\0'
+                        ? failure.message
+                        : (errorBuffer[0] != '\0' ? errorBuffer : "failed to evaluate expression"),
+                zr_debug_protocol_make_evaluate_failure_data(&failure));
         return;
     }
 
