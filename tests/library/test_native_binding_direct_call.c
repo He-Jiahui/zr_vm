@@ -207,7 +207,7 @@ static void test_direct_module_export_succeeds_for_source_module_function(void) 
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "simple_direct_export",
-                    "pub replay(): int {\n"
+                    "pub fn replay(): int {\n"
                     "    return 42;\n"
                     "}\n"
                     "\n"
@@ -237,7 +237,7 @@ static void test_direct_module_export_runtime_error_returns_false_instead_of_abo
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
                     "broken_direct_export",
-                    "pub broken(): int {\n"
+                    "pub fn broken(): int {\n"
                     "    var value = 1;\n"
                     "    return value.answer;\n"
                     "}\n"
@@ -273,7 +273,7 @@ static void test_direct_module_export_preserves_scalar_captures_after_tail_calle
                     "captured_scalar_tail_entry",
                     "var captured = 100;\n"
                     "\n"
-                    "pub replay(): int {\n"
+                    "pub fn replay(): int {\n"
                     "    return captured + 5;\n"
                     "}\n"
                     "\n"
@@ -306,7 +306,7 @@ static void test_direct_module_export_preserves_imported_native_module_captures(
                     "captured_native_import",
                     "var host = import(\"host_demo\");\n"
                     "\n"
-                    "pub replay(): int {\n"
+                    "pub fn replay(): int {\n"
                     "    return host.answer + host.bump(2, 3);\n"
                     "}\n"
                     "\n"
@@ -351,7 +351,7 @@ static void test_native_descriptor_modes_enter_exact_domain_scope(void) {
                     "native_mode_probe",
                     "var host = import(\"host_demo\");\n"
                     "\n"
-                    "pub probe(): int {\n"
+                    "pub fn probe(): int {\n"
                     "    return host.gcAware() + host.blockingDetached() + host.noSafepointCritical();\n"
                     "}\n"
                     "\n"

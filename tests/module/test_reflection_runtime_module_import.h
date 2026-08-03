@@ -399,6 +399,32 @@ static void test_reflection_module_import_uses_loaded_caller_runtime(void) {
     destroy_reflection_test_state(state);
 }
 
+static void test_reflection_module_import_requires_registered_provider_role(void) {
+    SMethodSpecGenericContextFixture fixture;
+    SZrState *state = create_reflection_test_state();
+    SZrObjectModule *target;
+    SZrFunction childCaller;
+    TZrStackValuePointer resultBase;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(method_spec_generic_context_fixture_init(&fixture));
+    target = reflection_import_create_loaded_runtime_module(
+            state, &fixture, ZR_NULL, "test.reflection.provider.required");
+    TEST_ASSERT_NOT_NULL(target);
+    memset(&childCaller, 0, sizeof(childCaller));
+    childCaller.ownerFunction =
+            ZrCore_Module_GetMetadataRuntime(target)->metadataFunction;
+
+    ZrCore_GlobalState_SetProviderModuleNameResolver(
+            state->global, ZR_NULL, ZR_NULL);
+    resultBase = reflection_import_invoke(
+            state, &childCaller, TEST_REFLECTION_MODULE_PATH, ZR_TRUE);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(
+            ZrCore_Stack_GetValue(resultBase)->type));
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, state->threadStatus);
+    destroy_reflection_test_state(state);
+}
+
 #undef TEST_REFLECTION_MODULE_PATH
 
 #endif

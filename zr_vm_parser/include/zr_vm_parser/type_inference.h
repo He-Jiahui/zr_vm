@@ -37,6 +37,7 @@ ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInfe
         SZrCompilerState *cs,
         const SZrInferredType *type);
 ZR_PARSER_API const TZrChar *ZrParser_ReflectionDescriptorTypeName(
+        SZrState *state,
         EZrReflectionTypeCategory category);
 
 // 从字面量推断类型

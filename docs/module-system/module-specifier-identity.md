@@ -15,11 +15,13 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.h
   - zr_vm_library/src/zr_vm_library/project/project_manifest_v2.c
   - zr_vm_library/src/zr_vm_library/project/project.c
+  - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
 plan_sources:
   - user: execute docs/plans/syntax milestones with a completion record and one commit per milestone
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
   - docs/plans/syntax/10-native-ffi-module-package/m1-specifier-foundation-implementation-plan.md
   - docs/plans/syntax/10-native-ffi-module-package/m2-manifest-artifact-implementation-plan.md
+  - user: 2026-08-03 reject workspace spoofing of official reflection providers
 tests:
   - tests/library/test_project_module_specifier.c
   - tests/library/test_project_import_resolver.c
@@ -27,6 +29,7 @@ tests:
   - tests/acceptance/2026-07-24-syntax-10r-m1-specifier-foundation.md
   - tests/acceptance/2026-07-24-syntax-10r-m2-v2-declarations.md
   - tests/acceptance/2026-07-24-syntax-10r-m2-v2-writer-lock.md
+  - tests/acceptance/2026-08-03-syntax-08-m1-reflection-provider-contract.md
 doc_type: module-detail
 ---
 
@@ -70,6 +73,20 @@ Dot and slash are equivalent only in logical segment areas. A `file:` URI is not
 The parser rejects empty segments, ambiguous native `zr.*` declarations, invalid package roots, bare physical
 paths, malformed aliases, incomplete or mixed relative paths, and incomplete UNC locators. Repeated `../`
 prefixes and their continuous-dot spelling both map to the same parent count.
+
+## Reserved Official Module Root
+
+The legacy project resolver applies the same identity boundary when deriving
+the current source ModuleId. A workspace source cannot resolve to `zr` or any
+`zr.*`/`zr/...` child, whether the identity came from the source path, an
+explicit `module` declaration, or both. The failure is reported as a reserved
+official module root before compiler type registration.
+
+This restriction applies to declaration ownership, not consumption.
+`ResolveImportModuleKey` still resolves imports such as `zr.system`, and the
+native registry remains the only owner of official descriptors. A workspace
+file therefore cannot spoof `zr.reflection.Type` and inherit reflection
+capabilities through a canonical-name collision.
 
 ## Relative Resolution
 
@@ -145,4 +162,6 @@ and malformed-input rejection. `test_project_manifest_v2.c` covers structured al
 domain-preserving alias and export resolution, phase-separated runtime/build dependency storage, deterministic v2
 writer and phase-typed lock projection output, unexported package rejection, v1-field isolation, local locator and
 loopback publication rejection, ambiguous dependency source rejection, and malformed roots. The existing
-`test_project_import_resolver.c` remains a regression guard for the untouched legacy resolver path.
+`test_project_import_resolver.c` covers the legacy resolver path, including the
+official-root source-declaration rejection and continued resolution of official
+imports.

@@ -3,6 +3,8 @@
 //
 
 #include "compiler_internal.h"
+
+#include "zr_vm_library/native_registry.h"
 #include "compile_tool_project_provider.h"
 #include "comptime_runtime_contract.h"
 #include "zr_vm_parser/parser.h"
@@ -21,6 +23,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     ZR_ASSERT(state != ZR_NULL);
 
     cs->state = state;
+    (void)ZrLibrary_NativeRegistry_Attach(state->global);
     cs->currentFunction = ZR_NULL;
     cs->currentAst = ZR_NULL;
     cs->semanticContext = ZrParser_SemanticContext_New(state);

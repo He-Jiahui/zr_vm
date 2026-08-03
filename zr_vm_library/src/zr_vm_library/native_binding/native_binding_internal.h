@@ -103,11 +103,21 @@ typedef struct ZrLibrary_NativeRegistryState {
     TZrSize bindingLookupHotIndices[ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY];
     EZrLibNativeRegistryErrorCode lastErrorCode;
     TZrChar lastErrorMessage[ZR_LIBRARY_NATIVE_REGISTRY_ERROR_BUFFER_LENGTH];
+    FZrNativeModuleLoader hostNativeModuleLoader;
+    TZrPtr hostNativeModuleLoaderUserData;
+    FZrProviderModuleNameResolver hostProviderModuleNameResolver;
+    TZrPtr hostProviderModuleNameResolverUserData;
+    FZrOwnershipStrongRefObserver hostOwnershipStrongRefObserver;
+    TZrPtr hostOwnershipStrongRefObserverUserData;
 } ZrLibrary_NativeRegistryState;
 
 ZR_LIBRARY_API TZrInt64 native_binding_dispatcher(SZrState *state);
 ZR_LIBRARY_API TZrInt64 native_binding_dispatch_cached_stack_root_one_argument(SZrState *state);
 ZR_LIBRARY_API TZrInt64 native_binding_dispatch_cached_stack_root_two_arguments(SZrState *state);
+const ZrLibModuleDescriptor *ZrLibrary_ReflectionContract_GetDescriptor(void);
+const TZrChar *native_registry_resolve_provider_module_name(
+        TZrUInt32 providerRole,
+        TZrPtr userData);
 
 static ZR_FORCE_INLINE TZrUInt32 native_binding_descriptor_dispatch_flags(EZrLibResolvedBindingKind bindingKind,
                                                                           const void *descriptor) {
@@ -564,6 +574,9 @@ const ZrLibRegisteredModuleRecord *native_registry_find_record_by_descriptor(
         const ZrLibModuleDescriptor *descriptor);
 TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegistryState *registry,
                                                                  const ZrLibModuleDescriptor *descriptor);
+TZrBool native_registry_validate_canonical_type_roles(
+        ZrLibrary_NativeRegistryState *registry,
+        const ZrLibModuleDescriptor *descriptor);
 TZrBool native_registry_validate_official_descriptor(
         ZrLibrary_NativeRegistryState *registry,
         const ZrLibModuleDescriptor *descriptor);

@@ -938,8 +938,17 @@ static void type_inference_builtin_reflection_add_runtime_type_members(
 
     type_inference_builtin_reflection_add_field(cs, info, "name", "string");
     type_inference_builtin_reflection_add_field(cs, info, "qualifiedName", "string");
-    type_inference_builtin_reflection_add_field(
-            cs, info, "id", "zr.reflection.TypeId");
+    const ZrLibCanonicalTypeRoleDescriptor *typeIdRole =
+            ZrParser_ReflectionCompileSurface_FindByRole(
+                    cs != ZR_NULL && cs->state != ZR_NULL
+                            ? cs->state->global
+                            : ZR_NULL,
+                    ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE_ID);
+
+    if (typeIdRole != ZR_NULL) {
+        type_inference_builtin_reflection_add_field(
+                cs, info, "id", typeIdRole->canonicalName);
+    }
     for (TZrSize index = 0u; index < ZR_ARRAY_COUNT(kQueryMethods); index++) {
         type_inference_builtin_reflection_add_method(
                 cs,
@@ -983,20 +992,31 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     SZrTypePrototypeInfo *targetInfo;
     const TZrChar *typeNameText;
     const TZrChar *parentTypeName = ZR_NULL;
-    const SZrParserReflectionCompileTypeDescriptor *descriptor;
-    const SZrParserReflectionCompileTypeDescriptor *parentDescriptor;
+    const ZrLibCanonicalTypeRoleDescriptor *descriptor;
+    const ZrLibCanonicalTypeRoleDescriptor *parentDescriptor;
 
     if (cs == ZR_NULL || typeName == ZR_NULL) {
         return;
     }
 
     typeNameText = ZrCore_String_GetNativeString(typeName);
-    descriptor = ZrParser_ReflectionCompileSurface_Find(typeNameText);
+    descriptor = ZrParser_ReflectionCompileSurface_Find(
+            cs->state != ZR_NULL ? cs->state->global : ZR_NULL,
+            typeNameText);
     if (descriptor == ZR_NULL) {
         return;
     }
-    parentDescriptor = ZrParser_ReflectionCompileSurface_FindByCapability(
-            descriptor->parentCapability);
+    targetInfo = find_registered_type_prototype_inference_exact_only(cs, typeName);
+    if (targetInfo != ZR_NULL && targetInfo->intrinsicCapabilityId != 0u &&
+        targetInfo->intrinsicCapabilityId != (TZrUInt32)descriptor->role) {
+        return;
+    }
+    if (targetInfo != ZR_NULL && targetInfo->intrinsicCapabilityId == 0u) {
+        return;
+    }
+    parentDescriptor = ZrParser_ReflectionCompileSurface_FindByRole(
+            cs->state != ZR_NULL ? cs->state->global : ZR_NULL,
+            descriptor->parentRole);
     parentTypeName = parentDescriptor != ZR_NULL
                              ? parentDescriptor->canonicalName
                              : ZR_NULL;
@@ -1006,7 +1026,6 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
                                                type_inference_builtin_reflection_string(cs, parentTypeName));
     }
 
-    targetInfo = find_registered_type_prototype_inference_exact_only(cs, typeName);
     if (targetInfo == ZR_NULL) {
         native_module_info_init_prototype(cs->state, &info, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
         info.allowValueConstruction = ZR_FALSE;
@@ -1019,7 +1038,7 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     }
 
     targetInfo->type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
-    targetInfo->intrinsicCapabilityId = (TZrUInt32)descriptor->capability;
+    targetInfo->intrinsicCapabilityId = (TZrUInt32)descriptor->role;
     targetInfo->allowValueConstruction = ZR_FALSE;
     targetInfo->allowBoxedConstruction = ZR_FALSE;
 
@@ -1028,20 +1047,26 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
     }
 
     if ((descriptor->surfaceFlags &
-         ZR_PARSER_REFLECTION_COMPILE_SURFACE_METADATA_MEMBERS) != 0U) {
+         ZR_CANONICAL_TYPE_SURFACE_METADATA_MEMBERS) != 0U) {
         type_inference_builtin_reflection_add_compile_metadata_members(cs, targetInfo);
     }
     if ((descriptor->surfaceFlags &
-         ZR_PARSER_REFLECTION_COMPILE_SURFACE_RUNTIME_TYPE_MEMBERS) != 0U) {
+         ZR_CANONICAL_TYPE_SURFACE_RUNTIME_TYPE_MEMBERS) != 0U) {
         type_inference_builtin_reflection_add_runtime_type_members(cs, targetInfo);
     }
     if ((descriptor->surfaceFlags &
-         ZR_PARSER_REFLECTION_COMPILE_SURFACE_REPRESENTED_TYPE_ID) != 0U) {
-        type_inference_builtin_reflection_add_field(
-                cs, targetInfo, "representedTypeId", "zr.reflection.TypeId");
+         ZR_CANONICAL_TYPE_SURFACE_REPRESENTED_TYPE_ID) != 0U) {
+        const ZrLibCanonicalTypeRoleDescriptor *typeIdRole =
+                ZrParser_ReflectionCompileSurface_FindByRole(
+                        cs->state != ZR_NULL ? cs->state->global : ZR_NULL,
+                        ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE_ID);
+        if (typeIdRole != ZR_NULL) {
+            type_inference_builtin_reflection_add_field(
+                    cs, targetInfo, "representedTypeId", typeIdRole->canonicalName);
+        }
     }
     if ((descriptor->surfaceFlags &
-         ZR_PARSER_REFLECTION_COMPILE_SURFACE_CONSTRUCTIBLE) != 0U) {
+         ZR_CANONICAL_TYPE_SURFACE_CONSTRUCTIBLE) != 0U) {
         type_inference_builtin_reflection_add_method(
                 cs,
                 targetInfo,
@@ -1051,7 +1076,7 @@ ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, 
                 0u);
     }
     if ((descriptor->surfaceFlags &
-         ZR_PARSER_REFLECTION_COMPILE_SURFACE_CALLABLE_MEMBERS) != 0U) {
+         ZR_CANONICAL_TYPE_SURFACE_CALLABLE_MEMBERS) != 0U) {
         type_inference_builtin_reflection_add_callable_members(cs, targetInfo);
     }
 }
@@ -2776,8 +2801,11 @@ ZR_PARSER_API EZrReflectionTypeCategory ZrParser_ReflectionTypeCategory_FromInfe
 }
 
 ZR_PARSER_API const TZrChar *ZrParser_ReflectionDescriptorTypeName(
+        SZrState *state,
         EZrReflectionTypeCategory category) {
-    return ZrParser_ReflectionCompileSurface_DescriptorName(category);
+    return ZrParser_ReflectionCompileSurface_DescriptorName(
+            state != ZR_NULL ? state->global : ZR_NULL,
+            category);
 }
 
 TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
@@ -2802,7 +2830,19 @@ TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
-        resultTypeName = "zr.reflection.TypeId";
+        {
+            const ZrLibCanonicalTypeRoleDescriptor *typeIdRole =
+                    ZrParser_ReflectionCompileSurface_FindByRole(
+                            cs->state != ZR_NULL ? cs->state->global : ZR_NULL,
+                            ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE_ID);
+            resultTypeName = typeIdRole != ZR_NULL
+                                     ? typeIdRole->canonicalName
+                                     : ZR_NULL;
+        }
+        if (resultTypeName == ZR_NULL) {
+            ZrParser_InferredType_Free(cs->state, &operandType);
+            return ZR_FALSE;
+        }
         reflectionTypeName = ZrCore_String_CreateFromNative(
                 cs->state, (TZrNativeString)resultTypeName);
         if (reflectionTypeName == ZR_NULL) {
@@ -2854,9 +2894,20 @@ TZrBool infer_type_query_expression_type(SZrCompilerState *cs,
              node->data.typeQueryExpression.operand->type == ZR_AST_BOOLEAN_LITERAL ||
              node->data.typeQueryExpression.operand->type == ZR_AST_STRING_LITERAL ||
              node->data.typeQueryExpression.operand->type == ZR_AST_CHAR_LITERAL);
-    resultTypeName = exposePreciseDescriptor
-                             ? ZrParser_ReflectionDescriptorTypeName(category)
-                             : "zr.reflection.Type";
+    if (exposePreciseDescriptor) {
+        resultTypeName = ZrParser_ReflectionDescriptorTypeName(
+                cs->state, category);
+    } else {
+        const ZrLibCanonicalTypeRoleDescriptor *typeRole =
+                ZrParser_ReflectionCompileSurface_FindByRole(
+                        cs->state != ZR_NULL ? cs->state->global : ZR_NULL,
+                        ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE);
+        resultTypeName = typeRole != ZR_NULL ? typeRole->canonicalName : ZR_NULL;
+    }
+    if (resultTypeName == ZR_NULL) {
+        ZrParser_InferredType_Free(cs->state, &operandType);
+        return ZR_FALSE;
+    }
 
     reflectionTypeName = ZrCore_String_CreateFromNative(
             cs->state, (TZrNativeString)resultTypeName);

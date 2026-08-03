@@ -39,20 +39,30 @@ static SZrFunction *module_reflection_import_owner_root(SZrFunction *function) {
     return ZR_NULL;
 }
 
-static TZrBool module_reflection_import_path_matches(SZrString *path) {
-    static const TZrChar reflectionModuleName[] = ZR_REFLECTION_MODULE_NAME;
+static TZrBool module_reflection_import_path_matches(
+        SZrGlobalState *global,
+        SZrString *path) {
+    const TZrChar *reflectionModuleName;
+    TZrSize reflectionModuleNameLength;
     TZrNativeString pathText;
 
-    if (path == ZR_NULL || path->super.type != ZR_RAW_OBJECT_TYPE_STRING) {
+    if (global == ZR_NULL || path == ZR_NULL ||
+        path->super.type != ZR_RAW_OBJECT_TYPE_STRING) {
         return ZR_FALSE;
     }
+    reflectionModuleName = ZrCore_GlobalState_ResolveProviderModuleName(
+            global, ZR_PROVIDER_CONTRACT_ROLE_REFLECTION);
+    if (reflectionModuleName == ZR_NULL || reflectionModuleName[0] == '\0') {
+        return ZR_FALSE;
+    }
+    reflectionModuleNameLength = strlen(reflectionModuleName);
     pathText = ZrCore_String_GetNativeString(path);
     return pathText != ZR_NULL &&
                            ZrCore_String_GetByteLength(path) ==
-                                   sizeof(reflectionModuleName) - 1u &&
+                                   reflectionModuleNameLength &&
                            memcmp(pathText,
                                   reflectionModuleName,
-                                  sizeof(reflectionModuleName) - 1u) == 0
+                                  reflectionModuleNameLength) == 0
                    ? ZR_TRUE
                    : ZR_FALSE;
 }
@@ -155,16 +165,13 @@ TZrBool zr_module_reflection_import_try_resolve(
     if (outModule != ZR_NULL) {
         *outModule = ZR_NULL;
     }
-    if (!module_reflection_import_path_matches(path)) {
+    if (state == ZR_NULL || state->global == ZR_NULL ||
+        !module_reflection_import_path_matches(state->global, path)) {
         return ZR_FALSE;
     }
     if (outModule == ZR_NULL) {
         return ZR_TRUE;
     }
-    if (state == ZR_NULL || state->global == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
     ZrCore_GlobalState_ClearModuleLoadDiagnostic(state->global);
     if (callerFunction == ZR_NULL) {
         return ZR_TRUE;

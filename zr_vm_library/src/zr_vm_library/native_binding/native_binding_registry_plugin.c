@@ -852,7 +852,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
     TZrUInt64 pathHash;
     TZrSize index;
 
-    if (state == ZR_NULL || registry == ZR_NULL || descriptor == ZR_NULL || descriptor->moduleName == ZR_NULL) {
+    if (state == ZR_NULL || registry == ZR_NULL || descriptor == ZR_NULL ||
+        descriptor->moduleName == ZR_NULL || descriptor->isContractOnly) {
         return ZR_NULL;
     }
 
@@ -992,6 +993,16 @@ struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *modul
     descriptor = native_registry_find_descriptor_or_plugin(state, registry, nativeModuleName);
 
     if (descriptor == ZR_NULL) {
+        if (registry->hostNativeModuleLoader != ZR_NULL &&
+            registry->hostNativeModuleLoader != native_registry_loader) {
+            SZrObjectModule *hostModule = registry->hostNativeModuleLoader(
+                    state,
+                    moduleName,
+                    registry->hostNativeModuleLoaderUserData);
+            if (hostModule != ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return hostModule;
+            }
+        }
         native_binding_trace_import(state, "[zr_native_import] loader miss module=%s\n", nativeModuleName);
         lastError = registry->lastErrorMessage[0] != '\0' ? registry->lastErrorMessage : ZR_NULL;
         if (lastError != ZR_NULL) {
@@ -1000,6 +1011,14 @@ struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *modul
                                                        nativeModuleName,
                                                        lastError);
         }
+        return ZR_NULL;
+    }
+
+    if (descriptor->isContractOnly) {
+        native_binding_trace_import(
+                state,
+                "[zr_native_import] contract-only module is not materialized module=%s\n",
+                nativeModuleName);
         return ZR_NULL;
     }
 

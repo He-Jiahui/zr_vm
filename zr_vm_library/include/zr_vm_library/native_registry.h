@@ -23,7 +23,10 @@ typedef enum EZrLibNativeRegistryErrorCode {
     ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_IN_USE = 7,
     ZR_LIB_NATIVE_REGISTRY_ERROR_PHASE_MISMATCH = 8,
     ZR_LIB_NATIVE_REGISTRY_ERROR_RESERVED_OFFICIAL_MODULE = 9,
-    ZR_LIB_NATIVE_REGISTRY_ERROR_DUPLICATE_OFFICIAL_PROVIDER = 10
+    ZR_LIB_NATIVE_REGISTRY_ERROR_DUPLICATE_OFFICIAL_PROVIDER = 10,
+    ZR_LIB_NATIVE_REGISTRY_ERROR_PROVIDER_CONTRACT_MISMATCH = 11,
+    ZR_LIB_NATIVE_REGISTRY_ERROR_INVALID_CANONICAL_TYPE_ROLE = 12,
+    ZR_LIB_NATIVE_REGISTRY_ERROR_DUPLICATE_PROVIDER_CONTRACT = 13
 } EZrLibNativeRegistryErrorCode;
 
 typedef enum EZrLibOfficialModuleTier {
@@ -37,7 +40,13 @@ typedef struct ZrLibOfficialModuleInventoryEntry {
     const TZrChar *moduleName;
     EZrLibOfficialModuleTier tier;
     EZrLibrary_ProviderPhase phase;
+    EZrProviderContractRole providerContractRole;
 } ZrLibOfficialModuleInventoryEntry;
+
+typedef struct ZrLibRegisteredCanonicalTypeRole {
+    const ZrLibModuleDescriptor *provider;
+    const ZrLibCanonicalTypeRoleDescriptor *typeRole;
+} ZrLibRegisteredCanonicalTypeRole;
 
 typedef struct ZrLibRegisteredModuleInfo {
     const ZrLibModuleDescriptor *descriptor;
@@ -54,6 +63,25 @@ ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_RegisterModule(SZrGlobalState *g
                                                                const ZrLibModuleDescriptor *descriptor);
 ZR_LIBRARY_API const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModule(SZrGlobalState *global,
                                                                                 const TZrChar *moduleName);
+ZR_LIBRARY_API const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModuleByProviderRole(
+        SZrGlobalState *global,
+        EZrProviderContractRole providerRole);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
+        SZrGlobalState *global,
+        EZrCanonicalTypeRole role,
+        ZrLibRegisteredCanonicalTypeRole *outRole);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByName(
+        SZrGlobalState *global,
+        const TZrChar *canonicalName,
+        ZrLibRegisteredCanonicalTypeRole *outRole);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByProjection(
+        SZrGlobalState *global,
+        EZrProviderContractRole providerRole,
+        EZrCanonicalTypeProjectionKind projectionKind,
+        ZrLibRegisteredCanonicalTypeRole *outRole);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
+        SZrGlobalState *global,
+        const ZrLibModuleDescriptor *descriptor);
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
                                                               const TZrChar *moduleName,
                                                               ZrLibRegisteredModuleInfo *outInfo);

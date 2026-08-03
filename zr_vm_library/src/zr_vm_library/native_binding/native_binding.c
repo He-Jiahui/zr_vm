@@ -1,5 +1,31 @@
 #include "native_binding/native_binding_internal.h"
 
+const TZrChar *native_registry_resolve_provider_module_name(
+        TZrUInt32 providerRole,
+        TZrPtr userData) {
+    ZrLibrary_NativeRegistryState *registry =
+            (ZrLibrary_NativeRegistryState *)userData;
+
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid ||
+        providerRole == (TZrUInt32)ZR_PROVIDER_CONTRACT_ROLE_NONE) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0u; index < registry->moduleRecords.length; index++) {
+        const ZrLibRegisteredModuleRecord *record =
+                (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(
+                        &registry->moduleRecords, index);
+        if (record != ZR_NULL && record->descriptor != ZR_NULL &&
+            (TZrUInt32)record->descriptor->providerContractRole == providerRole) {
+            return record->descriptor->moduleName;
+        }
+    }
+    return registry->hostProviderModuleNameResolver != ZR_NULL
+                   ? registry->hostProviderModuleNameResolver(
+                             providerRole,
+                             registry->hostProviderModuleNameResolverUserData)
+                   : ZR_NULL;
+}
+
 static void native_registry_observe_owner_strong_ref(SZrState *state,
                                                      SZrRawObject *object,
                                                      TZrInt32 delta,
@@ -10,39 +36,37 @@ static void native_registry_observe_owner_strong_ref(SZrState *state,
     const TZrChar *moduleName;
     ZrLibRegisteredModuleRecord *record;
 
-    if (state == ZR_NULL || object == ZR_NULL || registry == ZR_NULL || delta == 0 ||
-        object->type != ZR_RAW_OBJECT_TYPE_OBJECT) {
-        return;
+    if (state != ZR_NULL && object != ZR_NULL && registry != ZR_NULL && delta != 0 &&
+        object->type == ZR_RAW_OBJECT_TYPE_OBJECT) {
+        objectValue = ZR_CAST_OBJECT(state, object);
+        if (objectValue != ZR_NULL &&
+            objectValue->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+            module = (SZrObjectModule *)objectValue;
+            moduleName = module->moduleName != ZR_NULL
+                                 ? ZrCore_String_GetNativeString(module->moduleName)
+                                 : ZR_NULL;
+            record = moduleName != ZR_NULL
+                             ? (ZrLibRegisteredModuleRecord *)native_registry_find_record(
+                                       registry, moduleName)
+                             : ZR_NULL;
+            if (record != ZR_NULL) {
+                if (delta > 0) {
+                    record->ownerRefCount += (TZrUInt32)delta;
+                } else {
+                    TZrUInt32 decrement = (TZrUInt32)(-delta);
+                    record->ownerRefCount = decrement >= record->ownerRefCount
+                                                    ? 0u
+                                                    : record->ownerRefCount - decrement;
+                }
+            }
+        }
     }
-
-    objectValue = ZR_CAST_OBJECT(state, object);
-    if (objectValue == ZR_NULL || objectValue->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
-        return;
-    }
-
-    module = (SZrObjectModule *)objectValue;
-    if (module->moduleName == ZR_NULL) {
-        return;
-    }
-
-    moduleName = ZrCore_String_GetNativeString(module->moduleName);
-    if (moduleName == ZR_NULL) {
-        return;
-    }
-
-    record = (ZrLibRegisteredModuleRecord *)native_registry_find_record(registry, moduleName);
-    if (record == ZR_NULL) {
-        return;
-    }
-
-    if (delta > 0) {
-        record->ownerRefCount += (TZrUInt32)delta;
-        return;
-    }
-
-    {
-        TZrUInt32 decrement = (TZrUInt32)(-delta);
-        record->ownerRefCount = decrement >= record->ownerRefCount ? 0u : record->ownerRefCount - decrement;
+    if (registry != ZR_NULL && registry->hostOwnershipStrongRefObserver != ZR_NULL) {
+        registry->hostOwnershipStrongRefObserver(
+                state,
+                object,
+                delta,
+                registry->hostOwnershipStrongRefObserverUserData);
     }
 }
 
@@ -90,11 +114,28 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     }
     native_registry_clear_error(registry);
 
+    registry->hostNativeModuleLoader = global->nativeModuleLoader;
+    registry->hostNativeModuleLoaderUserData = global->nativeModuleLoaderUserData;
+    registry->hostProviderModuleNameResolver = global->providerModuleNameResolver;
+    registry->hostProviderModuleNameResolverUserData =
+            global->providerModuleNameResolverUserData;
+    registry->hostOwnershipStrongRefObserver = global->ownershipStrongRefObserver;
+    registry->hostOwnershipStrongRefObserverUserData =
+            global->ownershipStrongRefObserverUserData;
+
+    global->nativeRegistryState = registry;
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);
+    ZrCore_GlobalState_SetProviderModuleNameResolver(
+            global, native_registry_resolve_provider_module_name, registry);
     ZrCore_GlobalState_SetOwnershipStrongRefObserver(global,
                                                      native_registry_observe_owner_strong_ref,
                                                      registry);
     if (!ZrLibrary_NativeRegistry_RegisterModule(global, ZrLibrary_BuiltinModule_GetDescriptor())) {
+        ZrLibrary_NativeRegistry_Free(global);
+        return ZR_FALSE;
+    }
+    if (!ZrLibrary_NativeRegistry_RegisterModule(
+                global, ZrLibrary_ReflectionContract_GetDescriptor())) {
         ZrLibrary_NativeRegistry_Free(global);
         return ZR_FALSE;
     }
@@ -115,7 +156,14 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
         return;
     }
 
-    ZrCore_GlobalState_SetOwnershipStrongRefObserver(global, ZR_NULL, ZR_NULL);
+    if (global->ownershipStrongRefObserver ==
+                native_registry_observe_owner_strong_ref &&
+        global->ownershipStrongRefObserverUserData == registry) {
+        ZrCore_GlobalState_SetOwnershipStrongRefObserver(
+                global,
+                registry->hostOwnershipStrongRefObserver,
+                registry->hostOwnershipStrongRefObserverUserData);
+    }
 
     state = global->mainThreadState;
     if (registry->pluginHandles.isValid) {
@@ -171,12 +219,27 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
     ZrCore_Array_Free(state, &registry->bindingEntries);
     ZrCore_Array_Free(state, &registry->moduleRecords);
 
+    if (global->nativeModuleLoader == native_registry_loader &&
+        global->nativeModuleLoaderUserData == registry) {
+        ZrCore_GlobalState_SetNativeModuleLoader(
+                global,
+                registry->hostNativeModuleLoader,
+                registry->hostNativeModuleLoaderUserData);
+    }
+    if (global->providerModuleNameResolver ==
+                native_registry_resolve_provider_module_name &&
+        global->providerModuleNameResolverUserData == registry) {
+        ZrCore_GlobalState_SetProviderModuleNameResolver(
+                global,
+                registry->hostProviderModuleNameResolver,
+                registry->hostProviderModuleNameResolverUserData);
+    }
+    global->nativeRegistryState = ZR_NULL;
     global->allocator(global->userAllocationArguments,
                       registry,
                       sizeof(ZrLibrary_NativeRegistryState),
                       0,
                       ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-    ZrCore_GlobalState_SetNativeModuleLoader(global, ZR_NULL, ZR_NULL);
 }
 
 TZrBool ZrLibrary_NativeRegistry_RegisterModule(SZrGlobalState *global, const ZrLibModuleDescriptor *descriptor) {
@@ -202,6 +265,162 @@ const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModule(SZrGlobalState 
 
     record = native_registry_find_record(registry, moduleName);
     return record != ZR_NULL ? record->descriptor : ZR_NULL;
+}
+
+const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModuleByProviderRole(
+        SZrGlobalState *global,
+        EZrProviderContractRole providerRole) {
+    ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
+
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid ||
+        providerRole == ZR_PROVIDER_CONTRACT_ROLE_NONE) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0u; index < registry->moduleRecords.length; index++) {
+        const ZrLibRegisteredModuleRecord *record =
+                (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(
+                        &registry->moduleRecords, index);
+        if (record != ZR_NULL && record->descriptor != ZR_NULL &&
+            record->descriptor->providerContractRole == providerRole) {
+            return record->descriptor;
+        }
+    }
+    return ZR_NULL;
+}
+
+TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
+        SZrGlobalState *global,
+        EZrCanonicalTypeRole role,
+        ZrLibRegisteredCanonicalTypeRole *outRole) {
+    ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
+
+    if (outRole == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(outRole, 0, sizeof(*outRole));
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid ||
+        role == ZR_CANONICAL_TYPE_ROLE_NONE) {
+        return ZR_FALSE;
+    }
+    for (TZrSize moduleIndex = 0u;
+         moduleIndex < registry->moduleRecords.length;
+         moduleIndex++) {
+        const ZrLibRegisteredModuleRecord *record =
+                (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(
+                        &registry->moduleRecords, moduleIndex);
+        const ZrLibModuleDescriptor *provider =
+                record != ZR_NULL ? record->descriptor : ZR_NULL;
+
+        if (provider == ZR_NULL) {
+            continue;
+        }
+        for (TZrSize roleIndex = 0u;
+             roleIndex < provider->canonicalTypeRoleCount;
+             roleIndex++) {
+            if (provider->canonicalTypeRoles[roleIndex].role == role) {
+                outRole->provider = provider;
+                outRole->typeRole = &provider->canonicalTypeRoles[roleIndex];
+                return ZR_TRUE;
+            }
+        }
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByName(
+        SZrGlobalState *global,
+        const TZrChar *canonicalName,
+        ZrLibRegisteredCanonicalTypeRole *outRole) {
+    ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
+
+    if (outRole == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(outRole, 0, sizeof(*outRole));
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid ||
+        canonicalName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize moduleIndex = 0u;
+         moduleIndex < registry->moduleRecords.length;
+         moduleIndex++) {
+        const ZrLibRegisteredModuleRecord *record =
+                (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(
+                        &registry->moduleRecords, moduleIndex);
+        const ZrLibModuleDescriptor *provider =
+                record != ZR_NULL ? record->descriptor : ZR_NULL;
+
+        if (provider == ZR_NULL) {
+            continue;
+        }
+        for (TZrSize roleIndex = 0u;
+             roleIndex < provider->canonicalTypeRoleCount;
+             roleIndex++) {
+            if (provider->canonicalTypeRoles[roleIndex].canonicalName != ZR_NULL &&
+                strcmp(provider->canonicalTypeRoles[roleIndex].canonicalName,
+                       canonicalName) == 0) {
+                outRole->provider = provider;
+                outRole->typeRole = &provider->canonicalTypeRoles[roleIndex];
+                return ZR_TRUE;
+            }
+        }
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByProjection(
+        SZrGlobalState *global,
+        EZrProviderContractRole providerRole,
+        EZrCanonicalTypeProjectionKind projectionKind,
+        ZrLibRegisteredCanonicalTypeRole *outRole) {
+    const ZrLibModuleDescriptor *provider;
+    const ZrLibCanonicalTypeRoleDescriptor *match = ZR_NULL;
+
+    if (outRole == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memset(outRole, 0, sizeof(*outRole));
+    if (projectionKind == ZR_CANONICAL_TYPE_PROJECTION_ERASED ||
+        projectionKind > ZR_CANONICAL_TYPE_PROJECTION_ENUM) {
+        return ZR_FALSE;
+    }
+    provider = ZrLibrary_NativeRegistry_FindModuleByProviderRole(
+            global, providerRole);
+    if (provider == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0u; index < provider->canonicalTypeRoleCount; index++) {
+        const ZrLibCanonicalTypeRoleDescriptor *candidate =
+                &provider->canonicalTypeRoles[index];
+
+        if (candidate->projectionKind != projectionKind) {
+            continue;
+        }
+        if (match != ZR_NULL) {
+            return ZR_FALSE;
+        }
+        match = candidate;
+    }
+    if (match == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    outRole->provider = provider;
+    outRole->typeRole = match;
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
+        SZrGlobalState *global,
+        const ZrLibModuleDescriptor *descriptor) {
+    ZrLibrary_NativeRegistryState *registry;
+
+    if (!ZrLibrary_NativeRegistry_Attach(global)) {
+        return ZR_FALSE;
+    }
+    registry = native_registry_get(global);
+    return registry != ZR_NULL &&
+           native_registry_validate_official_descriptor(registry, descriptor) &&
+           native_registry_validate_descriptor_compatibility(registry, descriptor);
 }
 
 TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,

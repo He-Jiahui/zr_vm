@@ -10,6 +10,7 @@
 
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_common/zr_contract_conf.h"
 
 /**
  * 全局API字符串缓存配置参数
@@ -49,6 +50,9 @@ typedef struct SZrObjectModule *(*FZrNativeModuleLoader)(struct SZrState *state,
 typedef struct SZrObjectModule *(*FZrAotModuleLoader)(struct SZrState *state,
                                                       struct SZrString *moduleName,
                                                       TZrPtr userData);
+
+typedef const TZrChar *(*FZrProviderModuleNameResolver)(TZrUInt32 providerRole,
+                                                        TZrPtr userData);
 
 typedef void (*FZrGlobalOpaqueStateCleanup)(struct SZrGlobalState *global, TZrPtr state);
 typedef void (*FZrOwnershipStrongRefObserver)(struct SZrState *state,
@@ -105,6 +109,9 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     TZrPtr aotModuleLoaderUserData;
     FZrNativeModuleLoader nativeModuleLoader;
     TZrPtr nativeModuleLoaderUserData;
+    TZrPtr nativeRegistryState;
+    FZrProviderModuleNameResolver providerModuleNameResolver;
+    TZrPtr providerModuleNameResolverUserData;
     TZrChar moduleLoadDiagnostic[ZR_RUNTIME_ERROR_BUFFER_LENGTH];
     FZrOwnershipStrongRefObserver ownershipStrongRefObserver;
     TZrPtr ownershipStrongRefObserverUserData;
@@ -153,8 +160,15 @@ ZR_CORE_API void ZrCore_GlobalState_SetCompileSource(SZrGlobalState *global,
     struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName));
 
 ZR_CORE_API void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global,
-                                                          FZrNativeModuleLoader loader,
-                                                          TZrPtr userData);
+                                                           FZrNativeModuleLoader loader,
+                                                           TZrPtr userData);
+ZR_CORE_API void ZrCore_GlobalState_SetProviderModuleNameResolver(
+        SZrGlobalState *global,
+        FZrProviderModuleNameResolver resolver,
+        TZrPtr userData);
+ZR_CORE_API const TZrChar *ZrCore_GlobalState_ResolveProviderModuleName(
+        const SZrGlobalState *global,
+        TZrUInt32 providerRole);
 
 ZR_CORE_API void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
                                                        FZrAotModuleLoader loader,

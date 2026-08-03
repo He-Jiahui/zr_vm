@@ -349,6 +349,27 @@ static void test_precise_descriptor_registers_complete_reflection_hierarchy(void
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void test_workspace_type_name_cannot_spoof_reflection_capability(void) {
+    const TZrChar *source =
+            "module zr.reflection;\n"
+            "class Type { }\n"
+            "fn inspect(value: Type): object {\n"
+            "    let descriptor = typeof(value);\n"
+            "    return value.getFields();\n"
+            "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "zr/reflection.zr");
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    if (function != ZR_NULL) {
+        ZrCore_Function_Free(g_state, function);
+    }
+    TEST_ASSERT_NULL(function);
+}
+
 static void test_typeof_null_is_rejected_until_narrowed_non_null(void) {
     SZrAstNode *script = parse_source("typeof(null);\n");
     SZrCompilerState *compiler = create_compiler_state();
@@ -1118,6 +1139,7 @@ int main(void) {
     RUN_TEST(test_typeof_parses_operand_as_expression);
     RUN_TEST(test_type_queries_infer_generic_identity_and_precise_descriptor_types);
     RUN_TEST(test_precise_descriptor_registers_complete_reflection_hierarchy);
+    RUN_TEST(test_workspace_type_name_cannot_spoof_reflection_capability);
     RUN_TEST(test_typeof_null_is_rejected_until_narrowed_non_null);
     RUN_TEST(test_declaration_facts_drive_precise_reflection_categories);
     RUN_TEST(test_typeid_is_available_to_compile_time_evaluation);

@@ -1,158 +1,88 @@
 #include "type_inference_reflection_surface.h"
 
-#include <string.h>
+const ZrLibCanonicalTypeRoleDescriptor *
+ZrParser_ReflectionCompileSurface_Find(
+        SZrGlobalState *global,
+        const TZrChar *canonicalName) {
+    ZrLibRegisteredCanonicalTypeRole registeredRole;
 
-static const SZrParserReflectionCompileTypeDescriptor
-        kReflectionCompileTypeDescriptors[] = {
-                {"zr.builtin.TypeInfo",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_NONE,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_METADATA_MEMBERS,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Class",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_CLASS,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Struct",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_STRUCT,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Function",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_FUNCTION,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_CALLABLE_MEMBERS,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Field",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_FIELD,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Method",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_METHOD,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_CALLABLE_MEMBERS,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Property",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_PROPERTY,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Parameter",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_PARAMETER,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"Object",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_OBJECT,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"zr.reflection.Type",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_NONE,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_RUNTIME_TYPE_MEMBERS,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"zr.reflection.TypeId",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_ID,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_NONE,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"zr.reflection.TypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_REPRESENTED_TYPE_ID,
-                 ZR_REFLECTION_TYPE_CATEGORY_ERASED},
-                {"zr.reflection.declaration.ClassTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_CLASS_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_CLASS},
-                {"zr.reflection.declaration.ConcreteClassTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_CONCRETE_CLASS_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_CLASS_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_CONSTRUCTIBLE,
-                 ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS},
-                {"zr.reflection.declaration.InstanceClassTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_INSTANCE_CLASS_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_CONCRETE_CLASS_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS},
-                {"zr.reflection.declaration.StructTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_STRUCT_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_CONSTRUCTIBLE,
-                 ZR_REFLECTION_TYPE_CATEGORY_STRUCT},
-                {"zr.reflection.declaration.InterfaceTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_INTERFACE_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_INTERFACE},
-                {"zr.reflection.declaration.ResourceClassTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_RESOURCE_CLASS_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS},
-                {"zr.reflection.declaration.RefStructTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_REF_STRUCT_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT},
-                {"zr.reflection.declaration.EnumTypeOf",
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_ENUM_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-                 ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE,
-                 ZR_REFLECTION_TYPE_CATEGORY_ENUM},
-        };
-
-const SZrParserReflectionCompileTypeDescriptor *
-ZrParser_ReflectionCompileSurface_Find(const TZrChar *canonicalName) {
-    if (canonicalName == ZR_NULL) {
-        return ZR_NULL;
-    }
-    for (TZrSize index = 0U;
-         index < ZR_ARRAY_COUNT(kReflectionCompileTypeDescriptors);
-         index++) {
-        const SZrParserReflectionCompileTypeDescriptor *descriptor =
-                &kReflectionCompileTypeDescriptors[index];
-
-        if (strcmp(descriptor->canonicalName, canonicalName) == 0) {
-            return descriptor;
-        }
-    }
-    return ZR_NULL;
+    return ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByName(
+                   global, canonicalName, &registeredRole)
+                   ? registeredRole.typeRole
+                   : ZR_NULL;
 }
 
-const SZrParserReflectionCompileTypeDescriptor *
-ZrParser_ReflectionCompileSurface_FindByCapability(
-        EZrParserReflectionCompileCapability capability) {
-    if (capability == ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_NONE) {
-        return ZR_NULL;
+const ZrLibCanonicalTypeRoleDescriptor *
+ZrParser_ReflectionCompileSurface_FindByRole(
+        SZrGlobalState *global,
+        EZrCanonicalTypeRole role) {
+    ZrLibRegisteredCanonicalTypeRole registeredRole;
+
+    return ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
+                   global, role, &registeredRole)
+                   ? registeredRole.typeRole
+                   : ZR_NULL;
+}
+
+static TZrBool reflection_compile_surface_projection_for_category(
+        EZrReflectionTypeCategory category,
+        EZrCanonicalTypeProjectionKind *outProjection) {
+    if (outProjection == ZR_NULL) {
+        return ZR_FALSE;
     }
-    for (TZrSize index = 0U;
-         index < ZR_ARRAY_COUNT(kReflectionCompileTypeDescriptors);
-         index++) {
-        if (kReflectionCompileTypeDescriptors[index].capability == capability) {
-            return &kReflectionCompileTypeDescriptors[index];
-        }
+    switch (category) {
+        case ZR_REFLECTION_TYPE_CATEGORY_CLASS:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_CLASS;
+            return ZR_TRUE;
+        case ZR_REFLECTION_TYPE_CATEGORY_CONCRETE_CLASS:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_CONCRETE_CLASS;
+            return ZR_TRUE;
+        case ZR_REFLECTION_TYPE_CATEGORY_INSTANCE_CLASS:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_INSTANCE_CLASS;
+            return ZR_TRUE;
+        case ZR_REFLECTION_TYPE_CATEGORY_STRUCT:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_STRUCT;
+            return ZR_TRUE;
+        case ZR_REFLECTION_TYPE_CATEGORY_INTERFACE:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_INTERFACE;
+            return ZR_TRUE;
+        case ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_RESOURCE_CLASS;
+            return ZR_TRUE;
+        case ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_REF_STRUCT;
+            return ZR_TRUE;
+        case ZR_REFLECTION_TYPE_CATEGORY_ENUM:
+            *outProjection = ZR_CANONICAL_TYPE_PROJECTION_ENUM;
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
     }
-    return ZR_NULL;
 }
 
 const TZrChar *ZrParser_ReflectionCompileSurface_DescriptorName(
+        SZrGlobalState *global,
         EZrReflectionTypeCategory category) {
-    for (TZrSize index = 0U;
-         index < ZR_ARRAY_COUNT(kReflectionCompileTypeDescriptors);
-         index++) {
-        const SZrParserReflectionCompileTypeDescriptor *descriptor =
-                &kReflectionCompileTypeDescriptors[index];
+    ZrLibRegisteredCanonicalTypeRole registeredRole;
+    const ZrLibCanonicalTypeRoleDescriptor *typeRole;
+    EZrCanonicalTypeProjectionKind projectionKind;
 
-        if (descriptor->descriptorCategory == category &&
-            descriptor->capability >=
-                    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_CLASS_TYPE_OF) {
-            return descriptor->canonicalName;
-        }
+    if (category == ZR_REFLECTION_TYPE_CATEGORY_ERASED) {
+        typeRole = ZrParser_ReflectionCompileSurface_FindByRole(
+                global, ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE);
+        return typeRole != ZR_NULL ? typeRole->canonicalName : ZR_NULL;
     }
-    return "zr.reflection.Type";
+    if (!reflection_compile_surface_projection_for_category(
+                category, &projectionKind)) {
+        return ZR_NULL;
+    }
+    if (!ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByProjection(
+                global,
+                ZR_PROVIDER_CONTRACT_ROLE_REFLECTION,
+                projectionKind,
+                &registeredRole)) {
+        return ZR_NULL;
+    }
+
+    return registeredRole.typeRole->canonicalName;
 }

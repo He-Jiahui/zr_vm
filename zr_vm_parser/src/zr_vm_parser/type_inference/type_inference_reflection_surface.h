@@ -1,57 +1,22 @@
 #ifndef ZR_VM_PARSER_TYPE_INFERENCE_REFLECTION_SURFACE_H
 #define ZR_VM_PARSER_TYPE_INFERENCE_REFLECTION_SURFACE_H
 
+#include "zr_vm_core/global.h"
 #include "zr_vm_core/reflection.h"
+#include "zr_vm_library/native_registry.h"
 
-typedef enum EZrParserReflectionCompileCapability {
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_NONE = 0,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_ROOT,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_CLASS,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_STRUCT,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_FUNCTION,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_FIELD,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_METHOD,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_PROPERTY,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_PARAMETER,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_METADATA_OBJECT,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_ID,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_CLASS_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_CONCRETE_CLASS_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_INSTANCE_CLASS_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_STRUCT_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_INTERFACE_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_RESOURCE_CLASS_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_REF_STRUCT_TYPE_OF,
-    ZR_PARSER_REFLECTION_COMPILE_CAPABILITY_ENUM_TYPE_OF,
-} EZrParserReflectionCompileCapability;
+const ZrLibCanonicalTypeRoleDescriptor *
+ZrParser_ReflectionCompileSurface_Find(
+        SZrGlobalState *global,
+        const TZrChar *canonicalName);
 
-typedef enum EZrParserReflectionCompileSurfaceFlags {
-    ZR_PARSER_REFLECTION_COMPILE_SURFACE_NONE = 0,
-    ZR_PARSER_REFLECTION_COMPILE_SURFACE_METADATA_MEMBERS = 1u << 0u,
-    ZR_PARSER_REFLECTION_COMPILE_SURFACE_CALLABLE_MEMBERS = 1u << 1u,
-    ZR_PARSER_REFLECTION_COMPILE_SURFACE_RUNTIME_TYPE_MEMBERS = 1u << 2u,
-    ZR_PARSER_REFLECTION_COMPILE_SURFACE_REPRESENTED_TYPE_ID = 1u << 3u,
-    ZR_PARSER_REFLECTION_COMPILE_SURFACE_CONSTRUCTIBLE = 1u << 4u,
-} EZrParserReflectionCompileSurfaceFlags;
-
-typedef struct SZrParserReflectionCompileTypeDescriptor {
-    const TZrChar *canonicalName;
-    EZrParserReflectionCompileCapability capability;
-    EZrParserReflectionCompileCapability parentCapability;
-    TZrUInt32 surfaceFlags;
-    EZrReflectionTypeCategory descriptorCategory;
-} SZrParserReflectionCompileTypeDescriptor;
-
-const SZrParserReflectionCompileTypeDescriptor *
-ZrParser_ReflectionCompileSurface_Find(const TZrChar *canonicalName);
-
-const SZrParserReflectionCompileTypeDescriptor *
-ZrParser_ReflectionCompileSurface_FindByCapability(
-        EZrParserReflectionCompileCapability capability);
+const ZrLibCanonicalTypeRoleDescriptor *
+ZrParser_ReflectionCompileSurface_FindByRole(
+        SZrGlobalState *global,
+        EZrCanonicalTypeRole role);
 
 const TZrChar *ZrParser_ReflectionCompileSurface_DescriptorName(
+        SZrGlobalState *global,
         EZrReflectionTypeCategory category);
 
 #endif

@@ -3,6 +3,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/global.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
@@ -61,10 +62,18 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
     SZrString *requireExportName;
     SZrString *createExportName;
     SZrObjectModule *runtimeModule;
+    const TZrChar *providerModuleName;
     SZrObjectModule *result = ZR_NULL;
     TZrBool runtimeModulePinned = ZR_FALSE;
 
-    if (state == ZR_NULL || runtime == ZR_NULL || runtime->module == ZR_NULL) {
+    if (state == ZR_NULL || state->global == ZR_NULL || runtime == ZR_NULL ||
+        runtime->module == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    providerModuleName = ZrCore_GlobalState_ResolveProviderModuleName(
+            state->global, ZR_PROVIDER_CONTRACT_ROLE_REFLECTION);
+    if (providerModuleName == ZR_NULL || providerModuleName[0] == '\0') {
         return ZR_NULL;
     }
 
@@ -92,7 +101,8 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
             state, moduleRoot, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
     state->stackTop.valuePointer = rootBase + 1;
 
-    moduleName = ZrCore_String_CreateFromNative(state, ZR_REFLECTION_MODULE_NAME);
+    moduleName = ZrCore_String_CreateFromNative(
+            state, (TZrNativeString)providerModuleName);
     if (moduleName == ZR_NULL) {
         goto cleanup;
     }

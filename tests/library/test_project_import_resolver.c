@@ -438,6 +438,39 @@ static void test_project_import_resolver_derives_current_module_key_from_source_
     destroy_test_project(state, project);
 }
 
+static void test_project_import_resolver_rejects_reserved_official_source_modules(void) {
+    SZrState *state = ZR_NULL;
+    SZrLibrary_Project *project = create_test_project(&state);
+    TZrChar resolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar error[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    memset(resolved, 0, sizeof(resolved));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_DeriveCurrentModuleKey(
+            project,
+            "E:/repo/resolver-fixture/src/zr/reflection.zr",
+            "zr.reflection",
+            resolved,
+            sizeof(resolved),
+            error,
+            sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "reserved official module root"));
+
+    memset(resolved, 0, sizeof(resolved));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(ZrLibrary_Project_DeriveCurrentModuleKey(
+            ZR_NULL,
+            "zr/system/custom.zr",
+            ZR_NULL,
+            resolved,
+            sizeof(resolved),
+            error,
+            sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "reserved official module root"));
+
+    destroy_test_project(state, project);
+}
+
 static void test_project_import_resolver_resolves_dependency_imports_and_scopes(void) {
     SZrState *state = ZR_NULL;
     SZrLibrary_Project *project = create_dependency_test_project(&state, ZR_NULL, 0);
@@ -1018,6 +1051,7 @@ int main(void) {
     RUN_TEST(test_project_import_resolver_accepts_relative_and_alias_specifiers);
     RUN_TEST(test_project_import_resolver_rejects_invalid_relative_and_alias_forms);
     RUN_TEST(test_project_import_resolver_derives_current_module_key_from_source_root_and_detects_mismatch);
+    RUN_TEST(test_project_import_resolver_rejects_reserved_official_source_modules);
     RUN_TEST(test_project_import_resolver_resolves_dependency_imports_and_scopes);
     RUN_TEST(test_project_import_resolver_normalizes_assembly_references);
     RUN_TEST(test_project_manifest_parses_assembly_output_and_resources);

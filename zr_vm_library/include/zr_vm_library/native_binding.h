@@ -260,6 +260,14 @@ typedef struct ZrLibAttributeRoleDescriptor {
     const TZrChar *typeName;
 } ZrLibAttributeRoleDescriptor;
 
+typedef struct ZrLibCanonicalTypeRoleDescriptor {
+    const TZrChar *canonicalName;
+    EZrCanonicalTypeRole role;
+    EZrCanonicalTypeRole parentRole;
+    TZrUInt32 surfaceFlags;
+    EZrCanonicalTypeProjectionKind projectionKind;
+} ZrLibCanonicalTypeRoleDescriptor;
+
 typedef TZrBool (*FZrLibModuleMaterializeCallback)(SZrState *state,
                                                    struct SZrObjectModule *module,
                                                    const struct ZrLibModuleDescriptor *descriptor);
@@ -459,6 +467,10 @@ typedef struct ZrLibModuleDescriptor {
     const ZrLibAttributeRoleDescriptor *attributeRoles;
     TZrSize attributeRoleCount;
     const TZrChar *publicContractHash;
+    EZrProviderContractRole providerContractRole;
+    const ZrLibCanonicalTypeRoleDescriptor *canonicalTypeRoles;
+    TZrSize canonicalTypeRoleCount;
+    TZrBool isContractOnly;
 } ZrLibModuleDescriptor;
 
 ZR_LIBRARY_API TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context);

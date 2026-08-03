@@ -3777,10 +3777,10 @@ static void test_type_inference_legacy_builtin_aliases_fail_with_canonical_diagn
             {"var item: Equatable<int> = null;\n", "Equatable", "zr.builtin.IEquatable"},
             {"var item: Hashable = null;\n", "Hashable", "zr.builtin.IHashable"},
             {"var item: Comparable<int> = null;\n", "Comparable", "zr.builtin.IComparable"},
-            {"var meta: zr.system.reflect.Type = null;\n", "zr.system.reflect.Type", "zr.builtin.TypeInfo"},
+            {"var meta: zr.system.reflect.Type = null;\n", "zr.system.reflect", ZR_NULL},
             {"var meta: zr.system.reflect.CallableType = null;\n",
-             "zr.system.reflect.CallableType",
-             "zr.builtin.TypeInfo"}
+             "zr.system.reflect",
+             ZR_NULL}
     };
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Legacy Builtin Aliases Fail With Canonical Diagnostics";
@@ -3807,7 +3807,9 @@ static void test_type_inference_legacy_builtin_aliases_fail_with_canonical_diagn
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
         TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, cases[index].legacyName));
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, cases[index].canonicalName));
+        if (cases[index].canonicalName != ZR_NULL) {
+            TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, cases[index].canonicalName));
+        }
 
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);

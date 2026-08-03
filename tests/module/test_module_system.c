@@ -8474,6 +8474,7 @@ static void test_native_registry_rejects_legacy_plugin_abi(void) {
     {
         SZrState *state = create_test_state();
         const TZrChar *errorMessage;
+        TZrChar expectedAbiDiagnostic[32];
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_RegisterModule(
@@ -8484,7 +8485,11 @@ static void test_native_registry_rejects_legacy_plugin_abi(void) {
         errorMessage = ZrLibrary_NativeRegistry_GetLastErrorMessage(state->global);
         TEST_ASSERT_NOT_NULL(errorMessage);
         TEST_ASSERT_NOT_NULL(strstr(errorMessage, "probe.legacy_plugin_abi"));
-        TEST_ASSERT_NOT_NULL(strstr(errorMessage, "uses ABI 3"));
+        snprintf(expectedAbiDiagnostic,
+                 sizeof(expectedAbiDiagnostic),
+                 "uses ABI %u",
+                 (unsigned)(ZR_VM_NATIVE_PLUGIN_ABI_VERSION - 1u));
+        TEST_ASSERT_NOT_NULL(strstr(errorMessage, expectedAbiDiagnostic));
         TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModule(
                 state->global, "probe.legacy_plugin_abi"));
 

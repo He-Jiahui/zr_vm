@@ -12,34 +12,43 @@ typedef struct SZrExpectedOfficialModule {
     const TZrChar *moduleName;
     EZrLibOfficialModuleTier tier;
     EZrLibrary_ProviderPhase phase;
+    EZrProviderContractRole providerContractRole;
 } SZrExpectedOfficialModule;
 
+typedef struct SZrHostNativeLoaderProbe {
+    TZrSize loaderCallCount;
+    TZrSize resolverCallCount;
+    TZrSize observerCallCount;
+} SZrHostNativeLoaderProbe;
+
 static const SZrExpectedOfficialModule k_expected_modules[] = {
-        {"zr.builtin", ZR_LIB_OFFICIAL_MODULE_TIER_N0, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.container", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.iteration", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.math", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.task", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.debug", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.ffi", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.network", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.network.tcp", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.network.udp", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.pooling", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.reflection", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.assembly", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.console", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.env", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.exception", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.fs", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.gc", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.process", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.system.vm", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.thread", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME},
-        {"zr.compile", ZR_LIB_OFFICIAL_MODULE_TIER_N3, ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL},
-        {"zr.compile.declaration", ZR_LIB_OFFICIAL_MODULE_TIER_N3, ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL},
-        {"zr.testing", ZR_LIB_OFFICIAL_MODULE_TIER_N3, ZR_LIBRARY_PROVIDER_PHASE_TEST},
+        {"zr.builtin", ZR_LIB_OFFICIAL_MODULE_TIER_N0, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+         ZR_PROVIDER_CONTRACT_ROLE_BUILTIN_TYPE_SURFACE},
+        {"zr.container", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.iteration", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.math", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.task", ZR_LIB_OFFICIAL_MODULE_TIER_N1, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.debug", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.ffi", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.network", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.network.tcp", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.network.udp", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.pooling", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.reflection", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+         ZR_PROVIDER_CONTRACT_ROLE_REFLECTION},
+        {"zr.system", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.assembly", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.console", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.env", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.exception", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.fs", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.gc", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.process", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.system.vm", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.thread", ZR_LIB_OFFICIAL_MODULE_TIER_N2, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.compile", ZR_LIB_OFFICIAL_MODULE_TIER_N3, ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.compile.declaration", ZR_LIB_OFFICIAL_MODULE_TIER_N3, ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL, ZR_PROVIDER_CONTRACT_ROLE_NONE},
+        {"zr.testing", ZR_LIB_OFFICIAL_MODULE_TIER_N3, ZR_LIBRARY_PROVIDER_PHASE_TEST, ZR_PROVIDER_CONTRACT_ROLE_NONE},
 };
 
 void setUp(void) {}
@@ -59,6 +68,44 @@ static ZrLibModuleDescriptor make_descriptor(const TZrChar *moduleName,
     return descriptor;
 }
 
+static SZrObjectModule *host_native_loader_probe(SZrState *state,
+                                                 SZrString *moduleName,
+                                                 TZrPtr userData) {
+    SZrHostNativeLoaderProbe *probe = (SZrHostNativeLoaderProbe *)userData;
+
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(moduleName);
+    if (probe != ZR_NULL) {
+        probe->loaderCallCount++;
+    }
+    return ZR_NULL;
+}
+
+static const TZrChar *host_provider_resolver_probe(
+        TZrUInt32 providerRole,
+        TZrPtr userData) {
+    SZrHostNativeLoaderProbe *probe = (SZrHostNativeLoaderProbe *)userData;
+
+    if (probe != ZR_NULL) {
+        probe->resolverCallCount++;
+    }
+    return providerRole == 99u ? "host.provider" : ZR_NULL;
+}
+
+static void host_owner_observer_probe(SZrState *state,
+                                      SZrRawObject *object,
+                                      TZrInt32 delta,
+                                      TZrPtr userData) {
+    SZrHostNativeLoaderProbe *probe = (SZrHostNativeLoaderProbe *)userData;
+
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(object);
+    ZR_UNUSED_PARAMETER(delta);
+    if (probe != ZR_NULL) {
+        probe->observerCallCount++;
+    }
+}
+
 static void test_official_inventory_is_frozen_unique_and_phase_typed(void) {
     TZrSize index;
     TZrSize otherIndex;
@@ -74,6 +121,8 @@ static void test_official_inventory_is_frozen_unique_and_phase_typed(void) {
         TEST_ASSERT_EQUAL_STRING(k_expected_modules[index].moduleName, entry->moduleName);
         TEST_ASSERT_EQUAL_INT(k_expected_modules[index].tier, entry->tier);
         TEST_ASSERT_EQUAL_INT(k_expected_modules[index].phase, entry->phase);
+        TEST_ASSERT_EQUAL_INT(k_expected_modules[index].providerContractRole,
+                              entry->providerContractRole);
         found = ZrLibrary_OfficialModuleInventory_Find(entry->moduleName);
         TEST_ASSERT_EQUAL_PTR(entry, found);
 
@@ -90,6 +139,207 @@ static void test_official_inventory_is_frozen_unique_and_phase_typed(void) {
     TEST_ASSERT_NULL(ZrLibrary_OfficialModuleInventory_Find("debug"));
     TEST_ASSERT_NULL(ZrLibrary_OfficialModuleInventory_Find("zr.unknown"));
     TEST_ASSERT_NULL(ZrLibrary_OfficialModuleInventory_Find(ZR_NULL));
+}
+
+static void test_registered_provider_contract_owns_reflection_type_roles(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const ZrLibModuleDescriptor *builtinProvider;
+    const ZrLibModuleDescriptor *reflectionProvider;
+    ZrLibRegisteredCanonicalTypeRole typeInfoRole;
+    ZrLibRegisteredCanonicalTypeRole typeRole;
+    ZrLibRegisteredCanonicalTypeRole typeIdRole;
+    ZrLibRegisteredCanonicalTypeRole structProjectionRole;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(state->global));
+    builtinProvider = ZrLibrary_NativeRegistry_FindModuleByProviderRole(
+            state->global, ZR_PROVIDER_CONTRACT_ROLE_BUILTIN_TYPE_SURFACE);
+    reflectionProvider = ZrLibrary_NativeRegistry_FindModuleByProviderRole(
+            state->global, ZR_PROVIDER_CONTRACT_ROLE_REFLECTION);
+    TEST_ASSERT_NOT_NULL(builtinProvider);
+    TEST_ASSERT_NOT_NULL(reflectionProvider);
+    TEST_ASSERT_EQUAL_STRING("zr.builtin", builtinProvider->moduleName);
+    TEST_ASSERT_EQUAL_STRING("zr.reflection", reflectionProvider->moduleName);
+
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
+            state->global, ZR_CANONICAL_TYPE_ROLE_BUILTIN_METADATA_ROOT, &typeInfoRole));
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
+            state->global, ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE, &typeRole));
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByName(
+            state->global, "zr.reflection.TypeId", &typeIdRole));
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByProjection(
+            state->global,
+            ZR_PROVIDER_CONTRACT_ROLE_REFLECTION,
+            ZR_CANONICAL_TYPE_PROJECTION_STRUCT,
+            &structProjectionRole));
+    TEST_ASSERT_EQUAL_PTR(builtinProvider, typeInfoRole.provider);
+    TEST_ASSERT_EQUAL_PTR(reflectionProvider, typeRole.provider);
+    TEST_ASSERT_EQUAL_PTR(reflectionProvider, typeIdRole.provider);
+    TEST_ASSERT_EQUAL_STRING("zr.builtin.TypeInfo", typeInfoRole.typeRole->canonicalName);
+    TEST_ASSERT_EQUAL_STRING("zr.reflection.Type", typeRole.typeRole->canonicalName);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE_ID,
+                          typeIdRole.typeRole->role);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_ROLE_REFLECTION_STRUCT_TYPE_OF,
+                          structProjectionRole.typeRole->role);
+    TEST_ASSERT_TRUE(reflectionProvider->isContractOnly);
+
+    ZrLibrary_NativeRegistry_Free(state->global);
+    TEST_ASSERT_NULL(ZrLibrary_NativeRegistry_FindModuleByProviderRole(
+            state->global, ZR_PROVIDER_CONTRACT_ROLE_REFLECTION));
+    TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
+            state->global, ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE, &typeRole));
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(state->global));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_registry_rejects_spoofed_reflection_provider_contract(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    ZrLibCanonicalTypeRoleDescriptor spoofedTypeRole = {
+            "zr.reflection.Type",
+            ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE,
+            ZR_CANONICAL_TYPE_ROLE_NONE,
+            ZR_CANONICAL_TYPE_SURFACE_RUNTIME_TYPE_MEMBERS,
+            ZR_CANONICAL_TYPE_PROJECTION_ERASED,
+    };
+    ZrLibModuleDescriptor spoofedProvider = make_descriptor(
+            "third.party.reflection", ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, "spoof-v1");
+    ZrLibModuleDescriptor missingOfficialRole = make_descriptor(
+            "zr.reflection", ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, "reflection-v1");
+
+    TEST_ASSERT_NOT_NULL(state);
+    spoofedProvider.providerContractRole = ZR_PROVIDER_CONTRACT_ROLE_REFLECTION;
+    spoofedProvider.canonicalTypeRoles = &spoofedTypeRole;
+    spoofedProvider.canonicalTypeRoleCount = 1u;
+    TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_RegisterModule(
+            state->global, &spoofedProvider));
+    TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_PROVIDER_CONTRACT_MISMATCH,
+                          ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+    TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_RegisterModule(
+            state->global, &missingOfficialRole));
+    TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_PROVIDER_CONTRACT_MISMATCH,
+                          ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_registry_rejects_malformed_projection_and_parent_graphs(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const ZrLibModuleDescriptor *reflectionProvider;
+    ZrLibModuleDescriptor malformedProvider;
+    ZrLibCanonicalTypeRoleDescriptor roles[11];
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(state->global));
+    reflectionProvider = ZrLibrary_NativeRegistry_FindModuleByProviderRole(
+            state->global, ZR_PROVIDER_CONTRACT_ROLE_REFLECTION);
+    TEST_ASSERT_NOT_NULL(reflectionProvider);
+    TEST_ASSERT_EQUAL_UINT64(ZR_ARRAY_COUNT(roles),
+                             reflectionProvider->canonicalTypeRoleCount);
+    malformedProvider = *reflectionProvider;
+    malformedProvider.canonicalTypeRoles = roles;
+
+    memcpy(roles,
+           reflectionProvider->canonicalTypeRoles,
+           sizeof(roles));
+    roles[0].parentRole = roles[0].role;
+    TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
+            state->global, &malformedProvider));
+    TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_INVALID_CANONICAL_TYPE_ROLE,
+                          ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+
+    memcpy(roles,
+           reflectionProvider->canonicalTypeRoles,
+           sizeof(roles));
+    roles[2].parentRole = roles[3].role;
+    roles[3].parentRole = roles[2].role;
+    TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
+            state->global, &malformedProvider));
+    TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_INVALID_CANONICAL_TYPE_ROLE,
+                          ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+
+    memcpy(roles,
+           reflectionProvider->canonicalTypeRoles,
+           sizeof(roles));
+    roles[10].projectionKind = ZR_CANONICAL_TYPE_PROJECTION_STRUCT;
+    TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
+            state->global, &malformedProvider));
+    TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_INVALID_CANONICAL_TYPE_ROLE,
+                          ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+
+    malformedProvider.canonicalTypeRoles = ZR_NULL;
+    TEST_ASSERT_FALSE(ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
+            state->global, &malformedProvider));
+    TEST_ASSERT_EQUAL_INT(ZR_LIB_NATIVE_REGISTRY_ERROR_INVALID_CANONICAL_TYPE_ROLE,
+                          ZrLibrary_NativeRegistry_GetLastErrorCode(state->global));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_reflection_provider_contract_is_not_a_loadable_empty_module(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrString *reflectionName;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(state->global));
+    reflectionName = ZrCore_String_CreateFromNative(state, "zr.reflection");
+    TEST_ASSERT_NOT_NULL(reflectionName);
+    TEST_ASSERT_NOT_NULL(state->global->nativeModuleLoader);
+    TEST_ASSERT_NULL(state->global->nativeModuleLoader(
+            state, reflectionName, state->global->nativeModuleLoaderUserData));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_registry_composes_and_restores_host_native_loader(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrHostNativeLoaderProbe probe = {0u};
+    SZrString *reflectionName;
+    SZrString *unknownModuleName;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ZrLibrary_NativeRegistry_Free(state->global);
+    ZrCore_GlobalState_SetNativeModuleLoader(
+            state->global, host_native_loader_probe, &probe);
+    ZrCore_GlobalState_SetProviderModuleNameResolver(
+            state->global, host_provider_resolver_probe, &probe);
+    ZrCore_GlobalState_SetOwnershipStrongRefObserver(
+            state->global, host_owner_observer_probe, &probe);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(state->global));
+    TEST_ASSERT_NOT_NULL(state->global->nativeRegistryState);
+    reflectionName = ZrCore_String_CreateFromNative(state, "zr.reflection");
+    unknownModuleName = ZrCore_String_CreateFromNative(
+            state, "host.custom.module");
+    TEST_ASSERT_NOT_NULL(reflectionName);
+    TEST_ASSERT_NOT_NULL(unknownModuleName);
+    TEST_ASSERT_NOT_NULL(state->global->nativeModuleLoader);
+    TEST_ASSERT_NULL(state->global->nativeModuleLoader(
+            state, reflectionName, state->global->nativeModuleLoaderUserData));
+    TEST_ASSERT_EQUAL_UINT64(0u, probe.loaderCallCount);
+    TEST_ASSERT_NULL(state->global->nativeModuleLoader(
+            state, unknownModuleName, state->global->nativeModuleLoaderUserData));
+    TEST_ASSERT_EQUAL_UINT64(1u, probe.loaderCallCount);
+    TEST_ASSERT_EQUAL_STRING(
+            "host.provider",
+            ZrCore_GlobalState_ResolveProviderModuleName(state->global, 99u));
+    TEST_ASSERT_EQUAL_UINT64(1u, probe.resolverCallCount);
+    state->global->ownershipStrongRefObserver(
+            state,
+            ZR_NULL,
+            1,
+            state->global->ownershipStrongRefObserverUserData);
+    TEST_ASSERT_EQUAL_UINT64(1u, probe.observerCallCount);
+
+    ZrLibrary_NativeRegistry_Free(state->global);
+    TEST_ASSERT_NULL(state->global->nativeRegistryState);
+    TEST_ASSERT_EQUAL_PTR(host_native_loader_probe,
+                          state->global->nativeModuleLoader);
+    TEST_ASSERT_EQUAL_PTR(&probe, state->global->nativeModuleLoaderUserData);
+    TEST_ASSERT_EQUAL_PTR(host_provider_resolver_probe,
+                          state->global->providerModuleNameResolver);
+    TEST_ASSERT_EQUAL_PTR(&probe,
+                          state->global->providerModuleNameResolverUserData);
+    TEST_ASSERT_EQUAL_PTR(host_owner_observer_probe,
+                          state->global->ownershipStrongRefObserver);
+    TEST_ASSERT_EQUAL_PTR(&probe,
+                          state->global->ownershipStrongRefObserverUserData);
+    ZrTests_Runtime_State_Destroy(state);
 }
 
 static void test_owner_descriptors_converge_on_inventory_phase(void) {
@@ -189,6 +439,11 @@ static void test_provider_phase_admission_is_host_specific(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_official_inventory_is_frozen_unique_and_phase_typed);
+    RUN_TEST(test_registered_provider_contract_owns_reflection_type_roles);
+    RUN_TEST(test_registry_rejects_spoofed_reflection_provider_contract);
+    RUN_TEST(test_registry_rejects_malformed_projection_and_parent_graphs);
+    RUN_TEST(test_reflection_provider_contract_is_not_a_loadable_empty_module);
+    RUN_TEST(test_registry_composes_and_restores_host_native_loader);
     RUN_TEST(test_owner_descriptors_converge_on_inventory_phase);
     RUN_TEST(test_registry_rejects_legacy_phase_and_duplicate_official_providers);
     RUN_TEST(test_provider_phase_admission_is_host_specific);

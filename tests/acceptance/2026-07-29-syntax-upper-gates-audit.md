@@ -98,28 +98,62 @@ remaining owner gates are open.
 
 ## 2026-08-03 Gate 09 canonical-layout review
 
-- The native generational pool now accepts canonical `SZrTypeLayout` and derives
-  element size/alignment, copy, Drop, and scan behavior from it. Production
-  erased-value `Pool<T>` no longer owns handwritten value copy/drop callbacks.
-- Admission fails closed for move-only or missing copy paths, dangling nested
-  registries, managed layouts without a GC visitor, and value/value-slot layouts
-  without a VM state. Copy errors roll back without publishing a handle.
-- Focused WSL GCC evidence is canonical TypeLayout 14/14, pool 13/13, GC stress
-  3/3, and artifact 3/3. Exactly-once deferred Drop and canonical mapped visitor
-  routing are direct tests. The canonical target is also 14/14 under Clang 14 and
-  MSVC 19.44 with no warning attributed to the new pool sources.
-- This is a bounded M3 slice. The production provider's hidden value array is
-  still the actual GC root owner; compact-safe closed-`T` moving slabs and
-  language-level early-exit cleanup remain open.
+- The first bounded implementation accepted canonical `SZrTypeLayout`, but an
+  independent review reproduced two Critical nested-layout holes after the
+  green 14-test matrix.
+- Root `GcFree` classification ignored a nested registry-resolved `GcMapped`
+  layout, so the pool could omit a live reference visitor. The raw-copy fast
+  path also returned before resolving nested move-only/lifecycle layouts.
+- The public lifetime contract additionally omitted that the retained VM state
+  must outlive the pool. Existing focused tests did not cover either Critical
+  nested case, so their green result is not promotion evidence.
+- Gate 09 M3 is reopened. Compact-safe closed-`T` moving slabs and language
+  early-exit cleanup remain open after these lower correctness defects are fixed.
+
+## 2026-08-03 Gate 08 M1 provider-identity review
+
+- Replaced the parser-owned 20-entry reflection type table with registered
+  canonical TypeRoles owned by official `zr.builtin` and `zr.reflection`
+  descriptors. Native plugin ABI is now 5.
+- Core reflection import, module creation, and cache validation resolve the
+  reflection provider by role; production code no longer compares the concrete
+  module-name macro.
+- Ordinary source ModuleId derivation rejects the reserved `zr.*` root. A
+  corrected RED proved `zr/reflection.zr` could previously compile and spoof
+  the canonical type name; GREEN rejects it before type registration.
+- GCC, Clang, and MSVC each pass the same 12 executables and 395 Unity tests,
+  including provider 9/9, project resolver 10/10, reflection surface 19/19,
+  dynamic reflection 36/36, type inference 122/122, module 78/78, parser 74/74,
+  and percent cutover 6/6.
+- This proves M1 provider/canonical identity routing only. M2-M5 remain open.
+
+## 2026-08-03 Gate 11/14 requirement review
+
+- Gate 11 M1-M4 match their bounded first-version contracts. Gate 11 M5 remains
+  open because the final versioned compile-tool executable section, actual
+  transitive provider graph/cycle chain, and remaining artifact/reflection/LSP
+  consumers are absent.
+- Gate 14 manifest `SymbolId`/`TypeId` values are currently name hashes/XOR
+  projections rather than canonical semantic identities; `moduleGraphHash`
+  hashes only the module string.
+- `AssertionFailure` does not retain the required source span/snapshot metadata,
+  and `throws<E>` catches any exception without exact/subtype validation.
+- LSP CodeLens still rebuilds roles from AST decorators instead of consuming
+  TestRole facts/TestManifest. Debug has no canonical TestManifest consumer,
+  async logical-stack projection, or case-parameter integration.
+- Therefore the earlier Gate 14 M1/M2 "proven" labels are withdrawn. Runner
+  behavior and syntax migration remain useful bounded evidence, not full Gate 14
+  promotion.
 
 ## Gate ledger
 
 | Gate | Current evidence | State | Remaining proof/work |
 |---|---|---|---|
-| 08 M1-M5 | reflection behavior is routed through the canonical capability registry; nullable `typeof` is rejected until narrowed; TypeId fields are authenticated against the per-generation registry; callable by-ref modes survive runtime projection; focused reflection surface 18/18 | indirect | add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
+| 08 M1 | official provider roles and canonical TypeRoles replace parser/core name dispatch; contract-only reflection cannot materialize; host loaders compose; projections and parent graphs validate; `zr.*` source spoofing is rejected; provider 9/9, resolver 10/10, reflection surface 19/19 and dynamic reflection 36/36 pass across GCC/Clang/MSVC | proven | preserve registered identity and fail-closed provider resolution |
+| 08 M2-M5 | nullable `typeof`, authenticated TypeId fields, member queries/construction and callable by-ref projection have focused behavior, but the complete artifact/AOT/LSP/stress promotion matrix is absent | indirect | add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
 | 09 M1 | source-callable `Pool<T>` identity/recycle plus C state-machine, million-handle, ABA, exhaustion, alignment and concurrency evidence; pool 13/13 | proven | preserve scalar handle identity and ABI v4 descriptor contract |
 | 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, storage/escape rejection and no-repeat-validation counter | indirect | complete the full local/return/container/closure/suspension matrix and view replacement/early-exit ordering |
-| 09 M3 | deferred reclaim, partial-init rollback, GcFree/GcMapped/GcBarriered accounting and cards are covered by pool 13/13 plus GC stress 3/3; canonical TypeLayout admission/scan, direct/nested lifecycle consistency, copy-error rollback, state/concurrency fail-closed checks, and exactly-once deferred Drop are covered by TypeLayout 14/14 | indirect | replace the production erased-value mirror with compact-safe closed-`T` moving slabs and prove language early-exit cleanup |
+| 09 M3 | independent review reproduced skipped nested `GcMapped` scanning and raw-copy bypass of nested move-only/lifecycle validation; retained-state lifetime is undocumented | contradicted | fix nested layout closure and state lifetime first, add direct regressions, then replace the erased-value mirror with compact-safe closed-`T` moving slabs and prove language early-exit cleanup |
 | 09 M4 | native/binary/reflection contract hash parity and corrupt/missing/unknown rejection are covered by artifact 3/3; runtime-only/readonly/property-reference facts cross native import | indirect | finish dedicated LSP facts and full reflection non-boxing/lifetime evidence |
 | 09 M5 | million-handle and churn/hot-access counters are separated | indirect | add final pause/allocation/scan-byte promotion matrix after M2-M4 close |
 | 10F M3 | schema v4 persists independent canonical callable and ABI vectors; TypeLayout/capability-driven admission; `.zro`, C AOT, and LLVM AOT consumers; native extern 29/29 and AOT stripping 37/37 focused evidence | proven | preserve in final matrix |
@@ -128,10 +162,10 @@ remaining owner gates are open.
 | 11 M3 | typed AttributeUsage/AttributeData, Conditional elision, static decorator shape coverage, runtime decorator executor/helper removal | proven | preserve retained-data consumers |
 | 11 M4 | first-version public contract is GeneratedField-only; typed diagnostics, interfaceAdds, attributeAdds, normal rebind/layout, provenance, `.zri` generated source maps, artifact/reflection retention, and atomic cross-kind Patch commit with allocator-failure rollback are covered across GCC/Clang/MSVC/MSVC-ASan | proven | preserve; GeneratedType/Method/Property remain unpublished unless separately admitted through the reference gate |
 | 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; v2 buildDependencies are phase-separated in canonical manifest/lock output; project-owned lock admission is strict/atomic and feeds the compiler resolver without a parallel caller-owned lock graph; the resolver validates version range and CompileTool lock/ZRM package from one owned byte snapshot, checks actual package/entry SHA-256, hashes the canonical CompileTool lock section, and preserves runtime isolation; ordinary import now activates a materialized compiler-owned `.zrs` provider, keeps private helpers provider-local, exports only `pub`/`pro` transforms, executes a public typed Patch, and keeps the dependency out of the runtime graph; provider-to-provider build-dependency imports fail closed before recursion until the transitive phase-cycle graph is promoted; comptime cache v5 compares the full canonical 32-byte digest, includes current-module source identity, and has a versioned, deterministic, fixed-endian, whole-snapshot-authenticated format with atomic fail-closed import; the project CLI atomically persists `.zr_comptime_cache` and proves miss/hit/same-length semantic-edit miss/corrupt repair; formatter uses the migration plan as a fail-closed output gate, preserves canonical CompileTool syntax plus spaced/adjacent `%` and `%=` operators, and emits no edit for removed syntax | indirect | define and consume the final versioned compile-tool executable section, validate the actual transitive provider graph, and complete remaining artifact/reflection/LSP consumer acceptance |
-| 14 M1 | ordinary function test/case/skip roles, typed TestManifest, production typecheck-and-trim | proven | preserve |
-| 14 M2 | official Test-phase `zr.testing` provider with assert/equal/throws and bounded structured failure | proven | preserve |
+| 14 M1 | ordinary function role binding and production trim work, but manifest SymbolId/TypeId/moduleGraphHash are fabricated name projections rather than canonical semantic identities | contradicted | serialize canonical semantic SymbolId/TypeId and real module-graph identity with collision/cross-module/overload tests |
+| 14 M2 | official Test-phase provider exists, but AssertionFailure lacks required span/snapshot metadata and `throws<E>` does not validate E/subtypes | contradicted | implement structured bounded snapshots/source span and typed exception matching |
 | 14 M3 | deterministic discovery/filter/list/run, process isolation, jobs, timeout, output and exit codes | proven | preserve sync/async reference matrix |
-| 14 M4 | percent/draft migration and role-driven LSP CodeLens/projection | indirect | canonical Debug TestManifest consumer and final idempotent cross-consumer acceptance |
+| 14 M4 | percent/draft migration is covered, but LSP CodeLens reconstructs AST decorator roles rather than consuming facts/manifest; Debug consumer is absent | contradicted | migrate LSP and Debug to canonical TestRoleFact/TestManifest, including async logical stack and case parameters |
 | 06B parser cutover | removed syntax has rejection-only recognition and no old AST/lowering/runtime decorator semantics | proven | keep migration diagnostics and operator/internal-IR allowlist distinct |
 | 06B repository promotion | inventory has no machine/block/unknown/not-promoted findings, but 645 review findings and owner-gated reference slots remain | indirect | classify/migrate remaining current inputs as owner gates close |
 | 07B | coverage still has 13 owner-gated `design-pending` entries | contradicted | promote only after each owner gate has independent evidence |
@@ -139,7 +173,8 @@ remaining owner gates are open.
 ## Current conclusion
 
 The strict production parser cutover is complete. The 55 historical leaf
-records are confirmed in their own scope. The root Syntax redesign is not
-complete: 07B is explicitly open, and 08/09/10C/11/14 still have the partial
-rows listed above. No acceptance document may translate leaf completion into a
-root promotion.
+records are confirmed in their own scope; the current directory additionally
+contains one completed task-level support record outside that selector. The root
+Syntax redesign is not complete: 07B is explicitly open, Gate 09 and 14 have
+reopened correctness/contract defects, and 08 M2-M5, 10C, and 11 M5 remain open.
+No acceptance document may translate leaf completion into a root promotion.

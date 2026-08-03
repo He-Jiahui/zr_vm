@@ -122,6 +122,15 @@ typedef struct SReflectionDynamicGenericFixture {
 void setUp(void) {}
 void tearDown(void) {}
 
+static const TZrChar *reflection_test_provider_name_resolver(
+        TZrUInt32 providerRole,
+        TZrPtr userData) {
+    ZR_UNUSED_PARAMETER(userData);
+    return providerRole == ZR_PROVIDER_CONTRACT_ROLE_REFLECTION
+                   ? "zr.reflection"
+                   : ZR_NULL;
+}
+
 #include "test_reflection_runtime_module_import_allocator.h"
 
 static TZrPtr test_allocator(TZrPtr userData,
@@ -162,6 +171,8 @@ static SZrState *create_reflection_test_state(void) {
         return ZR_NULL;
     }
     ZrCore_GlobalState_InitRegistry(global->mainThreadState, global);
+    ZrCore_GlobalState_SetProviderModuleNameResolver(
+            global, reflection_test_provider_name_resolver, ZR_NULL);
     return global->mainThreadState;
 }
 
@@ -970,6 +981,7 @@ int main(void) {
     RUN_TEST(test_reflection_runtime_module_exports_bound_make_generic_method);
     RUN_TEST(test_reflection_runtime_module_cache_is_owned_by_target_module);
     RUN_TEST(test_reflection_module_import_uses_loaded_caller_runtime);
+    RUN_TEST(test_reflection_module_import_requires_registered_provider_role);
     RUN_TEST(test_generic_method_definition_object_materializes_parameters);
     RUN_TEST(test_method_spec_generic_context_materializes_metadata_arguments);
     RUN_TEST(test_method_spec_generic_call_info_context_survives_full_gc);

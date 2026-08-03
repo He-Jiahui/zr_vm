@@ -7,6 +7,7 @@
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
 #include "type_inference/type_inference_semantic_facts.h"
+#include "type_inference/type_inference_reflection_surface.h"
 #include "zr_vm_parser/ast.h"
 #include "type_inference/type_inference_constant_eval.h"
 #include "compiler/compile_tool_binding.h"
@@ -2027,10 +2028,10 @@ static TZrBool infer_lambda_callable_signature(SZrCompilerState *cs,
 }
 
 static TZrBool infer_type_literal_expression_type(SZrCompilerState *cs,
-                                                  SZrAstNode *node,
-                                                  SZrInferredType *result) {
+                                                   SZrAstNode *node,
+                                                   SZrInferredType *result) {
     SZrString *typeName;
-    static TZrChar kBuiltinTypeInfoName[] = "zr.builtin.TypeInfo";
+    const ZrLibCanonicalTypeRoleDescriptor *typeInfoRole;
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
         node->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||
@@ -2038,7 +2039,14 @@ static TZrBool infer_type_literal_expression_type(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    typeName = ZrCore_String_Create(cs->state, kBuiltinTypeInfoName, strlen(kBuiltinTypeInfoName));
+    typeInfoRole = ZrParser_ReflectionCompileSurface_FindByRole(
+            cs->state != ZR_NULL ? cs->state->global : ZR_NULL,
+            ZR_CANONICAL_TYPE_ROLE_BUILTIN_METADATA_ROOT);
+    if (typeInfoRole == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    typeName = ZrCore_String_CreateFromNative(
+            cs->state, (TZrNativeString)typeInfoRole->canonicalName);
     if (typeName == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -2995,7 +3003,9 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
 static TZrBool ast_type_should_preserve_primitive_alias(const TZrNativeString nameStr,
                                                         TZrSize nameLen);
 
-static const TZrChar *ast_type_builtin_canonical_name(const TZrChar *typeNameText) {
+static const TZrChar *ast_type_builtin_canonical_name(
+        SZrCompilerState *cs,
+        const TZrChar *typeNameText) {
     if (typeNameText == ZR_NULL) {
         return ZR_NULL;
     }
@@ -3021,10 +3031,14 @@ static const TZrChar *ast_type_builtin_canonical_name(const TZrChar *typeNameTex
     if (strcmp(typeNameText, "Comparable") == 0) {
         return "zr.builtin.IComparable";
     }
-    if (strcmp(typeNameText, "zr.system.reflect.Type") == 0 ||
-        strcmp(typeNameText, "zr.system.reflect.CallableType") == 0 ||
-        strcmp(typeNameText, "TypeInfo") == 0) {
-        return "zr.builtin.TypeInfo";
+    if (strcmp(typeNameText, "TypeInfo") == 0) {
+        const ZrLibCanonicalTypeRoleDescriptor *typeInfoRole =
+                ZrParser_ReflectionCompileSurface_FindByRole(
+                        cs != ZR_NULL && cs->state != ZR_NULL
+                                ? cs->state->global
+                                : ZR_NULL,
+                        ZR_CANONICAL_TYPE_ROLE_BUILTIN_METADATA_ROOT);
+        return typeInfoRole != ZR_NULL ? typeInfoRole->canonicalName : ZR_NULL;
     }
     if (strcmp(typeNameText, "IArrayLike") == 0 ||
         strcmp(typeNameText, "IEquatable") == 0 ||
@@ -3100,7 +3114,7 @@ static TZrBool ast_type_report_missing_explicit_binding(SZrCompilerState *cs,
         typeNameText = ZrCore_String_GetNativeString(typeName);
     }
 
-    canonicalBuiltinName = ast_type_builtin_canonical_name(typeNameText);
+    canonicalBuiltinName = ast_type_builtin_canonical_name(cs, typeNameText);
     if (typeNameText != ZR_NULL && canonicalBuiltinName != ZR_NULL) {
         snprintf(errorBuffer,
                  sizeof(errorBuffer),
@@ -3668,7 +3682,8 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
                 ZrParser_InferredType_Free(cs->state, &currentType);
                 return inferred_type_from_type_name(cs, qualifiedTypeName, result);
             }
-            if (ast_type_builtin_canonical_name(ZrCore_String_GetNativeString(qualifiedTypeName)) != ZR_NULL) {
+            if (ast_type_builtin_canonical_name(
+                        cs, ZrCore_String_GetNativeString(qualifiedTypeName)) != ZR_NULL) {
                 ZrParser_InferredType_Free(cs->state, &currentType);
                 return ast_type_report_missing_explicit_binding(cs, qualifiedTypeName, astType->name->location);
             }

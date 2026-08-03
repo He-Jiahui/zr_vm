@@ -11,6 +11,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser.c
@@ -23,6 +24,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
 plan_sources:
   - user: 2026-07-29 README.md is the current standard syntax
   - user: 2026-07-30 strictly perform a one-shot breaking syntax cutover
@@ -34,11 +36,14 @@ tests:
   - tests/parser/test_legacy_migration.c
   - tests/cli/test_cli_syntax_migration.c
   - tests/parser/test_property_ref_return.c
+  - tests/parser/test_type_inference.c
+  - tests/library/test_native_binding_direct_call.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_ownership_diagnostics.c
   - tests/language_server/stdio_diagnostic_fix_smoke.js
   - tests/language_server/stdio_smoke.js
   - tests/acceptance/2026-07-26-syntax-55-status-records-review.md
+  - tests/acceptance/2026-08-03-syntax-08-m1-reflection-provider-contract.md
 doc_type: module-detail
 ---
 
@@ -88,6 +93,12 @@ into a production compilation unit. Ordinary `%` remains the modulo operator.
 An unknown `%identifier` is an ordinary syntax error rather than an implicit
 migration directive.
 
+Removed qualified names are not retained as hidden type-inference aliases.
+`zr.system.reflect.Type` and `zr.system.reflect.CallableType` fail through
+ordinary module resolution; production type inference no longer maps either
+name to `zr.builtin.TypeInfo`. Migration tooling may explain historical input,
+but it does not install a compatibility type binding.
+
 ## Implemented Frontend Surface
 
 - `module path;` reaches the normalized module-declaration parser and becomes
@@ -120,6 +131,11 @@ and passes all 123 registered CTest tests, including `language_pipeline`,
 projects, language-server stdio, VM/AOT, debug, and migration consumers.
 
 This closes the dual-parser compatibility question, not the complete Syntax
-redesign. Gate 11 still lacks the full declaration Patch shape and all required
-consumers, Gate 14 remains unimplemented, and the root promotion ledger stays
-open until those owner gates have direct coverage.
+redesign. The upper-gate ledger remains open until every owner gate has direct
+coverage.
+
+The 2026-08-03 Gate 08 M1 replay revalidated parser 74/74 and percent cutover
+6/6 under GCC, Clang, and MSVC. The broader identical matrix was 395/395 per
+toolchain. It also found and migrated five stale native-direct-call fixtures
+that still declared functions without `fn`; no keywordless-function parser
+fallback was restored.

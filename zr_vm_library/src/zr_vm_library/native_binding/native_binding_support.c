@@ -346,10 +346,9 @@ void native_binding_register_prototype_in_global_scope(SZrState *state,
 }
 
 ZrLibrary_NativeRegistryState *native_registry_get(SZrGlobalState *global) {
-    if (global == ZR_NULL || global->nativeModuleLoader != native_registry_loader) {
-        return ZR_NULL;
-    }
-    return (ZrLibrary_NativeRegistryState *)global->nativeModuleLoaderUserData;
+    return global != ZR_NULL
+                   ? (ZrLibrary_NativeRegistryState *)global->nativeRegistryState
+                   : ZR_NULL;
 }
 
 void ZrLibrary_State_SetProviderPhase(SZrState *state,
@@ -637,7 +636,7 @@ static TZrBool native_registry_validate_parameter_passing_modes(
 }
 
 TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegistryState *registry,
-                                                                 const ZrLibModuleDescriptor *descriptor) {
+                                                           const ZrLibModuleDescriptor *descriptor) {
     TZrUInt32 minimumRuntimeAbi;
 
     if (descriptor == ZR_NULL) {
@@ -682,6 +681,10 @@ TZrBool native_registry_validate_descriptor_compatibility(ZrLibrary_NativeRegist
         return ZR_FALSE;
     }
 
+    if (!native_registry_validate_canonical_type_roles(registry, descriptor)) {
+        return ZR_FALSE;
+    }
+
     return ZR_TRUE;
 }
 
@@ -711,6 +714,18 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
     for (index = 0; index < registry->moduleRecords.length; index++) {
         ZrLibRegisteredModuleRecord *record =
                 (ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
+        if (record != ZR_NULL && record->descriptor != ZR_NULL &&
+            record->descriptor != descriptor &&
+            descriptor->providerContractRole != ZR_PROVIDER_CONTRACT_ROLE_NONE &&
+            record->descriptor->providerContractRole == descriptor->providerContractRole) {
+            native_registry_set_error(
+                    registry,
+                    ZR_LIB_NATIVE_REGISTRY_ERROR_DUPLICATE_PROVIDER_CONTRACT,
+                    "provider contract role %u is already owned by module '%s'",
+                    (unsigned)descriptor->providerContractRole,
+                    record->descriptor->moduleName);
+            return ZR_FALSE;
+        }
         if (record != ZR_NULL &&
             record->moduleName != ZR_NULL &&
             strcmp(record->moduleName, descriptor->moduleName) == 0) {

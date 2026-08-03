@@ -5,6 +5,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
+#include "zr_vm_core/global.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
@@ -51,6 +52,7 @@ static TZrBool reflection_cached_module_is_valid(
         SZrObjectModule *runtimeModule) {
     const TZrChar *moduleName;
     const TZrChar *fullPath;
+    const TZrChar *providerModuleName;
 
     if (state == ZR_NULL || serviceModule == ZR_NULL || makeExportName == ZR_NULL ||
         resolveExportName == ZR_NULL || requireExportName == ZR_NULL ||
@@ -71,11 +73,13 @@ static TZrBool reflection_cached_module_is_valid(
         return ZR_FALSE;
     }
 
+    providerModuleName = ZrCore_GlobalState_ResolveProviderModuleName(
+            state->global, ZR_PROVIDER_CONTRACT_ROLE_REFLECTION);
     moduleName = ZrCore_String_GetNativeString(serviceModule->moduleName);
     fullPath = ZrCore_String_GetNativeString(serviceModule->fullPath);
-    if (moduleName == ZR_NULL || fullPath == ZR_NULL ||
-        strcmp(moduleName, ZR_REFLECTION_MODULE_NAME) != 0 ||
-        strcmp(fullPath, ZR_REFLECTION_MODULE_NAME) != 0 ||
+    if (providerModuleName == ZR_NULL || moduleName == ZR_NULL ||
+        fullPath == ZR_NULL || strcmp(moduleName, providerModuleName) != 0 ||
+        strcmp(fullPath, providerModuleName) != 0 ||
         serviceModule->pathHash != ZrCore_Module_CalculatePathHash(
                 state, serviceModule->fullPath)) {
         return ZR_FALSE;

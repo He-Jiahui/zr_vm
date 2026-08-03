@@ -60,6 +60,13 @@ static TZrBool project_resolver_copy_text(const TZrChar *text, TZrChar *buffer, 
     return ZR_TRUE;
 }
 
+static TZrBool project_resolver_is_reserved_official_module_key(
+        const TZrChar *moduleKey) {
+    return moduleKey != ZR_NULL && moduleKey[0] == 'z' && moduleKey[1] == 'r' &&
+           (moduleKey[2] == '\0' || moduleKey[2] == '.' ||
+            moduleKey[2] == '/' || moduleKey[2] == '\\');
+}
+
 static TZrBool project_resolver_has_suffix(const TZrChar *text,
                                            TZrSize length,
                                            const TZrChar *suffix,
@@ -751,6 +758,14 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary
     }
 
     if (hasExplicit && !hasDerived) {
+        if (project_resolver_is_reserved_official_module_key(explicitNormalized)) {
+            project_resolver_set_error(
+                    errorBuffer,
+                    errorBufferSize,
+                    "source module '%s' uses reserved official module root 'zr'",
+                    explicitNormalized);
+            return ZR_FALSE;
+        }
         return project_resolver_copy_text(explicitNormalized, buffer, bufferSize);
     }
 
@@ -758,6 +773,15 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary
         project_resolver_set_error(errorBuffer,
                                    errorBufferSize,
                                    "unable to derive a current module key");
+        return ZR_FALSE;
+    }
+
+    if (project_resolver_is_reserved_official_module_key(derivedFromPath)) {
+        project_resolver_set_error(
+                errorBuffer,
+                errorBufferSize,
+                "source module '%s' uses reserved official module root 'zr'",
+                derivedFromPath);
         return ZR_FALSE;
     }
 

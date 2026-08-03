@@ -397,6 +397,9 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
+    global->nativeRegistryState = ZR_NULL;
+    global->providerModuleNameResolver = ZR_NULL;
+    global->providerModuleNameResolverUserData = ZR_NULL;
     global->moduleLoadDiagnostic[0] = '\0';
     global->ownershipStrongRefObserver = ZR_NULL;
     global->ownershipStrongRefObserverUserData = ZR_NULL;
@@ -437,6 +440,9 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
+    global->nativeRegistryState = ZR_NULL;
+    global->providerModuleNameResolver = ZR_NULL;
+    global->providerModuleNameResolverUserData = ZR_NULL;
     global->moduleLoadDiagnostic[0] = '\0';
     global->ownershipStrongRefObserver = ZR_NULL;
     global->ownershipStrongRefObserverUserData = ZR_NULL;
@@ -598,6 +604,28 @@ void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global,
 
     global->nativeModuleLoader = loader;
     global->nativeModuleLoaderUserData = userData;
+}
+
+void ZrCore_GlobalState_SetProviderModuleNameResolver(
+        SZrGlobalState *global,
+        FZrProviderModuleNameResolver resolver,
+        TZrPtr userData) {
+    if (global == ZR_NULL) {
+        return;
+    }
+    global->providerModuleNameResolver = resolver;
+    global->providerModuleNameResolverUserData = userData;
+}
+
+const TZrChar *ZrCore_GlobalState_ResolveProviderModuleName(
+        const SZrGlobalState *global,
+        TZrUInt32 providerRole) {
+    if (global == ZR_NULL || global->providerModuleNameResolver == ZR_NULL ||
+        providerRole == (TZrUInt32)ZR_PROVIDER_CONTRACT_ROLE_NONE) {
+        return ZR_NULL;
+    }
+    return global->providerModuleNameResolver(
+            providerRole, global->providerModuleNameResolverUserData);
 }
 
 void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
