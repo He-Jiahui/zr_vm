@@ -2847,6 +2847,10 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             ZrParser_InferredType_Init(cs->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
             resolvedTypeInitialized = ZR_TRUE;
             hasResolvedType = ZrParser_ExpressionType_Infer(cs, decl->value, &resolvedType);
+            if (hasResolvedType) {
+                (void)compiler_expression_consume_auto_loaded_property_reference(
+                        decl->value, &resolvedType);
+            }
             compile_statement_trace("var decl infer from initializer done success=%d baseType=%d typeName=%p hasError=%d",
                                     (int)hasResolvedType,
                                     resolvedTypeInitialized ? (int)resolvedType.baseType : -1,
@@ -2869,7 +2873,19 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compile_statement_trace("var decl compatibility check start");
             ZrParser_InferredType_Init(cs->state, &initializerType, ZR_VALUE_TYPE_OBJECT);
             initializerTypeInitialized = ZR_TRUE;
-            if (!ZrParser_ExpressionType_Infer(cs, decl->value, &initializerType) ||
+            if (!ZrParser_ExpressionType_Infer(cs, decl->value, &initializerType)) {
+                ZrParser_InferredType_Free(cs->state, &initializerType);
+                if (resolvedTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &resolvedType);
+                }
+                return;
+            }
+            if (resolvedType.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+                initializerType.referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+                (void)compiler_expression_consume_auto_loaded_property_reference(
+                        decl->value, &initializerType);
+            }
+            if (
                 !ZrParser_AssignmentCompatibility_Check(cs, &resolvedType, &initializerType, decl->value->location)) {
                 ZrParser_InferredType_Free(cs->state, &initializerType);
                 if (resolvedTypeInitialized) {
@@ -3100,6 +3116,8 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         if (hasResolvedType) {
             compiler_register_owner_cleanup_slot(
                     cs, varIndex, resolvedType.ownershipQualifier);
+            compiler_register_inferred_close_cleanup_slot(
+                    cs, varIndex, &resolvedType);
         }
         if (initializerTypeInitialized && decl->value != ZR_NULL) {
             TZrUInt32 mutableReferenceSourceSlot =
@@ -3301,6 +3319,8 @@ static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode
         return ZR_FALSE;
     }
 
+    (void)compiler_expression_consume_auto_loaded_property_reference(
+            expr, &returnType);
     if (inferred_type_contains_borrow_escape_ownership(&returnType)) {
         ZrParser_InferredType_Free(cs->state, &returnType);
         ZrParser_Compiler_Error(cs,
@@ -3476,7 +3496,8 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         }
         return;
     }
-    if (stmt->expr != ZR_NULL && !validate_return_ownership_escape(cs, stmt->expr)) {
+    if (stmt->expr != ZR_NULL && !stmt->isReferenceReturn &&
+        !validate_return_ownership_escape(cs, stmt->expr)) {
         return;
     }
 

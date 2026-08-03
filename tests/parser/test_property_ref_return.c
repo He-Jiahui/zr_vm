@@ -15,6 +15,10 @@
 #include "zr_vm_parser/writer.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
+#ifndef ZR_VM_TESTS_REPO_ROOT
+#define ZR_VM_TESTS_REPO_ROOT "."
+#endif
+
 static SZrState *g_state;
 
 void setUp(void) {
@@ -1046,6 +1050,9 @@ static void test_ref_property_aot_writers_keep_managed_reference_helpers(void) {
     SZrFunction *function = compile_source(source);
     char *cText;
     char *llvmText;
+#if defined(ZR_PLATFORM_UNIX)
+    char compileCommand[4096];
+#endif
 
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(
@@ -1061,15 +1068,25 @@ static void test_ref_property_aot_writers_keep_managed_reference_helpers(void) {
     TEST_ASSERT_NULL(strstr(cText, "unsupported instruction opcode"));
     TEST_ASSERT_NULL(strstr(llvmText, "unsupported instruction opcode"));
 #if defined(ZR_PLATFORM_UNIX)
+    TEST_ASSERT_GREATER_THAN_INT(
+            0,
+            snprintf(
+                    compileCommand,
+                    sizeof(compileCommand),
+                    "cc -std=c11 -fPIC "
+                    "-I\"%s/zr_vm_common/include\" "
+                    "-I\"%s/zr_vm_core/include\" "
+                    "-I\"%s/zr_vm_library/include\" "
+                    "-I\"%s/zr_vm_aot/include\" "
+                    "-c property_ref_return_aot.c "
+                    "-o property_ref_return_aot.o",
+                    ZR_VM_TESTS_REPO_ROOT,
+                    ZR_VM_TESTS_REPO_ROOT,
+                    ZR_VM_TESTS_REPO_ROOT,
+                    ZR_VM_TESTS_REPO_ROOT));
     TEST_ASSERT_EQUAL_INT(
             0,
-            system(
-                    "cc -std=c11 -fPIC "
-                    "-I./zr_vm_common/include "
-                    "-I./zr_vm_core/include "
-                    "-I./zr_vm_library/include "
-                    "-c property_ref_return_aot.c "
-                    "-o property_ref_return_aot.o"));
+            system(compileCommand));
     TEST_ASSERT_EQUAL_INT(
             0,
             system(

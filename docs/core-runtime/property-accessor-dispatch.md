@@ -14,6 +14,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
 implementation_files:
@@ -26,9 +28,14 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/reflection.c
   - zr_vm_core/src/zr_vm_core/reflection_property.c
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c
 plan_sources:
+  - user: 2026-08-03 严格按设计完成一次性破坏性切换并重新验收
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m3-access-lowering-receiver-effect-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m4-ref-return-place-region-implementation-plan.md
@@ -36,6 +43,8 @@ plan_sources:
 tests:
   - tests/parser/test_property_access_lowering.c
   - tests/parser/test_property_ref_return.c
+  - tests/container/test_pooling_closed_type_runtime.c
+  - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_property_consumer_contracts.c
@@ -110,6 +119,26 @@ Cold and quickened property paths share the same managed reference helpers. Cach
 descriptor lookup, but they do not own reference access, receiver lifetime, or source identity.
 Source and loaded executable artifacts preserve the instruction bytes, frame layout, property/accessor
 identity, and execution SemIR operation, so cache heat and serialization cannot change the Place.
+
+An ordinary value context consumes a terminal property-reference shell. Variable initialization,
+assignment, and non-reference return type checking remove the temporary reference access and
+borrow/loan qualifier because lowering emits `PROPERTY_REF_LOAD`; explicit `ref`/`out` arguments
+retain the reference and are scored with the same exact referent-type rule used by final Place
+validation. This keeps writable-reference overload selection strict without reporting a false
+`Expected T but found T` mismatch for an ordinary value read.
+
+When a writable property reference yields an inline struct and a later member is assigned, lowering
+loads the struct into a value slot and records the property reference in the existing nested-struct
+writeback stack. Writeback runs in reverse order: inner struct fields are stored first, then the
+completed struct is stored through the property reference. A chain such as `guard.value.x = 41`
+therefore mutates the referenced Place rather than a detached materialization.
+
+Frame-slot property stores also update the registered to-be-closed stack mirror when the resolved
+destination is an `out` argument value rather than the mirror itself. Replacing an existing guard
+therefore closes the previous mirrored value before publishing the new guard. When `CLOSE_SCOPE`
+can invoke native close metadata, the dispatcher saves the next instruction PC first and applies the
+normal native-call exception, frame-base, and trap refresh afterward. Nested close execution cannot
+resume at the property load/store that consumed the closed reference.
 
 The C and LLVM AOT backends lower the stable property-reference SemIR operations to shared runtime
 helpers for create/load/store. Generated code carries the managed value rather than computing a raw

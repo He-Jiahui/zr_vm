@@ -4,6 +4,35 @@
 
 #include "compile_expression_internal.h"
 
+TZrBool compiler_expression_consume_auto_loaded_property_reference(
+        const SZrAstNode *expression,
+        SZrInferredType *inferredType) {
+    const SZrPrimaryExpression *primary;
+    const SZrAstNode *lastMember;
+
+    if (expression == ZR_NULL || inferredType == ZR_NULL ||
+        inferredType->referenceAccess == ZR_REFERENCE_ACCESS_NONE ||
+        expression->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    primary = &expression->data.primaryExpression;
+    if (primary->members == ZR_NULL || primary->members->count == 0u) {
+        return ZR_FALSE;
+    }
+    lastMember = primary->members->nodes[primary->members->count - 1u];
+    if (lastMember == ZR_NULL ||
+        lastMember->type != ZR_AST_MEMBER_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    inferredType->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+    if (inferredType->ownershipQualifier ==
+                ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+        inferredType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
+        inferredType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool compiler_property_reference_load(
         SZrCompilerState *cs,
         TZrUInt32 referenceSlot,

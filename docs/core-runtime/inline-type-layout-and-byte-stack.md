@@ -28,12 +28,15 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
+  - zr_vm_core/include/zr_vm_core/raw_object.h
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_object.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_argument_view.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
@@ -118,12 +121,15 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/src/zr_vm_core/object/object_call.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
+  - zr_vm_core/include/zr_vm_core/raw_object.h
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_object.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_argument_view.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
@@ -234,6 +240,7 @@ tests:
   - tests/acceptance/2026-07-06-aot-09-s2-local-address-root-runtime-support.md
   - tests/acceptance/2026-06-26-aot-12-s7l-type-layout-payload-byte-trim-delta.md
 doc_type: module-detail
+last_verified: 2026-08-03
 ---
 
 # Inline Type Layout And Byte Stack Copy
@@ -470,6 +477,22 @@ Frame teardown and tail-call reuse call `ZrCore_Function_DropInlineFrameValues` 
 
 Native dispatch now seeds `ZrLibCallContext` with the current VM frame's metadata function, callable base, local frame base, and inline argument start. `ZrLib_CallContext_InlineArgumentSpan` can be called from a real known-native callback and returns an address, byte size, alignment, and type id for inline struct arguments that already exist in the VM frame layout. Stack-root callbacks use the existing stack-layout anchor; stable-argument native lanes now also adopt a lightweight inline-frame anchor, so a callback that grows or relocates the stack before asking for the span receives the relocated frame payload address without converting stable argument copies back to old stack slots. The span API requires the resolved frame slot to be both inline and marked as a parameter, so inline locals cannot be exposed through an argument index. When an argument is an inline struct parameter, ordinary `ZrLib_CallContext_Argument` and the typed `Read*` helpers report it as unavailable instead of returning a stable `SZrTypeValue` copy, because the inline payload bytes are not a boxed value. Object known-native direct-binding fast paths also clear their local call-context copies before filling fields, so absent inline frame metadata remains explicit absence rather than uninitialized state. When the current call has no frame layout, the argument is not an inline parameter, or metadata resolution is unavailable, the span API reports unavailable and the existing boxed/native behavior remains unchanged.
 
+`ZrLib_CallContext_InlineArgumentView` builds the provider-facing canonical view
+on top of that span. It requires an attached metadata registry, resolves the
+span's layout id through that registry, checks pointer identity plus layout
+validation/size/alignment, and zeroes the output on every failure. Providers
+borrow the span, layout, and registry only for the documented call/lifetime
+contract; they do not reinterpret raw bytes from an unverified frame slot.
+
+External native storage that embeds managed layout values uses
+`SZrRawObject.traceGcFunction`, a visitor-based child-enumeration callback that
+is separate from `scanMarkGcFunction` finalization. Classic mark, generational
+live-young checks, and forwarding rewrite pass their own visitor through this
+callback, so the same external slot can be marked or updated in place. Owners
+with an external trace remain address-stable during old-object compaction;
+their children may move and are rewritten. The direct full-compact free path
+now runs object/array finalizers as well as native-data finalizers exactly once.
+
 ## Current Boundary
 
 The implemented boundary covers:
@@ -499,6 +522,9 @@ The implemented boundary covers:
 - Generated AOT code-stripping statistics report referenced inline type-layout payload bytes before and after reachability filtering via `code_stripping.typeLayoutPayloadBytesBefore/After/Removed`; the metric sums each distinct inline slot layout's `frameSlotLayout.byteSize` and is separate from emitted-C descriptor byte-span markers.
 - Frame post-call and tail-call reuse drop wiring for owned embedded inline values.
 - Native callback inline argument spans in the real dispatch context for already-inline VM frame payloads, including span refresh after native callback stack relocation in stack-root, stable fast/inline-pinned, and generic dispatcher lanes, with non-parameter inline slots rejected, ordinary boxed argument reads blocked for inline struct parameters, and missing/non-inline metadata preserving boxed argument reads.
+- Canonical native inline argument views that fail closed on absent or drifting
+  metadata registries, plus external-layout GC tracing across full compaction
+  and barriered minor collection without conflating tracing with finalization.
 - Runtime validation for local struct field mutation, frame-byte probes, by-value parameter mutation, by-value return mutation, large POD values, managed string fields, GC scanning of embedded value fields, constructor copyback, and nested struct field copy.
 - AOT typed scalar generated C currently declares `sN/uN/fN/bN` locals for proven bool, signed `i64`, unsigned `u64`, and `f64` slots before dispatch; signed `i64` binary arithmetic, signed `i64` comparison, unsigned `u64` binary arithmetic, `f64` binary arithmetic, and signed `i64` binary bitwise can emit the first `sN = sN op sN` / `bN = (sN cmp sN)` / `uN = uN op uN` / `fN = fN op fN` expressions and mirror them back to frame slots. Signed `i64` shift, signed `i64` bit-not, fused signed branch comparisons, unsigned `u64` comparison, and the first numeric conversion source paths (`TO_UINT`, `TO_UINT_SIGNED`, `TO_UINT_FLOAT`, `TO_FLOAT`, `TO_INT_FLOAT`, and `TO_INT_UNSIGNED`) now reuse proven `sN/uN/fN` source locals when available, while the declarations remain a partial 04-S3 skeleton for other scalar operations.
 - Typed union constructor materialization into inline frame bytes for POD and value-sized payload fields, using the same type-layout bridge as struct inline values.

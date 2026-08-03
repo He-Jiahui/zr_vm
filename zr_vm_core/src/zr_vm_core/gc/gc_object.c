@@ -989,7 +989,9 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
         ZrCore_Ownership_NotifyObjectReleased(state, object);
     }
 
-    if (object->type == ZR_RAW_OBJECT_TYPE_NATIVE_DATA &&
+    if ((object->type == ZR_RAW_OBJECT_TYPE_NATIVE_DATA ||
+         object->type == ZR_RAW_OBJECT_TYPE_OBJECT ||
+         object->type == ZR_RAW_OBJECT_TYPE_ARRAY) &&
         object->scanMarkGcFunction != ZR_NULL) {
         object->scanMarkGcFunction(state, object);
     }

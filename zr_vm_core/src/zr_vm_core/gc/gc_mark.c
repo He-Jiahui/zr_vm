@@ -163,6 +163,18 @@ static void garbage_collector_mark_inline_array_value(
     }
 }
 
+static void garbage_collector_mark_custom_trace_value(
+        SZrState *state,
+        SZrTypeValue *value,
+        TZrPtr userData) {
+    TZrSize *work = (TZrSize *)userData;
+
+    garbage_collector_mark_value(state, value);
+    if (work != ZR_NULL) {
+        (*work)++;
+    }
+}
+
 static TZrSize garbage_collector_mark_inline_array(
         SZrState *state,
         SZrObject *array) {
@@ -1362,6 +1374,14 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
         default:
             ZR_ASSERT(ZR_FALSE);
             return 0;
+    }
+
+    if (object->traceGcFunction != ZR_NULL) {
+        object->traceGcFunction(
+                state,
+                object,
+                garbage_collector_mark_custom_trace_value,
+                &work);
     }
 
     return work;

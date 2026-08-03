@@ -122,10 +122,12 @@ static void test_canonical_gcfree_layout_defers_exactly_once_drop(void) {
 static void test_canonical_mapped_layout_drives_scan_visitor(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SCanonicalPoolProbe probe = {0};
+    SCanonicalPoolProbe dynamicProbe = {0};
     SZrTypeLayout layout;
     SZrPoolConfig config = canonical_pool_config();
     SZrPool *pool = ZR_NULL;
     SZrPoolHandle handles[2];
+    SZrPoolGuard retiredGuard = {0};
     SZrTypeValue values[2];
     uint64_t scannedSlots = 0u;
     uint64_t scannedBytes = 0u;
@@ -152,15 +154,52 @@ static void test_canonical_mapped_layout_drives_scan_visitor(void) {
     }
     TEST_ASSERT_EQUAL_INT(
             ZR_POOL_STATUS_OK,
+            ZrPool_TraceGcValues(
+                    pool,
+                    canonical_pool_record_visit,
+                    &dynamicProbe,
+                    &scannedSlots,
+                    &scannedBytes));
+    TEST_ASSERT_EQUAL_UINT64(2u, scannedSlots);
+    TEST_ASSERT_EQUAL_UINT64(2u * sizeof(SZrTypeValue), scannedBytes);
+    TEST_ASSERT_EQUAL_UINT32(2u, dynamicProbe.visitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, probe.visitCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_POOL_STATUS_OK,
             ZrPool_Scan(pool, &scannedSlots, &scannedBytes));
     TEST_ASSERT_EQUAL_UINT64(2u, scannedSlots);
     TEST_ASSERT_EQUAL_UINT64(2u * sizeof(SZrTypeValue), scannedBytes);
     TEST_ASSERT_EQUAL_UINT32(2u, probe.visitCount);
 
     TEST_ASSERT_EQUAL_INT(
+            ZR_POOL_STATUS_OK,
+            ZrPool_TryRead(pool, handles[0], &retiredGuard));
+    TEST_ASSERT_EQUAL_INT(
             ZR_POOL_STATUS_OK, ZrPool_Recycle(pool, handles[0]));
     TEST_ASSERT_EQUAL_INT(
             ZR_POOL_STATUS_OK, ZrPool_Recycle(pool, handles[1]));
+    memset(&dynamicProbe, 0, sizeof(dynamicProbe));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_POOL_STATUS_OK,
+            ZrPool_TraceGcValues(
+                    pool,
+                    canonical_pool_record_visit,
+                    &dynamicProbe,
+                    &scannedSlots,
+                    &scannedBytes));
+    TEST_ASSERT_EQUAL_UINT64(1u, scannedSlots);
+    TEST_ASSERT_EQUAL_UINT32(1u, dynamicProbe.visitCount);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_POOL_STATUS_OK, ZrPoolGuard_Release(&retiredGuard));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_POOL_STATUS_OK,
+            ZrPool_TraceGcValues(
+                    pool,
+                    canonical_pool_record_visit,
+                    &dynamicProbe,
+                    &scannedSlots,
+                    &scannedBytes));
+    TEST_ASSERT_EQUAL_UINT64(0u, scannedSlots);
     TEST_ASSERT_EQUAL_INT(ZR_POOL_STATUS_OK, ZrPool_Destroy(&pool));
     ZrTests_Runtime_State_Destroy(state);
 }

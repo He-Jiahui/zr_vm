@@ -5,8 +5,9 @@
 - State: accepted as a bounded M3 slice; Gate 09 M3 remains open.
 - Plan: `docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md`.
 - Scope: canonical TypeLayout admission, initialization/copy rollback, deferred
-  exactly-once Drop, layout-driven GC visitor routing, and production erased-value
-  provider convergence.
+  exactly-once Drop, layout-driven GC visitor routing, canonical native argument
+  views, production closed-layout provider convergence, and deterministic guard
+  cleanup across normal and abrupt scope exits.
 
 ## RED evidence
 
@@ -27,6 +28,12 @@
 5. Follow-up review found that a direct ownership value-slot could still declare
    `DropNone`. The focused test reproduced successful admission before the same
    recursive check began rejecting direct ownership/Drop downgrades.
+6. MSVC ASan then reproduced a deterministic 1/4 failure after a read guard
+   closed: `CLOSE_SCOPE` invoked its native close callback while the parent call
+   frame still stored the previous property-load PC. Nested execution resumed at
+   that stale PC and loaded through the already closed view. The existing
+   close-then-recycle source regression was RED before the dispatcher saved the
+   next PC and used the native-call resume protocol.
 
 ## Implemented contract
 
@@ -54,14 +61,41 @@
 
 ## Production convergence
 
-`pooling_generational_runtime.c` no longer hard-codes `sizeof(SZrTypeValue)`,
-alignment, copy, or Drop callbacks. It initializes the canonical value layout and
-creates the native pool through `ZrPool_CreateFromTypeLayout`.
+`ZrLib_CallContext_InlineArgumentView` resolves an inline parameter span against
+the attached canonical registry and fails closed on missing registry, invalid
+layout, pointer drift, or size/alignment mismatch. `Pool<T>.deliver` consumes
+that view, fixes the pool to the registry identity and layout id selected by the
+first delivery, and rejects even a structurally identical layout from another
+registry.
 
-The provider still mirrors values into the hidden `__zr_pool_values` array, which
-is the current GC root owner. Its canonical visitor is therefore deliberately a
-no-op to avoid double ownership. This slice does not claim closed-`T` inline
-moving slabs or language-level early-exit cleanup for native guards.
+The production provider stores the canonical bytes in the slab and no longer
+creates `__zr_pool_values`. A temporary object projection exists only while a
+read/write guard is active. Writable close copies the projection back into
+inline storage, propagates copy failure, and releases the guard exactly once.
+Return, throw, break, continue, ordinary block exit, and `out`-argument view
+replacement all release the active guard before the next borrow/recycle.
+
+`PROPERTY_REF_STORE` keeps the registered to-be-closed stack mirror synchronized
+when an `out` destination is represented by a separate argument value. The
+interpreter's `CLOSE_SCOPE` stores `programCounter + 1` before invoking close
+metadata and then applies the normal native-call exception/base/trap refresh.
+A nested native close therefore cannot resume at an instruction that consumed
+the just-closed view.
+
+`SZrRawObject.traceGcFunction` separates external child enumeration from the
+existing finalizer callback. Pool owners use it to visit initialized live and
+retired slots. Classic mark, minor live-young checks, and forwarding rewrite
+share the visitor contract; publication/copyback and metadata binding issue
+write barriers. A direct external-storage regression proves full-compaction and
+barriered-minor survival/rewrite plus exactly-once finalization.
+Because this changes the public raw-object layout, native runtime ABI is v4 and
+the exact plugin descriptor ABI is v6; older binaries must be rebuilt and fail
+registration rather than using stale field offsets.
+
+This is compact-safe native stable slab storage, not movable managed slab
+allocation. Ordinary interpreter child functions may also lack canonical code
+registration and retain materialized-value dispatch; source success alone is
+not accepted as non-boxing evidence for every backend.
 
 ## Reference evidence
 
@@ -80,6 +114,20 @@ moving slabs or language-level early-exit cleanup for native guards.
 
 ## Focused evidence
 
+- Final WSL GCC 11.4, WSL Clang 14.0, and MSVC 19.44 Debug replay: each toolchain
+  passed the same 21 affected executables and 530/530 Unity assertions. This
+  includes native inline view 7/7, external inline/GC layout 2/2, canonical pool
+  TypeLayout 14/14, production closed-layout runtime 4/4, property reference
+  23/23, property lowering 22/22, type inference 122/122, and pool lifecycle
+  13/13.
+- MSVC 19.44 ASan replay passed GC 67/67, concurrent GC 10/10, external inline
+  layout 2/2, native inline view 7/7, pool lifecycle 13/13, pool GC stress 3/3,
+  canonical pool TypeLayout 14/14, and production closed-layout runtime 4/4:
+  120/120 assertions total.
+- The production runtime test covers mirror absence, registry-identity
+  rejection, source writable `ref T` member-chain mutation, ordinary value
+  consumption, explicit close/readback, and real prototype plus canonical
+  registry writable copyback.
 - WSL GCC 11.4 Debug: canonical TypeLayout 14/14, pool 13/13, GC stress 3/3,
   artifact 3/3, core inline TypeLayout 38/38, and TypeLayout metadata contracts
   9/9.
@@ -89,24 +137,26 @@ moving slabs or language-level early-exit cleanup for native guards.
   pool sources produced no C4xxx warning.
 - The new test is part of the registered `containers` aggregate rather than an
   unregistered direct-only executable; the GCC `ctest -R ^containers$` replay
-  passed 1/1 with all eight aggregate executables.
+  passed 1/1 with all nine aggregate executables.
 - `generational_pool.c` was reduced from 1044 to 850 lines by extracting the
   canonical bridge into a cohesive module and a private 44-line header.
 
 ## Remaining Gate 09 M3 work
 
-- Replace the erased-value mirror with compact-safe, closed-`T` managed slab
-  storage and prove moving/full-GC behavior.
-- Prove language-level return/break/continue/throw cleanup and view replacement
-  ordering for native pool guards.
+- Attach canonical inline argument registries to ordinary interpreter call
+  frames, so all source backends exercise the same non-boxing provider route.
+- Decide and prove movable managed slabs if promotion requires slab relocation;
+  the accepted provider currently uses stable native slabs with traced/re-written
+  embedded managed values.
 - Run the final pause/allocation/scan-byte promotion matrix after M2-M4 close.
 - Define isolation-domain-safe per-operation state handling before admitting
   stateful canonical layouts to concurrent pools.
 
 ## Acceptance decision
 
-The canonical layout/lifecycle slice is accepted after closing the independent
-review's two Critical nested-layout bypasses and one Important state-lifetime
-documentation gap. No known Critical or Important issue remains. Gate 09 M3
-stays `indirect`, because moving slabs and language early-exit cleanup are
-explicitly outside this slice.
+The canonical layout/lifecycle and closed-layout production-provider slice is
+accepted after closing the nested-layout bypasses, permanent mirror, external
+GC trace/rewrite, registry-identity, writable-copyback, guard cleanup, and stale
+`CLOSE_SCOPE` resume findings. Gate 09 M3 stays `indirect`: writable
+reference-chain and source cleanup semantics are now proven; interpreter-wide
+canonical dispatch and final performance promotion remain open.

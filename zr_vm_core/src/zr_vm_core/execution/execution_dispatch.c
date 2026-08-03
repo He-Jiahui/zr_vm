@@ -9484,7 +9484,9 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(CLOSE_SCOPE) {
+                callInfo->context.context.programCounter = programCounter + 1;
                 close_scope_cleanup_registrations(state, E(instruction));
+                RESUME_AFTER_NATIVE_CALL(state, callInfo);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TRY) {

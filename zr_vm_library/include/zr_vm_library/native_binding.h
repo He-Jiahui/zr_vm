@@ -8,6 +8,7 @@
 #include "zr_vm_library/conf.h"
 #include "zr_vm_library/zrm.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/type_layout.h"
 #include "zr_vm_common/zr_contract_conf.h"
 
 struct ZrLibModuleDescriptor;
@@ -107,6 +108,12 @@ typedef struct ZrLibInlineSpan {
     TZrUInt32 typeLayoutId;
     TZrBool available;
 } ZrLibInlineSpan;
+
+typedef struct ZrLibInlineArgumentView {
+    ZrLibInlineSpan span;
+    const SZrTypeLayout *typeLayout;
+    SZrTypeLayoutRegistryView registry;
+} ZrLibInlineArgumentView;
 
 typedef struct ZrLibCallContext {
     SZrState *state;
@@ -482,6 +489,11 @@ ZR_LIBRARY_API TZrBool ZrLib_CallContext_WriteBackArgument(ZrLibCallContext *con
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
                                                             TZrSize index,
                                                             ZrLibInlineSpan *outSpan);
+/* Borrowed metadata and frame storage; reacquire after stack growth or a safepoint. */
+ZR_LIBRARY_API TZrBool ZrLib_CallContext_InlineArgumentView(
+        const ZrLibCallContext *context,
+        TZrSize index,
+        ZrLibInlineArgumentView *outView);
 ZR_LIBRARY_API struct SZrObjectPrototype *ZrLib_CallContext_OwnerPrototype(const ZrLibCallContext *context);
 ZR_LIBRARY_API struct SZrObjectPrototype *ZrLib_CallContext_GetConstructTargetPrototype(const ZrLibCallContext *context);
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *context,

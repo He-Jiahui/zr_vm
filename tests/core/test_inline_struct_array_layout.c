@@ -4,6 +4,8 @@
 
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
+#include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/type_layout.h"
@@ -18,6 +20,10 @@ typedef struct TestInlineArrayGcVisit {
     SZrTypeValue *values[2];
     TZrUInt32 count;
 } TestInlineArrayGcVisit;
+
+static SZrTypeValue gExternalTracedValue;
+static TZrUInt32 gExternalTraceCount;
+static TZrUInt32 gExternalFinalizeCount;
 
 void setUp(void) {}
 
@@ -54,6 +60,25 @@ static void test_inline_array_visit_gc_value(
         return;
     }
     visit->values[visit->count++] = value;
+}
+
+static void test_external_storage_trace(
+        SZrState *state,
+        SZrRawObject *owner,
+        FZrRawObjectGcValueVisitor visitor,
+        TZrPtr userData) {
+    ZR_UNUSED_PARAMETER(owner);
+
+    gExternalTraceCount++;
+    visitor(state, &gExternalTracedValue, userData);
+}
+
+static void test_external_storage_finalize(
+        SZrState *state,
+        SZrRawObject *owner) {
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(owner);
+    gExternalFinalizeCount++;
 }
 
 static void test_inline_struct_array_uses_registry_layout_for_gc_and_drop(void) {
@@ -145,8 +170,81 @@ static void test_inline_struct_array_uses_registry_layout_for_gc_and_drop(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_external_closed_storage_trace_survives_full_compaction(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrObject *owner;
+    SZrObject *child;
+    SZrGcRootHandle ownerRoot;
+    SZrRawObject *resolvedOwner = ZR_NULL;
+    SZrRawObject *resolvedChild;
+    SZrObject *youngChild;
+
+    TEST_ASSERT_NOT_NULL(state);
+    owner = ZrCore_Object_New(state, ZR_NULL);
+    child = ZrCore_Object_New(state, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(owner);
+    TEST_ASSERT_NOT_NULL(child);
+    ZrCore_Object_Init(state, owner);
+    ZrCore_Object_Init(state, child);
+    ZrCore_Value_InitAsRawObject(
+            state,
+            &gExternalTracedValue,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(child));
+    gExternalTracedValue.type = ZR_VALUE_TYPE_OBJECT;
+    gExternalTraceCount = 0u;
+    gExternalFinalizeCount = 0u;
+    owner->super.traceGcFunction = test_external_storage_trace;
+    owner->super.scanMarkGcFunction = test_external_storage_finalize;
+    TEST_ASSERT_TRUE(ZrCore_GcRootHandle_Create(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(owner), &ownerRoot));
+
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+
+    TEST_ASSERT_TRUE(ZrCore_GcRootHandle_Resolve(
+            state, &ownerRoot, &resolvedOwner));
+    TEST_ASSERT_NOT_NULL(resolvedOwner);
+    resolvedChild = ZrCore_Value_GetRawObject(&gExternalTracedValue);
+    TEST_ASSERT_NOT_NULL(resolvedChild);
+    TEST_ASSERT_TRUE(ZrCore_GcDomain_ObjectBelongsToState(
+            state, resolvedChild));
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, gExternalTraceCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, gExternalFinalizeCount);
+
+    state->global->garbageCollector->gcMode =
+            ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    youngChild = ZrCore_Object_New(state, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(youngChild);
+    ZrCore_Object_Init(state, youngChild);
+    ZrCore_Value_InitAsRawObject(
+            state,
+            &gExternalTracedValue,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(youngChild));
+    gExternalTracedValue.type = ZR_VALUE_TYPE_OBJECT;
+    ZrCore_GarbageCollector_Barrier(
+            state,
+            resolvedOwner,
+            ZR_CAST_RAW_OBJECT_AS_SUPER(youngChild));
+    ZrCore_GarbageCollector_ScheduleCollection(
+            state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+    ZrCore_GarbageCollector_GcStep(state);
+
+    resolvedChild = ZrCore_Value_GetRawObject(&gExternalTracedValue);
+    TEST_ASSERT_NOT_NULL(resolvedChild);
+    TEST_ASSERT_FALSE(ZrCore_RawObject_IsReleased(resolvedChild));
+    TEST_ASSERT_TRUE(ZrCore_GcDomain_ObjectBelongsToState(
+            state, resolvedChild));
+
+    ZrCore_GcRootHandle_Release(state, &ownerRoot);
+    ZrCore_Value_ResetAsNull(&gExternalTracedValue);
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    TEST_ASSERT_EQUAL_UINT32(1u, gExternalFinalizeCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_inline_struct_array_uses_registry_layout_for_gc_and_drop);
+    RUN_TEST(test_external_closed_storage_trace_survives_full_compaction);
     return UNITY_END();
 }

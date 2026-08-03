@@ -784,9 +784,39 @@ static TZrBool garbage_collector_native_data_references_live_young(SZrRawObject 
     return ZR_FALSE;
 }
 
+typedef struct SZrGcExternalYoungReferenceCheck {
+    TZrBool found;
+} SZrGcExternalYoungReferenceCheck;
+
+static void garbage_collector_check_external_value_for_live_young(
+        SZrState *state,
+        SZrTypeValue *value,
+        TZrPtr userData) {
+    SZrGcExternalYoungReferenceCheck *check =
+            (SZrGcExternalYoungReferenceCheck *)userData;
+
+    ZR_UNUSED_PARAMETER(state);
+    if (check != ZR_NULL && !check->found &&
+        garbage_collector_value_references_live_young(value)) {
+        check->found = ZR_TRUE;
+    }
+}
+
 static TZrBool garbage_collector_object_references_live_young(SZrState *state, SZrRawObject *object) {
+    SZrGcExternalYoungReferenceCheck externalCheck = {0};
+
     if (state == ZR_NULL || object == ZR_NULL || !garbage_collector_object_can_hold_gc_references(object)) {
         return ZR_FALSE;
+    }
+    if (object->traceGcFunction != ZR_NULL) {
+        object->traceGcFunction(
+                state,
+                object,
+                garbage_collector_check_external_value_for_live_young,
+                &externalCheck);
+        if (externalCheck.found) {
+            return ZR_TRUE;
+        }
     }
 
     switch (object->type) {
@@ -1854,6 +1884,19 @@ static TZrSize garbage_collector_rewrite_call_info_functions(SZrState *state, SZ
     return work;
 }
 
+static void garbage_collector_rewrite_external_value(
+        SZrState *state,
+        SZrTypeValue *value,
+        TZrPtr userData) {
+    TZrSize *work = (TZrSize *)userData;
+
+    ZR_UNUSED_PARAMETER(state);
+    if (garbage_collector_rewrite_value_if_forwarded(value) &&
+        work != ZR_NULL) {
+        (*work)++;
+    }
+}
+
 static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObject *object) {
     TZrSize work = 0;
 
@@ -1959,6 +2002,14 @@ static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObj
         }
         default:
             break;
+    }
+
+    if (object->traceGcFunction != ZR_NULL) {
+        object->traceGcFunction(
+                state,
+                object,
+                garbage_collector_rewrite_external_value,
+                &work);
     }
 
     return work;
@@ -2455,6 +2506,7 @@ static ZR_FORCE_INLINE TZrBool garbage_collector_object_can_old_compact(SZrGarba
 
     if (garbage_collector_ignore_registry_contains(collector, object) ||
         object->ownershipControl != ZR_NULL ||
+        object->traceGcFunction != ZR_NULL ||
         object->scanMarkGcFunction != ZR_NULL) {
         return ZR_FALSE;
     }

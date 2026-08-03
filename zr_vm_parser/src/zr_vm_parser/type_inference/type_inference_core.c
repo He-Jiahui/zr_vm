@@ -4115,6 +4115,15 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
                 return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
 
+            if (passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+                passingMode == ZR_PARAMETER_PASSING_MODE_OUT) {
+                if (!type_inference_reference_argument_type_equal(
+                            argType, paramType)) {
+                    return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
+                }
+                continue;
+            }
+
             if (ZrParser_InferredType_Equal(argType, paramType)) {
                 continue;
             }

@@ -9,9 +9,17 @@
 
 struct SZrState;
 struct SZrRawObject;
+struct SZrTypeValue;
 struct SZrOwnershipControl;
 
 typedef void (*FRawObjectScanMarkGc)(struct SZrState *state, struct SZrRawObject *parentThis);
+typedef void (*FZrRawObjectGcValueVisitor)(struct SZrState *state,
+                                           struct SZrTypeValue *value,
+                                           TZrPtr userData);
+typedef void (*FRawObjectTraceGc)(struct SZrState *state,
+                                  struct SZrRawObject *parentThis,
+                                  FZrRawObjectGcValueVisitor visitor,
+                                  TZrPtr userData);
 
 typedef enum EZrResourceLifecycleState {
     ZR_RESOURCE_LIFECYCLE_NONE = 0,
@@ -29,6 +37,7 @@ struct ZR_STRUCT_ALIGN SZrRawObject {
     TZrUInt8 resourceLifecycleState;
     SZrGarbageCollectionObjectMark garbageCollectMark;
     struct SZrRawObject *gcList;
+    FRawObjectTraceGc traceGcFunction;
     FRawObjectScanMarkGc scanMarkGcFunction;
     struct SZrOwnershipControl *ownershipControl;
     TZrUInt64 gcDomainId;
@@ -66,6 +75,7 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->garbageCollectMark.forwardingAddress = ZR_NULL;
     super->garbageCollectMark.forwardingRefLocation = ZR_NULL;
     super->gcList = ZR_NULL;
+    super->traceGcFunction = ZR_NULL;
     super->scanMarkGcFunction = ZR_NULL;
     super->ownershipControl = ZR_NULL;
     super->gcDomainId = 0u;

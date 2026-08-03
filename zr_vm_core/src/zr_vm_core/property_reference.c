@@ -719,6 +719,7 @@ TZrBool ZrCore_PropertyReference_Store(
     if (kind == ZR_PROPERTY_REFERENCE_KIND_FRAME_SLOT) {
         SZrFunction *function;
         TZrStackValuePointer frameBase;
+        TZrStackValuePointer cleanupMirror;
         TZrUInt32 stackSlot;
         SZrTypeValue *destination;
 
@@ -729,6 +730,11 @@ TZrBool ZrCore_PropertyReference_Store(
             return ZR_FALSE;
         }
         ZrCore_Value_Copy(state, destination, value);
+        cleanupMirror = frameBase + stackSlot;
+        if (cleanupMirror->toBeClosedValueOffset != 0u &&
+            destination != &cleanupMirror->value) {
+            ZrCore_Value_Copy(state, &cleanupMirror->value, destination);
+        }
         return ZR_TRUE;
     }
     if (kind == ZR_PROPERTY_REFERENCE_KIND_MEMBER) {

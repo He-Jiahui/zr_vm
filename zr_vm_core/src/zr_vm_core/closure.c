@@ -423,11 +423,8 @@ static void closure_value_pre_call_close_meta(SZrState *state, TZrStackPointer s
 void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePointer stackPointer) {
     ZR_ASSERT(stackPointer > state->toBeClosedValueList.valuePointer);
     SZrTypeValue *stackValue = ZrCore_Stack_GetValue(stackPointer);
-    if (ZR_VALUE_IS_TYPE_NULL(stackValue)) {
-        return;
-    }
-    TZrBool hasCloseMeta = closure_value_check_close_meta(state, stackPointer);
-    if (!hasCloseMeta) {
+    if (!ZR_VALUE_IS_TYPE_NULL(stackValue->type) &&
+        !closure_value_check_close_meta(state, stackPointer)) {
         return;
     }
 

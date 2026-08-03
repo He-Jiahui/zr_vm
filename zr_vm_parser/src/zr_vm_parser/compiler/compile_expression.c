@@ -745,6 +745,7 @@ typedef struct SZrAssignmentInlineStructParentWriteback {
     TZrUInt32 parentSlot;
     TZrUInt32 childSlot;
     TZrUInt32 memberId;
+    TZrBool propertyReference;
     SZrFileRange location;
 } SZrAssignmentInlineStructParentWriteback;
 
@@ -773,11 +774,20 @@ static TZrBool emit_assignment_inline_struct_writebacks(
 
     for (TZrSize index = writebackCount; index > 0u; index--) {
         const SZrAssignmentInlineStructParentWriteback *writeback = &writebacks[index - 1u];
-        if (!emit_member_slot_set(cs,
-                                  writeback->childSlot,
-                                  writeback->parentSlot,
-                                  writeback->memberId,
-                                  writeback->location)) {
+        TZrBool stored = writeback->propertyReference
+                                 ? compiler_property_reference_store(
+                                           cs,
+                                           writeback->parentSlot,
+                                           writeback->childSlot,
+                                           writeback->location)
+                                 : emit_member_slot_set(
+                                           cs,
+                                           writeback->childSlot,
+                                           writeback->parentSlot,
+                                           writeback->memberId,
+                                           writeback->location);
+
+        if (!stored) {
             return ZR_FALSE;
         }
     }
@@ -960,6 +970,11 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
 
             if (getterAccessor != ZR_NULL && memberName != ZR_NULL && !memberExpr->computed) {
                 TZrUInt32 destinationSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
+                TZrBool returnsPropertyReference =
+                        typeMember != ZR_NULL &&
+                        typeMember->hasStructuredReturnType &&
+                        typeMember->structuredReturnType.referenceAccess !=
+                                ZR_REFERENCE_ACCESS_NONE;
 
                 if (destinationSlot == ZR_PARSER_SLOT_NONE) {
                     return ZR_FALSE;
@@ -992,8 +1007,46 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                         return ZR_FALSE;
                     }
                 }
-                currentSlot = destinationSlot;
                 rootTypeName = getterAccessor->returnTypeName;
+                if (returnsPropertyReference) {
+                    TZrUInt32 referenceSlot = destinationSlot;
+                    TZrUInt32 valueSlot = allocate_fresh_stack_slot_after(
+                            cs, referenceSlot);
+
+                    if (valueSlot == ZR_PARSER_SLOT_NONE ||
+                        !compiler_property_reference_load(
+                                cs,
+                                referenceSlot,
+                                valueSlot,
+                                memberNode->location)) {
+                        return ZR_FALSE;
+                    }
+                    if (assignment_field_type_is_inline_struct(
+                                cs, rootTypeName) &&
+                        writebacks != ZR_NULL &&
+                        outWritebackCount != ZR_NULL) {
+                        if (*outWritebackCount >= writebackCapacity) {
+                            ZrParser_Compiler_Error(
+                                    cs,
+                                    "Too many nested struct fields in assignment target",
+                                    memberNode->location);
+                            return ZR_FALSE;
+                        }
+                        writebacks[*outWritebackCount].parentSlot =
+                                referenceSlot;
+                        writebacks[*outWritebackCount].childSlot = valueSlot;
+                        writebacks[*outWritebackCount].memberId =
+                                ZR_PARSER_MEMBER_ID_NONE;
+                        writebacks[*outWritebackCount].propertyReference =
+                                ZR_TRUE;
+                        writebacks[*outWritebackCount].location =
+                                memberNode->location;
+                        (*outWritebackCount)++;
+                    }
+                    currentSlot = valueSlot;
+                } else {
+                    currentSlot = destinationSlot;
+                }
                 rootIsTypeReference = getterAccessor->isStatic &&
                                       rootTypeName != ZR_NULL &&
                                       find_compiler_type_prototype(cs, rootTypeName) != ZR_NULL;
@@ -1072,6 +1125,8 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                         writebacks[*outWritebackCount].parentSlot = parentSlot;
                         writebacks[*outWritebackCount].childSlot = destinationSlot;
                         writebacks[*outWritebackCount].memberId = memberId;
+                        writebacks[*outWritebackCount].propertyReference =
+                                ZR_FALSE;
                         writebacks[*outWritebackCount].location = memberNode->location;
                         (*outWritebackCount)++;
                     }
@@ -1702,6 +1757,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                 left->type == ZR_AST_PRIMARY_EXPRESSION &&
                 leftType.referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
                 leftType.referenceAccess = ZR_REFERENCE_ACCESS_NONE;
+            }
+            if (leftType.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+                rightType.referenceAccess != ZR_REFERENCE_ACCESS_NONE) {
+                (void)compiler_expression_consume_auto_loaded_property_reference(
+                        right, &rightType);
             }
             if (!ZrParser_AssignmentCompatibility_Check(cs, &leftType, &rightType, node->location)) {
                 ZrParser_InferredType_Free(cs->state, &leftType);

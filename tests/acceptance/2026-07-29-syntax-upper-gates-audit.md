@@ -9,7 +9,7 @@ scope:
   - Syntax 11
   - Syntax 14
 status: in-progress
-last_verified: 2026-08-03
+last_verified: 2026-08-04
 ---
 
 # Syntax upper gates requirement-to-evidence ledger
@@ -98,17 +98,58 @@ remaining owner gates are open.
 
 ## 2026-08-03 Gate 09 canonical-layout review
 
-- The first bounded implementation accepted canonical `SZrTypeLayout`, but an
-  independent review reproduced two Critical nested-layout holes after the
-  green 14-test matrix.
-- Root `GcFree` classification ignored a nested registry-resolved `GcMapped`
-  layout, so the pool could omit a live reference visitor. The raw-copy fast
-  path also returned before resolving nested move-only/lifecycle layouts.
-- The public lifetime contract additionally omitted that the retained VM state
-  must outlive the pool. Existing focused tests did not cover either Critical
-  nested case, so their green result is not promotion evidence.
-- Gate 09 M3 is reopened. Compact-safe closed-`T` moving slabs and language
-  early-exit cleanup remain open after these lower correctness defects are fixed.
+- The first bounded implementation initially admitted two Critical nested-layout
+  downgrades: a root `GcFree` layout could hide a registry-resolved `GcMapped`
+  child, and a raw-copy root could hide a move-only/lifecycle child.
+- The committed recursive admission walk now validates every nested edge before
+  pool creation. Direct regressions reject both downgrade forms; managed nested
+  scan and nested custom Drop tests also prove positive traversal and
+  exactly-once cleanup. The public contract states that retained VM state,
+  registry backing, nested layouts/tables, and callback data must outlive the
+  pool.
+- A fresh isolated WSL GCC 11.4 replay on 2026-08-03 passed the canonical
+  TypeLayout suite 14/14, including both former Critical cases. They are closed,
+  not current Gate blockers.
+- Follow-up production convergence removed the permanent
+  `__zr_pool_values` mirror. Canonical inline delivery now fixes registry
+  identity/layout id, external slab values participate in mark/minor/forwarding
+  through a separate trace callback, and guard projections copy back only on
+  writable close. Focused GCC evidence is native view 7/7, external GC layout
+  2/2, canonical pool layout 14/14, and production provider 4/4.
+- Writable `ref T` member chains now load nested inline structs, reverse-write
+  the completed value through the property reference, and consume the temporary
+  reference shell in ordinary variable/assignment/return contexts. Property
+  ref 23/23, property lowering 22/22, type inference 122/122, and the source
+  pool write/close/readback test pass.
+- Source return/throw/break/continue/block cleanup and `out` view replacement
+  release native guards in deterministic order. `CLOSE_SCOPE` now saves its next
+  PC before nested native close and refreshes normal native-call state, closing
+  the ASan stale-resume failure.
+- Gate 09 M3 remains open for interpreter-wide canonical registration, optional
+  managed slab relocation proof, and the final pause/allocation/scan-byte
+  promotion matrix.
+
+## 2026-08-04 final recount and review
+
+- The fresh selector recursively scans Markdown files below the Syntax
+  milestone subdirectories, excludes 19 `*-implementation-plan.md` files and
+  the one task-support `m5-task4-property-import-bootstrap.md` record, and
+  returns `TOTAL=55 COMPLETE=55 MISSING=0`. The exact marker distribution is
+  20 Chinese plain completions, 16 English plain completions, 12 backticked
+  English completions, three `completed_with_known_*` historical qualifiers,
+  one backticked M4-qualified completion, and three Chinese promotion-qualified
+  completions.
+- A production-source literal scan returns zero occurrences for the removed
+  `%module`, `%compileTime`, `%extern`, `%test`, `%owned`, `%import`, `%borrow`,
+  `%loan`, `%unique`, `%shared`, and `%func` spellings. The 24-name migration
+  table is used only by `report_removed_percent_syntax`: production parsing
+  marks the error fatal, emits `legacy_syntax_removed`, and returns no AST.
+  Remaining percent-token branches are modulo/modulo-assignment, rejection
+  routing, parser recovery, or the internal intermediate closure delimiter.
+- The final review found no unresolved Critical or Important defect in this
+  bounded Gate 09 slice. The same 21 affected executables pass 530/530 Unity
+  assertions under WSL GCC 11.4, WSL Clang 14.0, and MSVC 19.44 Debug; the
+  MSVC ASan subset passes 120/120. These results do not promote the root gate.
 
 ## 2026-08-03 Gate 08 M1 provider-identity review
 
@@ -152,8 +193,8 @@ remaining owner gates are open.
 | 08 M1 | official provider roles and canonical TypeRoles replace parser/core name dispatch; contract-only reflection cannot materialize; host loaders compose; projections and parent graphs validate; `zr.*` source spoofing is rejected; provider 9/9, resolver 10/10, reflection surface 19/19 and dynamic reflection 36/36 pass across GCC/Clang/MSVC | proven | preserve registered identity and fail-closed provider resolution |
 | 08 M2-M5 | nullable `typeof`, authenticated TypeId fields, member queries/construction and callable by-ref projection have focused behavior, but the complete artifact/AOT/LSP/stress promotion matrix is absent | indirect | add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
 | 09 M1 | source-callable `Pool<T>` identity/recycle plus C state-machine, million-handle, ABA, exhaustion, alignment and concurrency evidence; pool 13/13 | proven | preserve scalar handle identity and ABI v4 descriptor contract |
-| 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, storage/escape rejection and no-repeat-validation counter | indirect | complete the full local/return/container/closure/suspension matrix and view replacement/early-exit ordering |
-| 09 M3 | independent review reproduced skipped nested `GcMapped` scanning and raw-copy bypass of nested move-only/lifecycle validation; retained-state lifetime is undocumented | contradicted | fix nested layout closure and state lifetime first, add direct regressions, then replace the erased-value mirror with compact-safe closed-`T` moving slabs and prove language early-exit cleanup |
+| 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, storage/escape rejection, no-repeat-validation counter, and source return/throw/break/continue/replacement cleanup | indirect | complete the remaining container/closure/suspension matrix |
+| 09 M3 | recursive canonical admission rejects nested lifecycle downgrades; production canonical inline delivery has no permanent mirror, fixes registry identity/layout id, traces and rewrites external managed values across full/minor GC, performs temporary guard projection with writable copyback, closes writable `ref T` nested-member/value-consumption semantics, and resumes after native close without replaying a closed view; focused suites pass 7/7 + 2/2 + 14/14 + 4/4 + property ref 23/23 + property lowering 22/22 + type inference 122/122 | indirect | attach canonical registries to ordinary interpreter frames, decide managed slab relocation scope, and run the final pause/allocation/scan-byte matrix |
 | 09 M4 | native/binary/reflection contract hash parity and corrupt/missing/unknown rejection are covered by artifact 3/3; runtime-only/readonly/property-reference facts cross native import | indirect | finish dedicated LSP facts and full reflection non-boxing/lifetime evidence |
 | 09 M5 | million-handle and churn/hot-access counters are separated | indirect | add final pause/allocation/scan-byte promotion matrix after M2-M4 close |
 | 10F M3 | schema v4 persists independent canonical callable and ABI vectors; TypeLayout/capability-driven admission; `.zro`, C AOT, and LLVM AOT consumers; native extern 29/29 and AOT stripping 37/37 focused evidence | proven | preserve in final matrix |
@@ -175,6 +216,7 @@ remaining owner gates are open.
 The strict production parser cutover is complete. The 55 historical leaf
 records are confirmed in their own scope; the current directory additionally
 contains one completed task-level support record outside that selector. The root
-Syntax redesign is not complete: 07B is explicitly open, Gate 09 and 14 have
-reopened correctness/contract defects, and 08 M2-M5, 10C, and 11 M5 remain open.
+Syntax redesign is not complete: 07B is explicitly open; Gate 09 still lacks
+interpreter canonical registration and performance promotion work; Gate 14 has
+reopened contract defects; and 08 M2-M5, 10C, and 11 M5 remain open.
 No acceptance document may translate leaf completion into a root promotion.

@@ -541,6 +541,89 @@ static void test_native_plain_value_frame_slot_stays_boxed_argument(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_native_inline_argument_view_validates_canonical_layout_registry(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout slotLayout = {0};
+    SZrTypeLayout typeLayout;
+    const SZrTypeLayout *layouts[1];
+    SZrAotCodeRegistration registration = {0};
+    ZrLibCallContext context = {0};
+    ZrLibInlineArgumentView view;
+    TZrStackValuePointer frameBase;
+    SZrStackFramePlace place;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ZrCore_TypeLayout_InitStruct(
+            &typeLayout,
+            (TZrUInt32)(sizeof(TZrInt64) * 2u),
+            (TZrUInt32)_Alignof(TZrInt64),
+            ZR_TYPE_LAYOUT_COPY_KIND_BITWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+            ZR_NULL,
+            0u);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&typeLayout));
+    layouts[0] = &typeLayout;
+    registration.typeLayouts = layouts;
+    registration.typeLayoutCount = ZR_ARRAY_COUNT(layouts);
+    function.metadataCodeRegistration = &registration;
+    function.metadataTypeLayoutCount = ZR_ARRAY_COUNT(layouts);
+
+    slotLayout.stackSlot = 0u;
+    slotLayout.byteOffset = 0u;
+    slotLayout.byteSize = typeLayout.byteSize;
+    slotLayout.byteAlign = typeLayout.byteAlign;
+    slotLayout.typeLayoutId = 0u;
+    slotLayout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    slotLayout.isParameter = ZR_TRUE;
+    function.frameSlotLayouts = &slotLayout;
+    function.frameSlotLayoutLength = 1u;
+    function.frameByteSize = slotLayout.byteSize;
+    function.frameByteAlign = slotLayout.byteAlign;
+
+    frameBase = state->stackBase.valuePointer + 8;
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            state, &function, frameBase, 0u, &place));
+    context.state = state;
+    context.argumentCount = 1u;
+    context.inlineFrameFunction = &function;
+    context.inlineFrameBase = frameBase;
+    context.inlineArgumentStartSlot = 0u;
+
+    memset(&view, 0xcc, sizeof(view));
+    TEST_ASSERT_TRUE(ZrLib_CallContext_InlineArgumentView(
+            &context, 0u, &view));
+    TEST_ASSERT_TRUE(view.span.available);
+    TEST_ASSERT_EQUAL_PTR(place.address, view.span.address);
+    TEST_ASSERT_EQUAL_UINT32(0u, view.span.typeLayoutId);
+    TEST_ASSERT_EQUAL_PTR(&typeLayout, view.typeLayout);
+    TEST_ASSERT_EQUAL_PTR(layouts, view.registry.layouts);
+    TEST_ASSERT_EQUAL_UINT32(1u, view.registry.count);
+
+    function.metadataCodeRegistration = ZR_NULL;
+    memset(&view, 0xcc, sizeof(view));
+    TEST_ASSERT_FALSE(ZrLib_CallContext_InlineArgumentView(
+            &context, 0u, &view));
+    TEST_ASSERT_FALSE(view.span.available);
+    TEST_ASSERT_NULL(view.span.address);
+    TEST_ASSERT_NULL(view.typeLayout);
+    TEST_ASSERT_NULL(view.registry.layouts);
+    TEST_ASSERT_EQUAL_UINT32(0u, view.registry.count);
+
+    function.metadataCodeRegistration = &registration;
+    slotLayout.byteSize = typeLayout.byteSize / 2u;
+    memset(&view, 0xcc, sizeof(view));
+    TEST_ASSERT_FALSE(ZrLib_CallContext_InlineArgumentView(
+            &context, 0u, &view));
+    TEST_ASSERT_FALSE(view.span.available);
+    TEST_ASSERT_NULL(view.span.address);
+    TEST_ASSERT_NULL(view.typeLayout);
+    TEST_ASSERT_NULL(view.registry.layouts);
+    TEST_ASSERT_EQUAL_UINT32(0u, view.registry.count);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -554,6 +637,7 @@ int main(void) {
     RUN_TEST(test_native_inline_parameter_requires_span_not_plain_argument_value);
     RUN_TEST(test_native_boxed_argument_stays_available_when_no_inline_frame_layout);
     RUN_TEST(test_native_plain_value_frame_slot_stays_boxed_argument);
+    RUN_TEST(test_native_inline_argument_view_validates_canonical_layout_registry);
 
     return UNITY_END();
 }

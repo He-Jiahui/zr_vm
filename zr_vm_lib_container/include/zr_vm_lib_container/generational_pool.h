@@ -165,6 +165,13 @@ ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_Scan(
         uint64_t *outScannedSlots,
         uint64_t *outScannedBytes);
 
+ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_TraceGcValues(
+        SZrPool *pool,
+        FZrTypeLayoutGcValueVisitor visitor,
+        TZrPtr visitorUserData,
+        uint64_t *outScannedSlots,
+        uint64_t *outScannedBytes);
+
 ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_GetStats(
         const SZrPool *pool,
         SZrPoolStats *outStats);

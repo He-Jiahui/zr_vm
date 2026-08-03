@@ -796,6 +796,79 @@ EZrPoolStatus ZrPool_Scan(
     return status;
 }
 
+EZrPoolStatus ZrPool_TraceGcValues(
+        SZrPool *pool,
+        FZrTypeLayoutGcValueVisitor visitor,
+        TZrPtr visitorUserData,
+        uint64_t *outScannedSlots,
+        uint64_t *outScannedBytes) {
+    uint64_t scannedSlots = 0u;
+    uint64_t scannedBytes = 0u;
+    EZrPoolStatus status = ZR_POOL_STATUS_OK;
+
+    if (outScannedSlots != ZR_NULL) {
+        *outScannedSlots = 0u;
+    }
+    if (outScannedBytes != ZR_NULL) {
+        *outScannedBytes = 0u;
+    }
+    if (pool == ZR_NULL || !pool->hasCanonicalLayout ||
+        (pool->canonicalLayout.gcScanKind !=
+                 (TZrUInt8)ZR_TYPE_LAYOUT_GC_SCAN_FREE &&
+         visitor == ZR_NULL)) {
+        return ZR_POOL_STATUS_INVALID_ARGUMENT;
+    }
+
+    zr_pool_lock(pool);
+    if (pool->canonicalLayout.gcScanKind !=
+        (TZrUInt8)ZR_TYPE_LAYOUT_GC_SCAN_FREE) {
+        for (TZrSize slabIndex = 0u;
+             slabIndex < pool->slabCount && status == ZR_POOL_STATUS_OK;
+             slabIndex++) {
+            SZrPoolSlab *slab = pool->slabs[slabIndex];
+
+            for (TZrSize localIndex = 0u;
+                 localIndex < pool->config.slabCapacity;
+                 localIndex++) {
+                SZrPoolSlot *slot = &slab->slots[localIndex];
+                TZrPtr storage;
+
+                if (!slot->initialized ||
+                    (slot->state != ZR_POOL_SLOT_LIVE &&
+                     slot->state != ZR_POOL_SLOT_RETIRED)) {
+                    continue;
+                }
+                storage = slab->storage +
+                          localIndex * pool->elementStride;
+                if (!ZrCore_TypeLayout_VisitGcValuesWithRegistry(
+                            pool->canonicalState,
+                            &pool->canonicalLayout,
+                            &pool->canonicalRegistry,
+                            storage,
+                            visitor,
+                            visitorUserData)) {
+                    status = ZR_POOL_STATUS_INVALID_ARGUMENT;
+                    break;
+                }
+                scannedSlots++;
+                scannedBytes += pool->canonicalLayout.byteSize;
+            }
+        }
+    }
+    pool->stats.scanPassCount++;
+    pool->stats.scannedSlotCount += scannedSlots;
+    pool->stats.scannedByteCount += scannedBytes;
+    zr_pool_unlock(pool);
+
+    if (outScannedSlots != ZR_NULL) {
+        *outScannedSlots = scannedSlots;
+    }
+    if (outScannedBytes != ZR_NULL) {
+        *outScannedBytes = scannedBytes;
+    }
+    return status;
+}
+
 static EZrPoolStatus zr_pool_get_stats_unlocked(
         const SZrPool *pool,
         SZrPoolStats *outStats) {

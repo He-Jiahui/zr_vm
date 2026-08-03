@@ -10,6 +10,10 @@ related_code:
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_internal.h
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_type_layout.c
+  - zr_vm_core/include/zr_vm_core/raw_object.h
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_object.c
   - zr_vm_lib_ffi/include/zr_vm_lib_ffi/runtime.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
@@ -23,6 +27,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ref_struct_rules.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_argument_view.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
 implementation_files:
@@ -32,6 +37,10 @@ implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.h
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c
   - zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_type_layout.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_object.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_argument_view.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
@@ -54,8 +63,11 @@ tests:
   - tests/container/test_generational_pool_gc_stress.c
   - tests/container/test_generational_pool_type_layout.c
   - tests/container/test_generational_pool_artifact.c
+  - tests/container/test_pooling_closed_type_runtime.c
+  - tests/core/test_inline_struct_array_layout.c
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
 doc_type: module-detail
+last_verified: 2026-08-03
 ---
 
 # Pooling And Pinned FFI Views
@@ -106,8 +118,10 @@ structured metadata; the native metadata projection and parser import path
 preserve it as `EZrParameterPassingMode`, rather than encoding `out` in a type
 name. Runtime-only backing fields, readonly field facts, and ref-property
 access contracts are also structured descriptor fields. This descriptor schema
-is native plugin ABI v4. Providers built against ABI v3 or earlier are rejected
-during registration and must be rebuilt; the runtime ABI remains v3.
+was introduced in native plugin ABI v4. The current provider/type-role schema is
+native plugin ABI v6, and the external trace field moves the native runtime ABI
+to v4. Providers built against earlier descriptor/runtime layouts are rejected
+during registration and must be rebuilt.
 
 Imported `PoolRef<T>` and `PoolReadRef<T>` are ref-like because the compiler
 queries their canonical `REF_LIKE` capability. The storage and escape passes do
@@ -149,12 +163,45 @@ valid until the pool is destroyed. The root layout value itself is copied.
 Stateful canonical layouts are currently thread-local; concurrent admission is
 rejected until operations can receive an isolation-domain-safe state per call.
 
-The production erased-value `Pool<T>` provider now enters through this canonical
-bridge. Its hidden `__zr_pool_values` array remains the current managed root
-owner, so its canonical visitor intentionally does not mark a second copy of the
-same values. Direct `ZrPool_Scan` tests prove layout-driven visitor routing for
-native closed layouts; they do not yet claim that the production provider stores
-closed `T` values only in compacting GC-owned slabs.
+The production provider consumes `ZrLibInlineArgumentView` when the native call
+frame carries a canonical registry. The first successful `deliver(T)` fixes the
+pool's registry identity, layout id, layout/hash/size/alignment, and metadata
+function. Later deliveries must match that same registry entry; a structurally
+identical layout from another registry is rejected. The slab copies the inline
+bytes directly through the canonical layout. The former permanent
+`__zr_pool_values` mirror has been removed.
+
+Pool slabs are native stable storage, so the pool owner exposes their embedded
+GC values through `SZrRawObject.traceGcFunction`. Classic mark, remembered-set
+minor checks, and forwarding rewrite invoke the same visitor contract. The
+metadata function is traced and write-barriered when it is first bound, and
+every successful element publication or writable-guard copyback barriers the
+embedded managed values. Live and retired initialized slots are traced; free or
+uninitialized slots are not. Object finalization remains a separate callback
+and destroys the pool exactly once.
+
+`PoolRef<T>`/`PoolReadRef<T>` materialize an object projection only for the
+guard's lifetime. Read guards never write it back. Explicit writable close
+copies the projection back into canonical inline storage and propagates a copy
+failure while still releasing the guard. This temporary projection is not a
+second persistent pool owner. Writable `ref T` member chains load the projection,
+apply nested inline-struct updates, and store the completed value back through
+the property reference before close. Ordinary variable/assignment/return value
+contexts consume the temporary reference shell, while explicit `ref`/`out`
+calls preserve its Place identity.
+
+Compiler scope cleanup marks guard locals for close and emits cleanup on normal
+block exit, return, throw, break, and continue. Reusing an `out` variable closes
+its previous active guard before writing the replacement. Runtime `CLOSE_SCOPE`
+saves the next bytecode PC before invoking native close metadata and restores
+the normal native-call frame/exception state afterward, so nested close cannot
+re-enter an instruction that still refers to the now-closed projection.
+
+The ordinary interpreter can still lack `metadataCodeRegistration` on a source
+child function. Such a call cannot produce `ZrLibInlineArgumentView` and retains
+the existing materialized-value route. Closed-layout provider tests therefore
+attach a real prototype layout to a canonical registry explicitly; source-only
+execution is not evidence that every backend is non-boxing.
 
 The native module publishes that hash as a descriptor constant. The generic
 artifact projection maps it to the StableSlotSource layout capability by
@@ -228,12 +275,21 @@ admission, visitor routing, exactly-once deferred Drop, managed-state and visito
 requirements, VM copy-error rollback, stateful-concurrency rejection, successful
 nested managed scan/Drop, missing copy paths, raw-copy bypass, and nested
 scan/Drop downgrade rejection.
+`zr_vm_pooling_closed_type_runtime_test` covers mirror-free inline publication,
+strict registry identity, source-level writable struct member chains, ordinary
+property-reference value loads, explicit close/readback, and writable guard
+object-to-inline copyback through a compiled prototype plus canonical registry.
+`zr_vm_property_ref_return_test` and `zr_vm_property_access_lowering_test` cover
+ref/out identity, nested writeback, binary roundtrip, and C/LLVM AOT emission.
+`zr_vm_inline_struct_array_layout_test` additionally proves that an
+external trace keeps and rewrites managed children across full compaction and a
+barriered minor collection, while finalization remains exactly once.
 
 ## Follow-up Boundary
 
 This milestone provides exact-length reusable arrays and pinned byte-buffer views.
-Size-class pooling, arbitrary typed native slices, custom marshallers, managed
-moving-slab compaction, closed-`T` production storage, and language-level
-early-exit cleanup for native pool guards remain separate work. They must
-extend the structured protocol, TypeLayout, and artifact contracts rather than
-adding provider-name recognition.
+Size-class pooling, arbitrary typed native slices, custom marshallers, movable
+managed slab storage, interpreter-wide canonical inline argument registration,
+and language-level view replacement/early-exit cleanup for native pool guards
+remain separate work. They must extend the structured protocol, TypeLayout, and
+artifact contracts rather than adding provider-name recognition.

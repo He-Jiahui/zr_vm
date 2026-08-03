@@ -728,8 +728,13 @@ void compiler_register_owner_cleanup_slot(SZrCompilerState *cs,
                                           EZrOwnershipQualifier ownershipQualifier) ;
 
 void compiler_register_typed_owner_cleanup_slot(SZrCompilerState *cs,
-                                                TZrUInt32 slot,
-                                                const SZrType *typeInfo) ;
+                                                 TZrUInt32 slot,
+                                                 const SZrType *typeInfo) ;
+
+void compiler_register_inferred_close_cleanup_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 slot,
+        const SZrInferredType *typeInfo) ;
 
 void enter_type_scope(SZrCompilerState *cs) ;
 

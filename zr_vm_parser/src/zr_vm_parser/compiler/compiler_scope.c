@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compile_expression_internal.h"
 
 void compiler_register_scope_cleanup_slot(
         SZrCompilerState *cs,
@@ -75,6 +76,45 @@ void compiler_register_typed_owner_cleanup_slot(
     compiler_register_owner_cleanup_slot(cs, slot, ownershipQualifier);
 }
 
+void compiler_register_inferred_close_cleanup_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 slot,
+        const SZrInferredType *typeInfo) {
+    SZrTypePrototypeInfo *prototype;
+    TZrBool hasCloseContract;
+
+    if (cs == ZR_NULL || typeInfo == ZR_NULL || typeInfo->typeName == ZR_NULL ||
+        typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+        typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+        typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
+        return;
+    }
+
+    hasCloseContract = ZR_FALSE;
+    prototype = find_compiler_type_prototype(cs, typeInfo->typeName);
+    for (TZrSize index = 0u;
+         !hasCloseContract && prototype != ZR_NULL &&
+         index < prototype->members.length;
+         index++) {
+        const SZrTypeMemberInfo *member =
+                (const SZrTypeMemberInfo *)ZrCore_Array_Get(
+                        &prototype->members, index);
+
+        if (member != ZR_NULL &&
+            ((member->isMetaMethod && member->metaType == ZR_META_CLOSE) ||
+             member->contractRole == ZR_MEMBER_CONTRACT_ROLE_POOL_RELEASE)) {
+            hasCloseContract = ZR_TRUE;
+        }
+    }
+    if (hasCloseContract) {
+        compiler_register_scope_cleanup_slot(
+                cs,
+                slot,
+                ZR_OWNERSHIP_BUILTIN_KIND_NONE,
+                ZR_PARSER_SLOT_NONE);
+    }
+}
+
 static void emit_scope_cleanup_registration(SZrCompilerState *cs,
                                             const SZrScopeCleanupRegistration *registration) {
     if (cs == ZR_NULL || registration == ZR_NULL || cs->hasError) {
@@ -131,9 +171,7 @@ TZrBool compiler_has_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
             const SZrScopeCleanupRegistration *registration =
                     (const SZrScopeCleanupRegistration *)ZrCore_Array_Get(&scope->cleanupRegistrations,
                                                                           registrationIndex);
-            if (registration != ZR_NULL &&
-                (registration->ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE ||
-                 registration->ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN)) {
+            if (registration != ZR_NULL) {
                 return ZR_TRUE;
             }
         }
@@ -168,9 +206,7 @@ void compiler_emit_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
             const SZrScopeCleanupRegistration *registration =
                     (const SZrScopeCleanupRegistration *)ZrCore_Array_Get(&scope->cleanupRegistrations,
                                                                           registrationIndex - 1);
-            if (registration == ZR_NULL ||
-                (registration->ownershipBuiltinKind != ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
-                 registration->ownershipBuiltinKind != ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN)) {
+            if (registration == ZR_NULL) {
                 continue;
             }
 
