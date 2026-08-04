@@ -15,6 +15,7 @@ typedef struct SZrParserArtifactPublicContract {
 } SZrParserArtifactPublicContract;
 
 struct ZrLibTypeDescriptor;
+struct SZrReflectionTypeIdentity;
 
 ZR_PARSER_API EZrArtifactStatus ZrParser_ArtifactLayout_ApplyNativeCapabilities(
         const struct ZrLibTypeDescriptor *typeDescriptor,
@@ -46,6 +47,18 @@ ZR_PARSER_API EZrArtifactStatus ZrParser_ArtifactType_BuildPublicIdentity(
         TZrSize signatureBufferCapacity,
         TZrSize *outSignatureLength,
         SZrArtifactPublicIdentity *outIdentity,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_PARSER_API EZrArtifactStatus ZrParser_ArtifactMetadata_BuildState(
+        const struct SZrReflectionTypeIdentity *identity,
+        const struct ZrLibTypeDescriptor *nativeTypeDescriptor,
+        EZrArtifactMetadataPreservationState preservationState,
+        TZrUInt32 retainedMemberCount,
+        TZrUInt32 retainedPropertyCount,
+        TZrUInt32 retainedMetaRecordCount,
+        TZrUInt64 layoutHash,
+        TZrUInt64 callableContractHash,
+        SZrArtifactMetadataStateRow *outState,
         SZrArtifactDiagnostic *diagnostic);
 
 #endif // ZR_VM_PARSER_ARTIFACT_PROJECTION_H

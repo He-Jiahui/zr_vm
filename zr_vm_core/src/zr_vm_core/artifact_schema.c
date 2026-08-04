@@ -603,6 +603,9 @@ static EZrArtifactStatus artifact_validate_document(const SZrArtifactDocument *d
         }
     }
 
+    status = zr_artifact_metadata_graph_validate_input(document, diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) return status;
+
     if (document->kind != ZR_ARTIFACT_KIND_ZRS) {
         status = artifact_validate_input_identity_rows(document, diagnostic);
         if (status != ZR_ARTIFACT_STATUS_OK) return status;
@@ -1004,6 +1007,11 @@ static EZrArtifactStatus artifact_validate_decoded_rows(const SZrArtifactView *v
                                             section.byteOffset + rowIndex * section.elementSize);
             }
         }
+    }
+    {
+        EZrArtifactStatus status =
+                zr_artifact_metadata_graph_validate_decoded(view, diagnostic);
+        if (status != ZR_ARTIFACT_STATUS_OK) return status;
     }
     if (view->kind != ZR_ARTIFACT_KIND_ZRS) {
         SZrArtifactSectionView refSection, specSection, contractSection, layoutSection;

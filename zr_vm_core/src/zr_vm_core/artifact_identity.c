@@ -66,6 +66,69 @@ TZrUInt64 ZrCore_Artifact_HashBytes(const TZrByte *bytes, TZrSize byteLength) {
     return hash;
 }
 
+static void artifact_hash_u32(TZrUInt64 *hash, TZrUInt32 value) {
+    TZrUInt32 shift;
+
+    for (shift = 0u; shift < 32u; shift += 8u) {
+        *hash ^= (TZrByte)((value >> shift) & 0xffu);
+        *hash *= 1099511628211ULL;
+    }
+}
+
+static void artifact_hash_u64(TZrUInt64 *hash, TZrUInt64 value) {
+    TZrUInt32 shift;
+
+    for (shift = 0u; shift < 64u; shift += 8u) {
+        *hash ^= (TZrByte)((value >> shift) & 0xffu);
+        *hash *= 1099511628211ULL;
+    }
+}
+
+TZrUInt64 ZrCore_Artifact_ComputeMetadataStateHash(
+        const SZrArtifactMetadataStateRow *state) {
+    TZrUInt64 hash = 1469598103934665603ULL;
+
+    if (state == ZR_NULL) return 0u;
+    artifact_hash_u32(&hash, state->typeToken);
+    artifact_hash_u32(&hash, (TZrUInt32)state->preservationState);
+    artifact_hash_u32(&hash, (TZrUInt32)state->category);
+    artifact_hash_u32(&hash, state->metadataGeneration);
+    artifact_hash_u32(&hash, state->retainedMemberCount);
+    artifact_hash_u32(&hash, state->retainedPropertyCount);
+    artifact_hash_u32(&hash, state->retainedMetaRecordCount);
+    artifact_hash_u32(&hash, state->flags);
+    artifact_hash_u64(&hash, state->typeSignatureHash);
+    artifact_hash_u64(&hash, state->layoutHash);
+    artifact_hash_u64(&hash, state->callableContractHash);
+    return hash;
+}
+
+TZrUInt64 ZrCore_Artifact_ComputeMetadataRecordHash(
+        const SZrArtifactMetadataRecordRow *record,
+        const TZrByte *payload,
+        TZrSize payloadLength) {
+    TZrUInt64 hash = 1469598103934665603ULL;
+    TZrSize index;
+
+    if (record == ZR_NULL || payloadLength != record->payloadLength ||
+        (payload == ZR_NULL && payloadLength > 0u)) {
+        return 0u;
+    }
+    artifact_hash_u32(&hash, record->ownerToken);
+    artifact_hash_u32(&hash, (TZrUInt32)record->kind);
+    artifact_hash_u32(&hash, (TZrUInt32)record->retention);
+    artifact_hash_u32(&hash, record->flags);
+    artifact_hash_u32(&hash, record->payloadOffset);
+    artifact_hash_u32(&hash, record->payloadLength);
+    artifact_hash_u32(&hash, record->metadataGeneration);
+    artifact_hash_u32(&hash, record->reserved0);
+    for (index = 0u; index < payloadLength; ++index) {
+        hash ^= payload[index];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
 const TZrChar *ZrCore_Artifact_StatusName(EZrArtifactStatus status) {
     static const TZrChar *names[] = {
             "ok", "invalid-argument", "bad-magic", "unsupported-version", "invalid-kind",
@@ -84,7 +147,9 @@ const TZrChar *ZrCore_Artifact_SectionName(TZrUInt32 sectionKind) {
             "invalid", "string-heap", "type-def-table", "type-ref-table", "type-spec-table",
             "member-def-table", "property-def-table", "signature-heap", "contract-table",
             "layout-table", "code-table", "relocation-binding-table", "debug-map",
-            "syntax-tree", "semantic-ir"};
+            "syntax-tree", "semantic-ir", "domain-transfer-table", "scheduler-contract-table",
+            "metadata-state-table", "metadata-record-table", "metadata-blob-heap",
+            "layout-map-heap"};
     if (sectionKind >= (TZrUInt32)(sizeof(names) / sizeof(names[0]))) return "unknown";
     return names[sectionKind];
 }

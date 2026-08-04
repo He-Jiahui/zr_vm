@@ -78,6 +78,37 @@ static void artifact_write_layout_row(TZrByte *bytes, const SZrArtifactLayoutRow
     zr_artifact_write_u64(bytes + 40u, row->stableSlotContractHash);
 }
 
+static void artifact_write_metadata_state_row(
+        TZrByte *bytes,
+        const SZrArtifactMetadataStateRow *row) {
+    zr_artifact_write_u32(bytes + 0u, row->typeToken);
+    zr_artifact_write_u32(bytes + 4u, (TZrUInt32)row->preservationState);
+    zr_artifact_write_u32(bytes + 8u, (TZrUInt32)row->category);
+    zr_artifact_write_u32(bytes + 12u, row->metadataGeneration);
+    zr_artifact_write_u32(bytes + 16u, row->retainedMemberCount);
+    zr_artifact_write_u32(bytes + 20u, row->retainedPropertyCount);
+    zr_artifact_write_u32(bytes + 24u, row->retainedMetaRecordCount);
+    zr_artifact_write_u32(bytes + 28u, row->flags);
+    zr_artifact_write_u64(bytes + 32u, row->typeSignatureHash);
+    zr_artifact_write_u64(bytes + 40u, row->layoutHash);
+    zr_artifact_write_u64(bytes + 48u, row->callableContractHash);
+    zr_artifact_write_u64(bytes + 56u, row->metadataHash);
+}
+
+static void artifact_write_metadata_record_row(
+        TZrByte *bytes,
+        const SZrArtifactMetadataRecordRow *row) {
+    zr_artifact_write_u32(bytes + 0u, row->ownerToken);
+    zr_artifact_write_u32(bytes + 4u, (TZrUInt32)row->kind);
+    zr_artifact_write_u32(bytes + 8u, (TZrUInt32)row->retention);
+    zr_artifact_write_u32(bytes + 12u, row->flags);
+    zr_artifact_write_u32(bytes + 16u, row->payloadOffset);
+    zr_artifact_write_u32(bytes + 20u, row->payloadLength);
+    zr_artifact_write_u32(bytes + 24u, row->metadataGeneration);
+    zr_artifact_write_u32(bytes + 28u, 0u);
+    zr_artifact_write_u64(bytes + 32u, row->recordHash);
+}
+
 static void artifact_write_domain_transfer_row(
         TZrByte *bytes,
         const SZrArtifactDomainTransferRow *row) {
@@ -153,6 +184,18 @@ void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionI
             for (index = 0u; index < section->elementCount; ++index)
                 artifact_write_layout_row(bytes + (TZrSize)index * elementSize,
                                           &((const SZrArtifactLayoutRow *)section->data)[index]);
+            break;
+        case ZR_ARTIFACT_SECTION_METADATA_STATE_TABLE:
+            for (index = 0u; index < section->elementCount; ++index)
+                artifact_write_metadata_state_row(
+                        bytes + (TZrSize)index * elementSize,
+                        &((const SZrArtifactMetadataStateRow *)section->data)[index]);
+            break;
+        case ZR_ARTIFACT_SECTION_METADATA_RECORD_TABLE:
+            for (index = 0u; index < section->elementCount; ++index)
+                artifact_write_metadata_record_row(
+                        bytes + (TZrSize)index * elementSize,
+                        &((const SZrArtifactMetadataRecordRow *)section->data)[index]);
             break;
         case ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE:
             for (index = 0u; index < section->elementCount; ++index)
@@ -333,6 +376,77 @@ EZrArtifactStatus ZrCore_Artifact_ReadLayoutRow(const SZrArtifactSectionView *se
     outRow->ownershipMapLength = zr_artifact_read_u32(bytes + 28u);
     outRow->layoutHash = zr_artifact_read_u64(bytes + 32u);
     outRow->stableSlotContractHash = zr_artifact_read_u64(bytes + 40u);
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+EZrArtifactStatus ZrCore_Artifact_ReadMetadataStateRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactMetadataStateRow *outRow,
+        SZrArtifactDiagnostic *diagnostic) {
+    const TZrByte *bytes;
+    EZrArtifactStatus status;
+
+    if (outRow == ZR_NULL) {
+        return zr_artifact_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
+    }
+    status = artifact_get_row_bytes(
+            section,
+            rowIndex,
+            ZR_ARTIFACT_METADATA_STATE_ROW_ENCODED_SIZE,
+            &bytes,
+            diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) return status;
+    memset(outRow, 0, sizeof(*outRow));
+    outRow->typeToken = zr_artifact_read_u32(bytes + 0u);
+    outRow->preservationState =
+            (EZrArtifactMetadataPreservationState)zr_artifact_read_u32(bytes + 4u);
+    outRow->category =
+            (EZrArtifactReflectionCategory)zr_artifact_read_u32(bytes + 8u);
+    outRow->metadataGeneration = zr_artifact_read_u32(bytes + 12u);
+    outRow->retainedMemberCount = zr_artifact_read_u32(bytes + 16u);
+    outRow->retainedPropertyCount = zr_artifact_read_u32(bytes + 20u);
+    outRow->retainedMetaRecordCount = zr_artifact_read_u32(bytes + 24u);
+    outRow->flags = zr_artifact_read_u32(bytes + 28u);
+    outRow->typeSignatureHash = zr_artifact_read_u64(bytes + 32u);
+    outRow->layoutHash = zr_artifact_read_u64(bytes + 40u);
+    outRow->callableContractHash = zr_artifact_read_u64(bytes + 48u);
+    outRow->metadataHash = zr_artifact_read_u64(bytes + 56u);
+    return ZR_ARTIFACT_STATUS_OK;
+}
+
+EZrArtifactStatus ZrCore_Artifact_ReadMetadataRecordRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactMetadataRecordRow *outRow,
+        SZrArtifactDiagnostic *diagnostic) {
+    const TZrByte *bytes;
+    EZrArtifactStatus status;
+
+    if (outRow == ZR_NULL) {
+        return zr_artifact_fail(
+                diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
+    }
+    status = artifact_get_row_bytes(
+            section,
+            rowIndex,
+            ZR_ARTIFACT_METADATA_RECORD_ROW_ENCODED_SIZE,
+            &bytes,
+            diagnostic);
+    if (status != ZR_ARTIFACT_STATUS_OK) return status;
+    memset(outRow, 0, sizeof(*outRow));
+    outRow->ownerToken = zr_artifact_read_u32(bytes + 0u);
+    outRow->kind =
+            (EZrArtifactMetadataRecordKind)zr_artifact_read_u32(bytes + 4u);
+    outRow->retention =
+            (EZrArtifactMetadataRetention)zr_artifact_read_u32(bytes + 8u);
+    outRow->flags = zr_artifact_read_u32(bytes + 12u);
+    outRow->payloadOffset = zr_artifact_read_u32(bytes + 16u);
+    outRow->payloadLength = zr_artifact_read_u32(bytes + 20u);
+    outRow->metadataGeneration = zr_artifact_read_u32(bytes + 24u);
+    outRow->reserved0 = zr_artifact_read_u32(bytes + 28u);
+    outRow->recordHash = zr_artifact_read_u64(bytes + 32u);
     return ZR_ARTIFACT_STATUS_OK;
 }
 

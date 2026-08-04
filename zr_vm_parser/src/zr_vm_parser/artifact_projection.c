@@ -94,8 +94,8 @@ EZrArtifactStatus ZrParser_ArtifactLayout_ApplyNativeCapabilities(
 }
 
 static EZrArtifactStatus artifact_projection_fail(SZrArtifactDiagnostic *diagnostic,
-                                                  EZrArtifactStatus status,
-                                                  TZrSize offset) {
+                                                   EZrArtifactStatus status,
+                                                   TZrSize offset) {
     if (diagnostic != ZR_NULL) {
         memset(diagnostic, 0, sizeof(*diagnostic));
         diagnostic->status = status;

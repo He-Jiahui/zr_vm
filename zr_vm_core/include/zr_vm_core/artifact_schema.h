@@ -4,7 +4,7 @@
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/metadata_token.h"
 
-#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)3u)
+#define ZR_ARTIFACT_SCHEMA_VERSION ((TZrUInt16)4u)
 #define ZR_ARTIFACT_HEADER_ENCODED_SIZE ((TZrUInt32)112u)
 #define ZR_ARTIFACT_SECTION_DIRECTORY_ENTRY_ENCODED_SIZE ((TZrUInt32)24u)
 #define ZR_ARTIFACT_HEADER_SECTION_COUNT_OFFSET ((TZrUInt32)16u)
@@ -23,6 +23,10 @@
 #define ZR_ARTIFACT_RELOCATION_ROW_ENCODED_SIZE ((TZrUInt32)40u)
 #define ZR_ARTIFACT_DOMAIN_TRANSFER_ROW_ENCODED_SIZE ((TZrUInt32)48u)
 #define ZR_ARTIFACT_SCHEDULER_CONTRACT_ROW_ENCODED_SIZE ((TZrUInt32)48u)
+#define ZR_ARTIFACT_METADATA_STATE_ROW_ENCODED_SIZE ((TZrUInt32)64u)
+#define ZR_ARTIFACT_METADATA_RECORD_ROW_ENCODED_SIZE ((TZrUInt32)40u)
+#define ZR_ARTIFACT_LAYOUT_MAP_VERSION ((TZrUInt32)1u)
+#define ZR_ARTIFACT_LAYOUT_MAP_HEADER_ENCODED_SIZE ((TZrUInt32)16u)
 
 typedef enum EZrArtifactKind {
     ZR_ARTIFACT_KIND_ZRS = 1,
@@ -47,7 +51,11 @@ typedef enum EZrArtifactSectionKind {
     ZR_ARTIFACT_SECTION_SYNTAX_TREE = 13,
     ZR_ARTIFACT_SECTION_SEMANTIC_IR = 14,
     ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE = 15,
-    ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE = 16
+    ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE = 16,
+    ZR_ARTIFACT_SECTION_METADATA_STATE_TABLE = 17,
+    ZR_ARTIFACT_SECTION_METADATA_RECORD_TABLE = 18,
+    ZR_ARTIFACT_SECTION_METADATA_BLOB_HEAP = 19,
+    ZR_ARTIFACT_SECTION_LAYOUT_MAP_HEAP = 20
 } EZrArtifactSectionKind;
 
 #define ZR_ARTIFACT_SECTION_FLAG_MANDATORY ((TZrUInt32)0u)
@@ -207,7 +215,10 @@ typedef enum EZrArtifactDomainTransferKind {
 #define ZR_ARTIFACT_TYPE_FLAG_REF_LIKE ((TZrUInt32)1u << 4u)
 #define ZR_ARTIFACT_TYPE_FLAG_DROP ((TZrUInt32)1u << 5u)
 #define ZR_ARTIFACT_TYPE_FLAG_VALUE_CONSTRUCTIBLE ((TZrUInt32)1u << 6u)
-#define ZR_ARTIFACT_TYPE_FLAG_KNOWN_MASK ((TZrUInt32)0x7fu)
+#define ZR_ARTIFACT_TYPE_FLAG_INTERFACE ((TZrUInt32)1u << 7u)
+#define ZR_ARTIFACT_TYPE_FLAG_ABSTRACT ((TZrUInt32)1u << 8u)
+#define ZR_ARTIFACT_TYPE_FLAG_ENUM ((TZrUInt32)1u << 9u)
+#define ZR_ARTIFACT_TYPE_FLAG_KNOWN_MASK ((TZrUInt32)0x3ffu)
 
 #define ZR_ARTIFACT_CONTRACT_FLAG_SCOPED ((TZrUInt32)1u << 0u)
 #define ZR_ARTIFACT_CONTRACT_FLAG_THROWS ((TZrUInt32)1u << 1u)
@@ -236,6 +247,40 @@ typedef enum EZrArtifactAbiLoweringKind {
 
 #define ZR_ARTIFACT_LAYOUT_CAPABILITY_STABLE_SLOT_SOURCE ((TZrUInt32)1u << 0u)
 #define ZR_ARTIFACT_LAYOUT_CAPABILITY_KNOWN_MASK ZR_ARTIFACT_LAYOUT_CAPABILITY_STABLE_SLOT_SOURCE
+
+typedef enum EZrArtifactMetadataPreservationState {
+    ZR_ARTIFACT_METADATA_PRESERVATION_IDENTITY_ONLY = 1,
+    ZR_ARTIFACT_METADATA_PRESERVATION_MEMBERS = 2,
+    ZR_ARTIFACT_METADATA_PRESERVATION_FULL = 3
+} EZrArtifactMetadataPreservationState;
+
+typedef enum EZrArtifactReflectionCategory {
+    ZR_ARTIFACT_REFLECTION_CATEGORY_ERASED = 0,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_CLASS = 1,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_CONCRETE_CLASS = 2,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_INSTANCE_CLASS = 3,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_STRUCT = 4,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_INTERFACE = 5,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_RESOURCE_CLASS = 6,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_REF_STRUCT = 7,
+    ZR_ARTIFACT_REFLECTION_CATEGORY_ENUM = 8
+} EZrArtifactReflectionCategory;
+
+typedef enum EZrArtifactMetadataRecordKind {
+    ZR_ARTIFACT_METADATA_RECORD_ATTRIBUTE_DATA = 1,
+    ZR_ARTIFACT_METADATA_RECORD_USER_DATA = 2,
+    ZR_ARTIFACT_METADATA_RECORD_SOURCE_IDENTITY = 3,
+    ZR_ARTIFACT_METADATA_RECORD_DECLARATION_FLAG = 4
+} EZrArtifactMetadataRecordKind;
+
+typedef enum EZrArtifactMetadataRetention {
+    ZR_ARTIFACT_METADATA_RETENTION_RUNTIME = 1,
+    ZR_ARTIFACT_METADATA_RETENTION_TEST = 2,
+    ZR_ARTIFACT_METADATA_RETENTION_COMPILE_TOOL = 3
+} EZrArtifactMetadataRetention;
+
+#define ZR_ARTIFACT_METADATA_STATE_FLAG_KNOWN_MASK ((TZrUInt32)0u)
+#define ZR_ARTIFACT_METADATA_RECORD_FLAG_KNOWN_MASK ((TZrUInt32)0u)
 
 typedef struct SZrArtifactDiagnostic {
     EZrArtifactStatus status;
@@ -338,6 +383,33 @@ typedef struct SZrArtifactLayoutRow {
     TZrUInt64 layoutHash;
     TZrUInt64 stableSlotContractHash;
 } SZrArtifactLayoutRow;
+
+typedef struct SZrArtifactMetadataStateRow {
+    TZrMetadataToken typeToken;
+    EZrArtifactMetadataPreservationState preservationState;
+    EZrArtifactReflectionCategory category;
+    TZrUInt32 metadataGeneration;
+    TZrUInt32 retainedMemberCount;
+    TZrUInt32 retainedPropertyCount;
+    TZrUInt32 retainedMetaRecordCount;
+    TZrUInt32 flags;
+    TZrUInt64 typeSignatureHash;
+    TZrUInt64 layoutHash;
+    TZrUInt64 callableContractHash;
+    TZrUInt64 metadataHash;
+} SZrArtifactMetadataStateRow;
+
+typedef struct SZrArtifactMetadataRecordRow {
+    TZrMetadataToken ownerToken;
+    EZrArtifactMetadataRecordKind kind;
+    EZrArtifactMetadataRetention retention;
+    TZrUInt32 flags;
+    TZrUInt32 payloadOffset;
+    TZrUInt32 payloadLength;
+    TZrUInt32 metadataGeneration;
+    TZrUInt32 reserved0;
+    TZrUInt64 recordHash;
+} SZrArtifactMetadataRecordRow;
 
 typedef struct SZrArtifactDomainTransferRow {
     TZrMetadataToken typeToken;
@@ -469,6 +541,18 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadLayoutRow(
         SZrArtifactLayoutRow *outRow,
         SZrArtifactDiagnostic *diagnostic);
 
+ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadMetadataStateRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactMetadataStateRow *outRow,
+        SZrArtifactDiagnostic *diagnostic);
+
+ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadMetadataRecordRow(
+        const SZrArtifactSectionView *section,
+        TZrUInt32 rowIndex,
+        SZrArtifactMetadataRecordRow *outRow,
+        SZrArtifactDiagnostic *diagnostic);
+
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
@@ -504,6 +588,14 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadCallableSignatureSummary(
         SZrArtifactDiagnostic *diagnostic);
 
 ZR_CORE_API TZrUInt64 ZrCore_Artifact_HashBytes(const TZrByte *bytes, TZrSize byteLength);
+
+ZR_CORE_API TZrUInt64 ZrCore_Artifact_ComputeMetadataStateHash(
+        const SZrArtifactMetadataStateRow *state);
+
+ZR_CORE_API TZrUInt64 ZrCore_Artifact_ComputeMetadataRecordHash(
+        const SZrArtifactMetadataRecordRow *record,
+        const TZrByte *payload,
+        TZrSize payloadLength);
 
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_WriteText(
         const SZrArtifactView *view,

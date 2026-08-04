@@ -46,6 +46,9 @@ void test_source_without_scheduler_call_publishes_no_scheduler_fact(void);
 void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void);
 void test_source_without_scheduler_call_rejects_artifact_write(void);
 void test_scheduler_artifact_writer_rejects_unavailable_provider(void);
+void test_artifact_metadata_graph_roundtrips_zri_and_zro(void);
+void test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs(void);
+void test_artifact_metadata_projection_matches_source_native_and_binary(void);
 
 static void write_u32(TZrByte *bytes, TZrUInt32 value) {
     bytes[0] = (TZrByte)(value & 0xffu);
@@ -415,6 +418,60 @@ static void test_reader_rejects_truncation_count_limit_and_illegal_tokens(void) 
                           ZrCore_Artifact_GetEncodedSize(&fixture.document, &length, &diagnostic));
 }
 
+static void test_writer_and_reader_reject_dangling_member_owner_token(void) {
+    SZrArtifactTestFixture fixture;
+    SZrArtifactSectionInput sections[10];
+    SZrArtifactMemberDefRow member = {0};
+    SZrArtifactView view;
+    SZrArtifactSectionView memberSection;
+    SZrArtifactDiagnostic diagnostic;
+    TZrByte buffer[2048];
+    TZrSize encodedLength;
+    TZrSize length;
+
+    init_fixture(&fixture, ZR_ARTIFACT_KIND_ZRO);
+    memcpy(sections, fixture.sections, sizeof(fixture.sections));
+    member.token = TEST_MEMBER_TOKEN;
+    member.ownerTypeToken = TEST_TYPE_DEF_TOKEN;
+    member.signatureToken = TEST_SIGNATURE_TOKEN;
+    member.signatureHash = TEST_SIGNATURE_HASH;
+    member.contractHash = TEST_CONTRACT_HASH;
+    sections[fixture.document.sectionCount] = (SZrArtifactSectionInput){
+            ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE,
+            ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
+            1u,
+            &member};
+    fixture.document.sectionCount++;
+    fixture.document.sections = sections;
+
+    length = write_fixture(&fixture, buffer, sizeof(buffer));
+    encodedLength = length;
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_Read(buffer, length, &view, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_FindSection(
+                    &view,
+                    ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE,
+                    &memberSection,
+                    &diagnostic));
+
+    member.ownerTypeToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 99u);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_GetEncodedSize(
+                    &fixture.document, &length, &diagnostic));
+
+    write_u32(
+            buffer + memberSection.byteOffset + sizeof(TZrMetadataToken),
+            member.ownerTypeToken);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_Read(buffer, encodedLength, &view, &diagnostic));
+}
+
 static void test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts(void) {
     TZrByte signature[128] = {0};
     SZrArtifactDiagnostic diagnostic;
@@ -625,21 +682,35 @@ static void test_duplicate_forbidden_and_recursive_signature_inputs_are_rejected
 static void test_member_property_and_relocation_contracts_validate_tokens_and_code_bounds(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactSectionInput sections[11];
-    SZrArtifactMemberDefRow member;
+    SZrArtifactTypeDefRow typeDefs[2];
+    SZrArtifactMemberDefRow members[2];
     SZrArtifactPropertyDefRow property;
     SZrArtifactRelocationRow relocation;
+    SZrArtifactView view;
+    SZrArtifactSectionView memberSection;
     SZrArtifactDiagnostic diagnostic;
     TZrByte binary[4096];
     TZrSize length = 0u;
 
     init_fixture(&fixture, ZR_ARTIFACT_KIND_ZRO);
     memcpy(sections, fixture.sections, sizeof(fixture.sections));
-    memset(&member, 0, sizeof(member));
-    member.token = TEST_MEMBER_TOKEN;
-    member.ownerTypeToken = TEST_TYPE_DEF_TOKEN;
-    member.signatureToken = TEST_SIGNATURE_TOKEN;
-    member.signatureHash = TEST_SIGNATURE_HASH;
-    member.contractHash = TEST_CONTRACT_HASH;
+    typeDefs[0] = fixture.typeDef;
+    typeDefs[1] = fixture.typeDef;
+    typeDefs[1].token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 2u);
+    typeDefs[1].canonicalTypeId = TEST_TYPE_ID + 1u;
+    typeDefs[1].flags = ZR_ARTIFACT_TYPE_FLAG_VALUE;
+    typeDefs[1].constructorToken = 0u;
+    typeDefs[1].constructorSignatureToken = 0u;
+    typeDefs[1].constructorContractHash = 0u;
+    memset(members, 0, sizeof(members));
+    members[0].token = TEST_MEMBER_TOKEN;
+    members[0].ownerTypeToken = TEST_TYPE_DEF_TOKEN;
+    members[0].signatureToken = TEST_SIGNATURE_TOKEN;
+    members[0].signatureHash = TEST_SIGNATURE_HASH;
+    members[0].contractHash = TEST_CONTRACT_HASH;
+    members[1] = members[0];
+    members[1].token =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 5u);
     memset(&property, 0, sizeof(property));
     property.token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 4u);
     property.ownerTypeToken = TEST_TYPE_DEF_TOKEN;
@@ -659,12 +730,14 @@ static void test_member_property_and_relocation_contracts_validate_tokens_and_co
     relocation.expectedContractHash = TEST_CONTRACT_HASH;
     relocation.expectedModuleHash = TEST_MODULE_HASH;
     sections[8] = (SZrArtifactSectionInput){
-            ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE, ZR_ARTIFACT_SECTION_FLAG_MANDATORY, 1u, &member};
+            ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE, ZR_ARTIFACT_SECTION_FLAG_MANDATORY, 2u, members};
     sections[9] = (SZrArtifactSectionInput){
             ZR_ARTIFACT_SECTION_PROPERTY_DEF_TABLE, ZR_ARTIFACT_SECTION_FLAG_MANDATORY, 1u, &property};
     sections[10] = (SZrArtifactSectionInput){
             ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE,
             ZR_ARTIFACT_SECTION_FLAG_MANDATORY, 1u, &relocation};
+    sections[1].elementCount = 2u;
+    sections[1].data = typeDefs;
     fixture.document.sections = sections;
     fixture.document.sectionCount = 11u;
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
@@ -673,6 +746,31 @@ static void test_member_property_and_relocation_contracts_validate_tokens_and_co
                                                 sizeof(binary),
                                                 &length,
                                                 &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_Read(binary, length, &view, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_FindSection(
+                    &view,
+                    ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE,
+                    &memberSection,
+                    &diagnostic));
+    write_u32(
+            binary + memberSection.byteOffset + sizeof(TZrMetadataToken),
+            typeDefs[1].token);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_Read(binary, length, &view, &diagnostic));
+    write_u32(
+            binary + memberSection.byteOffset + sizeof(TZrMetadataToken),
+            TEST_TYPE_DEF_TOKEN);
+
+    members[0].ownerTypeToken = typeDefs[1].token;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+                          ZrCore_Artifact_GetEncodedSize(
+                                  &fixture.document, &length, &diagnostic));
+    members[0].ownerTypeToken = TEST_TYPE_DEF_TOKEN;
 
     property.getterToken = TEST_TYPE_DEF_TOKEN;
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
@@ -1114,6 +1212,10 @@ int main(void) {
     RUN_TEST(test_public_identity_mismatches_are_precise);
     RUN_TEST(test_reader_rejects_unknown_mandatory_but_skips_unknown_optional_section);
     RUN_TEST(test_reader_rejects_truncation_count_limit_and_illegal_tokens);
+    RUN_TEST(test_writer_and_reader_reject_dangling_member_owner_token);
+    RUN_TEST(test_artifact_metadata_graph_roundtrips_zri_and_zro);
+    RUN_TEST(test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs);
+    RUN_TEST(test_artifact_metadata_projection_matches_source_native_and_binary);
     RUN_TEST(test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts);
     RUN_TEST(test_repeat_encoding_and_text_roundtrip_keep_hashes_stable);
     RUN_TEST(test_internal_public_rows_report_the_exact_mismatch);

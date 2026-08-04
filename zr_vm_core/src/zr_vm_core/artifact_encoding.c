@@ -64,7 +64,7 @@ TZrBool zr_artifact_kind_is_valid(EZrArtifactKind kind) {
 
 TZrBool zr_artifact_section_is_known(TZrUInt32 kind) {
     return (TZrBool)(kind >= ZR_ARTIFACT_SECTION_STRING_HEAP &&
-                     kind <= ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE);
+                     kind <= ZR_ARTIFACT_SECTION_LAYOUT_MAP_HEAP);
 }
 
 TZrBool zr_artifact_section_is_allowed(EZrArtifactKind artifactKind, TZrUInt32 sectionKind) {
@@ -95,13 +95,19 @@ TZrUInt32 zr_artifact_section_element_size(TZrUInt32 kind) {
             return ZR_ARTIFACT_DOMAIN_TRANSFER_ROW_ENCODED_SIZE;
         case ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE:
             return ZR_ARTIFACT_SCHEDULER_CONTRACT_ROW_ENCODED_SIZE;
+        case ZR_ARTIFACT_SECTION_METADATA_STATE_TABLE:
+            return ZR_ARTIFACT_METADATA_STATE_ROW_ENCODED_SIZE;
+        case ZR_ARTIFACT_SECTION_METADATA_RECORD_TABLE:
+            return ZR_ARTIFACT_METADATA_RECORD_ROW_ENCODED_SIZE;
         case ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE: return ZR_ARTIFACT_RELOCATION_ROW_ENCODED_SIZE;
         case ZR_ARTIFACT_SECTION_STRING_HEAP:
         case ZR_ARTIFACT_SECTION_SIGNATURE_HEAP:
         case ZR_ARTIFACT_SECTION_CODE_TABLE:
         case ZR_ARTIFACT_SECTION_DEBUG_MAP:
         case ZR_ARTIFACT_SECTION_SYNTAX_TREE:
-        case ZR_ARTIFACT_SECTION_SEMANTIC_IR: return 1u;
+        case ZR_ARTIFACT_SECTION_SEMANTIC_IR:
+        case ZR_ARTIFACT_SECTION_METADATA_BLOB_HEAP:
+        case ZR_ARTIFACT_SECTION_LAYOUT_MAP_HEAP: return 1u;
         default: return 0u;
     }
 }

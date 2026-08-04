@@ -621,6 +621,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_add_unity_test_target(
             zr_vm_artifact_schema_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_artifact_schema.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_artifact_schema_metadata_graph.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_artifact_schema_source_roundtrip.c
     )
     target_include_directories(zr_vm_artifact_schema_test PRIVATE
@@ -635,6 +636,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     elseif (TARGET zr_vm_thread_static)
         target_link_libraries(zr_vm_artifact_schema_test PRIVATE zr_vm_thread_static)
     endif ()
+    add_test(
+            NAME artifact_schema
+            COMMAND $<TARGET_FILE:zr_vm_artifact_schema_test>
+    )
 
     zr_vm_add_unity_test_target(
             zr_vm_canonical_consumers_test

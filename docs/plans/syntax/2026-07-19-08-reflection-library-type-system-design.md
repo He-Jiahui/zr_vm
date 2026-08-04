@@ -436,6 +436,8 @@ reflection.byref_invoke_requires_typed_api
 
 依赖：M2、04 的 ownership/GC map 语义。晋级门：`.zri/.zro` writer/reader 对称，source/native/binary contract hash 一致；unknown mandatory kind、断裂 token、超限表、伪造 category 和 stripped metadata 均有负例。08 只提供 immutable retained metadata contract，11 在其上定义 compile-time attribute/patch，不形成反向依赖。
 
+状态（2026-08-04）：已晋级。canonical artifact schema 一次性升级到 v4，`.zri/.zro` 共用 MetadataState/MetadataRecord、metadata blob 与 layout-map section；TypeDef/member/property/accessor、generation、layout、callable contract 和 retained count 建立双向引用闭包。`IdentityOnly/Members/Full` 明确区分裁剪状态，缺失 state 表示 artifact 未发布 reflection graph，不能解释成“无成员”。state/record hash 按固定 little-endian 字段和原始 payload 计算，writer/reader 均拒绝陈旧 hash、跨 owner accessor、断裂 token、伪造/erased category、损坏 layout/GC/ownership/ref map、unknown mandatory section 与超限表。source/native projection 和 binary row 字节一致；GCC 11.4、Clang 14、MSVC 19.44 的 80 项聚焦及相邻断言全部通过，验收见 `tests/acceptance/2026-08-04-syntax-08-m3-artifact-metadata-graph.md`。M4-M5 不因本状态自动晋级。
+
 ### M4 Runtime construction、cache、AOT 与 native module
 
 目标：实现 `ConstructibleType.createInstance`、binder cache/generation invalidation、throw cleanup、boxed struct/class result，并通过 10R 注册唯一 `zr.reflection` ModuleIdentity。

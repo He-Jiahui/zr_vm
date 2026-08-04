@@ -11,6 +11,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
+  - zr_vm_core/src/zr_vm_core/artifact_schema_metadata_graph.c
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/reflection_property.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
@@ -19,6 +20,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_parser/src/zr_vm_parser/artifact_metadata_projection.c
   - zr_vm_lib_container/include/zr_vm_lib_container/generational_pool.h
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
@@ -36,6 +38,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
+  - zr_vm_core/src/zr_vm_core/artifact_schema_metadata_graph.c
   - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/reflection_property.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
@@ -44,6 +47,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_text.c
   - zr_vm_core/src/zr_vm_core/canonical_consumer.c
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
+  - zr_vm_parser/src/zr_vm_parser/artifact_metadata_projection.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability.c
@@ -54,9 +58,11 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
   - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
+  - docs/plans/syntax/2026-07-19-08-reflection-library-type-system-design.md
 tests:
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
+  - tests/parser/test_artifact_schema_metadata_graph.c
   - tests/parser/test_reference_callable_consumers.c
   - tests/parser/test_canonical_consumers.c
   - tests/parser/test_buffer_pool_ffi.c
@@ -70,6 +76,7 @@ tests:
   - tests/acceptance/2026-07-19-syntax-01-m4-artifact-schema.md
   - tests/acceptance/2026-07-20-syntax-02-m6-artifact-lsp-consumers.md
   - tests/acceptance/2026-07-22-syntax-04-m7-concurrent-major-artifact-aot-lsp.md
+  - tests/acceptance/2026-08-04-syntax-08-m3-artifact-metadata-graph.md
 doc_type: module-detail
 ---
 
@@ -112,6 +119,37 @@ TypeDef token and encodes `Forbidden`, `ValueCopy`, `StructuredClone`, `Immutabl
 ordered and unique. A missing table or TypeDef row means no cross-domain capability (`Forbidden`),
 not an invalid artifact. VM and AOT TypeLayout v2 consume the same identity; provider-backed
 layouts with GC, ownership, or ref fields are rejected instead of allowing a source-domain edge.
+
+Schema v4 is the one-shot reflection metadata cutover. It adds fixed-width metadata-state and
+metadata-record tables plus bounded metadata-blob and layout-map heaps. `.zri` and `.zro` use the
+same rows and validation rules; schema v3 is rejected and must be rebuilt rather than entering a
+parallel compatibility reader.
+
+Each metadata-state row binds one TypeDef token to its reflection category, metadata generation,
+retained member/property/meta-record counts, type-signature hash, layout hash, callable-contract
+hash, and immutable state hash. The preservation states are explicit:
+
+- `IdentityOnly` has zero retained counts. An erased category is valid only in this state.
+- `Members` retains MemberDef and PropertyDef rows but no metadata records.
+- `Full` retains members, properties, and the declared metadata-record count.
+
+An artifact without a metadata-state table does not publish a reflection metadata graph. A consumer
+must report metadata not preserved instead of interpreting an absent member/property table as proof
+that the type has no members. Once a state table is present, every declared count and linked section
+is mandatory for that state.
+
+State and record hashes use a canonical little-endian field sequence, not native C structure bytes.
+The state hash covers every field before `metadataHash`; the record hash covers every header field
+before `recordHash` followed by the exact payload slice. Writer and reader reject a stale hash after
+any header or payload mutation. Metadata records resolve to an existing TypeDef, MemberDef, or
+PropertyDef, and their generation must equal the owning state. Property accessors must resolve to
+MemberDef rows owned by the same TypeDef; existence in another type is not sufficient.
+
+The layout-map heap uses a versioned 16-byte header followed by sorted GC, ownership, and reference
+offset segments. Segment counts and total length are bounded, every offset is strictly ordered and
+inside the LayoutRow byte size, and the GC segment must agree with the declared GC scan kind. This
+keeps reflection layout facts aligned with the runtime ownership/GC contract instead of introducing
+a second inferred map.
 
 The core canonical consumer projects an optional domain-transfer row only after resolving the
 exact TypeDef/TypeSpec identity. `ZrCore_CanonicalConsumer_ResolveDomainTransfer` returns the same
@@ -203,6 +241,13 @@ row. It rejects a protocol without a hash, a hash without the protocol, and a
 preexisting mismatched hash. The helper consumes the protocol bit and explicit
 owner constant; it never compares the provider or source type name.
 
+`ZrParser_ArtifactMetadata_BuildState` is the shared source/native projection into the v4 metadata
+state row. It validates TypeDef identity, category, generation, preservation counts, layout and
+callable hashes. When a native descriptor is supplied, its prototype category and exact
+field/method/meta-method/enum-member count and property projection must match the projected state;
+nonzero descriptor counts also require their backing arrays. The resulting row and hash are
+byte-identical to the source projection and to the row returned by the binary reader.
+
 `ZrCore_Artifact_ReadCallableSignatureSummary` validates a complete function signature before
 projecting receiver effect, ref-export effect, effect flags, parameter count, and whether any
 `ref`/`ref readonly` parameter has a function-scoped escape bound. The core canonical consumer
@@ -265,3 +310,10 @@ StableSlotSource constant, compares it with the native descriptor constant,
 roundtrips it through a binary LayoutRow, and resolves the same value through
 the canonical reflection consumer. Zero hashes and unknown capability bits are
 rejected before publication.
+
+Syntax 08 M3 additionally verifies `.zri/.zro` state/record/layout-map symmetry, source/native/binary
+state equality, preservation-state stripping, forged categories, stale state and payload hashes,
+dangling and cross-owner tokens, corrupt layout offsets, oversized tables, and unknown mandatory
+sections. The focused artifact suite and adjacent reflection consumers pass under WSL GCC, WSL
+Clang, and MSVC; the promotion evidence is recorded in
+`tests/acceptance/2026-08-04-syntax-08-m3-artifact-metadata-graph.md`.
