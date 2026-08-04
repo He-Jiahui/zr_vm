@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: accepted as a bounded M3 slice; Gate 09 M3 remains open.
+- State: `proven` for M3; Gate 09 remains open at M4 and M5.
 - Plan: `docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md`.
 - Scope: canonical TypeLayout admission, initialization/copy rollback, deferred
   exactly-once Drop, layout-driven GC visitor routing, canonical native argument
@@ -172,21 +172,33 @@ route without fabricating artifact registration.
 - `generational_pool.c` was reduced from 1044 to 850 lines by extracting the
   canonical bridge into a cohesive module and a private 44-line header.
 
-## Remaining Gate 09 M3 work
+## Storage and concurrency decision
 
-- Decide and prove movable managed slabs if promotion requires slab relocation;
-  the accepted provider currently uses stable native slabs with traced/re-written
-  embedded managed values.
-- Run the final pause/allocation/scan-byte promotion matrix after M2-M4 close.
-- Define isolation-domain-safe per-operation state handling before admitting
-  stateful canonical layouts to concurrent pools.
+The design permits managed slabs with a compact-updated base handle or
+native/ownership slabs with stable allocation. This implementation deliberately
+selects the latter: active slabs never move, managed children are traced and
+rewritten through the canonical external visitor, and source views retain only
+a guard pointer into that stable native allocation rather than an interior
+pointer into movable managed storage. Full compaction and barriered minor
+collection tests prove that embedded children survive and are rewritten while
+guard identity remains stable. A movable managed-slab variant is optional future
+work, not an M3 promotion requirement.
+
+The design also separates thread-local and concurrent capabilities. Stateful
+canonical layouts borrow one VM state and are rejected at concurrent-pool
+admission. GcFree layouts with no state dependency use the existing atomic
+concurrent path, which has direct churn coverage. Per-operation isolation-domain
+state is required only before widening concurrent admission; fail-closed
+rejection is the accepted current boundary.
+
+The final pause/allocation/scan-byte comparison belongs to M5 and remains open
+until M4 consumer acceptance is complete.
 
 ## Acceptance decision
 
-The canonical layout/lifecycle and closed-layout production-provider slice is
-accepted after closing the nested-layout bypasses, permanent mirror, external
-GC trace/rewrite, registry-identity, writable-copyback, guard cleanup, and stale
-`CLOSE_SCOPE` resume findings. Ordinary-interpreter canonical dispatch is now
-also proven. Gate 09 M3 stays `indirect`: movable-slab scope, the final
-pause/allocation/scan-byte promotion matrix, and isolation-domain-safe stateful
-concurrency remain open.
+M3 is `proven` after closing the nested-layout bypasses, permanent mirror,
+external GC trace/rewrite, registry-identity, writable-copyback, guard cleanup,
+stale `CLOSE_SCOPE` resume, ordinary-interpreter registry, compact-safe stable
+slab, and concurrency-capability findings. Gate 09 remains open because M4
+consumer acceptance and the M5 pause/allocation/scan-byte matrix are separate
+promotion gates.

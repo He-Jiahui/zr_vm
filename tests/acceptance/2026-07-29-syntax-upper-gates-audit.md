@@ -131,9 +131,11 @@ remaining owner gates are open.
   artifact registries remain authoritative and fail closed without source-cache
   fallback. GCC, Clang, and MSVC each pass the same 13 executables and 271/271
   assertions; the focused MSVC ASan registry/lifetime subset passes 60/60.
-- Gate 09 M3 remains open for optional managed slab relocation proof, the final
-  pause/allocation/scan-byte promotion matrix, and isolation-domain-safe
-  per-operation state handling for stateful concurrent pools.
+- Design review confirms that stable native/ownership slabs are an explicit M3
+  option. Full/minor compaction rewrites embedded managed children through the
+  external visitor, while stateful canonical layouts fail concurrent admission
+  until an isolation-safe per-operation state exists. M3 is therefore proven;
+  the pause/allocation/scan-byte comparison is a distinct M5 requirement.
 
 ## 2026-08-04 final recount and review
 
@@ -199,8 +201,8 @@ remaining owner gates are open.
 | 08 M1 | official provider roles and canonical TypeRoles replace parser/core name dispatch; contract-only reflection cannot materialize; host loaders compose; projections and parent graphs validate; `zr.*` source spoofing is rejected; provider 9/9, resolver 10/10, reflection surface 19/19 and dynamic reflection 36/36 pass across GCC/Clang/MSVC | proven | preserve registered identity and fail-closed provider resolution |
 | 08 M2-M5 | nullable `typeof`, authenticated TypeId fields, member queries/construction and callable by-ref projection have focused behavior, but the complete artifact/AOT/LSP/stress promotion matrix is absent | indirect | add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
 | 09 M1 | source-callable `Pool<T>` identity/recycle plus C state-machine, million-handle, ABA, exhaustion, alignment and concurrency evidence; pool 13/13 | proven | preserve scalar handle identity and ABI v4 descriptor contract |
-| 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, storage/escape rejection, no-repeat-validation counter, and source return/throw/break/continue/replacement cleanup | indirect | complete the remaining container/closure/suspension matrix |
-| 09 M3 | recursive canonical admission rejects nested lifecycle downgrades; production canonical inline delivery has no permanent mirror, fixes registry identity/layout id, traces and rewrites external managed values across full/minor GC, performs temporary guard projection with writable copyback, closes writable `ref T` nested-member/value-consumption semantics, resumes after native close without replaying a closed view, and gives ordinary interpreter entry functions a stable canonical registry without weakening artifact fail-closed validation; the registry slice passes 271/271 across GCC/Clang/MSVC and 60/60 under focused MSVC ASan | indirect | decide managed slab relocation scope, define isolation-domain-safe stateful concurrency, and run the final pause/allocation/scan-byte matrix |
+| 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, local/field/global/array/box/native-ABI/closure/await/yield matrix, no-repeat-validation counter, and source return/throw/break/continue/replacement cleanup; the relevant six-target matrix passes 187/187 across GCC/Clang/MSVC | proven | preserve capability-driven ref-like and cleanup contracts |
+| 09 M3 | recursive canonical admission rejects nested lifecycle downgrades; production canonical inline delivery has no permanent mirror, fixes registry identity/layout id, traces and rewrites external managed values across full/minor GC, performs temporary guard projection with writable copyback, resumes after native close without replaying a closed view, gives ordinary interpreter entry functions a stable canonical registry without weakening artifact validation, uses the design-permitted stable native slab path, and rejects state-dependent concurrent admission; the registry slice passes 271/271 across GCC/Clang/MSVC and 60/60 under focused MSVC ASan | proven | preserve compact-safe external tracing and fail-closed concurrency capability boundaries |
 | 09 M4 | native/binary/reflection contract hash parity and corrupt/missing/unknown rejection are covered by artifact 3/3; runtime-only/readonly/property-reference facts cross native import | indirect | finish dedicated LSP facts and full reflection non-boxing/lifetime evidence |
 | 09 M5 | million-handle and churn/hot-access counters are separated | indirect | add final pause/allocation/scan-byte promotion matrix after M2-M4 close |
 | 10F M3 | schema v4 persists independent canonical callable and ABI vectors; TypeLayout/capability-driven admission; `.zro`, C AOT, and LLVM AOT consumers; native extern 29/29 and AOT stripping 37/37 focused evidence | proven | preserve in final matrix |
@@ -223,6 +225,6 @@ The strict production parser cutover is complete. The 55 historical leaf
 records are confirmed in their own scope; the current directory additionally
 contains one completed task-level support record outside that selector. The root
 Syntax redesign is not complete: 07B is explicitly open; Gate 09 still lacks
-managed-slab/concurrency decisions and performance promotion work; Gate 14 has
+M4 consumer acceptance and M5 performance promotion work; Gate 14 has
 reopened contract defects; and 08 M2-M5, 10C, and 11 M5 remain open.
 No acceptance document may translate leaf completion into a root promotion.

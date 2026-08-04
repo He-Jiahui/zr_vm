@@ -33,7 +33,9 @@ tests:
   - tests/parser/test_ref_struct_restrictions.c
   - tests/container/test_generational_pool.c
   - tests/acceptance/2026-07-20-syntax-02-m5-reference-escape-closure-suspension.md
+  - tests/acceptance/2026-08-04-syntax-09-m2-guarded-direct-ref.md
 doc_type: module-detail
+last_verified: 2026-08-04
 ---
 
 # Reference Escape, Closure, And Suspension

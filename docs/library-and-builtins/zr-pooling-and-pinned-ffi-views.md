@@ -67,6 +67,7 @@ tests:
   - tests/container/test_pooling_closed_type_runtime.c
   - tests/core/test_inline_struct_array_layout.c
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
+  - tests/acceptance/2026-08-04-syntax-09-m2-guarded-direct-ref.md
 doc_type: module-detail
 last_verified: 2026-08-04
 ---
@@ -294,8 +295,10 @@ barriered minor collection, while finalization remains exactly once.
 ## Follow-up Boundary
 
 This milestone provides exact-length reusable arrays and pinned byte-buffer views.
-Size-class pooling, arbitrary typed native slices, custom marshallers, movable
-managed slab storage, the final pause/allocation/scan-byte matrix, and
-isolation-domain-safe state handling for concurrent stateful canonical layouts
-remain separate work. They must extend the structured protocol, TypeLayout, and
+Size-class pooling, arbitrary typed native slices, custom marshallers, the
+remaining M4 reflection/LSP consumers, and the final M5 pause/allocation/
+scan-byte matrix remain separate work. A movable managed-slab implementation or
+stateful concurrent admission may be added later, but the current design-valid
+stable native slab and fail-closed concurrency boundary do not require them for
+M3. Future variants must extend the structured protocol, TypeLayout, and
 artifact contracts rather than adding provider-name recognition.
