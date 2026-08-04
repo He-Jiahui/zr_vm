@@ -16,6 +16,7 @@
 #include "zr_vm_lib_container/module.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/parser.h"
 
@@ -244,6 +245,108 @@ static void test_native_descriptor_publishes_stable_slot_contract_by_role(void) 
     TEST_ASSERT_NOT_NULL(readRef->methods[0].callback);
     TEST_ASSERT_NOT_NULL(readRef->methods[1].callback);
     TEST_ASSERT_NOT_NULL(readRef->metaMethods[0].callback);
+}
+
+static void test_native_pool_reflection_hides_guard_bypass_and_runtime_storage(void) {
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrObjectModule *module;
+    const SZrTypeValue *poolRefValue;
+    SZrTypeValue descriptorValue;
+    SZrObject *descriptor;
+    const SZrTypeValue *idValue;
+    SZrReflectionTypeIdentity identity;
+    SZrReflectionMemberQuery query;
+    SZrObject *member = ZR_NULL;
+    const SZrTypeValue *getterValue;
+    const SZrTypeValue *setterValue;
+    const SZrTypeValue *referenceAccessValue;
+    EZrReflectionQueryStatus queryStatus;
+    EZrReflectionConstructionStatus constructionStatus;
+    SZrTypeValue instance;
+
+    TEST_ASSERT_NOT_NULL(state);
+    module = ZrContainerTests_ImportNativeModule(state, "zr.pooling");
+    TEST_ASSERT_NOT_NULL(module);
+    poolRefValue = ZrContainerTests_GetModuleExportValue(
+            state, module, "PoolRef");
+    TEST_ASSERT_NOT_NULL(poolRefValue);
+    ZrCore_Value_ResetAsNull(&descriptorValue);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_TypeOfValue(
+            state, poolRefValue, &descriptorValue));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, descriptorValue.type);
+    descriptor = ZR_CAST_OBJECT(state, descriptorValue.value.object);
+    TEST_ASSERT_NOT_NULL(descriptor);
+    idValue = ZrContainerTests_GetObjectFieldValue(state, descriptor, "id");
+    TEST_ASSERT_NOT_NULL(idValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, idValue->type);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ReadTypeIdObject(
+            state,
+            ZR_CAST_OBJECT(state, idValue->value.object),
+            &identity,
+            ZR_NULL));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT, identity.category);
+
+    ZrCore_Reflection_MemberQueryInitDefault(&query);
+    TEST_ASSERT_FALSE(ZrCore_Reflection_GetMember(
+            state,
+            descriptor,
+            ZrCore_String_CreateFromNative(state, "__zr_pool_guard_value"),
+            ZR_REFLECTION_MEMBER_KIND_FIELD,
+            ZR_NULL,
+            0u,
+            &query,
+            &member,
+            &queryStatus));
+    TEST_ASSERT_EQUAL_INT(ZR_REFLECTION_QUERY_STATUS_NOT_FOUND, queryStatus);
+    TEST_ASSERT_FALSE(ZrCore_Reflection_GetMember(
+            state,
+            descriptor,
+            ZrCore_String_CreateFromNative(state, "__get_value"),
+            ZR_REFLECTION_MEMBER_KIND_METHOD,
+            ZR_NULL,
+            0u,
+            &query,
+            &member,
+            &queryStatus));
+    TEST_ASSERT_EQUAL_INT(ZR_REFLECTION_QUERY_STATUS_NOT_FOUND, queryStatus);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_GetMember(
+            state,
+            descriptor,
+            ZrCore_String_CreateFromNative(state, "value"),
+            ZR_REFLECTION_MEMBER_KIND_PROPERTY,
+            ZR_NULL,
+            0u,
+            &query,
+            &member,
+            &queryStatus));
+    TEST_ASSERT_NOT_NULL(member);
+    TEST_ASSERT_EQUAL_INT(ZR_REFLECTION_QUERY_STATUS_OK, queryStatus);
+    getterValue = ZrContainerTests_GetObjectFieldValue(state, member, "getter");
+    setterValue = ZrContainerTests_GetObjectFieldValue(state, member, "setter");
+    referenceAccessValue = ZrContainerTests_GetObjectFieldValue(
+            state, member, "referenceAccess");
+    TEST_ASSERT_NOT_NULL(getterValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, getterValue->type);
+    TEST_ASSERT_NULL(setterValue);
+    TEST_ASSERT_NOT_NULL(referenceAccessValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(referenceAccessValue->type));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_REFERENCE_ACCESS_WRITABLE,
+            referenceAccessValue->value.nativeObject.nativeInt64);
+
+    ZrCore_Value_ResetAsNull(&instance);
+    TEST_ASSERT_FALSE(ZrCore_Reflection_CreateInstance(
+            state,
+            descriptor,
+            ZR_NULL,
+            0u,
+            &instance,
+            &constructionStatus));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_REFLECTION_CONSTRUCTION_STATUS_TYPE_NOT_CONSTRUCTIBLE,
+            constructionStatus);
+    ZrContainerTests_DestroyState(state);
 }
 
 static void test_native_pool_executes_identity_and_recycle_from_source(void) {
@@ -991,6 +1094,7 @@ static void test_concurrent_pool_serializes_state_without_charging_thread_local_
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_native_descriptor_publishes_stable_slot_contract_by_role);
+    RUN_TEST(test_native_pool_reflection_hides_guard_bypass_and_runtime_storage);
     RUN_TEST(test_native_pool_executes_identity_and_recycle_from_source);
     RUN_TEST(test_native_pool_executes_scoped_read_write_guards_from_source);
     RUN_TEST(test_native_semantic_import_preserves_ref_like_and_stable_slot_protocols);

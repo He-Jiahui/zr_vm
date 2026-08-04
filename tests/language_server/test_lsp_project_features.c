@@ -600,7 +600,7 @@ static TZrBool prepare_generated_ffi_wrapper_fixture(const TZrChar *artifactName
         "return nativeApi;\n";
     static const TZrChar *wrapperContent =
         "native extern(\"fixture\") {\n"
-        "    Add(lhs: i32, rhs: i32): i32;\n"
+        "    fn Add(lhs: i32, rhs: i32): i32;\n"
         "}\n";
     TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
     TZrChar rootPath[ZR_TESTS_PATH_MAX];
@@ -6699,7 +6699,7 @@ static void test_lsp_semantic_tokens_cover_decorators_and_meta_methods(SZrState 
 static void test_lsp_semantic_tokens_cover_external_metadata_members(SZrState *state) {
     static const TZrChar *mainContent =
         "var plugin = import(\"zr.pluginprobe\");\n"
-        "pub usePlugin(): int {\n"
+        "pub fn usePlugin(): int {\n"
         "    var point: plugin.ProbePoint = plugin.makePoint();\n"
         "    plugin.console.printLine(\"trace\");\n"
         "    return point.x + point.total();\n"
@@ -7717,6 +7717,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
 #include "test_lsp_project_native_callable_signature_cases.h"
 #include "test_lsp_project_native_receiver_callable_cases.h"
 #include "test_lsp_project_source_rename_edit_cases.h"
+#include "test_lsp_stable_slot_contract_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
@@ -7903,6 +7904,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_native_value_constructor_members_surface_hover_and_completion(state);
+    TEST_DIVIDER();
+
+    test_lsp_stable_slot_contract_classification_is_name_independent(state);
+    TEST_DIVIDER();
+
+    test_lsp_pooling_hover_completion_and_projection_expose_guard_contract(state);
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);

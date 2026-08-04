@@ -20,6 +20,9 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
@@ -74,6 +77,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
@@ -129,6 +134,7 @@ tests:
   - tests/language_server/test_lsp_project_utf16_ranges.c
   - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/test_lsp_project_features.c
+  - tests/language_server/test_lsp_stable_slot_contract_cases.h
   - tests/language_server/test_incremental_parser.c
   - tests/language_server/test_lsp_expression_fact_hover.c
   - tests/language_server/test_lsp_local_semantic_hover.c
@@ -176,6 +182,8 @@ doc_type: module-detail
 ## 设计边界
 
 `lsp_editor_features.c` / `lsp_code_actions.c` 是新的公共接口实现文件，避免继续扩大 `lsp_interface.c`。它们只负责编辑器形态的结果建模：
+
+- stable-slot hover/completion 消费 imported prototype 的 `protocolMask`、member `contractRole` 和 structured reference access。它把 scalar identity handle 标为 weak identity，把 acquisition owner 标为 stable slot source，把 ref-like guard view 标为 scoped readonly/writable ref，并在 ref-property hover 中显示 getter-only 与 active-guard lifetime。分类器不比较 `Pool`/`PoolHandle`/`PoolRef` 或 acquire method 的固定名字；completion 仍由真实 prototype members 生成，因此 acquisition 只出现在 source capability 上。
 
 - formatting 生成 `SZrLspTextEdit`，当前使用基于 brace/block 的保守缩进。full/range formatting 在生成 edit 前复用 `ZrParser_LegacyMigration_PlanSource`；文档只要含有已登记的迁移项，就成功返回空 edit 集合，避免 formatter 重新输出已经移除的 `%keyword` 或其他旧表层。普通 `%` / `%=` 运算不产生迁移项；`remainder%value` 和 `remainder %value` 等相邻写法也按前置表达式上下文识别为模运算，不会误报成 legacy directive。
 - code action 使用 `SZrLspCodeAction`，提供 `source.organizeImports`、`source.removeUnused`、缺失 import quickfix 和缺失分号 `quickfix`，返回最小 `TextEdit`。缺失分号动作只消费`ZrLanguageServer_Lsp_GetDiagnostics`返回的`ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE` structured fix；title、edit range和edit text来自parser fact，LSP不再按`var`/`return`等源码前缀重建。stdio在producer运行前捕获URI/version/generation/open-state/length/hash，producer返回后复验并只序列化captured version；fingerprint以opaque `data.snapshot`随action往返，`codeAction/resolve`发现stale或malformed token时删除edit并返回disabled reason，不按title/kind/source重建。

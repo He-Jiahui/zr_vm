@@ -18,6 +18,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_ast_constants.h"
+#include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_common/zr_runtime_limits_conf.h"
 
@@ -38,6 +39,7 @@ static const TZrChar *kReflectionPrototypeFieldName = "__zr_reflection_prototype
 #define ZR_RUNTIME_DECLARATION_MODIFIER_FINAL ((TZrUInt32)(1u << 3))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_SHADOW ((TZrUInt32)(1u << 4))
 #define ZR_RUNTIME_DECLARATION_MODIFIER_REF_LIKE ((TZrUInt32)(1u << 6))
+#define ZR_RUNTIME_PROPERTY_ACCESSOR_ROLE_GET ((TZrUInt32)1u)
 #define ZR_REFLECTION_SIGNATURE_NODE_OBJECT_MAX_RECURSION_DEPTH 64u
 
 static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectModule *module);
@@ -634,6 +636,19 @@ static TZrBool reflection_get_field_bool_value(SZrState *state,
     }
 
     return fieldValue->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE;
+}
+
+static TZrInt64 reflection_get_field_int_value(SZrState *state,
+                                               SZrObject *object,
+                                               const TZrChar *fieldName,
+                                               TZrInt64 fallback) {
+    const SZrTypeValue *fieldValue = reflection_get_field_value(state, object, fieldName);
+
+    if (fieldValue == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(fieldValue->type)) {
+        return fallback;
+    }
+
+    return fieldValue->value.nativeObject.nativeInt64;
 }
 
 static TZrUInt32 reflection_array_length(SZrObject *array) {
@@ -3105,6 +3120,10 @@ static void reflection_populate_native_members(SZrState *state,
             }
 
             entryObject = ZR_CAST_OBJECT(state, entryValue->value.object);
+            if (reflection_get_field_bool_value(
+                        state, entryObject, "runtimeOnly", ZR_FALSE)) {
+                continue;
+            }
             fieldName = reflection_get_field_string_native(state, entryObject, "name", "");
             if (fieldName[0] == '\0') {
                 continue;
@@ -3137,6 +3156,7 @@ static void reflection_populate_native_members(SZrState *state,
             SZrObject *entryObject;
             const SZrTypeValue *maxArgsValue;
             const TZrChar *methodName;
+            TZrInt64 contractRole;
             TZrChar qualifiedMemberName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
             SZrObject *methodReflection;
 
@@ -3147,6 +3167,150 @@ static void reflection_populate_native_members(SZrState *state,
             entryObject = ZR_CAST_OBJECT(state, entryValue->value.object);
             methodName = reflection_get_field_string_native(state, entryObject, "name", "");
             if (methodName[0] == '\0') {
+                continue;
+            }
+            contractRole = reflection_get_field_int_value(
+                    state,
+                    entryObject,
+                    "contractRole",
+                    ZR_MEMBER_CONTRACT_ROLE_NONE);
+            if (contractRole == ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION) {
+                const TZrChar *propertyName = reflection_get_field_string_native(
+                        state, entryObject, "propertyName", "");
+                const TZrChar *propertyTypeName = reflection_get_field_string_native(
+                        state, entryObject, "returnTypeName", "any");
+                TZrInt64 referenceAccess = reflection_get_field_int_value(
+                        state,
+                        entryObject,
+                        "propertyReferenceAccess",
+                        ZR_MEMBER_REFERENCE_ACCESS_NONE);
+                TZrBool exportsWritableRef = reflection_get_field_bool_value(
+                        state,
+                        entryObject,
+                        "propertyExportsWritableRef",
+                        ZR_FALSE);
+                TZrBool isStatic = reflection_get_field_bool_value(
+                        state, entryObject, "isStatic", ZR_FALSE);
+                TZrBool isReadonlyReceiver = reflection_get_field_bool_value(
+                        state, entryObject, "isReadonlyReceiver", ZR_FALSE);
+                TZrChar qualifiedPropertyName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+                TZrChar qualifiedGetterName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+                SZrObject *propertyReflection;
+                SZrObject *getterReflection;
+
+                if (propertyName[0] == '\0' ||
+                    (referenceAccess != ZR_MEMBER_REFERENCE_ACCESS_WRITABLE &&
+                     referenceAccess != ZR_MEMBER_REFERENCE_ACCESS_READONLY)) {
+                    continue;
+                }
+                snprintf(qualifiedPropertyName,
+                         sizeof(qualifiedPropertyName),
+                         "%s.%s",
+                         qualifiedTypeName,
+                         propertyName);
+                propertyReflection = reflection_build_member_info(
+                        state,
+                        propertyName,
+                        qualifiedPropertyName,
+                        "property",
+                        (TZrUInt64)index + ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE +
+                                (TZrUInt64)0x1000u);
+                if (propertyReflection == ZR_NULL) {
+                    continue;
+                }
+                reflection_assign_owner_links(
+                        state, propertyReflection, typeReflection, moduleReflection);
+                reflection_set_field_int(
+                        state, propertyReflection, "accessModifier", ZR_ACCESS_CONSTANT_PUBLIC);
+                reflection_set_field_int(
+                        state, propertyReflection, "access", ZR_ACCESS_CONSTANT_PUBLIC);
+                reflection_set_field_bool(state, propertyReflection, "isMetaMethod", ZR_FALSE);
+                reflection_set_field_bool(state, propertyReflection, "isStatic", isStatic);
+                reflection_set_field_bool(
+                        state,
+                        propertyReflection,
+                        "isConst",
+                        referenceAccess == ZR_MEMBER_REFERENCE_ACCESS_READONLY);
+                reflection_set_field_string(
+                        state, propertyReflection, "typeName", propertyTypeName);
+                reflection_set_field_int(state, propertyReflection, "parameterCount", 0);
+                reflection_set_field_int(
+                        state, propertyReflection, "referenceAccess", referenceAccess);
+                reflection_set_field_bool(
+                        state,
+                        propertyReflection,
+                        "exportsWritableRef",
+                        exportsWritableRef);
+                reflection_set_field_int(
+                        state,
+                        propertyReflection,
+                        "receiverEffect",
+                        isStatic
+                                ? ZR_MEMBER_RECEIVER_EFFECT_NONE
+                                : (isReadonlyReceiver
+                                           ? ZR_MEMBER_RECEIVER_EFFECT_READONLY
+                                           : ZR_MEMBER_RECEIVER_EFFECT_MUTABLE));
+                reflection_set_field_int(
+                        state,
+                        propertyReflection,
+                        "getterAccess",
+                        ZR_ACCESS_CONSTANT_PUBLIC);
+                reflection_set_field_int(
+                        state,
+                        propertyReflection,
+                        "setterAccess",
+                        ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE);
+                reflection_set_field_int(
+                        state,
+                        propertyReflection,
+                        "initializerAccess",
+                        ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE);
+
+                snprintf(qualifiedGetterName,
+                         sizeof(qualifiedGetterName),
+                         "%s.%s.get",
+                         qualifiedTypeName,
+                         propertyName);
+                getterReflection = reflection_build_member_info(
+                        state,
+                        "get",
+                        qualifiedGetterName,
+                        "method",
+                        (TZrUInt64)index + ZR_RUNTIME_REFLECTION_METHOD_HASH_BASE);
+                if (getterReflection != ZR_NULL) {
+                    reflection_assign_owner_links(
+                            state, getterReflection, typeReflection, moduleReflection);
+                    reflection_set_field_int(
+                            state,
+                            getterReflection,
+                            "accessModifier",
+                            ZR_ACCESS_CONSTANT_PUBLIC);
+                    reflection_set_field_int(
+                            state,
+                            getterReflection,
+                            "accessorRole",
+                            ZR_RUNTIME_PROPERTY_ACCESSOR_ROLE_GET);
+                    reflection_set_field_bool(state, getterReflection, "isMetaMethod", ZR_FALSE);
+                    reflection_set_field_bool(state, getterReflection, "isStatic", isStatic);
+                    reflection_set_field_int(state, getterReflection, "parameterCount", 0);
+                    reflection_set_field_string(
+                            state, getterReflection, "returnTypeName", propertyTypeName);
+                    reflection_set_field_int(
+                            state, getterReflection, "referenceAccess", referenceAccess);
+                    reflection_set_field_bool(
+                            state,
+                            getterReflection,
+                            "exportsWritableRef",
+                            exportsWritableRef);
+                    reflection_set_field_object(
+                            state,
+                            propertyReflection,
+                            "getter",
+                            getterReflection,
+                            ZR_VALUE_TYPE_OBJECT);
+                }
+                reflection_add_named_entry(
+                        state, membersObject, propertyName, propertyReflection);
                 continue;
             }
 
@@ -4531,9 +4695,11 @@ static EZrReflectionTypeCategory reflection_type_category_for_prototype(
         case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
             return ZR_REFLECTION_TYPE_CATEGORY_ENUM;
         case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
-            return prototypeInfo != ZR_NULL &&
-                           (prototypeInfo->modifierFlags &
-                            ZR_RUNTIME_DECLARATION_MODIFIER_REF_LIKE) != 0u
+            return ZrCore_ObjectPrototype_ImplementsProtocol(
+                                   prototype, ZR_PROTOCOL_ID_REF_LIKE) ||
+                           (prototypeInfo != ZR_NULL &&
+                            (prototypeInfo->modifierFlags &
+                             ZR_RUNTIME_DECLARATION_MODIFIER_REF_LIKE) != 0u)
                            ? ZR_REFLECTION_TYPE_CATEGORY_REF_STRUCT
                            : ZR_REFLECTION_TYPE_CATEGORY_STRUCT;
         case ZR_OBJECT_PROTOTYPE_TYPE_CLASS:

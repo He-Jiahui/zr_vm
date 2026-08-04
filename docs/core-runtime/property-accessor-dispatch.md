@@ -161,6 +161,14 @@ unavailable; the runtime does not pair `__get_`/`__set_` names. A legacy-looking
 therefore reflected as a method, while compile-time decorators and AOT reflection roots attach to
 the exact visible property/accessor identities.
 
+Native descriptors use the same presentation boundary through explicit role metadata. A native
+method with `POOL_REF_PROJECTION` and a valid property name/reference-access contract becomes one
+visible getter-only property plus its linked getter descriptor. Runtime-only backing fields and the
+hidden provider method are omitted. This is role-driven and does not infer a property from a method
+name; malformed or incomplete projection metadata fails closed. A native prototype implementing
+`REF_LIKE` is categorized as a ref struct and remains non-constructible through reflection, so the
+descriptor cannot be used to box or retain a guard-scoped direct reference.
+
 Opt-in AOT stripping also preserves concrete property accessors from those same compiled rows. A
 row becomes a `root.property_accessor` only when its property identity and accessor role are valid
 and its callable constant resolves to an exact function index. This protects descriptor/reflection

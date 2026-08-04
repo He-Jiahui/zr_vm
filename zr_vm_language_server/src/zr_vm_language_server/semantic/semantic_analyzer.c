@@ -4,10 +4,32 @@
 
 #include "semantic/semantic_analyzer_internal.h"
 #include "module/lsp_module_metadata.h"
+#include "semantic/lsp_stable_slot_contract.h"
 
 #include <stdarg.h>
 
 #define ZR_LSP_NATIVE_MODULE_COMPLETION_MAX_DEPTH ((TZrSize)4)
+
+static void semantic_append_stable_slot_hover(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrInferredType *typeInfo,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    const TZrChar *typeName;
+    const SZrTypePrototypeInfo *prototype;
+
+    if (analyzer == ZR_NULL || typeInfo == ZR_NULL ||
+        typeInfo->typeName == ZR_NULL || buffer == ZR_NULL || bufferSize == 0u) {
+        return;
+    }
+    typeName = typeInfo->typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                       ? ZrCore_String_GetNativeStringShort(typeInfo->typeName)
+                       : ZrCore_String_GetNativeString(typeInfo->typeName);
+    prototype = ZrLanguageServer_LspModuleMetadata_FindTypePrototype(
+            analyzer, typeName);
+    ZrLanguageServer_LspStableSlotContract_AppendPrototypeHover(
+            prototype, buffer, bufferSize);
+}
 
 static TZrBool semantic_source_uri_equals(SZrString *left, SZrString *right) {
     TZrNativeString leftText;
@@ -2348,6 +2370,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
                                                                    expressionTypeBuffer,
                                                                    sizeof(expressionTypeBuffer));
             snprintf(buffer, sizeof(buffer), "**expression**\n\nType: %s", resolvedTypeText);
+            semantic_append_stable_slot_hover(
+                    analyzer, &resolvedType, buffer, sizeof(buffer));
             *result = ZrLanguageServer_HoverInfo_New(state,
                                                      buffer,
                                                      position,
@@ -2426,6 +2450,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
             semantic_buffer_append(buffer, sizeof(buffer), strlen(buffer), "\nSource: %s", sourceText);
         }
         semantic_append_symbol_ffi_hover_metadata(symbol, buffer, sizeof(buffer), strlen(buffer));
+        semantic_append_stable_slot_hover(
+                analyzer, displayTypeInfo, buffer, sizeof(buffer));
         *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
         return *result != ZR_NULL;
     }
@@ -2455,6 +2481,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
         semantic_buffer_append(buffer, sizeof(buffer), strlen(buffer), "\nSource: %s", sourceText);
     }
     semantic_append_symbol_ffi_hover_metadata(symbol, buffer, sizeof(buffer), strlen(buffer));
+    semantic_append_stable_slot_hover(
+            analyzer, displayTypeInfo, buffer, sizeof(buffer));
 
     *result = ZrLanguageServer_HoverInfo_New(state, buffer, symbol->selectionRange, symbol->typeInfo);
     return *result != ZR_NULL;

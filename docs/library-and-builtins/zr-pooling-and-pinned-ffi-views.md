@@ -14,6 +14,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_object.c
+  - zr_vm_core/src/zr_vm_core/reflection.c
   - zr_vm_lib_ffi/include/zr_vm_lib_ffi/runtime.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
@@ -30,6 +31,10 @@ related_code:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_argument_view.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.h
@@ -40,6 +45,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_object.c
+  - zr_vm_core/src/zr_vm_core/reflection.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_argument_view.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
@@ -50,6 +56,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/artifact_projection.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ref_struct_rules.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
 plan_sources:
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
   - user: 2026-08-03 严格按设计完成一次性破坏性切换并重新验收
@@ -65,6 +74,8 @@ tests:
   - tests/container/test_generational_pool_type_layout.c
   - tests/container/test_generational_pool_artifact.c
   - tests/container/test_pooling_closed_type_runtime.c
+  - tests/language_server/test_lsp_stable_slot_contract_cases.h
+  - tests/language_server/test_lsp_project_features.c
   - tests/core/test_inline_struct_array_layout.c
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
   - tests/acceptance/2026-08-04-syntax-09-m2-guarded-direct-ref.md
@@ -215,6 +226,24 @@ protocol id, not provider name. Source import, native metadata, binary artifact,
 canonical consumer and reflection therefore observe one hash; zero, dangling or
 unknown layout capabilities fail closed.
 
+Native reflection classifies a struct as ref-like from its registered
+`REF_LIKE` protocol, even when there is no compiled source prototype row. Fields
+marked `runtimeOnly` are omitted. A method carrying the
+`POOL_REF_PROJECTION` role is not exposed under its hidden provider spelling;
+reflection instead publishes one visible getter-only property with the exact
+readonly/writable reference access. The linked getter is descriptive metadata,
+not a path that creates or retains a guard. Ref-like pool views remain
+non-constructible through reflection.
+
+The language server classifies stable-slot types from `protocolMask`, member
+`contractRole`, and structured reference access. Hover therefore labels the
+handle as weak identity, the provider as a stable slot source with its actual
+acquire member names, and the guard view as a scoped readonly/writable ref.
+Property hover identifies the getter-only projection and its active-guard
+lifetime. Completion follows the real API owner: acquisition methods appear on
+the stable-slot source, while a handle exposes only its identity surface. No
+consumer compares `Pool`, `PoolHandle`, `PoolRef`, or their member spellings.
+
 ## Exception Cleanup
 
 `using (lease)` registers the lease in the VM to-be-closed chain. Every exception
@@ -291,13 +320,17 @@ ref/out identity, nested writeback, binary roundtrip, and C/LLVM AOT emission.
 `zr_vm_inline_struct_array_layout_test` additionally proves that an
 external trace keeps and rewrites managed children across full compaction and a
 barriered minor collection, while finalization remains exactly once.
+`zr_vm_language_server_lsp_project_features_test` proves name-independent
+stable-slot classification, source acquisition completion, weak-handle/source/
+guard hover, and getter-only active-guard property hover. The same suite keeps
+descriptor-plugin semantic tokens green with canonical `fn` declarations after
+the one-time syntax cutover.
 
 ## Follow-up Boundary
 
 This milestone provides exact-length reusable arrays and pinned byte-buffer views.
 Size-class pooling, arbitrary typed native slices, custom marshallers, the
-remaining M4 reflection/LSP consumers, and the final M5 pause/allocation/
-scan-byte matrix remain separate work. A movable managed-slab implementation or
+final M5 pause/allocation/scan-byte matrix remain separate work. A movable managed-slab implementation or
 stateful concurrent admission may be added later, but the current design-valid
 stable native slab and fail-closed concurrency boundary do not require them for
 M3. Future variants must extend the structured protocol, TypeLayout, and

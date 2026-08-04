@@ -1,10 +1,10 @@
 # 09 generational `PoolHandle<T>`、`PoolRef<T>` 与连续池化内存
 
-> 状态：已补齐直接依赖、分层里程碑与晋级门，等待按里程碑实施。
+> 状态：M1-M4 已有直接晋级证据；Gate 09 仅剩 M5 stress/performance promotion matrix。
 >
 > 语义硬依赖：[Canonical Place/CFG](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[ref struct/Span/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[ownership/GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[property/ref-return contract](./2026-07-18-05-property-unified-ast-design.md)。
 >
-> 集成依赖：M4 依赖 08 的 metadata projection 和 10R 的 ModuleIdentity/native descriptor substrate；M1-M3 可独立验收。
+> 集成依赖：M4 已通过 08 metadata projection 和 10R ModuleIdentity/native descriptor substrate 验收；M5 继续消费 M1-M4 的稳定契约。
 
 ## 1. 目标结果
 
@@ -389,6 +389,15 @@ stale/retired 是 `tryBorrow` 的正常 `false` 结果；required/throwing API �
 目标：保存 pool/slot/generation/guard/layout contract，向 08 暴露只读 metadata，并通过 10R 注册唯一 `zr.pooling` ModuleIdentity/capability。
 
 依赖：M1-M3、08 metadata projection、10R。晋级门：source/binary/native contract hash 一致，LSP 不按 `PoolHandle/PoolRef` 名字推断，artifact corrupt/unknown layout 拒绝，reflection 不装箱或长期保存 direct ref。
+
+状态（2026-08-04）：`proven`。artifact 3/3 直接覆盖 source/native/binary/
+reflection contract hash parity 和 corrupt/missing/unknown layout fail-closed；native
+reflection 以 `REF_LIKE` protocol 分类 ref struct，隐藏 `runtimeOnly` backing field，
+并把 `POOL_REF_PROJECTION` 角色投影成 getter-only property，而不暴露隐藏 provider
+method。LSP 仅以 protocol bit、member contract role 和 structured reference access
+识别 weak handle、stable-slot source 及 scoped readonly/writable ref；任意重命名的
+原型分类测试证明没有具体类型名依赖。`PoolRef` 不可构造，reflection 只描述 guard
+范围内的 property contract，不创建、装箱或长期保存 direct ref。
 
 ### M5 Stress、性能与整体晋级
 

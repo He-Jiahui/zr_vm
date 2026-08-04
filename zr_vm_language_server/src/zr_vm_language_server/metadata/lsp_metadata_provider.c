@@ -2098,6 +2098,19 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                         provider->state,
                         content,
                         metadata_provider_create_markdown_text(provider->state, sourceBuffer));
+                if (resolvedMember->typeMemberInfo != ZR_NULL &&
+                    resolvedMember->typeMemberInfo->contractRole ==
+                            ZR_MEMBER_CONTRACT_ROLE_POOL_REF_PROJECTION) {
+                    content = metadata_provider_append_markdown_section(
+                            provider->state,
+                            content,
+                            metadata_provider_create_markdown_text(
+                                    provider->state,
+                                    resolvedMember->propertyContract.referenceAccess ==
+                                                    ZR_REFERENCE_ACCESS_WRITABLE
+                                            ? "Stable-slot projection: getter-only writable reference; valid only within the active stable-slot guard."
+                                            : "Stable-slot projection: getter-only readonly reference; valid only within the active stable-slot guard."));
+                }
                 return metadata_provider_create_hover(
                         provider,
                         content,
