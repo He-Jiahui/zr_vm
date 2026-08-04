@@ -32,7 +32,7 @@ void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void)
 void test_source_without_scheduler_provider_rejects_artifact_write(void);
 
 void test_real_source_compile_and_binary_signature_import_are_identical(void) {
-    static const TZrChar source[] = "identity(value: int): int { return value; }";
+    static const TZrChar source[] = "fn identity(value: int): int { return value; }";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrString *sourceName;
     SZrAstNode *ast;
@@ -191,7 +191,7 @@ void test_real_source_scheduler_call_publishes_canonical_source_fact(void) {
             "var task = import(\"zr.task\");\n"
             "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_scheduler_artifact_test_state();
@@ -227,8 +227,8 @@ void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void) {
             "var task = import(\"zr.task\");\n"
             "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var firstJob = init task.Job<int>(() => { return 7; });\n"
-            "var secondJob = init task.Job<int>(() => { return 8; });\n"
+            "var firstJob = init task.Job<int>(fn() => { return 7; });\n"
+            "var secondJob = init task.Job<int>(fn() => { return 8; });\n"
             "var first = scheduler.schedule<int>(firstJob);\n"
             "var second = scheduler.schedule<int>(secondJob);\n"
             "return first.result() + second.result();\n";
@@ -276,7 +276,7 @@ void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void)
             "var task = import(\"zr.task\");\n"
             "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     static const TZrChar artifactPath[] = "scheduler_source_contract.zro";
@@ -456,7 +456,7 @@ void test_scheduler_artifact_writer_rejects_unavailable_provider(void) {
             "var task = import(\"zr.task\");\n"
             "var thread = import(\"zr.thread\");\n"
             "var scheduler = new thread.ThreadScheduler(1);\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var completion = scheduler.schedule<int>(job);\n"
             "return completion.result();\n";
     SZrState *state = create_scheduler_artifact_test_state();

@@ -6175,7 +6175,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
         strstr(renderedText, "native extern(\"zr.task\")") == ZR_NULL ||
         strstr(renderedText, "pub interface Scheduler") == ZR_NULL ||
         strstr(renderedText, "pub class Task<T>") == ZR_NULL ||
-        strstr(renderedText, "pub class Job<T>") == ZR_NULL ||
+        strstr(renderedText, "pub struct Job<T>") == ZR_NULL ||
         strstr(renderedText, "schedule(job: zr.task.Job<T>): zr.task.Task<T>") == ZR_NULL ||
         strstr(renderedText, "__createTaskRunner") != ZR_NULL ||
         strstr(renderedText, "TaskRunner") != ZR_NULL ||

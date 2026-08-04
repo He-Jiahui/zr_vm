@@ -194,7 +194,7 @@ static void test_yield_now_and_delay_complete_through_task_result_abi(void) {
 static void test_scheduler_consumes_job_at_source_call_boundary(void) {
     static const char *source =
             "var task = import(\"zr.task\");\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var first = task.currentScheduler.schedule<int>(job);\n"
             "var second = task.currentScheduler.schedule<int>(job);\n"
             "return 0;\n";
@@ -225,7 +225,7 @@ static void test_discarded_task_expression_is_rejected(void) {
 static void test_job_constructor_and_current_scheduler_schedule_complete_callable_once(void) {
     static const char *source =
             "var task = import(\"zr.task\");\n"
-            "var job = init task.Job<int>(() => { return 7; });\n"
+            "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var completion = task.currentScheduler.schedule<int>(job);\n"
             "var value = completion.result();\n"
             "return value;\n";

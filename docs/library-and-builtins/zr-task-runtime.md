@@ -22,7 +22,8 @@ doc_type: module-detail
 `zr.task` exposes exactly three task-facing types:
 
 - `Task<T>` is the completion handle.
-- `Job<T>` owns one cold callable and is consumed by scheduling.
+- `Job<T>` is a non-Copy struct value that owns one cold callable and is
+  consumed by scheduling. Source constructs it with `init Job<T>(...)`.
 - `Scheduler` is the canonical scheduler capability. Its only public operation
   is `schedule(Job<T>): Task<T>`.
 

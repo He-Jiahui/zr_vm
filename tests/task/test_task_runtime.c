@@ -469,6 +469,8 @@ static void test_zr_task_registers_only_canonical_public_shapes(void) {
     TEST_ASSERT_NOT_NULL(taskType);
     TEST_ASSERT_NOT_NULL(jobType);
     TEST_ASSERT_NOT_NULL(schedulerType);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, jobType->prototypeType);
     TEST_ASSERT_EQUAL_UINT64(1U, taskType->genericParameterCount);
     TEST_ASSERT_TRUE((taskType->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE)) != 0U);
     TEST_ASSERT_NULL(find_type_descriptor(taskDescriptor, "Async"));
@@ -838,7 +840,8 @@ static void test_direct_await_rejects_non_task_operand(void) {
 static void test_direct_await_rejects_borrow_crossing_suspension(void) {
     expect_task_effect_failure_contains(
             "async fn invalid(task: zr.task.Task<int>): zr.task.Task<int> {\n"
-            "    var value: ref readonly string = \"ok\";\n"
+            "    var owner = \"ok\";\n"
+            "    var value: ref readonly string = ref owner;\n"
             "    await task;\n"
             "    return value;\n"
             "}\n",
