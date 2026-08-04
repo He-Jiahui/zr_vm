@@ -207,6 +207,7 @@ static EZrPoolStatus zr_pool_add_slab(SZrPool *pool) {
     }
     pool->slabs[pool->slabCount++] = slab;
     pool->stats.slabCount++;
+    pool->stats.slabAllocationCount++;
     pool->stats.slotCount += pool->config.slabCapacity;
     pool->stats.freeCount += pool->config.slabCapacity;
     return ZR_POOL_STATUS_OK;

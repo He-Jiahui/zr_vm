@@ -71,6 +71,7 @@ tests:
   - tests/parser/test_span_semantic_ir_cases.c
   - tests/container/test_generational_pool.c
   - tests/container/test_generational_pool_gc_stress.c
+  - tests/container/test_generational_pool_performance_matrix.c
   - tests/container/test_generational_pool_type_layout.c
   - tests/container/test_generational_pool_artifact.c
   - tests/container/test_pooling_closed_type_runtime.c
@@ -79,6 +80,7 @@ tests:
   - tests/core/test_inline_struct_array_layout.c
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
   - tests/acceptance/2026-08-04-syntax-09-m2-guarded-direct-ref.md
+  - tests/acceptance/2026-08-04-syntax-09-m5-performance-promotion.md
 doc_type: module-detail
 last_verified: 2026-08-04
 ---
@@ -303,6 +305,15 @@ million handles and concurrent churn. `zr_vm_generational_pool_gc_stress_test`
 separates partial-init rollback, GcFree/GcMapped/GcBarriered scan accounting,
 card retention during a write guard, one million direct-field accesses without
 another generation validation, and 100,000 reuse cycles.
+`zr_vm_generational_pool_performance_matrix_test` records successful slab
+allocation events separately from current slab/slot state. Its deterministic
+matrix compares 65,536 per-item class-storage allocations with 256 slabs per
+pool, separates GcFree zero-scan work from GcMapped payload scan work, records
+the larger per-item object traversal, and reports thread-local versus concurrent
+ticks for one million validations. Allocation/slot/byte/validation counts are
+asserted; clock ticks are observational because scheduler and toolchain variance
+must not make the regression test flaky. The target passes 2/2 under GCC 11.4,
+Clang 14, and MSVC 19.44.
 `zr_vm_generational_pool_artifact_test` executes the source constant and proves
 native/binary/reflection hash parity plus corrupt-layout rejection.
 `zr_vm_generational_pool_type_layout_test` covers canonical GcFree and GcMapped
@@ -329,9 +340,9 @@ the one-time syntax cutover.
 ## Follow-up Boundary
 
 This milestone provides exact-length reusable arrays and pinned byte-buffer views.
-Size-class pooling, arbitrary typed native slices, custom marshallers, the
-final M5 pause/allocation/scan-byte matrix remain separate work. A movable managed-slab implementation or
+Size-class pooling, arbitrary typed native slices, and custom marshallers remain
+separate work. A movable managed-slab implementation or
 stateful concurrent admission may be added later, but the current design-valid
-stable native slab and fail-closed concurrency boundary do not require them for
-M3. Future variants must extend the structured protocol, TypeLayout, and
+stable native slab and fail-closed concurrency boundary do not prevent Gate 09
+promotion. Future variants must extend the structured protocol, TypeLayout, and
 artifact contracts rather than adding provider-name recognition.

@@ -110,6 +110,7 @@ typedef struct SZrPoolStats {
     uint64_t scanPassCount;
     uint64_t scannedSlotCount;
     uint64_t scannedByteCount;
+    uint64_t slabAllocationCount;
 } SZrPoolStats;
 
 ZR_VM_LIB_CONTAINER_API EZrPoolStatus ZrPool_Create(

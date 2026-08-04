@@ -1,10 +1,10 @@
 # 09 generational `PoolHandle<T>`、`PoolRef<T>` 与连续池化内存
 
-> 状态：M1-M4 已有直接晋级证据；Gate 09 仅剩 M5 stress/performance promotion matrix。
+> 状态：M1-M5 均有直接晋级证据；Gate 09 已晋级。
 >
 > 语义硬依赖：[Canonical Place/CFG](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[ref struct/Span/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[ownership/GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[property/ref-return contract](./2026-07-18-05-property-unified-ast-design.md)。
 >
-> 集成依赖：M4 已通过 08 metadata projection 和 10R ModuleIdentity/native descriptor substrate 验收；M5 继续消费 M1-M4 的稳定契约。
+> 集成依赖：08 metadata projection 和 10R ModuleIdentity/native descriptor substrate 已由 M4 消费并验收；M5 已完成整体晋级矩阵。
 
 ## 1. 目标结果
 
@@ -404,6 +404,18 @@ method。LSP 仅以 protocol bit、member contract role 和 structured reference
 目标：验证高 churn、百万级 handle、GC scan bytes、并发能力边界和 direct-field hot path。
 
 依赖：M1-M4。晋级门：下列测试矩阵全部有直接证据；stale/ABA、guard/reclamation、GcFree/GcMapped、resource Drop 和性能计数分别报告，不能混合为单一 smoke。只有 M1-M5 全部通过，09 才可供 12、10C 与 07B 作为已晋级依赖。
+
+状态（2026-08-04）：`proven`。既有独立用例覆盖 100 万 handle validate/
+reject、100 万次 guard 内 direct-field hot access、10 万 recycle/reuse churn、
+4 worker 并发 churn、partial-init、deferred Drop 和 GcFree/GcMapped/
+GcBarriered 分离扫描。新增 performance matrix 用 65,536 个 live element、256
+slot/slab 和 8 次扫描证明每个池只有 256 个成功 slab allocation event，而
+per-item class-storage 基线为 65,536 个独立 allocation；GcFree 为 0 slot/0 byte，
+GcMapped 为 524,288 slot/16,777,216 byte，逐对象 storage traversal 为
+524,288 visit/109,051,904 byte。另以 thread-local 和 concurrent 模式分别执行
+100 万次验证并分别报告 ticks。GCC 11.4、Clang 14、MSVC 19.44 均为 2/2；ticks
+只作观测，不以调度器/工具链相关的速度排序作为成败阈值。M1-M5 全部通过，
+Gate 09 晋级，可作为 12、10C 与 07B 的已晋级依赖。
 
 ## 15. 测试矩阵
 
