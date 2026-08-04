@@ -376,8 +376,12 @@ and package submodules, unknown-package rejection, runtime-graph isolation,
 missing-lock rejection, ordinary-function visibility retention, compiler-owned
 provider lifetime, private external transform rejection, private provider-local
 helper execution, public transform execution, generated-field layout/readback,
-the absence of runtime dependency insertion, and fail-closed rejection of an
-unpromoted transitive build-dependency import.
+and the absence of runtime dependency insertion. The promoted provider-graph
+cases load a CompileTool provider which imports another locked CompileTool
+provider, deduplicate canonical identities, execute an alias-qualified helper,
+and reject a real two-archive cycle with the stable chain
+`@cyclea -> @cycleb -> @cyclea`. Missing transitive locks and cycles restore all
+temporary bindings, module aliases, imported modules, and provider records.
 
 The 2026-07-30 WSL GCC isolated build and full 123-test CTest matrix include the
 pre-diagnostic baseline. The 2026-07-31 WSL GCC and Clang focused replays pass
@@ -386,9 +390,12 @@ pre-diagnostic baseline. The 2026-07-31 WSL GCC and Clang focused replays pass
 retention, and runtime-decorator absence. The same
 toolchains also pass the 127-case compiler integration suite. On 2026-08-02,
 the isolated CompileTool/ZRM matrix passed 106/106 under WSL GCC 11.4, WSL
-Clang 14, and MSVC 19.44, including strict percent cutover 6/6. See the linked
-acceptance records for exact commands and RED/GREEN history. This focused
-evidence does not replace the final multi-toolchain gate matrix.
+Clang 14, and MSVC 19.44, including strict percent cutover 6/6. On 2026-08-04,
+the final executable-section/provider-graph replay passed the ZRM container
+8/8, project provider 9/9, comptime runtime 14/14, and compile-time evaluator
+69/69 suites under all three toolchains; adjacent compiler integration, CLI
+incremental, manifest, and LSP advanced suites also passed under GCC. See the
+linked acceptance records for exact scope and RED/GREEN history.
 
 ## File Structure
 
@@ -399,9 +406,14 @@ transform registration each have named source files and narrow internal APIs.
 External CompileTool package/ZRM resolution is isolated in
 `compile_tool_artifact.c`; fixture-heavy resolver cases live in a dedicated
 test header so the general runtime-contract test remains an orchestration file.
+The artifact resolver consumes only the versioned, hash-authenticated
+`compile-tools/*.zrs` executable section exposed by the ZRM reader; ordinary
+module entries are not an executable-source fallback.
 `compile_tool_project_provider.c` owns materialized project-provider lifetime
-and its resolved descriptor. `compile_tool_execution_scope.c` owns the
-temporary provider import/helper binding scope. `compile_statement.c` owns the
+and its resolved descriptor, canonical-identity deduplication, ancestry-aware
+cycle detection, and transactional rollback. `compile_tool_execution_scope.c`
+owns the temporary provider import/helper binding and module-alias scope.
+`compile_statement.c` owns the
 shared source-module loader because both ordinary imported comptime modules and
 external source providers require the same declaration collection and cleanup
 rules. `compile_time_import.h` is the narrow internal bridge between those

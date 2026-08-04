@@ -10,6 +10,9 @@ ZrParser_CompileTimeImport_LoadSourceModule(
         const TZrByte *sourceBytes,
         TZrSize sourceByteCount,
         TZrBool canonicalizeImports);
+ZR_PARSER_API void ZrParser_CompileTimeImport_RestoreModules(
+        SZrCompilerState *cs,
+        TZrSize mark);
 ZR_PARSER_API TZrBool ZrParser_CompileTimeImport_RegisterModuleAlias(
         SZrCompilerState *cs,
         SZrString *aliasName,

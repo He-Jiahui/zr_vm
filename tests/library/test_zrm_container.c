@@ -164,6 +164,8 @@ static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
     TEST_ASSERT_EQUAL_STRING("sha256-zr-math-test", archive.publicContractHash);
     TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)archive.moduleCount);
     TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)archive.resourceCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            0u, (TZrUInt32)archive.compileToolExecutableCount);
 
     moduleEntry = ZrLibrary_Zrm_FindModule(&archive, "ops/sum");
     resourceEntry = ZrLibrary_Zrm_FindResource(&archive, "config/default.txt");
@@ -199,6 +201,146 @@ static void test_zrm_pack_writes_manifest_modules_and_deflated_resources(void) {
     TEST_ASSERT_TRUE(read_entry_text_contains(&archive, ZR_LIBRARY_ZRM_MANIFEST_ENTRY, "\"resources\""));
 
     ZrLibrary_Zrm_Close(&archive);
+}
+
+static void test_zrm_compile_tool_uses_versioned_executable_section(void) {
+    TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar error[512];
+    SZrLibrary_ZrmPackModule module;
+    SZrLibrary_ZrmPackRequest request;
+    SZrLibrary_ZrmArchive archive;
+    const SZrLibrary_ZrmEntryInfo *executable;
+    TZrByte *sourceBytes = ZR_NULL;
+    TZrSize sourceByteCount = 0U;
+    static const TZrByte source[] =
+            "pub comptime fn generatedName(): string { return \"generated\"; }\n";
+    static const TZrByte compiledModule[] = "compiled-zro-v1";
+    static const TZrChar missingSectionManifest[] =
+            "{"
+            "\"format\":\"zr.zrm/v1\","
+            "\"assembly\":{\"name\":\"derive\",\"version\":\"1.0.0\","
+            "\"culture\":\"\",\"publicKeyToken\":\"\",\"kind\":\"compile-tool\","
+            "\"providerPhase\":\"compileTool\",\"publicContractHash\":\"contract\"},"
+            "\"entry\":\"main\","
+            "\"modules\":[{\"name\":\"main\",\"entry\":\"modules/main.zro\","
+            "\"hash\":\"source-hash\",\"size\":0,\"crc32\":0,\"compression\":\"store\"}],"
+            "\"resources\":[]"
+            "}";
+    static const TZrChar forbiddenSectionManifest[] =
+            "{"
+            "\"format\":\"zr.zrm/v1\","
+            "\"assembly\":{\"name\":\"runtime\",\"version\":\"1.0.0\","
+            "\"culture\":\"\",\"publicKeyToken\":\"\",\"kind\":\"library\","
+            "\"providerPhase\":\"runtime\",\"publicContractHash\":\"contract\"},"
+            "\"entry\":\"main\",\"modules\":[],\"resources\":[],"
+            "\"compileToolExecutable\":{"
+            "\"schema\":\"zr.compile-tool-executable/v1\","
+            "\"format\":\"zr.source/utf8-v1\",\"modules\":[]}}";
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "library",
+            "zrm_container",
+            "compile_tool",
+            ".zrm",
+            archivePath,
+            sizeof(archivePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "library",
+            "zrm_container",
+            "compile_tool",
+            ".zro",
+            modulePath,
+            sizeof(modulePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "library",
+            "zrm_container",
+            "compile_tool",
+            ".zrs",
+            sourcePath,
+            sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(write_bytes_file(
+            modulePath, compiledModule, sizeof(compiledModule) - 1U));
+    TEST_ASSERT_TRUE(write_bytes_file(
+            sourcePath, source, sizeof(source) - 1U));
+
+    memset(&module, 0, sizeof(module));
+    module.moduleKey = "main";
+    module.sourcePath = modulePath;
+    module.hash = "module-hash";
+    module.compileToolExecutableSourcePath = sourcePath;
+    module.compileToolExecutableHash = "source-hash";
+    memset(&request, 0, sizeof(request));
+    request.outputPath = archivePath;
+    request.assembly.name = "derive";
+    request.assembly.version = "1.0.0";
+    request.assembly.kind = "compile-tool";
+    request.assembly.entryModule = "main";
+    request.assembly.providerPhase =
+            ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+    request.assembly.publicContractHash = "contract";
+    request.modules = &module;
+    request.moduleCount = 1U;
+
+    memset(error, 0, sizeof(error));
+    module.compileToolExecutableSourcePath = ZR_NULL;
+    TEST_ASSERT_FALSE(
+            ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "compile-tool executable"));
+    module.compileToolExecutableSourcePath = sourcePath;
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error)),
+            error);
+    memset(&archive, 0, sizeof(archive));
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)),
+            error);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, (TZrUInt32)archive.compileToolExecutableCount);
+    executable = ZrLibrary_Zrm_FindCompileToolExecutable(&archive, "main");
+    TEST_ASSERT_NOT_NULL(executable);
+    TEST_ASSERT_EQUAL_STRING(
+            "compile-tools/main.zrs", executable->entryName);
+    TEST_ASSERT_EQUAL_STRING("source-hash", executable->hash);
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_ReadEntry(
+                    &archive,
+                    executable->entryName,
+                    &sourceBytes,
+                    &sourceByteCount,
+                    error,
+                    sizeof(error)),
+            error);
+    TEST_ASSERT_EQUAL_UINT32(
+            sizeof(source) - 1U, (TZrUInt32)sourceByteCount);
+    TEST_ASSERT_EQUAL_MEMORY(source, sourceBytes, sizeof(source) - 1U);
+    ZrLibrary_Zrm_FreeBytes(sourceBytes);
+    ZrLibrary_Zrm_Close(&archive);
+
+    TEST_ASSERT_TRUE(write_zip_with_manifest_and_entry(
+            archivePath,
+            missingSectionManifest,
+            "modules/main.zro",
+            (const TZrChar *)source));
+    memset(&archive, 0, sizeof(archive));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(
+            ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "compile-tool executable section"));
+
+    TEST_ASSERT_TRUE(write_zip_with_entries(
+            archivePath,
+            ZR_LIBRARY_ZRM_MANIFEST_ENTRY,
+            forbiddenSectionManifest,
+            ZR_NULL,
+            ZR_NULL));
+    memset(&archive, 0, sizeof(archive));
+    memset(error, 0, sizeof(error));
+    TEST_ASSERT_FALSE(
+            ZrLibrary_Zrm_Open(archivePath, &archive, error, sizeof(error)));
+    TEST_ASSERT_NOT_NULL(strstr(error, "forbidden for this provider phase"));
 }
 
 static void test_zrm_rejects_unsafe_and_duplicate_logical_names(void) {
@@ -542,6 +684,7 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_zrm_pack_writes_manifest_modules_and_deflated_resources);
+    RUN_TEST(test_zrm_compile_tool_uses_versioned_executable_section);
     RUN_TEST(test_zrm_rejects_unsafe_and_duplicate_logical_names);
     RUN_TEST(test_zrm_open_rejects_missing_manifest_and_corrupt_zip);
     RUN_TEST(test_zrm_open_bytes_owns_reader_but_borrows_stable_source_bytes);

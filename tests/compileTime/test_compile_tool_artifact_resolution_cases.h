@@ -168,6 +168,8 @@ static TZrBool write_compile_tool_fixture_archive_named(
     module.hash = declaredModuleHash != ZR_NULL
                           ? declaredModuleHash
                           : outActualModuleHash;
+    module.compileToolExecutableSourcePath = modulePath;
+    module.compileToolExecutableHash = module.hash;
     request.outputPath = outArchivePath;
     request.assembly.name = assemblyName;
     request.assembly.version = "1.4.0";
@@ -424,7 +426,8 @@ static void test_compile_tool_artifact_resolution_hands_owned_identity_to_cache(
     TEST_ASSERT_TRUE(strcmp(
             firstArtifact.lockGraphHash, secondArtifact.lockGraphHash) != 0);
     TEST_ASSERT_EQUAL_STRING(moduleHash, firstArtifact.artifactContentHash);
-    TEST_ASSERT_EQUAL_STRING("modules/main.zro", firstArtifact.artifactEntry);
+    TEST_ASSERT_EQUAL_STRING(
+            "compile-tools/main.zrs", firstArtifact.artifactEntry);
     TEST_ASSERT_EQUAL_STRING(
             descriptor->publicContractHash,
             firstArtifact.publicContractHash);
@@ -432,7 +435,8 @@ static void test_compile_tool_artifact_resolution_hands_owned_identity_to_cache(
     TEST_ASSERT_EQUAL_UINT32(19U, (TZrUInt32)firstArtifact.artifactByteCount);
     TEST_ASSERT_EQUAL_STRING("tools.derive", submoduleArtifact.moduleIdentity.segments);
     TEST_ASSERT_EQUAL_STRING(
-            "modules/tools/derive.zro", submoduleArtifact.artifactEntry);
+            "compile-tools/tools/derive.zrs",
+            submoduleArtifact.artifactEntry);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)project->dependencyPackageCount);
 
     memset(&runtimeLocation, 0, sizeof(runtimeLocation));

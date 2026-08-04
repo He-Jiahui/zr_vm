@@ -73,6 +73,9 @@ The container is a ZIP archive written by `ZrLibrary_Zrm_WriteArchive()` and rea
 
 - `META-INF/zrm.json`: manifest with `format: "zr.zrm/v1"`, assembly identity, entry module, module entries, and resource entries.
 - `modules/<module-key>.zro`: compiled module bytes. Module keys are slash-separated logical names such as `ops/sum`.
+- `compile-tools/<module-key>.zrs`: compiler-owned executable source for a
+  CompileTool module. This entry exists only when the manifest declares the
+  versioned `zr.compile-tool-executable/v1` section.
 - `resources/<logical-name>`: optional resource bytes. Logical names use safe slash-separated names such as `config/default.txt`.
 
 Modules are stored without compression. Resources can be stored or deflated; `.zrp` resources default to compression unless `compress: false` is specified.
@@ -156,6 +159,19 @@ the entry, phase, and hash describe the selected artifact. Runtime source loadin
 non-runtime archive providers before opening the selected `.zro`; no filename or locator fallback can reinterpret a
 CompileTool or Test provider as Runtime.
 
+CompileTool archives have an additional phase-isolated executable contract.
+Their manifest must contain `compileToolExecutable` with schema
+`zr.compile-tool-executable/v1`, format `zr.source/utf8-v1`, and exactly one
+hash-authenticated entry for every declared module. The compiler resolves
+provider source exclusively through `ZrLibrary_Zrm_FindCompileToolExecutable()`;
+it does not reinterpret `modules/*.zro` as source. Missing, duplicate,
+wrong-format, wrong-hash, or incomplete executable sections reject the archive.
+Runtime and Test archives reject this section, so a loader cannot acquire
+CompileTool execution capability through an ordinary module entry.
+The pack request supplies the `.zro` module path/hash and the executable
+source path/hash independently; the writer rejects a CompileTool module which
+does not explicitly provide its executable source.
+
 `ZrLibrary_Project_ResolveImportProviderLocation()` is the AOT-facing discovery API for referenced providers. It resolves the same import specifier to the canonical provider module key plus the declared assembly identity/version range. For `.zrm` references it returns the open archive and module entry; for `.zrp` project references it returns source, binary, and intermediate module paths. Exact aliases can point at multiple versions of the same assembly and resolve to distinct canonical provider keys. This is location discovery only: automatic range-based candidate selection remains separate.
 
 `ZrLibrary_Project_ResolveImportProviderAotLoadRequest()` converts that provider location into a loader-facing request record. For `.zrp` references it carries the backend kind, descriptor-local module name, source/binary/intermediate module paths, and the backend-specific dynamic-library path under `aot_c` or `aot_llvm`. For `.zrm` references it mirrors the archive and entry pointers and deliberately leaves `libraryPath` empty so archive entries are not treated as filesystem dynamic libraries. This is request planning only; runtime dynamic loading is still a later AOT/runtime stage.
@@ -191,7 +207,7 @@ This is intentionally project-assembly scoped. `.zro` execution without an emitt
 
 ## Test Coverage
 
-- `tests/library/test_zrm_container.c` verifies manifest writing, module/resource entry names, compression mode, byte extraction, duplicate rejection, unsafe logical name rejection, missing manifest rejection, corrupt ZIP rejection, manifest entry path traversal rejection, provider-phase round-trip/defaulting, and unknown-phase rejection.
+- `tests/library/test_zrm_container.c` verifies manifest writing, module/resource entry names, compression mode, byte extraction, duplicate rejection, unsafe logical name rejection, missing manifest rejection, corrupt ZIP rejection, manifest entry path traversal rejection, provider-phase round-trip/defaulting, unknown-phase rejection, and the versioned CompileTool executable section. It also proves that missing CompileTool sections and executable sections on Runtime archives fail closed.
 - `tests/library/test_project_import_resolver.c` verifies `assembly.output`, project resources, `.zrm` references, `$alias@version/module` resolution, provider-location discovery and AOT load-request planning for `.zrp` and `.zrm` references, provider entry/phase/hash facts, Runtime-versus-CompileTool rejection, and loading a Runtime module `.zro` from inside the container.
 - `tests/library/test_project_import_provider_version_selection.c` verifies multi-version `.zrp` provider exact alias/version selection and strict declared range rejection.
 - `tests/library/test_project_manifest_v2.c` verifies canonical v2 manifest ordering/read-write-read equivalence,

@@ -1141,9 +1141,13 @@ static SZrImportedCompileTimeModule *ct_find_imported_compile_time_module_alias(
         return ZR_NULL;
     }
 
-    for (TZrSize index = 0; index < cs->importedCompileTimeModuleAliases.length; index++) {
+    for (TZrSize index = cs->importedCompileTimeModuleAliases.length;
+         index > 0U;
+         index--) {
         SZrImportedCompileTimeModuleAlias *alias =
-                (SZrImportedCompileTimeModuleAlias *)ZrCore_Array_Get(&cs->importedCompileTimeModuleAliases, index);
+                (SZrImportedCompileTimeModuleAlias *)ZrCore_Array_Get(
+                        &cs->importedCompileTimeModuleAliases,
+                        index - 1U);
         if (alias != ZR_NULL && alias->aliasName != ZR_NULL && alias->module != ZR_NULL &&
             ZrCore_String_Equal(alias->aliasName, aliasName)) {
             return alias->module;
@@ -4107,6 +4111,41 @@ static TZrBool ct_eval_primary(SZrCompilerState *cs, SZrAstNode *node, SZrCompil
                         cs,
                         primary->property->data.importExpression.modulePath->data.stringLiteral.value,
                         primary->members->nodes[0]->data.memberExpression.property->data.identifier.name);
+
+        if (importedFunction != ZR_NULL) {
+            if (!ct_call_function(
+                        cs,
+                        primary->members->nodes[1],
+                        importedFunction,
+                        &primary->members->nodes[1]->data.functionCall,
+                        frame,
+                        &currentValue)) {
+                return ZR_FALSE;
+            }
+            startIndex = 2;
+        }
+    }
+
+    if (startIndex == 0 && primary->property != ZR_NULL &&
+        primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+        primary->members->count >= 2 &&
+        primary->members->nodes[0] != ZR_NULL &&
+        primary->members->nodes[0]->type == ZR_AST_MEMBER_EXPRESSION &&
+        !primary->members->nodes[0]->data.memberExpression.computed &&
+        primary->members->nodes[0]->data.memberExpression.property != ZR_NULL &&
+        primary->members->nodes[0]->data.memberExpression.property->type ==
+                ZR_AST_IDENTIFIER_LITERAL &&
+        primary->members->nodes[1] != ZR_NULL &&
+        primary->members->nodes[1]->type == ZR_AST_FUNCTION_CALL) {
+        SZrImportedCompileTimeModule *importedModule =
+                ct_find_imported_compile_time_module_alias(
+                        cs, primary->property->data.identifier.name);
+        SZrCompileTimeFunction *importedFunction =
+                ct_find_imported_compile_time_function(
+                        importedModule,
+                        primary->members->nodes[0]
+                                ->data.memberExpression.property
+                                ->data.identifier.name);
 
         if (importedFunction != ZR_NULL) {
             if (!ct_call_function(

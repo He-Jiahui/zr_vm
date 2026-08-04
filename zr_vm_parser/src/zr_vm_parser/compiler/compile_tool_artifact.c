@@ -661,11 +661,12 @@ TZrBool ZrParser_CompileToolArtifact_OpenBuildDependency(
                 "compiletool.artifact.module identity is too long");
         goto cleanup;
     }
-    entry = ZrLibrary_Zrm_FindModule(&artifact.archive, moduleKey);
+    entry = ZrLibrary_Zrm_FindCompileToolExecutable(
+            &artifact.archive, moduleKey);
     if (entry == ZR_NULL) {
         compile_tool_artifact_set_error(
                 errorBuffer, errorBufferSize,
-                "compiletool.artifact.module is not exported by the archive");
+                "compiletool.artifact.executable section does not export the module");
         goto cleanup;
     }
     if (!ZrLibrary_Zrm_ReadEntry(
@@ -680,7 +681,7 @@ TZrBool ZrParser_CompileToolArtifact_OpenBuildDependency(
     if (artifact.artifactBytes == ZR_NULL || artifact.artifactByteCount == 0U) {
         compile_tool_artifact_set_error(
                 errorBuffer, errorBufferSize,
-                "compiletool.artifact.module entry is empty");
+                "compiletool.artifact.executable entry is empty");
         goto cleanup;
     }
     if (!ZrParser_CompileToolContentHash_Bytes(
@@ -690,7 +691,7 @@ TZrBool ZrParser_CompileToolArtifact_OpenBuildDependency(
             sizeof(actualArtifactHash))) {
         compile_tool_artifact_set_error(
                 errorBuffer, errorBufferSize,
-                "compiletool.artifact.failed to hash module entry");
+                "compiletool.artifact.failed to hash executable entry");
         goto cleanup;
     }
     if (entry->hash[0] == '\0' ||

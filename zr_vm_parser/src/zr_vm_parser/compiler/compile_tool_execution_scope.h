@@ -5,6 +5,7 @@
 
 typedef struct SZrCompileToolExecutionScope {
     TZrSize bindingMark;
+    TZrSize moduleAliasMark;
     SZrImportedCompileTimeModule *previousModule;
     TZrBool entered;
 } SZrCompileToolExecutionScope;

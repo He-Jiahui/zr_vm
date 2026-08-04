@@ -20,6 +20,12 @@
 #define ZR_LIBRARY_ZRM_ZIP_METHOD_STORE 0U
 #define ZR_LIBRARY_ZRM_ZIP_METHOD_DEFLATE 8U
 
+typedef enum EZrLibrary_ZrmManifestEntryKind {
+    ZR_LIBRARY_ZRM_MANIFEST_ENTRY_MODULE = 0,
+    ZR_LIBRARY_ZRM_MANIFEST_ENTRY_RESOURCE = 1,
+    ZR_LIBRARY_ZRM_MANIFEST_ENTRY_COMPILE_TOOL_EXECUTABLE = 2
+} EZrLibrary_ZrmManifestEntryKind;
+
 static void zrm_set_error(TZrChar *errorBuffer, TZrSize errorBufferSize, const TZrChar *format, ...) {
     va_list arguments;
 
@@ -307,7 +313,7 @@ static TZrBool zrm_apply_zip_stat(mz_zip_archive *zip,
 }
 
 static TZrBool zrm_parse_entry_array(cJSON *array,
-                                     TZrBool modules,
+                                     EZrLibrary_ZrmManifestEntryKind kind,
                                      SZrLibrary_ZrmEntryInfo **outEntries,
                                      TZrSize *outCount,
                                      TZrChar *errorBuffer,
@@ -363,14 +369,33 @@ static TZrBool zrm_parse_entry_array(cJSON *array,
             return ZR_FALSE;
         }
 
-        if (!(modules ? ZrLibrary_Zrm_BuildModuleEntryName(name, expectedEntryName, sizeof(expectedEntryName))
-                      : ZrLibrary_Zrm_BuildResourceEntryName(name, expectedEntryName, sizeof(expectedEntryName))) ||
+        TZrBool validEntryName =
+                kind == ZR_LIBRARY_ZRM_MANIFEST_ENTRY_MODULE
+                        ? ZrLibrary_Zrm_BuildModuleEntryName(
+                                  name,
+                                  expectedEntryName,
+                                  sizeof(expectedEntryName))
+                : kind == ZR_LIBRARY_ZRM_MANIFEST_ENTRY_RESOURCE
+                        ? ZrLibrary_Zrm_BuildResourceEntryName(
+                                  name,
+                                  expectedEntryName,
+                                  sizeof(expectedEntryName))
+                        : ZrLibrary_Zrm_BuildCompileToolExecutableEntryName(
+                                  name,
+                                  expectedEntryName,
+                                  sizeof(expectedEntryName));
+
+        if (!validEntryName ||
             strcmp(entryName, expectedEntryName) != 0) {
             free(entries);
             zrm_set_error(errorBuffer,
                           errorBufferSize,
                           "zrm manifest contains an unsafe %s entry",
-                          modules ? "module" : "resource");
+                          kind == ZR_LIBRARY_ZRM_MANIFEST_ENTRY_MODULE
+                                  ? "module"
+                          : kind == ZR_LIBRARY_ZRM_MANIFEST_ENTRY_RESOURCE
+                                  ? "resource"
+                                  : "compile-tool executable");
             return ZR_FALSE;
         }
 
@@ -471,6 +496,33 @@ TZrBool ZrLibrary_Zrm_BuildResourceEntryName(const TZrChar *logicalName, TZrChar
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_Zrm_BuildCompileToolExecutableEntryName(
+        const TZrChar *moduleKey,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    TZrSize prefixLength;
+    TZrSize moduleLength;
+    static const TZrChar extension[] = ".zrs";
+
+    if (buffer == ZR_NULL || bufferSize == 0U) {
+        return ZR_FALSE;
+    }
+    buffer[0] = '\0';
+    if (!ZrLibrary_Zrm_ValidateLogicalName(moduleKey)) {
+        return ZR_FALSE;
+    }
+
+    prefixLength = strlen(ZR_LIBRARY_ZRM_COMPILE_TOOL_ENTRY_PREFIX);
+    moduleLength = strlen(moduleKey);
+    if (prefixLength + moduleLength + sizeof(extension) > bufferSize) {
+        return ZR_FALSE;
+    }
+    memcpy(buffer, ZR_LIBRARY_ZRM_COMPILE_TOOL_ENTRY_PREFIX, prefixLength);
+    memcpy(buffer + prefixLength, moduleKey, moduleLength);
+    memcpy(buffer + prefixLength + moduleLength, extension, sizeof(extension));
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
                                    TZrChar *errorBuffer,
                                    TZrSize errorBufferSize) {
@@ -479,11 +531,16 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
     cJSON *assembly = ZR_NULL;
     cJSON *modulesJson = ZR_NULL;
     cJSON *resourcesJson = ZR_NULL;
+    cJSON *compileToolExecutable = ZR_NULL;
+    cJSON *compileToolExecutablesJson = ZR_NULL;
     TZrChar **moduleEntryNames = ZR_NULL;
     TZrChar **resourceEntryNames = ZR_NULL;
+    TZrChar **compileToolExecutableEntryNames = ZR_NULL;
     TZrByte **moduleBytes = ZR_NULL;
+    TZrByte **compileToolExecutableBytes = ZR_NULL;
     TZrByte **resourceBytes = ZR_NULL;
     TZrSize *moduleByteCounts = ZR_NULL;
+    TZrSize *compileToolExecutableByteCounts = ZR_NULL;
     TZrSize *resourceByteCounts = ZR_NULL;
     TZrBool ok = ZR_FALSE;
     TZrBool writerInitialized = ZR_FALSE;
@@ -512,11 +569,41 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
 
     moduleEntryNames = request->moduleCount > 0 ? (TZrChar **)calloc(request->moduleCount, sizeof(*moduleEntryNames)) : ZR_NULL;
     resourceEntryNames = request->resourceCount > 0 ? (TZrChar **)calloc(request->resourceCount, sizeof(*resourceEntryNames)) : ZR_NULL;
+    compileToolExecutableEntryNames =
+            request->assembly.providerPhase ==
+                            ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL &&
+                    request->moduleCount > 0
+                    ? (TZrChar **)calloc(
+                              request->moduleCount,
+                              sizeof(*compileToolExecutableEntryNames))
+                    : ZR_NULL;
     moduleBytes = request->moduleCount > 0 ? (TZrByte **)calloc(request->moduleCount, sizeof(*moduleBytes)) : ZR_NULL;
+    compileToolExecutableBytes =
+            request->assembly.providerPhase ==
+                            ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL &&
+                    request->moduleCount > 0
+                    ? (TZrByte **)calloc(
+                              request->moduleCount,
+                              sizeof(*compileToolExecutableBytes))
+                    : ZR_NULL;
     resourceBytes = request->resourceCount > 0 ? (TZrByte **)calloc(request->resourceCount, sizeof(*resourceBytes)) : ZR_NULL;
     moduleByteCounts = request->moduleCount > 0 ? (TZrSize *)calloc(request->moduleCount, sizeof(*moduleByteCounts)) : ZR_NULL;
+    compileToolExecutableByteCounts =
+            request->assembly.providerPhase ==
+                            ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL &&
+                    request->moduleCount > 0
+                    ? (TZrSize *)calloc(
+                              request->moduleCount,
+                              sizeof(*compileToolExecutableByteCounts))
+                    : ZR_NULL;
     resourceByteCounts = request->resourceCount > 0 ? (TZrSize *)calloc(request->resourceCount, sizeof(*resourceByteCounts)) : ZR_NULL;
     if ((request->moduleCount > 0 && (moduleEntryNames == ZR_NULL || moduleBytes == ZR_NULL || moduleByteCounts == ZR_NULL)) ||
+        (request->assembly.providerPhase ==
+                         ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL &&
+         request->moduleCount > 0 &&
+         (compileToolExecutableEntryNames == ZR_NULL ||
+          compileToolExecutableBytes == ZR_NULL ||
+          compileToolExecutableByteCounts == ZR_NULL)) ||
         (request->resourceCount > 0 && (resourceEntryNames == ZR_NULL || resourceBytes == ZR_NULL || resourceByteCounts == ZR_NULL))) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to allocate pack buffers");
         goto cleanup;
@@ -526,7 +613,17 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
     assembly = cJSON_CreateObject();
     modulesJson = cJSON_CreateArray();
     resourcesJson = cJSON_CreateArray();
-    if (manifest == ZR_NULL || assembly == ZR_NULL || modulesJson == ZR_NULL || resourcesJson == ZR_NULL) {
+    if (request->assembly.providerPhase ==
+        ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL) {
+        compileToolExecutable = cJSON_CreateObject();
+        compileToolExecutablesJson = cJSON_CreateArray();
+    }
+    if (manifest == ZR_NULL || assembly == ZR_NULL || modulesJson == ZR_NULL ||
+        resourcesJson == ZR_NULL ||
+        (request->assembly.providerPhase ==
+                         ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL &&
+         (compileToolExecutable == ZR_NULL ||
+          compileToolExecutablesJson == ZR_NULL))) {
         zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to allocate manifest");
         goto cleanup;
     }
@@ -573,6 +670,40 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
                           module != ZR_NULL && module->moduleKey != ZR_NULL ? module->moduleKey : "<null>");
             goto cleanup;
         }
+        if (compileToolExecutablesJson != ZR_NULL) {
+            compileToolExecutableEntryNames[index] =
+                    (TZrChar *)calloc(
+                            ZR_LIBRARY_MAX_PATH_LENGTH,
+                            sizeof(TZrChar));
+            if (compileToolExecutableEntryNames[index] == ZR_NULL ||
+                module->compileToolExecutableSourcePath == ZR_NULL ||
+                module->compileToolExecutableHash == ZR_NULL ||
+                !ZrLibrary_Zrm_BuildCompileToolExecutableEntryName(
+                        module->moduleKey,
+                        compileToolExecutableEntryNames[index],
+                        ZR_LIBRARY_MAX_PATH_LENGTH) ||
+                !zrm_read_file(
+                        module->compileToolExecutableSourcePath,
+                        &compileToolExecutableBytes[index],
+                        &compileToolExecutableByteCounts[index]) ||
+                !zrm_add_manifest_entry(
+                        compileToolExecutablesJson,
+                        module->moduleKey,
+                        compileToolExecutableEntryNames[index],
+                        module->compileToolExecutableHash,
+                        compileToolExecutableByteCounts[index],
+                        zrm_crc32(
+                                compileToolExecutableBytes[index],
+                                compileToolExecutableByteCounts[index]),
+                        ZR_LIBRARY_ZRM_COMPRESSION_STORE)) {
+                zrm_set_error(
+                        errorBuffer,
+                        errorBufferSize,
+                        "zrm failed to add compile-tool executable '%s'",
+                        module->moduleKey);
+                goto cleanup;
+            }
+        }
     }
 
     for (TZrSize index = 0; index < request->resourceCount; index++) {
@@ -612,6 +743,32 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
     modulesJson = ZR_NULL;
     cJSON_AddItemToObject(manifest, "resources", resourcesJson);
     resourcesJson = ZR_NULL;
+    if (compileToolExecutable != ZR_NULL) {
+        if (!zrm_add_manifest_string(
+                    compileToolExecutable,
+                    "schema",
+                    ZR_LIBRARY_ZRM_COMPILE_TOOL_EXECUTABLE_SCHEMA) ||
+            !zrm_add_manifest_string(
+                    compileToolExecutable,
+                    "format",
+                    ZR_LIBRARY_ZRM_COMPILE_TOOL_EXECUTABLE_FORMAT)) {
+            zrm_set_error(
+                    errorBuffer,
+                    errorBufferSize,
+                    "zrm failed to build compile-tool executable section");
+            goto cleanup;
+        }
+        cJSON_AddItemToObject(
+                compileToolExecutable,
+                "modules",
+                compileToolExecutablesJson);
+        compileToolExecutablesJson = ZR_NULL;
+        cJSON_AddItemToObject(
+                manifest,
+                "compileToolExecutable",
+                compileToolExecutable);
+        compileToolExecutable = ZR_NULL;
+    }
 
     manifestText = cJSON_PrintUnformatted(manifest);
     if (manifestText == ZR_NULL) {
@@ -646,6 +803,20 @@ TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
                                    moduleByteCounts[index],
                                    MZ_NO_COMPRESSION)) {
             zrm_set_error(errorBuffer, errorBufferSize, "zrm failed to write module '%s'", request->modules[index].moduleKey);
+            goto cleanup;
+        }
+        if (compileToolExecutableEntryNames != ZR_NULL &&
+            !mz_zip_writer_add_mem(
+                    &zip,
+                    compileToolExecutableEntryNames[index],
+                    compileToolExecutableBytes[index],
+                    compileToolExecutableByteCounts[index],
+                    MZ_NO_COMPRESSION)) {
+            zrm_set_error(
+                    errorBuffer,
+                    errorBufferSize,
+                    "zrm failed to write compile-tool executable '%s'",
+                    request->modules[index].moduleKey);
             goto cleanup;
         }
     }
@@ -690,6 +861,12 @@ cleanup:
     if (resourcesJson != ZR_NULL) {
         cJSON_Delete(resourcesJson);
     }
+    if (compileToolExecutable != ZR_NULL) {
+        cJSON_Delete(compileToolExecutable);
+    }
+    if (compileToolExecutablesJson != ZR_NULL) {
+        cJSON_Delete(compileToolExecutablesJson);
+    }
     if (moduleEntryNames != ZR_NULL) {
         for (TZrSize index = 0; index < request->moduleCount; index++) {
             free(moduleEntryNames[index]);
@@ -702,11 +879,23 @@ cleanup:
         }
         free(resourceEntryNames);
     }
+    if (compileToolExecutableEntryNames != ZR_NULL) {
+        for (TZrSize index = 0; index < request->moduleCount; index++) {
+            free(compileToolExecutableEntryNames[index]);
+        }
+        free(compileToolExecutableEntryNames);
+    }
     if (moduleBytes != ZR_NULL) {
         for (TZrSize index = 0; index < request->moduleCount; index++) {
             free(moduleBytes[index]);
         }
         free(moduleBytes);
+    }
+    if (compileToolExecutableBytes != ZR_NULL) {
+        for (TZrSize index = 0; index < request->moduleCount; index++) {
+            free(compileToolExecutableBytes[index]);
+        }
+        free(compileToolExecutableBytes);
     }
     if (resourceBytes != ZR_NULL) {
         for (TZrSize index = 0; index < request->resourceCount; index++) {
@@ -715,6 +904,7 @@ cleanup:
         free(resourceBytes);
     }
     free(moduleByteCounts);
+    free(compileToolExecutableByteCounts);
     free(resourceByteCounts);
     return ok;
 }
@@ -730,6 +920,7 @@ static TZrBool zrm_open_initialized_reader(
     void *manifestBytes = ZR_NULL;
     cJSON *manifest = ZR_NULL;
     cJSON *assembly = ZR_NULL;
+    cJSON *compileToolExecutable = ZR_NULL;
     const TZrChar *format;
     const TZrChar *providerPhase;
     const TZrChar *publicContractHash;
@@ -816,18 +1007,51 @@ static TZrBool zrm_open_initialized_reader(
 
     if (!zrm_parse_entry_array(
                 cJSON_GetObjectItemCaseSensitive(manifest, "modules"),
-                ZR_TRUE,
+                ZR_LIBRARY_ZRM_MANIFEST_ENTRY_MODULE,
                 &archive->modules,
                 &archive->moduleCount,
                 errorBuffer,
                 errorBufferSize) ||
         !zrm_parse_entry_array(
                 cJSON_GetObjectItemCaseSensitive(manifest, "resources"),
-                ZR_FALSE,
+                ZR_LIBRARY_ZRM_MANIFEST_ENTRY_RESOURCE,
                 &archive->resources,
                 &archive->resourceCount,
                 errorBuffer,
                 errorBufferSize)) {
+        goto cleanup;
+    }
+    compileToolExecutable = cJSON_GetObjectItemCaseSensitive(
+            manifest, "compileToolExecutable");
+    if (archive->providerPhase == ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL) {
+        if (!cJSON_IsObject(compileToolExecutable) ||
+            zrm_json_string(compileToolExecutable, "schema") == ZR_NULL ||
+            strcmp(
+                    zrm_json_string(compileToolExecutable, "schema"),
+                    ZR_LIBRARY_ZRM_COMPILE_TOOL_EXECUTABLE_SCHEMA) != 0 ||
+            zrm_json_string(compileToolExecutable, "format") == ZR_NULL ||
+            strcmp(
+                    zrm_json_string(compileToolExecutable, "format"),
+                    ZR_LIBRARY_ZRM_COMPILE_TOOL_EXECUTABLE_FORMAT) != 0 ||
+            !zrm_parse_entry_array(
+                    cJSON_GetObjectItemCaseSensitive(
+                            compileToolExecutable, "modules"),
+                    ZR_LIBRARY_ZRM_MANIFEST_ENTRY_COMPILE_TOOL_EXECUTABLE,
+                    &archive->compileToolExecutables,
+                    &archive->compileToolExecutableCount,
+                    errorBuffer,
+                    errorBufferSize)) {
+            zrm_set_error(
+                    errorBuffer,
+                    errorBufferSize,
+                    "zrm compile-tool executable section is missing or invalid");
+            goto cleanup;
+        }
+    } else if (compileToolExecutable != ZR_NULL) {
+        zrm_set_error(
+                errorBuffer,
+                errorBufferSize,
+                "zrm compile-tool executable section is forbidden for this provider phase");
         goto cleanup;
     }
     if (ZrLibrary_Zrm_FindModule(archive, archive->entryModule) == ZR_NULL) {
@@ -837,6 +1061,30 @@ static TZrBool zrm_open_initialized_reader(
                 "zrm entry module '%s' does not name a module entry",
                 archive->entryModule);
         goto cleanup;
+    }
+    if (archive->providerPhase == ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL) {
+        if (archive->compileToolExecutableCount != archive->moduleCount) {
+            zrm_set_error(
+                    errorBuffer,
+                    errorBufferSize,
+                    "zrm compile-tool executable section must cover every module exactly once");
+            goto cleanup;
+        }
+        for (TZrSize index = 0U; index < archive->moduleCount; index++) {
+            const SZrLibrary_ZrmEntryInfo *module = &archive->modules[index];
+            const SZrLibrary_ZrmEntryInfo *executable =
+                    ZrLibrary_Zrm_FindCompileToolExecutable(
+                            archive, module->logicalName);
+
+            if (executable == ZR_NULL) {
+                zrm_set_error(
+                        errorBuffer,
+                        errorBufferSize,
+                        "zrm compile-tool executable section does not match module '%s'",
+                        module->logicalName);
+                goto cleanup;
+            }
+        }
     }
 
     for (TZrSize index = 0; index < archive->moduleCount; index++) {
@@ -848,6 +1096,17 @@ static TZrBool zrm_open_initialized_reader(
     for (TZrSize index = 0; index < archive->resourceCount; index++) {
         if (!zrm_apply_zip_stat(
                     zip, &archive->resources[index], errorBuffer, errorBufferSize)) {
+            goto cleanup;
+        }
+    }
+    for (TZrSize index = 0;
+         index < archive->compileToolExecutableCount;
+         index++) {
+        if (!zrm_apply_zip_stat(
+                    zip,
+                    &archive->compileToolExecutables[index],
+                    errorBuffer,
+                    errorBufferSize)) {
             goto cleanup;
         }
     }
@@ -950,6 +1209,7 @@ void ZrLibrary_Zrm_Close(SZrLibrary_ZrmArchive *archive) {
     }
     free(archive->modules);
     free(archive->resources);
+    free(archive->compileToolExecutables);
     memset(archive, 0, sizeof(*archive));
 }
 
@@ -974,6 +1234,24 @@ const SZrLibrary_ZrmEntryInfo *ZrLibrary_Zrm_FindResource(const SZrLibrary_ZrmAr
     for (TZrSize index = 0; index < archive->resourceCount; index++) {
         if (strcmp(archive->resources[index].logicalName, logicalName) == 0) {
             return &archive->resources[index];
+        }
+    }
+    return ZR_NULL;
+}
+
+const SZrLibrary_ZrmEntryInfo *ZrLibrary_Zrm_FindCompileToolExecutable(
+        const SZrLibrary_ZrmArchive *archive,
+        const TZrChar *moduleKey) {
+    if (archive == ZR_NULL || moduleKey == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0U;
+         index < archive->compileToolExecutableCount;
+         index++) {
+        if (strcmp(
+                    archive->compileToolExecutables[index].logicalName,
+                    moduleKey) == 0) {
+            return &archive->compileToolExecutables[index];
         }
     }
     return ZR_NULL;

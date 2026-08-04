@@ -8,11 +8,19 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef enum EZrCompileToolProjectProviderState {
+    ZR_COMPILE_TOOL_PROJECT_PROVIDER_LOADING = 1,
+    ZR_COMPILE_TOOL_PROJECT_PROVIDER_READY = 2
+} EZrCompileToolProjectProviderState;
+
+enum { ZR_COMPILE_TOOL_PROJECT_PROVIDER_MAX_ANCESTRY = 64U };
+
 struct SZrCompileToolProjectProvider {
     SZrParserCompileToolResolvedArtifact artifact;
     SZrParserCompileToolModuleDescriptor descriptor;
     SZrImportedCompileTimeModule *module;
     TZrChar moduleName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    EZrCompileToolProjectProviderState state;
 };
 
 static const TZrChar *compile_tool_project_provider_text(const SZrString *value) {
@@ -90,18 +98,180 @@ static SZrCompileToolProjectProvider *compile_tool_project_provider_find(
     if (cs == ZR_NULL || rawSpecifier == ZR_NULL) {
         return ZR_NULL;
     }
-    for (TZrSize index = 0U;
-         index < cs->ownedCompileToolProviders.length;
-         index++) {
-        SZrCompileToolProjectProvider **provider =
-                (SZrCompileToolProjectProvider **)ZrCore_Array_Get(
-                        (SZrArray *)&cs->ownedCompileToolProviders, index);
-        if (provider != ZR_NULL && *provider != ZR_NULL &&
-            strcmp((*provider)->moduleName, rawSpecifier) == 0) {
-            return *provider;
+    for (const SZrCompilerState *cursor = cs;
+         cursor != ZR_NULL;
+         cursor = cursor->compileToolProviderParent) {
+        for (TZrSize index = 0U;
+             index < cursor->ownedCompileToolProviders.length;
+             index++) {
+            SZrCompileToolProjectProvider **provider =
+                    (SZrCompileToolProjectProvider **)ZrCore_Array_Get(
+                            (SZrArray *)&cursor->ownedCompileToolProviders,
+                            index);
+            if (provider != ZR_NULL && *provider != ZR_NULL &&
+                strcmp((*provider)->moduleName, rawSpecifier) == 0) {
+                return *provider;
+            }
         }
     }
     return ZR_NULL;
+}
+
+static SZrCompileToolProjectProvider *compile_tool_project_provider_find_identity(
+        const SZrCompilerState *cs,
+        const SZrLibrary_ModuleIdentity *identity) {
+    if (cs == ZR_NULL || identity == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (const SZrCompilerState *cursor = cs;
+         cursor != ZR_NULL;
+         cursor = cursor->compileToolProviderParent) {
+        for (TZrSize index = 0U;
+             index < cursor->ownedCompileToolProviders.length;
+             index++) {
+            SZrCompileToolProjectProvider **provider =
+                    (SZrCompileToolProjectProvider **)ZrCore_Array_Get(
+                            (SZrArray *)&cursor->ownedCompileToolProviders,
+                            index);
+            if (provider != ZR_NULL && *provider != ZR_NULL &&
+                ZrParser_CompileToolArtifact_IsOpen(&(*provider)->artifact) &&
+                ZrLibrary_ModuleIdentity_Equals(
+                        &(*provider)->artifact.moduleIdentity,
+                        identity)) {
+                return *provider;
+            }
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrBool compile_tool_project_provider_bind(
+        SZrCompilerState *cs,
+        SZrString *aliasName,
+        SZrCompileToolProjectProvider *provider,
+        SZrFileRange location) {
+    TZrSize bindingMark;
+    TZrSize aliasMark;
+
+    if (cs == ZR_NULL || aliasName == ZR_NULL || provider == ZR_NULL ||
+        provider->state != ZR_COMPILE_TOOL_PROJECT_PROVIDER_READY ||
+        provider->module == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    bindingMark = ZrParser_CompileToolBinding_Mark(cs);
+    aliasMark = cs->importedCompileTimeModuleAliases.length;
+    if (ZrParser_CompileToolBinding_DeclareResolvedProvider(
+                cs,
+                aliasName,
+                &provider->descriptor,
+                &provider->artifact) &&
+        ZrParser_CompileTimeImport_RegisterModuleAlias(
+                cs,
+                aliasName,
+                provider->module,
+                location,
+                ZR_FALSE)) {
+        return ZR_TRUE;
+    }
+    ZrParser_CompileToolBinding_Restore(cs, bindingMark);
+    cs->importedCompileTimeModuleAliases.length = aliasMark;
+    return ZR_FALSE;
+}
+
+static void compile_tool_project_provider_report_cycle(
+        SZrCompilerState *cs,
+        const TZrChar *rawSpecifier,
+        SZrFileRange location) {
+    const SZrCompilerState
+            *ancestry[ZR_COMPILE_TOOL_PROJECT_PROVIDER_MAX_ANCESTRY];
+    TZrSize ancestryLength = 0U;
+    TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    TZrSize offset = 0U;
+    int written;
+
+    written = snprintf(
+            message,
+            sizeof(message),
+            "comptime.phase_cycle: compile-tool provider graph ");
+    if (written > 0 && (TZrSize)written < sizeof(message)) {
+        offset = (TZrSize)written;
+    }
+    for (const SZrCompilerState *cursor = cs;
+         cursor != ZR_NULL &&
+         ancestryLength < ZR_COMPILE_TOOL_PROJECT_PROVIDER_MAX_ANCESTRY;
+         cursor = cursor->compileToolProviderParent) {
+        ancestry[ancestryLength++] = cursor;
+    }
+    while (ancestryLength > 0U && offset < sizeof(message)) {
+        const SZrCompilerState *cursor = ancestry[--ancestryLength];
+
+        for (TZrSize index = 0U;
+             index < cursor->ownedCompileToolProviders.length;
+             index++) {
+            SZrCompileToolProjectProvider **provider =
+                    (SZrCompileToolProjectProvider **)ZrCore_Array_Get(
+                            (SZrArray *)&cursor->ownedCompileToolProviders,
+                            index);
+            if (provider == ZR_NULL || *provider == ZR_NULL ||
+                (*provider)->state !=
+                        ZR_COMPILE_TOOL_PROJECT_PROVIDER_LOADING) {
+                continue;
+            }
+            written = snprintf(
+                    message + offset,
+                    sizeof(message) - offset,
+                    "%s -> ",
+                    (*provider)->moduleName);
+            if (written < 0 ||
+                (TZrSize)written >= sizeof(message) - offset) {
+                offset = sizeof(message) - 1U;
+                break;
+            }
+            offset += (TZrSize)written;
+        }
+    }
+    if (offset < sizeof(message)) {
+        snprintf(
+                message + offset,
+                sizeof(message) - offset,
+                "%s",
+                rawSpecifier != ZR_NULL ? rawSpecifier : "<unknown>");
+    }
+    ZrParser_Compiler_Error(cs, message, location);
+}
+
+static void compile_tool_project_provider_release(
+        SZrCompilerState *cs,
+        SZrCompileToolProjectProvider *provider) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || provider == ZR_NULL) {
+        return;
+    }
+    ZrParser_CompileToolArtifact_Close(&provider->artifact);
+    ZrCore_Memory_RawFreeWithType(
+            cs->state->global,
+            provider,
+            sizeof(*provider),
+            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+}
+
+static void compile_tool_project_provider_restore(
+        SZrCompilerState *cs,
+        TZrSize mark) {
+    if (cs == ZR_NULL || mark > cs->ownedCompileToolProviders.length) {
+        return;
+    }
+    while (cs->ownedCompileToolProviders.length > mark) {
+        TZrSize index = cs->ownedCompileToolProviders.length - 1U;
+        SZrCompileToolProjectProvider **provider =
+                (SZrCompileToolProjectProvider **)ZrCore_Array_Get(
+                        &cs->ownedCompileToolProviders,
+                        index);
+
+        if (provider != ZR_NULL) {
+            compile_tool_project_provider_release(cs, *provider);
+        }
+        cs->ownedCompileToolProviders.length = index;
+    }
 }
 
 TZrBool ZrParser_CompileToolProjectProvider_Declare(
@@ -112,8 +282,10 @@ TZrBool ZrParser_CompileToolProjectProvider_Declare(
     const SZrLibrary_Project *project;
     const SZrLibrary_ProjectManifestDependency *dependency;
     SZrCompileToolProjectProvider *provider;
+    SZrCompileToolProjectProvider *identityProvider;
     SZrString *moduleName;
-    TZrSize bindingMark;
+    TZrSize providerMark;
+    TZrSize moduleMark;
     TZrChar archivePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
 
@@ -124,22 +296,13 @@ TZrBool ZrParser_CompileToolProjectProvider_Declare(
     }
     provider = compile_tool_project_provider_find(cs, rawSpecifier);
     if (provider != ZR_NULL) {
-        bindingMark = ZrParser_CompileToolBinding_Mark(cs);
-        if (ZrParser_CompileToolBinding_DeclareResolvedProvider(
-                    cs,
-                    aliasName,
-                    &provider->descriptor,
-                    &provider->artifact) &&
-            ZrParser_CompileTimeImport_RegisterModuleAlias(
-                    cs,
-                    aliasName,
-                    provider->module,
-                    location,
-                    ZR_FALSE)) {
-            return ZR_TRUE;
+        if (provider->state == ZR_COMPILE_TOOL_PROJECT_PROVIDER_LOADING) {
+            compile_tool_project_provider_report_cycle(
+                    cs, rawSpecifier, location);
+            return ZR_FALSE;
         }
-        ZrParser_CompileToolBinding_Restore(cs, bindingMark);
-        return ZR_FALSE;
+        return compile_tool_project_provider_bind(
+                cs, aliasName, provider, location);
     }
 
     project = ZrLibrary_Project_GetFromGlobal(cs->state->global);
@@ -155,6 +318,8 @@ TZrBool ZrParser_CompileToolProjectProvider_Declare(
         return ZR_FALSE;
     }
 
+    providerMark = cs->ownedCompileToolProviders.length;
+    moduleMark = cs->importedCompileTimeModules.length;
     provider = (SZrCompileToolProjectProvider *)
             ZrCore_Memory_RawMallocWithType(
                     cs->state->global,
@@ -186,6 +351,25 @@ TZrBool ZrParser_CompileToolProjectProvider_Declare(
                 location);
         return ZR_FALSE;
     }
+    identityProvider = compile_tool_project_provider_find_identity(
+            cs, &provider->artifact.moduleIdentity);
+    if (identityProvider != ZR_NULL) {
+        TZrBool ready = (TZrBool)(identityProvider->state ==
+                                  ZR_COMPILE_TOOL_PROJECT_PROVIDER_READY);
+
+        if (!ready) {
+            compile_tool_project_provider_report_cycle(
+                    cs, rawSpecifier, location);
+        }
+        compile_tool_project_provider_release(cs, provider);
+        return ready
+                       ? compile_tool_project_provider_bind(
+                                 cs,
+                                 aliasName,
+                                 identityProvider,
+                                 location)
+                       : ZR_FALSE;
+    }
     if (snprintf(
                 provider->moduleName,
                 sizeof(provider->moduleName),
@@ -205,6 +389,8 @@ TZrBool ZrParser_CompileToolProjectProvider_Declare(
     provider->descriptor.moduleName = provider->moduleName;
     provider->descriptor.providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
     provider->descriptor.publicContractHash = provider->artifact.publicContractHash;
+    provider->state = ZR_COMPILE_TOOL_PROJECT_PROVIDER_LOADING;
+    ZrCore_Array_Push(cs->state, &cs->ownedCompileToolProviders, &provider);
     moduleName = ZrCore_String_CreateFromNative(
             cs->state, provider->moduleName);
     provider->module = ZrParser_CompileTimeImport_LoadSourceModule(
@@ -214,36 +400,21 @@ TZrBool ZrParser_CompileToolProjectProvider_Declare(
             provider->artifact.artifactByteCount,
             ZR_FALSE);
     if (moduleName == ZR_NULL || provider->module == ZR_NULL) {
-        ZrParser_CompileToolArtifact_Close(&provider->artifact);
-        ZrCore_Memory_RawFreeWithType(
-                cs->state->global,
-                provider,
-                sizeof(*provider),
-                ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        ZrParser_Compiler_Error(
-                cs,
-                "compiletool.artifact.executable_invalid: provider module is not valid compiler-owned source",
-                location);
+        ZrParser_CompileTimeImport_RestoreModules(cs, moduleMark);
+        compile_tool_project_provider_restore(cs, providerMark);
+        if (cs->errorMessage == ZR_NULL) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "compiletool.artifact.executable_invalid: provider module is not valid compiler-owned source",
+                    location);
+        }
         return ZR_FALSE;
     }
-    ZrCore_Array_Push(cs->state, &cs->ownedCompileToolProviders, &provider);
-    bindingMark = ZrParser_CompileToolBinding_Mark(cs);
-    if (!ZrParser_CompileToolBinding_DeclareResolvedProvider(
-                cs, aliasName, &provider->descriptor, &provider->artifact) ||
-        !ZrParser_CompileTimeImport_RegisterModuleAlias(
-                cs,
-                aliasName,
-                provider->module,
-                location,
-                ZR_FALSE)) {
-        ZrParser_CompileToolBinding_Restore(cs, bindingMark);
-        cs->ownedCompileToolProviders.length--;
-        ZrParser_CompileToolArtifact_Close(&provider->artifact);
-        ZrCore_Memory_RawFreeWithType(
-                cs->state->global,
-                provider,
-                sizeof(*provider),
-                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    provider->state = ZR_COMPILE_TOOL_PROJECT_PROVIDER_READY;
+    if (!compile_tool_project_provider_bind(
+                cs, aliasName, provider, location)) {
+        ZrParser_CompileTimeImport_RestoreModules(cs, moduleMark);
+        compile_tool_project_provider_restore(cs, providerMark);
         ZrParser_Compiler_Error(
                 cs, "compiletool.binding: resolved provider contract mismatch", location);
         return ZR_FALSE;
@@ -256,21 +427,6 @@ void ZrParser_CompileToolProjectProvider_FreeAll(SZrCompilerState *cs) {
         !cs->ownedCompileToolProviders.isValid) {
         return;
     }
-    for (TZrSize index = 0U;
-         index < cs->ownedCompileToolProviders.length;
-         index++) {
-        SZrCompileToolProjectProvider **provider =
-                (SZrCompileToolProjectProvider **)ZrCore_Array_Get(
-                        &cs->ownedCompileToolProviders, index);
-        if (provider == ZR_NULL || *provider == ZR_NULL) {
-            continue;
-        }
-        ZrParser_CompileToolArtifact_Close(&(*provider)->artifact);
-        ZrCore_Memory_RawFreeWithType(
-                cs->state->global,
-                *provider,
-                sizeof(**provider),
-                ZR_MEMORY_NATIVE_TYPE_ARRAY);
-    }
+    compile_tool_project_provider_restore(cs, 0U);
     ZrCore_Array_Free(cs->state, &cs->ownedCompileToolProviders);
 }

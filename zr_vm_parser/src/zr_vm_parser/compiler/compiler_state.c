@@ -215,6 +215,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->constructorInitializedConstFields,
                       sizeof(SZrString *),
                       ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    cs->compileToolProviderParent = ZR_NULL;
     ZrCore_Array_Init(state,
                       &cs->ownedCompileToolProviders,
                       sizeof(SZrCompileToolProjectProvider *),

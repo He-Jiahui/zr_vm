@@ -8,6 +8,10 @@
 #define ZR_LIBRARY_ZRM_MANIFEST_ENTRY "META-INF/zrm.json"
 #define ZR_LIBRARY_ZRM_MODULE_ENTRY_PREFIX "modules/"
 #define ZR_LIBRARY_ZRM_RESOURCE_ENTRY_PREFIX "resources/"
+#define ZR_LIBRARY_ZRM_COMPILE_TOOL_ENTRY_PREFIX "compile-tools/"
+#define ZR_LIBRARY_ZRM_COMPILE_TOOL_EXECUTABLE_SCHEMA \
+    "zr.compile-tool-executable/v1"
+#define ZR_LIBRARY_ZRM_COMPILE_TOOL_EXECUTABLE_FORMAT "zr.source/utf8-v1"
 #define ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH 512U
 
 typedef enum EZrLibrary_ZrmCompression {
@@ -36,6 +40,8 @@ typedef struct SZrLibrary_ZrmPackModule {
     const TZrChar *moduleKey;
     const TZrChar *sourcePath;
     const TZrChar *hash;
+    const TZrChar *compileToolExecutableSourcePath;
+    const TZrChar *compileToolExecutableHash;
 } SZrLibrary_ZrmPackModule;
 
 typedef struct SZrLibrary_ZrmPackResource {
@@ -78,6 +84,8 @@ typedef struct SZrLibrary_ZrmArchive {
     TZrSize moduleCount;
     SZrLibrary_ZrmEntryInfo *resources;
     TZrSize resourceCount;
+    SZrLibrary_ZrmEntryInfo *compileToolExecutables;
+    TZrSize compileToolExecutableCount;
     TZrPtr zipHandle;
 } SZrLibrary_ZrmArchive;
 
@@ -90,6 +98,11 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Zrm_BuildModuleEntryName(const TZrChar *moduleK
 ZR_LIBRARY_API TZrBool ZrLibrary_Zrm_BuildResourceEntryName(const TZrChar *logicalName,
                                                             TZrChar *buffer,
                                                             TZrSize bufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Zrm_BuildCompileToolExecutableEntryName(
+        const TZrChar *moduleKey,
+        TZrChar *buffer,
+        TZrSize bufferSize);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Zrm_WriteArchive(const SZrLibrary_ZrmPackRequest *request,
                                                   TZrChar *errorBuffer,
@@ -115,6 +128,11 @@ ZR_LIBRARY_API const SZrLibrary_ZrmEntryInfo *ZrLibrary_Zrm_FindModule(const SZr
 
 ZR_LIBRARY_API const SZrLibrary_ZrmEntryInfo *ZrLibrary_Zrm_FindResource(const SZrLibrary_ZrmArchive *archive,
                                                                          const TZrChar *logicalName);
+
+ZR_LIBRARY_API const SZrLibrary_ZrmEntryInfo *
+ZrLibrary_Zrm_FindCompileToolExecutable(
+        const SZrLibrary_ZrmArchive *archive,
+        const TZrChar *moduleKey);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Zrm_ReadEntry(const SZrLibrary_ZrmArchive *archive,
                                                const TZrChar *entryName,

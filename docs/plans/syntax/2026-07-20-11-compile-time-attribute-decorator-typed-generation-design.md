@@ -10,7 +10,7 @@
 
 ---
 
-> 状态：按Occam原则修订；类型化声明生成边界已确认。第一版 M4 已完成 typed
+> 状态：Gate 11 M1-M5 已完成。按Occam原则修订；类型化声明生成边界已确认。第一版 M4 已完成 typed
 > `CompileDiagnostic[]`、canonical `interfaceAdds: TypeId[]`、schema-checked
 > `attributeAdds: AttributeData[]` 与 `GeneratedField` provenance/retention；
 > generated source map 已投影到 `.zri`，runtime decorator path 已删除。当前
@@ -22,16 +22,18 @@
 > 实际条目与整包 SHA-256，并把规范 CompileTool lock-section SHA-256 交给
 > comptime cache v5；cache entry 比较完整 32-byte digest，不再压缩为 64-bit FNV，
 > 并把当前模块完整 source SHA-256 纳入 identity。
-> runtime dependency graph 不接收该 provider。外部 `.zrs` source provider 的
-> import/执行激活已有独立验收；实际传递 provider 图未晋级，provider-to-provider
-> build-dependency import 当前在递归准备前 fail-closed。comptime cache 现有版本化、规范排序、
+> runtime dependency graph 不接收该 provider。CompileTool ZRM 现在必须提供
+> `zr.compile-tool-executable/v1`、`zr.source/utf8-v1` 的独立
+> `compile-tools/*.zrs` 段；compiler 不再把普通 module entry 当作 source fallback。
+> 外部 source provider 的 import/执行和实际传递 provider 图已有独立验收：canonical
+> identity 去重、alias-qualified helper 执行、稳定 phase-cycle chain，以及缺锁/成环时
+> binding、alias、module、provider 的完整回滚均已覆盖。comptime cache 现有版本化、规范排序、
 > 固定大端编码且带全快照 SHA-256 的 snapshot export/import，损坏输入不会替换旧缓存；
 > project CLI 已接入 `.zr_comptime_cache` 原子读写，并证明 miss/hit、同长度语义修改
-> miss、损坏拒绝修复和恢复原源码后的 artifact byte-identical。其余
-> artifact/reflection consumers 仍未完成。formatter 已复用 migration plan
+> miss、损坏拒绝修复和恢复原源码后的 artifact byte-identical。artifact、reflection、
+> LSP 与 formatter consumers 已完成第一版契约。formatter 已复用 migration plan
 > 作为 fail-closed 输出门：旧语法不产生 edit，当前 CompileTool 表层和合法
-> `%`/`%=` 运算继续格式化；仍不能据此
-> 提升整门 Gate。
+> `%`/`%=` 运算继续格式化。2026-08-04 的 GCC、Clang、MSVC 回放已提升 M5。
 >
 > 上游契约：[01 Canonical TypeRef、Place、CFG与artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[03 `init TypeRef`与layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[05 property](./2026-07-18-05-property-unified-ast-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[08 reflection metadata](./2026-07-19-08-reflection-library-type-system-design.md)、[10R module/package foundation](./2026-07-19-10-native-ffi-module-package-design.md)。本计划不依赖 06B 最终仓库切换。
 
@@ -290,7 +292,9 @@ fn warning(message: string, target: SymbolId? = null): void; // zr.compile.warni
 
 - compile-only import仍写`let tool = import("@derive");`；resolver绑定`CompileToolNamespace`，只在comptime context可用，不进入runtime graph。
 - `zr.compile`与`zr.compile.declaration`host descriptor是TypeId/CallableContract/role的唯一真源；generated interface/LSP virtual document只读投影。
-- exported transform executable进入compile-tool section；runtime loader不映射。
+- exported transform executable进入版本化 `zr.compile-tool-executable/v1`
+  section，以 `zr.source/utf8-v1` 保存于 `compile-tools/<module>.zrs`；compiler
+  只消费此段，runtime/Test archive与loader均拒绝映射。
 - `.zrs`保存source syntax；`.zri`保存condition decision、expansion provenance、generated source map与cache key；`.zro`保存最终public generated declarations、AttributeData和conditional predicate。
 - runtime reflection只看到最终member和runtime-retained AttributeData，不看到handler/Patch/compile heap。
 - LSP显示inactive branch、attribute schema、transform origin和read-only generated virtual document；LSP不执行transform。
@@ -331,6 +335,10 @@ cache key至少包含handler artifact hash、compiler schema、arguments、targe
 ### M5 consumers/migration
 
 接通artifact、reflection、LSP、formatter、buildDependencies和reference fixture；删除runtime decorator path。
+
+状态：已完成。传递 CompileTool provider 图使用 canonical identity 去重，加载中
+provider 形成稳定的 root-to-leaf phase-cycle chain；缺锁、成环或 executable
+解析失败均回滚本次作用域新增的 binding、module alias、imported module 和 provider。
 
 晋级至少证明：
 

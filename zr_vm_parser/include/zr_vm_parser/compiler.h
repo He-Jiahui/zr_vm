@@ -213,6 +213,7 @@ typedef struct SZrCompilerState {
     SZrArray constLocalVars;                   // const 局部变量名数组（SZrString*）
     SZrArray constParameters;                  // const 参数名数组（SZrString*）
     SZrArray constructorInitializedConstFields; // 构造函数中已初始化的 const 成员名数组（SZrString*）
+    struct SZrCompilerState *compileToolProviderParent; // imported-provider compilation ancestry
     SZrArray ownedCompileToolProviders;         // SZrCompileToolProjectProvider*; compiler-only artifact owners
 } SZrCompilerState;
 

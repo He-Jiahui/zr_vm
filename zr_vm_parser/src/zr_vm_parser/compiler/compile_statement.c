@@ -32,46 +32,6 @@
 static TZrBool compile_statement_trace_enabled(void);
 static void compile_statement_trace(const TZrChar *format, ...);
 
-static SZrAstNode *compile_statement_find_transitive_build_dependency_import(
-        const SZrCompilerState *cs,
-        SZrAstNode *scriptAst) {
-    SZrAstNodeArray *statements;
-
-    if (cs == ZR_NULL || scriptAst == ZR_NULL ||
-        scriptAst->type != ZR_AST_SCRIPT) {
-        return ZR_NULL;
-    }
-    statements = scriptAst->data.script.statements;
-    for (TZrSize index = 0U;
-         statements != ZR_NULL && index < statements->count;
-         index++) {
-        SZrAstNode *statement = statements->nodes[index];
-        SZrAstNode *modulePath;
-        const TZrChar *specifier;
-
-        if (statement == ZR_NULL ||
-            statement->type != ZR_AST_VARIABLE_DECLARATION ||
-            statement->data.variableDeclaration.value == ZR_NULL ||
-            statement->data.variableDeclaration.value->type !=
-                    ZR_AST_IMPORT_EXPRESSION) {
-            continue;
-        }
-        modulePath = statement->data.variableDeclaration.value
-                             ->data.importExpression.modulePath;
-        if (modulePath == ZR_NULL ||
-            modulePath->type != ZR_AST_STRING_LITERAL ||
-            modulePath->data.stringLiteral.value == ZR_NULL) {
-            continue;
-        }
-        specifier = ZrCore_String_GetNativeString(
-                modulePath->data.stringLiteral.value);
-        if (ZrParser_ProjectImports_IsBuildDependencySpecifier(
-                    cs->state, specifier)) {
-            return statement;
-        }
-    }
-    return ZR_NULL;
-}
 void emit_type_conversion(SZrCompilerState *cs,
                           TZrUInt32 destSlot,
                           TZrUInt32 srcSlot,
@@ -534,9 +494,13 @@ static SZrImportedCompileTimeModule *compile_statement_find_imported_compile_tim
         return ZR_NULL;
     }
 
-    for (TZrSize index = 0; index < cs->importedCompileTimeModuleAliases.length; index++) {
+    for (TZrSize index = cs->importedCompileTimeModuleAliases.length;
+         index > 0;
+         index--) {
         SZrImportedCompileTimeModuleAlias *alias =
-                (SZrImportedCompileTimeModuleAlias *)ZrCore_Array_Get(&cs->importedCompileTimeModuleAliases, index);
+                (SZrImportedCompileTimeModuleAlias *)ZrCore_Array_Get(
+                        &cs->importedCompileTimeModuleAliases,
+                        index - 1U);
         if (alias != ZR_NULL && alias->aliasName != ZR_NULL && alias->module != ZR_NULL &&
             ZrCore_String_Equal(alias->aliasName, aliasName)) {
             return alias->module;
@@ -1299,7 +1263,8 @@ SZrImportedCompileTimeModule *ZrParser_CompileTimeImport_LoadSourceModule(
     SZrImportedCompileTimeModule *module;
     SZrAstNode *scriptAst;
     SZrCompileToolExecutionScope executionScope;
-    SZrAstNode *transitiveImport;
+    SZrCompilerState importedCompiler;
+    TZrBool buildFactsPrepared;
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH] = {0};
     SZrFileRange importErrorLocation =
             {{0, 0, 0}, {0, 0, 0}, ZR_NULL};
@@ -1320,20 +1285,22 @@ SZrImportedCompileTimeModule *ZrParser_CompileTimeImport_LoadSourceModule(
             (const TZrChar *)sourceBytes,
             sourceByteCount,
             moduleName);
-    transitiveImport = !canonicalizeImports
-                               ? compile_statement_find_transitive_build_dependency_import(
-                                         cs, scriptAst)
-                               : ZR_NULL;
-    if (transitiveImport != ZR_NULL) {
-        ZrParser_Compiler_Error(
-                cs,
-                "compiletool.provider.transitive_not_promoted: external provider build-dependency imports require the phase-cycle graph gate",
-                transitiveImport->location);
-        ZrParser_Ast_Free(cs->state, scriptAst);
-        return ZR_NULL;
+    buildFactsPrepared = ZR_FALSE;
+    if (scriptAst != ZR_NULL) {
+        ZrParser_CompilerState_Init(&importedCompiler, cs->state);
+        importedCompiler.compileToolProviderParent = cs;
+        buildFactsPrepared =
+                ZrParser_CompileTime_PrepareBuildFactsInCompilerState(
+                        &importedCompiler, scriptAst);
+        if (!buildFactsPrepared && importedCompiler.errorMessage != ZR_NULL) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    importedCompiler.errorMessage,
+                    importedCompiler.errorLocation);
+        }
+        ZrParser_CompilerState_Free(&importedCompiler);
     }
-    if (scriptAst == ZR_NULL ||
-        !ZrParser_CompileTime_PrepareBuildFacts(cs->state, scriptAst)) {
+    if (scriptAst == ZR_NULL || !buildFactsPrepared) {
         if (scriptAst != ZR_NULL) {
             ZrParser_Ast_Free(cs->state, scriptAst);
         }
@@ -1403,6 +1370,41 @@ SZrImportedCompileTimeModule *ZrParser_CompileTimeImport_LoadSourceModule(
     return module;
 }
 
+void ZrParser_CompileTimeImport_RestoreModules(
+        SZrCompilerState *cs,
+        TZrSize mark) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL ||
+        !cs->importedCompileTimeModules.isValid ||
+        mark > cs->importedCompileTimeModules.length) {
+        return;
+    }
+    while (cs->importedCompileTimeModules.length > mark) {
+        TZrSize index = cs->importedCompileTimeModules.length - 1U;
+        SZrImportedCompileTimeModule **modulePtr =
+                (SZrImportedCompileTimeModule **)ZrCore_Array_Get(
+                        &cs->importedCompileTimeModules,
+                        index);
+
+        if (modulePtr != ZR_NULL && *modulePtr != ZR_NULL) {
+            SZrImportedCompileTimeModule *module = *modulePtr;
+
+            compile_statement_free_imported_compile_time_variables(
+                    cs->state, module);
+            compile_statement_free_imported_compile_time_functions(
+                    cs->state, module);
+            if (module->scriptAst != ZR_NULL) {
+                ZrParser_Ast_Free(cs->state, module->scriptAst);
+            }
+            ZrCore_Memory_RawFreeWithType(
+                    cs->state->global,
+                    module,
+                    sizeof(*module),
+                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        }
+        cs->importedCompileTimeModules.length = index;
+    }
+}
+
 TZrBool ZrParser_CompileTimeImport_RegisterModuleAlias(
         SZrCompilerState *cs,
         SZrString *aliasName,
@@ -1414,19 +1416,6 @@ TZrBool ZrParser_CompileTimeImport_RegisterModuleAlias(
     if (cs == ZR_NULL || aliasName == ZR_NULL || module == ZR_NULL) {
         return ZR_FALSE;
     }
-    for (TZrSize index = 0U;
-         index < cs->importedCompileTimeModuleAliases.length;
-         index++) {
-        SZrImportedCompileTimeModuleAlias *existing =
-                (SZrImportedCompileTimeModuleAlias *)ZrCore_Array_Get(
-                        &cs->importedCompileTimeModuleAliases, index);
-        if (existing != ZR_NULL && existing->aliasName != ZR_NULL &&
-            ZrCore_String_Equal(existing->aliasName, aliasName)) {
-            existing->module = module;
-            return ZR_TRUE;
-        }
-    }
-
     alias.aliasName = aliasName;
     alias.module = module;
     ZrCore_Array_Push(

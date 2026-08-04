@@ -300,7 +300,7 @@ static void test_function_access_modifiers_are_retained_in_ast(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
-static void test_provider_source_rejects_unpromoted_transitive_build_dependency(void) {
+static void test_provider_source_rolls_back_failed_transitive_build_dependency(void) {
     static const TZrByte source[] =
             "let nested = import(\"@derive\");\n"
             "pub comptime fn exported(): int { return 1; }\n";
@@ -321,10 +321,12 @@ static void test_provider_source_rejects_unpromoted_transitive_build_dependency(
     TEST_ASSERT_NOT_NULL_MESSAGE(
             strstr(
                     compiler.errorMessage,
-                    "compiletool.provider.transitive_not_promoted"),
+                    "compiletool.artifact.lock_missing"),
             compiler.errorMessage);
     TEST_ASSERT_EQUAL_size_t(0U, compiler.importedCompileTimeModules.length);
     TEST_ASSERT_EQUAL_size_t(0U, compiler.ownedCompileToolProviders.length);
+    TEST_ASSERT_EQUAL_size_t(0U, compiler.compileToolBindings.length);
+    TEST_ASSERT_EQUAL_size_t(0U, compiler.importedCompileTimeModuleAliases.length);
     ZrParser_CompilerState_Free(&compiler);
 }
 
@@ -358,10 +360,219 @@ static void normalize_json_path(TZrChar *path) {
     }
 }
 
+typedef struct STestCompileToolArchive {
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
+    TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar archiveHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
+} STestCompileToolArchive;
+
+static void create_compile_tool_archive(
+        const TZrChar *stem,
+        const TZrChar *packageName,
+        const TZrChar *version,
+        const TZrByte *source,
+        TZrSize sourceByteCount,
+        const TZrChar *publicContractHash,
+        STestCompileToolArchive *outArchive) {
+    SZrLibrary_ZrmPackModule module = {0};
+    SZrLibrary_ZrmPackRequest request = {0};
+    TZrByte *archiveBytes = ZR_NULL;
+    TZrSize archiveByteCount = 0U;
+    TZrChar moduleStem[ZR_TESTS_PATH_MAX];
+    TZrChar moduleHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
+    TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH] = {0};
+    int written;
+
+    TEST_ASSERT_NOT_NULL(stem);
+    TEST_ASSERT_NOT_NULL(packageName);
+    TEST_ASSERT_NOT_NULL(version);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_NOT_NULL(publicContractHash);
+    TEST_ASSERT_NOT_NULL(outArchive);
+    written = snprintf(moduleStem, sizeof(moduleStem), "%s_main", stem);
+    TEST_ASSERT_TRUE(written > 0 && (TZrSize)written < sizeof(moduleStem));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "parser",
+            "compile_tool_project_import",
+            moduleStem,
+            ".zrs",
+            outArchive->modulePath,
+            sizeof(outArchive->modulePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "parser",
+            "compile_tool_project_import",
+            stem,
+            ".zrm",
+            outArchive->archivePath,
+            sizeof(outArchive->archivePath)));
+    normalize_json_path(outArchive->modulePath);
+    normalize_json_path(outArchive->archivePath);
+    TEST_ASSERT_TRUE(write_bytes(
+            outArchive->modulePath, source, sourceByteCount));
+    TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
+            source,
+            sourceByteCount,
+            moduleHash,
+            sizeof(moduleHash)));
+
+    module.moduleKey = "main";
+    module.sourcePath = outArchive->modulePath;
+    module.hash = moduleHash;
+    module.compileToolExecutableSourcePath = outArchive->modulePath;
+    module.compileToolExecutableHash = moduleHash;
+    request.outputPath = outArchive->archivePath;
+    request.assembly.name = packageName;
+    request.assembly.version = version;
+    request.assembly.kind = "compile-tool";
+    request.assembly.entryModule = "main";
+    request.assembly.providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+    request.assembly.publicContractHash = publicContractHash;
+    request.modules = &module;
+    request.moduleCount = 1U;
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error)),
+            error);
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(
+            outArchive->archivePath,
+            &archiveBytes,
+            &archiveByteCount));
+    TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
+            archiveBytes,
+            archiveByteCount,
+            outArchive->archiveHash,
+            sizeof(outArchive->archiveHash)));
+    free(archiveBytes);
+}
+
+static void test_transitive_build_dependency_cycle_reports_chain_and_rolls_back(void) {
+    static const TZrByte cycleAModuleBytes[] =
+            "let cycleb = import(\"@cycleb\");\n"
+            "pub comptime fn value(): int { return cycleb.value(); }\n";
+    static const TZrByte cycleBModuleBytes[] =
+            "let cyclea = import(\"@cyclea\");\n"
+            "pub comptime fn value(): int { return cyclea.value(); }\n";
+    const SZrParserCompileToolModuleDescriptor *builtinDescriptor =
+            ZrParser_CompileTool_FindModule(ZR_PARSER_COMPILE_TOOL_MODULE_BUILD);
+    STestCompileToolArchive cycleA = {0};
+    STestCompileToolArchive cycleB = {0};
+    SZrLibrary_Project *project;
+    SZrAstNode *ast;
+    SZrCompilerState compiler;
+    SZrString *sourceName;
+    SZrString *currentModuleKey = ZR_NULL;
+    SZrFileRange errorLocation = {{0, 0, 0}, {0, 0, 0}, ZR_NULL};
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar manifest[4096];
+    TZrChar lock[2048];
+    TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH] = {0};
+    int written;
+
+    TEST_ASSERT_NOT_NULL(builtinDescriptor);
+    create_compile_tool_archive(
+            "cyclea",
+            "cyclea",
+            "1.0.0",
+            cycleAModuleBytes,
+            sizeof(cycleAModuleBytes) - 1U,
+            builtinDescriptor->publicContractHash,
+            &cycleA);
+    create_compile_tool_archive(
+            "cycleb",
+            "cycleb",
+            "1.0.0",
+            cycleBModuleBytes,
+            sizeof(cycleBModuleBytes) - 1U,
+            builtinDescriptor->publicContractHash,
+            &cycleB);
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "parser",
+            "compile_tool_project_import",
+            "cycle_consumer",
+            ".zrp",
+            projectPath,
+            sizeof(projectPath)));
+    normalize_json_path(projectPath);
+    written = snprintf(
+            manifest,
+            sizeof(manifest),
+            "{\"manifestVersion\":2,\"name\":\"cycle-consumer\","
+            "\"version\":\"1.0.0\",\"kind\":\"executable\","
+            "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\","
+            "\"dependencies\":{},\"buildDependencies\":{"
+            "\"@cyclea\":{\"version\":\"^1.0.0\",\"path\":\"%s\"},"
+            "\"@cycleb\":{\"version\":\"^1.0.0\",\"path\":\"%s\"}}}",
+            cycleA.archivePath,
+            cycleB.archivePath);
+    TEST_ASSERT_TRUE(written > 0 && (TZrSize)written < sizeof(manifest));
+    project = ZrLibrary_Project_New(g_state, manifest, projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    written = snprintf(
+            sourcePath,
+            sizeof(sourcePath),
+            "%s/src/main.zr",
+            ZrCore_String_GetNativeString(project->directory));
+    TEST_ASSERT_TRUE(written > 0 && (TZrSize)written < sizeof(sourcePath));
+    written = snprintf(
+            lock,
+            sizeof(lock),
+            "{\"lockVersion\":1,\"dependencies\":{},\"buildDependencies\":{"
+            "\"@cyclea\":{\"version\":\"1.0.0\",\"contentHash\":\"%s\","
+            "\"transitiveIdentity\":\"sha256:uZUQq8UmbWYobrUOMIYjSt_JG2D7HnXK8ukUtWWZfpA\","
+            "\"provider\":\"path\"},"
+            "\"@cycleb\":{\"version\":\"1.0.0\",\"contentHash\":\"%s\","
+            "\"transitiveIdentity\":\"sha256:VfjnMCaYkN5eJPeoTId1YBuK5y0FzGf3hQmQhhdNJ8E\","
+            "\"provider\":\"path\"}}}",
+            cycleA.archiveHash,
+            cycleB.archiveHash);
+    TEST_ASSERT_TRUE(written > 0 && (TZrSize)written < sizeof(lock));
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_ProjectManifestV2_ReadDependencyLock(
+                    g_state, project, lock, error, sizeof(error)),
+            error);
+    g_state->global->userData = project;
+
+    ast = parse_import_source("@cyclea");
+    TEST_ASSERT_NOT_NULL(ast);
+    sourceName = ZrCore_String_CreateFromNative(g_state, sourcePath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrParser_ProjectImports_CanonicalizeAst(
+                    g_state,
+                    ast,
+                    sourceName,
+                    &currentModuleKey,
+                    error,
+                    sizeof(error),
+                    &errorLocation),
+            error);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_FALSE(
+            ZrParser_CompileTime_PrepareBuildFactsInCompilerState(
+                    &compiler, ast));
+    TEST_ASSERT_NOT_NULL(compiler.errorMessage);
+    TEST_ASSERT_NOT_NULL_MESSAGE(
+            strstr(
+                    compiler.errorMessage,
+                    "comptime.phase_cycle: compile-tool provider graph @cyclea -> @cycleb -> @cyclea"),
+            compiler.errorMessage);
+    TEST_ASSERT_EQUAL_size_t(0U, compiler.compileToolBindings.length);
+    TEST_ASSERT_EQUAL_size_t(0U, compiler.importedCompileTimeModuleAliases.length);
+    TEST_ASSERT_EQUAL_size_t(0U, compiler.importedCompileTimeModules.length);
+    TEST_ASSERT_EQUAL_size_t(0U, compiler.ownedCompileToolProviders.length);
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+    g_state->global->userData = g_project;
+    ZrLibrary_Project_Free(g_state, project);
+}
+
 static void test_locked_build_dependency_import_executes_owned_compile_tool_transform(void) {
+    static const TZrByte helperModuleBytes[] =
+            "pub comptime fn generatedName(): string { return \"generated\"; }\n";
     static const TZrByte moduleBytes[] =
             "let declaration = import(\"zr.compile.declaration\");\n"
-            "comptime fn generatedName(): string { return \"generated\"; }\n"
+            "let helper = import(\"@helper\");\n"
             "#zr.compile.declarationTransform#\n"
             "comptime fn privateDerive(target: declaration.Struct): declaration.Patch {\n"
             "    return init declaration.Patch(target: target.symbolId);\n"
@@ -369,7 +580,7 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
             "#zr.compile.declarationTransform#\n"
             "pub comptime fn derive(target: declaration.Struct): declaration.Patch {\n"
             "    let field = init declaration.GeneratedField(\n"
-            "        name: generatedName(), type: typeid(bool),\n"
+            "        name: helper.generatedName(), type: typeid(bool),\n"
             "        visibility: declaration.Visibility.public,\n"
             "        mutability: declaration.Mutability.let);\n"
             "    return init declaration.Patch(\n"
@@ -392,7 +603,9 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
     const SZrParserCompileToolModuleDescriptor *builtinDescriptor =
             ZrParser_CompileTool_FindModule(ZR_PARSER_COMPILE_TOOL_MODULE_BUILD);
     SZrLibrary_ZrmPackModule module = {0};
+    SZrLibrary_ZrmPackModule helperModule = {0};
     SZrLibrary_ZrmPackRequest request = {0};
+    SZrLibrary_ZrmPackRequest helperRequest = {0};
     SZrLibrary_Project *project;
     SZrAstNode *ast;
     SZrCompilerState compiler;
@@ -402,13 +615,19 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
     SZrString *currentModuleKey = ZR_NULL;
     TZrByte *archiveBytes = ZR_NULL;
     TZrSize archiveByteCount = 0U;
+    TZrByte *helperArchiveBytes = ZR_NULL;
+    TZrSize helperArchiveByteCount = 0U;
     SZrFileRange errorLocation;
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
+    TZrChar helperModulePath[ZR_TESTS_PATH_MAX];
+    TZrChar helperArchivePath[ZR_TESTS_PATH_MAX];
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar sourcePath[ZR_TESTS_PATH_MAX];
     TZrChar moduleHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
     TZrChar archiveHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
+    TZrChar helperModuleHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
+    TZrChar helperArchiveHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
     TZrChar manifest[4096];
     TZrChar lock[2048];
     TZrChar error[ZR_LIBRARY_ZRM_ERROR_BUFFER_LENGTH];
@@ -432,12 +651,28 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
             "parser",
             "compile_tool_project_import",
+            "helper_main",
+            ".zrs",
+            helperModulePath,
+            sizeof(helperModulePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "parser",
+            "compile_tool_project_import",
+            "helper",
+            ".zrm",
+            helperArchivePath,
+            sizeof(helperArchivePath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "parser",
+            "compile_tool_project_import",
             "consumer",
             ".zrp",
             projectPath,
             sizeof(projectPath)));
     normalize_json_path(modulePath);
     normalize_json_path(archivePath);
+    normalize_json_path(helperModulePath);
+    normalize_json_path(helperArchivePath);
     normalize_json_path(projectPath);
     TEST_ASSERT_TRUE(write_bytes(
             modulePath, moduleBytes, sizeof(moduleBytes) - 1U));
@@ -446,10 +681,21 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
             sizeof(moduleBytes) - 1U,
             moduleHash,
             sizeof(moduleHash)));
+    TEST_ASSERT_TRUE(write_bytes(
+            helperModulePath,
+            helperModuleBytes,
+            sizeof(helperModuleBytes) - 1U));
+    TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
+            helperModuleBytes,
+            sizeof(helperModuleBytes) - 1U,
+            helperModuleHash,
+            sizeof(helperModuleHash)));
 
     module.moduleKey = "main";
     module.sourcePath = modulePath;
     module.hash = moduleHash;
+    module.compileToolExecutableSourcePath = modulePath;
+    module.compileToolExecutableHash = moduleHash;
     request.outputPath = archivePath;
     request.assembly.name = "derive";
     request.assembly.version = "1.4.0";
@@ -462,6 +708,23 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
     TEST_ASSERT_TRUE_MESSAGE(
             ZrLibrary_Zrm_WriteArchive(&request, error, sizeof(error)),
             error);
+    helperModule.moduleKey = "main";
+    helperModule.sourcePath = helperModulePath;
+    helperModule.hash = helperModuleHash;
+    helperModule.compileToolExecutableSourcePath = helperModulePath;
+    helperModule.compileToolExecutableHash = helperModuleHash;
+    helperRequest.outputPath = helperArchivePath;
+    helperRequest.assembly.name = "helper";
+    helperRequest.assembly.version = "1.1.0";
+    helperRequest.assembly.kind = "compile-tool";
+    helperRequest.assembly.entryModule = "main";
+    helperRequest.assembly.providerPhase = ZR_LIBRARY_PROVIDER_PHASE_COMPILE_TOOL;
+    helperRequest.assembly.publicContractHash = builtinDescriptor->publicContractHash;
+    helperRequest.modules = &helperModule;
+    helperRequest.moduleCount = 1U;
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrLibrary_Zrm_WriteArchive(&helperRequest, error, sizeof(error)),
+            error);
     TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(
             archivePath, &archiveBytes, &archiveByteCount));
     TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
@@ -470,6 +733,14 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
             archiveHash,
             sizeof(archiveHash)));
     free(archiveBytes);
+    TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(
+            helperArchivePath, &helperArchiveBytes, &helperArchiveByteCount));
+    TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
+            helperArchiveBytes,
+            helperArchiveByteCount,
+            helperArchiveHash,
+            sizeof(helperArchiveHash)));
+    free(helperArchiveBytes);
 
     written = snprintf(
             manifest,
@@ -478,8 +749,10 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
             "\"version\":\"1.0.0\",\"kind\":\"executable\","
             "\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\","
             "\"dependencies\":{},\"buildDependencies\":{"
-            "\"@derive\":{\"version\":\"^1.0.0\",\"path\":\"%s\"}}}",
-            archivePath);
+            "\"@derive\":{\"version\":\"^1.0.0\",\"path\":\"%s\"},"
+            "\"@helper\":{\"version\":\"^1.0.0\",\"path\":\"%s\"}}}",
+            archivePath,
+            helperArchivePath);
     TEST_ASSERT_TRUE(written > 0 && (TZrSize)written < sizeof(manifest));
     project = ZrLibrary_Project_New(g_state, manifest, projectPath);
     TEST_ASSERT_NOT_NULL(project);
@@ -496,8 +769,12 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
             "\"buildDependencies\":{\"@derive\":{"
             "\"version\":\"1.4.0\",\"contentHash\":\"%s\","
             "\"transitiveIdentity\":\"sha256:uZUQq8UmbWYobrUOMIYjSt_JG2D7HnXK8ukUtWWZfpA\","
+            "\"provider\":\"path\"},\"@helper\":{"
+            "\"version\":\"1.1.0\",\"contentHash\":\"%s\","
+            "\"transitiveIdentity\":\"sha256:VfjnMCaYkN5eJPeoTId1YBuK5y0FzGf3hQmQhhdNJ8E\","
             "\"provider\":\"path\"}}}",
-            archiveHash);
+            archiveHash,
+            helperArchiveHash);
     TEST_ASSERT_TRUE(written > 0 && (TZrSize)written < sizeof(lock));
     TEST_ASSERT_TRUE_MESSAGE(
             ZrLibrary_ProjectManifestV2_ReadDependencyLock(
@@ -527,6 +804,8 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
                     &compiler, ast),
             compiler.errorMessage != ZR_NULL ? compiler.errorMessage : "build facts failed");
     TEST_ASSERT_EQUAL_size_t(1U, compiler.compileToolBindings.length);
+    TEST_ASSERT_EQUAL_size_t(2U, compiler.ownedCompileToolProviders.length);
+    TEST_ASSERT_EQUAL_size_t(2U, compiler.importedCompileTimeModules.length);
     binding = (const SZrCompileToolBinding *)ZrCore_Array_Get(
             &compiler.compileToolBindings, 0U);
     TEST_ASSERT_NOT_NULL(binding);
@@ -567,7 +846,8 @@ int main(void) {
     RUN_TEST(test_build_dependency_import_is_excluded_from_runtime_module_graph);
     RUN_TEST(test_build_dependency_import_requires_compile_tool_lock);
     RUN_TEST(test_function_access_modifiers_are_retained_in_ast);
-    RUN_TEST(test_provider_source_rejects_unpromoted_transitive_build_dependency);
+    RUN_TEST(test_provider_source_rolls_back_failed_transitive_build_dependency);
+    RUN_TEST(test_transitive_build_dependency_cycle_reports_chain_and_rolls_back);
     RUN_TEST(test_locked_build_dependency_import_executes_owned_compile_tool_transform);
     return UNITY_END();
 }

@@ -15,6 +15,7 @@ TZrBool ZrParser_CompileToolExecutionScope_EnterAst(
     }
     ZrCore_Memory_RawSet(scope, 0, sizeof(*scope));
     scope->bindingMark = ZrParser_CompileToolBinding_Mark(cs);
+    scope->moduleAliasMark = cs->importedCompileTimeModuleAliases.length;
     scope->previousModule = cs->activeImportedCompileTimeModule;
     cs->activeImportedCompileTimeModule = module;
     scope->entered = ZR_TRUE;
@@ -59,6 +60,9 @@ void ZrParser_CompileToolExecutionScope_Leave(
         return;
     }
     ZrParser_CompileToolBinding_Restore(cs, scope->bindingMark);
+    if (scope->moduleAliasMark <= cs->importedCompileTimeModuleAliases.length) {
+        cs->importedCompileTimeModuleAliases.length = scope->moduleAliasMark;
+    }
     cs->activeImportedCompileTimeModule = scope->previousModule;
     scope->entered = ZR_FALSE;
 }
