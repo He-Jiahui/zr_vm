@@ -402,44 +402,6 @@ SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
     return base;
 }
 
-SZrAstNode *parse_prototype_reference_expression(SZrParserState *ps) {
-    SZrFileRange startLoc;
-    SZrAstNode *target;
-    SZrAstNode *prototypeNode;
-    SZrFileRange fullLoc;
-
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_DOLLAR) {
-        return ZR_NULL;
-    }
-
-    startLoc = get_current_location(ps);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    if (ps->lexer->t.token == ZR_TK_LPAREN) {
-        consume_token(ps, ZR_TK_LPAREN);
-        target = parse_expression(ps);
-        expect_token(ps, ZR_TK_RPAREN);
-        consume_token(ps, ZR_TK_RPAREN);
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && peek_token(ps) == ZR_TK_LESS_THAN) {
-        target = parse_generic_construct_target(ps);
-    } else {
-        target = parse_prototype_path_expression(ps);
-    }
-
-    if (target == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    fullLoc = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
-    prototypeNode = create_prototype_reference_node(ps, target, fullLoc);
-    if (prototypeNode == ZR_NULL) {
-        ZrParser_Ast_Free(ps->state, target);
-        return ZR_NULL;
-    }
-
-    return prototypeNode;
-}
-
 SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                               SZrFileRange startLoc,
                                               EZrOwnershipQualifier ownershipQualifier,

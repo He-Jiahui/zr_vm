@@ -40,12 +40,19 @@ The report values are stable:
 - `blocked`: no valid proposal can be emitted;
 - `targetNotPromoted`: the target grammar or semantics belongs to a plan that has not passed its gate.
 
-M2 deliberately publishes only `%owned -> resource` as a machine edit. The exact resource declaration
-shell is verified by applying the plan, parsing the result, and compiling a `Unique<FileHandle>` plus
-`own`/`drop` witness. `%module` is retained as `targetNotPromoted/06B` because the current parser still
-accepts `%module` and rejects the target declaration spelling. Ownership calls, parameter passing
-markers, callable arrows, `func`, `$Type(...)`, dynamic constructors, imports, and property forms are
-reported without a write until a parser-owned semantic binding proves them safe.
+After the one-shot cutover, production parsing rejects every removed percent directive and `$`
+constructor form with a fatal `legacy_syntax_removed` diagnostic. Migration remains a separate,
+explicit frontend. Structurally proven `%module`, `%owned`, `%type`, and other promoted forms may carry
+machine edits; semantic ownership, receiver, callable, and static-constructor choices remain
+`requiresReview` or `blocked` until their binding is proven.
+
+The dynamic `$(target)(arguments)` adapter consumes the complete balanced target and argument ranges.
+When both are structurally complete it proposes
+`reflection.requireConstructible(target).createInstance(...[arguments])` as a
+`ZR_DIAGNOSTIC_FIX_MAYBE_INCORRECT` edit. The ordinary machine-edit applicator never applies it. The
+reviewer must confirm that `target` is `zr.reflection.Type` and that argument boxing is correct. Missing
+or unbalanced target/argument groups are `blocked`. The migration frontend does not create a legacy
+prototype-reference AST and never rewrites a runtime type expression into `init`.
 
 The planner records the original FNV-1a source hash. `ZrParser_LegacyMigration_ApplyMachineEdits`
 rejects a changed source or a plan marked as overlapping, applies non-overlapping edits from the right,
@@ -59,8 +66,7 @@ adapter captures its `legacy_property_syntax` structured diagnostic and projects
 producer marks it machine-applicable; a scanner fallback is review-only only when no producer fact exists.
 It never reconstructs or duplicates a property replacement.
 
-06A does not inject adapter findings into normal LSP diagnostics. The formal parser migration diagnostic
-is a 06B/M4 cutover responsibility; publishing it early would change diagnostics for currently accepted
-repository source. Existing LSP structured diagnostic fixes, code actions, and revision-bound workspace
-edit snapshots remain the future consumer path. They serialize a parser-provided machine fix and never
-rebuild migration text in the language server.
+Normal parsing owns the fatal removed-syntax diagnostic; the migration command owns review candidates.
+Existing LSP structured diagnostic fixes, code actions, and revision-bound workspace-edit snapshots
+serialize parser-provided edits and never rebuild migration text in the language server. This split
+keeps removed syntax out of production AST/lowering while preserving an explicit migration workflow.

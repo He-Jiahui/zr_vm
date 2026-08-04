@@ -47,7 +47,7 @@
     "blocked": 0,
     "machineApplicable": 0,
     "maybeIncorrect": 0,
-    "requiresReview": 649,
+    "requiresReview": 651,
     "targetNotPromoted": 0
   },
   "exclusions": [
@@ -1136,6 +1136,10 @@
       "reason": "historicalPlan"
     },
     {
+      "file": "docs/superpowers/specs/2026-08-04-repl-closure-submission-design.md",
+      "reason": "historicalPlan"
+    },
+    {
       "file": "docs/zr_language_specification.md",
       "reason": "historicalSyntaxReference"
     },
@@ -1854,11 +1858,11 @@
       "range": {
         "end": {
           "column": 21,
-          "line": 63
+          "line": 68
         },
         "start": {
           "column": 17,
-          "line": 63
+          "line": 68
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -3047,6 +3051,42 @@
         "start": {
           "column": 27,
           "line": 4780
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/container/test_pooling_closed_type_runtime.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 52,
+          "line": 177
+        },
+        "start": {
+          "column": 44,
+          "line": 177
+        }
+      },
+      "reason": "call_vs_constructor_binding_required",
+      "sourceKind": "embeddedZrFixture",
+      "targetPlan": "06A"
+    },
+    {
+      "classification": "requiresReview",
+      "file": "tests/container/test_pooling_closed_type_runtime.c",
+      "legacyForm": "legacyBareTypeCall",
+      "range": {
+        "end": {
+          "column": 52,
+          "line": 232
+        },
+        "start": {
+          "column": 44,
+          "line": 232
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -6947,11 +6987,11 @@
       "legacyForm": "legacyBareTypeCall",
       "range": {
         "end": {
-          "column": 17,
+          "column": 20,
           "line": 603
         },
         "start": {
-          "column": 14,
+          "column": 17,
           "line": 603
         }
       },
@@ -9558,11 +9598,11 @@
       "range": {
         "end": {
           "column": 36,
-          "line": 1094
+          "line": 1115
         },
         "start": {
           "column": 31,
-          "line": 1094
+          "line": 1115
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10080,11 +10120,11 @@
       "range": {
         "end": {
           "column": 35,
-          "line": 3904
+          "line": 3906
         },
         "start": {
           "column": 28,
-          "line": 3904
+          "line": 3906
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10098,11 +10138,11 @@
       "range": {
         "end": {
           "column": 52,
-          "line": 3957
+          "line": 3959
         },
         "start": {
           "column": 45,
-          "line": 3957
+          "line": 3959
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10116,11 +10156,11 @@
       "range": {
         "end": {
           "column": 30,
-          "line": 4109
+          "line": 4111
         },
         "start": {
           "column": 23,
-          "line": 4109
+          "line": 4111
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10134,11 +10174,11 @@
       "range": {
         "end": {
           "column": 33,
-          "line": 4162
+          "line": 4164
         },
         "start": {
           "column": 27,
-          "line": 4162
+          "line": 4164
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10152,11 +10192,11 @@
       "range": {
         "end": {
           "column": 39,
-          "line": 4214
+          "line": 4216
         },
         "start": {
           "column": 29,
-          "line": 4214
+          "line": 4216
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10170,11 +10210,11 @@
       "range": {
         "end": {
           "column": 42,
-          "line": 4320
+          "line": 4322
         },
         "start": {
           "column": 28,
-          "line": 4320
+          "line": 4322
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10188,11 +10228,11 @@
       "range": {
         "end": {
           "column": 59,
-          "line": 4427
+          "line": 4429
         },
         "start": {
           "column": 56,
-          "line": 4427
+          "line": 4429
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10206,11 +10246,11 @@
       "range": {
         "end": {
           "column": 28,
-          "line": 4429
+          "line": 4431
         },
         "start": {
           "column": 25,
-          "line": 4429
+          "line": 4431
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10224,11 +10264,11 @@
       "range": {
         "end": {
           "column": 27,
-          "line": 4546
+          "line": 4548
         },
         "start": {
           "column": 23,
-          "line": 4546
+          "line": 4548
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10242,11 +10282,11 @@
       "range": {
         "end": {
           "column": 22,
-          "line": 4780
+          "line": 4782
         },
         "start": {
           "column": 18,
-          "line": 4780
+          "line": 4782
         }
       },
       "reason": "new_struct_binding_required",
@@ -10260,11 +10300,11 @@
       "range": {
         "end": {
           "column": 51,
-          "line": 6623
+          "line": 6625
         },
         "start": {
           "column": 47,
-          "line": 6623
+          "line": 6625
         }
       },
       "reason": "new_struct_binding_required",
@@ -10278,11 +10318,11 @@
       "range": {
         "end": {
           "column": 53,
-          "line": 7399
+          "line": 7401
         },
         "start": {
           "column": 41,
-          "line": 7399
+          "line": 7401
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10296,11 +10336,11 @@
       "range": {
         "end": {
           "column": 53,
-          "line": 7492
+          "line": 7494
         },
         "start": {
           "column": 41,
-          "line": 7492
+          "line": 7494
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -10314,11 +10354,11 @@
       "range": {
         "end": {
           "column": 43,
-          "line": 7550
+          "line": 7552
         },
         "start": {
           "column": 36,
-          "line": 7550
+          "line": 7552
         }
       },
       "reason": "call_vs_constructor_binding_required",
@@ -13598,6 +13638,10 @@
       "sourceKind": "currentDocumentation"
     },
     {
+      "file": "docs/library-and-builtins/reflection-provider-contract.md",
+      "sourceKind": "currentDocumentation"
+    },
+    {
       "file": "docs/library-and-builtins/zr-container-contiguous-views.md",
       "sourceKind": "currentDocumentation"
     },
@@ -14331,6 +14375,18 @@
     },
     {
       "file": "tests/container/test_generational_pool_gc_stress.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/container/test_generational_pool_performance_matrix.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/container/test_generational_pool_type_layout.c",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
+      "file": "tests/container/test_pooling_closed_type_runtime.c",
       "sourceKind": "embeddedZrFixture"
     },
     {
@@ -15822,6 +15878,10 @@
       "sourceKind": "embeddedZrFixture"
     },
     {
+      "file": "tests/language_server/test_lsp_stable_slot_contract_cases.h",
+      "sourceKind": "embeddedZrFixture"
+    },
+    {
       "file": "tests/language_server/test_lsp_statement_parser_diagnostics.c",
       "sourceKind": "embeddedZrFixture"
     },
@@ -17123,7 +17183,7 @@
   "targetPlanCounts": {
     "04": 1,
     "05": 4,
-    "06A": 619,
+    "06A": 621,
     "14": 25
   },
   "unknownCount": 0

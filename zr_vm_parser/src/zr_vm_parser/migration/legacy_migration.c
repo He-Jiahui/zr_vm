@@ -299,6 +299,49 @@ static TZrChar *legacy_migration_format_unary_call(
     return result;
 }
 
+static TZrChar *legacy_migration_format_dynamic_construct(
+        SZrState *state,
+        const TZrChar *source,
+        TZrSize targetStart,
+        TZrSize targetEnd,
+        TZrSize argumentStart,
+        TZrSize argumentEnd) {
+    static const TZrChar prefix[] = "reflection.requireConstructible(";
+    static const TZrChar middle[] = ").createInstance(...[";
+    static const TZrChar suffix[] = "])";
+    TZrSize prefixLength = sizeof(prefix) - 1U;
+    TZrSize middleLength = sizeof(middle) - 1U;
+    TZrSize suffixLength = sizeof(suffix) - 1U;
+    TZrSize targetLength = targetEnd - targetStart;
+    TZrSize argumentLength = argumentEnd - argumentStart;
+    TZrSize resultLength = prefixLength + targetLength + middleLength +
+                           argumentLength + suffixLength;
+    TZrChar *result;
+    TZrSize cursor = 0U;
+
+    if (state == ZR_NULL || source == ZR_NULL || targetStart > targetEnd ||
+        argumentStart > argumentEnd) {
+        return ZR_NULL;
+    }
+    result = (TZrChar *)ZrCore_Memory_RawMalloc(
+            state->global, resultLength + 1U);
+    if (result == ZR_NULL) {
+        return ZR_NULL;
+    }
+    memcpy(result + cursor, prefix, prefixLength);
+    cursor += prefixLength;
+    memcpy(result + cursor, source + targetStart, targetLength);
+    cursor += targetLength;
+    memcpy(result + cursor, middle, middleLength);
+    cursor += middleLength;
+    memcpy(result + cursor, source + argumentStart, argumentLength);
+    cursor += argumentLength;
+    memcpy(result + cursor, suffix, suffixLength);
+    cursor += suffixLength;
+    result[cursor] = '\0';
+    return result;
+}
+
 static TZrBool legacy_migration_find_balanced_end(
         const TZrChar *source,
         TZrSize sourceLength,
@@ -1182,6 +1225,117 @@ static TZrBool legacy_migration_append_word_item(
             editText);
 }
 
+static TZrBool legacy_migration_append_dynamic_dollar_construct(
+        SZrState *state,
+        SZrLegacyMigrationPlan *plan,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        SZrString *sourceName,
+        TZrSize dollarOffset,
+        TZrSize *outConsumedEnd) {
+    TZrSize targetCallEnd;
+    TZrSize targetStart;
+    TZrSize targetEnd;
+    TZrSize argumentOpen;
+    TZrSize argumentCallEnd;
+    TZrSize argumentStart;
+    TZrSize argumentEnd;
+    TZrChar *editText;
+    TZrBool appended;
+
+    if (outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = dollarOffset + 1U;
+    }
+    if (state == ZR_NULL || plan == ZR_NULL || source == ZR_NULL ||
+        dollarOffset + 1U >= sourceLength ||
+        source[dollarOffset] != '$' || source[dollarOffset + 1U] != '(') {
+        return ZR_FALSE;
+    }
+    if (!legacy_migration_find_call_end(
+                source, sourceLength, dollarOffset + 1U, &targetCallEnd)) {
+        return legacy_migration_append_word_item(
+                state,
+                plan,
+                source,
+                sourceName,
+                "legacyDynamicDollarConstruct",
+                "constructorCall",
+                "08",
+                ZR_LEGACY_MIGRATION_BLOCKED,
+                "Dynamic constructor target is not structurally complete.",
+                dollarOffset,
+                dollarOffset + 1U,
+                ZR_NULL);
+    }
+
+    targetStart = legacy_migration_skip_whitespace(
+            source, sourceLength, dollarOffset + 2U);
+    targetEnd = targetCallEnd - 1U;
+    while (targetEnd > targetStart &&
+           isspace((unsigned char)source[targetEnd - 1U])) {
+        targetEnd--;
+    }
+    argumentOpen = legacy_migration_skip_whitespace(
+            source, sourceLength, targetCallEnd);
+    if (targetStart == targetEnd || argumentOpen >= sourceLength ||
+        source[argumentOpen] != '(' ||
+        !legacy_migration_find_call_end(
+                source, sourceLength, argumentOpen, &argumentCallEnd)) {
+        if (outConsumedEnd != ZR_NULL) {
+            *outConsumedEnd = targetCallEnd;
+        }
+        return legacy_migration_append_item(
+                state,
+                plan,
+                source,
+                sourceName,
+                "legacyDynamicDollarConstruct",
+                "constructorCall",
+                "08",
+                ZR_LEGACY_MIGRATION_BLOCKED,
+                "Dynamic constructor arguments are not structurally complete.",
+                dollarOffset,
+                targetCallEnd,
+                dollarOffset,
+                targetCallEnd,
+                ZR_NULL);
+    }
+
+    argumentStart = argumentOpen + 1U;
+    argumentEnd = argumentCallEnd - 1U;
+    editText = legacy_migration_format_dynamic_construct(
+            state,
+            source,
+            targetStart,
+            targetEnd,
+            argumentStart,
+            argumentEnd);
+    if (editText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    appended = legacy_migration_append_item(
+            state,
+            plan,
+            source,
+            sourceName,
+            "legacyDynamicDollarConstruct",
+            "reflectionConstruction",
+            "08",
+            ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
+            "Confirm the target is zr.reflection.Type and review argument boxing before applying.",
+            dollarOffset,
+            argumentCallEnd,
+            dollarOffset,
+            argumentCallEnd,
+            editText);
+    ZrCore_Memory_RawFree(
+            state->global, editText, strlen(editText) + 1U);
+    if (appended && outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = argumentCallEnd;
+    }
+    return appended;
+}
+
 static TZrBool legacy_migration_append_old_test_attribute(
         SZrState *state,
         SZrLegacyMigrationPlan *plan,
@@ -1417,22 +1571,21 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
         }
         if (current == '$') {
             if (index + 1U < sourceLength && source[index + 1U] == '(') {
-                if (!legacy_migration_append_word_item(
+                TZrSize consumedEnd = index + 1U;
+
+                if (!legacy_migration_append_dynamic_dollar_construct(
                             state,
                             outPlan,
                             source,
+                            sourceLength,
                             sourceName,
-                            "legacyDynamicDollarConstruct",
-                            "constructorCall",
-                            "08",
-                            ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-                            "Dynamic constructor targets require resolved type identity.",
                             index,
-                            index + 1U,
-                            ZR_NULL)) {
+                            &consumedEnd)) {
                     ZrParser_LegacyMigration_PlanFree(state, outPlan);
                     return ZR_FALSE;
                 }
+                index = consumedEnd;
+                continue;
             } else if (index + 1U < sourceLength &&
                        legacy_migration_is_identifier_start(source[index + 1U])) {
                 if (!legacy_migration_append_word_item(

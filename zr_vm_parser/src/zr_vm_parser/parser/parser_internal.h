@@ -274,8 +274,6 @@ SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *tar
 
 SZrAstNode *parse_prototype_path_expression(SZrParserState *ps);
 
-SZrAstNode *parse_prototype_reference_expression(SZrParserState *ps);
-
 SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                               SZrFileRange startLoc,
                                               EZrOwnershipQualifier ownershipQualifier,

@@ -93,6 +93,10 @@ into a production compilation unit. Ordinary `%` remains the modulo operator.
 An unknown `%identifier` is an ordinary syntax error rather than an implicit
 migration directive.
 
+The obsolete standalone `$` prototype-reference parser entry has been removed.
+Canonical `init/new/own` still use their internal typed construct-target node;
+that implementation detail is not a legacy source grammar path.
+
 Removed qualified names are not retained as hidden type-inference aliases.
 `zr.system.reflect.Type` and `zr.system.reflect.CallableType` fail through
 ordinary module resolution; production type inference no longer maps either
@@ -139,3 +143,9 @@ The 2026-08-03 Gate 08 M1 replay revalidated parser 74/74 and percent cutover
 toolchain. It also found and migrated five stale native-direct-call fixtures
 that still declared functions without `fn`; no keywordless-function parser
 fallback was restored.
+
+The 2026-08-04 replay again reports 6/6 strict-cutover and 12/12 migration
+tests under WSL GCC. The canonical status selector reports
+`TOTAL=55 COMPLETE=55 MISSING=0`. The repository inventory golden contains
+651 review-only findings and six allowlisted negative examples; none is a
+production parser acceptance path.

@@ -272,7 +272,7 @@ static void test_legacy_migration_plan_covers_inventory_classification_contract(
         {"legacyDefinitionArrow", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyFunctionTypeArrow", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyDollarConstruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "03", ZR_FALSE},
-        {"legacyDynamicDollarConstruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "08", ZR_FALSE},
+        {"legacyDynamicDollarConstruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "08", ZR_TRUE},
         {"legacyBareTypeCall", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"legacyNewStruct", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "06A", ZR_FALSE},
         {"nativePrototypeFactory", ZR_LEGACY_MIGRATION_TARGET_NOT_PROMOTED, "10", ZR_FALSE},
@@ -496,6 +496,98 @@ static void test_legacy_percent_type_migrates_to_typeof_and_is_idempotent(void) 
     ZrParser_LegacyMigration_PlanFree(g_state, &first);
 }
 
+static void test_dynamic_dollar_construct_provides_review_only_capability_edit(void) {
+    const TZrChar *source =
+            "let runtimeType = typeof(1);\n"
+            "let value = $(runtimeType)(1, nested(2, \"x)\"));\n";
+    const TZrChar *expectedEdit =
+            "reflection.requireConstructible(runtimeType)"
+            ".createInstance(...[1, nested(2, \"x)\")])";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "legacy_dynamic_construct_migration.zr");
+    SZrLegacyMigrationPlan plan = {0};
+    SZrLegacyMigrationPlan adoptedPlan = {0};
+    const SZrLegacyMigrationItem *item;
+    TZrChar *machineResult = ZR_NULL;
+    TZrSize machineResultLength = 0U;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, source, strlen(source), sourceName, &plan));
+    TEST_ASSERT_EQUAL_UINT32(1U, plan.items.length);
+    item = migration_find_item(&plan, "legacyDynamicDollarConstruct");
+    TEST_ASSERT_NOT_NULL(item);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, item->applicability);
+    TEST_ASSERT_EQUAL_STRING("08", migration_string_text(item->targetPlanId));
+    TEST_ASSERT_TRUE(item->hasFix);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MAYBE_INCORRECT, item->fix.applicability);
+    TEST_ASSERT_EQUAL_STRING(expectedEdit, migration_string_text(item->fix.editText));
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrSize)(strstr(source, "$(runtimeType)") - source),
+            item->fix.editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            strlen(source) - 2U,
+            item->fix.editRange.end.offset);
+
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_ApplyMachineEdits(
+            g_state,
+            &plan,
+            source,
+            strlen(source),
+            &machineResult,
+            &machineResultLength));
+    TEST_ASSERT_EQUAL_UINT64(strlen(source), machineResultLength);
+    TEST_ASSERT_EQUAL_STRING(source, machineResult);
+
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state,
+            expectedEdit,
+            strlen(expectedEdit),
+            sourceName,
+            &adoptedPlan));
+    TEST_ASSERT_EQUAL_UINT32(0U, adoptedPlan.items.length);
+
+    ZrCore_Memory_RawFree(
+            g_state->global, machineResult, machineResultLength + 1U);
+    ZrParser_LegacyMigration_PlanFree(g_state, &adoptedPlan);
+    ZrParser_LegacyMigration_PlanFree(g_state, &plan);
+}
+
+static void test_incomplete_dynamic_dollar_construct_is_blocked(void) {
+    const TZrChar *source = "let value = $(runtimeType);\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "legacy_incomplete_dynamic_construct.zr");
+    SZrLegacyMigrationPlan plan = {0};
+    const SZrLegacyMigrationItem *item;
+    TZrChar *machineResult = ZR_NULL;
+    TZrSize machineResultLength = 0U;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, source, strlen(source), sourceName, &plan));
+    TEST_ASSERT_EQUAL_UINT32(1U, plan.items.length);
+    item = migration_find_item(&plan, "legacyDynamicDollarConstruct");
+    TEST_ASSERT_NOT_NULL(item);
+    TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_BLOCKED, item->applicability);
+    TEST_ASSERT_FALSE(item->hasFix);
+
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_ApplyMachineEdits(
+            g_state,
+            &plan,
+            source,
+            strlen(source),
+            &machineResult,
+            &machineResultLength));
+    TEST_ASSERT_EQUAL_UINT64(strlen(source), machineResultLength);
+    TEST_ASSERT_EQUAL_STRING(source, machineResult);
+
+    ZrCore_Memory_RawFree(
+            g_state->global, machineResult, machineResultLength + 1U);
+    ZrParser_LegacyMigration_PlanFree(g_state, &plan);
+}
+
 static void test_legacy_migration_apply_rejects_stale_or_overlapping_plan(void) {
     const TZrChar *source = "%owned class FileHandle {}\n";
     const TZrChar *changedSource = "%owned class FileHandle { }\n";
@@ -545,6 +637,8 @@ int main(void) {
     RUN_TEST(test_legacy_migration_apply_machine_edits_is_idempotent);
     RUN_TEST(test_legacy_migration_machine_edit_compiles_with_current_parser);
     RUN_TEST(test_legacy_percent_type_migrates_to_typeof_and_is_idempotent);
+    RUN_TEST(test_dynamic_dollar_construct_provides_review_only_capability_edit);
+    RUN_TEST(test_incomplete_dynamic_dollar_construct_is_blocked);
     RUN_TEST(test_legacy_migration_apply_rejects_stale_or_overlapping_plan);
     return UNITY_END();
 }
