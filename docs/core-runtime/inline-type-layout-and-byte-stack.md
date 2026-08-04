@@ -174,9 +174,11 @@ plan_sources:
   - user: 2026-05-16 struct inline stack storage and memcpy parameter passing
   - user: 2026-05-18 real GC/native entry wiring without claiming full ABI completion
   - user: 2026-06-04 align struct value execution with lua/hybridclr and lua/il2cpp architecture
+  - user: 2026-08-04 retest and accept the strict Syntax cutover before commit
   - docs/plans/aot/03-instruction-set-refactor.md
   - docs/plans/aot/04-semir-and-c-backend.md
   - docs/plans/aot/06-implementation-blueprint.md
+  - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
 tests:
   - tests/core/test_type_layout_inline_copy.c
   - tests/core/test_type_layout_metadata_contracts.c
@@ -185,6 +187,7 @@ tests:
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_object_call_known_native_fast_path.c
   - tests/core/test_native_inline_span_dispatch.c
+  - tests/container/test_pooling_closed_type_runtime.c
   - tests/gc/gc_tests.c
   - tests/module/test_metadata_runtime_binding_compatibility.c
   - tests/module/test_aot_runtime_typed_direct_call_compatibility.c
@@ -239,8 +242,9 @@ tests:
   - tests/acceptance/2026-06-28-aot-11-s6h-inline-struct-typed-call-deopt.md
   - tests/acceptance/2026-07-06-aot-09-s2-local-address-root-runtime-support.md
   - tests/acceptance/2026-06-26-aot-12-s7l-type-layout-payload-byte-trim-delta.md
+  - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
 doc_type: module-detail
-last_verified: 2026-08-03
+last_verified: 2026-08-04
 ---
 
 # Inline Type Layout And Byte Stack Copy
@@ -305,6 +309,22 @@ The fields are serialized into `function->prototypeData`, imported back into par
 `ZrCore_Function_ResolvePrototypeFrameTypeLayout` is the current runtime bridge from `SZrFunctionFrameSlotLayout.typeLayoutId` to `SZrTypeLayout`. In this increment the id is still a checked prototype index, not a standalone serialized type-layout table id. The resolver reads the owning entry function's `prototypeData`, validates the encoded prototype count and byte bounds, and builds a per-function cache of layouts.
 
 For AOT-loaded functions that have an attached code registration, GC inline-frame mark/rewrite now resolves the same `typeLayoutId` through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout`. That path reads the code-registration layout registry attached to the function or its prototype-context entry function, so AOT GC consumers use the same metadata runtime layout table as generic dictionary and GC descriptor lookup. When an AOT registry is present but a registry layout is missing, GC does not fall back to the prototype layout cache. When no AOT registry is attached, ordinary VM/interpreter inline-frame GC keeps using `ZrCore_Function_ResolvePrototypeFrameTypeLayout`.
+
+`ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry` exposes the ordinary
+interpreter side of that contract as a stable borrowed registry. It resolves the
+required prototype layout first, including recursively referenced local layouts,
+then publishes one pointer table owned by the entry function. Repeated calls for
+the same function return the same registry identity; invalid or unresolved ids
+fail with a cleared view. The table and every cached layout remain valid until
+the entry function releases its prototype-layout cache, so consumers must not
+retain the view beyond that function lifetime.
+
+Native inline argument binding uses this source registry only when no artifact
+code registration is attached. Once a function or its prototype context carries
+an artifact registration, the metadata-runtime registry is authoritative:
+missing, corrupt, or mismatched artifact entries fail closed and never fall back
+to the source prototype cache. Source `Pool<T>.deliver` can therefore use the
+same canonical non-boxing inline view without weakening artifact validation.
 
 `metadata_runtime_layout_binding.c` keeps the row-to-layout binding views separate from the main metadata runtime cache code. TypeDef and FieldDef binding views resolve their rows through the attached zrp metadata and the code-registration layout registry. TypeSpec binding now follows the same rule: a `TYPE_SPEC` token must match its zrp TypeSpec row and paired signature record, then the row's `typeLayoutId` resolves through `ZrCore_MetadataRuntime_ResolveTypeLayout`. `ZrCore_MetadataRuntime_ResolveTypeTokenLayout` wraps the TypeDef and TypeSpec binding views with a public token-level resolver. `ZrCore_MetadataRuntime_ResolveTypeLayoutToken` first checks bounded cache entries and, when present, `codeRegistration->typeLayoutTokens[typeLayoutId]`; accepted table entries must be TypeDef or TypeSpec tokens whose registry-backed layout resolves. If the table has no usable entry, it scans TypeDef/TypeSpec rows to reverse a registry-backed layout id back to its metadata token. `ZrCore_MetadataRuntime_ResolveCTypeIdToken` exposes the same reverse path under the current `cTypeId == typeLayoutId` registry invariant. Generated C now emits the token-table carrier as `zr_aot_type_layout_tokens[]`; entries for uniquely matched local TypeDef-backed named struct/union layouts carry real `TYPE_DEF` tokens, and current-function generated generic layouts whose type name structurally matches a unique `TYPE_SPEC` canonical signature carry real `TYPE_SPEC` tokens. Missing metadata, ambiguous matches, cross-module records, and unsupported signature shapes stay `0u`. Both directions share a bounded 8-entry cache on `SZrMetadataRuntime`, so TypeDef and TypeSpec token/layout hits can coexist instead of replacing only the latest hit. Missing registry layout data does not fall back to prototype layout cache. This is still a read-only binding/cache/carrier path; runtime construction of generic layouts and ownership-offset tables remains later work.
 

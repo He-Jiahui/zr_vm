@@ -53,6 +53,7 @@ implementation_files:
 plan_sources:
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
   - user: 2026-08-03 严格按设计完成一次性破坏性切换并重新验收
+  - user: 2026-08-04 确认 55 份状态、重新测试验收 review 后详细提交
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
   - docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md
 tests:
@@ -67,7 +68,7 @@ tests:
   - tests/core/test_inline_struct_array_layout.c
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
 doc_type: module-detail
-last_verified: 2026-08-03
+last_verified: 2026-08-04
 ---
 
 # Pooling And Pinned FFI Views
@@ -163,13 +164,14 @@ valid until the pool is destroyed. The root layout value itself is copied.
 Stateful canonical layouts are currently thread-local; concurrent admission is
 rejected until operations can receive an isolation-domain-safe state per call.
 
-The production provider consumes `ZrLibInlineArgumentView` when the native call
-frame carries a canonical registry. The first successful `deliver(T)` fixes the
-pool's registry identity, layout id, layout/hash/size/alignment, and metadata
-function. Later deliveries must match that same registry entry; a structurally
-identical layout from another registry is rejected. The slab copies the inline
-bytes directly through the canonical layout. The former permanent
-`__zr_pool_values` mirror has been removed.
+The production provider consumes `ZrLibInlineArgumentView` from either an
+artifact registry or the stable prototype-layout registry owned by an ordinary
+source entry function. The first successful `deliver(T)` fixes the pool's
+registry identity, layout id, layout/hash/size/alignment, and metadata function.
+Later deliveries must match that same registry entry; a structurally identical
+layout from another registry is rejected. The slab copies the inline bytes
+directly through the canonical layout. The former permanent `__zr_pool_values`
+mirror has been removed.
 
 Pool slabs are native stable storage, so the pool owner exposes their embedded
 GC values through `SZrRawObject.traceGcFunction`. Classic mark, remembered-set
@@ -197,11 +199,14 @@ saves the next bytecode PC before invoking native close metadata and restores
 the normal native-call frame/exception state afterward, so nested close cannot
 re-enter an instruction that still refers to the now-closed projection.
 
-The ordinary interpreter can still lack `metadataCodeRegistration` on a source
-child function. Such a call cannot produce `ZrLibInlineArgumentView` and retains
-the existing materialized-value route. Closed-layout provider tests therefore
-attach a real prototype layout to a canonical registry explicitly; source-only
-execution is not evidence that every backend is non-boxing.
+An ordinary source child function does not need `metadataCodeRegistration` to
+produce `ZrLibInlineArgumentView`. The core lazily resolves the required
+prototype layout and publishes one entry-function-owned registry whose backing
+outlives every borrowed call view and pool binding. Nested ready layouts share
+that same table, and repeated calls preserve registry identity. If any artifact
+registration is attached, however, its metadata-runtime registry is the only
+authority: invalid or missing artifact entries fail closed instead of falling
+back to source prototype metadata.
 
 The native module publishes that hash as a descriptor constant. The generic
 artifact projection maps it to the StableSlotSource layout capability by
@@ -276,9 +281,10 @@ requirements, VM copy-error rollback, stateful-concurrency rejection, successful
 nested managed scan/Drop, missing copy paths, raw-copy bypass, and nested
 scan/Drop downgrade rejection.
 `zr_vm_pooling_closed_type_runtime_test` covers mirror-free inline publication,
-strict registry identity, source-level writable struct member chains, ordinary
-property-reference value loads, explicit close/readback, and writable guard
-object-to-inline copyback through a compiled prototype plus canonical registry.
+strict registry identity, stable source-registry ownership, invalid-id clearing,
+artifact-registry fail-closed behavior, source-level writable struct member
+chains, ordinary property-reference value loads, explicit close/readback, and
+writable guard object-to-inline copyback without a fabricated code registration.
 `zr_vm_property_ref_return_test` and `zr_vm_property_access_lowering_test` cover
 ref/out identity, nested writeback, binary roundtrip, and C/LLVM AOT emission.
 `zr_vm_inline_struct_array_layout_test` additionally proves that an
@@ -289,7 +295,7 @@ barriered minor collection, while finalization remains exactly once.
 
 This milestone provides exact-length reusable arrays and pinned byte-buffer views.
 Size-class pooling, arbitrary typed native slices, custom marshallers, movable
-managed slab storage, interpreter-wide canonical inline argument registration,
-and language-level view replacement/early-exit cleanup for native pool guards
+managed slab storage, the final pause/allocation/scan-byte matrix, and
+isolation-domain-safe state handling for concurrent stateful canonical layouts
 remain separate work. They must extend the structured protocol, TypeLayout, and
 artifact contracts rather than adding provider-name recognition.

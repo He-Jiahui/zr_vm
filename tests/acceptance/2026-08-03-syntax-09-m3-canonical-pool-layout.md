@@ -6,8 +6,9 @@
 - Plan: `docs/plans/syntax/2026-07-19-09-generational-pool-handle-ref-struct-design.md`.
 - Scope: canonical TypeLayout admission, initialization/copy rollback, deferred
   exactly-once Drop, layout-driven GC visitor routing, canonical native argument
-  views, production closed-layout provider convergence, and deterministic guard
-  cleanup across normal and abrupt scope exits.
+  views for artifacts and ordinary interpreter functions, production
+  closed-layout provider convergence, and deterministic guard cleanup across
+  normal and abrupt scope exits.
 
 ## RED evidence
 
@@ -34,6 +35,11 @@
    that stale PC and loaded through the already closed view. The existing
    close-then-recycle source regression was RED before the dispatcher saved the
    next PC and used the native-call resume protocol.
+7. The ordinary-interpreter registry test removed its fabricated
+   `SZrAotCodeRegistration` before production changes. The focused WSL GCC run
+   then reported 3/4 passing: only writable native struct copyback failed at
+   `ZrLib_CallContext_InlineArgumentView`, proving that a source function without
+   artifact metadata could not expose its canonical prototype layout.
 
 ## Implemented contract
 
@@ -58,15 +64,23 @@
 - The public API copies the root layout value but borrows the VM state, nested
   layouts, field/offset tables, registry backing, and callback user data. Those
   objects must outlive the pool.
+- An ordinary entry function lazily owns one stable prototype-layout pointer
+  registry. Resolving a required id also resolves reachable local nested layouts;
+  callers borrow the published table, and repeated calls preserve its identity.
+  Invalid ids fail with a cleared view. The registry is released with the
+  function's prototype-layout cache.
 
 ## Production convergence
 
 `ZrLib_CallContext_InlineArgumentView` resolves an inline parameter span against
-the attached canonical registry and fails closed on missing registry, invalid
-layout, pointer drift, or size/alignment mismatch. `Pool<T>.deliver` consumes
-that view, fixes the pool to the registry identity and layout id selected by the
-first delivery, and rejects even a structurally identical layout from another
-registry.
+the attached artifact registry or, for source functions with no artifact
+registration, the function-owned prototype-layout registry. It fails closed on
+missing registry, invalid layout, pointer drift, or size/alignment mismatch.
+The presence of any artifact registration forbids source-cache fallback, so a
+corrupt artifact cannot be repaired accidentally from prototypes.
+`Pool<T>.deliver` consumes that view, fixes the pool to the registry identity and
+layout id selected by the first delivery, and rejects even a structurally
+identical layout from another registry.
 
 The production provider stores the canonical bytes in the slab and no longer
 creates `__zr_pool_values`. A temporary object projection exists only while a
@@ -93,9 +107,9 @@ the exact plugin descriptor ABI is v6; older binaries must be rebuilt and fail
 registration rather than using stale field offsets.
 
 This is compact-safe native stable slab storage, not movable managed slab
-allocation. Ordinary interpreter child functions may also lack canonical code
-registration and retain materialized-value dispatch; source success alone is
-not accepted as non-boxing evidence for every backend.
+allocation. Ordinary interpreter child functions now use their entry function's
+canonical prototype-layout registry and exercise the same non-boxing provider
+route without fabricating artifact registration.
 
 ## Reference evidence
 
@@ -108,6 +122,15 @@ not accepted as non-boxing evidence for every backend.
 - Rust `lua/rust/library/alloc/src/vec/in_place_drop.rs:8` and `:21` use scoped
   Drop guards for initialized destinations; `tests/ui/drop/conditional-drop-10734.rs:15`
   asserts that a value is not dropped twice.
+- .NET `lua/runtime/src/libraries/System.Private.CoreLib/src/System/Span.cs`
+  models a borrowed by-reference plus length in a `readonly ref struct`; its
+  pinnable reference is meaningful only while the backing storage remains live.
+- Rust `lua/rust/library/core/src/pin.rs` makes stable backing and projection
+  lifetime explicit. ZR similarly owns registry backing on the entry function
+  and exposes only borrowed views rather than copying transient pointer tables.
+- Mono `lua/mono/mono/metadata/class-init.c` keeps canonical class layout/init
+  state on the long-lived runtime class object. This supports publishing the ZR
+  registry only after the required layout is completely resolved.
 - CPython `lua/cpython/Objects/obmalloc.c:2063` and `:2302` separate arena/pool
   allocation and reuse bookkeeping. It informs slab organization but is not the
   source of ZR's managed scan or Drop semantics.
@@ -124,6 +147,14 @@ not accepted as non-boxing evidence for every backend.
   layout 2/2, native inline view 7/7, pool lifecycle 13/13, pool GC stress 3/3,
   canonical pool TypeLayout 14/14, and production closed-layout runtime 4/4:
   120/120 assertions total.
+- The ordinary-interpreter registry slice was replayed as the same 13 executables
+  under WSL GCC 11.4, WSL Clang 14.0, and MSVC 19.44 Debug. Each toolchain passed
+  271/271 assertions: core inline layout 38, layout metadata 9, inline array 2,
+  native inline view 7, metadata runtime 11, pool lifecycle 13, pool GC stress 3,
+  canonical pool layout 14, production runtime 4, artifact 3, property lowering
+  22, property ref 23, and type inference 122. A static MSVC `/Od
+  /fsanitize=address` replay passed the four registry/lifetime targets 60/60
+  (4 + 7 + 38 + 11) with no sanitizer report.
 - The production runtime test covers mirror absence, registry-identity
   rejection, source writable `ref T` member-chain mutation, ordinary value
   consumption, explicit close/readback, and real prototype plus canonical
@@ -143,8 +174,6 @@ not accepted as non-boxing evidence for every backend.
 
 ## Remaining Gate 09 M3 work
 
-- Attach canonical inline argument registries to ordinary interpreter call
-  frames, so all source backends exercise the same non-boxing provider route.
 - Decide and prove movable managed slabs if promotion requires slab relocation;
   the accepted provider currently uses stable native slabs with traced/re-written
   embedded managed values.
@@ -157,6 +186,7 @@ not accepted as non-boxing evidence for every backend.
 The canonical layout/lifecycle and closed-layout production-provider slice is
 accepted after closing the nested-layout bypasses, permanent mirror, external
 GC trace/rewrite, registry-identity, writable-copyback, guard cleanup, and stale
-`CLOSE_SCOPE` resume findings. Gate 09 M3 stays `indirect`: writable
-reference-chain and source cleanup semantics are now proven; interpreter-wide
-canonical dispatch and final performance promotion remain open.
+`CLOSE_SCOPE` resume findings. Ordinary-interpreter canonical dispatch is now
+also proven. Gate 09 M3 stays `indirect`: movable-slab scope, the final
+pause/allocation/scan-byte promotion matrix, and isolation-domain-safe stateful
+concurrency remain open.

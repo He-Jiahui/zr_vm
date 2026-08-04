@@ -248,6 +248,7 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->prototypeFrameTypeLayouts = ZR_NULL;
     function->prototypeFrameTypeLayoutFields = ZR_NULL;
     function->prototypeFrameTypeLayoutStates = ZR_NULL;
+    function->prototypeFrameTypeLayoutRegistry = ZR_NULL;
     function->prototypeFrameTypeLayoutLength = 0;
     function->prototypeFrameTypeLayoutFieldCount = 0;
     function->prototypeFrameTypeLayoutFieldCapacity = 0;
@@ -1107,6 +1108,7 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->prototypeFrameTypeLayouts = ZR_NULL;
     function->prototypeFrameTypeLayoutFields = ZR_NULL;
     function->prototypeFrameTypeLayoutStates = ZR_NULL;
+    function->prototypeFrameTypeLayoutRegistry = ZR_NULL;
     function->prototypeFrameTypeLayoutLength = 0;
     function->prototypeFrameTypeLayoutFieldCount = 0;
     function->prototypeFrameTypeLayoutFieldCapacity = 0;

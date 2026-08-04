@@ -369,9 +369,7 @@ static void test_native_struct_write_guard_copies_projection_back_to_inline_slot
     SZrFunction *function;
     SZrFunction *layoutFunction = ZR_NULL;
     const SZrFunctionFrameSlotLayout *slot;
-    SZrAotCodeRegistration registration = {0};
-    const SZrTypeLayout *registeredLayouts[16] = {0};
-    const SZrTypeLayout *prototypeLayout;
+    SZrAotCodeRegistration invalidRegistration = {0};
     SZrObject *poolObject;
     SZrObject *particleObject;
     SZrTypeValue poolValue;
@@ -394,8 +392,8 @@ static void test_native_struct_write_guard_copies_projection_back_to_inline_slot
     const SZrTypeValue *projected;
     ZrLibInlineArgumentView inlineView;
     ZrLibInlineSpan inlineSpan;
-    SZrTypeLayoutRegistryView registry;
-    const SZrTypeLayout *resolvedLayout;
+    SZrTypeLayoutRegistryView sourceRegistry;
+    SZrTypeLayoutRegistryView repeatedRegistry;
     const ZrLibMethodDescriptor *deliver;
     const ZrLibMethodDescriptor *tryBorrow;
     const ZrLibMethodDescriptor *tryRead;
@@ -421,15 +419,7 @@ static void test_native_struct_write_guard_copies_projection_back_to_inline_slot
             "pooling closed-type runtime test frame"));
     TEST_ASSERT_TRUE(find_inline_struct_parameter(
             function, &layoutFunction, &slot));
-    TEST_ASSERT_TRUE(slot->typeLayoutId < ZR_ARRAY_COUNT(registeredLayouts));
-    prototypeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(
-            layoutFunction, slot->typeLayoutId, state);
-    TEST_ASSERT_NOT_NULL(prototypeLayout);
-    registeredLayouts[slot->typeLayoutId] = prototypeLayout;
-    registration.typeLayouts = registeredLayouts;
-    registration.typeLayoutCount = slot->typeLayoutId + 1u;
-    layoutFunction->metadataCodeRegistration = &registration;
-    layoutFunction->metadataTypeLayoutCount = registration.typeLayoutCount;
+    TEST_ASSERT_NULL(layoutFunction->metadataCodeRegistration);
 
     poolObject = ZrLib_Type_NewInstance(state, "zr.pooling.Pool");
     if (poolObject == ZR_NULL) {
@@ -480,16 +470,39 @@ static void test_native_struct_write_guard_copies_projection_back_to_inline_slot
     deliverContext.inlineArgumentStartSlot = slot->stackSlot;
     TEST_ASSERT_TRUE(ZrLib_CallContext_InlineArgumentSpan(
             &deliverContext, 0u, &inlineSpan));
-    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
-            layoutFunction, &registry));
-    TEST_ASSERT_TRUE(inlineSpan.typeLayoutId < registry.count);
-    resolvedLayout = ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(
-            layoutFunction, inlineSpan.typeLayoutId);
-    TEST_ASSERT_NOT_NULL(resolvedLayout);
-    TEST_ASSERT_EQUAL_UINT32(inlineSpan.byteSize, resolvedLayout->byteSize);
-    TEST_ASSERT_EQUAL_UINT32(inlineSpan.byteAlign, resolvedLayout->byteAlign);
+    TEST_ASSERT_TRUE(ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry(
+            state,
+            layoutFunction,
+            inlineSpan.typeLayoutId,
+            &sourceRegistry));
+    TEST_ASSERT_FALSE(ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry(
+            state,
+            layoutFunction,
+            ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE,
+            &repeatedRegistry));
+    TEST_ASSERT_NULL(repeatedRegistry.layouts);
+    TEST_ASSERT_EQUAL_UINT32(0u, repeatedRegistry.count);
+    TEST_ASSERT_TRUE(ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry(
+            state,
+            layoutFunction,
+            inlineSpan.typeLayoutId,
+            &repeatedRegistry));
+    TEST_ASSERT_EQUAL_PTR(sourceRegistry.layouts, repeatedRegistry.layouts);
+    TEST_ASSERT_EQUAL_UINT32(sourceRegistry.count, repeatedRegistry.count);
+    TEST_ASSERT_NOT_NULL(sourceRegistry.layouts[inlineSpan.typeLayoutId]);
+
+    layoutFunction->metadataCodeRegistration = &invalidRegistration;
+    layoutFunction->metadataTypeLayoutCount = inlineSpan.typeLayoutId + 1u;
+    TEST_ASSERT_FALSE(ZrLib_CallContext_InlineArgumentView(
+            &deliverContext, 0u, &inlineView));
+    layoutFunction->metadataCodeRegistration = ZR_NULL;
+    layoutFunction->metadataTypeLayoutCount = 0u;
     TEST_ASSERT_TRUE(ZrLib_CallContext_InlineArgumentView(
             &deliverContext, 0u, &inlineView));
+    TEST_ASSERT_EQUAL_PTR(sourceRegistry.layouts, inlineView.registry.layouts);
+    TEST_ASSERT_EQUAL_PTR(
+            sourceRegistry.layouts[inlineSpan.typeLayoutId],
+            inlineView.typeLayout);
     ZrLib_Value_SetNull(&handleValue);
     TEST_ASSERT_TRUE(deliver->callback(&deliverContext, &handleValue));
 

@@ -828,6 +828,14 @@ void ZrCore_Function_FreePrototypeFrameTypeLayoutCache(struct SZrState *state, S
         return;
     }
 
+    if (function->prototypeFrameTypeLayoutRegistry != ZR_NULL &&
+        function->prototypeFrameTypeLayoutLength > 0u) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->prototypeFrameTypeLayoutRegistry,
+                                      sizeof(*function->prototypeFrameTypeLayoutRegistry) *
+                                              function->prototypeFrameTypeLayoutLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
     if (function->prototypeFrameTypeLayouts != ZR_NULL && function->prototypeFrameTypeLayoutLength > 0u) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->prototypeFrameTypeLayouts,
@@ -850,6 +858,7 @@ void ZrCore_Function_FreePrototypeFrameTypeLayoutCache(struct SZrState *state, S
     function->prototypeFrameTypeLayouts = ZR_NULL;
     function->prototypeFrameTypeLayoutFields = ZR_NULL;
     function->prototypeFrameTypeLayoutStates = ZR_NULL;
+    function->prototypeFrameTypeLayoutRegistry = ZR_NULL;
     function->prototypeFrameTypeLayoutLength = 0u;
     function->prototypeFrameTypeLayoutFieldCount = 0u;
     function->prototypeFrameTypeLayoutFieldCapacity = 0u;
@@ -1816,6 +1825,77 @@ zr_function_type_layout_retry_record:
     }
     entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_READY;
     return &entryFunction->prototypeFrameTypeLayouts[typeLayoutId];
+}
+
+TZrBool ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 requiredTypeLayoutId,
+        SZrTypeLayoutRegistryView *outRegistry) {
+    const SZrFunction *entryFunctionConst = function_type_layout_entry_function(state, function);
+    SZrFunction *entryFunction = (SZrFunction *)entryFunctionConst;
+    const SZrTypeLayout *requiredLayout;
+    const SZrTypeLayout **registryLayouts;
+    TZrBool allocatedRegistry = ZR_FALSE;
+
+    if (outRegistry != ZR_NULL) {
+        outRegistry->layouts = ZR_NULL;
+        outRegistry->count = 0u;
+    }
+    if (state == ZR_NULL || state->global == ZR_NULL || entryFunction == ZR_NULL ||
+        outRegistry == ZR_NULL || requiredTypeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ||
+        requiredTypeLayoutId >= entryFunction->prototypeCount) {
+        return ZR_FALSE;
+    }
+
+    requiredLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(
+            entryFunction, requiredTypeLayoutId, state);
+    if (requiredLayout == ZR_NULL || !ZrCore_TypeLayout_Validate(requiredLayout) ||
+        entryFunction->prototypeFrameTypeLayouts == ZR_NULL ||
+        entryFunction->prototypeFrameTypeLayoutStates == ZR_NULL ||
+        entryFunction->prototypeFrameTypeLayoutLength != entryFunction->prototypeCount ||
+        (TZrSize)entryFunction->prototypeFrameTypeLayoutLength >
+                ZR_MAX_SIZE / sizeof(*registryLayouts)) {
+        return ZR_FALSE;
+    }
+
+    registryLayouts = entryFunction->prototypeFrameTypeLayoutRegistry;
+    if (registryLayouts == ZR_NULL) {
+        registryLayouts = (const SZrTypeLayout **)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(*registryLayouts) * entryFunction->prototypeFrameTypeLayoutLength,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (registryLayouts == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        memset(registryLayouts,
+               0,
+               sizeof(*registryLayouts) * entryFunction->prototypeFrameTypeLayoutLength);
+        allocatedRegistry = ZR_TRUE;
+    }
+
+    for (TZrUInt32 index = 0u; index < entryFunction->prototypeFrameTypeLayoutLength; ++index) {
+        if (entryFunction->prototypeFrameTypeLayoutStates[index] == ZR_FUNCTION_TYPE_LAYOUT_CACHE_READY) {
+            registryLayouts[index] = &entryFunction->prototypeFrameTypeLayouts[index];
+        }
+    }
+    if (registryLayouts[requiredTypeLayoutId] != requiredLayout) {
+        if (allocatedRegistry) {
+            ZrCore_Memory_RawFreeWithType(
+                    state->global,
+                    registryLayouts,
+                    sizeof(*registryLayouts) * entryFunction->prototypeFrameTypeLayoutLength,
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        return ZR_FALSE;
+    }
+    if (allocatedRegistry) {
+        entryFunction->prototypeFrameTypeLayoutRegistry = registryLayouts;
+    }
+
+    outRegistry->layouts = registryLayouts;
+    outRegistry->count = entryFunction->prototypeFrameTypeLayoutLength;
+    return ZR_TRUE;
 }
 
 SZrObjectPrototype *ZrCore_Function_ResolvePrototypeFrameStructPrototype(SZrState *state,

@@ -19,6 +19,7 @@ struct SZrObject;
 struct SZrObjectPrototype;
 struct SZrClosure;
 struct SZrTypeLayoutField;
+struct SZrTypeLayoutRegistryView;
 struct SZrAotCodeRegistration;
 
 typedef enum EZrFunctionMemberEntryKind {
@@ -697,6 +698,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     SZrTypeLayout *prototypeFrameTypeLayouts;
     struct SZrTypeLayoutField *prototypeFrameTypeLayoutFields;
     TZrUInt8 *prototypeFrameTypeLayoutStates;
+    const SZrTypeLayout **prototypeFrameTypeLayoutRegistry;
     TZrUInt32 prototypeFrameTypeLayoutLength;
     TZrUInt32 prototypeFrameTypeLayoutFieldCount;
     TZrUInt32 prototypeFrameTypeLayoutFieldCapacity;
@@ -827,6 +829,11 @@ ZR_CORE_API TZrBool ZrCore_Function_BindMatchingTypeRefMetadataWithStatus(
 ZR_CORE_API const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFunction *function,
                                                                                  TZrUInt32 typeLayoutId,
                                                                                  TZrPtr userData);
+ZR_CORE_API TZrBool ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 requiredTypeLayoutId,
+        struct SZrTypeLayoutRegistryView *outRegistry);
 ZR_CORE_API struct SZrObjectPrototype *ZrCore_Function_ResolvePrototypeFrameStructPrototype(
         struct SZrState *state,
         const SZrFunction *function,
