@@ -1,6 +1,6 @@
 # ZR 语法重设计子计划索引
 
-> 状态：总设计已批准；03-14 不作整体确认，按本文的分阶段依赖和各自 promotion gate 单独确认。
+> 状态：总设计已完成分阶段晋级；截至 2026-08-05，06B 与 07B 已完成最终收口，01-14 的当前 gate ledger 全部有独立验收证据。
 >
 > 总设计：[ZR 语法、引用与内存模型重设计](./2026-07-18-zr-syntax-and-memory-model-redesign.md)
 
@@ -114,7 +114,7 @@ flowchart TD
 
 实施顺序以阶段节点而不是文档编号为准：第 4、5 项在第 1-3 项稳定后可以分别实施；06A 和 07A 只建立迁移/fixture 基础设施。10R 随后固定 module/package/resolver 与 descriptor substrate，第 8、9 项和 10F 再分别完成 reflection、pooling 与 FFI ABI。第 11 项固定编译阶段和静态 metadata。第 12 项的AttachedDomain worker必须等待04 M5的domain-local STW/multi-mutator gate，IsolatedDomain worker必须等待04 M6的transport gate；第13、14项再分别完成iterator与test harness。08、09、11-14 各自基于 10R 登记本计划拥有的 provider contract；10C 只汇聚并审计这些已晋级 contract 的 inventory、identity 和 phase 一致性。06B 必须等待 08、10-14 全部目标契约通过后才执行最终仓库切换；07B 又必须等待 07A、06B 和 08-14，才能把设计样例晋级为 current reference。下游引用“依赖 06”时必须写明 `06A` 或 `06B`，不得把二者视为同一个已完成 gate。
 
-截至 2026-08-05，10R、10F、10C 均已完成三工具链晋级，Syntax 10 整体已满足 06B 前置条件；根计划仍等待 06B 仓库 promotion/cleanup 与 07B current-reference promotion，不能提前宣称整体完成。
+截至 2026-08-05，10R、10F、10C 均已完成三工具链晋级；06B 随后完成仓库 inventory v3、旧 source-intermediate AST/consumer 清理和 current spec 发布，07B 再完成零 pending coverage、真实项目 import、interp/binary checksum 与 owner-consumer 证据汇聚。根 Syntax 计划由此完成最终晋级；详细证据见 `tests/acceptance/2026-08-05-syntax-06b-repository-promotion.md` 与 `tests/acceptance/2026-08-05-syntax-07b-current-reference.md`。
 
 ## 4. 共同约束
 

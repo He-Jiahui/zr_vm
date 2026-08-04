@@ -193,62 +193,6 @@ class Student:Person, Man{
         var temp = 1;
     }
 }
-intermediate TestIntermediate(i:int, j:int):int %
-<
-    c1: int,
-    c2: int,
-    c3: int
->
-[
-    num = 1;
-    str = "test";
-    num2 = 2;
-]
-(
-    var1: int,
-    var2: int
-)
-{
-    GetConstant num;
-    SetStack var1; // load num
-    GetConstant num2;
-    SetStack var2; // load num2
-    AddInt var1 var2; // num + num2
-    SetStack var1; // var1 = num + num2
-    AddInt i j; // i + j
-    SetStack var2; // var2 = i + j
-    AddInt var1 var2; // var1 + var2
-    SetStack 1;
-    FunctionReturn 0 1;
-}
-
-
-intermediate __entry():int %
-<
-    c1: int,
-    c2: int,
-    c3: int
->
-[
-    num = 1;
-    str = "test";
-    num2 = 2;
-]
-(
-    var1: int,
-    var2: int
-)
-{
-    GetConstant num;
-    SetStack var1; // load num
-    GetConstant num2;
-    SetStack var2; // load num2
-    AddInt var1 var2; // num + num2
-    SetStack var1; // var1 = num + num2
-    FunctionReturn 0 1;
-}
-
-
 // 单元测试
 #zr.testing.test# fn testSecond(): void {
     if(true){

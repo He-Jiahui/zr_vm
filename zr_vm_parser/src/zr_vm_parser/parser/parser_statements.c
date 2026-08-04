@@ -1907,7 +1907,11 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_expression_statement(ps);
 
         case ZR_TK_INTERMEDIATE:
-            return parse_intermediate_statement(ps);
+            report_removed_legacy_syntax(
+                    ps,
+                    "intermediate source declaration",
+                    "Use compiler-generated SemIR/.zri output; user source cannot declare intermediate instructions.");
+            return ZR_NULL;
 
         case ZR_TK_IF: {
             SZrAstNode *ifNode = parse_if_expression(ps);

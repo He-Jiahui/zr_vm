@@ -107,58 +107,6 @@ TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
     return isLambda;
 }
 
-TZrBool is_expression_level_using_new(SZrParserState *ps) {
-    TZrSize savedPos;
-    TZrInt32 savedChar;
-    TZrInt32 savedLine;
-    TZrInt32 savedLastLine;
-    SZrToken savedToken;
-    SZrToken savedLookahead;
-    TZrSize savedLookaheadPos;
-    TZrInt32 savedLookaheadChar;
-    TZrInt32 savedLookaheadLine;
-    TZrInt32 savedLookaheadLastLine;
-
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_USING) {
-        return ZR_FALSE;
-    }
-
-    savedPos = ps->lexer->currentPos;
-    savedChar = ps->lexer->currentChar;
-    savedLine = ps->lexer->lineNumber;
-    savedLastLine = ps->lexer->lastLine;
-    savedToken = ps->lexer->t;
-    savedLookahead = ps->lexer->lookahead;
-    savedLookaheadPos = ps->lexer->lookaheadPos;
-    savedLookaheadChar = ps->lexer->lookaheadChar;
-    savedLookaheadLine = ps->lexer->lookaheadLine;
-    savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
-    ZrParser_Lexer_Next(ps->lexer);
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        SZrString *name = ps->lexer->t.seminfo.stringValue;
-        if (zr_string_equals_literal(name, "unique") || zr_string_equals_literal(name, "shared") ||
-            zr_string_equals_literal(name, "share") || zr_string_equals_literal(name, "weak")) {
-            ZrParser_Lexer_Next(ps->lexer);
-        }
-    }
-
-    {
-        TZrBool result = ps->lexer->t.token == ZR_TK_NEW;
-        ps->lexer->currentPos = savedPos;
-        ps->lexer->currentChar = savedChar;
-        ps->lexer->lineNumber = savedLine;
-        ps->lexer->lastLine = savedLastLine;
-        ps->lexer->t = savedToken;
-        ps->lexer->lookahead = savedLookahead;
-        ps->lexer->lookaheadPos = savedLookaheadPos;
-        ps->lexer->lookaheadChar = savedLookaheadChar;
-        ps->lexer->lookaheadLine = savedLookaheadLine;
-        ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-        return result;
-    }
-}
-
 SZrAstNodeArray *create_empty_argument_list(SZrParserState *ps) {
     if (ps == ZR_NULL) {
         return ZR_NULL;

@@ -10,11 +10,13 @@
 
 ---
 
-> 状态：已拆为 07A fixture 骨架与 07B current reference 晋级，分别验收；不是当前编译器已经支持的语法声明。
+> 状态：07A 与 07B 均已验收；2026-08-05 已发布零 design-pending 的 current reference catalog 与可运行 application fixture。
 >
 > 07A 硬依赖：01-05 与 06A；只建立目录、feature id、manifest schema 和 design-pending 样例，不证明尚未实现的语义。
 >
 > 07B 硬依赖：07A、06B 与 08-14 全部通过各自 promotion gate；只有 07B 可以发布 current reference。任何代码块与已确认子设计冲突时，以对应细化设计和[索引](./README.md)为准，并同步修订本文。
+
+> 最终执行架构：公共 CLI 只开放 `interp` 与 `binary` project execution，并明确拒绝旧 `aot_c/aot_llvm` execution mode。07B 用同一 reference project 断言这两条公开路径 checksum 一致并生成 AOT C input；AOT C/LLVM 执行一致性继续由各 feature owner gate 的 frozen bound/SemIR/artifact contract 矩阵证明，不在 reference fixture 中恢复第二套 CLI dispatch。完整映射见 `tests/acceptance/2026-08-05-syntax-07b-current-reference.md`。
 
 ## 1. “覆盖所有语法”的范围
 

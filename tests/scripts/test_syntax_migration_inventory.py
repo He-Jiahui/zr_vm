@@ -284,42 +284,94 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
         first_payload = json.loads(first.to_json())
 
         self.assertEqual(first.to_json(), second.to_json())
-        self.assertEqual(0, first_payload["classificationCounts"]["blocked"])
+        self.assertEqual([], first_payload["findings"])
+        self.assertEqual(
+            {classification.value: 0 for classification in MigrationClassification},
+            first_payload["classificationCounts"],
+        )
+        self.assertGreater(len(first_payload["reviewedCurrentFindings"]), 0)
+        self.assertEqual(
+            {"legacyBareTypeCall", "legacyNewStruct"},
+            {
+                entry["syntaxForm"]
+                for entry in first_payload["reviewedCurrentFindings"]
+            },
+        )
         self.assertEqual(
             [
                 (
                     "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
-                    11,
+                    14,
                     "percentCompileTime",
                 ),
                 (
                     "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
-                    14,
+                    28,
                     "percentFunc",
                 ),
                 (
                     "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
-                    14,
+                    39,
                     "legacyFunctionTypeArrow",
                 ),
                 (
+                    "tests/language_server/test_lsp_project_features.c",
+                    10,
+                    "percentImport",
+                ),
+                (
+                    "tests/language_server/test_lsp_property_contract_cases.h",
+                    22,
+                    "legacyPropertyAccessor",
+                ),
+                (
+                    "tests/parser/test_compiler_features.c",
+                    46,
+                    "percentUsing",
+                ),
+                (
+                    "tests/parser/test_compiler_features.c",
+                    67,
+                    "percentUnique",
+                ),
+                (
+                    "tests/parser/test_parser.c",
+                    47,
+                    "percentUsing",
+                ),
+                (
                     "tests/parser/test_percent_syntax_cutover.c",
-                    172,
+                    42,
+                    "unrecognizedPercentDirective",
+                ),
+                (
+                    "tests/parser/test_property_consumer_contracts.c",
+                    20,
+                    "legacyPropertyAccessor",
+                ),
+                (
+                    "tests/parser/test_property_consumer_contracts.c",
+                    27,
+                    "legacyPropertyAccessor",
+                ),
+                (
+                    "tests/parser/test_property_consumer_contracts.c",
+                    24,
+                    "legacyPropertyAccessor",
+                ),
+                (
+                    "tests/task/test_task_runtime.c",
+                    27,
                     "unrecognizedPercentDirective",
                 ),
                 (
                     "tests/task/test_task_runtime.c",
-                    862,
-                    "unrecognizedPercentDirective",
-                ),
-                (
-                    "tests/task/test_task_runtime.c",
-                    863,
+                    24,
                     "unrecognizedPercentDirective",
                 ),
             ],
             [
-                (entry["file"], entry["line"], entry["legacyForm"])
+                (entry["file"], entry["column"], entry["legacyForm"])
                 for entry in first_payload["allowlistedFindings"]
             ],
         )
@@ -354,15 +406,16 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
+            "historicalLegacyParserFixture",
+            exclusion_reasons["tests/fixtures/scripts/closures.zr"],
+        )
+        self.assertEqual(
             "expectedDiagnosticFixture",
             exclusion_reasons[
                 "tests/fixtures/projects/syntax_reference_v1/negative/function_delimiters.zr"
             ],
         )
-        self.assertEqual(
-            "historicalSyntaxReference",
-            exclusion_reasons["docs/zr_language_specification.md"],
-        )
+        self.assertIn("docs/zr_language_specification.md", scanned)
         self.assertFalse(
             any(entry.file.endswith((".zro", ".zri", ".zrs")) for entry in first.scanned_files)
         )
@@ -390,14 +443,11 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
             )
         )
 
-    def test_repository_inventory_excludes_historical_syntax_reference(self) -> None:
+    def test_repository_inventory_scans_current_syntax_reference(self) -> None:
         report = build_repository_inventory(REPOSITORY_ROOT)
-        exclusion_reasons = {entry.file: entry.reason for entry in report.exclusions}
+        scanned_files = {entry.file for entry in report.scanned_files}
 
-        self.assertEqual(
-            "historicalSyntaxReference",
-            exclusion_reasons["docs/zr_language_specification.md"],
-        )
+        self.assertIn("docs/zr_language_specification.md", scanned_files)
 
     def test_embedded_scan_tracks_adjacent_zr_source_literals(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -159,6 +159,7 @@ static void test_non_percent_legacy_forms_are_diagnostics_only(void) {
             "let value: Loan<LegacyResource>;",
             "let value = {{ out 1; }};",
             "out 1;",
+            "intermediate legacy(): int % < > [ ] ( ) { FunctionReturn 0 1; }",
             "class LegacyProperty { pub get value: int { return 1; } }",
     };
     TZrSize index;

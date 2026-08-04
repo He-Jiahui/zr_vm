@@ -5,6 +5,7 @@
 #include "unity.h"
 
 #include "test_support.h"
+#include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/writer.h"
@@ -12,6 +13,8 @@
 void setUp(void) {}
 
 void tearDown(void) {}
+
+const ZrLibModuleDescriptor *ZrVm_GetSyntaxReferenceRenderModule_v1(void);
 
 static const TZrChar *const kStableFeatureIds[] = {
         "function.definition.colon",
@@ -60,7 +63,7 @@ typedef struct SZrSyntaxReferenceCurrentEvidence {
 static const SZrSyntaxReferenceFeatureMapping kFeatureMappings[] = {
         {"function.definition.colon", "current", "current", "src/host.zr"},
         {"callable.type.arrow", "current", "current", "src/callables.zr"},
-        {"anonymous.function.expression_arrow", "design-pending", "design-pending", "src/anonymous_expression_arrow.zr"},
+        {"anonymous.function.expression_arrow", "current", "current", "src/anonymous_expression_arrow.zr"},
         {"reference.passing", "current", "current", "src/algorithms.zr"},
         {"construct.init_new_own_call", "current", "current", "src/model.zr"},
         {"struct.ref_struct", "current", "current", "src/model.zr"},
@@ -73,20 +76,20 @@ static const SZrSyntaxReferenceFeatureMapping kFeatureMappings[] = {
         {"lexical.literal_destructuring", "current", "current", "surface/lexical_and_literals.zr"},
         {"control_flow.cleanup", "current", "current", "src/ownership.zr"},
         {"legacy.percent_migration", "negative", "negative", "negative/legacy_percent_surface.zr"},
-        {"semicolon.explicit", "design-pending", "design-pending", "src/semicolon_explicit.zr"},
-        {"module.import_native_ffi", "design-pending", "design-pending", "src/native_ffi.zr"},
-        {"module_namespace.import_binding", "design-pending", "design-pending", "src/modules.zr"},
-        {"reflection.type_and_construction", "design-pending", "design-pending", "src/reflection.zr"},
-        {"pooling.handle_and_ref", "design-pending", "design-pending", "src/pooling.zr"},
+        {"semicolon.explicit", "current", "current", "src/semicolon_explicit.zr"},
+        {"module.import_native_ffi", "current", "current", "src/native_ffi.zr"},
+        {"module_namespace.import_binding", "current", "current", "src/modules.zr"},
+        {"reflection.type_and_construction", "current", "current", "src/reflection.zr"},
+        {"pooling.handle_and_ref", "current", "current", "src/pooling.zr"},
         {"comptime.metadata_transform", "current", "current", "src/compile_time_and_attributes.zr"},
         {"conditional.direct_call", "current", "current", "src/compile_time_and_attributes.zr"},
-        {"async.task_job_scheduler", "design-pending", "design-pending", "src/async_jobs.zr"},
-        {"iterator.enumerator_yield", "design-pending", "design-pending", "src/iterators.zr"},
-        {"testing.manifest_and_case", "design-pending", "design-pending", "tests/syntax_tests.zr"},
-        {"module_specifier.package_artifact", "design-pending", "design-pending", "src/modules.zr"},
-        {"module_domain.provider_locator", "design-pending", "design-pending", "generated/file_locator_import.zr"},
-        {"official_native_provider_contract", "design-pending", "design-pending", "native/syntax_reference_native.c"},
-        {"canonical.callable_ffi_contract", "design-pending", "design-pending", "src/native_ffi.zr"},
+        {"async.task_job_scheduler", "current", "current", "src/async_jobs.zr"},
+        {"iterator.enumerator_yield", "current", "current", "src/iterators.zr"},
+        {"testing.manifest_and_case", "current", "current", "tests/syntax_tests.zr"},
+        {"module_specifier.package_artifact", "current", "current", "src/modules.zr"},
+        {"module_domain.provider_locator", "current", "current", "generated/file_locator_import.zr"},
+        {"official_native_provider_contract", "current", "current", "native/syntax_reference_native.c"},
+        {"canonical.callable_ffi_contract", "current", "current", "src/native_ffi.zr"},
 };
 
 static const TZrChar *const kCurrentCollectionFiles[] = {
@@ -101,14 +104,6 @@ static const TZrChar *const kCurrentCollectionFiles[] = {
         "src/ownership.zr",
         "src/main.zr",
         "surface/lexical_and_literals.zr",
-};
-
-static const TZrChar *const kNegativeCollectionFiles[] = {
-        "negative/function_delimiters.zr",
-        "negative/legacy_percent_surface.zr",
-};
-
-static const TZrChar *const kDesignPendingCollectionFiles[] = {
         "src/semicolon_explicit.zr",
         "src/anonymous_expression_arrow.zr",
         "src/reflection.zr",
@@ -125,8 +120,13 @@ static const TZrChar *const kDesignPendingCollectionFiles[] = {
         "tests/syntax_tests.zr",
 };
 
+static const TZrChar *const kNegativeCollectionFiles[] = {
+        "negative/function_delimiters.zr",
+        "negative/legacy_percent_surface.zr",
+};
+
 static const SZrSyntaxReferenceCurrentEvidence kCurrentEvidence[] = {
-        {"src/host.zr", "fn syntaxReferenceHost(): int"},
+        {"src/host.zr", "pub fn syntaxReferenceHost(): int"},
         {"src/callables.zr", "fn(int) -> int"},
         {"src/algorithms.zr", "in int"},
         {"src/model.zr", "init SyntaxReferencePoint"},
@@ -142,10 +142,17 @@ static const SZrSyntaxReferenceCurrentEvidence kCurrentEvidence[] = {
         {"src/compile_time_and_attributes.zr", "#zr.compile.declarationTransform#"},
         {"src/compile_time_and_attributes.zr", "declaration.GeneratedField"},
         {"src/compile_time_and_attributes.zr", "#zr.compile.conditional(\"trace\")#"},
-};
-
-static const SZrSyntaxReferenceCurrentEvidence kDesignPendingEvidence[] = {
         {"src/anonymous_expression_arrow.zr", "var syntaxReferenceAnonymous = fn(value: int): int => value;"},
+        {"src/semicolon_explicit.zr", "var syntaxReferenceSemicolon = 1;"},
+        {"src/reflection.zr", "reflection.requireConstructible"},
+        {"src/pooling.zr", "pooling.PoolHandle"},
+        {"src/modules.zr", "let fixturePackage = import(\"@fixturedep\");"},
+        {"src/native_ffi.zr", "native extern(\"syntax_reference_native\")"},
+        {"src/async_jobs.zr", "async fn syntaxReferenceAsync"},
+        {"src/iterators.zr", "yield value;"},
+        {"tests/syntax_tests.zr", "#zr.testing.test#"},
+        {"generated/file_locator_import.zr", "file:${SYNTAX_REFERENCE_FILE_URI}"},
+        {"native/syntax_reference_native.c", "ZrVm_GetSyntaxReferenceRenderModule_v1"},
 };
 
 static TZrChar *read_syntax_reference_project_file(const TZrChar *relativePath, TZrSize *outLength) {
@@ -238,6 +245,16 @@ static TZrBool collection_block_contains_file(const TZrChar *block,
     return match != ZR_NULL && match < end;
 }
 
+static TZrBool syntax_reference_path_has_suffix(
+        const TZrChar *path,
+        const TZrChar *suffix) {
+    TZrSize pathLength = strlen(path);
+    TZrSize suffixLength = strlen(suffix);
+
+    return pathLength >= suffixLength &&
+           strcmp(path + pathLength - suffixLength, suffix) == 0;
+}
+
 static TZrSize collection_block_file_count(const TZrChar *block, const TZrChar *end) {
     const TZrChar *cursor = strchr(block, '[');
     TZrSize count = 0u;
@@ -317,14 +334,6 @@ static void test_syntax_reference_v1_feature_mappings_match_disjoint_source_coll
                                          sizeof(kCurrentCollectionFiles) / sizeof(kCurrentCollectionFiles[0]),
                                          kNegativeCollectionFiles,
                                          sizeof(kNegativeCollectionFiles) / sizeof(kNegativeCollectionFiles[0]));
-    assert_collection_files_are_disjoint(kCurrentCollectionFiles,
-                                         sizeof(kCurrentCollectionFiles) / sizeof(kCurrentCollectionFiles[0]),
-                                         kDesignPendingCollectionFiles,
-                                         sizeof(kDesignPendingCollectionFiles) / sizeof(kDesignPendingCollectionFiles[0]));
-    assert_collection_files_are_disjoint(kNegativeCollectionFiles,
-                                         sizeof(kNegativeCollectionFiles) / sizeof(kNegativeCollectionFiles[0]),
-                                         kDesignPendingCollectionFiles,
-                                         sizeof(kDesignPendingCollectionFiles) / sizeof(kDesignPendingCollectionFiles[0]));
     assert_collection_block_matches_expected(currentBlock,
                                              currentEnd,
                                              kCurrentCollectionFiles,
@@ -335,8 +344,8 @@ static void test_syntax_reference_v1_feature_mappings_match_disjoint_source_coll
                                              sizeof(kNegativeCollectionFiles) / sizeof(kNegativeCollectionFiles[0]));
     assert_collection_block_matches_expected(pendingBlock,
                                              pendingEnd,
-                                             kDesignPendingCollectionFiles,
-                                             sizeof(kDesignPendingCollectionFiles) / sizeof(kDesignPendingCollectionFiles[0]));
+                                             ZR_NULL,
+                                             0u);
 
     for (index = 0u; index < sizeof(kFeatureMappings) / sizeof(kFeatureMappings[0]); index++) {
         const SZrSyntaxReferenceFeatureMapping *mapping = &kFeatureMappings[index];
@@ -411,10 +420,14 @@ static void test_syntax_reference_v1_current_feature_sources_contain_syntax_evid
     }
     for (index = 0u; index < sizeof(kCurrentCollectionFiles) / sizeof(kCurrentCollectionFiles[0]); index++) {
         TZrSize sourceLength = 0u;
-        TZrChar *source = read_syntax_reference_project_file(kCurrentCollectionFiles[index], &sourceLength);
+        TZrChar *source;
         SZrString *sourceName;
         SZrAstNode *ast;
 
+        if (!syntax_reference_path_has_suffix(kCurrentCollectionFiles[index], ".zr")) {
+            continue;
+        }
+        source = read_syntax_reference_project_file(kCurrentCollectionFiles[index], &sourceLength);
         TEST_ASSERT_NOT_NULL_MESSAGE(source, kCurrentCollectionFiles[index]);
         sourceName = ZrCore_String_Create(state,
                                           (TZrNativeString)kCurrentCollectionFiles[index],
@@ -428,19 +441,22 @@ static void test_syntax_reference_v1_current_feature_sources_contain_syntax_evid
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_syntax_reference_v1_pending_expression_arrow_preserves_its_target_syntax(void) {
-    TZrSize index;
+static void test_syntax_reference_v1_has_no_design_pending_features(void) {
+    TZrSize manifestLength = 0u;
+    TZrChar *manifest = read_syntax_reference_project_file(
+            "golden/coverage.json", &manifestLength);
 
-    for (index = 0u; index < sizeof(kDesignPendingEvidence) / sizeof(kDesignPendingEvidence[0]); index++) {
-        TZrSize sourceLength = 0u;
-        TZrChar *source = read_syntax_reference_project_file(kDesignPendingEvidence[index].source, &sourceLength);
+    TEST_ASSERT_NOT_NULL(manifest);
+    TEST_ASSERT_TRUE(manifestLength > 0u);
+    TEST_ASSERT_EQUAL_UINT64(
+            0u,
+            ZrTests_Reference_CountJsonStringFieldValueOccurrences(
+                    manifest, "status", "design-pending"));
+    TEST_ASSERT_EQUAL_UINT64(0u, ZrTests_Reference_CountOccurrences(manifest, "\"ownerPlan\""));
+    TEST_ASSERT_EQUAL_UINT64(0u, ZrTests_Reference_CountOccurrences(manifest, "\"ownerGate\""));
+    TEST_ASSERT_EQUAL_UINT64(0u, ZrTests_Reference_CountOccurrences(manifest, "\"expectAfterPromotion\""));
 
-        TEST_ASSERT_NOT_NULL_MESSAGE(source, kDesignPendingEvidence[index].source);
-        TEST_ASSERT_TRUE_MESSAGE(sourceLength > 0u, kDesignPendingEvidence[index].source);
-        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(source, kDesignPendingEvidence[index].syntaxMarker),
-                                     kDesignPendingEvidence[index].syntaxMarker);
-        free(source);
-    }
+    free(manifest);
 }
 
 static void test_syntax_reference_v1_manifest_enumerates_stable_feature_ids(void) {
@@ -466,7 +482,7 @@ static void test_syntax_reference_v1_manifest_enumerates_stable_feature_ids(void
     free(manifest);
 }
 
-static void test_syntax_reference_v1_separates_current_negative_and_pending_collections(void) {
+static void test_syntax_reference_v1_separates_current_and_negative_collections(void) {
     static const TZrChar *const kRequiredProjectFiles[] = {
             "syntax_reference_v1.zrp",
             "src/host.zr",
@@ -499,21 +515,10 @@ static void test_syntax_reference_v1_separates_current_negative_and_pending_coll
                              manifest, "status", "current") >= 1u);
     TEST_ASSERT_TRUE(ZrTests_Reference_CountJsonStringFieldValueOccurrences(
                              manifest, "status", "negative") >= 1u);
-    TEST_ASSERT_TRUE(ZrTests_Reference_CountJsonStringFieldValueOccurrences(
-                             manifest, "status", "design-pending") >= 1u);
     TEST_ASSERT_EQUAL_UINT64(
+            0u,
             ZrTests_Reference_CountJsonStringFieldValueOccurrences(
-                    manifest, "status", "design-pending"),
-            ZrTests_Reference_CountOccurrences(manifest, "\"ownerPlan\""));
-    TEST_ASSERT_EQUAL_UINT64(
-            ZrTests_Reference_CountJsonStringFieldValueOccurrences(
-                    manifest, "status", "design-pending"),
-            ZrTests_Reference_CountOccurrences(manifest, "\"ownerGate\""));
-    TEST_ASSERT_EQUAL_UINT64(
-            ZrTests_Reference_CountJsonStringFieldValueOccurrences(
-                    manifest, "status", "design-pending"),
-            ZrTests_Reference_CountOccurrences(manifest, "\"expectAfterPromotion\""));
-    TEST_ASSERT_NULL(strstr(manifest, "\"status\":\"design-pending\",\"collection\":\"current\""));
+                    manifest, "status", "design-pending"));
 
     for (index = 0u; index < sizeof(kRequiredProjectFiles) / sizeof(kRequiredProjectFiles[0]); index++) {
         assert_project_file_exists(kRequiredProjectFiles[index]);
@@ -544,6 +549,8 @@ static void test_syntax_reference_v1_preserves_provider_identity_without_host_pa
     TEST_ASSERT_TRUE(locatorLength > 0u);
     TEST_ASSERT_NOT_NULL(projectManifest);
     TEST_ASSERT_TRUE(projectManifestLength > 0u);
+    TEST_ASSERT_NOT_NULL(strstr(projectManifest, "\"kind\": \"application\""));
+    TEST_ASSERT_NOT_NULL(strstr(projectManifest, "\"entry\": \"main\""));
     TEST_ASSERT_NOT_NULL(strstr(locator, "\"moduleIdentity\": \"native:engine.render\""));
     TEST_ASSERT_NOT_NULL(strstr(locator, "\"workspaceShadow\": \"engine.render\""));
     TEST_ASSERT_NOT_NULL(strstr(locator, "file:${SYNTAX_REFERENCE_FILE_URI}"));
@@ -574,6 +581,42 @@ static void test_syntax_reference_v1_preserves_provider_identity_without_host_pa
 
     free(locator);
     free(projectManifest);
+}
+
+static void test_syntax_reference_v1_entry_executes_imported_checksum(void) {
+    TZrSize mainLength = 0u;
+    TZrSize hostLength = 0u;
+    TZrChar *mainSource = read_syntax_reference_project_file(
+            "src/main.zr", &mainLength);
+    TZrChar *hostSource = read_syntax_reference_project_file(
+            "src/host.zr", &hostLength);
+
+    TEST_ASSERT_NOT_NULL(mainSource);
+    TEST_ASSERT_NOT_NULL(hostSource);
+    TEST_ASSERT_TRUE(mainLength > 0u);
+    TEST_ASSERT_TRUE(hostLength > 0u);
+    TEST_ASSERT_NOT_NULL(strstr(mainSource, "let host = import(\"host\");"));
+    TEST_ASSERT_NOT_NULL(strstr(mainSource, "return syntaxReferenceMain();"));
+    TEST_ASSERT_NOT_NULL(strstr(hostSource, "pub fn syntaxReferenceHost(): int"));
+
+    free(mainSource);
+    free(hostSource);
+}
+
+static void test_syntax_reference_v1_native_provider_is_a_current_descriptor(void) {
+    const ZrLibModuleDescriptor *descriptor =
+            ZrVm_GetSyntaxReferenceRenderModule_v1();
+
+    TEST_ASSERT_NOT_NULL(descriptor);
+    TEST_ASSERT_EQUAL_STRING("engine.render", descriptor->moduleName);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LIBRARY_PROVIDER_PHASE_RUNTIME, descriptor->providerPhase);
+    TEST_ASSERT_EQUAL_STRING(
+            "engine.render:v1:value-int", descriptor->publicContractHash);
+    TEST_ASSERT_EQUAL_UINT64(1u, descriptor->functionCount);
+    TEST_ASSERT_NOT_NULL(descriptor->functions);
+    TEST_ASSERT_EQUAL_STRING("value", descriptor->functions[0].name);
+    TEST_ASSERT_EQUAL_STRING("int", descriptor->functions[0].returnTypeName);
 }
 
 static TZrUInt64 syntax_reference_hash_bytes(const TZrByte *bytes, TZrSize length) {
@@ -714,7 +757,8 @@ static void syntax_reference_assert_current_source_compiles(
     TEST_ASSERT_NOT_NULL(source);
     TEST_ASSERT_TRUE(sourceLength > 0u);
     TEST_ASSERT_NOT_NULL(state);
-    sourceName = ZrCore_String_Create(state, relativePath, strlen(relativePath));
+    sourceName = ZrCore_String_Create(
+            state, (TZrNativeString)relativePath, strlen(relativePath));
     TEST_ASSERT_NOT_NULL(sourceName);
     ast = ZrParser_Parse(state, source, sourceLength, sourceName);
     TEST_ASSERT_NOT_NULL(ast);
@@ -818,11 +862,13 @@ static void test_compiler_assigns_distinct_canonical_symbols_to_reused_parameter
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_syntax_reference_v1_manifest_enumerates_stable_feature_ids);
-    RUN_TEST(test_syntax_reference_v1_separates_current_negative_and_pending_collections);
+    RUN_TEST(test_syntax_reference_v1_separates_current_and_negative_collections);
     RUN_TEST(test_syntax_reference_v1_feature_mappings_match_disjoint_source_collections);
     RUN_TEST(test_syntax_reference_v1_current_feature_sources_contain_syntax_evidence_and_parse);
-    RUN_TEST(test_syntax_reference_v1_pending_expression_arrow_preserves_its_target_syntax);
+    RUN_TEST(test_syntax_reference_v1_has_no_design_pending_features);
     RUN_TEST(test_syntax_reference_v1_preserves_provider_identity_without_host_paths);
+    RUN_TEST(test_syntax_reference_v1_entry_executes_imported_checksum);
+    RUN_TEST(test_syntax_reference_v1_native_provider_is_a_current_descriptor);
     RUN_TEST(test_syntax_reference_v1_formatted_and_minified_current_source_have_identical_ast_and_semantic_hashes);
     RUN_TEST(test_syntax_reference_v1_gcbox_bridge_compiles_with_its_declared_type);
     RUN_TEST(test_syntax_reference_v1_callable_parameter_retains_its_exact_signature);

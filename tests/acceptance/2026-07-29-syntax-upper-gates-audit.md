@@ -257,15 +257,13 @@ remaining owner gates are open.
 | 14 M3 | deterministic discovery/filter/list/run, process isolation, jobs, timeout, output and exit codes | proven | preserve sync/async reference matrix |
 | 14 M4 | LSP lenses and Debug frame projection consume canonical TestManifest identity; invalid role bindings do not create lenses; ordinary argument scope, scheduler logical stack, and idempotent percent/draft migration remain covered | proven | preserve manifest-driven tooling and migration-only legacy spelling |
 | 06B parser cutover | removed syntax has rejection-only recognition and no old AST/lowering/runtime decorator semantics | proven | keep migration diagnostics and operator/internal-IR allowlist distinct |
-| 06B repository promotion | inventory has no machine/block/unknown/not-promoted findings, but 645 review findings and owner-gated reference slots remain | indirect | classify/migrate remaining current inputs as owner gates close |
-| 07B | coverage still has 13 owner-gated `design-pending` entries | contradicted | promote only after each owner gate has independent evidence |
+| 06B repository promotion | scanner v3 has zero findings/unknown/classification counts, 14 intentional negative allowlist entries, 595 reviewed current call/new candidates, current spec publication, removed source-intermediate AST and stale CLI/semantic consumers; Python 9/9 and three-toolchain parser/cutover rebuilds pass | proven | preserve diagnostic-only recognition and explicit historical/negative exclusions |
+| 07B | 29 stable ids are 28 current plus one negative, pending collection is empty; reference application imports host and returns checksum 7 under interp/binary; AOT C is emitted and owner-gate AOT/artifact/LSP matrices remain canonical | proven | preserve owner-evidence mapping and public execution-mode boundary |
 
 ## Current conclusion
 
-The strict production parser cutover is complete. The 55 historical leaf
-records are confirmed in their own scope; the current directory additionally
-contains one completed task-level support record outside that selector. The root
-Syntax redesign is not complete: 06B repository promotion and 07B still
-require their final convergence passes. Gate 14 M1-M4 and Syntax 10C are
-promoted by their 2026-08-05 three-toolchain replays.
-No acceptance document may translate leaf completion into a root promotion.
+The strict production parser cutover and both final convergence passes are
+complete. The 55 historical leaf records remain confirmed in their own scope;
+the root promotion additionally depends on the independent 06B and 07B
+evidence recorded on 2026-08-05. Gate 14 M1-M4, Syntax 10C, repository
+inventory/cleanup, and the current reference application are all promoted.

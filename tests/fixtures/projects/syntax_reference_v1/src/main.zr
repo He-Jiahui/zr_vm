@@ -1,3 +1,7 @@
-fn main(): int {
-    return syntaxReferenceHost();
+let host = import("host");
+
+fn syntaxReferenceMain(): int {
+    return host.syntaxReferenceHost();
 }
+
+return syntaxReferenceMain();

@@ -768,10 +768,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_add_unity_test_target(
             zr_vm_syntax_reference_v1_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_syntax_reference_v1.c
+            ${CMAKE_SOURCE_DIR}/tests/fixtures/projects/syntax_reference_v1/native/syntax_reference_native.c
     )
     target_include_directories(zr_vm_syntax_reference_v1_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_syntax_reference_v1_test)
     add_test(

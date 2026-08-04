@@ -9,6 +9,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_function_syntax.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
+  - zr_vm_parser/include/zr_vm_parser/ast.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_public_contract.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
@@ -22,6 +26,10 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_function_syntax.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
+  - zr_vm_parser/include/zr_vm_parser/ast.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_public_contract.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
@@ -44,6 +52,8 @@ tests:
   - tests/language_server/stdio_smoke.js
   - tests/acceptance/2026-07-26-syntax-55-status-records-review.md
   - tests/acceptance/2026-08-03-syntax-08-m1-reflection-provider-contract.md
+  - tests/acceptance/2026-08-05-syntax-06b-repository-promotion.md
+  - tests/acceptance/2026-08-05-syntax-07b-current-reference.md
 doc_type: module-detail
 ---
 
@@ -51,10 +61,12 @@ doc_type: module-detail
 
 ## Authority
 
-`README.md` is the sole current-language source for examples and editor-facing
-syntax. Historical percent forms belong only to migration diagnostics,
-inventory, negative fixtures, or historical design documents. The production
-parser does not accept them as a compatibility surface.
+`README.md` is the user-facing authority, while
+`docs/zr_language_specification.md` records the production grammar boundary
+and `tests/fixtures/projects/syntax_reference_v1` is its executable catalog.
+Historical percent forms belong only to migration diagnostics, inventory,
+negative fixtures, or historical design documents. The production parser does
+not accept them as a compatibility surface.
 
 The relevant current forms are:
 
@@ -93,6 +105,18 @@ into a production compilation unit. Ordinary `%` remains the modulo operator.
 An unknown `%identifier` is an ordinary syntax error rather than an implicit
 migration directive.
 
+Known removed spellings deliberately remain as parser token comparisons so a
+user receives the directed fatal `legacy_syntax_removed` diagnostic. Every
+such branch returns no AST. Their presence in production source is therefore
+a rejection contract, not a compatibility grammar.
+
+The final 06B audit found a distinct compatibility route for user-authored
+`intermediate ... % ...` input. Its parser helpers, five source AST kinds and
+payloads, project-import projection, syntax writer, semantic branch, and stale
+CLI compiler consumer were deleted. Their numeric AST slots remain gaps so
+later values do not move, and public-contract wire value 13 is rejected
+explicitly rather than deserialized as a source declaration.
+
 The obsolete standalone `$` prototype-reference parser entry has been removed.
 Canonical `init/new/own` still use their internal typed construct-target node;
 that implementation detail is not a legacy source grammar path.
@@ -129,10 +153,11 @@ spelling.
 The breaking switch is directly covered by `percent_syntax_cutover`,
 `cli_syntax_migration`, and `legacy_migration`: old source is rejected by the
 production path while migration diagnostics and edits remain available. A
-static scan of the production parser has zero occurrences of the listed legacy
-keyword literals. The 2026-07-30 WSL GCC isolated matrix builds the full tree
-and passes all 123 registered CTest tests, including `language_pipeline`,
-projects, language-server stdio, VM/AOT, debug, and migration consumers.
+static audit permits listed legacy literals only in rejection diagnostics,
+migration tooling, explicit negative inputs, and historical records. The
+2026-07-30 WSL GCC isolated matrix built the full tree and passed all 123 then
+registered CTest tests, including `language_pipeline`, projects,
+language-server stdio, VM/AOT, debug, and migration consumers.
 
 This closes the dual-parser compatibility question, not the complete Syntax
 redesign. The upper-gate ledger remains open until every owner gate has direct
@@ -144,8 +169,10 @@ toolchain. It also found and migrated five stale native-direct-call fixtures
 that still declared functions without `fn`; no keywordless-function parser
 fallback was restored.
 
-The 2026-08-04 replay again reports 6/6 strict-cutover and 12/12 migration
-tests under WSL GCC. The canonical status selector reports
-`TOTAL=55 COMPLETE=55 MISSING=0`. The repository inventory golden contains
-651 review-only findings and six allowlisted negative examples; none is a
-production parser acceptance path.
+The final 2026-08-05 replay reports 6/6 strict cutover, parser 74/74,
+semantic-query 27/27, and current-reference 13/13. Inventory scanner v3 scans
+the current language specification and reports zero findings, zero unknown,
+14 stable allowlisted negative/migration inputs, and 598 separately reviewed
+current call/new candidates. The canonical status selector remains
+`TOTAL=55 MISSING=0`; 06B and 07B have independent root-promotion acceptance
+records rather than being inferred from those leaf statuses.

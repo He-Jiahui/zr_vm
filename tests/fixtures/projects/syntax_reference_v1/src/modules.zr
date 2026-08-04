@@ -1,1 +1,14 @@
-// design-pending: owner 10R module/provider resolution
+let fixtureWorkspace = import("engine.render");
+let fixtureNative = import("native:engine.render");
+let fixtureNativeAlias = import("#nativeRender");
+let fixturePackage = import("@fixturedep");
+let fixturePackageTool = import("@fixturedep/tool");
+let fixtureArtifact = import("artifacts/fixturedep.zrm");
+
+fn syntaxReferenceModuleChecksum(): int {
+    return fixtureWorkspace.syntaxReferenceWorkspaceRender() +
+           fixtureNative.value() +
+           fixtureNativeAlias.value() +
+           fixturePackage.fixtureDependencyValue() +
+           fixturePackageTool.fixtureDependencyToolValue();
+}

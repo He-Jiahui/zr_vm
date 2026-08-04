@@ -1,1 +1,13 @@
-// design-pending: owner 14 test metadata and manifest contract.
+let testing = import("zr.testing");
+
+#zr.testing.test#
+fn syntaxReferencePasses(): void {
+    testing.assert(true);
+}
+
+#zr.testing.test#
+#zr.testing.case(1, 2)#
+#zr.testing.case(3, 4)#
+fn syntaxReferenceOrdered(left: int, right: int): void {
+    testing.assert(left < right);
+}

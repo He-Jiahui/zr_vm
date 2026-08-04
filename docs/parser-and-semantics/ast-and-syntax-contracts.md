@@ -19,6 +19,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ast_free.c
   - zr_vm_parser/src/zr_vm_parser/project_imports.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_syntax_tree.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_public_contract.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_property.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
@@ -29,6 +32,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ast_free.c
   - zr_vm_parser/src/zr_vm_parser/project_imports.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_syntax_tree.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_public_contract.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
 plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
@@ -87,9 +93,10 @@ manually supplied legacy property nodes as semantic sources.
 
 `let` and `var` are the canonical binding surface for locals, `for`/`foreach` bindings, and explicit
 class, struct, resource-class, and interface fields. `let` projects to the existing immutable binding
-fact; `var` projects to mutable storage. The compatibility spellings `var const` and legacy const
-fields remain accepted inputs, but writer/debug output reports the canonical `let` or `var` binding
-kind from the AST fact rather than preserving source spelling.
+fact; `var` projects to mutable storage. The final 06B cutover rejects `var const` in local, class, and
+struct positions with a directed migration diagnostic. Bare module `const` remains the distinct
+current module-constant contract. Writer/debug output reports the canonical binding kind from the AST
+fact rather than preserving removed source spelling.
 
 Object/array destructuring and foreach destructuring register every bound identifier with the same
 binding kind; `let {x}`, `let [x]`, and `for (let {x} in values)` therefore cannot be reassigned.
@@ -108,6 +115,14 @@ Property recovery is scoped to the declaration body and accessor terminators. A 
 accessor may report an exact property/accessor range while preserving later members when a stable
 boundary exists. Recovery never converts an unrelated identifier named `property`, `get`, `set`,
 `init`, or `value` into a declaration.
+
+## Removed Source-Intermediate Contract
+
+User-authored `intermediate ... % ...` declarations are removed syntax. The final 06B cutover deleted
+their five AST enum names and payloads, parser helpers, import projection, writer labels, semantic
+branch, and CLI compiler consumer. The enum numbers remain unassigned gaps so later serialized AST
+values do not move. Public-contract wire value 13 has a named removed-value constant and is rejected
+explicitly; it must never be treated as a current declaration or accepted to preserve an old artifact.
 
 ## M2 Boundary
 

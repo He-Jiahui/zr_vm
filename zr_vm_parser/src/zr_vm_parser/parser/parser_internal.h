@@ -259,8 +259,6 @@ SZrAstNode *try_parse_braced_primary_member(SZrParserState *ps,
 
 TZrBool is_lambda_expression_after_lparen(SZrParserState *ps);
 
-TZrBool is_expression_level_using_new(SZrParserState *ps);
-
 SZrAstNodeArray *create_empty_argument_list(SZrParserState *ps);
 
 TZrBool reject_named_construct_arguments(SZrParserState *ps, SZrArray *argNames, SZrFileRange location);
@@ -457,16 +455,6 @@ SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArra
 SZrAstNode *parse_extern_block(SZrParserState *ps);
 
 SZrAstNode *parse_compile_time_declaration(SZrParserState *ps);
-
-SZrAstNode *parse_intermediate_instruction_parameter(SZrParserState *ps);
-
-SZrAstNode *parse_intermediate_instruction(SZrParserState *ps);
-
-SZrAstNode *parse_intermediate_constant(SZrParserState *ps);
-
-SZrAstNode *parse_intermediate_declaration(SZrParserState *ps);
-
-SZrAstNode *parse_intermediate_statement(SZrParserState *ps);
 
 SZrAstNode *parse_generator_expression(SZrParserState *ps);
 

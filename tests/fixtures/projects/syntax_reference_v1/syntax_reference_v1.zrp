@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "name": "syntax_reference_v1",
   "version": "1.0.0",
-  "kind": "library",
+  "kind": "application",
   "source": "src",
   "binary": "bin",
   "entry": "main",

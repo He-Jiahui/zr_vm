@@ -5,6 +5,7 @@
 
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_common/zr_ast_constants.h"
 
 #define ZR_PUBLIC_CONTRACT_HASH_OFFSET ((TZrUInt64)14695981039346656037ULL)
 #define ZR_PUBLIC_CONTRACT_HASH_PRIME ((TZrUInt64)1099511628211ULL)
@@ -654,7 +655,9 @@ TZrBool ZrParser_SemanticQuery_PublicContract(
         SZrPublicContractExport exportItem;
         TZrBool contributes = ZR_FALSE;
 
-        if (node == ZR_NULL) {
+        if (node == ZR_NULL ||
+            (TZrUInt32)node->type ==
+                    ZR_AST_CONSTANT_REMOVED_INTERMEDIATE_STATEMENT) {
             goto cleanup;
         }
         memset(&exportItem, 0, sizeof(exportItem));
@@ -675,9 +678,7 @@ TZrBool ZrParser_SemanticQuery_PublicContract(
                    node->type == ZR_AST_EXTERN_BLOCK ||
                    node->type == ZR_AST_EXTERN_FUNCTION_DECLARATION ||
                    node->type == ZR_AST_EXTERN_DELEGATE_DECLARATION ||
-                   node->type == ZR_AST_COMPILE_TIME_DECLARATION ||
-                   node->type == ZR_AST_INTERMEDIATE_DECLARATION ||
-                   node->type == ZR_AST_INTERMEDIATE_STATEMENT) {
+                   node->type == ZR_AST_COMPILE_TIME_DECLARATION) {
             goto cleanup;
         }
         if (contributes) {

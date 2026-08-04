@@ -1,6 +1,6 @@
 # 06 `%xxx` 迁移、LSP、文档与全项目 fixture
 
-> 状态：已拆为 06A 前置迁移基础设施与 06B 最终仓库切换，分别验收。
+> 状态：06A 与 06B 均已验收；2026-08-05 完成最终仓库 promotion、旧 source-intermediate AST/consumer 清理和 current spec 发布。
 >
 > 06A 硬依赖：本目录 01-05 子设计全部通过各自 promotion gate。
 >
@@ -564,6 +564,8 @@ cutover gate 使用结构化 allowlist，而不是简单要求零 `%`：
 晋级门：shared production path 无旧 spelling/owner-kind branch；allowlist 只剩有意保留项。
 
 06B 的独立晋级门：M4-M5 全部通过，正式 parser、VM/AOT、artifact、CLI、LSP 和仓库 current source 只剩一套新语义。06B 未通过时，禁止把 07 的全量 reference 标为 current。
+
+2026-08-05 最终结果：repository scanner v3 对 current 候选（包括现行语言规范）报告零 finding、零 unknown、零未晋级分类；14 个命中均为稳定 allowlisted negative/migration input，capitalized call 与 `new` 候选进入独立 reviewed-current 事实而不再伪装成未处理迁移。正式 parser 中所有已知 `%xxx` 入口只调用 fatal diagnostic 并返回空 AST；额外发现的 `intermediate ... %` source parser、五类 AST payload、CLI/import/semantic/writer consumer 已删除，保留的 wire 数值槽仅用于拒绝旧 artifact。完整证据见 `tests/acceptance/2026-08-05-syntax-06b-repository-promotion.md`。
 
 ## 12. 测试矩阵
 

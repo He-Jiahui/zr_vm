@@ -1,5 +1,5 @@
 // Workspace module deliberately shares the logical display name with the
-// design-pending RegisteredNative provider native:engine.render.
+// current RegisteredNative provider native:engine.render.
 fn syntaxReferenceWorkspaceRender(): int {
     return 1;
 }

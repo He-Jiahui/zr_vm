@@ -1,1 +1,9 @@
-// design-pending: owner 12 Task/Job/Scheduler
+let task = import("zr.task");
+
+async fn syntaxReferenceAsync(value: int): task.Task<int> {
+    return value + 1;
+}
+
+fn syntaxReferenceYieldTask(): task.Task<void> {
+    return task.yieldNow();
+}

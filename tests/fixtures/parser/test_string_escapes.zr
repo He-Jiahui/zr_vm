@@ -1,5 +1,7 @@
 // 测试字符串转义序列
-module "string_escapes";
+module string_escapes;
+
+let testing = import("zr.testing");
 
 // 基本转义字符
 var s1 = "hello\nworld";
@@ -17,7 +19,8 @@ var s8 = "unicode\u0041";
 var s9 = "unicode\u4E2D";
 
 // 测试用例
-%test("stringEscapesTest"){
+#zr.testing.test#
+fn stringEscapesTest(): void {
     var result = 0;
     
     // 验证基本转义字符
@@ -35,7 +38,7 @@ var s9 = "unicode\u4E2D";
     if (s8 != null) { result = result + 1; }
     if (s9 != null) { result = result + 1; }
     
-    return result;
+    testing.assert(result == 9);
 }
 
 

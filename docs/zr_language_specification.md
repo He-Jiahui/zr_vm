@@ -1,1397 +1,155 @@
-# zr 语言完整语法规范
+# ZR Current Language Syntax
 
-> **状态：历史参考。** 现行语言介绍与规范语法以 [`README.md`](../README.md) 为准。本文中的旧示例不应作为编译器、LSP 或测试的实现目标。
+> Status: current. `README.md` is the user-facing authority. This document
+> records the production grammar boundary used by the parser, tooling, and
+> current syntax reference project.
 
-本文档基于 `test_simple.zr` 示例文件和解析器实现，总结了 zr 语言的完整语法规范。
+## Source Structure
 
-## 目录
-
-1. [词法规范](#1-词法规范)
-2. [语法规范](#2-语法规范)
-3. [特殊语法特性](#3-特殊语法特性)
-4. [文件结构](#4-文件结构)
-5. [语法规则总结](#5-语法规则总结)
-6. [已知问题和待实现功能](#6-已知问题和待实现功能)
-
----
-
-## 1. 词法规范
-
-### 1.1 关键字
-
-#### 模块和类型声明
-- `module` - 模块声明
-- `struct` - 结构体声明
-- `class` - 类声明
-- `interface` - 接口声明
-- `enum` - 枚举声明
-- `union` - 带字段的代数数据类型声明
-- `intermediate` - 中间代码声明
-
-#### 变量和函数
-- `var` - 变量声明
-- `const` - 常量声明（只读变量）
-- `static` - 静态成员声明
-
-#### 访问修饰符
-- `pub` - public（公开）
-- `pri` - private（私有）
-- `pro` - protected（受保护）
-
-#### 控制流
-- `if` - 条件语句
-- `else` - else 分支
-- `switch` - 开关语句
-- `while` - while 循环
-- `for` - for 循环
-- `break` - 跳出循环
-- `continue` - 继续循环
-- `return` - 返回语句
-
-#### 异常处理
-- `try` - 异常捕获开始
-- `catch` - 异常捕获
-- `finally` - 最终处理
-- `throw` - 抛出异常
-
-#### 特殊关键字
-- `new` - 创建类实例
-- `super` - 调用父类
-- `in` - foreach 循环中的迭代关键字
-- `out` - 生成器表达式中的输出关键字
-- `get` - 属性访问器（getter）
-- `set` - 属性访问器（setter）
-
-#### 测试
-- `test` - 测试声明（配合 `%` 使用）
-
-#### 特殊值
-- `Infinity` - 正无穷
-- `NegativeInfinity` - 负无穷
-- `NaN` - 非数字
-- `true` - 布尔真值
-- `false` - 布尔假值
-- `null` - 空值
-
-### 1.2 操作符
-
-#### 算术操作符
-- `+` - 加法
-- `-` - 减法
-- `*` - 乘法
-- `/` - 除法
-- `%` - 取模
-
-#### 赋值操作符
-- `=` - 赋值
-- `+=` - 加法赋值
-- `-=` - 减法赋值
-- `*=` - 乘法赋值
-- `/=` - 除法赋值
-- `%=` - 取模赋值
-
-#### 比较操作符
-- `==` - 相等
-- `!=` - 不等
-- `<` - 小于
-- `>` - 大于
-- `<=` - 小于等于
-- `>=` - 大于等于
-
-#### 逻辑操作符
-- `&&` - 逻辑与
-- `||` - 逻辑或
-- `!` - 逻辑非
-
-#### 位运算操作符
-- `&` - 位与
-- `|` - 位或
-- `^` - 位异或
-- `~` - 位取反
-- `<<` - 左移
-- `>>` - 右移
-
-#### 其他操作符
-- `?` - 三元运算符
-- `:` - 类型注解、三元运算符
-- `->` - 规范 callable TypeRef 箭头（`fn(...) -> R`）
-- `=>` - 兼容箭头输入（语义等同于 `->`）
-- `...` - 可变参数、展开操作符
-- `.` - 成员访问
-- `@` - 元函数标识符
-- `#` - 装饰器
-- `init` - 静态值类型构造
-- `<` - 小于、泛型开始、类型转换
-- `>` - 大于、泛型结束、类型转换
-
-### 1.3 字面量
-
-#### 整数字面量
-- **十进制**: `123`, `0`, `-456`
-- **十六进制**: `0xFF`, `0xABCD`, `0xffffffffffffffff`
-- **八进制**: `0777`, `0123`
-
-#### 浮点数字面量
-- **双精度**: `1.0`, `3.14`, `-0.5`
-- **单精度**: `1.0f`, `3.14F`
-- **双精度显式**: `1.0d`, `3.14D`
-- **科学计数法**: `1e10`, `1.5e-3`
-
-#### 字符串字面量
-- **双引号**: `"hello"`, `"world"`
-- **单引号**: `'hello'`, `'world'`
-- **转义序列**:
-  - `\n` - 换行
-  - `\t` - 制表符
-  - `\r` - 回车
-  - `\b` - 退格
-  - `\f` - 换页
-  - `\"` - 双引号
-  - `\'` - 单引号
-  - `\\` - 反斜杠
-  - `\xXX` - 十六进制字符（2位）
-  - `\uXXXX` - Unicode 字符（4位）
-
-#### 字符字面量
-- **格式**: `'a'`, `'\n'`, `'\x21'`, `'\''`
-- **转义序列**: 与字符串相同
-
-#### 布尔字面量
-- `true` - 真
-- `false` - 假
-
-#### 空值字面量
-- `null` - 空值
-
----
-
-## 2. 语法规范
-
-### 2.1 模块声明
+Modules use an unquoted module path and explicit statement terminators:
 
 ```zr
-module module_name;
+module app.main;
+let system = import("zr.system");
 ```
 
-**说明**:
-- 模块名使用点分隔的 canonical module path
-- 模块声明必须位于模块作用域
-- 旧 `%module` 拼写只产生 `legacy_syntax_removed` 错误，不再生成模块 AST
+`import(...)` is a dedicated static-import expression. It accepts one string
+literal and is normally bound by a module-scope `let`. Package, registered
+native, alias, artifact, and file-locator forms live inside that literal; they
+are not language keywords.
 
-### 2.2 变量声明
+## Functions And Callable Types
 
-```zr
-// 基本声明
-var name = value;
-var name: Type = value;
-
-// const 变量声明（只读）
-var const name: Type = value;  // 声明时赋值，之后不可修改
-
-// 解构赋值（对象）
-var {a, b, c} = object;
-
-// 解构赋值（数组）
-var [x, y] = array;
-var [x] = array;
-```
-
-**说明**:
-- 类型注解可选，支持类型推断
-- 支持对象和数组解构
-- `const` 关键字用于声明只读变量，必须在声明时赋值，之后不可修改
-
-### 2.3 函数声明
+All definitions use `fn` and introduce the return type with `:`:
 
 ```zr
-// 普通函数
-functionName(param1: Type, param2: Type): ReturnType {
-    // body
-}
-
-// func 关键字可选兼容
-func functionName(param1: Type, param2: Type): ReturnType {
-    // body
-}
-
-// const 参数（函数内部不会修改该参数）
-functionName(const param: Type) {
-    // body
-}
-
-// 可变参数
-functionName(...args: Type[]) {
-    // body
-}
-
-// 混合参数
-functionName(param1: Type, ...args: Type[]) {
-    // body
-}
-
-// Lambda 表达式
-var func = (param1, param2)->{
-    // body
-};
-
-var func = (param1: Type, param2: Type): ReturnType -> {
-    // body
-};
-
-// 兼容写法，parser 也接受 =>
-var compat = (param1: Type, param2: Type): ReturnType => {
-    // body
-};
-
-// async callable 必须显式声明闭合 Task<T> 返回类型
-async fn addOne(value: int): zr.task.Task<int> {
-    return value + 1;
-}
-
-async fn run(): zr.task.Task<int> {
-    return await addOne(4);
+fn add(left: int, right: int): int {
+    return left + right;
 }
 ```
 
-**说明**:
-- 支持函数重载
-- 支持可变参数（`...args`）
-- Lambda 表达式支持类型推断
-- `func` 关键字保持兼容，但不是强制关键字
-- `->` 是正式箭头；`=>` 只作为兼容输入
-
-### 2.4 结构体 (struct)
+Callable types use `->`; expression-bodied anonymous functions use `=>`:
 
 ```zr
-struct Vector3 {
-    // 字段声明
-    pub var x: float;
-    var y: float;
-    var z: float = 0;
-    var a;  // 类型推断为 object
-    
-    // const 字段（仅在构造函数中可赋值）
-    pub const id: int;
-    
-    // 静态成员
-    static var ZERO = init Vector3(0, 0, 0);
-    static const MAX_SIZE: int = 100;  // 静态 const 字段
-    
-    // 构造函数
-    pub @constructor() {
-        this.x = 0;
-        this.id = 1;  // const 字段可以在构造函数中赋值
-    }
-    
-    pub @constructor(x: float, y: float, z: float) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-        this.id = 2;  // const 字段可以在构造函数中赋值
-    }
-    
-    // 元方法（静态）
-    pub static @add(lhs: Vector3, rhs: Vector3): Vector3 {
-        return init Vector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z);
-    }
-    
-    // 普通方法
-    pub add(rhs: Vector3): Vector3 {
-        return init Vector3(this.x + rhs.x, this.y + rhs.y, this.z + rhs.z);
+let transform: fn(int) -> int = fn(value: int): int => value + 1;
+```
+
+Parameter contracts put the passing form in the TypeRef:
+
+```zr
+fn read(value: in int): int { return value; }
+fn update(value: ref int): void { }
+fn inspect(value: ref readonly int): int { return value; }
+fn produce(value: out int): void { }
+```
+
+## Types, Construction, And Ownership
+
+Value, GC object, and resource construction are distinct:
+
+```zr
+let point = init Point(1, 2);
+let object = new Widget();
+let owner = own FileHandle();
+```
+
+`Unique<T>`, `Shared<T>`, and `Weak<T>` are the canonical owner types. Scoped
+access uses `ref T` or `ref readonly T`. Ownership operations are ordinary
+typed members or statements, including `share()`, `weak()`, `upgrade()`,
+`intoGc()`, and `drop(value)`.
+
+Runtime type construction never reuses static construction syntax. It goes
+through `zr.reflection`:
+
+```zr
+let reflection = import("zr.reflection");
+let constructible = reflection.requireConstructible(runtimeType);
+let value = constructible.createInstance(...arguments);
+```
+
+## Properties
+
+Properties use the unified declaration and accessor grammar. Storage remains
+an explicit field:
+
+```zr
+class Counter {
+    pri var stored: int = 0;
+
+    pub property value: int {
+        pub get { return this.stored; }
+        pri set { this.stored = value; }
     }
 }
 ```
 
-**特点**:
-- **值类型**: 使用 `init TypeRef(...)` 选择 `@constructor` 并直接初始化目标 Place
-- **不支持继承**: struct 不能继承其他类型
-- **支持静态成员和方法**: static 成员存储在原型
-- **支持元函数**: `@` 开头的特殊函数（如 `@constructor`）
-- **支持访问修饰符**: pub, pri, pro
+## Native, Compile-Time, Async, Iteration, And Tests
 
-`ref struct` 和 `readonly ref struct` 是 ref-like inline value。它们可以作为 local、temporary、
-value/scoped parameter、安全返回值或其他 ref struct 的字段，也可以包含语言 `ref`、GC handle
-和 owner 字段。它们不能进入 class/resource class 字段、普通 struct 字段、GC array、
-module/global/static storage、无约束泛型容器、object/interface/dynamic box、escaping closure、
-await/yield frame 或未声明布局的 native ABI。合法 ref/GC/owner 字段分别进入 TypeLayout 的
-ref、GC 和 ownership/drop map；这些限制由类型 capability 和结构化 escape facts 驱动，
-不按 `Span` 等具体类型名特判。
-
-### 2.5 类 (class)
+Native declarations use `native extern`:
 
 ```zr
-// 类装饰器
-#singleton#
-#serializable#
-class Person {
-    // 成员装饰器
-    #header("Person Info")#
-    #editor.input#
-    
-    // 字段
-    pub var id: string;
-    pub const version: int;  // const 字段，仅在构造函数中可赋值
-    pri var _address: string;
-    pro var telephone: string;
-    
-    // 静态成员（存储在原型）
-    pri static var _address2: string;
-    pro static var telephone2: string;
-    
-    // 构造函数
-    pub @constructor(id: string) {
-        this.version = 1;  // const 字段可以在构造函数中赋值
-    }
-    
-    // 属性访问器
-    #editor.input#
-    pub set address(val: string) {
-        this._address = val;
-    }
-    
-    pub get address {
-        return this._address;
-    }
-    
-    pub static get address2 {
-        // 此时 this 为类原型
-        return this._address2;
-    }
-}
-
-// 继承和接口实现
-class Student: Person, Man {
-    pub @constructor(id: string) super(id) {
-        // body
-    }
+native extern("math") {
+    fn add(left: i32, right: i32): i32;
 }
 ```
 
-**特点**:
-- **引用类型**: 使用 `new` 创建实例
-- **支持单继承和多个接口实现**: `class Child: Parent, Interface1, Interface2`
-- **支持装饰器**: `#...#` 语法
-- **支持属性访问器**: `get`/`set`
-- **支持静态成员**: static 成员存储在原型
-- **支持访问修饰符**: pub, pri, pro
+Compile-time execution uses `comptime` plus typed `zr.compile` metadata. It
+does not use a runtime decorator or a `%compileTime` directive.
 
-### 2.6 接口 (interface)
+Async and iterator functions declare their real carrier types:
 
 ```zr
-interface Man: arr {
-    pub var id: string;
-    pub const version: int;  // 接口中的 const 字段，实现类必须也标记为 const
-    pub var telephone;
-    pro var _address: string;
-    
-    // 访问器（接口中只能声明，不能实现）
-    pub get set address: int;
-    
-    // 方法签名
-    pub @constructor(id: string);
-    pub getName(): string;
-}
+let task = import("zr.task");
+let iteration = import("zr.iteration");
+
+async fn work(): task.Task<int> { return 7; }
+fn values(): iteration.Iterator<int> { yield 7; }
 ```
 
-**特点**:
-- **只能声明方法和成员，不实现**: 接口只定义契约
-- **访问性检查**: 只允许 `pub` 和 `pro`（不允许 `pri`）默认使用`pub`
-- **可以继承其他类型**: `interface A: B, C`
-- **访问器可以声明不同的 getter 和 setter 类型**
-
-### 2.7 枚举 (enum)
+Tests are ordinary functions with `zr.testing` metadata:
 
 ```zr
-// 默认 int 类型，从 0 开始递增
-enum Dimension {
-    x;
-    y;
-    z;
-}
+let testing = import("zr.testing");
 
-// 显式指定基类型和值
-enum RGBA: string {
-    R = "R",
-    G = "G",
-    B = "B",
-    A = "A",
-}
-
-enum Status: int {
-    Pending = 0;
-    Running = 1;
-    Completed = 2;
-}
-```
-
-**特点**:
-- **可以继承基类型**: `int`, `string`, `float`, `bool`
-- **成员可以显式赋值或使用默认值**: 默认从 0 开始递增
-- **成员分隔符**: 可以使用 `,` 或 `;`
-
-### 2.7.1 Union 类型 (union)
-
-`union` 是带字段的 variant 类型，适合表达 `Option<T>` / `Result<T,E>` 这类代数数据类型：
-
-```zr
-union Shape {
-    Empty;
-    Circle(radius: float);
-    Rect { width: float; height: float; }
-}
-
-union Option<T> {
-    None;
-    Some(value: T);
-}
-
-var s = Shape.Circle(2.0);
-var empty = Shape.Empty;
-var some = Option<int>.Some(42);
-```
-
-当前已实现声明解析、unit/tuple-style/struct-style 构造器、泛型 union 类型推断、carrier object lowering，以及 typed inline union 局部/字段的 tag/payload materialization 与读取。构造出的 carrier 值包含 `__zr_unionType`、`__zr_unionVariant` 和 `__zr_unionPayloadN` 字段；`switch` 已支持 variant tag 匹配、tuple-style payload 绑定、struct-style payload 绑定、无 default 时的基础穷尽性检查，以及重复 variant case 的不可达检查。typed union local、typed struct 字段和嵌套字段链可在已知声明类型时使用 inline tag/payload 路径。
-
-### 2.8 对象字面量
-
-```zr
-// 基本对象
-var value = {
-    a: 1,
-    b: 2,
-    c: 3
-};
-
-// 使用分号分隔
-var valueX = {
-    a: 1;
-};
-
-// 计算键
-var value2 = {
-    ["a"]: "a";
-    b: "b";
-    c: "c";
-    [2]: "d";
-};
-```
-
-**说明**:
-- 键可以是标识符、字符串或表达式
-- 值可以是任意表达式
-- 可以使用 `,` 或 `;` 分隔成员
-
-### 2.9 数组字面量
-
-```zr
-// 基本数组
-var arr = [1, 2, 3];
-
-// 使用分号分隔
-var arr2: int[] = [1; 2; 3;];
-
-// 元组类型
-var arr3: [string, int, bool, object] = ["root", 1, true, null];
-```
-
-**说明**:
-- 可以使用 `,` 或 `;` 分隔元素
-- 支持元组类型注解
-
-### 2.10 控制流
-
-#### if 语句
-
-```zr
-// if 语句
-if (condition) {
-    // statements
-}
-
-if (condition) {
-    // statements
-} else {
-    // statements
-}
-```
-
-#### switch 语句
-
-```zr
-// switch 语句
-switch (value) {
-    (1) {
-        // case 1
-    }
-    (2) {
-        // case 2
-    }
-    () {
-        // default case
-    }
-}
-```
-
-union 值可以用 variant case 做基础 tag 匹配，并可对 tuple-style payload 做位置绑定：
-
-```zr
-switch (shape) {
-    (Shape.Empty) {
-        // unit variant
-    }
-    (Shape.Circle(r)) {
-        // Circle tag matched; r is bound from the first payload field
-    }
-    (Shape.Rect { width: w, height: h }) {
-        // Rect tag matched; w/h are bound from named payload fields
-    }
-}
-```
-
-当 `switch` 目标类型已知为 `Shape` 时，case 可省略类型前缀：
-
-```zr
-switch (shape) {
-    (Empty) { }
-    (Circle(r)) { }
-    (Rect { width: w, height: h }) { }
-}
-```
-
-当 `switch` 目标能推断为 union 类型且没有 `()` default case 时，编译器要求覆盖该 union 的所有 variants；缺失分支会报 `Non-exhaustive union switch; missing variant '<name>'`。重复匹配同一 variant 的第二个 case 会报 `Unreachable union switch case; variant '<name>' is already covered`。写 `()` default 可显式允许部分覆盖。`switch` / `using` 也可读取 typed inline union 字段链，例如 `holder.inner.choice`，前提是字段声明类型已知。
-
-#### while 循环
-
-```zr
-// while 语句
-while (condition) {
-    // statements
-}
-```
-
-#### for 循环
-
-```zr
-// 传统 for 循环
-for (var i: int = 0; i < 100; i += 1) {
-    // statements
-}
-
-// 无限循环
-for (;;) {
-    // statements
-}
-
-// foreach 循环
-for (var i in array) {
-    // statements
-}
-```
-
-#### 生成器表达式
-
-```zr
-// 生成器允许在 out 时返回结果，直到运行结束
-var builtin = import("zr.builtin");
-var k = {{
-    if (builtin.Object.type(j) == "array") {
-        out j.toArray();
-    }
-    // default out null;
-}};
-// 函数返回生成器
-test(){
-    return {{
-        if (builtin.Object.type(j) == "array") {
-            out j.toArray();
-        }
-        // default out null;
-    }}
-}
-```
-
-**生成器说明**:
-- 使用 `{{}}` 语法
-- `out` 语句会寻找最近的 block 表达式
-- 可以多次 `out`，返回所有结果
-- 默认 `out null`
-
-#### try-catch-finally
-
-```zr
-// try 语句
-try {
-    // statements
-}
-
-// try-catch
-try {
-    // statements
-} catch (e) {
-    // error handling
-}
-
-// try-catch-finally
-try {
-    // statements
-} catch (e) {
-    // error handling
-} finally {
-    // cleanup
-}
-```
-
-### 2.11 表达式
-
-#### 运算符优先级
-
-从高到低：
-
-1. **成员访问**: `.`, `[]`
-2. **一元运算符**: `!`, `~`, `+`, `-`, `$`, `new`
-3. **乘除模**: `*`, `/`, `%`
-4. **加减**: `+`, `-`
-5. **位移**: `<<`, `>>`
-6. **比较**: `<`, `>`, `<=`, `>=`
-7. **相等**: `==`, `!=`
-8. **位与**: `&`
-9. **位异或**: `^`
-10. **位或**: `|`
-11. **逻辑与**: `&&`
-12. **逻辑或**: `||`
-13. **三元运算符**: `? :`
-14. **赋值**: `=`, `+=`, `-=`, `*=`, `/=`, `%=`
-
-#### 函数调用
-
-```zr
-// 基本调用
-functionName(arg1, arg2);
-
-// 方法调用
-obj.method(arg1, arg2);
-
-// 动态方法调用（不明确类型，首先 to_function 指令校验转换为函数，然后调用时进行类型检查）
-obj["method"](arg1, arg2);
-
-// 链式调用
-obj.member["sant"]();
-
-// 复杂链式调用
-// revert(mam) 返回为函数，需要 to_function 指令校验转换，才能继续调用("kanji")
-// revert(mam)("kanji") 返回 object 才能访问["minify"]
-// (obj["Vector3"].revert(mam)("kanji")["minify"] + val) 返回了 struct 原型，才能使用 $xxx(s) 实例化
-$(obj["Vector3"].revert(mam)("kanji")["minify"] + val)(s);
-```
-
-#### 成员访问
-
-```zr
-// . 方式访问优先找成员
-obj.property;
-
-// [] 方式访问优先被元方法截获，再找键值对
-obj["property"];
-
-// 方法调用
-obj.method();
-
-// 动态方法调用（调用前必然经过指令 to_function 校验）
-obj["method"]();
-```
-
-### 2.12 测试声明
-
-```zr
 #zr.testing.test#
-fn test_name(): void {
-    // test body; throw 表示测试失败
+fn examplePasses(): void {
+    testing.assert(true);
 }
 ```
 
-**说明**:
-- 测试角色通过 `#zr.testing.test#` 绑定到普通 `fn(...): void`
-- `throw` 表示测试失败
-- 旧 `%test(...)` 只产生移除诊断
-
-### 2.13 中间代码 (intermediate)
-
-```zr
-intermediate TestIntermediate(i: int, j: int): int %
-<
-    // 闭包：会去校验上层同名局部变量
-    c1: int,
-    c2: int,
-    c3: int
->
-[
-    // 常量：可指定类型
-    num = 1;
-    str = "test";
-    num2 = 2;
-]
-(
-    // 函数栈/局部变量名字，按顺序编码，可不指定类型
-    var1: int,
-    var2: int
-)
-{
-    GetConstant num;
-    SetStack var1;
-    GetConstant num2;
-    SetStack var2;
-    AddInt var1 var2;
-    SetStack var1;
-    AddInt i j;
-    SetStack var2;
-    AddInt var1 var2;
-    SetStack 1;
-    FunctionReturn 0 1;
-}
-```
-
-**语法结构**:
-- `intermediate` 关键字
-- 函数签名: `name(params): returnType`
-- `%` 分隔符
-- 闭包参数: `<...>`（会校验上层同名局部变量）
-- 常量: `[...]`（可指定类型）
-- 局部变量: `(...)`（按顺序编码，可不指定类型）
-- 指令体: `{...}`
-
-### 2.14 装饰器
-
-```zr
-// 类装饰器（脚本初始化时立即执行，允许以 zr.ClassDecorator 衍生类或者函数返回作为装饰器结果）
-#singleton#
-#serializable#
-#decorator_with_args("arg")#
-
-class MyClass {
-    // 属性装饰器（脚本初始化时立即执行，允许以 zr.PropertyDecorator 衍生类或者函数作为装饰器结果）
-    #serializable#
-    pub var field: int;
-    
-    // 范围约束装饰器（编译期和运行时检查）
-    #range(min: 0, max: 100)#
-    pub var count: int;
-    
-    // 方法装饰器（脚本初始化时立即执行，允许以 zr.MethodDecorator 衍生类或者函数作为装饰器结果）
-    #networked#
-    pub method(): int {
-        return 1;
-    }
-}
-```
-
-**说明**:
-- 装饰器使用 `#...#` 语法
-- 装饰器在脚本初始化时立即执行
-- 支持类、属性、方法装饰器
-- 装饰器可以是标识符或函数调用表达式
-- `#range(min: value, max: value)#` 装饰器用于为变量添加范围约束，编译期和运行时都会检查
-
-### 2.15 注释
-
-```zr
-// 单行注释
-
-/* 
-   多行注释
-*/
-```
-
-### 2.16 类型注解
-
-```zr
-// v2 统一语法：前缀修饰 + 主类型 + 后缀修饰
-
-// 基本类型
-var name: Type;
-
-// 数组类型
-var name: Type[];
-
-// 固定大小数组（编译期检查）
-var arr: int[10];  // 固定10个元素的数组
-
-// 范围约束数组（编译期和运行时检查）
-var arr2: int[1..100];  // 数组长度必须在1到100之间
-
-// 最小大小约束
-var arr3: int[5..];  // 数组长度至少为5
-
-// 元组类型
-var name: [Type1, Type2];
-
-// 泛型类型
-var name: Generic<Type>;
-
-// 所有权泛型类型
-var owned: Unique<Resource>;
-var shared: Shared<Resource>;
-var weak: Weak<Resource>;
-var view: ref readonly Resource;
-var slot: scoped ref Resource;
-var root: Gc<Document>;
-var boxed: GcBox<Resource>;
-
-// 嵌套类型
-var name: Outer<Inner<Type>>;
-
-// Task carrier
-var completion: zr.task.Task<int>;
-
-// 显式函数类型
-var mapper: fn(int) -> int;
-
-// 组合类型
-var callbacks: Shared<Array<fn(int) -> string>>;
-
-// 类型身份与运行时描述符
-var callableId = typeid(fn(int) -> int);
-var callableDescriptor = typeof(mapper);
-
-// 类型值别名复用普通绑定模型
-var callback: fn(int) -> int = fn(x: int): int => {
-    return x;
-};
-```
-
-**说明**:
-- 函数类型统一写作 `fn(...) -> ReturnType`；lambda 使用 `fn(...): ReturnType => expression` 或 block body。
-- `Unique<T>` / `Shared<T>` / `Weak<T>` 是 owner carrier；借用统一使用 `ref` / `ref readonly` / `scoped ref` TypeRef。
-- `typeid(TypeRef)` 返回稳定类型身份，`typeof(expr)` 返回非空运行时值的精确描述符。
-- `%func`、`%type`、`%unique/%shared/%weak/%borrow/%loan` 和 `Borrow<T>/Loan<T>` 都已从 production parser 移除。
-- `async fn` 必须显式返回闭合 `zr.task.Task<T>`；`await` 只能在 async effect 中消费该 carrier。旧 `%async`、`%await` 和 `%async T` 已被拒绝。
-
----
-
-## 3. 特殊语法特性
-
-### 3.1 元函数/元方法
-
-以 `@` 开头的特殊函数，如 `@constructor`。
-
-```zr
-pub @constructor() {
-    // 构造函数
-}
-
-pub @add(lhs: Type, rhs: Type): Type {
-    // 元方法
-}
-```
-
-### 3.2 值类型构造
-
-使用 `init TypeRef(...)` 创建值类型实例。
-
-```zr
-var v = init Vector3(1, 2, 3);
-var pair = init collections.Pair<int>(1, 2);
-```
-
-**说明**:
-- `init` 后必须是可静态绑定的 TypeRef，可以是 qualified、generic 或 alias type。
-- `init` 只绑定 value constructor，不会回退到 ordinary call、GC allocation 或 runtime
-  reflection construction。
-- 运行时 `Type` object 必须显式使用 reflection constructible capability，不能作为
-  `init` target。
-
-### 3.3 解构赋值
-
-```zr
-// 对象解构
-var {a, b, c} = object;
-
-// 数组解构
-var [x, y] = array;
-var [x] = array;
-```
-
-### 3.4 可变参数
-
-```zr
-functionName(...args: Type[]) {
-    // body
-}
-
-functionName(param1: Type, ...args: Type[]) {
-    // body
-}
-```
-
-### 3.5 属性访问器
-
-```zr
-// Getter
-pub get propertyName {
-    return this._value;
-}
-
-// Setter
-pub set propertyName(val: Type) {
-    this._value = val;
-}
-
-// 简写形式（接口中）
-pub get set propertyName: Type;
-```
-
-### 3.6 const 关键字
-
-`const` 关键字用于声明只读变量，支持树摇优化。一旦实例化即无法更改。
-
-#### 3.6.1 局部 const 变量
-
-```zr
-var const a: int = 1;  // 声明时赋值，之后不可修改
-// a = 2;  // 编译错误：Cannot assign to const variable after declaration
-```
-
-#### 3.6.2 类/结构体 const 字段
-
-```zr
-class MyClass {
-    pub const id: int;  // const 字段，仅在构造函数中可赋值
-    
-    pub @constructor() {
-        this.id = 1;  // 允许：在构造函数中初始化一次
-    }
-    
-    pub update() {
-        // this.id = 2;  // 编译错误：Cannot assign to const field outside constructor
-    }
-}
-```
-
-#### 3.6.3 接口 const 字段
-
-```zr
-interface MyInterface {
-    pub const version: int;  // 接口中的 const 字段
-}
-
-class MyClass: MyInterface {
-    pub const version: int;  // 实现类必须也标记为 const
-    
-    pub @constructor() {
-        this.version = 1;
-    }
-}
-```
-
-#### 3.6.4 函数 const 参数
-
-```zr
-function process(const data: MyType) {
-    // data 参数标记为 const，函数内部不会修改该参数
-    // data.field = value;  // 编译错误：Cannot assign to const parameter
-    return data.value;  // 允许：读取 const 参数
-}
-```
-
-#### 3.6.5 静态 const 字段
-
-```zr
-class MyClass {
-    static const MAX_SIZE: int = 100;  // 静态 const 字段，必须在声明时初始化
-    // static const MAX_SIZE: int;  // 编译错误：静态 const 字段必须初始化
-}
-```
-
-**const 使用规则**:
-- const 关键字必须紧跟在 `var` 关键字之后
-- const 局部变量必须在声明时赋值，之后不可修改
-- const 成员字段可以不在声明处初始化，但必须在构造函数的所有可继续执行路径上完成初始化
-- const 成员字段一旦在声明处或构造函数中完成初始化，就不能再次赋值
-- 接口中的 const 字段必须在实现类中也标记为 const
-- 函数参数的 const 标记主要用于文档和优化提示，函数内部不能修改 const 参数
-- 静态 const 字段必须在声明时初始化，且之后不可修改
-
-**树摇优化相关**:
-- const 标记帮助编译器识别不可变数据
-- 未使用的 const 字段可以安全地移除（死代码消除）
-- const 字段可以内联到使用处，减少内存访问
-- const 变量可以更精确地进行类型推断
-- const 参数可以帮助编译器决定是否内联函数
-
-### 3.6 强制类型转换
-
-```zr
-// <> 放在表达式前面表示强制转换，会真实编译为 to_int 指令
-var i: int = <int> a;
-
-// 假设 Vector3 为 m 模块声明的结构体，会真实编译为 to_struct 指令
-var m = import("math");
-var j = <m.Vector3> x;
-
-// 假设 Person 是 k 模块声明的类，会真实编译为 to_object 指令，指令带有 Person 原型信息
-var k = import("PersonInfo");
-var l = <k.Person> p;
-```
-
-**说明**:
-- `<Type>` 语法用于强制类型转换
-- 会根据目标类型生成不同的转换指令：
-  - 基本类型 → `to_int`, `to_float`, `to_string` 等
-  - struct → `to_struct`（带原型信息）
-  - class → `to_object`（带原型信息）
-
-### 3.7 泛型和动态类型原型
-
-#### 元数据泛型（v1）
-
-zr 当前采用接近 C# 的“开放泛型定义 + 闭型懒实例化 + 共享函数体”模型，而不是 C++ 式模板单态化。源码定义、native 导入和 binary/import 导入都落到同一套泛型元数据与闭型缓存机制上。
-
-```zr
-class Box<T> {
-    pub value: T;
-}
-
-struct Pair<TLeft, TRight> {
-    pub left: TLeft;
-    pub right: TRight;
-}
-
-interface IProducer<out T> {
-    next(): T;
-}
-
-class Matrix<T, const N: int> {
-    pub rows: Array<T>[N];
-}
-
-fn map<TIn, TOut>(source: Array<TIn>, f: fn(TIn) -> TOut): Array<TOut> {
-    return source;
-}
-```
-
-**说明**:
-- 泛型声明支持 `class`、`struct`、`interface`、函数、实例方法。
-- 使用处支持显式实参 `foo<int>(...)`、`obj.method<string>(...)`，也支持从接收者和调用参数做类型推断。
-- 嵌套泛型会保留规范化后的闭型名称，例如 `Map<string, Array<List<int>>>`。
-- 整数 const 泛型的身份以编译期归约值为准，因此 `Matrix<int, 2 + 2>` 与 `Matrix<int, 4>` 视为同一闭型。
-- 源码层当前不支持通过 `new Box()` 这类省略实参的形式把类型留到运行时再决定；源码可见的是闭型使用，开放泛型主要存在于编译器和元数据层。
-
-#### 泛型约束与继承
-
-泛型约束使用 C# 风格 `where` 子句，v1 支持以下约束：
-- 基类 / 接口约束
-- `class`
-- `struct`
-- `new()`
-- `owner`
-- `unique`
-- `shared`
-- `weak`
-
-```zr
-class Base<T> {
-    pub value: T;
-}
-
-class Derived<T, const N: int> : Base<T>
-where T: class, new()
-{
-}
-
-fn requireOwner<T>(): int
-where T: owner
-{
-    return 1;
-}
-
-fn requireShared<T>(): int
-where T: shared
-{
-    return 1;
-}
-```
-
-继承与实现列表中的泛型实参同样支持转发、固定和 const 表达式，闭型实例化时会进行替换与约束校验。`owner` 约束要求实参是所有权世界类型，例如 `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>`；plain `T` 不满足该约束。`unique` / `shared` / `weak` 是精确所有权约束，分别要求实参为 `Unique<T>` / `Shared<T>` / `Weak<T>`。
-
-#### 所有权泛型与 using 作用域
-
-`using` 是资源作用域关键字；`%using` 已从 production parser 移除，只保留迁移拒绝诊断。
-
-`Shared<T>` 是当前 isolation domain 内的非原子共享 owner；赋值和按值传参会 clone strong
-handle，最后一个 strong handle 被释放时立即执行 resource Drop。`Weak<T>` 只能由
-`Shared<T>.weak()` 创建，不保活目标，也不能直接访问 `T`；目标存活时 `upgrade()` 返回
-Shared handle，目标死亡或正在 Drop 时返回空。Weak handle 自身在目标死亡后仍有效，直到最后
-一个 Weak handle 被释放。Shared 不提供 cycle collector，resource 的长期反向边应使用 Weak；
-compiler 会以 `resource_shared_strong_cycle` warning 提示 process-local self/reciprocal Shared
-field cycle。普通 Shared 不跨 isolation domain，也不动态切换到原子计数；`AtomicShared<T>`
-属于独立后续设计。
-
-当前实现为兼容既有 callable/type ABI，暂以 nullable `Shared<T>` niche 表达 upgrade 的 live/empty
-结果；最终规范目标仍是 `Option<Shared<T>>`。在 built-in Option/prelude carrier 和 VM/AOT
-construction contract 落地前，不应把该兼容表示视作 final public Option surface。
-
-`Gc<T>` 保存普通 GC class 的显式 root-handle contract；`GcBox<T>` 保存已移入 GC world 的
-resource。二者在 canonical type 中具有不同 bridge kind：`Gc<Resource>` 与
-`GcBox<ordinary class>` 均不合法。当前 source bridge 是 consuming
-`Unique<Resource>.intoGc(): GcBox<Resource>`；它使 source owner 进入 moved 状态，Shared 或
-active borrow 输入被拒绝。当前 M4 只完成单 mutator domain identity、C runtime root handle、
-explicit ownership roots 和 GcBox source bridge，不宣称通用 source `Gc<T>` constructor、
-多 mutator STW 或跨 domain transport。
-
-```zr
-var owned: Unique<Resource>;
-using owned;
-
-using (owned) {
-    owned.use();
-}
-
-using (var []: Shape.Empty = shape) {
-    fallbackForEmpty();
-} else {
-    fallback();
-}
-
-using (var [r]: Shape.Circle = shape) {
-    r.use();
-} else {
-    fallback();
-}
-
-using (var {w: width, height}: Shape.Rect = shape) {
-    w.use();
-    height.use();
-} else {
-    fallback();
-}
-
-using (var plugin = import("render.vulkan")) {
-    plugin.init();
-} else {
-    fallback();
-}
-```
-
-语义层会根据资源类型中的所有权泛型记录 deterministic cleanup step，例如 `Unique<Resource>` 会归一为 inner type `Resource` 加 owner qualifier。`Unique<T>` / `Shared<T>` 的 using scope 退出会 lowering 到 release；`ref readonly T` / `ref T` view 按 lexical region 结束。`using` 对已知 union resource 的单 variant 守卫采用“解构 pattern + variant 标注”形式：tuple payload 写 `using (var [x]: Union.Variant = value) { ... } else { ... }`，struct payload 写 `using (var {local: field}: Union.Variant = value) { ... } else { ... }`，也可以混合默认名和别名如 `{width, h: height}`。编译器会拒绝 tuple variant 的 `{...}` 字段解构和 struct variant 的 `[...]` 元组解构；该规则同样适用于唯一 `@` 默认 variant 的省略 variant 写法。当 `value` 是已知 typed union 局部或嵌套字段链（如 `holder.inner.choice`）时，guard 会从 inline frame tag/payload 读取。省略 variant 只允许在 union 有唯一 `@` 默认 variant 且 binder 是 `[x]` 或 `{field}` 解构时使用；`import(...)` 资源即使显式写 `DynamicModule<T>.Variant`，目标 variant 也必须是该 union 的 `@` 默认校验 variant。旧式 `using (var Variant(x) = value)` 会被编译器拒绝并提示迁移到新形态。
-`using (var p = import(...)) { ... } else { ... }` 当前支持插件守卫：编译器会先求值 import，把 `p` 作为 block 内局部绑定，并按 import 结果决定进入 block 或走 else；module init analysis 会把 block 内的 `p.*` 记录为 canonical module effect，metadata token builder 会把可签名的 import member effect 写成函数级 `MEMBER_REF` + `SIGNATURE` 前置记录。`using (var [m]: PluginLoad.Available = import(...)) { ... } else { ... }` 是内置 success-payload 形态，不要求脚本声明 `DynamicModule` union；它与 `DynamicModule<T>.@Available` 和无 annotation payload guard 共用 import guard helper、插件逃逸扫描、`.share()` 提升和 guard-scope 隐藏 owner release。未 `share()` 的 guard binder、payload binding 或别名不能经 return/throw/out、调用参数或构造实参、聚合字段、闭包捕获、generator 延迟输出或 assignment expression 副作用逃逸；例如 `new Sink(m)`、`if (alias = m)` 或 `var ok = (alias = m)` 都会让未提升的 guard-scoped plugin 值继续受 `plugin_type_escape` 约束。native registry 已可通过 owner refcount API 观察这些显式/隐藏 shared owner 的生命周期；descriptor safe unload/cache invalidation、descriptor-DLL 诊断透传和更完整跨 region/global/async 插件类型逃逸检查仍属于后续运行时收口工作。
-
-#### 方差与参数作用
-
-generic variance 与 callable parameter passing 是两套独立机制：
-- `in/out` 只用于 `interface` 泛型参数，分别表示逆变和协变。
-- class / struct / function / method 泛型参数当前不允许声明 `in/out`。
-- callable 参数写作 `value: in T`、`value: out T`、`value: ref T` 或 `value: ref readonly T`，不表示泛型方差。
-
-```zr
-interface IConsumer<in T> {
-    fn accept(value: T): void;
-}
-
-fn tryGet<T>(key: string, value: out T): bool {
-    value = null;
-    return true;
-}
-
-func swap<T>(%ref left: T, %ref right: T): void {
-}
-```
-
-**语义规则**:
-- `name: in T` 形参在函数体内视为只读，禁止再次赋值。
-- `name: out T` 实参必须以 `out` 标记可赋值左值，且被调用函数必须保证在所有控制流路径上完成赋值。
-- `name: ref T` 实参必须以 `ref` 标记可赋值左值，并按不变位置匹配。
-- interface 方差位置会做专用诊断，字段、双向 property 和不合法的嵌套泛型位置都会报错。
-
----
-
-## 4. 文件结构
-
-1. **可选的模块声明**
-   ```zr
-   module module_name;
-   ```
-
-2. **顶层语句（按顺序）**:
-   - 结构体声明
-   - 类声明
-   - 接口声明
-   - 枚举声明
-   - 变量声明
-   - 函数声明
-   - 测试声明
-   - 表达式语句
-   - 中间代码声明
-
----
-
-## 5. 语法规则总结
-
-### 5.1 基本规则
-
-- **语句分隔**: 语句可以以分号结尾（必须）
-- **块表达式**: 块表达式不可返回值，但是生成器可以延迟返回
-- **函数重载**: 支持函数重载，函数类型越明确，使用越快的指令集，但是不明确类型调用的时候使用不明确类型函数重载，若不存在则需要强制转换
-- **泛型**: 支持元数据泛型、显式泛型调用、泛型方法、整数 const 泛型、`where` 约束和 interface 方差
-
-### 5.2 类型系统
-
-- **类型推断**: 支持类型推断，未明确类型的变量推断为 `object`
-- **类型注解**: 支持显式类型注解
-- **类型转换**: 支持强制类型转换 `<Type>`
-- **泛型**: 支持 class/struct/interface/function/method 泛型、嵌套泛型和整数 const 泛型闭型实例化
-- **类型检查**: 编译期进行类型兼容性检查，运行时（debug模式）可进行额外检查
-- **范围约束**: 支持为变量和数组添加范围约束，编译期和运行时都会验证
-- **边界检查**: 编译期检查数组索引边界（字面量索引），运行时（debug模式）检查所有索引访问
-
-### 5.3 访问控制
-
-- **访问修饰符**: `pub` (public), `pri` (private), `pro` (protected)
-- **默认访问性**: 未指定时默认为 `pri` (private)
-- **接口限制**: 接口中只允许 `pub` 和 `pro`，不允许 `pri`
-
-### 5.4 值类型 vs 引用类型
-
-- **struct**: 值类型，使用 `$TypeName(...)` 创建实例
-- **class**: 引用类型，使用 `new TypeName(...)` 创建实例
-- **struct 不支持继承**: struct 不能继承其他类型
-- **class 支持继承**: class 支持单继承和多个接口实现
-
----
-
-## 6. 类型检查和边界检查
-
-### 6.1 编译期检查
-
-zr 语言在编译期进行以下检查：
-
-1. **类型兼容性检查**: 
-   - 赋值操作的类型兼容性
-   - 函数调用参数类型匹配
-   - 运算符操作数类型检查
-
-2. **字面量范围检查**:
-   - 整数字面量是否在目标类型范围内（如 `int8 = 128` 会报错）
-   - 无符号整数不能为负数
-   - 浮点数字面量的有效性检查
-
-3. **数组大小约束检查**:
-   - 数组字面量大小是否符合声明约束
-   - 固定大小数组的字面量必须匹配声明的大小
-
-4. **数组索引边界检查**:
-   - 字面量索引的编译期越界检查
-   - 负数索引检查
-
-### 6.2 运行时检查（Debug模式）
-
-在运行时，如果启用了 debug 模式检查，会进行以下额外验证：
-
-1. **边界检查**: 数组访问时的索引边界验证
-2. **类型检查**: 类型转换和赋值时的类型验证
-3. **范围检查**: 变量赋值时的范围约束验证
-
-可以通过 `SZrState` 的以下标志控制运行时检查：
-- `enableRuntimeBoundsCheck`: 启用运行时边界检查
-- `enableRuntimeTypeCheck`: 启用运行时类型检查
-- `enableRuntimeRangeCheck`: 启用运行时范围检查
-
-### 6.3 范围约束语法
-
-```zr
-// 整数范围约束（使用装饰器）
-#range(min: 0, max: 100)#
-var count: int;
-
-// 数组大小约束（使用类型注解）
-var arr: int[10];        // 固定大小
-var arr2: int[1..100];   // 范围约束
-var arr3: int[5..];      // 最小大小
-
-// 编译期检查字面量范围
-var x: int8 = 128;       // 编译错误：超出范围
-var y: uint8 = -1;       // 编译错误：负数不能赋值给无符号类型
-```
-
-## 7. 已知问题和待实现功能
-
-### 7.1 Lexer 问题
-
-1. **字符字面量识别问题**: 
-   - 当前 lexer 将单引号和双引号都当作字符串处理
-   - `read_char` 函数已实现但未被调用
-   - 需要修复：单引号应识别为字符字面量 `ZR_TK_CHAR`，双引号识别为字符串字面量 `ZR_TK_STRING`
-
-### 7.2 Parser 待实现功能
-
-1. **类型转换语法**: 
-   - `<Type>` 类型转换语法在 parser 中可能没有明确支持
-   - 需要添加对类型转换表达式的解析支持
-
-2. **字符字面量解析**: 
-   - 如果 lexer 修复了字符字面量识别，parser 需要确保能正确解析 `ZR_TK_CHAR` token
-
-### 7.3 测试覆盖
-
-建议为以下功能添加单元测试：
-
-1. 字符字面量的各种转义序列
-2. 类型转换 `<Type>` 的各种场景
-3. 泛型声明、约束、方差和 `%in/%out/%ref` 参数作用语法
-4. 装饰器的各种用法
-5. 中间代码的各种指令
-6. 类型检查和边界检查的各种场景
-
----
-
-## 附录
-
-### A. 运算符优先级表
-
-| 优先级 | 运算符 | 结合性 |
-|--------|--------|--------|
-| 1 | `.` `[]` | 左结合 |
-| 2 | `!` `~` `+` `-` `$` `new` | 右结合 |
-| 3 | `*` `/` `%` | 左结合 |
-| 4 | `+` `-` | 左结合 |
-| 5 | `<<` `>>` | 左结合 |
-| 6 | `<` `>` `<=` `>=` | 左结合 |
-| 7 | `==` `!=` | 左结合 |
-| 8 | `&` | 左结合 |
-| 9 | `^` | 左结合 |
-| 10 | `\|` | 左结合 |
-| 11 | `&&` | 左结合 |
-| 12 | `\|\|` | 左结合 |
-| 13 | `? :` | 右结合 |
-| 14 | `=` `+=` `-=` `*=` `/=` `%=` | 右结合 |
-
-### B. 关键字列表
-
-**类型声明**: `module`, `struct`, `class`, `interface`, `enum`, `union`, `intermediate`
-
-**变量和函数**: `var`, `const`, `static`
-
-**访问修饰符**: `pub`, `pri`, `pro`
-
-**控制流**: `if`, `else`, `switch`, `while`, `for`, `break`, `continue`, `return`
-
-**异常处理**: `try`, `catch`, `finally`, `throw`
-
-**特殊关键字**: `new`, `super`, `in`, `out`, `get`, `set`
-
-**测试**: `test`
-
-**特殊值**: `Infinity`, `NegativeInfinity`, `NaN`, `true`, `false`, `null`
-
-### C. 示例文件索引
-
-- `tests/parser/test_simple.zr` - 完整语法示例
-- `tests/scripts/test_cases/classes.zr` - 类相关示例
-- `tests/scripts/test_cases/enums.zr` - 枚举示例
-- `tests/scripts/test_cases/decorators.zr` - 装饰器示例
-- `tests/scripts/test_cases/lambda.zr` - Lambda 表达式示例
-- `tests/scripts/test_cases/intermediate.zr` - 中间代码示例
-
----
-
-**文档版本**: 1.0  
-**最后更新**: 2025-01-XX  
-**基于**: zr_vm parser implementation and test_simple.zr
+## Terminators And Percent Operator
+
+Newlines are trivia and never insert semicolons. Simple declarations,
+bindings, expressions, assignments, `return`, `throw`, `break`, `continue`,
+and bodyless declarations require `;`. Braced declarations and compound
+control-flow statements are closed by their grammar.
+
+`%` and `%=` remain the modulo and modulo-assignment operators. No
+percent-prefixed identifier is a production keyword.
+
+## Removed Source Forms
+
+The following are not accepted by the production parser:
+
+- `%module`, `%import`, `%extern`, `%compileTime`, `%test`, and `%owned`;
+- `%borrow`, `%loan`, `%borrowed`, `%loaned`, `%unique`, `%shared`, `%weak`,
+  `%using`, `%type`, `%in`, `%out`, `%ref`, and `%func`;
+- `func` definitions, keywordless definitions, old return delimiters, and old
+  callable-type `=>`;
+- `$Type(...)`, `$(runtimeType)(...)`, bare ownership constructors, and old
+  generator `out` statements;
+- user-authored `intermediate ...` instruction declarations.
+
+The lexer/parser may recognize a removed spelling only to emit the fatal
+`legacy_syntax_removed` diagnostic. That path returns no production AST and
+cannot reach semantic lowering, VM/AOT, artifact, CLI, or LSP execution.
+Migration edits are produced only by the explicit syntax migration frontend.
+
+## Executable Reference
+
+The current positive and negative source catalog is
+`tests/fixtures/projects/syntax_reference_v1`. Its coverage manifest contains
+no `design-pending` entries. The application entry imports its host module and
+returns checksum `7` in interpreter and binary-first project execution. AOT,
+artifact, reflection, pooling, compile-time, async, iterator, testing, and LSP
+contracts are additionally enforced by their owner-gate test matrices.

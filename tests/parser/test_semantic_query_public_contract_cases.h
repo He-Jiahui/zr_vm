@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_QUERY_PUBLIC_CONTRACT_CASES_H
 #define ZR_VM_TEST_SEMANTIC_QUERY_PUBLIC_CONTRACT_CASES_H
 
+#include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_parser/compiler.h"
 
 typedef struct SZrSemanticPublicContractFixture {
@@ -510,10 +511,10 @@ static void test_semantic_query_public_contract_rejects_noncanonical_generic_con
     semantic_public_contract_fixture_free(&fixture);
 }
 
-static void test_semantic_query_public_contract_rejects_intermediate_artifacts(void) {
+static void test_semantic_query_public_contract_rejects_removed_intermediate_wire_value(void) {
     SZrSemanticPublicContractFixture fixture;
     SZrParserSemanticPublicContractQuery query;
-    SZrAstNode intermediateDeclaration;
+    SZrAstNode removedIntermediateStatement;
 
     semantic_public_contract_fixture_init(
             &fixture,
@@ -521,8 +522,12 @@ static void test_semantic_query_public_contract_rejects_intermediate_artifacts(v
             ZR_VALUE_TYPE_INT64,
             ZR_ACCESS_PRIVATE,
             ZR_FALSE);
-    init_node(&intermediateDeclaration, ZR_AST_INTERMEDIATE_DECLARATION, 61U, 79U);
-    fixture.statementNodes[1] = &intermediateDeclaration;
+    init_node(
+            &removedIntermediateStatement,
+            (EZrAstNodeType)ZR_AST_CONSTANT_REMOVED_INTERMEDIATE_STATEMENT,
+            61U,
+            79U);
+    fixture.statementNodes[1] = &removedIntermediateStatement;
 
     query.hash = 99U;
     query.exportCount = 99U;

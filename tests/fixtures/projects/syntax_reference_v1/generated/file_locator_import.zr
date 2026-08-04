@@ -1,3 +1,3 @@
-// 07A renders a host-local canonical file URI during focused validation.
+// The 07B harness renders a host-local canonical file URI during validation.
 // The checked-in template preserves a placeholder and never records an absolute path.
 let fileTarget = import("file:${SYNTAX_REFERENCE_FILE_URI}");

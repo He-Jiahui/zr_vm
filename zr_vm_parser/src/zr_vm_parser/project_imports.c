@@ -1133,40 +1133,6 @@ static TZrBool project_imports_canonicalize_node(SZrState *state,
                                                      errorBufferSize,
                                                      outErrorLocation);
 
-        case ZR_AST_INTERMEDIATE_STATEMENT:
-            return project_imports_canonicalize_node(state,
-                                                     node->data.intermediateStatement.declaration,
-                                                     project,
-                                                     currentModuleKey,
-                                                     errorBuffer,
-                                                     errorBufferSize,
-                                                     outErrorLocation) &&
-                   project_imports_canonicalize_node_array(state,
-                                                           node->data.intermediateStatement.instructions,
-                                                           project,
-                                                           currentModuleKey,
-                                                           errorBuffer,
-                                                           errorBufferSize,
-                                                           outErrorLocation);
-
-        case ZR_AST_INTERMEDIATE_DECLARATION:
-            return project_imports_canonicalize_node_array(state,
-                                                           node->data.intermediateDeclaration.constants,
-                                                           project,
-                                                           currentModuleKey,
-                                                           errorBuffer,
-                                                           errorBufferSize,
-                                                           outErrorLocation);
-
-        case ZR_AST_INTERMEDIATE_CONSTANT:
-            return project_imports_canonicalize_node(state,
-                                                     node->data.intermediateConstant.value,
-                                                     project,
-                                                     currentModuleKey,
-                                                     errorBuffer,
-                                                     errorBufferSize,
-                                                     outErrorLocation);
-
         default:
             return ZR_TRUE;
     }

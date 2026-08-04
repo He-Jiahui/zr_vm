@@ -1,1 +1,8 @@
-// design-pending: owner 10F native FFI contract
+native extern("syntax_reference_native") {
+    #zr.ffi.entry("syntax_reference_render_value")#
+    fn syntaxReferenceNativeValue(): i32;
+}
+
+fn syntaxReferenceNativeChecksum(): i32 {
+    return syntaxReferenceNativeValue();
+}

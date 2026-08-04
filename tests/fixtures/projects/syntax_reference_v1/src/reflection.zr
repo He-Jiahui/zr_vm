@@ -1,2 +1,18 @@
-// design-pending: owner 08 M1-M5
-// The 07A discovery skeleton must not compile this reflection surface.
+let reflection = import("zr.reflection");
+
+struct SyntaxReferenceReflectionPoint {
+    pub var x: int;
+}
+
+fn syntaxReferenceCreateReflected(typeValue: reflection.Type): object {
+    let constructible = reflection.requireConstructible(typeValue);
+    return constructible.createInstance(7);
+}
+
+fn syntaxReferenceResolvePoint(): reflection.Type {
+    return reflection.resolve(typeid(SyntaxReferenceReflectionPoint));
+}
+
+fn syntaxReferenceTypeOf(value: object): reflection.TypeOf {
+    return typeof(value);
+}

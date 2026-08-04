@@ -32,10 +32,10 @@ enum EZrAstNodeType {
     ZR_AST_EXTERN_BLOCK,
     ZR_AST_EXTERN_FUNCTION_DECLARATION,
     ZR_AST_EXTERN_DELEGATE_DECLARATION,
-    ZR_AST_INTERMEDIATE_STATEMENT,
 
     // 结构体成员
-    ZR_AST_STRUCT_FIELD,
+    /* Preserve the removed intermediate-statement wire value. */
+    ZR_AST_STRUCT_FIELD = ZR_AST_EXTERN_DELEGATE_DECLARATION + 2,
     ZR_AST_STRUCT_METHOD,
     ZR_AST_STRUCT_META_FUNCTION,
 
@@ -132,14 +132,9 @@ enum EZrAstNodeType {
     // 元函数标识符
     ZR_AST_META_IDENTIFIER,
 
-    // 中间代码相关
-    ZR_AST_INTERMEDIATE_DECLARATION,
-    ZR_AST_INTERMEDIATE_CONSTANT,
-    ZR_AST_INTERMEDIATE_INSTRUCTION,
-    ZR_AST_INTERMEDIATE_INSTRUCTION_PARAMETER,
-
     // 访问修饰符
-    ZR_AST_ACCESS_MODIFIER,
+    /* Preserve the four removed intermediate-node wire values. */
+    ZR_AST_ACCESS_MODIFIER = ZR_AST_META_IDENTIFIER + 5,
 
     // 属性类型
     ZR_AST_PROPERTY_GET,
@@ -987,40 +982,6 @@ typedef struct SZrTryCatchFinallyStatement {
     SZrAstNode *finallyBlock; // Block（可选）
 } SZrTryCatchFinallyStatement;
 
-// Intermediate 语句
-typedef struct SZrIntermediateStatement {
-    SZrAstNode *declaration; // IntermediateDeclaration
-    SZrAstNodeArray *instructions; // IntermediateInstruction 数组
-} SZrIntermediateStatement;
-
-// Intermediate 声明
-typedef struct SZrIntermediateDeclaration {
-    SZrIdentifier *name;
-    SZrAstNodeArray *params; // Parameter 数组
-    SZrParameter *args; // 可变参数（可选）
-    SZrType *returnType; // 可选
-    SZrAstNodeArray *closures; // Parameter 数组（可选）
-    SZrAstNodeArray *constants; // IntermediateConstant 数组（可选）
-    SZrAstNodeArray *locals; // Parameter 数组（可选）
-} SZrIntermediateDeclaration;
-
-// Intermediate 常量
-typedef struct SZrIntermediateConstant {
-    SZrIdentifier *name;
-    SZrAstNode *value; // Literal
-} SZrIntermediateConstant;
-
-// Intermediate 指令
-typedef struct SZrIntermediateInstruction {
-    SZrIdentifier *name;
-    SZrAstNodeArray *values; // IntermediateInstructionParameter 数组
-} SZrIntermediateInstruction;
-
-// Intermediate 指令参数
-typedef struct SZrIntermediateInstructionParameter {
-    SZrString *value; // 标识符名或数字字面量字符串
-} SZrIntermediateInstructionParameter;
-
 // 解构
 typedef struct SZrDestructuringObject {
     SZrAstNodeArray *keys; // Identifier 或 KeyValuePair 数组
@@ -1153,12 +1114,6 @@ typedef struct SZrAstNode {
         SZrYieldStatement yieldStatement;
         SZrCatchClause catchClause;
         SZrTryCatchFinallyStatement tryCatchFinallyStatement;
-        SZrIntermediateStatement intermediateStatement;
-        SZrIntermediateDeclaration intermediateDeclaration;
-        SZrIntermediateConstant intermediateConstant;
-        SZrIntermediateInstruction intermediateInstruction;
-        SZrIntermediateInstructionParameter intermediateInstructionParameter;
-
         // 类型
         SZrType type;
         SZrFunctionType functionType;

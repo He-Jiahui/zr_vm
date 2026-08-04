@@ -72,6 +72,15 @@ class InventoryAllowlistedFinding:
 
 
 @dataclass(frozen=True)
+class InventoryReviewedCurrentFinding:
+    file: str
+    source_kind: SourceKind
+    source_range: SourceRange
+    syntax_form: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class MigrationRule:
     classification: MigrationClassification
     target_plan: str
@@ -84,6 +93,7 @@ class InventoryReport:
     exclusions: tuple[InventoryExclusion, ...]
     findings: tuple[InventoryFinding, ...]
     allowlisted_findings: tuple[InventoryAllowlistedFinding, ...] = ()
+    reviewed_current_findings: tuple[InventoryReviewedCurrentFinding, ...] = ()
     scanner_version: str = "1"
     selected_roots: tuple[str, ...] = ()
 
@@ -108,6 +118,19 @@ class InventoryReport:
                         "reason": entry.reason,
                     }
                     for entry in self.allowlisted_findings
+                ],
+                "reviewedCurrentFindings": [
+                    {
+                        "file": entry.file,
+                        "sourceKind": entry.source_kind.value,
+                        "range": {
+                            "start": asdict(entry.source_range.start),
+                            "end": asdict(entry.source_range.end),
+                        },
+                        "syntaxForm": entry.syntax_form,
+                        "reason": entry.reason,
+                    }
+                    for entry in self.reviewed_current_findings
                 ],
                 "findings": [
                     {
@@ -139,6 +162,7 @@ class InventoryReport:
             f"scanned files: {len(self.scanned_files)}",
             f"excluded files: {len(self.exclusions)}",
             f"allowlisted findings: {len(self.allowlisted_findings)}",
+            f"reviewed current findings: {len(self.reviewed_current_findings)}",
             f"findings: {len(self.findings)}",
             "classification counts:",
         ]
@@ -948,34 +972,78 @@ _EMBEDDED_HOST_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".js", ".ts"}
 _REPOSITORY_FINDING_ALLOWLIST = {
     (
         "tests/parser/test_percent_syntax_cutover.c",
-        172,
+        42,
         "unrecognizedPercentDirective",
     ): "expectedUnknownPercentNegative",
     (
         "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
-        11,
+        14,
         "percentCompileTime",
     ): "expectedRemovedSyntaxFormattingNegative",
     (
         "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
-        14,
+        28,
         "percentFunc",
     ): "expectedRemovedSyntaxFormattingNegative",
     (
         "tests/language_server/test_lsp_current_syntax_formatting_cases.h",
-        14,
+        39,
         "legacyFunctionTypeArrow",
     ): "expectedRemovedSyntaxFormattingNegative",
     (
         "tests/task/test_task_runtime.c",
-        862,
+        27,
         "unrecognizedPercentDirective",
     ): "expectedRemovedPercentTypeNegative",
     (
         "tests/task/test_task_runtime.c",
-        863,
+        24,
         "unrecognizedPercentDirective",
     ): "expectedRemovedPercentTypeNegative",
+    (
+        "tests/language_server/test_lsp_project_features.c",
+        10,
+        "percentImport",
+    ): "expectedRemovedImportSemanticTokenNegative",
+    (
+        "tests/language_server/test_lsp_property_contract_cases.h",
+        22,
+        "legacyPropertyAccessor",
+    ): "expectedLegacyPropertyMigrationInput",
+    (
+        "tests/parser/test_compiler_features.c",
+        46,
+        "percentUsing",
+    ): "expectedRemovedUsingFieldNegative",
+    (
+        "tests/parser/test_compiler_features.c",
+        67,
+        "percentUnique",
+    ): "expectedRemovedOwnershipFieldNegative",
+    (
+        "tests/parser/test_parser.c",
+        47,
+        "percentUsing",
+    ): "expectedRemovedUsingFieldNegative",
+    (
+        "tests/parser/test_property_consumer_contracts.c",
+        20,
+        "legacyPropertyAccessor",
+    ): "expectedLegacyPropertyMigrationInput",
+    (
+        "tests/parser/test_property_consumer_contracts.c",
+        27,
+        "legacyPropertyAccessor",
+    ): "expectedLegacyPropertyMigrationInput",
+    (
+        "tests/parser/test_property_consumer_contracts.c",
+        24,
+        "legacyPropertyAccessor",
+    ): "expectedLegacyPropertyMigrationInput",
+}
+_REPOSITORY_REVIEWED_CURRENT_FORMS = {
+    "legacyBareTypeCall",
+    "legacyNewStruct",
 }
 
 
@@ -1027,10 +1095,10 @@ def _repository_exclusion_reason(relative_path: Path) -> str | None:
         return "thirdParty"
     if normalized.startswith("docs/plans/") or normalized.startswith("docs/superpowers/"):
         return "historicalPlan"
-    if normalized == "docs/zr_language_specification.md":
-        return "historicalSyntaxReference"
     if normalized.startswith("tests/fixtures/syntax_migration_inventory/"):
         return "inventorySelfFixture"
+    if normalized.startswith("tests/fixtures/scripts/"):
+        return "historicalLegacyParserFixture"
     if normalized.startswith("tests/fixtures/reference/"):
         return "expectedDiagnosticFixture"
     if any("legacy" in part.lower() or "migration" in part.lower() for part in parts):
@@ -1056,6 +1124,7 @@ def build_repository_inventory(root: Path) -> InventoryReport:
     exclusions: list[InventoryExclusion] = []
     findings: list[InventoryFinding] = []
     allowlisted_findings: list[InventoryAllowlistedFinding] = []
+    reviewed_current_findings: list[InventoryReviewedCurrentFinding] = []
     for relative_file in repository_candidate_paths(root):
         relative_path = Path(relative_file)
         reason = _repository_exclusion_reason(relative_path)
@@ -1082,27 +1151,46 @@ def build_repository_inventory(root: Path) -> InventoryReport:
             allowlist_reason = _REPOSITORY_FINDING_ALLOWLIST.get(
                 (
                     finding.file,
-                    finding.source_range.start.line,
+                    finding.source_range.start.column,
                     finding.legacy_form,
                 )
             )
-            if allowlist_reason is None:
-                findings.append(finding)
-                continue
-            allowlisted_findings.append(
-                InventoryAllowlistedFinding(
-                    file=finding.file,
-                    line=finding.source_range.start.line,
-                    column=finding.source_range.start.column,
-                    legacy_form=finding.legacy_form,
-                    reason=allowlist_reason,
+            if allowlist_reason is not None:
+                allowlisted_findings.append(
+                    InventoryAllowlistedFinding(
+                        file=finding.file,
+                        line=finding.source_range.start.line,
+                        column=finding.source_range.start.column,
+                        legacy_form=finding.legacy_form,
+                        reason=allowlist_reason,
+                    )
                 )
-            )
+                continue
+            if finding.legacy_form in _REPOSITORY_REVIEWED_CURRENT_FORMS:
+                reviewed_current_findings.append(
+                    InventoryReviewedCurrentFinding(
+                        file=finding.file,
+                        source_kind=finding.source_kind,
+                        source_range=finding.source_range,
+                        syntax_form=finding.legacy_form,
+                        reason="currentParserSemanticBindingValidated",
+                    )
+                )
+                continue
+            findings.append(finding)
 
     scanned_files.sort(key=lambda entry: (entry.file, entry.source_kind.value))
     exclusions.sort(key=lambda entry: (entry.file, entry.reason))
     allowlisted_findings.sort(
         key=lambda entry: (entry.file, entry.line, entry.column, entry.legacy_form)
+    )
+    reviewed_current_findings.sort(
+        key=lambda entry: (
+            entry.file,
+            entry.source_range.start.line,
+            entry.source_range.start.column,
+            entry.syntax_form,
+        )
     )
     findings.sort(
         key=lambda entry: (
@@ -1117,7 +1205,8 @@ def build_repository_inventory(root: Path) -> InventoryReport:
         exclusions=tuple(exclusions),
         findings=tuple(findings),
         allowlisted_findings=tuple(allowlisted_findings),
-        scanner_version="2",
+        reviewed_current_findings=tuple(reviewed_current_findings),
+        scanner_version="3",
         selected_roots=_REPOSITORY_SELECTED_ROOTS,
     )
 

@@ -1,7 +1,6 @@
 {
   "schema": "syntax-reference-v1-artifact-placeholder",
   "moduleIdentity": "@fixturedep",
-  "status": "design-pending",
-  "ownerPlan": "10",
-  "ownerGate": "10R"
+  "status": "current",
+  "publicContractHash": "fixturedep:v1:index-tool"
 }

@@ -1,1 +1,6 @@
-// design-pending: owner 13 Iterator/Enumerator/yield
+let iteration = import("zr.iteration");
+
+fn syntaxReferenceValues(value: int): iteration.Iterator<int> {
+    yield value;
+    yield value + 1;
+}

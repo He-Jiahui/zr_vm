@@ -54,6 +54,11 @@ explicit frontend. Structurally proven `%module`, `%owned`, `%type`, and other p
 machine edits; semantic ownership, receiver, callable, and static-constructor choices remain
 `requiresReview` or `blocked` until their binding is proven.
 
+The production parser retains direct comparisons for known removed tokens only to select that fatal
+diagnostic; every branch returns no AST. The 06B final audit also removed the separate user-authored
+source-intermediate parser and its five AST/consumer paths. This is intentionally stricter than the
+migration frontend, which can continue to describe old input without compiling it.
+
 The dynamic `$(target)(arguments)` adapter consumes the complete balanced target and argument ranges.
 When both are structurally complete it proposes
 `reflection.requireConstructible(target).createInstance(...[arguments])` as a
@@ -88,3 +93,12 @@ the import token, parentheses, and literal. It edits only the literal payload to
 already-canonical imports remain unchanged. Replanning the result produces no
 second edit. This migration fact does not register a runtime alias or make the
 production parser accept an old import form through a separate grammar.
+
+## Repository Promotion Boundary
+
+Inventory scanner v3 is the repository-level consumer of these distinctions. It scans the current
+language specification and current source/embedded fixtures, explicitly excludes historical plans,
+legacy parser scripts, diagnostic fixtures, and migration self-fixtures, and freezes every exclusion
+reason in JSON. After target-owner promotion, ordinary capitalized calls and `new` expressions are
+recorded as `reviewedCurrentFindings`; they are not unresolved migration items. The final 06B baseline
+has no classified finding or unknown form, with 14 stable negative/migration allowlist entries.

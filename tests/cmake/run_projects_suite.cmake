@@ -496,6 +496,8 @@ register_project_case("using_union_normal" "using_real_world_checkout/using_unio
 register_project_case("using_union_edge_cases" "using_real_world_checkout/using_union_edge_cases.zrp" "USING_UNION_EDGE_PASS 77" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("using_feature_matrix" "using_feature_matrix/using_feature_matrix.zrp" "USING_FEATURE_MATRIX_PASS 276" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("using_edge_matrix" "using_edge_matrix/using_edge_matrix.zrp" "USING_EDGE_MATRIX_PASS 266" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("syntax_reference_v1_interp" "syntax_reference_v1/syntax_reference_v1.zrp" "7" "${COMMON_FAIL_REGEX}|null" "" "" "" "")
+register_project_case("syntax_reference_v1_binary" "syntax_reference_v1/syntax_reference_v1.zrp" "7" "${COMMON_FAIL_REGEX}|null" "" "" "" "")
 
 set_project_case_metadata("hello_world" "smoke;core;stress" "")
 set_project_case_metadata("import_basic" "smoke;core;stress" "")
@@ -539,8 +541,12 @@ set_project_case_metadata("using_union_normal" "using" "")
 set_project_case_metadata("using_union_edge_cases" "using" "")
 set_project_case_metadata("using_feature_matrix" "smoke;core;stress;using" "")
 set_project_case_metadata("using_edge_matrix" "smoke;core;stress;using" "")
+set_project_case_metadata("syntax_reference_v1_interp" "smoke;core;stress" "executed_via=interp")
+set_project_case_metadata("syntax_reference_v1_binary" "smoke;core;stress" "executed_via=binary")
 
 set_project_case_execution("network_loopback_binary" "" "--execution-mode;binary;--emit-executed-via")
+set_project_case_execution("syntax_reference_v1_interp" "" "--execution-mode;interp;--emit-executed-via")
+set_project_case_execution("syntax_reference_v1_binary" "" "--execution-mode;binary;--emit-executed-via")
 
 message("==========")
 message("Running suite: projects")

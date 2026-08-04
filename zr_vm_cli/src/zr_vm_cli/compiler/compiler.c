@@ -683,16 +683,6 @@ static TZrBool zr_cli_collect_imports_from_ast(SZrAstNode *node, SZrCliStringLis
             return zr_cli_collect_imports_from_ast(node->data.foreachLoop.expr, imports) &&
                    zr_cli_collect_imports_from_ast(node->data.foreachLoop.block, imports);
 
-        case ZR_AST_INTERMEDIATE_STATEMENT:
-            return zr_cli_collect_imports_from_ast(node->data.intermediateStatement.declaration, imports) &&
-                   zr_cli_collect_imports_from_array(node->data.intermediateStatement.instructions, imports);
-
-        case ZR_AST_INTERMEDIATE_DECLARATION:
-            return zr_cli_collect_imports_from_array(node->data.intermediateDeclaration.constants, imports);
-
-        case ZR_AST_INTERMEDIATE_CONSTANT:
-            return zr_cli_collect_imports_from_ast(node->data.intermediateConstant.value, imports);
-
         default:
             return ZR_TRUE;
     }

@@ -1037,6 +1037,6 @@ int main(void) {
     RUN_TEST(test_semantic_query_public_contract_rejects_poisoned_or_unsupported_modules);
     RUN_TEST(test_semantic_query_public_contract_rejects_mismatched_semantic_owners);
     RUN_TEST(test_semantic_query_public_contract_rejects_noncanonical_generic_constraints);
-    RUN_TEST(test_semantic_query_public_contract_rejects_intermediate_artifacts);
+    RUN_TEST(test_semantic_query_public_contract_rejects_removed_intermediate_wire_value);
     return UNITY_END();
 }

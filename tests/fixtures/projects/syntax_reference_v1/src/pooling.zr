@@ -1,2 +1,12 @@
-// design-pending: owner 09 M1-M5
-// The 07A discovery skeleton must not compile this pooling surface.
+let pooling = import("zr.pooling");
+
+fn syntaxReferenceBorrowPooled(
+    handle: pooling.PoolHandle<int>,
+    borrowed: out pooling.PoolRef<int>
+): bool {
+    return handle.tryBorrow(out borrowed);
+}
+
+fn syntaxReferenceRecyclePooled(handle: pooling.PoolHandle<int>): bool {
+    return handle.recycle();
+}
