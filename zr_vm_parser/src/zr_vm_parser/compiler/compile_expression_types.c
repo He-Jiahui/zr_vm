@@ -3483,8 +3483,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                            : (hasResolvedFunctionSignature
                                                       ? &resolvedFunctionSignature.parameterPassingModes
                                                       : ZR_NULL));
+                TZrBool hasFixedSpreadSignature =
+                        activeCallMemberInfo == ZR_NULL ||
+                        activeCallMemberInfo->parameterCount != ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
+                        activeCallMemberInfo->parameterTypes.length > 0u;
 
-                if (spreadParameterTypes != ZR_NULL &&
+                if (hasFixedSpreadSignature && spreadParameterTypes != ZR_NULL &&
                     !compiler_validate_spread_call_signature(
                             cs,
                             call,
@@ -4062,5 +4066,4 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
         *ioRootOwnershipQualifier = rootOwnershipQualifier;
     }
 }
-
 

@@ -82,6 +82,60 @@ static EZrStaticCType backend_aot_c_scalar_stack_copy_static_type_for_slot(const
     return ZR_STATIC_C_TYPE_DYNAMIC;
 }
 
+static TZrBool backend_aot_c_scalar_stack_copy_source_has_dynamic_stack_copy_write(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 execInstructionIndex) {
+    const SZrFunction *function;
+    TZrUInt32 blockIndex;
+    TZrUInt32 blockStart = 0u;
+    TZrBool foundBlock = ZR_FALSE;
+    TZrUInt32 scanIndex;
+
+    if (functionIr == ZR_NULL ||
+        functionIr->function == ZR_NULL ||
+        functionIr->function->instructionsList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    for (blockIndex = 0u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
+        const SZrAotExecIrBasicBlock *block = &functionIr->basicBlocks[blockIndex];
+        TZrUInt32 blockEnd = block->firstExecInstructionIndex + block->instructionCount;
+
+        if (execInstructionIndex >= block->firstExecInstructionIndex &&
+            execInstructionIndex < blockEnd) {
+            blockStart = block->firstExecInstructionIndex;
+            foundBlock = ZR_TRUE;
+            break;
+        }
+    }
+    if (!foundBlock || execInstructionIndex > function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    for (scanIndex = execInstructionIndex; scanIndex > blockStart; scanIndex--) {
+        const TZrInstruction *instruction = &function->instructionsList[scanIndex - 1u];
+        EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+        TZrInt32 copiedSourceSlot;
+
+        if ((opcode != ZR_INSTRUCTION_OP_GET_STACK && opcode != ZR_INSTRUCTION_OP_SET_STACK) ||
+            instruction->instruction.operandExtra != sourceSlot) {
+            continue;
+        }
+
+        copiedSourceSlot = instruction->instruction.operand.operand2[0];
+        if (copiedSourceSlot >= 0 &&
+            (TZrUInt32)copiedSourceSlot != sourceSlot &&
+            backend_aot_c_scalar_stack_copy_static_type_for_slot(
+                    function, (TZrUInt32)copiedSourceSlot) == ZR_STATIC_C_TYPE_DYNAMIC) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static EZrStaticCType backend_aot_c_scalar_stack_copy_static_type_from_locals(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 slot) {
@@ -154,6 +208,10 @@ static TZrBool backend_aot_c_scalar_stack_copy_source_local_is_available(
         TZrUInt32 sourceSlot,
         TZrUInt32 execInstructionIndex,
         EZrStaticCType staticCType) {
+    if (backend_aot_c_scalar_stack_copy_source_has_dynamic_stack_copy_write(
+                functionIr, sourceSlot, execInstructionIndex)) {
+        return ZR_FALSE;
+    }
     switch (staticCType) {
         case ZR_STATIC_C_TYPE_BOOL:
             return (TZrBool)(backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&

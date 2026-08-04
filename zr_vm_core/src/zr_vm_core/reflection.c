@@ -4695,6 +4695,10 @@ static EZrReflectionTypeCategory reflection_type_category_for_prototype(
         case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
             return ZR_REFLECTION_TYPE_CATEGORY_ENUM;
         case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
+            if (prototypeInfo != ZR_NULL &&
+                (prototypeInfo->modifierFlags & ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC) != 0u) {
+                return ZR_REFLECTION_TYPE_CATEGORY_ERASED;
+            }
             return ZrCore_ObjectPrototype_ImplementsProtocol(
                                    prototype, ZR_PROTOCOL_ID_REF_LIKE) ||
                            (prototypeInfo != ZR_NULL &&
@@ -4708,6 +4712,7 @@ static EZrReflectionTypeCategory reflection_type_category_for_prototype(
                 return ZR_REFLECTION_TYPE_CATEGORY_RESOURCE_CLASS;
             }
             if (prototypeInfo == ZR_NULL ||
+                (prototypeInfo->modifierFlags & ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC) != 0u ||
                 (prototypeInfo->modifierFlags &
                  ZR_RUNTIME_DECLARATION_MODIFIER_ABSTRACT) != 0u) {
                 return ZR_REFLECTION_TYPE_CATEGORY_CLASS;
@@ -4828,6 +4833,14 @@ static TZrBool reflection_attach_type_identity(
             prototype = targetObject->prototype;
         }
         identity.category = reflection_type_category_for_prototype(state, prototype);
+        if (prototype != ZR_NULL) {
+            SZrObjectModule *ownerModule = ZR_NULL;
+
+            reflection_get_prototype_metadata_context(state, prototype, &ownerModule, ZR_NULL);
+            if (ownerModule != ZR_NULL) {
+                identity.metadataGeneration = ownerModule->metadataGeneration;
+            }
+        }
     } else {
         identity.category = ZR_REFLECTION_TYPE_CATEGORY_ERASED;
     }

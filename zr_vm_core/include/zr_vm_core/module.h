@@ -47,6 +47,7 @@ struct ZR_STRUCT_ALIGN SZrObjectModule {
     TZrUInt8 initState;
     TZrUInt8 reserved0;
     TZrUInt16 reserved1;
+    TZrUInt32 metadataGeneration;
     SZrModuleExportDescriptor *exportDescriptors;
     TZrUInt32 exportDescriptorLength;
     TZrBool hasMetadataRuntime;

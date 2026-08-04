@@ -58,6 +58,14 @@ static TZrBool member_resolution_infer_call_arguments(SZrCompilerState *cs,
             ZrCore_Array_Construct(argTypes);
             return ZR_FALSE;
         }
+        if (argNode->type == ZR_AST_SPREAD_ARGUMENT) {
+            argNode = argNode->data.spreadArgument.expression;
+            if (argNode == ZR_NULL) {
+                free_inferred_type_array(cs->state, argTypes);
+                ZrCore_Array_Construct(argTypes);
+                return ZR_FALSE;
+            }
+        }
 
         ZrParser_InferredType_Init(cs->state, &argType, ZR_VALUE_TYPE_OBJECT);
         if (!ZrParser_ExpressionType_Infer(cs, argNode, &argType)) {

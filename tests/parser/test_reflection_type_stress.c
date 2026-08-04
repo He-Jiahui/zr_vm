@@ -197,6 +197,18 @@ static SZrObject *object_field(
     return ZR_CAST_OBJECT(g_state, value->value.object);
 }
 
+static const SZrTypeValue *value_field(SZrObject *object, const TZrChar *name) {
+    SZrString *keyString = ZrCore_String_CreateFromNative(g_state, (TZrNativeString) name);
+    SZrTypeValue key;
+
+    if (object == ZR_NULL || keyString == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Value_InitAsRawObject(g_state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(g_state, object, &key);
+}
+
 static void unpin_if_added(SZrRawObject *object, TZrBool added) {
     if (added) {
         ZrCore_GarbageCollector_UnignoreObject(g_state->global, object);
@@ -513,10 +525,66 @@ static void test_reflection_constructor_throw_reports_boundary_and_clears_result
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_reflection_constructor_cache_and_result_survive_compacting_gc(void) {
+    static const TZrChar *source = "module reflection_constructor_gc_stress;\n"
+                                   "pub class Box {\n"
+                                   "  pub var value: int;\n"
+                                   "  pub @constructor(value: int) { this.value = value; }\n"
+                                   "}\n";
+    SZrFunction *function = ZR_NULL;
+    SZrObjectModule *module =
+            create_module("reflection_constructor_gc_stress", "reflection_constructor_gc_stress.zr", source, &function);
+    SZrObject *descriptor;
+    SZrTypeValue argument;
+    SZrTypeValue result;
+    SZrObject *firstInstance;
+    const SZrTypeValue *firstValue;
+    EZrReflectionConstructionStatus status;
+    SZrReflectionConstructionCacheStats stats;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(module);
+    descriptor = type_descriptor(module_prototype(module, "Box"));
+    TEST_ASSERT_NOT_NULL(descriptor);
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(module)));
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(descriptor)));
+
+    ZrCore_Value_InitAsInt(g_state, &argument, 41);
+    ZrCore_Reflection_DebugResetConstructionCacheStats();
+    TEST_ASSERT_TRUE(ZrCore_Reflection_CreateInstance(g_state, descriptor, &argument, 1u, &result, &status));
+    firstInstance = ZR_CAST_OBJECT(g_state, result.value.object);
+    TEST_ASSERT_NOT_NULL(firstInstance);
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(firstInstance)));
+
+    ZrCore_GarbageCollector_GcFull(g_state, ZR_TRUE);
+    firstValue = value_field(firstInstance, "value");
+    TEST_ASSERT_NOT_NULL(firstValue);
+    TEST_ASSERT_EQUAL_INT64(41, firstValue->value.nativeObject.nativeInt64);
+    for (TZrUInt32 iteration = 0u; iteration < 10000u; iteration++) {
+        const SZrTypeValue *value;
+
+        ZrCore_Value_InitAsInt(g_state, &argument, (TZrInt64) iteration);
+        TEST_ASSERT_TRUE(ZrCore_Reflection_CreateInstance(g_state, descriptor, &argument, 1u, &result, &status));
+        value = value_field(ZR_CAST_OBJECT(g_state, result.value.object), "value");
+        TEST_ASSERT_NOT_NULL(value);
+        TEST_ASSERT_EQUAL_INT64(iteration, value->value.nativeObject.nativeInt64);
+    }
+    stats = ZrCore_Reflection_DebugGetConstructionCacheStats();
+    TEST_ASSERT_EQUAL_UINT64(1u, stats.missCount);
+    TEST_ASSERT_EQUAL_UINT64(10000u, stats.hitCount);
+
+    TEST_ASSERT_TRUE(
+            ZrCore_GarbageCollector_UnignoreObject(g_state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(firstInstance)));
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(g_state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(descriptor)));
+    TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(g_state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(module)));
+    ZrCore_Function_Free(g_state, function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reflection_query_caches_one_hundred_thousand_members);
     RUN_TEST(test_reflection_deep_inheritance_cache_survives_compacting_gc);
     RUN_TEST(test_reflection_constructor_throw_reports_boundary_and_clears_result);
+    RUN_TEST(test_reflection_constructor_cache_and_result_survive_compacting_gc);
     return UNITY_END();
 }

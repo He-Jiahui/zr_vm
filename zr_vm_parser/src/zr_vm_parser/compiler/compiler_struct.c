@@ -1277,6 +1277,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                               : 1);
     ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, structDecl->generic);
+    if (info.genericParameters.length > 0u) {
+        info.modifierFlags |= ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC;
+    }
     
     // 处理继承关系
     if (structDecl->inherits != ZR_NULL && structDecl->inherits->count > 0) {

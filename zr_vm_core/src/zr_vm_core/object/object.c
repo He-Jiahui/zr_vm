@@ -3135,6 +3135,7 @@ TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
     SZrObjectPrototype *prototype;
     const SZrMemberDescriptor *descriptor;
     SZrTypeValue callableValue;
+    const SZrTypeValue *callReceiver;
 
     if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -3162,9 +3163,18 @@ TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    callReceiver = (descriptor != ZR_NULL && descriptor->isStatic) ? ZR_NULL : receiver;
+    if (callableValue.type == ZR_VALUE_TYPE_CLOSURE && callableValue.isNative &&
+        callableValue.value.object != ZR_NULL && callableValue.value.object->type == ZR_RAW_OBJECT_TYPE_CLOSURE &&
+        callableValue.value.object->isNative &&
+        ZR_CAST_NATIVE_CLOSURE(state, callableValue.value.object)->nativeBindingUsesReceiver ==
+                ZR_NATIVE_BINDING_RECEIVER_CAPTURED) {
+        callReceiver = ZR_NULL;
+    }
+
     return ZrCore_Object_CallValue(state,
                                    &callableValue,
-                                   (descriptor != ZR_NULL && descriptor->isStatic) ? ZR_NULL : receiver,
+                                   callReceiver,
                                    arguments,
                                    argumentCount,
                                    result);

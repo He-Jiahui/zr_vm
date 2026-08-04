@@ -142,7 +142,7 @@ SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closu
     closure->nativeBindingTypeDescriptor = ZR_NULL;
     closure->nativeBindingOwnerPrototype = ZR_NULL;
     closure->nativeBindingKind = 0u;
-    closure->nativeBindingUsesReceiver = ZR_FALSE;
+    closure->nativeBindingUsesReceiver = ZR_NATIVE_BINDING_RECEIVER_NONE;
     ZrCore_Memory_RawSet(&closure->nativeBindingDirectDispatch, 0, sizeof(closure->nativeBindingDirectDispatch));
     closure->closureValueCount = closureValueCount;
     if (closureValueCount > 0) {

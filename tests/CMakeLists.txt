@@ -2415,6 +2415,23 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     endif ()
 
     zr_vm_add_unity_test_target(
+            zr_vm_aot_c_reflection_construction_shared_library_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_reflection_construction_shared_library.c
+    )
+    target_include_directories(zr_vm_aot_c_reflection_construction_shared_library_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    target_compile_definitions(zr_vm_aot_c_reflection_construction_shared_library_test PRIVATE
+            ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+            ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
+    )
+    zr_vm_link_parser_core_plus_library(
+            zr_vm_aot_c_reflection_construction_shared_library_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_aot_c_metadata_binding_loader_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_c_metadata_binding_loader.c
     )
@@ -5542,6 +5559,16 @@ if (TARGET zr_vm_reflection_type_stress_test)
             COMMAND $<TARGET_FILE:zr_vm_reflection_type_stress_test>
     )
     set_tests_properties(reflection_type_stress PROPERTIES LABELS "stress")
+endif ()
+
+if (TARGET zr_vm_aot_c_reflection_construction_shared_library_test)
+    add_test(
+            NAME aot_c_reflection_construction_shared_library
+            COMMAND $<TARGET_FILE:zr_vm_aot_c_reflection_construction_shared_library_test>
+    )
+    set_tests_properties(
+            aot_c_reflection_construction_shared_library
+            PROPERTIES LABELS "aot;reflection")
 endif ()
 
 if (TARGET zr_vm_call_spread_test)

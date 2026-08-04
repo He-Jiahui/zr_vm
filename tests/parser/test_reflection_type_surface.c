@@ -677,11 +677,13 @@ static void test_reflection_construction_binds_public_constructor_and_rejects_in
             "}\n"
             "pub abstract class AbstractValue {}\n"
             "pub interface Contract {}\n"
+            "pub class Generic<T> { pub @constructor() {} }\n"
+            "pub struct GenericPoint<T> { pub @constructor() {} }\n"
             "pub resource class ResourceValue { pub @constructor() {} }\n"
             "pub ref struct Window { pub var value: int; }\n";
     const char *constructibleNames[] = {"Box", "Point"};
     const char *rejectedNames[] = {
-            "AbstractValue", "Contract", "ResourceValue", "Window"};
+            "AbstractValue", "Contract", "Generic", "GenericPoint", "ResourceValue", "Window"};
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "reflection_construction.zr");
     SZrFunction *function = ZrParser_Source_Compile(
@@ -700,7 +702,7 @@ static void test_reflection_construction_binds_public_constructor_and_rejects_in
             ZrCore_Module_CalculatePathHash(g_state, sourceName),
             sourceName);
     TEST_ASSERT_TRUE(
-            ZrCore_Module_CreatePrototypesFromData(g_state, module, function) >= 5u);
+            ZrCore_Module_CreatePrototypesFromData(g_state, module, function) >= 7u);
     ZrCore_Value_InitAsInt(g_state, &argument, 42);
 
     for (TZrUInt32 index = 0u; index < 2u; index++) {
@@ -749,7 +751,7 @@ static void test_reflection_construction_binds_public_constructor_and_rejects_in
                 status);
     }
 
-    for (TZrUInt32 index = 0u; index < 4u; index++) {
+    for (TZrUInt32 index = 0u; index < 6u; index++) {
         SZrObjectPrototype *prototype = ZR_NULL;
         SZrTypeValue prototypeValue;
         SZrTypeValue descriptorValue;
@@ -789,6 +791,91 @@ static void test_reflection_construction_binds_public_constructor_and_rejects_in
     }
 
     ZrCore_Function_Free(g_state, function);
+}
+
+static void test_reflection_constructor_cache_invalidates_across_module_generations(void) {
+    static const TZrChar *firstSource = "module reflection_generation_reload;\n"
+                                        "pub class Reloaded {\n"
+                                        "  pub var value: int;\n"
+                                        "  pub @constructor(value: int) { this.value = value; }\n"
+                                        "}\n";
+    static const TZrChar *secondSource = "module reflection_generation_reload;\n"
+                                         "pub class Reloaded {\n"
+                                         "  pub var value: int;\n"
+                                         "  pub @constructor(value: int) { this.value = value + 100; }\n"
+                                         "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "reflection_generation_reload.zr");
+    SZrFunction *firstFunction = ZrParser_Source_Compile(g_state, firstSource, strlen(firstSource), sourceName);
+    SZrFunction *secondFunction = ZrParser_Source_Compile(g_state, secondSource, strlen(secondSource), sourceName);
+    SZrObjectModule *firstModule = ZrCore_Module_Create(g_state);
+    SZrObjectModule *secondModule = ZrCore_Module_Create(g_state);
+    SZrObject *firstDescriptor;
+    SZrObject *secondDescriptor;
+    SZrReflectionTypeIdentity firstIdentity = {0};
+    SZrReflectionTypeIdentity secondIdentity = {0};
+    SZrTypeValue argument;
+    SZrTypeValue result;
+    EZrReflectionConstructionStatus status;
+    SZrReflectionConstructionCacheStats stats;
+
+    TEST_ASSERT_NOT_NULL(firstFunction);
+    TEST_ASSERT_NOT_NULL(secondFunction);
+    TEST_ASSERT_NOT_NULL(firstModule);
+    TEST_ASSERT_NOT_NULL(secondModule);
+    ZrCore_Module_SetInfo(g_state, firstModule, ZrCore_String_CreateFromNative(g_state, "reflection_generation_reload"),
+                          ZrCore_Module_CalculatePathHash(g_state, sourceName), sourceName);
+    ZrCore_Module_SetInfo(g_state, secondModule,
+                          ZrCore_String_CreateFromNative(g_state, "reflection_generation_reload"),
+                          ZrCore_Module_CalculatePathHash(g_state, sourceName), sourceName);
+    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Module_CreatePrototypesFromData(g_state, firstModule, firstFunction));
+    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Module_CreatePrototypesFromData(g_state, secondModule, secondFunction));
+
+    {
+        SZrTypeValue prototypeValue;
+        SZrTypeValue descriptorValue;
+
+        ZrCore_Value_InitAsRawObject(g_state, &prototypeValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(module_prototype(firstModule, "Reloaded")));
+        prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
+        TEST_ASSERT_TRUE(ZrCore_Reflection_TypeOfValue(g_state, &prototypeValue, &descriptorValue));
+        firstDescriptor = ZR_CAST_OBJECT(g_state, descriptorValue.value.object);
+
+        ZrCore_Value_InitAsRawObject(g_state, &prototypeValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(module_prototype(secondModule, "Reloaded")));
+        prototypeValue.type = ZR_VALUE_TYPE_OBJECT;
+        TEST_ASSERT_TRUE(ZrCore_Reflection_TypeOfValue(g_state, &prototypeValue, &descriptorValue));
+        secondDescriptor = ZR_CAST_OBJECT(g_state, descriptorValue.value.object);
+    }
+
+    TEST_ASSERT_NOT_EQUAL(firstDescriptor, secondDescriptor);
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ReadTypeIdObject(
+            g_state, ZR_CAST_OBJECT(g_state, object_field(firstDescriptor, "id")->value.object), &firstIdentity,
+            ZR_NULL));
+    TEST_ASSERT_TRUE(ZrCore_Reflection_ReadTypeIdObject(
+            g_state, ZR_CAST_OBJECT(g_state, object_field(secondDescriptor, "id")->value.object), &secondIdentity,
+            ZR_NULL));
+    TEST_ASSERT_NOT_EQUAL(0u, firstIdentity.metadataGeneration);
+    TEST_ASSERT_NOT_EQUAL(firstIdentity.metadataGeneration, secondIdentity.metadataGeneration);
+
+    ZrCore_Value_InitAsInt(g_state, &argument, 7);
+    ZrCore_Reflection_DebugResetConstructionCacheStats();
+    for (TZrUInt32 iteration = 0u; iteration < 2u; iteration++) {
+        const SZrTypeValue *value;
+
+        TEST_ASSERT_TRUE(ZrCore_Reflection_CreateInstance(g_state, firstDescriptor, &argument, 1u, &result, &status));
+        value = object_field(ZR_CAST_OBJECT(g_state, result.value.object), "value");
+        TEST_ASSERT_NOT_NULL(value);
+        TEST_ASSERT_EQUAL_INT64(7, value->value.nativeObject.nativeInt64);
+    }
+    TEST_ASSERT_TRUE(ZrCore_Reflection_CreateInstance(g_state, secondDescriptor, &argument, 1u, &result, &status));
+    TEST_ASSERT_EQUAL_INT64(
+            107, object_field(ZR_CAST_OBJECT(g_state, result.value.object), "value")->value.nativeObject.nativeInt64);
+    stats = ZrCore_Reflection_DebugGetConstructionCacheStats();
+    TEST_ASSERT_EQUAL_UINT64(2u, stats.missCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, stats.hitCount);
+
+    ZrCore_Function_Free(g_state, secondFunction);
+    ZrCore_Function_Free(g_state, firstFunction);
 }
 
 static void test_reflection_constructor_binder_caches_success_and_negative_plans(void) {
@@ -1132,6 +1219,34 @@ static void test_runtime_descriptor_members_are_callable_from_source(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_ordinary_calls_and_construction_bypass_reflection_binder(void) {
+    const char *source = "class Box {\n"
+                         "  pub var value: int;\n"
+                         "  pub @constructor(value: int) { this.value = value; }\n"
+                         "}\n"
+                         "struct Point {\n"
+                         "  pub var value: int;\n"
+                         "  pub @constructor(value: int) { this.value = value; }\n"
+                         "}\n"
+                         "fn add(left: int, right: int): int { return left + right; }\n"
+                         "let box = new Box(19);\n"
+                         "let point = init Point(21);\n"
+                         "return add(box.value, point.value) + 2;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "ordinary_construction_without_reflection.zr");
+    SZrFunction *function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
+    SZrReflectionConstructionCacheStats stats;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    ZrCore_Reflection_DebugResetConstructionCacheStats();
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(42, result);
+    stats = ZrCore_Reflection_DebugGetConstructionCacheStats();
+    TEST_ASSERT_EQUAL_UINT64(0u, stats.hitCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, stats.missCount);
+    ZrCore_Function_Free(g_state, function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reflection_query_keywords_have_dedicated_tokens);
@@ -1148,10 +1263,12 @@ int main(void) {
     RUN_TEST(test_member_query_filters_orders_and_selects_overloads);
     RUN_TEST(test_reflection_construction_binds_public_constructor_and_rejects_invalid_categories);
     RUN_TEST(test_reflection_constructor_binder_caches_success_and_negative_plans);
+    RUN_TEST(test_reflection_constructor_cache_invalidates_across_module_generations);
     RUN_TEST(test_type_identity_and_resolved_descriptor_are_canonical_per_generation);
     RUN_TEST(test_type_identity_rejects_forged_authenticated_fields);
     RUN_TEST(test_member_query_reports_stripped_metadata);
     RUN_TEST(test_runtime_typeof_and_static_typeid_share_identity_and_descriptor);
     RUN_TEST(test_runtime_descriptor_members_are_callable_from_source);
+    RUN_TEST(test_ordinary_calls_and_construction_bypass_reflection_binder);
     return UNITY_END();
 }

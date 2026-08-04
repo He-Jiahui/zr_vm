@@ -1,6 +1,9 @@
 # 08 `zr.reflection` 独立反射库与运行时类型系统
 
-> 状态：已补齐直接依赖、分层里程碑与晋级门，等待按里程碑实施。
+> 状态（2026-08-04）：M1-M5 均已按分层门槛晋级，`zr.reflection` 的 canonical identity、
+> member/callable contract、artifact metadata graph、runtime construction/AOT 与
+> LSP/migration/stress 证据完整。Gate 08 已整体晋级，可作为 11、10C、06B 和 07B
+> 的已完成依赖；详细证据见本节各里程碑 acceptance 记录。
 >
 > 语义硬依赖：[Canonical TypeRef/Place/CFG/artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[struct/layout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)、[resource ownership/GC bridge](./2026-07-18-04-resource-ownership-drop-gc-bridge-design.md)、[property](./2026-07-18-05-property-unified-ast-design.md)。
 >
@@ -444,11 +447,28 @@ reflection.byref_invoke_requires_typed_api
 
 依赖：M1-M3、10R。晋级门：direct/spread arguments、constructor no-match/ambiguity/throw、resource/ref struct/interface/abstract/open-generic 拒绝、GC compact、AOT 与 VM 等价全部通过；普通调用/构造不经过 reflection 慢路径。
 
+状态（2026-08-04）：已晋级。descriptor native method 以 GC-traced captured receiver
+绑定，不再依赖调用帧伪 receiver；direct 与 spread construction 共享同一参数边界。
+每个 module 分配非零 metadata generation，TypeId/cache key 随 generation 失效；
+open generic class/struct/interface 在关闭实例物化前不可构造，closed generic 清除该标记。
+constructor 的成功、no-match、ambiguity、throw、boxed class/struct、compact GC 与 10,000 次
+cache hit 均有直接测试。AOT C 从 binary artifact 执行 direct+spread construction，与 VM
+同得 `42`；普通 `new`、`init` 和普通 call 的 reflection cache hit/miss 保持为零。
+GCC 11.4、Clang 14、MSVC 19.44 聚焦矩阵全部通过，验收见
+`tests/acceptance/2026-08-04-syntax-08-m4-runtime-construction.md`。
+
 ### M5 LSP、迁移与压力验收
 
 目标：接通 precise hover/completion/navigation、06A 的 `%type`/dynamic construction migration adapter，以及查询/cache/GC 压力测试。
 
 依赖：M1-M4、06A。晋级门：LSP 只消费 canonical query；migration edit 对 machine/requiresReview/blocked 分类稳定且幂等；100k members、深继承、重复查询和 compact/throw 压力无陈旧 pointer 或对象泄漏。
+
+状态（2026-08-04）：已晋级。LSP hover/completion 从 canonical reflection descriptor
+层级给出精确类型；legacy migration 对 `%type` 与旧 dynamic construction 继续只生成
+machine/requiresReview/blocked edit，不向 production parser 恢复旧语法。100,000-member query、
+512 层继承、重复查询、constructor throw、compacting GC 和 10,000 次动态构造均通过。
+三编译器重放均为零失败，验收见
+`tests/acceptance/2026-08-04-syntax-08-m5-lsp-migration-stress.md`。
 
 ### 整体晋级门
 

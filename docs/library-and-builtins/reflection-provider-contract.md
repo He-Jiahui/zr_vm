@@ -3,8 +3,15 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_abi_conf.h
   - zr_vm_common/include/zr_vm_common/zr_contract_conf.h
   - zr_vm_core/include/zr_vm_core/global.h
+  - zr_vm_core/include/zr_vm_core/closure.h
+  - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_core/src/zr_vm_core/global.c
+  - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/module/module.c
   - zr_vm_core/src/zr_vm_core/module/module_reflection_import.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/reflection_descriptor_native.c
   - zr_vm_core/src/zr_vm_core/reflection_module.c
   - zr_vm_core/src/zr_vm_core/reflection_module_cache.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
@@ -16,14 +23,28 @@ related_code:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_reflection_contract.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_state.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_reflection_surface.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_contract_conf.h
+  - zr_vm_core/include/zr_vm_core/closure.h
+  - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_core/include/zr_vm_core/global.h
+  - zr_vm_core/src/zr_vm_core/closure.c
   - zr_vm_core/src/zr_vm_core/global.c
+  - zr_vm_core/src/zr_vm_core/module/module.c
   - zr_vm_core/src/zr_vm_core/module/module_reflection_import.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/reflection.c
+  - zr_vm_core/src/zr_vm_core/reflection_descriptor_native.c
   - zr_vm_core/src/zr_vm_core/reflection_module.c
   - zr_vm_core/src/zr_vm_core/reflection_module_cache.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
@@ -35,11 +56,19 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_reflection_contract.c
   - zr_vm_library/src/zr_vm_library/project/project_import_resolver.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_state.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_reflection_surface.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
 plan_sources:
   - user: 2026-08-03 严格执行一次性破坏性语法和 provider identity 切换
+  - user: 2026-08-04 完成 Syntax 08 上层 construction、AOT、LSP 与压力 gate
   - docs/plans/syntax/2026-07-19-08-reflection-library-type-system-design.md
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
 tests:
@@ -48,8 +77,14 @@ tests:
   - tests/module/test_module_system.c
   - tests/module/test_reflection_dynamic_generic_instance.c
   - tests/parser/test_reflection_type_surface.c
+  - tests/parser/test_reflection_type_stress.c
+  - tests/parser/test_aot_c_reflection_construction_shared_library.c
+  - tests/parser/test_legacy_migration.c
+  - tests/language_server/test_lsp_expression_fact_hover.c
   - tests/parser/test_type_inference.c
   - tests/acceptance/2026-08-03-syntax-08-m1-reflection-provider-contract.md
+  - tests/acceptance/2026-08-04-syntax-08-m4-runtime-construction.md
+  - tests/acceptance/2026-08-04-syntax-08-m5-lsp-migration-stress.md
 doc_type: module-detail
 ---
 
@@ -117,6 +152,39 @@ reflection module name from `REFLECTION`; they do not compare a literal module
 name. Without an installed provider resolver the special reflection import
 fails closed and returns no service module.
 
+## Runtime Construction And Cache Generations
+
+Reflection descriptor methods are native closures with one closed, GC-traced
+descriptor capture. `Object_InvokeMember` recognizes this captured-receiver
+mode and does not append a second frame receiver. The native entry therefore
+sees the callable followed immediately by direct or spread construction
+arguments, while the descriptor remains live across allocation and compacting
+GC.
+
+Each runtime module receives a process-unique, nonzero metadata generation.
+TypeId projection copies the owner module generation into the authenticated
+identity, so reloading the same module and type spelling produces a distinct
+descriptor/cache key. Constructor plans can be reused within one generation
+and cannot leak into a replacement module generation.
+
+Open generic class, struct, and interface declarations carry a shared modifier
+flag. Open generic structs project as erased and open generic classes remain
+non-constructible; materializing a closed generic instance clears the flag.
+Abstract, interface, resource, ref-like, erased, and open-generic categories
+all fail before constructor invocation.
+
+## AOT Construction Boundary
+
+Member spread inference unwraps the spread expression before inferring its
+type. Unknown-arity reflection member calls defer fixed-signature validation to
+the runtime constructor binder; ordinary fixed signatures remain strict.
+
+The AOT C scalar stack-copy path also rejects a cached scalar local when the
+same basic block previously overwrote that slot from a dynamically typed stack
+source. It reads the canonical VM value slot instead. This preserves descriptor
+and result values across direct plus spread reflection calls without weakening
+scalar-local reuse for ordinary statically typed writes.
+
 ## Reserved Official Root
 
 Ordinary source cannot declare a module under `zr` or `zr.*`. Project current
@@ -147,11 +215,15 @@ runtime tests verify the registered hierarchy, workspace spoof rejection, and
 missing-resolver failure. Type inference and module-system suites protect the
 adjacent compiler and ABI behavior.
 
-The 2026-08-03 acceptance replay passed the same 395 Unity tests under WSL GCC
-11.4, WSL Clang 14, and MSVC 19.44.
+The M4/M5 replay adds 21 reflection surface tests, 4 stress tests, one VM/AOT C
+equivalence test, 9 provider convergence tests, the legacy migration suite, and
+8 focused LSP hover/completion assertions. GCC 11.4, Clang 14, and MSVC 19.44
+all pass the registered matrix; the AOT shared-library execution path is
+directly exercised on both GCC and Clang, while MSVC verifies the guarded
+platform boundary.
 
 ## Scope
 
-This closes Syntax 08 M1 provider/canonical-identity routing. It does not promote
-M2 member contracts, M3 artifact/corruption coverage, M4 construction/AOT, or
-M5 LSP/stress acceptance. Those gates remain open.
+This document now covers the complete promoted Syntax 08 provider and runtime
+boundary. Compile-time generated metadata remains owned by Syntax 11, and
+global provider inventory convergence remains owned by Syntax 10C.

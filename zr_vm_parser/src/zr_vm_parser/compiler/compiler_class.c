@@ -1092,6 +1092,9 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                               : 1);
     ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, classDecl->generic);
+    if (info.genericParameters.length > 0u) {
+        info.modifierFlags |= ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC;
+    }
     SZrString *primarySuperTypeName = ZR_NULL;
     // 处理继承关系
     if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {

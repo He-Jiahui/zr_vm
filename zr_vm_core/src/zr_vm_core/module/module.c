@@ -9,6 +9,25 @@
 
 #include "zr_vm_core/gc.h"
 
+#if defined(ZR_PLATFORM_WIN)
+#include <windows.h>
+#endif
+
+static volatile TZrUInt32 gNextModuleMetadataGeneration = 0u;
+
+static TZrUInt32 zr_module_next_metadata_generation(void) {
+    TZrUInt32 generation;
+
+    do {
+#if defined(ZR_PLATFORM_WIN)
+        generation = (TZrUInt32) InterlockedIncrement((volatile LONG *) &gNextModuleMetadataGeneration);
+#else
+        generation = (TZrUInt32) __atomic_add_fetch(&gNextModuleMetadataGeneration, 1u, __ATOMIC_RELAXED);
+#endif
+    } while (generation == 0u);
+    return generation;
+}
+
 static void zr_module_barrier_string_field(SZrState *state,
                                            struct SZrObjectModule *module,
                                            SZrString *stringValue) {
@@ -89,6 +108,7 @@ struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     module->initState = ZR_MODULE_INIT_STATE_UNINITIALIZED;
     module->reserved0 = 0;
     module->reserved1 = 0;
+    module->metadataGeneration = zr_module_next_metadata_generation();
     module->exportDescriptors = ZR_NULL;
     module->exportDescriptorLength = 0;
     module->hasMetadataRuntime = ZR_FALSE;

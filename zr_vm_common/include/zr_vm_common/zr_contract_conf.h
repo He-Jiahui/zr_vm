@@ -8,6 +8,7 @@
 #include "zr_vm_common/zr_common_conf.h"
 
 #define ZR_TYPE_MODIFIER_FLAG_RESOURCE (1u << 8)
+#define ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC (1u << 9)
 
 typedef enum EZrMemberContractRole {
     ZR_MEMBER_CONTRACT_ROLE_NONE = 0,

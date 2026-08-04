@@ -137,6 +137,9 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     compiler_collect_generic_parameter_info(cs, &info.genericParameters, interfaceDecl->generic);
+    if (info.genericParameters.length > 0u) {
+        info.modifierFlags |= ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC;
+    }
 
     if (interfaceDecl->inherits != ZR_NULL && interfaceDecl->inherits->count > 0) {
         for (TZrSize index = 0; index < interfaceDecl->inherits->count; index++) {

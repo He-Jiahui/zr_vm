@@ -16,6 +16,10 @@ struct SZrState;
 struct SZrClosureValue;
 struct SZrCallInfo;
 
+#define ZR_NATIVE_BINDING_RECEIVER_NONE 0u
+#define ZR_NATIVE_BINDING_RECEIVER_FRAME 1u
+#define ZR_NATIVE_BINDING_RECEIVER_CAPTURED 2u
+
 union TZrClosureLink {
     struct {
         struct SZrClosureValue *next;
