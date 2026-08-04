@@ -122,6 +122,7 @@ static void test_reflection_invoke_method_token_rejects_incomplete_signature_sha
     TEST_ASSERT_EQUAL_UINT32(0u, test_invoke_call_count);
 
     parameterType.baseType = (TZrUInt16)ZR_VALUE_TYPE_INT64;
+    parameterType.passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
     signature.parameterTypes = &parameterType;
     argumentValue.type = ZR_VALUE_TYPE_INT64;
     reset_invoke_capture();
@@ -190,7 +191,9 @@ static void test_reflection_invoke_method_token_checks_fixed_parameter_base_type
     TEST_ASSERT_NOT_NULL(runtime);
 
     parameterTypes[0].baseType = (TZrUInt16)ZR_VALUE_TYPE_INT64;
+    parameterTypes[0].passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
     parameterTypes[1].baseType = (TZrUInt16)ZR_VALUE_TYPE_BOOL;
+    parameterTypes[1].passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
     signature.parameterCount = 2u;
     signature.parameterTypes = parameterTypes;
     methodInfo.signature = &signature;
@@ -216,6 +219,104 @@ static void test_reflection_invoke_method_token_checks_fixed_parameter_base_type
                                                                      arguments,
                                                                      2u,
                                                                      &returnValue));
+    TEST_ASSERT_EQUAL_UINT32(1u, test_invoke_call_count);
+}
+
+static void test_reflection_invoke_method_token_rejects_non_value_parameter_modes(void) {
+    const EZrAotParameterPassingMode rejectedModes[] = {
+            ZR_AOT_PARAMETER_PASSING_UNKNOWN,
+            ZR_AOT_PARAMETER_PASSING_IN,
+            ZR_AOT_PARAMETER_PASSING_REF,
+            ZR_AOT_PARAMETER_PASSING_REF_READONLY,
+            ZR_AOT_PARAMETER_PASSING_SCOPED_REF,
+            ZR_AOT_PARAMETER_PASSING_SCOPED_REF_READONLY,
+            ZR_AOT_PARAMETER_PASSING_OUT,
+            (EZrAotParameterPassingMode)255,
+    };
+    SZrObjectModule module = {0};
+    SZrFunction metadataFunction = {0};
+    SZrAotCodeRegistration registration = {0};
+    SZrMetadataTokenRecord records[2] = {0};
+    FZrAotEntryThunk functionPointers[1] = {0};
+    SZrAotMethodInfo methodInfo = {0};
+    const SZrAotMethodInfo *methodInfos[1] = {0};
+    TZrUInt32 methodTokens[1] = {0};
+    SZrAotSignature signature = {0};
+    SZrAotSignatureType parameterType = {0};
+    SZrMetadataRuntime *runtime;
+    struct SZrState *state = (struct SZrState *)(void *)&module;
+    SZrTypeValue argument = {0};
+    SZrTypeValue returnValue = {0};
+
+    set_method_records(&metadataFunction, records);
+    runtime = attach_method_runtime(&module,
+                                    &metadataFunction,
+                                    &registration,
+                                    &methodInfo,
+                                    functionPointers,
+                                    methodInfos,
+                                    methodTokens);
+    TEST_ASSERT_NOT_NULL(runtime);
+
+    reset_invoke_capture();
+    TEST_ASSERT_FALSE(ZrCore_Reflection_InvokeMethodToken(
+            state,
+            runtime,
+            TEST_INVOKE_MEMBER_DEF_TOKEN,
+            ZR_NULL,
+            &argument,
+            &returnValue));
+    TEST_ASSERT_EQUAL_UINT32(0u, test_invoke_call_count);
+
+    parameterType.baseType = (TZrUInt16)ZR_VALUE_TYPE_INT64;
+    signature.parameterCount = 1u;
+    signature.parameterTypes = &parameterType;
+    methodInfo.signature = &signature;
+    argument.type = ZR_VALUE_TYPE_INT64;
+
+    for (TZrUInt32 index = 0u;
+         index < (TZrUInt32)(sizeof(rejectedModes) / sizeof(rejectedModes[0]));
+         index++) {
+        parameterType.passingMode = (TZrUInt8)rejectedModes[index];
+        reset_invoke_capture();
+        TEST_ASSERT_FALSE(ZrCore_Reflection_InvokeMethodTokenWithArgCount(
+                state,
+                runtime,
+                TEST_INVOKE_MEMBER_DEF_TOKEN,
+                ZR_NULL,
+                &argument,
+                1u,
+                &returnValue));
+        TEST_ASSERT_EQUAL_UINT32(0u, test_invoke_call_count);
+        TEST_ASSERT_FALSE(ZrCore_Reflection_InvokeMethodToken(
+                state,
+                runtime,
+                TEST_INVOKE_MEMBER_DEF_TOKEN,
+                ZR_NULL,
+                &argument,
+                &returnValue));
+        TEST_ASSERT_EQUAL_UINT32(0u, test_invoke_call_count);
+    }
+
+    parameterType.passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
+    reset_invoke_capture();
+    TEST_ASSERT_TRUE(ZrCore_Reflection_InvokeMethodTokenWithArgCount(
+            state,
+            runtime,
+            TEST_INVOKE_MEMBER_DEF_TOKEN,
+            ZR_NULL,
+            &argument,
+            1u,
+            &returnValue));
+    TEST_ASSERT_EQUAL_UINT32(1u, test_invoke_call_count);
+    reset_invoke_capture();
+    TEST_ASSERT_TRUE(ZrCore_Reflection_InvokeMethodToken(
+            state,
+            runtime,
+            TEST_INVOKE_MEMBER_DEF_TOKEN,
+            ZR_NULL,
+            &argument,
+            &returnValue));
     TEST_ASSERT_EQUAL_UINT32(1u, test_invoke_call_count);
 }
 
@@ -360,6 +461,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reflection_invoke_method_token_rejects_incomplete_signature_shape);
     RUN_TEST(test_reflection_invoke_method_token_checks_fixed_parameter_base_types);
+    RUN_TEST(test_reflection_invoke_method_token_rejects_non_value_parameter_modes);
     RUN_TEST(test_reflection_invoke_method_token_checks_return_base_type);
     RUN_TEST(test_reflection_invoke_method_token_rejects_stale_return_slot_when_invoker_does_not_write);
     RUN_TEST(test_reflection_invoke_method_token_clears_void_return_slot_after_dispatch);

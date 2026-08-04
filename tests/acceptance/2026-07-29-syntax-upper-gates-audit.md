@@ -176,6 +176,22 @@ remaining owner gates are open.
   and percent cutover 6/6.
 - This proves M1 provider/canonical identity routing only. M2-M5 remain open.
 
+## 2026-08-04 Gate 08 M2 invocation-boundary review
+
+- The public AOT signature now carries one versioned parameter passing mode;
+  AOT ABI advanced from 14 to 15.
+- Generated C projects every ExecIR form explicitly: value, in, ref,
+  ref-readonly, scoped-ref, scoped-ref-readonly, and out. Unknown projection
+  remains unknown instead of being treated as value.
+- Both reflection invocation entry points reject any known non-value, unknown,
+  or corrupt mode before invoking generated/native code. The counted entry
+  retains its arity, argument base-type, return-type, and return-slot guards.
+- Public reflection parameter descriptors and callable type literals already
+  preserve passing-mode names; the focused change closes the lower AOT/runtime
+  erasure path rather than adding a parallel descriptor model.
+- GCC and Clang pass 49/49 focused assertions. MSVC passes 46/46; three
+  ExecIR projection cases are intentionally Unix-only. M3-M5 remain open.
+
 ## 2026-08-03 Gate 11/14 requirement review
 
 - Gate 11 M1-M4 match their bounded first-version contracts. Gate 11 M5 remains
@@ -199,7 +215,8 @@ remaining owner gates are open.
 | Gate | Current evidence | State | Remaining proof/work |
 |---|---|---|---|
 | 08 M1 | official provider roles and canonical TypeRoles replace parser/core name dispatch; contract-only reflection cannot materialize; host loaders compose; projections and parent graphs validate; `zr.*` source spoofing is rejected; provider 9/9, resolver 10/10, reflection surface 19/19 and dynamic reflection 36/36 pass across GCC/Clang/MSVC | proven | preserve registered identity and fail-closed provider resolution |
-| 08 M2-M5 | nullable `typeof`, authenticated TypeId fields, member queries/construction and callable by-ref projection have focused behavior, but the complete artifact/AOT/LSP/stress promotion matrix is absent | indirect | add real reflection artifact/trimming/corruption, full VM/AOT execution, remaining LSP and stress/perf evidence |
+| 08 M2 | public parameter descriptors preserve passing modes; AOT ABI 15 projects all seven ExecIR forms; unknown/corrupt/non-value modes fail before both object-invocation dispatch paths; field/property/member query and overload/access/ref-getter matrices remain covered; GCC/Clang 49/49 and MSVC 46/46 focused assertions pass | proven | preserve value-only object invocation and require a future typed/scoped API for by-ref invocation |
+| 08 M3-M5 | nullable `typeof`, authenticated TypeId fields, member queries/construction, AOT roots, LSP hover/completion and stress tests have focused behavior, but the complete artifact/preservation/corruption, VM/AOT/LSP/navigation and final promotion matrix is absent | indirect | add reflection-specific artifact/trimming/corruption proof, complete VM/AOT execution and remaining LSP/navigation/stress acceptance |
 | 09 M1 | source-callable `Pool<T>` identity/recycle plus C state-machine, million-handle, ABA, exhaustion, alignment and concurrency evidence; pool 13/13 | proven | preserve scalar handle identity and ABI v4 descriptor contract |
 | 09 M2 | source-callable `tryRead`/`tryBorrow`, native `out` writeback, readonly/writable ref-property metadata, ref-like identity, local/field/global/array/box/native-ABI/closure/await/yield matrix, no-repeat-validation counter, and source return/throw/break/continue/replacement cleanup; the relevant six-target matrix passes 187/187 across GCC/Clang/MSVC | proven | preserve capability-driven ref-like and cleanup contracts |
 | 09 M3 | recursive canonical admission rejects nested lifecycle downgrades; production canonical inline delivery has no permanent mirror, fixes registry identity/layout id, traces and rewrites external managed values across full/minor GC, performs temporary guard projection with writable copyback, resumes after native close without replaying a closed view, gives ordinary interpreter entry functions a stable canonical registry without weakening artifact validation, uses the design-permitted stable native slab path, and rejects state-dependent concurrent admission; the registry slice passes 271/271 across GCC/Clang/MSVC and 60/60 under focused MSVC ASan | proven | preserve compact-safe external tracing and fail-closed concurrency capability boundaries |
@@ -225,5 +242,5 @@ The strict production parser cutover is complete. The 55 historical leaf
 records are confirmed in their own scope; the current directory additionally
 contains one completed task-level support record outside that selector. The root
 Syntax redesign is not complete: 07B is explicitly open; Gate 14 has
-reopened contract defects; and 08 M2-M5, 10C, and 11 M5 remain open.
+reopened contract defects; and 08 M3-M5, 10C, and 11 M5 remain open.
 No acceptance document may translate leaf completion into a root promotion.

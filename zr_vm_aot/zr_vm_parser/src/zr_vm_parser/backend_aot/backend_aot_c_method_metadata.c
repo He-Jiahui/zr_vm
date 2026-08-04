@@ -90,7 +90,8 @@ static const TZrChar *backend_aot_c_reflection_metadata_level_name(TZrUInt8 refl
 }
 
 static void backend_aot_write_c_signature_type(FILE *file,
-                                               const SZrFunctionTypedTypeRef *typeRef) {
+                                               const SZrFunctionTypedTypeRef *typeRef,
+                                               EZrAotParameterPassingMode passingMode) {
     TZrUInt32 baseType = 0u;
     TZrUInt32 staticCType = 0u;
     TZrUInt32 staticCTypeId = 0u;
@@ -122,6 +123,7 @@ static void backend_aot_write_c_signature_type(FILE *file,
             "        .elementBaseType = (TZrUInt16)%uu,\n"
             "        .isNullable = (TZrUInt8)%uu,\n"
             "        .isArray = (TZrUInt8)%uu,\n"
+            "        .passingMode = (TZrUInt8)%uu,\n"
             "    },\n",
             (unsigned)baseType,
             (unsigned)staticCType,
@@ -129,7 +131,8 @@ static void backend_aot_write_c_signature_type(FILE *file,
             (unsigned)ownershipQualifier,
             (unsigned)elementBaseType,
             (unsigned)isNullable,
-            (unsigned)isArray);
+            (unsigned)isArray,
+            (unsigned)passingMode);
 }
 
 static const SZrFunctionTypedTypeRef *backend_aot_c_signature_parameter_type(
@@ -148,6 +151,19 @@ static const SZrFunctionTypedTypeRef *backend_aot_c_signature_parameter_type(
     }
 
     return &function->parameterMetadata[parameterIndex].type;
+}
+
+static EZrAotParameterPassingMode backend_aot_c_signature_parameter_passing_mode(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 parameterIndex) {
+    if (functionIr == ZR_NULL ||
+        functionIr->frameLayout.parameterLayouts == ZR_NULL ||
+        parameterIndex >= functionIr->frameLayout.parameterLayoutCount) {
+        return ZR_AOT_PARAMETER_PASSING_UNKNOWN;
+    }
+
+    return backend_aot_exec_ir_parameter_passing_mode(
+            &functionIr->frameLayout.parameterLayouts[parameterIndex]);
 }
 
 typedef TZrBool (*FZrAotCSignatureReturnProof)(const SZrAotExecIrFunction *functionIr,
@@ -320,11 +336,15 @@ static void backend_aot_write_c_signature(FILE *file,
 
     fprintf(file, "static const SZrAotSignatureType zr_aot_signature_%u_types[] = {\n",
             (unsigned)functionIndex);
-    backend_aot_write_c_signature_type(file, returnType);
+    backend_aot_write_c_signature_type(
+            file, returnType, ZR_AOT_PARAMETER_PASSING_UNKNOWN);
     for (parameterIndex = 0u; parameterIndex < parameterCount; parameterIndex++) {
-        backend_aot_write_c_signature_type(file,
-                                           backend_aot_c_signature_parameter_type(
-                                                   function, functionIr, parameterIndex));
+        backend_aot_write_c_signature_type(
+                file,
+                backend_aot_c_signature_parameter_type(
+                        function, functionIr, parameterIndex),
+                backend_aot_c_signature_parameter_passing_mode(
+                        functionIr, parameterIndex));
     }
     fprintf(file, "};\n");
     fprintf(file, "static const SZrAotSignature zr_aot_signature_%u = {\n", (unsigned)functionIndex);

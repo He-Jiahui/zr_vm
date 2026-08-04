@@ -2985,3 +2985,13 @@ the pre-growth gate and all four snapshot fields before the export-only block; G
 also preserve generic typed-call and generated shared-library success paths. Public ABI, artifact schema, dynamic/meta/
 cross-module generation binding, physical ref/out storage and writeback, aggregate destination/return ABI,
 spill/address-taken slots, and A7.3 environment generation keys are unchanged or remain open.
+
+Syntax 08 M2 AOT signature projection update (2026-08-04): the public AOT ABI is
+now version 15 and `SZrAotSignatureType` carries an explicit parameter passing
+mode. Generated C maps the existing ExecIR sidecar's value, in, ref,
+ref-readonly, scoped-ref, scoped-ref-readonly, and out forms without relying on
+enum-number coincidence; absent or invalid projection remains unknown. The
+runtime's generic reflection object invocation accepts only explicit value
+parameters, so by-ref callables cannot be erased into the object argument
+vector. GCC and Clang focused matrices pass 49/49 assertions; MSVC passes 46/46
+with three established Unix-only projection cases omitted.

@@ -1675,3 +1675,15 @@ M6 的验证不是“编译成功”级别，而是直接断言 opcode、签名�
   Dynamic generic tests pass 35/0 under GCC, Clang, and MSVC; final MSVC focused CTest passes 6/6 and shared regressions
   pass 66/0, 31/0, and 95/0. Final independent review reports no Critical/Important. Global registration,
   replacement/unload, module generation, declaration reflection, and full reflection invocation remain separate work.
+
+- 2026-08-04 Syntax 08 M2 closes the value-only reflection invocation boundary.
+  `SZrAotSignatureType` now carries a versioned parameter passing mode and AOT
+  ABI 15 distinguishes unknown, value, in, ref, ref-readonly, scoped-ref,
+  scoped-ref-readonly, and out. Generated C consumes the existing ExecIR
+  parameter sidecar through an explicit mapping. Both token invocation APIs
+  reject unknown, corrupt, and non-value parameters before dispatch, while the
+  counted API retains its existing arity/base-type/return guards. Public
+  callable reflection continues to use its established `parameters[].passingMode`
+  and `parameterModes` fields; no second descriptor model was introduced.
+  Focused GCC/Clang validation passes 49/49 assertions and MSVC passes 46/46,
+  with three established Unix-only ExecIR projection cases omitted on MSVC.

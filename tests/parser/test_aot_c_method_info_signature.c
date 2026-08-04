@@ -14,6 +14,8 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
 
+#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
+
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {
     SZrString *sourceName;
 
@@ -213,6 +215,54 @@ static void assert_signature_type_row(const char *signatureTypes,
     TEST_ASSERT_TRUE(staticCType < rowEnd);
 }
 
+static void assert_signature_type_row_passing_mode(
+        const char *signatureTypes,
+        TZrUInt32 rowIndex,
+        EZrAotParameterPassingMode expectedPassingMode) {
+    const char *row = find_signature_type_row(signatureTypes, rowIndex);
+    const char *rowEnd;
+    const char *passingMode;
+    char passingModeText[96];
+
+    TEST_ASSERT_NOT_NULL(row);
+    rowEnd = strstr(row, "    },\n");
+    TEST_ASSERT_NOT_NULL(rowEnd);
+    snprintf(passingModeText,
+             sizeof(passingModeText),
+             "        .passingMode = (TZrUInt8)%uu,",
+             (unsigned)expectedPassingMode);
+    passingMode = strstr(row, passingModeText);
+    TEST_ASSERT_NOT_NULL(passingMode);
+    TEST_ASSERT_TRUE(passingMode < rowEnd);
+}
+
+static void test_aot_exec_ir_maps_all_parameter_passing_modes_to_public_abi(void) {
+    const EZrAotParameterPassingMode expectedModes[] = {
+            ZR_AOT_PARAMETER_PASSING_UNKNOWN,
+            ZR_AOT_PARAMETER_PASSING_VALUE,
+            ZR_AOT_PARAMETER_PASSING_IN,
+            ZR_AOT_PARAMETER_PASSING_REF,
+            ZR_AOT_PARAMETER_PASSING_REF_READONLY,
+            ZR_AOT_PARAMETER_PASSING_SCOPED_REF,
+            ZR_AOT_PARAMETER_PASSING_SCOPED_REF_READONLY,
+            ZR_AOT_PARAMETER_PASSING_OUT,
+    };
+    SZrAotExecIrParameterLayout layout = {0};
+
+    TEST_ASSERT_EQUAL(
+            ZR_AOT_PARAMETER_PASSING_UNKNOWN,
+            backend_aot_exec_ir_parameter_passing_mode(&layout));
+    for (TZrUInt32 index = 1u;
+         index < (TZrUInt32)(sizeof(expectedModes) / sizeof(expectedModes[0]));
+         index++) {
+        layout.passingFormKnown = ZR_TRUE;
+        layout.passingForm = index;
+        TEST_ASSERT_EQUAL(
+                expectedModes[index],
+                backend_aot_exec_ir_parameter_passing_mode(&layout));
+    }
+}
+
 #include "test_aot_c_method_info_return_projection_cases.h"
 #include "test_aot_c_direct_inline_return_layout_projection_cases.h"
 
@@ -274,6 +324,7 @@ static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(
     bindings[1].symbolId = 21u;
     bindings[1].typeId = 22u;
     bindings[1].placeId = 23u;
+    bindings[1].roleFlags = ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_VALUE;
     init_signature_type_ref(
             &bindings[1].type, ZR_VALUE_TYPE_INT64, ZR_STATIC_C_TYPE_I64);
     TEST_ASSERT_NOT_NULL(bindings[0].name);
@@ -348,6 +399,10 @@ static void test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types(
     TEST_ASSERT_NOT_NULL(explicitStaticType);
     TEST_ASSERT_TRUE(explicitStaticType < signatureDescriptor);
     assert_text_contains(signatureDescriptor, "    .parameterCount = 2u,");
+    assert_signature_type_row_passing_mode(
+            signatureTypes, 1u, ZR_AOT_PARAMETER_PASSING_UNKNOWN);
+    assert_signature_type_row_passing_mode(
+            signatureTypes, 2u, ZR_AOT_PARAMETER_PASSING_VALUE);
 
     free(generatedCText);
     ZrTests_Runtime_State_Destroy(state);
@@ -520,6 +575,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_method_info_infers_bool_u64_f64_script_return_signatures);
     RUN_TEST(test_aot_c_method_info_aligns_receiver_and_explicit_parameter_types);
+    RUN_TEST(test_aot_exec_ir_maps_all_parameter_passing_modes_to_public_abi);
     RUN_TEST(test_aot_c_method_info_leaves_ambiguous_legacy_parameter_types_unknown);
     RUN_TEST(test_aot_exec_ir_callable_return_accessor_isolates_raw_metadata);
 #if defined(ZR_PLATFORM_UNIX)

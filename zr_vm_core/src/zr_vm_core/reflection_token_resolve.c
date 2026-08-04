@@ -271,7 +271,30 @@ static TZrBool reflection_signature_accepts_fixed_argument_types(const SZrAotSig
     }
 
     for (index = 0u; index < signature->parameterCount; index++) {
-        if (!reflection_signature_base_type_accepts_argument(signature->parameterTypes[index].baseType, &args[index])) {
+        if (signature->parameterTypes[index].passingMode !=
+            (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE ||
+            !reflection_signature_base_type_accepts_argument(
+                    signature->parameterTypes[index].baseType, &args[index])) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool reflection_method_signature_is_value_only(
+        const SZrAotMethodInfo *methodInfo) {
+    const SZrAotSignature *signature;
+
+    if (methodInfo == ZR_NULL || methodInfo->signature == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    signature = methodInfo->signature;
+    if (signature->parameterCount > 0u && signature->parameterTypes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 index = 0u; index < signature->parameterCount; index++) {
+        if (signature->parameterTypes[index].passingMode !=
+            (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE) {
             return ZR_FALSE;
         }
     }
@@ -362,6 +385,9 @@ TZrBool ZrCore_Reflection_InvokeMethodToken(struct SZrState *state,
         return ZR_FALSE;
     }
     if (!reflection_resolve_invokable_method(runtime, methodToken, &resolved)) {
+        return ZR_FALSE;
+    }
+    if (!reflection_method_signature_is_value_only(resolved.methodInfo)) {
         return ZR_FALSE;
     }
 

@@ -109,6 +109,34 @@ static inline TZrBool backend_aot_exec_ir_parameter_passing_form_is_valid(
                     (TZrUInt32)ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_OUT);
 }
 
+static inline EZrAotParameterPassingMode
+backend_aot_exec_ir_parameter_passing_mode(
+        const SZrAotExecIrParameterLayout *layout) {
+    if (!backend_aot_exec_ir_parameter_passing_form_is_valid(layout) ||
+        layout->passingFormKnown != ZR_TRUE) {
+        return ZR_AOT_PARAMETER_PASSING_UNKNOWN;
+    }
+    switch ((EZrAotExecIrParameterPassingForm)layout->passingForm) {
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_VALUE:
+            return ZR_AOT_PARAMETER_PASSING_VALUE;
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_IN:
+            return ZR_AOT_PARAMETER_PASSING_IN;
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_REF:
+            return ZR_AOT_PARAMETER_PASSING_REF;
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_REF_READONLY:
+            return ZR_AOT_PARAMETER_PASSING_REF_READONLY;
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_SCOPED_REF:
+            return ZR_AOT_PARAMETER_PASSING_SCOPED_REF;
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_SCOPED_REF_READONLY:
+            return ZR_AOT_PARAMETER_PASSING_SCOPED_REF_READONLY;
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_OUT:
+            return ZR_AOT_PARAMETER_PASSING_OUT;
+        case ZR_AOT_EXEC_IR_PARAMETER_PASSING_FORM_UNKNOWN:
+        default:
+            return ZR_AOT_PARAMETER_PASSING_UNKNOWN;
+    }
+}
+
 static inline TZrBool backend_aot_exec_ir_parameter_is_value_passing(
         const SZrAotExecIrParameterLayout *layout) {
     return (TZrBool)(

@@ -4192,6 +4192,8 @@ static void test_reflection_invoke_method_token_dispatches_aot_invoker(void) {
             0u,
             TEST_MEMBER_DEF_TOKEN,
     };
+    SZrAotSignatureType parameterTypes[2] = {{0}};
+    SZrAotSignature signature = {0};
     SZrMetadataRuntime *runtime;
     struct SZrState *state = (struct SZrState *)(void *)&module;
     SZrTypeValue selfValue = {0};
@@ -4210,6 +4212,11 @@ static void test_reflection_invoke_method_token_dispatches_aot_invoker(void) {
     methodInfo0.functionIndex = 0u;
     methodInfo0.invoker = test_reflection_aot_invoker;
     methodInfo1.functionIndex = 1u;
+    parameterTypes[0].passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
+    parameterTypes[1].passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
+    signature.parameterCount = 2u;
+    signature.parameterTypes = parameterTypes;
+    methodInfo1.signature = &signature;
     methodInfo1.invoker = test_reflection_aot_invoker;
     registration.functionCount = 2u;
     registration.functionPointers = functionPointers;
@@ -4300,7 +4307,9 @@ static void test_reflection_invoke_method_token_checks_signature_argument_count(
     metadataFunction.metadataTokenRecords = records;
     metadataFunction.metadataTokenRecordLength = 2u;
     parameterTypes[0].baseType = (TZrUInt16)ZR_VALUE_TYPE_INT64;
+    parameterTypes[0].passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
     parameterTypes[1].baseType = (TZrUInt16)ZR_VALUE_TYPE_UINT64;
+    parameterTypes[1].passingMode = (TZrUInt8)ZR_AOT_PARAMETER_PASSING_VALUE;
     returnType.baseType = (TZrUInt16)ZR_VALUE_TYPE_INT64;
     signature.parameterCount = 2u;
     signature.returnType = &returnType;

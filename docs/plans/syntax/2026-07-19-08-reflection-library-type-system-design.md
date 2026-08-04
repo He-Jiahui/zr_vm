@@ -428,6 +428,8 @@ reflection.byref_invoke_requires_typed_api
 
 依赖：M1、05，以及 03 已冻结的 receiver/layout contract。晋级门：field let/var、concrete/ref-return property、overload/generic method、declared/inherited/access/query ambiguity 全矩阵通过；ref getter 和 `in/ref/out` 不被 object invocation 擦除。
 
+状态（2026-08-04）：已晋级。公开 callable/parameter descriptor 已保留七种 passing mode；AOT ABI 15 把 ExecIR 的 `value/in/ref/ref readonly/scoped ref/scoped ref readonly/out` 投影到版本化 MethodInfo signature。通用 object invocation 只接受显式 `value`，unknown、损坏值和全部 by-ref mode 在 invoker 调度前失败。field/property/member query 的访问、继承、稳定顺序、overload/ambiguity 与 ref getter 证据由 reflection surface、token resolve 和 module reflection 矩阵覆盖；三编译器聚焦验收见 `tests/acceptance/2026-08-04-syntax-08-m2-reflection-invocation-boundary.md`。M3-M5 不因本状态自动晋级。
+
 ### M3 Metadata graph、artifact 与 preservation
 
 目标：让 source、binary 与 runtime descriptor 共用 TypeDef/member/layout/ownership/meta record schema，并建立裁剪/preservation 状态和损坏输入拒绝。

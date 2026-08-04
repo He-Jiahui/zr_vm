@@ -14,7 +14,7 @@ struct SZrAotMethodInfo;
 struct SZrAotGcRootMap;
 struct SZrTypeLayout;
 
-#define ZR_VM_AOT_ABI_VERSION 14u
+#define ZR_VM_AOT_ABI_VERSION 15u
 
 typedef enum EZrAotBackendKind {
     ZR_AOT_BACKEND_KIND_NONE = 0,
@@ -85,6 +85,17 @@ typedef struct SZrAotGenericDictionary {
     SZrAotGenericResolvedSlot *resolvedSlots;
 } SZrAotGenericDictionary;
 
+typedef enum EZrAotParameterPassingMode {
+    ZR_AOT_PARAMETER_PASSING_UNKNOWN = 0,
+    ZR_AOT_PARAMETER_PASSING_VALUE = 1,
+    ZR_AOT_PARAMETER_PASSING_IN = 2,
+    ZR_AOT_PARAMETER_PASSING_REF = 3,
+    ZR_AOT_PARAMETER_PASSING_REF_READONLY = 4,
+    ZR_AOT_PARAMETER_PASSING_SCOPED_REF = 5,
+    ZR_AOT_PARAMETER_PASSING_SCOPED_REF_READONLY = 6,
+    ZR_AOT_PARAMETER_PASSING_OUT = 7
+} EZrAotParameterPassingMode;
+
 typedef struct SZrAotSignatureType {
     TZrUInt16 baseType;
     TZrUInt16 staticCType;
@@ -93,6 +104,9 @@ typedef struct SZrAotSignatureType {
     TZrUInt16 elementBaseType;
     TZrUInt8 isNullable;
     TZrUInt8 isArray;
+    TZrUInt8 passingMode;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
 } SZrAotSignatureType;
 
 typedef struct SZrAotSignature {
