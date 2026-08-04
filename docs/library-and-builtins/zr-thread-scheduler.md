@@ -20,14 +20,17 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
 plan_sources:
+  - user: 2026-08-05 完成 Syntax 10C official provider convergence
   - user: 2026-07-25 execute Syntax 12 milestones and record each completed milestone
   - docs/plans/syntax/2026-07-20-12-async-task-job-scheduler-design.md
   - docs/plans/syntax/12-async-task-job-scheduler/m4-attached-domain-thread-scheduler-implementation-plan.md
   - docs/plans/syntax/12-async-task-job-scheduler/m5-isolated-domain-transport-implementation-plan.md
 tests:
   - tests/thread/test_thread_runtime.c
+  - tests/library/test_official_provider_convergence.c
   - tests/acceptance/2026-07-25-syntax-12-m4-attached-domain-thread-scheduler.md
   - tests/acceptance/2026-07-25-syntax-12-m5-isolated-domain-transport.md
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
 doc_type: module-detail
 ---
 
@@ -40,6 +43,11 @@ doc_type: module-detail
 Task, Job, or Scheduler family. A submission consumes the existing
 `zr.task.Job<T>` once and returns the existing caller-domain `zr.task.Task<T>`
 completion object.
+
+The `zr.thread` descriptor explicitly declares Runtime phase and
+`zr.thread:v1:isolated-scheduler-send` as its public contract hash. Syntax 10C
+validates that it owns `ThreadScheduler` and `Send` while publishing no local
+`Task` or `Job` TypeDef.
 
 The M4 provider is specifically the AttachedDomain policy: a worker state is
 a mutator of the caller's `GcDomain`. It is therefore not the legacy isolated

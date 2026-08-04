@@ -8,6 +8,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/parser.h"
 
+#include "legacy_migration_module_specifier.h"
+
 typedef enum EZrLegacyMigrationLexState {
     ZR_LEGACY_MIGRATION_LEX_CODE = 0,
     ZR_LEGACY_MIGRATION_LEX_LINE_COMMENT,
@@ -1437,6 +1439,52 @@ static TZrBool legacy_migration_word_is_test_function_prefix(
     return legacy_migration_span_equals(source, next, nextEnd, "fn");
 }
 
+static TZrBool legacy_migration_append_bare_debug_import(
+        SZrState *state,
+        SZrLegacyMigrationPlan *plan,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        SZrString *sourceName,
+        TZrSize wordStart,
+        TZrSize wordEnd,
+        TZrSize *outConsumedEnd) {
+    SZrLegacyMigrationModuleSpecifierMatch match;
+
+    if (outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = wordEnd;
+    }
+    if (!ZrParser_LegacyMigrationModuleSpecifier_TryMatchBareDebugImport(
+                source,
+                sourceLength,
+                wordStart,
+                wordEnd,
+                &match)) {
+        return ZR_TRUE;
+    }
+
+    if (!legacy_migration_append_item(
+                state,
+                plan,
+                source,
+                sourceName,
+                "legacyDebugModuleSpecifier",
+                "canonicalModuleSpecifier",
+                "10",
+                ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+                "The bare debug native module was removed; use canonical zr.debug.",
+                wordStart,
+                match.itemEnd,
+                match.editStart,
+                match.editEnd,
+                "zr.debug")) {
+        return ZR_FALSE;
+    }
+    if (outConsumedEnd != ZR_NULL) {
+        *outConsumedEnd = match.itemEnd;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool legacy_migration_has_machine_overlap(const SZrLegacyMigrationPlan *plan) {
     TZrSize index;
     TZrSize previousEnd = 0U;
@@ -1658,8 +1706,22 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
         }
         if (legacy_migration_is_identifier_start(current)) {
             TZrSize wordEnd = legacy_migration_read_identifier(source, sourceLength, index);
+            TZrSize consumedEnd = wordEnd;
 
-            if (legacy_migration_span_equals(source, index, wordEnd, "test") &&
+            if (legacy_migration_span_equals(source, index, wordEnd, "import")) {
+                if (!legacy_migration_append_bare_debug_import(
+                            state,
+                            outPlan,
+                            source,
+                            sourceLength,
+                            sourceName,
+                            index,
+                            wordEnd,
+                            &consumedEnd)) {
+                    ZrParser_LegacyMigration_PlanFree(state, outPlan);
+                    return ZR_FALSE;
+                }
+            } else if (legacy_migration_span_equals(source, index, wordEnd, "test") &&
                 legacy_migration_word_is_test_function_prefix(
                         source, sourceLength, wordEnd)) {
                 if (!legacy_migration_append_word_item(
@@ -1784,7 +1846,7 @@ ZR_PARSER_API TZrBool ZrParser_LegacyMigration_PlanSource(
                     return ZR_FALSE;
                 }
             }
-            index = wordEnd;
+            index = consumedEnd;
             continue;
         }
         index++;

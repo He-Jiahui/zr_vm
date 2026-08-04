@@ -13,13 +13,17 @@ implementation_files:
   - zr_vm_lib_debug/CMakeLists.txt
 plan_sources:
   - user: 2026-06-21 按 docs/plans/debug 优化 debug 调试能力
+  - user: 2026-08-05 严格执行 debug 到 zr.debug 的一次性破坏性切换
   - docs/plans/debug/04-script-debug-library.md
   - docs/plans/debug/index.md
+  - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
 tests:
   - tests/library/test_debug_library.c
+  - tests/library/test_official_provider_convergence.c
   - tests/debug/test_debug_traceback.c
   - tests/debug/test_debug_hook_core.c
   - tests/debug/test_debug_introspection.c
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
 doc_type: module-detail
 ---
 
@@ -27,7 +31,7 @@ doc_type: module-detail
 
 ## Purpose
 
-`debug` 是脚本层调试标准库，桥接 Phase 1-3 已落地的内核 hook、栈信息、自省变量和 traceback 能力。它对齐 Lua `ldblib.c` 的首批脚本 API，但默认不自动装载；宿主必须显式注册，才能让脚本通过 `%import("debug")` 取得模块。
+`zr.debug` 是脚本层调试标准库，桥接 Phase 1-3 已落地的内核 hook、栈信息、自省变量和 traceback 能力。它对齐 Lua `ldblib.c` 的首批脚本 API，但默认不自动装载；宿主必须显式注册，脚本再通过 `let debug = import("zr.debug");` 取得模块。
 
 这个模块面向测试、诊断、profiler 原型和断言增强，不应作为普通业务脚本的默认依赖。
 
@@ -52,11 +56,17 @@ doc_type: module-detail
 `zr_vm_lib_debug/include/zr_vm_lib_debug/module.h` 暴露两组描述符和注册入口：
 
 - `ZrVmLibDebug_Register(global)` 注册受信描述符，允许所有读写 API。
-- `ZrVmLibDebug_RegisterSandboxed(global)` 注册同名 `debug` 模块的只读描述符。
+- `ZrVmLibDebug_RegisterSandboxed(global)` 注册同名 `zr.debug` 模块的只读描述符。
 - `ZrVmLibDebug_GetModuleDescriptor()` / `ZrVmLibDebug_GetSandboxedModuleDescriptor()` 供宿主或测试直接取描述符。
 - shared library 模式下，`ZrVm_GetNativeModule_v1()` 返回受信描述符，保持 native module plugin ABI 兼容。
 
 受信和沙箱描述符使用同一组函数表，运行时通过 `ZrLibCallContext::moduleDescriptor` 区分当前调用来自哪一种注册。模块 materialize 时还会写入 `__writeEnabled` 和 `__hook` 字段，前者用于调试观察，后者用于把脚本 hook 函数保留在模块对象上，避免 hook record 只保存裸值导致回收风险。
+
+两个描述符都显式声明 Runtime provider phase 和
+`zr.debug:v1:lua-aligned-debug-surface` public contract hash。descriptor、type-hint
+JSON、内部 hook lookup 和 module cache 使用同一个 `zr.debug` identity。裸
+`debug` 不注册 alias；native registry 以稳定错误拒绝旧 descriptor，06A migration
+frontend 提供 `import("debug")` 到 `import("zr.debug")` 的结构化 edit。
 
 ## Runtime Behavior
 

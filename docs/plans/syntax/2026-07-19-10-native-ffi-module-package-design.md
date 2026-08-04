@@ -1,6 +1,8 @@
 # 10 Native extern、内建库、模块与包解析设计
 
-> 状态：已拆分 resolver、FFI ABI 与 provider convergence 依赖，等待按里程碑实施。
+> 状态：10R、10F 与 10C 已完成并分别通过三工具链验收；Syntax 10 整体晋级，可作为 06B 前置依赖。
+>
+> 验收记录：[10R M1](../../../tests/acceptance/2026-07-24-syntax-10r-m1-specifier-foundation.md)、[10R M2](../../../tests/acceptance/2026-07-24-syntax-10r-m2-artifact-provider-phase.md)、[10F](../../../tests/acceptance/2026-07-29-syntax-10f-native-extern-ffi-contract.md)、[10C](../../../tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md)。
 >
 > 10R resolver/package 硬依赖：[01 Canonical TypeRef、Place、CFG 与 artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)。
 >
@@ -561,11 +563,17 @@ provider descriptor还必须声明`Runtime | Test | CompileTool` phase。phase�
 
 保留 `zr.*` 根，冻结 N0-N3 inventory，并由 10 自身完成 `debug` 到 `zr.debug` 的迁移；收集并校验 08、09、11-14 已经基于 10R substrate 登记的 task/iteration/container/thread/reflection/pooling/compile/testing native/host descriptor 和 canonical type role。provider 的 schema/注册由 owner 计划自己的 gate 负责，10C 不替 owner 补实现；未晋级 provider 不得以占位 TypeDef 冒充完成。
 
+完成：25 项 inventory 保持冻结；真实 owner descriptor 的 identity、phase、public contract hash、注册 admission 和唯一 TypeDef 已聚合验证。Debug trusted/sandboxed descriptor、hint schema 与内部 lookup 已一次性切换为 `zr.debug`，裸 `debug` 仅保留稳定拒绝诊断。
+
 #### M5 Consumers/migration
 
 LSP、reflection、debug、formatter和 06A migration frontend 只消费 canonical identity/schema。M5 验证迁移 edit plan 与 target contract，但全仓 edit、parser cutover 和 legacy 删除仍由 06B 独占。
 
+完成：resolver/project import、reflection、Debug 与 LSP focused matrix 共同验证 canonical identity/schema 消费。06A 对 `import("debug")` 生成仅编辑 literal 的幂等 machine edit，支持 trivia 且不引入 runtime alias；全仓输入应用仍由 06B 负责。
+
 10C 晋级门：M4-M5 全部 provider/consumer 证据完成；10R、10F 可以在此之前分别晋级，但 10 作为 06B 的整体前置依赖时必须连同 10C 一起通过。
+
+晋级结果：202/202 focused checks 在 GCC 11.4、Clang 14 和 MSVC 19.44 分别通过，合计 606/606；10C 于 2026-08-05 晋级。
 
 整体晋级要求：
 

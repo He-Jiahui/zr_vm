@@ -4010,13 +4010,44 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_debug/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_iteration/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_testing/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_thread/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_official_provider_convergence_test)
     if (BUILD_SHARED_LIB)
-        target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_lib_testing_shared)
+        target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE
+                zr_vm_lib_container_shared
+                zr_vm_lib_iteration_shared
+                zr_vm_lib_testing_shared
+        )
     else ()
-        target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_lib_testing_static)
+        target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE
+                zr_vm_lib_container_static
+                zr_vm_lib_iteration_static
+                zr_vm_lib_testing_static
+        )
+    endif ()
+    if (TARGET zr_vm_thread_shared OR TARGET zr_vm_thread_static)
+        target_compile_definitions(zr_vm_official_provider_convergence_test PRIVATE
+                ZR_TEST_HAS_THREAD_PROVIDER=1)
+        if (BUILD_SHARED_LIB)
+            target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_thread_shared)
+        else ()
+            target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_thread_static)
+        endif ()
+    endif ()
+    if (TARGET zr_vm_debug_shared OR TARGET zr_vm_debug_static)
+        target_compile_definitions(zr_vm_official_provider_convergence_test PRIVATE
+                ZR_TEST_HAS_DEBUG_PROVIDER=1)
+        if (BUILD_SHARED_LIB)
+            target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_debug_shared)
+        else ()
+            target_link_libraries(zr_vm_official_provider_convergence_test PRIVATE zr_vm_debug_static)
+        endif ()
     endif ()
 
     zr_vm_add_unity_test_target(

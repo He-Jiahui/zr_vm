@@ -125,7 +125,7 @@ static const ZrLibFunctionDescriptor g_debug_functions[] = {
 static const TZrChar g_debug_type_hints_json[] =
         "{\n"
         "  \"schema\": \"zr.native.hints/v1\",\n"
-        "  \"module\": \"debug\",\n"
+        "  \"module\": \"zr.debug\",\n"
         "  \"functions\": [\n"
         "    {\"name\":\"traceback\",\"signature\":\"traceback(msg: string = null, level: int = 1): string\"},\n"
         "    {\"name\":\"getinfo\",\"signature\":\"getinfo(levelOrFunction, what: string = \\\"nSlu\\\"): object\"},\n"
@@ -141,7 +141,7 @@ static const TZrChar g_debug_type_hints_json[] =
 
 static const ZrLibModuleDescriptor g_debug_module_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
-        .moduleName = "debug",
+        .moduleName = "zr.debug",
         .constants = ZR_NULL,
         .constantCount = 0,
         .functions = g_debug_functions,
@@ -158,11 +158,13 @@ static const ZrLibModuleDescriptor g_debug_module_descriptor = {
         .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         .requiredCapabilities = 0,
         .onMaterialize = debug_module_on_materialize,
+        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+        .publicContractHash = "zr.debug:v1:lua-aligned-debug-surface",
 };
 
 static const ZrLibModuleDescriptor g_debug_sandboxed_module_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
-        .moduleName = "debug",
+        .moduleName = "zr.debug",
         .constants = ZR_NULL,
         .constantCount = 0,
         .functions = g_debug_functions,
@@ -179,6 +181,8 @@ static const ZrLibModuleDescriptor g_debug_sandboxed_module_descriptor = {
         .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         .requiredCapabilities = 0,
         .onMaterialize = debug_module_on_materialize,
+        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+        .publicContractHash = "zr.debug:v1:lua-aligned-debug-surface",
 };
 
 static void debug_write_int_field(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
@@ -408,7 +412,7 @@ static void debug_store_module_hook_value(SZrState *state, const SZrTypeValue *h
         return;
     }
 
-    module = ZrLib_Module_GetLoaded(state, "debug");
+    module = ZrLib_Module_GetLoaded(state, "zr.debug");
     if (module == ZR_NULL) {
         return;
     }

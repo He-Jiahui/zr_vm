@@ -210,11 +210,58 @@ static void test_generated_identifier_collision_never_auto_applies(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+static void test_bare_debug_import_migrates_to_canonical_module_idempotently(void) {
+    static const TZrChar source[] =
+            "let debug = import(\"debug\");\n"
+            "let debugWithTrivia = import /* provider */ (\n"
+            "    \"debug\"\n"
+            ");\n"
+            "let preserved = \"import(\\\"debug\\\")\";\n"
+            "// import(\"debug\")\n";
+    static const TZrChar expected[] =
+            "let debug = import(\"zr.debug\");\n"
+            "let debugWithTrivia = import /* provider */ (\n"
+            "    \"zr.debug\"\n"
+            ");\n"
+            "let preserved = \"import(\\\"debug\\\")\";\n"
+            "// import(\"debug\")\n";
+    SZrString *sourceName =
+            ZrCore_String_CreateFromNative(g_state, "debug_module_migration.zr");
+    SZrLegacyMigrationPlan plan = {0};
+    SZrLegacyMigrationPlan second = {0};
+    const SZrLegacyMigrationItem *item;
+    TZrChar *migrated = ZR_NULL;
+    TZrSize migratedLength = 0U;
+
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, source, strlen(source), sourceName, &plan));
+    item = find_item(&plan, "legacyDebugModuleSpecifier");
+    TEST_ASSERT_NOT_NULL(item);
+    TEST_ASSERT_EQUAL(ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, item->applicability);
+    TEST_ASSERT_TRUE(item->hasFix);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_ApplyMachineEdits(
+            g_state,
+            &plan,
+            source,
+            strlen(source),
+            &migrated,
+            &migratedLength));
+    TEST_ASSERT_EQUAL_STRING(expected, migrated);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, migrated, migratedLength, sourceName, &second));
+    TEST_ASSERT_EQUAL_UINT32(0U, second.items.length);
+
+    ZrParser_LegacyMigration_PlanFree(g_state, &second);
+    ZrCore_Memory_RawFree(g_state->global, migrated, migratedLength + 1U);
+    ZrParser_LegacyMigration_PlanFree(g_state, &plan);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_percent_test_becomes_typed_ordinary_function);
     RUN_TEST(test_return_convention_requires_review_and_is_not_applied);
     RUN_TEST(test_draft_test_functions_and_attributes_migrate_idempotently);
     RUN_TEST(test_generated_identifier_collision_never_auto_applies);
+    RUN_TEST(test_bare_debug_import_migrates_to_canonical_module_idempotently);
     return UNITY_END();
 }

@@ -4339,6 +4339,8 @@ static const ZrLibModuleDescriptor g_container_module_descriptor = {
         .moduleVersion = ZR_NULL,
         .minRuntimeAbi = 0,
         .requiredCapabilities = 0,
+        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+        .publicContractHash = "zr.container:v1:container-span-protocols",
 };
 
 const ZrLibModuleDescriptor *ZrVmLibContainer_GetModuleDescriptor(void) {

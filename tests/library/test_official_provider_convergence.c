@@ -1,7 +1,12 @@
 #include "unity.h"
 
 #include "runtime_support.h"
+#include "zr_vm_core/task_runtime.h"
+#include "zr_vm_lib_container/module.h"
+#include "zr_vm_lib_debug/module.h"
+#include "zr_vm_lib_iteration/module.h"
 #include "zr_vm_lib_testing/module.h"
+#include "zr_vm_lib_thread/module.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser/attribute_contract.h"
 #include "zr_vm_parser/compile_tool.h"
@@ -66,6 +71,40 @@ static ZrLibModuleDescriptor make_descriptor(const TZrChar *moduleName,
     descriptor.providerPhase = phase;
     descriptor.publicContractHash = publicContractHash;
     return descriptor;
+}
+
+static const ZrLibTypeDescriptor *find_descriptor_type(
+        const ZrLibModuleDescriptor *descriptor,
+        const TZrChar *typeName) {
+    TZrSize index;
+
+    if (descriptor == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < descriptor->typeCount; index++) {
+        if (descriptor->types[index].name != ZR_NULL &&
+            strcmp(descriptor->types[index].name, typeName) == 0) {
+            return &descriptor->types[index];
+        }
+    }
+    return ZR_NULL;
+}
+
+static void assert_official_runtime_descriptor(
+        SZrState *state,
+        const ZrLibModuleDescriptor *descriptor,
+        const TZrChar *expectedModuleName) {
+    const ZrLibOfficialModuleInventoryEntry *entry;
+
+    TEST_ASSERT_NOT_NULL(descriptor);
+    TEST_ASSERT_EQUAL_STRING(expectedModuleName, descriptor->moduleName);
+    entry = ZrLibrary_OfficialModuleInventory_Find(descriptor->moduleName);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_INT(entry->phase, descriptor->providerPhase);
+    TEST_ASSERT_NOT_NULL(descriptor->publicContractHash);
+    TEST_ASSERT_NOT_EQUAL('\0', descriptor->publicContractHash[0]);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
+            state->global, descriptor));
 }
 
 static SZrObjectModule *host_native_loader_probe(SZrState *state,
@@ -343,6 +382,21 @@ static void test_registry_composes_and_restores_host_native_loader(void) {
 }
 
 static void test_owner_descriptors_converge_on_inventory_phase(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    const ZrLibModuleDescriptor *taskModule;
+    const ZrLibModuleDescriptor *iterationModule =
+            ZrVmLibIteration_GetModuleDescriptor();
+    const ZrLibModuleDescriptor *containerModule =
+            ZrVmLibContainer_GetModuleDescriptor();
+    const ZrLibModuleDescriptor *poolingModule =
+            ZrVmLibContainer_GetPoolingModuleDescriptor();
+#if defined(ZR_TEST_HAS_THREAD_PROVIDER)
+    const ZrLibModuleDescriptor *threadModule = ZR_NULL;
+#endif
+#if defined(ZR_TEST_HAS_DEBUG_PROVIDER)
+    const ZrLibModuleDescriptor *debugModule = ZR_NULL;
+#endif
+    const ZrLibModuleDescriptor *reflectionModule;
     const SZrParserCompileToolModuleDescriptor *compileModule =
             ZrParser_CompileTool_FindModule("zr.compile");
     const SZrParserCompileToolModuleDescriptor *declarationModule =
@@ -350,6 +404,47 @@ static void test_owner_descriptors_converge_on_inventory_phase(void) {
     const ZrLibModuleDescriptor *testingModule = ZrVmLibTesting_GetModuleDescriptor();
     const ZrLibOfficialModuleInventoryEntry *entry;
     const SZrParserAttributeSchema *schema;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(state->global));
+    TEST_ASSERT_TRUE(ZrCore_TaskRuntime_RegisterBuiltins(state->global));
+    taskModule = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.task");
+    reflectionModule = ZrLibrary_NativeRegistry_FindModule(state->global, "zr.reflection");
+#if defined(ZR_TEST_HAS_THREAD_PROVIDER)
+    threadModule = ZrVmThread_GetModuleDescriptor();
+#endif
+#if defined(ZR_TEST_HAS_DEBUG_PROVIDER)
+    debugModule = ZrVmLibDebug_GetModuleDescriptor();
+#endif
+
+    assert_official_runtime_descriptor(state, taskModule, "zr.task");
+    assert_official_runtime_descriptor(state, iterationModule, "zr.iteration");
+    assert_official_runtime_descriptor(state, containerModule, "zr.container");
+    assert_official_runtime_descriptor(state, poolingModule, "zr.pooling");
+    assert_official_runtime_descriptor(state, reflectionModule, "zr.reflection");
+#if defined(ZR_TEST_HAS_THREAD_PROVIDER)
+    assert_official_runtime_descriptor(state, threadModule, "zr.thread");
+#endif
+#if defined(ZR_TEST_HAS_DEBUG_PROVIDER)
+    assert_official_runtime_descriptor(state, debugModule, "zr.debug");
+#endif
+
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(taskModule, "Task"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(taskModule, "Job"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(taskModule, "Scheduler"));
+    TEST_ASSERT_NULL(find_descriptor_type(iterationModule, "Task"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(iterationModule, "Iterable"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(iterationModule, "Enumerator"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(iterationModule, "Iterator"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(iterationModule, "AsyncIterator"));
+#if defined(ZR_TEST_HAS_THREAD_PROVIDER)
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(threadModule, "ThreadScheduler"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(threadModule, "Send"));
+    TEST_ASSERT_NULL(find_descriptor_type(threadModule, "Task"));
+    TEST_ASSERT_NULL(find_descriptor_type(threadModule, "Job"));
+#endif
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(poolingModule, "Pool"));
+    TEST_ASSERT_NOT_NULL(find_descriptor_type(poolingModule, "PoolRef"));
 
     TEST_ASSERT_NOT_NULL(compileModule);
     TEST_ASSERT_NOT_NULL(declarationModule);
@@ -380,6 +475,8 @@ static void test_owner_descriptors_converge_on_inventory_phase(void) {
     entry = ZrLibrary_OfficialModuleInventory_Find(schema->ownerModule);
     TEST_ASSERT_NOT_NULL(entry);
     TEST_ASSERT_EQUAL_INT(entry->phase, schema->providerPhase);
+
+    ZrTests_Runtime_State_Destroy(state);
 }
 
 static void test_registry_rejects_legacy_phase_and_duplicate_official_providers(void) {

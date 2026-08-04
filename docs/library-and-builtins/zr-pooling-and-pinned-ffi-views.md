@@ -78,6 +78,8 @@ tests:
   - tests/language_server/test_lsp_stable_slot_contract_cases.h
   - tests/language_server/test_lsp_project_features.c
   - tests/core/test_inline_struct_array_layout.c
+  - tests/library/test_official_provider_convergence.c
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
   - tests/acceptance/2026-08-04-syntax-09-m2-guarded-direct-ref.md
   - tests/acceptance/2026-08-04-syntax-09-m5-performance-promotion.md
@@ -346,3 +348,11 @@ stateful concurrent admission may be added later, but the current design-valid
 stable native slab and fail-closed concurrency boundary do not prevent Gate 09
 promotion. Future variants must extend the structured protocol, TypeLayout, and
 artifact contracts rather than adding provider-name recognition.
+
+## Official Provider Identity
+
+`zr.pooling` is an N2 Runtime provider with public contract hash
+`zr.pooling:v1:stable-slot-generational-pool`. Syntax 10C obtains the real
+descriptor through `ZrVmLibContainer_GetPoolingModuleDescriptor`, validates it
+against the frozen official inventory, and confirms `Pool`/`PoolRef` ownership
+without manufacturing a placeholder provider.

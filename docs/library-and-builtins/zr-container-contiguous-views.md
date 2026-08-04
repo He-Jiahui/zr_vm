@@ -28,11 +28,15 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_field_scalar_locals.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
+  - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
+  - user: 2026-08-05 完成 Syntax 10C official provider convergence
 tests:
   - tests/parser/test_span_core.c
   - tests/parser/test_span_semantic_ir_cases.c
   - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c
+  - tests/library/test_official_provider_convergence.c
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
 doc_type: module
 ---
 
@@ -42,6 +46,11 @@ doc_type: module
 inline contiguous views. The compiler recognizes them through protocol bits and
 member-contract roles. It does not compare the type or member names when choosing
 view, slice, readonly-conversion, bounds, or lifecycle semantics.
+
+The owning `zr.container` descriptor has Runtime phase and public contract hash
+`zr.container:v1:container-span-protocols`. Provider convergence validates that
+the descriptor is an official N1 owner and does not duplicate Task or iteration
+protocol TypeDefs.
 
 ## Public Surface
 

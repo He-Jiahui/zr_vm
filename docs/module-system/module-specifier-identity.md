@@ -9,6 +9,7 @@ related_code:
   - tests/library/test_project_module_specifier.c
   - tests/library/test_project_import_resolver.c
   - tests/library/test_project_manifest_v2.c
+  - tests/library/test_official_provider_convergence.c
 implementation_files:
   - zr_vm_library/include/zr_vm_library/project.h
   - zr_vm_library/src/zr_vm_library/project/project_module_specifier.c
@@ -22,6 +23,7 @@ plan_sources:
   - docs/plans/syntax/10-native-ffi-module-package/m1-specifier-foundation-implementation-plan.md
   - docs/plans/syntax/10-native-ffi-module-package/m2-manifest-artifact-implementation-plan.md
   - user: 2026-08-03 reject workspace spoofing of official reflection providers
+  - user: 2026-08-05 complete Syntax 10C provider and consumer convergence
 tests:
   - tests/library/test_project_module_specifier.c
   - tests/library/test_project_import_resolver.c
@@ -30,6 +32,7 @@ tests:
   - tests/acceptance/2026-07-24-syntax-10r-m2-v2-declarations.md
   - tests/acceptance/2026-07-24-syntax-10r-m2-v2-writer-lock.md
   - tests/acceptance/2026-08-03-syntax-08-m1-reflection-provider-contract.md
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
 doc_type: module-detail
 ---
 
@@ -43,6 +46,11 @@ native-provider layers make a selection.
 
 The API lives beside the project resolver because later manifest resolution will consume the same data. It
 does not replace the existing 06A migration resolver in this milestone.
+
+Syntax 10C consumes this identity substrate without adding another parser.
+Official descriptors, project import canonicalization, reflection, Debug and
+LSP tests all use the canonical identity/provider facts; N0-N3 tier remains
+inventory policy and does not enter `SZrLibrary_ModuleIdentity`.
 
 ## Data Model
 

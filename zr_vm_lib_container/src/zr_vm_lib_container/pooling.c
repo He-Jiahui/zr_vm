@@ -911,6 +911,8 @@ static const ZrLibModuleDescriptor kPoolingModuleDescriptor = {
         .moduleLinkCount = ZR_ARRAY_COUNT(kPoolingModuleLinks),
         .moduleVersion = "1.1.0",
         .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+        .publicContractHash = "zr.pooling:v1:stable-slot-generational-pool",
 };
 
 const ZrLibModuleDescriptor *ZrVmLibContainer_Pooling_GetModuleDescriptor(void) {

@@ -228,6 +228,11 @@ remaining owner gates are open.
 - The eight-target focused matrix passes 219/219 independently under GCC 11.4,
   Clang 14.0, and MSVC 19.44. Detailed commands and requirement mapping are in
   `2026-08-05-syntax-14-typed-test-harness.md`.
+- Syntax 10C now validates every in-scope real owner descriptor, the canonical
+  `zr.debug` cutover, migration idempotence, and canonical project/reflection/
+  Debug/LSP consumers. Its twelve-target matrix passes 202/202 independently
+  under GCC, Clang, and MSVC; see
+  `2026-08-05-syntax-10c-official-provider-convergence.md`.
 
 ## Gate ledger
 
@@ -242,7 +247,7 @@ remaining owner gates are open.
 | 09 M4 | artifact 3/3 proves source/native/binary/reflection hash parity and corrupt/missing/unknown rejection; native reflection uses `REF_LIKE`/member roles to hide runtime storage and hidden projection methods, exposes a non-constructible ref struct plus getter-only property, and LSP classifies arbitrary-renamed handle/source/ref prototypes solely from protocol/role/reference facts; pool 14/14 and full project-features (including the migrated canonical-`fn` external metadata token case) pass | proven | preserve role-driven non-boxing reflection and guard-scoped LSP presentation |
 | 09 M5 | million-handle validation/rejection, one-million direct-field access, 100,000 reuse churn, and multi-worker concurrency remain separate focused evidence; the new 65,536-element matrix proves 256 successful slab allocation events per pool versus 65,536 per-item allocations, GcFree 0-slot/0-byte work, GcMapped 524,288-slot/16,777,216-byte work versus 109,051,904 per-item storage bytes, and separate one-million-validation thread-local/concurrent observations; matrix 2/2 passes GCC/Clang/MSVC | proven | preserve deterministic count assertions; wall-clock ticks remain observational only |
 | 10F M3 | schema v4 persists independent canonical callable and ABI vectors; TypeLayout/capability-driven admission; `.zro`, C AOT, and LLVM AOT consumers; native extern 29/29 and AOT stripping 37/37 focused evidence | proven | preserve in final matrix |
-| 10C | frozen 25-module N0-N3 inventory; phase-typed owners; distinct official provider descriptors rejected; LSP CompileTool phase/hash convergence | indirect | prove artifact/reflection/debug identity and every owner provider before global promotion |
+| 10C | frozen 25-module N0-N3 inventory; real task/iteration/container/pooling/thread/reflection/compile/testing/debug descriptors validate identity, phase, versioned contract hash and unique TypeDef ownership; `debug` is rejection/migration-only while product registration/import uses `zr.debug`; project import, reflection, Debug and LSP consume canonical identity/schema; GCC/Clang/MSVC each pass 202/202 | proven | preserve no-alias cutover and descriptor-driven consumers |
 | 11 M1-M2 | build facts, typed diagnostics/effects, deterministic limits/cache | proven | preserve |
 | 11 M3 | typed AttributeUsage/AttributeData, Conditional elision, static decorator shape coverage, runtime decorator executor/helper removal | proven | preserve retained-data consumers |
 | 11 M4 | first-version public contract is GeneratedField-only; typed diagnostics, interfaceAdds, attributeAdds, normal rebind/layout, provenance, `.zri` generated source maps, artifact/reflection retention, and atomic cross-kind Patch commit with allocator-failure rollback are covered across GCC/Clang/MSVC/MSVC-ASan | proven | preserve; GeneratedType/Method/Property remain unpublished unless separately admitted through the reference gate |
@@ -260,7 +265,7 @@ remaining owner gates are open.
 The strict production parser cutover is complete. The 55 historical leaf
 records are confirmed in their own scope; the current directory additionally
 contains one completed task-level support record outside that selector. The root
-Syntax redesign is not complete: 10C, 06B repository promotion, and 07B still
-require their final convergence passes. Gate 14 M1-M4 is promoted by the
-2026-08-05 three-toolchain replay.
+Syntax redesign is not complete: 06B repository promotion and 07B still
+require their final convergence passes. Gate 14 M1-M4 and Syntax 10C are
+promoted by their 2026-08-05 three-toolchain replays.
 No acceptance document may translate leaf completion into a root promotion.

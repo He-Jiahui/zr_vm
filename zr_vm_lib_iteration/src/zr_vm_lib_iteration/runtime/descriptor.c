@@ -95,6 +95,8 @@ static const ZrLibModuleDescriptor g_iteration_module_descriptor = {
         .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         .requiredCapabilities = 0,
         .onMaterialize = ZR_NULL,
+        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+        .publicContractHash = "zr.iteration:v1:canonical-iterator-protocols",
 };
 
 const ZrLibModuleDescriptor *ZrVmLibIteration_Runtime_GetModuleDescriptor(void) {

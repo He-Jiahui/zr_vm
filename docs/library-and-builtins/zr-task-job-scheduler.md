@@ -6,6 +6,17 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - tests/task/test_task_job_scheduler.c
+implementation_files:
+  - zr_vm_library/src/zr_vm_library/task_runtime.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.c
+plan_sources:
+  - user: 2026-08-05 完成 Syntax 10C official provider convergence
+  - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
+  - docs/plans/syntax/2026-07-20-12-async-task-job-scheduler-design.md
+tests:
+  - tests/task/test_task_job_scheduler.c
+  - tests/library/test_official_provider_convergence.c
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
 doc_type: module-detail
 ---
 
@@ -17,6 +28,12 @@ Syntax 12 M6.2 exposes the cold `Job<T>` handoff and cooperative `Scheduler`
 surface as the sole `zr.task` scheduling contract. The descriptor module
 version is `3.0.0`. It does not expose `TaskRunner`, coroutine scheduler
 names, worker threads, or script-controlled pumping.
+
+The product descriptor is registered by
+`ZrCore_TaskRuntime_RegisterBuiltins`, declares Runtime phase, and publishes
+`zr.task:v3:task-job-scheduler` as its public contract hash. The excluded
+`zr_vm_lib_task` directory is not part of the root product graph and is not a
+second accepted provider.
 
 ## Public Contract
 

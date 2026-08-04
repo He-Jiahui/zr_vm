@@ -139,10 +139,30 @@ static void test_debug_module_is_not_loaded_until_host_registers_it(void) {
     SZrState *state = create_test_state();
 
     TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NULL(ZrLib_Module_GetLoaded(state, "zr.debug"));
+    TEST_ASSERT_NULL(ZrLib_Module_GetExport(state, "zr.debug", "traceback"));
     TEST_ASSERT_NULL(ZrLib_Module_GetLoaded(state, "debug"));
     TEST_ASSERT_NULL(ZrLib_Module_GetExport(state, "debug", "traceback"));
 
     ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_debug_descriptors_match_the_canonical_official_inventory(void) {
+    const ZrLibModuleDescriptor *trusted = ZrVmLibDebug_GetModuleDescriptor();
+    const ZrLibModuleDescriptor *sandboxed = ZrVmLibDebug_GetSandboxedModuleDescriptor();
+    const ZrLibOfficialModuleInventoryEntry *entry =
+            ZrLibrary_OfficialModuleInventory_Find("zr.debug");
+
+    TEST_ASSERT_NOT_NULL(trusted);
+    TEST_ASSERT_NOT_NULL(sandboxed);
+    TEST_ASSERT_NOT_NULL(entry);
+    TEST_ASSERT_EQUAL_STRING(entry->moduleName, trusted->moduleName);
+    TEST_ASSERT_EQUAL_STRING(entry->moduleName, sandboxed->moduleName);
+    TEST_ASSERT_EQUAL_INT(entry->phase, trusted->providerPhase);
+    TEST_ASSERT_EQUAL_INT(entry->phase, sandboxed->providerPhase);
+    TEST_ASSERT_NOT_NULL(trusted->typeHintsJson);
+    TEST_ASSERT_NOT_NULL(strstr(trusted->typeHintsJson, "\"module\": \"zr.debug\""));
+    TEST_ASSERT_NULL(strstr(trusted->typeHintsJson, "\"module\": \"debug\""));
 }
 
 static void test_registered_debug_module_exports_lua_aligned_api_surface(void) {
@@ -164,8 +184,9 @@ static void test_registered_debug_module_exports_lua_aligned_api_surface(void) {
     TEST_ASSERT_TRUE(ZrVmLibDebug_Register(state->global));
 
     for (index = 0; index < sizeof(kExpectedExports) / sizeof(kExpectedExports[0]); index++) {
-        TEST_ASSERT_NOT_NULL_MESSAGE(ZrLib_Module_GetExport(state, "debug", kExpectedExports[index]),
+        TEST_ASSERT_NOT_NULL_MESSAGE(ZrLib_Module_GetExport(state, "zr.debug", kExpectedExports[index]),
                                      kExpectedExports[index]);
+        TEST_ASSERT_NULL(ZrLib_Module_GetExport(state, "debug", kExpectedExports[index]));
     }
 
     ZrTests_Runtime_State_Destroy(state);
@@ -173,7 +194,7 @@ static void test_registered_debug_module_exports_lua_aligned_api_surface(void) {
 
 static void test_traceback_returns_known_script_call_chain(void) {
     const TZrChar *source =
-            "let debug = import(\"debug\");\n"
+            "let debug = import(\"zr.debug\");\n"
             "fn leaf(value: int): string {\n"
             "    var next = value + 1;\n"
             "    return debug.traceback(\"phase4-marker\");\n"
@@ -211,7 +232,7 @@ static void test_traceback_returns_known_script_call_chain(void) {
 
 static void test_getinfo_reports_name_source_line_and_parameter_count(void) {
     const TZrChar *source =
-            "let debug = import(\"debug\");\n"
+            "let debug = import(\"zr.debug\");\n"
             "fn inspect(value: int) {\n"
             "    var info = debug.getinfo(1, \"nSlu\");\n"
             "    return info;\n"
@@ -244,7 +265,7 @@ static void test_getinfo_reports_name_source_line_and_parameter_count(void) {
 
 static void test_getlocal_and_setlocal_read_and_change_active_script_locals(void) {
     const TZrChar *source =
-            "let debug = import(\"debug\");\n"
+            "let debug = import(\"zr.debug\");\n"
             "fn mutate(input: int): int {\n"
             "    var target = input + 1;\n"
             "    var before = debug.getlocal(1, 2);\n"
@@ -273,7 +294,7 @@ static void test_getlocal_and_setlocal_read_and_change_active_script_locals(void
 
 static void test_upvalue_helpers_read_write_and_identify_closure_cells(void) {
     const TZrChar *source =
-            "let debug = import(\"debug\");\n"
+            "let debug = import(\"zr.debug\");\n"
             "fn makeRunner(seed: int) {\n"
             "    var captured = seed;\n"
             "    return fn() => {\n"
@@ -307,7 +328,7 @@ static void test_upvalue_helpers_read_write_and_identify_closure_cells(void) {
 
 static void test_sethook_invokes_script_hook_and_gethook_reports_state(void) {
     const TZrChar *source =
-            "let debug = import(\"debug\");\n"
+            "let debug = import(\"zr.debug\");\n"
             "var events = 0;\n"
             "var hook = fn(event, line) => {\n"
             "    events = events + 1;\n"
@@ -355,7 +376,7 @@ static void test_sethook_invokes_script_hook_and_gethook_reports_state(void) {
 
 static void test_sandboxed_debug_module_rejects_write_apis(void) {
     const TZrChar *source =
-            "let debug = import(\"debug\");\n"
+            "let debug = import(\"zr.debug\");\n"
             "fn mutate(input: int): int {\n"
             "    var target = input + 1;\n"
             "    debug.setlocal(1, 2, 40);\n"
@@ -384,6 +405,7 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_debug_module_is_not_loaded_until_host_registers_it);
+    RUN_TEST(test_debug_descriptors_match_the_canonical_official_inventory);
     RUN_TEST(test_registered_debug_module_exports_lua_aligned_api_surface);
     RUN_TEST(test_traceback_returns_known_script_call_chain);
     RUN_TEST(test_getinfo_reports_name_source_line_and_parameter_count);

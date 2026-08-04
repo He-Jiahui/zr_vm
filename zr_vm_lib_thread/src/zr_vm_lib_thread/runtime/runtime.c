@@ -1544,23 +1544,18 @@ static const TZrChar g_task_hints_json[] =
         "}\n";
 
 static const ZrLibModuleDescriptor g_task_descriptor = {
-        ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
-        "zr.thread",
-        ZR_NULL,
-        0,
-        ZR_NULL,
-        0,
-        g_task_types,
-        ZR_ARRAY_COUNT(g_task_types),
-        g_task_hints,
-        ZR_ARRAY_COUNT(g_task_hints),
-        g_task_hints_json,
-        "Worker thread, cross-isolate transport, and shared-handle primitives for zr_vm.",
-        ZR_NULL,
-        0,
-        "1.0.0",
-        ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
-        0,
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "zr.thread",
+        .types = g_task_types,
+        .typeCount = ZR_ARRAY_COUNT(g_task_types),
+        .typeHints = g_task_hints,
+        .typeHintCount = ZR_ARRAY_COUNT(g_task_hints),
+        .typeHintsJson = g_task_hints_json,
+        .documentation = "Worker thread, cross-isolate transport, and shared-handle primitives for zr_vm.",
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+        .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
+        .publicContractHash = "zr.thread:v1:isolated-scheduler-send",
 };
 
 const ZrLibModuleDescriptor *ZrVmThread_Runtime_GetModuleDescriptor(void) {

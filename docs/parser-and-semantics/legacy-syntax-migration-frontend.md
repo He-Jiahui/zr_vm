@@ -2,16 +2,24 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/legacy_migration.h
   - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
+  - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration_module_specifier.c
+  - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration_module_specifier.h
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/legacy_migration.h
   - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration.c
+  - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration_module_specifier.c
+  - zr_vm_parser/src/zr_vm_parser/migration/legacy_migration_module_specifier.h
 plan_sources:
   - docs/plans/syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md
   - docs/plans/syntax/06-percent-migration-lsp-fixtures/m2-migration-frontend-lsp-fixes-implementation-plan.md
+  - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
+  - user: 2026-08-05 migrate bare debug to zr.debug without runtime aliases
 tests:
   - tests/parser/test_legacy_migration.c
   - tests/parser/test_property_consumer_contracts.c
   - tests/fixtures/syntax_migration_frontend/input/machine_forms.zr
+  - tests/migration/test_percent_test_migration.c
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
 doc_type: module-detail
 ---
 
@@ -70,3 +78,13 @@ Normal parsing owns the fatal removed-syntax diagnostic; the migration command o
 Existing LSP structured diagnostic fixes, code actions, and revision-bound workspace-edit snapshots
 serialize parser-provided edits and never rebuild migration text in the language server. This split
 keeps removed syntax out of production AST/lowering while preserving an explicit migration workflow.
+
+## Canonical Debug Module Migration
+
+The module-specifier migration component recognizes an actual
+`import("debug")` expression in code, including whitespace and comments between
+the import token, parentheses, and literal. It edits only the literal payload to
+`zr.debug`. Quoted examples, comments, member names, other module literals and
+already-canonical imports remain unchanged. Replanning the result produces no
+second edit. This migration fact does not register a runtime alias or make the
+production parser accept an old import form through a separate grammar.

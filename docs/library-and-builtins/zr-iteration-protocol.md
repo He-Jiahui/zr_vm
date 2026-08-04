@@ -19,9 +19,11 @@ plan_sources:
   - docs/plans/syntax/13-iterator-enumerator-yield/m1-enumerator-protocol-implementation-plan.md
 tests:
   - tests/iterator/test_enumerator_protocol.c
+  - tests/library/test_official_provider_convergence.c
   - tests/container/test_container_type_inference.c
   - tests/parser/test_numeric_foreach_cardinality_dataflow.c
   - tests/parser/test_numeric_loop_assignment_dataflow.c
+  - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
 doc_type: module
 ---
 
@@ -31,6 +33,11 @@ doc_type: module
 `Iterable<T>`, `Enumerator<T>`, `Iterator<T>`, and `AsyncIterator<T>`.
 Concrete libraries publish their capability metadata against these canonical names;
 they do not redeclare protocol owner types.
+
+The native descriptor explicitly declares Runtime phase and
+`zr.iteration:v1:canonical-iterator-protocols` as its public contract hash.
+Syntax 10C validates that the official inventory, descriptor phase, protocol
+owners, reflection projection, and LSP consumer all observe this same provider.
 
 ## Public Contract
 
