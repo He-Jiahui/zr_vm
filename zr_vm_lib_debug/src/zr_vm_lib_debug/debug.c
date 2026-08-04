@@ -1575,6 +1575,22 @@ TZrBool ZrDebug_AgentStart(SZrState *state,
         zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to allocate debug agent");
         return ZR_FALSE;
     }
+    agent->state = state;
+    agent->entryFunction = entryFunction;
+    if (entryFunction->testManifestDataLength > 0U) {
+        if (entryFunction->testManifestData == ZR_NULL ||
+            entryFunction->testManifestDataLength > (TZrSize)UINT32_MAX ||
+            !ZrParser_TestManifest_Decode(state,
+                                          entryFunction->testManifestData,
+                                          (TZrUInt32)entryFunction->testManifestDataLength,
+                                          &agent->testManifest)) {
+            zr_debug_copy_text(errorBuffer, errorBufferSize,
+                               "debug agent rejected invalid TestManifest metadata");
+            ZrDebug_AgentStop(agent);
+            return ZR_FALSE;
+        }
+        agent->hasTestManifest = ZR_TRUE;
+    }
 
     if (!ZrNetwork_ParseEndpoint(effectiveConfig.address, &endpoint, errorBuffer, errorBufferSize) ||
         !ZrNetwork_ListenerOpenLoopback(&endpoint, &agent->listener, errorBuffer, errorBufferSize) ||
@@ -1583,8 +1599,6 @@ TZrBool ZrDebug_AgentStart(SZrState *state,
         return ZR_FALSE;
     }
 
-    agent->state = state;
-    agent->entryFunction = entryFunction;
     agent->config = effectiveConfig;
     agent->runMode = ZR_DEBUG_RUN_MODE_RUNNING;
     agent->clientDisconnectContinue = ZR_TRUE;
@@ -1630,7 +1644,56 @@ void ZrDebug_AgentStop(ZrDebugAgent *agent) {
         free(agent->threads);
         agent->threads = ZR_NULL;
     }
+    if (agent->hasTestManifest && agent->state != ZR_NULL) {
+        ZrParser_TestManifest_Free(agent->state, &agent->testManifest);
+        agent->hasTestManifest = ZR_FALSE;
+    }
     free(agent);
+}
+
+TZrBool ZrDebug_ReadTestManifest(ZrDebugAgent *agent,
+                                 ZrDebugTestEntrySnapshot **outEntries,
+                                 TZrSize *outCount) {
+    ZrDebugTestEntrySnapshot *entries;
+
+    if (outEntries != ZR_NULL) {
+        *outEntries = ZR_NULL;
+    }
+    if (outCount != ZR_NULL) {
+        *outCount = 0U;
+    }
+    if (agent == ZR_NULL || outEntries == ZR_NULL || outCount == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!agent->hasTestManifest || agent->testManifest.entryCount == 0U) {
+        return ZR_TRUE;
+    }
+
+    entries = (ZrDebugTestEntrySnapshot *)calloc(agent->testManifest.entryCount,
+                                                  sizeof(*entries));
+    if (entries == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrUInt32 index = 0U; index < agent->testManifest.entryCount; index++) {
+        const SZrParserTestEntry *source = &agent->testManifest.entries[index];
+        entries[index].function_symbol_id = source->functionSymbolId;
+        entries[index].function_type_id = source->functionTypeId;
+        entries[index].callable_child_index = source->callableChildIndex;
+        entries[index].case_count = source->caseCount;
+        entries[index].is_async = source->isAsync;
+        zr_debug_copy_text(entries[index].module_id,
+                           sizeof(entries[index].module_id),
+                           source->moduleId != ZR_NULL ? source->moduleId : "");
+        zr_debug_copy_text(entries[index].qualified_name,
+                           sizeof(entries[index].qualified_name),
+                           source->qualifiedName != ZR_NULL ? source->qualifiedName : "");
+        zr_debug_copy_text(entries[index].skip_reason,
+                           sizeof(entries[index].skip_reason),
+                           source->skipReason != ZR_NULL ? source->skipReason : "");
+    }
+    *outEntries = entries;
+    *outCount = agent->testManifest.entryCount;
+    return ZR_TRUE;
 }
 
 TZrBool ZrDebug_AgentGetEndpoint(ZrDebugAgent *agent, TZrChar *buffer, TZrSize bufferSize) {

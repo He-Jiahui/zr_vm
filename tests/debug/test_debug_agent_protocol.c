@@ -43,6 +43,23 @@ static SZrFunction *compile_debug_agent_source(SZrState *state, const char *sour
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static SZrFunction *compile_debug_agent_test_source(
+        SZrState *state,
+        const char *sourceLabel,
+        const char *source) {
+    SZrString *sourceName;
+
+    if (state == ZR_NULL || sourceLabel == ZR_NULL || source == ZR_NULL) {
+        return ZR_NULL;
+    }
+    sourceName = ZrCore_String_Create(
+            state, (TZrNativeString)sourceLabel, strlen(sourceLabel));
+    return sourceName != ZR_NULL
+                   ? ZrParser_Source_CompileTest(
+                             state, source, strlen(source), sourceName)
+                   : ZR_NULL;
+}
+
 static void debug_agent_attach_scheduler_contract(SZrFunction *function) {
     TZrUInt32 index;
 
@@ -405,6 +422,44 @@ static void test_debug_agent_initialize_reports_extended_capabilities(void) {
     TEST_ASSERT_EQUAL_INT64(7, thread.result);
 
     ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_debug_agent_projects_typed_test_manifest(void) {
+    static const TZrChar *source =
+            "#zr.testing.test#\n"
+            "#zr.testing.case(value: 17)#\n"
+            "fn parameterized(value: int): void { }\n";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    ZrDebugTestEntrySnapshot *entries = ZR_NULL;
+    TZrSize entryCount = 0U;
+    TZrChar error[256];
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_agent_test_source(
+            state, "debug_test_manifest.zr", source);
+    TEST_ASSERT_NOT_NULL(function);
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    TEST_ASSERT_TRUE(ZrDebug_AgentStart(
+            state, function, "tests.debug.manifest", &config,
+            &agent, error, sizeof(error)));
+    TEST_ASSERT_TRUE(ZrDebug_ReadTestManifest(agent, &entries, &entryCount));
+    TEST_ASSERT_EQUAL_UINT32(1U, entryCount);
+    TEST_ASSERT_NOT_NULL(entries);
+    TEST_ASSERT_NOT_EQUAL(0U, entries[0].function_symbol_id);
+    TEST_ASSERT_NOT_EQUAL(0U, entries[0].function_type_id);
+    TEST_ASSERT_EQUAL_UINT32(1U, entries[0].case_count);
+    TEST_ASSERT_FALSE(entries[0].is_async);
+    TEST_ASSERT_EQUAL_STRING(
+            "debug_test_manifest::parameterized", entries[0].qualified_name);
+
+    ZrDebug_Free(entries);
     ZrDebug_AgentStop(agent);
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
@@ -905,6 +960,7 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_debug_agent_initialize_reports_extended_capabilities);
+    RUN_TEST(test_debug_agent_projects_typed_test_manifest);
     RUN_TEST(test_debug_agent_pause_request_over_tcp_stops_at_next_safepoint);
     RUN_TEST(test_debug_agent_evaluate_context_enforces_capabilities);
     RUN_TEST(test_debug_agent_disconnect_request_while_paused_resumes_target);

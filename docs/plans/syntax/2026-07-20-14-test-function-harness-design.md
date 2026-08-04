@@ -10,7 +10,8 @@
 
 ---
 
-> 状态：设计第一版，等待按里程碑实施。
+> 状态：M1-M4 已实施并通过 GCC 11.4、Clang 14.0 与 MSVC 19.44
+> 三工具链验收；每套工具链 8 个聚焦可执行文件、219/219 测试通过。
 >
 > 上游契约：[01 artifact](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[06A migration inventory/frontend](./2026-07-18-06-percent-migration-lsp-fixtures-design.md)、[10R module/native descriptor foundation](./2026-07-19-10-native-ffi-module-package-design.md)、[11 compile-time metadata](./2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md)、[12 Task/Scheduler](./2026-07-20-12-async-task-job-scheduler-design.md)。本计划基于 10R 登记 `zr.testing` provider，不依赖 06B 最终仓库切换；本计划晋级后由 10C 做全局汇聚审计。
 
@@ -287,9 +288,9 @@ debugger 以真实 function body/source map 断点。parameter case arguments �
 - Test: `tests/testing/test_test_role_binding.c`
 - Test: `tests/artifact/test_manifest_roundtrip.c`
 
-- [ ] 断言测试仍是 ordinary FunctionDefinition。
-- [ ] 覆盖 sync/async、有参 case、skip、非法 target/signature 和 constants。
-- [ ] production artifact 无 test roots，test artifact manifest 可 roundtrip。
+- [x] 断言测试仍是 ordinary FunctionDefinition。
+- [x] 覆盖 sync/async、有参 case、skip、非法 target/signature 和 constants。
+- [x] production artifact 无 test roots，test artifact manifest 可 roundtrip。
 
 ### Task 2: `zr.testing`
 
@@ -302,11 +303,11 @@ debugger 以真实 function body/source map 断点。parameter case arguments �
 - Create: `zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c`
 - Test: `tests/testing/test_assertions.c`
 
-- [ ] descriptor登记Test/Case/Skip roles、AssertionFailure和三个function；不修改`zr_vm_lib_builtin`。
-- [ ] 验证Test provider只在Test phase注册，Runtime/CompileTool import给出phase mismatch。
-- [ ] 先写 assert/equal/throws success/failure/fault tests。
-- [ ] 验证 AssertionFailure field、source span、bounded snapshot 和 exception identity。
-- [ ] 不增加 ledger 外 convenience helper。
+- [x] descriptor登记Test/Case/Skip roles、AssertionFailure和三个function；不修改`zr_vm_lib_builtin`。
+- [x] 验证Test provider只在Test phase注册，Runtime/CompileTool import给出phase mismatch。
+- [x] 先写 assert/equal/throws success/failure/fault tests。
+- [x] 验证 AssertionFailure field、source span、bounded snapshot 和 exception identity。
+- [x] 不增加 ledger 外 convenience helper。
 
 ### Task 3: runner
 
@@ -317,9 +318,9 @@ debugger 以真实 function body/source map 断点。parameter case arguments �
 - Test: `tests/testing/test_runner.c`
 - Project: `tests/fixtures/projects/testing_reference/`
 
-- [ ] 覆盖 discovery order、filter/list、sync/async、skip、timeout/crash 和 exit code。
-- [ ] 默认顺序执行；`--jobs` 只跨 module isolate。
-- [ ] 每个 case 结束验证无 root Task、unobserved fault 或外部 root leak。
+- [x] 覆盖 discovery order、filter/list、sync/async、skip、timeout/crash 和 exit code。
+- [x] 默认顺序执行；`--jobs` 只跨 module isolate。
+- [x] 每个 case 结束验证无 root Task、unobserved fault 或外部 root leak。
 
 ### Task 4: LSP、debug 与 migration
 
@@ -330,9 +331,9 @@ debugger 以真实 function body/source map 断点。parameter case arguments �
 - Test: `tests/language_server/test_lsp_test_facts.c`
 - Test: `tests/migration/test_percent_test_migration.c`
 
-- [ ] CodeLens 数据来自 TestRoleFact/TestManifest。
-- [ ] async logical stack 与 parameter values 可调试。
-- [ ] migration 幂等，current fixture 不含 `test fn` 或 `#zr.test.*#`。
+- [x] CodeLens 数据来自 TestRoleFact/TestManifest。
+- [x] async logical stack 与 parameter values 可调试。
+- [x] migration 幂等，current fixture 不含 `test fn` 或 `#zr.test.*#`。
 
 ## 12. 晋级门
 

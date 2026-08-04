@@ -4,8 +4,10 @@
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_lib_testing/module.h"
@@ -52,6 +54,7 @@ static const ZrLibAttributeRoleDescriptor *find_role(
 
 static void test_descriptor_is_the_test_phase_contract_source(void) {
     const ZrLibModuleDescriptor *descriptor = ZrVmLibTesting_GetModuleDescriptor();
+    const ZrLibFunctionDescriptor *throwsDescriptor;
     const TZrUInt32 roles[] = {
             ZR_PARSER_ATTRIBUTE_ROLE_TEST,
             ZR_PARSER_ATTRIBUTE_ROLE_TEST_CASE,
@@ -62,14 +65,21 @@ static void test_descriptor_is_the_test_phase_contract_source(void) {
     TEST_ASSERT_EQUAL_STRING("zr.testing", descriptor->moduleName);
     TEST_ASSERT_EQUAL(ZR_LIBRARY_PROVIDER_PHASE_TEST, descriptor->providerPhase);
     TEST_ASSERT_EQUAL_UINT32(3U, descriptor->functionCount);
-    TEST_ASSERT_EQUAL_UINT32(4U, descriptor->typeCount);
+    TEST_ASSERT_EQUAL_UINT32(6U, descriptor->typeCount);
     TEST_ASSERT_EQUAL_UINT32(3U, descriptor->attributeRoleCount);
     TEST_ASSERT_EQUAL_STRING(
-            "zr.testing:v1:test-case-skip:assert-equal-throws",
+            "zr.testing:v2:typed-manifest-structured-assertions",
             descriptor->publicContractHash);
     TEST_ASSERT_NOT_NULL(find_function(descriptor, "assert"));
     TEST_ASSERT_NOT_NULL(find_function(descriptor, "equal"));
-    TEST_ASSERT_NOT_NULL(find_function(descriptor, "throws"));
+    throwsDescriptor = find_function(descriptor, "throws");
+    TEST_ASSERT_NOT_NULL(throwsDescriptor);
+    TEST_ASSERT_EQUAL_UINT32(1U, throwsDescriptor->genericParameterCount);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U, throwsDescriptor->genericParameters[0].constraintTypeCount);
+    TEST_ASSERT_EQUAL_STRING(
+            "Error",
+            throwsDescriptor->genericParameters[0].constraintTypeNames[0]);
 
     for (TZrSize index = 0U; index < ZR_ARRAY_COUNT(roles); index++) {
         const ZrLibAttributeRoleDescriptor *nativeRole = find_role(descriptor, roles[index]);
@@ -170,6 +180,8 @@ static void test_equal_uses_canonical_equality_and_bounded_snapshots(void) {
     TEST_ASSERT_TRUE(ZrVmLibTesting_GetLastFailure(&failure));
     TEST_ASSERT_EQUAL(ZR_TESTING_ASSERTION_KIND_EQUAL, failure.assertionKind);
     TEST_ASSERT_TRUE(failure.actual.truncated);
+    TEST_ASSERT_TRUE(failure.actual.hasValue);
+    TEST_ASSERT_EQUAL_STRING("string", failure.actual.typeName);
     TEST_ASSERT_LESS_OR_EQUAL_UINT32(
             ZR_VM_LIB_TESTING_SNAPSHOT_CAPACITY,
             strlen(failure.actual.text));
@@ -203,6 +215,18 @@ static TZrInt64 test_action_throws(SZrState *state) {
     return 1;
 }
 
+static TZrInt64 test_action_collects_then_throws(SZrState *state) {
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    return test_action_throws(state);
+}
+
+static TZrBool g_invalid_expected_type_action_called = ZR_FALSE;
+
+static TZrInt64 test_action_marks_unexpected_call(SZrState *state) {
+    g_invalid_expected_type_action_called = ZR_TRUE;
+    return test_action_throws(state);
+}
+
 static TZrInt64 test_formatter_throws(SZrState *state) {
     SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
     TZrStackValuePointer functionBase =
@@ -229,28 +253,93 @@ static void init_native_callable(SZrState *state,
     value->isGarbageCollectable = ZR_TRUE;
 }
 
+static void init_type_id_argument(SZrState *state,
+                                  const TZrChar *typeName,
+                                  SZrTypeValue *value) {
+    SZrReflectionTypeIdentity identity;
+    SZrString *canonicalName;
+    SZrObject *typeId;
+
+    memset(&identity, 0, sizeof(identity));
+    identity.category = ZR_REFLECTION_TYPE_CATEGORY_CLASS;
+    canonicalName = ZrCore_String_CreateFromNative(state, (TZrNativeString)typeName);
+    TEST_ASSERT_NOT_NULL(canonicalName);
+    typeId = ZrCore_Reflection_BuildTypeIdObject(state, canonicalName, &identity);
+    TEST_ASSERT_NOT_NULL(typeId);
+    ZrCore_Value_InitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(typeId));
+    value->type = ZR_VALUE_TYPE_OBJECT;
+}
+
 static void test_throws_returns_exception_and_rejects_non_throwing_action(void) {
     SZrState *state = create_testing_state();
-    SZrTypeValue action;
+    SZrTypeValue arguments[2];
     SZrTypeValue result;
     SZrTestingAssertionFailure failure;
 
     ZrLibrary_State_SetProviderPhase(state, ZR_LIBRARY_PROVIDER_PHASE_TEST);
-    init_native_callable(state, test_action_throws, &action);
+    init_native_callable(state, test_action_throws, &arguments[0]);
+    init_type_id_argument(state, "Error", &arguments[1]);
     TEST_ASSERT_TRUE(ZrLib_CallModuleExport(
-            state, "zr.testing", "throws", &action, 1U, &result));
+            state, "zr.testing", "throws", arguments, 2U, &result));
     TEST_ASSERT_EQUAL(ZR_VALUE_TYPE_OBJECT, result.type);
     TEST_ASSERT_FALSE(state->hasCurrentException);
 
-    init_native_callable(state, test_action_noop, &action);
+    init_native_callable(state, test_action_noop, &arguments[0]);
     TEST_ASSERT_FALSE(ZrLib_CallModuleExport(
-            state, "zr.testing", "throws", &action, 1U, &result));
+            state, "zr.testing", "throws", arguments, 2U, &result));
     TEST_ASSERT_TRUE(ZrVmLibTesting_GetLastFailure(&failure));
     TEST_ASSERT_EQUAL(ZR_TESTING_ASSERTION_KIND_THROWS, failure.assertionKind);
     TEST_ASSERT_NOT_NULL(strstr(failure.message, "without throwing"));
 
     reset_exception(state);
     ZrVmLibTesting_ClearLastFailure();
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_throws_rejects_wrong_exception_type(void) {
+    SZrState *state = create_testing_state();
+    SZrTypeValue arguments[2];
+    SZrTypeValue result;
+    SZrTestingAssertionFailure failure;
+
+    ZrLibrary_State_SetProviderPhase(state, ZR_LIBRARY_PROVIDER_PHASE_TEST);
+    init_native_callable(state, test_action_throws, &arguments[0]);
+    init_type_id_argument(state, "AssertionFailure", &arguments[1]);
+    TEST_ASSERT_FALSE(ZrLib_CallModuleExport(
+            state, "zr.testing", "throws", arguments, 2U, &result));
+    TEST_ASSERT_TRUE(ZrVmLibTesting_GetLastFailure(&failure));
+    TEST_ASSERT_EQUAL(ZR_TESTING_ASSERTION_KIND_THROWS, failure.assertionKind);
+    TEST_ASSERT_EQUAL_STRING("AssertionFailure", failure.expected.typeName);
+    TEST_ASSERT_EQUAL_STRING("Error", failure.exception.typeName);
+    TEST_ASSERT_NOT_NULL(strstr(failure.message, "does not match"));
+
+    reset_exception(state);
+    ZrVmLibTesting_ClearLastFailure();
+    g_invalid_expected_type_action_called = ZR_FALSE;
+    init_native_callable(state, test_action_marks_unexpected_call, &arguments[0]);
+    init_type_id_argument(state, "int", &arguments[1]);
+    TEST_ASSERT_TRUE(ZrLib_CallModuleExport(
+            state, "zr.testing", "throws", arguments, 2U, &result));
+    TEST_ASSERT_FALSE(g_invalid_expected_type_action_called);
+    TEST_ASSERT_EQUAL(ZR_VALUE_TYPE_NULL, result.type);
+    TEST_ASSERT_FALSE(state->hasCurrentException);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_throws_reloads_hidden_type_identity_after_callback_gc(void) {
+    SZrState *state = create_testing_state();
+    SZrTypeValue arguments[2];
+    SZrTypeValue result;
+
+    ZrLibrary_State_SetProviderPhase(state, ZR_LIBRARY_PROVIDER_PHASE_TEST);
+    init_native_callable(state, test_action_collects_then_throws, &arguments[0]);
+    init_type_id_argument(state, "Error", &arguments[1]);
+
+    TEST_ASSERT_TRUE(ZrLib_CallModuleExport(
+            state, "zr.testing", "throws", arguments, 2U, &result));
+    TEST_ASSERT_EQUAL(ZR_VALUE_TYPE_OBJECT, result.type);
+    TEST_ASSERT_FALSE(state->hasCurrentException);
+
     ZrTests_Runtime_State_Destroy(state);
 }
 
@@ -316,6 +405,89 @@ static void test_compiler_enforces_testing_provider_phase(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_compiler_reifies_throws_type_argument(void) {
+    static const TZrChar *source =
+            "let testing = import(\"zr.testing\");\n"
+            "let captured = testing.throws<testing.AssertionFailure>(fn(): void {\n"
+            "    testing.assert(false);\n"
+            "});\n";
+    SZrState *state = create_testing_state();
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            state, "testing_throws_typeid.zr");
+    SZrFunction *function;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_CompileTest(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    ZrLibrary_State_SetProviderPhase(state, ZR_LIBRARY_PROVIDER_PHASE_TEST);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_EQUAL(ZR_VALUE_TYPE_NULL, result.type);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_compiler_rejects_invalid_throws_action_signatures(void) {
+    static const TZrChar *sourceWithParameter =
+            "let testing = import(\"zr.testing\");\n"
+            "testing.throws<testing.AssertionFailure>(fn(value: int): void { });\n";
+    static const TZrChar *sourceWithValueReturn =
+            "let testing = import(\"zr.testing\");\n"
+            "testing.throws<testing.AssertionFailure>(fn(): int { return 1; });\n";
+    static const TZrChar *sourceWithNonExceptionType =
+            "let testing = import(\"zr.testing\");\n"
+            "testing.throws<int>(fn(): void { });\n";
+    const TZrChar *sources[] = {
+            sourceWithParameter,
+            sourceWithValueReturn,
+            sourceWithNonExceptionType,
+    };
+
+    for (TZrSize index = 0U; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrState *state = create_testing_state();
+        SZrString *sourceName = ZrCore_String_CreateFromNative(
+                state, "testing_throws_invalid_action.zr");
+        SZrFunction *function;
+
+        TEST_ASSERT_NOT_NULL(sourceName);
+        function = ZrParser_Source_CompileTest(
+                state, sources[index], strlen(sources[index]), sourceName);
+        TEST_ASSERT_NULL(function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
+static void test_compiled_assertion_captures_source_span(void) {
+    static const TZrChar *source =
+            "let testing = import(\"zr.testing\");\n"
+            "testing.assert(false, \"span failure\");\n";
+    SZrState *state = create_testing_state();
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            state, "testing_assertion_span.zr");
+    SZrFunction *function;
+    SZrTypeValue result;
+    SZrTestingAssertionFailure failure;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_CompileTest(
+            state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    ZrLibrary_State_SetProviderPhase(state, ZR_LIBRARY_PROVIDER_PHASE_TEST);
+    TEST_ASSERT_FALSE(ZrTests_Runtime_Function_ExecuteCaptureFailure(
+            state, function, &result));
+    TEST_ASSERT_TRUE(ZrVmLibTesting_GetLastFailure(&failure));
+    TEST_ASSERT_EQUAL_STRING("testing_assertion_span.zr", failure.sourceSpan.sourceFile);
+    TEST_ASSERT_GREATER_THAN_UINT32(0U, failure.sourceSpan.startLine);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
+            failure.sourceSpan.startLine, failure.sourceSpan.endLine);
+
+    reset_exception(state);
+    ZrVmLibTesting_ClearLastFailure();
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_descriptor_is_the_test_phase_contract_source);
@@ -323,7 +495,12 @@ int main(void) {
     RUN_TEST(test_assert_success_and_structured_failure);
     RUN_TEST(test_equal_uses_canonical_equality_and_bounded_snapshots);
     RUN_TEST(test_throws_returns_exception_and_rejects_non_throwing_action);
+    RUN_TEST(test_throws_rejects_wrong_exception_type);
+    RUN_TEST(test_throws_reloads_hidden_type_identity_after_callback_gc);
     RUN_TEST(test_equal_isolates_formatter_faults);
     RUN_TEST(test_compiler_enforces_testing_provider_phase);
+    RUN_TEST(test_compiler_reifies_throws_type_argument);
+    RUN_TEST(test_compiler_rejects_invalid_throws_action_signatures);
+    RUN_TEST(test_compiled_assertion_captures_source_span);
     return UNITY_END();
 }

@@ -9,7 +9,7 @@ scope:
   - Syntax 11
   - Syntax 14
 status: in-progress
-last_verified: 2026-08-04
+last_verified: 2026-08-05
 ---
 
 # Syntax upper gates requirement-to-evidence ledger
@@ -210,6 +210,25 @@ remaining owner gates are open.
   behavior and syntax migration remain useful bounded evidence, not full Gate 14
   promotion.
 
+## 2026-08-05 Gate 14 promotion replay
+
+- M1 now takes the bound function's canonical semantic SymbolId/TypeId and
+  module signature hash, emits module-qualified names, and distinguishes
+  overload identities without name-derived surrogates.
+- M2 publishes nested source-span and bounded value-snapshot data. Formatter
+  faults are isolated. The compiler supplies the hidden canonical generic
+  TypeId for `throws<E>`, and the runtime enforces exact/subtype exception
+  matching while preserving the one-argument public callable contract.
+- M3 retains deterministic manifest discovery, process isolation, sync/async
+  execution, jobs, timeout, output capture, and exit-code coverage.
+- M4 LSP CodeLens is compiled-manifest driven, so invalid role bindings produce
+  no lens. Debug decodes that same manifest and projects canonical test identity
+  onto frames while retaining the ordinary Arguments scope and scheduler
+  logical-stack behavior. Percent/draft syntax remains migration-only.
+- The eight-target focused matrix passes 219/219 independently under GCC 11.4,
+  Clang 14.0, and MSVC 19.44. Detailed commands and requirement mapping are in
+  `2026-08-05-syntax-14-typed-test-harness.md`.
+
 ## Gate ledger
 
 | Gate | Current evidence | State | Remaining proof/work |
@@ -228,10 +247,10 @@ remaining owner gates are open.
 | 11 M3 | typed AttributeUsage/AttributeData, Conditional elision, static decorator shape coverage, runtime decorator executor/helper removal | proven | preserve retained-data consumers |
 | 11 M4 | first-version public contract is GeneratedField-only; typed diagnostics, interfaceAdds, attributeAdds, normal rebind/layout, provenance, `.zri` generated source maps, artifact/reflection retention, and atomic cross-kind Patch commit with allocator-failure rollback are covered across GCC/Clang/MSVC/MSVC-ASan | proven | preserve; GeneratedType/Method/Property remain unpublished unless separately admitted through the reference gate |
 | 11 M5 | runtime decorator deleted; artifact/reflection and LSP CompileTool projection present; v2 buildDependencies are phase-separated in canonical manifest/lock output; project-owned lock admission is strict/atomic and feeds the compiler resolver without a parallel caller-owned lock graph; the resolver validates version range and CompileTool lock/ZRM package from one owned byte snapshot, checks actual package/entry SHA-256, hashes the canonical CompileTool lock section, and preserves runtime isolation; ordinary import now activates a materialized compiler-owned `.zrs` provider, keeps private helpers provider-local, exports only `pub`/`pro` transforms, executes a public typed Patch, and keeps the dependency out of the runtime graph; provider-to-provider build-dependency imports fail closed before recursion until the transitive phase-cycle graph is promoted; comptime cache v5 compares the full canonical 32-byte digest, includes current-module source identity, and has a versioned, deterministic, fixed-endian, whole-snapshot-authenticated format with atomic fail-closed import; the project CLI atomically persists `.zr_comptime_cache` and proves miss/hit/same-length semantic-edit miss/corrupt repair; formatter uses the migration plan as a fail-closed output gate, preserves canonical CompileTool syntax plus spaced/adjacent `%` and `%=` operators, and emits no edit for removed syntax | indirect | define and consume the final versioned compile-tool executable section, validate the actual transitive provider graph, and complete remaining artifact/reflection/LSP consumer acceptance |
-| 14 M1 | ordinary function role binding and production trim work, but manifest SymbolId/TypeId/moduleGraphHash are fabricated name projections rather than canonical semantic identities | contradicted | serialize canonical semantic SymbolId/TypeId and real module-graph identity with collision/cross-module/overload tests |
-| 14 M2 | official Test-phase provider exists, but AssertionFailure lacks required span/snapshot metadata and `throws<E>` does not validate E/subtypes | contradicted | implement structured bounded snapshots/source span and typed exception matching |
+| 14 M1 | ordinary-function role binding and production trim now serialize canonical semantic SymbolId/TypeId, module-qualified names, and module signature identity; overload and artifact roundtrip coverage passes | proven | preserve semantic identity and test-root trimming |
+| 14 M2 | the official Test-phase provider emits structured source spans and bounded snapshots, isolates formatter faults, and validates exact/subtype identity for compiler-bound `throws<E>` | proven | preserve the one-argument public callable contract and hidden TypeId lowering |
 | 14 M3 | deterministic discovery/filter/list/run, process isolation, jobs, timeout, output and exit codes | proven | preserve sync/async reference matrix |
-| 14 M4 | percent/draft migration is covered, but LSP CodeLens reconstructs AST decorator roles rather than consuming facts/manifest; Debug consumer is absent | contradicted | migrate LSP and Debug to canonical TestRoleFact/TestManifest, including async logical stack and case parameters |
+| 14 M4 | LSP lenses and Debug frame projection consume canonical TestManifest identity; invalid role bindings do not create lenses; ordinary argument scope, scheduler logical stack, and idempotent percent/draft migration remain covered | proven | preserve manifest-driven tooling and migration-only legacy spelling |
 | 06B parser cutover | removed syntax has rejection-only recognition and no old AST/lowering/runtime decorator semantics | proven | keep migration diagnostics and operator/internal-IR allowlist distinct |
 | 06B repository promotion | inventory has no machine/block/unknown/not-promoted findings, but 645 review findings and owner-gated reference slots remain | indirect | classify/migrate remaining current inputs as owner gates close |
 | 07B | coverage still has 13 owner-gated `design-pending` entries | contradicted | promote only after each owner gate has independent evidence |
@@ -241,6 +260,7 @@ remaining owner gates are open.
 The strict production parser cutover is complete. The 55 historical leaf
 records are confirmed in their own scope; the current directory additionally
 contains one completed task-level support record outside that selector. The root
-Syntax redesign is not complete: 07B is explicitly open; Gate 14 has
-reopened contract defects; and 08 M3-M5, 10C, and 11 M5 remain open.
+Syntax redesign is not complete: 10C, 06B repository promotion, and 07B still
+require their final convergence passes. Gate 14 M1-M4 is promoted by the
+2026-08-05 three-toolchain replay.
 No acceptance document may translate leaf completion into a root promotion.

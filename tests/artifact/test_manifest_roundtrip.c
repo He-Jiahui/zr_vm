@@ -109,7 +109,7 @@ static void test_test_manifest_roundtrips_through_binary_and_runtime_loader(void
     ioSource = ZrCore_Io_ReadSourceNew(io);
     TEST_ASSERT_NOT_NULL(ioSource);
     TEST_ASSERT_EQUAL_UINT32(
-            ZR_IO_SOURCE_PATCH_HAS_TEST_MANIFEST,
+            ZR_IO_SOURCE_PATCH_CURRENT,
             ioSource->versionPatch);
     TEST_ASSERT_NOT_NULL(ioSource->modules[0].entryFunction);
     TEST_ASSERT_EQUAL_UINT32(
@@ -131,7 +131,12 @@ static void test_test_manifest_roundtrips_through_binary_and_runtime_loader(void
             loadedFunction->testManifestDataLength,
             &manifest));
     TEST_ASSERT_EQUAL_UINT32(1U, manifest.entryCount);
-    TEST_ASSERT_EQUAL_STRING("roundtrip", manifest.entries[0].qualifiedName);
+    TEST_ASSERT_EQUAL_STRING(
+            "test_manifest_roundtrip::roundtrip",
+            manifest.entries[0].qualifiedName);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, manifest.entries[0].functionSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, manifest.entries[0].functionTypeId);
+    TEST_ASSERT_EQUAL_UINT64(function->moduleSignatureHash, manifest.moduleGraphHash);
     TEST_ASSERT_EQUAL_STRING("documented", manifest.entries[0].skipReason);
     TEST_ASSERT_EQUAL_UINT32(1U, manifest.entries[0].caseCount);
     TEST_ASSERT_EQUAL_INT64(

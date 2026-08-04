@@ -20,8 +20,13 @@ static const ZrLibGenericParameterDescriptor g_single_t[] = {
         {"T", "Compared value type.", ZR_NULL, 0U},
 };
 
+static const TZrChar *g_error_constraint[] = {
+        "Error",
+};
+
 static const ZrLibGenericParameterDescriptor g_single_e[] = {
-        {"E", "Expected exception type.", ZR_NULL, 0U},
+        {"E", "Expected exception type.",
+         g_error_constraint, ZR_ARRAY_COUNT(g_error_constraint)},
 };
 
 static const ZrLibFunctionDescriptor g_testing_functions[] = {
@@ -32,7 +37,7 @@ static const ZrLibFunctionDescriptor g_testing_functions[] = {
          "Compare values through canonical equality.",
          g_equal_parameters, ZR_ARRAY_COUNT(g_equal_parameters),
          g_single_t, ZR_ARRAY_COUNT(g_single_t), 0U, 0U},
-        {"throws", 1U, 1U, ZrVmLibTesting_Throws, "E",
+        {"throws", 2U, 2U, ZrVmLibTesting_Throws, "E",
          "Return the exception thrown by a synchronous action.",
          g_throws_parameters, ZR_ARRAY_COUNT(g_throws_parameters),
          g_single_e, ZR_ARRAY_COUNT(g_single_e), 0U, 0U},
@@ -44,11 +49,27 @@ static const ZrLibFieldDescriptor g_skip_fields[] = {
 
 static const ZrLibFieldDescriptor g_assertion_failure_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("assertionKind", "int", "Canonical assertion kind."),
-        ZR_LIB_FIELD_DESCRIPTOR_INIT("sourceLine", "int", "Call-site source line when available."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("sourceSpan", "SourceSpan", "Call-site source span when available."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("message", "string", "Bounded failure message."),
-        ZR_LIB_FIELD_DESCRIPTOR_INIT("expected", "string", "Bounded expected snapshot."),
-        ZR_LIB_FIELD_DESCRIPTOR_INIT("actual", "string", "Bounded actual snapshot."),
-        ZR_LIB_FIELD_DESCRIPTOR_INIT("exception", "string", "Bounded exception snapshot."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("expected", "ValueSnapshot", "Bounded expected snapshot."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("actual", "ValueSnapshot", "Bounded actual snapshot."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("exception", "ValueSnapshot", "Bounded exception snapshot."),
+};
+
+static const ZrLibFieldDescriptor g_source_span_fields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("sourceFile", "string", "Source file name."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("startLine", "int", "One-based start line."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("startColumn", "int", "One-based start column."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("endLine", "int", "One-based end line."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("endColumn", "int", "One-based end column."),
+};
+
+static const ZrLibFieldDescriptor g_value_snapshot_fields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("typeName", "string", "Canonical runtime type name."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("text", "string", "Bounded debug text."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("hasValue", "bool", "Whether a value was captured."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("truncated", "bool", "Whether debug text was truncated."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("formatterFaulted", "bool", "Whether value formatting raised."),
 };
 
 static const ZrLibTypeDescriptor g_testing_types[] = {
@@ -66,6 +87,18 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
                                     g_skip_fields, ZR_ARRAY_COUNT(g_skip_fields),
                                     ZR_NULL, 0U, ZR_NULL, 0U,
                                     "Metadata schema for a retained skipped test.",
+                                    ZR_NULL, ZR_NULL, 0U, ZR_NULL, 0U, ZR_NULL,
+                                    ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0U),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("SourceSpan", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+                                    g_source_span_fields, ZR_ARRAY_COUNT(g_source_span_fields),
+                                    ZR_NULL, 0U, ZR_NULL, 0U,
+                                    "Structured assertion call-site span.",
+                                    ZR_NULL, ZR_NULL, 0U, ZR_NULL, 0U, ZR_NULL,
+                                    ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0U),
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("ValueSnapshot", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
+                                    g_value_snapshot_fields, ZR_ARRAY_COUNT(g_value_snapshot_fields),
+                                    ZR_NULL, 0U, ZR_NULL, 0U,
+                                    "Bounded assertion value snapshot.",
                                     ZR_NULL, ZR_NULL, 0U, ZR_NULL, 0U, ZR_NULL,
                                     ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0U),
         ZR_LIB_TYPE_DESCRIPTOR_INIT("AssertionFailure", ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
@@ -108,7 +141,7 @@ static const ZrLibModuleDescriptor g_testing_descriptor = {
         .providerPhase = ZR_LIBRARY_PROVIDER_PHASE_TEST,
         .attributeRoles = g_testing_roles,
         .attributeRoleCount = ZR_ARRAY_COUNT(g_testing_roles),
-        .publicContractHash = "zr.testing:v1:test-case-skip:assert-equal-throws",
+        .publicContractHash = "zr.testing:v2:typed-manifest-structured-assertions",
 };
 
 const ZrLibModuleDescriptor *ZrVmLibTesting_Runtime_GetModuleDescriptor(void) {

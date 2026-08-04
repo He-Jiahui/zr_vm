@@ -2,6 +2,7 @@
 #define ZR_VM_DEBUG_DEBUG_INTERNAL_H
 
 #include "zr_vm_lib_debug/debug.h"
+#include "zr_vm_parser/test_contract.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,6 +162,8 @@ typedef struct ZrDebugThreadEntry {
 struct ZrDebugAgent {
     SZrState *state;
     SZrFunction *entryFunction;
+    SZrParserTestManifest testManifest;
+    TZrBool hasTestManifest;
     ZrDebugAgentConfig config;
     SZrNetworkListener listener;
     SZrNetworkStream client;

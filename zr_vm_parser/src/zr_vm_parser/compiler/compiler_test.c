@@ -37,6 +37,62 @@ static TZrChar *compiler_test_duplicate_text(
     return copy;
 }
 
+static TZrChar *compiler_test_build_qualified_name(
+        SZrCompilerState *cs,
+        const TZrChar *moduleId,
+        const TZrChar *functionName) {
+    TZrSize moduleLength;
+    TZrSize functionLength;
+    TZrChar *qualifiedName;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL ||
+        moduleId == ZR_NULL || functionName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    moduleLength = strlen(moduleId);
+    functionLength = strlen(functionName);
+    qualifiedName = (TZrChar *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            moduleLength + 2U + functionLength + 1U,
+            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (qualifiedName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    memcpy(qualifiedName, moduleId, moduleLength);
+    qualifiedName[moduleLength] = ':';
+    qualifiedName[moduleLength + 1U] = ':';
+    memcpy(qualifiedName + moduleLength + 2U, functionName, functionLength + 1U);
+    return qualifiedName;
+}
+
+static const SZrFunctionTypeInfo *compiler_test_find_function_identity(
+        const SZrCompilerState *cs,
+        const SZrAstNode *functionNode) {
+    const SZrTypeEnvironment *environment;
+
+    if (cs == ZR_NULL || functionNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (environment = cs->typeEnv;
+         environment != ZR_NULL;
+         environment = environment->parent) {
+        for (TZrSize index = 0U;
+             index < environment->functionReturnTypes.length;
+             index++) {
+            SZrFunctionTypeInfo *const *candidate =
+                    (SZrFunctionTypeInfo *const *)ZrCore_Array_Get(
+                            (SZrArray *)&environment->functionReturnTypes,
+                            index);
+
+            if (candidate != ZR_NULL && *candidate != ZR_NULL &&
+                (*candidate)->declarationNode == functionNode) {
+                return *candidate;
+            }
+        }
+    }
+    return ZR_NULL;
+}
+
 static TZrBool compiler_test_type_is_plain_void(const SZrType *type) {
     return type != ZR_NULL && type->subType == ZR_NULL &&
                    type->dimensions == 0 &&
@@ -522,6 +578,8 @@ TZrBool compiler_test_bind_function(
     TZrSize caseCount = 0U;
     TZrSize skipCount = 0U;
     SZrParserTestEntry entry;
+    const SZrFunctionTypeInfo *functionIdentity;
+    const TZrChar *functionName;
 
     if (isTest != ZR_NULL) {
         *isTest = ZR_FALSE;
@@ -606,21 +664,28 @@ TZrBool compiler_test_bind_function(
             cs->currentModuleKey != ZR_NULL
                     ? ZrCore_String_GetNativeStringShort(cs->currentModuleKey)
                     : "main");
-    entry.qualifiedName = compiler_test_duplicate_text(
-            cs, ZrCore_String_GetNativeStringShort(declaration->name->name));
+    functionName = ZrCore_String_GetNativeStringShort(declaration->name->name);
+    entry.qualifiedName = compiler_test_build_qualified_name(
+            cs, entry.moduleId, functionName);
     if (entry.moduleId == ZR_NULL || entry.qualifiedName == ZR_NULL) {
         compiler_test_free_entry(cs, &entry);
         ZrParser_Compiler_Error(
                 cs, "test.manifest_allocation: failed to retain test identity", functionNode->location);
         return ZR_FALSE;
     }
-    entry.functionSymbolId = ZrParser_AttributeContract_ComputeId(
-            entry.qualifiedName);
-    entry.functionTypeId = entry.functionSymbolId ^
-                           (TZrUInt32)((declaration->params != ZR_NULL
-                                               ? declaration->params->count
-                                               : 0U) +
-                                      (declaration->isAsync ? 0x80000000U : 0U));
+    functionIdentity = compiler_test_find_function_identity(cs, functionNode);
+    if (functionIdentity == ZR_NULL ||
+        functionIdentity->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        functionIdentity->typeId == ZR_SEMANTIC_ID_INVALID) {
+        compiler_test_free_entry(cs, &entry);
+        ZrParser_Compiler_Error(
+                cs,
+                "test.semantic_identity: test function has no canonical symbol/type identity",
+                functionNode->location);
+        return ZR_FALSE;
+    }
+    entry.functionSymbolId = functionIdentity->symbolId;
+    entry.functionTypeId = functionIdentity->typeId;
     entry.sourceRange = functionNode->location;
     entry.isAsync = declaration->isAsync;
     entry.caseCount = (TZrUInt32)caseCount;
@@ -686,24 +751,8 @@ TZrBool compiler_test_bind_function(
     return ZR_TRUE;
 }
 
-static TZrUInt64 compiler_test_hash_module(const TZrChar *moduleId) {
-    const TZrByte *cursor;
-    TZrUInt64 hash = UINT64_C(1469598103934665603);
-
-    if (moduleId == ZR_NULL) {
-        return hash;
-    }
-    cursor = (const TZrByte *)moduleId;
-    while (*cursor != 0U) {
-        hash ^= (TZrUInt64)*cursor++;
-        hash *= UINT64_C(1099511628211);
-    }
-    return hash;
-}
-
 TZrBool compiler_test_finalize_manifest(SZrCompilerState *cs) {
     SZrParserTestManifest manifest;
-    const TZrChar *moduleId;
     TZrByte *encodedData = ZR_NULL;
     TZrUInt32 encodedLength = 0U;
 
@@ -718,9 +767,6 @@ TZrBool compiler_test_finalize_manifest(SZrCompilerState *cs) {
                 cs, "test.manifest_limit: too many test entries", cs->currentAst->location);
         return ZR_FALSE;
     }
-    moduleId = cs->currentModuleKey != ZR_NULL
-               ? ZrCore_String_GetNativeStringShort(cs->currentModuleKey)
-               : "main";
     ZrCore_Memory_RawSet(&manifest, 0, sizeof(manifest));
     manifest.schemaVersion = ZR_PARSER_TEST_MANIFEST_SCHEMA_VERSION;
 #if defined(_WIN32)
@@ -728,7 +774,14 @@ TZrBool compiler_test_finalize_manifest(SZrCompilerState *cs) {
 #else
     manifest.targetTriple = "unix-native";
 #endif
-    manifest.moduleGraphHash = compiler_test_hash_module(moduleId);
+    manifest.moduleGraphHash = cs->currentFunction->moduleSignatureHash;
+    if (manifest.moduleGraphHash == 0U) {
+        ZrParser_Compiler_Error(
+                cs,
+                "test.module_graph_identity: typed module metadata has no canonical signature hash",
+                cs->currentAst->location);
+        return ZR_FALSE;
+    }
     manifest.entries = (SZrParserTestEntry *)cs->testManifestEntries.head;
     manifest.entryCount = (TZrUInt32)cs->testManifestEntries.length;
     if (!ZrParser_TestManifest_Encode(

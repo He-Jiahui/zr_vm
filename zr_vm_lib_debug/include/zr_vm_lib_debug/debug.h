@@ -97,6 +97,12 @@ typedef struct ZrDebugFrameSnapshot {
     TZrUInt32 async_isolated_requirement_flags;
     TZrUInt64 async_transport_contract_hash;
     TZrUInt64 async_scheduler_contract_hash;
+    TZrBool has_test_contract;
+    TZrBool test_is_async;
+    TZrUInt32 test_function_symbol_id;
+    TZrUInt32 test_function_type_id;
+    TZrUInt32 test_case_count;
+    TZrChar test_qualified_name[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar module_name[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar call_kind[ZR_DEBUG_NAME_CAPACITY];
     TZrChar function_name[ZR_DEBUG_NAME_CAPACITY];
@@ -105,6 +111,17 @@ typedef struct ZrDebugFrameSnapshot {
     TZrChar receiver_type_name[ZR_DEBUG_NAME_CAPACITY];
     TZrChar receiver_value_text[ZR_DEBUG_TEXT_CAPACITY];
 } ZrDebugFrameSnapshot;
+
+typedef struct ZrDebugTestEntrySnapshot {
+    TZrUInt32 function_symbol_id;
+    TZrUInt32 function_type_id;
+    TZrUInt32 callable_child_index;
+    TZrUInt32 case_count;
+    TZrBool is_async;
+    TZrChar module_id[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar qualified_name[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar skip_reason[ZR_DEBUG_TEXT_CAPACITY];
+} ZrDebugTestEntrySnapshot;
 
 typedef struct ZrDebugScopeSnapshot {
     TZrUInt32 thread_id;
@@ -199,6 +216,10 @@ ZR_DEBUG_API void ZrDebug_StepOver(ZrDebugAgent *agent);
 ZR_DEBUG_API void ZrDebug_StepOut(ZrDebugAgent *agent);
 
 ZR_DEBUG_API TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames, TZrSize *outCount);
+
+ZR_DEBUG_API TZrBool ZrDebug_ReadTestManifest(ZrDebugAgent *agent,
+                                              ZrDebugTestEntrySnapshot **outEntries,
+                                              TZrSize *outCount);
 
 ZR_DEBUG_API TZrBool ZrDebug_ReadScopes(ZrDebugAgent *agent, TZrUInt32 frameId, ZrDebugScopeSnapshot **outScopes,
                                         TZrSize *outCount);

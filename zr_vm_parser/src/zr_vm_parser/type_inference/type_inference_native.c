@@ -1669,6 +1669,24 @@ TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, 
         nativeTypeNameLength = nativeTypeName != ZR_NULL ? typeName->longStringLength : 0;
     }
     if (nativeTypeName != ZR_NULL &&
+        (strcmp(nativeTypeName, "fn() -> void") == 0 ||
+         strcmp(nativeTypeName, "fn() -> null") == 0)) {
+        SZrString *canonicalTypeName =
+                strcmp(nativeTypeName, "fn() -> void") == 0
+                        ? ZrCore_String_CreateFromNative(cs->state, "fn() -> null")
+                        : typeName;
+        if (canonicalTypeName == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrParser_InferredType_InitFull(
+                cs->state,
+                result,
+                ZR_VALUE_TYPE_CLOSURE,
+                ZR_FALSE,
+                canonicalTypeName);
+        return ZR_TRUE;
+    }
+    if (nativeTypeName != ZR_NULL &&
         nativeTypeNameLength > 2 &&
         nativeTypeName[nativeTypeNameLength - 1] == ']') {
         const TZrChar *bracket = strrchr(nativeTypeName, '[');

@@ -1,6 +1,7 @@
 #include "lsp_editor_features_internal.h"
-#include "zr_vm_parser/attribute_contract.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/legacy_migration.h"
+#include "zr_vm_parser/test_contract.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -896,69 +897,73 @@ TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
 }
 
 static TZrBool lsp_code_lens_append_test_roles(SZrState *state,
-                                               const SZrAstNode *ast,
                                                const TZrChar *content,
                                                TZrSize contentLength,
                                                SZrString *uri,
                                                SZrArray *result) {
-    const SZrAstNodeArray *statements;
+    SZrFunction *function;
+    SZrParserTestManifest manifest;
+    TZrBool success = ZR_TRUE;
 
-    if (ast == ZR_NULL) {
+    if (state == ZR_NULL || content == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    function = ZrParser_Source_CompileTest(state, content, contentLength, uri);
+    if (function == ZR_NULL || function->testManifestData == ZR_NULL ||
+        function->testManifestDataLength == 0U ||
+        function->testManifestDataLength > (TZrSize)UINT32_MAX) {
+        if (function != ZR_NULL) {
+            ZrCore_Function_Free(state, function);
+        }
         return ZR_TRUE;
     }
-    if (ast->type == ZR_AST_SCRIPT) {
-        statements = ast->data.script.statements;
-    } else {
-        statements = ZR_NULL;
+    memset(&manifest, 0, sizeof(manifest));
+    if (!ZrParser_TestManifest_Decode(state,
+                                      function->testManifestData,
+                                      (TZrUInt32)function->testManifestDataLength,
+                                      &manifest)) {
+        ZrCore_Function_Free(state, function);
+        return ZR_FALSE;
     }
 
-    for (TZrSize statementIndex = 0U;
-         statements != ZR_NULL && statementIndex < statements->count;
-         statementIndex++) {
-        const SZrAstNode *statement = statements->nodes[statementIndex];
-        const SZrAstNodeArray *decorators;
+    for (TZrUInt32 entryIndex = 0U; entryIndex < manifest.entryCount; entryIndex++) {
+        const SZrParserTestEntry *entry = &manifest.entries[entryIndex];
+        TZrSize startOffset = entry->sourceRange.start.offset;
+        TZrSize endOffset = entry->sourceRange.end.offset;
+        SZrLspRange range;
+        SZrLspPosition position;
 
-        if (statement == ZR_NULL || statement->type != ZR_AST_FUNCTION_DECLARATION) {
+        if (startOffset > contentLength) {
             continue;
         }
-        decorators = statement->data.functionDeclaration.decorators;
-        for (TZrSize decoratorIndex = 0U;
-             decorators != ZR_NULL && decoratorIndex < decorators->count;
-             decoratorIndex++) {
-            SZrParserAttributeData attribute;
-            TZrSize startOffset;
-            TZrSize endOffset;
-
-            if (!ZrParser_AttributeContract_ResolveBuiltinDecorator(
-                        decorators->nodes[decoratorIndex], &attribute) ||
-                attribute.role != ZR_PARSER_ATTRIBUTE_ROLE_TEST) {
-                continue;
-            }
-            startOffset = attribute.sourceRange.start.offset;
-            endOffset = attribute.sourceRange.end.offset;
-            if (startOffset > contentLength) {
-                continue;
-            }
-            if (endOffset < startOffset || endOffset > contentLength) {
-                endOffset = startOffset;
-            }
-            while (endOffset < contentLength && content[endOffset] != '\n') {
-                endOffset++;
-            }
-            if (!lsp_code_lens_append(
-                        state,
-                        result,
-                        lsp_editor_range_from_offsets(
-                                content, contentLength, startOffset, endOffset),
-                        "Run Zr test",
-                        "zr.runCurrentProject",
-                        uri,
-                        ZR_NULL)) {
-                return ZR_FALSE;
+        if (endOffset < startOffset || endOffset > contentLength) {
+            endOffset = startOffset;
+        }
+        range = lsp_editor_range_from_offsets(content, contentLength, startOffset, endOffset);
+        position = range.start;
+        if (!lsp_code_lens_append(state, result, range, "Run Zr test",
+                                  ZR_LSP_COMMAND_RUN_CURRENT_PROJECT, uri, &position) ||
+            !lsp_code_lens_append(state, result, range, "Debug Zr test",
+                                  "zr.debugCurrentProject", uri, &position)) {
+            success = ZR_FALSE;
+            break;
+        }
+        for (TZrUInt32 caseIndex = 0U; caseIndex < entry->caseCount; caseIndex++) {
+            TZrChar title[ZR_LSP_SHORT_TEXT_BUFFER_LENGTH];
+            snprintf(title, sizeof(title), "Run case %u", entry->cases[caseIndex].ordinal);
+            if (!lsp_code_lens_append(state, result, range, title,
+                                      ZR_LSP_COMMAND_RUN_CURRENT_PROJECT, uri, &position)) {
+                success = ZR_FALSE;
+                break;
             }
         }
+        if (!success) {
+            break;
+        }
     }
-    return ZR_TRUE;
+    ZrParser_TestManifest_Free(state, &manifest);
+    ZrCore_Function_Free(state, function);
+    return success;
 }
 
 TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
@@ -985,10 +990,9 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
     }
 
     fileVersion = lsp_editor_get_file_version(context, uri);
-    if (!snapshot.usesFallbackAst && fileVersion != ZR_NULL &&
+    if (!snapshot.usesFallbackAst && fileVersion != ZR_NULL && fileVersion->ast != ZR_NULL &&
         !lsp_code_lens_append_test_roles(
                 state,
-                fileVersion->ast,
                 snapshot.content,
                 snapshot.contentLength,
                 uri,

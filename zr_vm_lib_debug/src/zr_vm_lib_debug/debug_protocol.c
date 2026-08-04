@@ -973,6 +973,27 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent, TZrUIn
                 cJSON_AddItemToObject(frameObject, "asyncContract", asyncContract);
             }
         }
+        if (frames[index].has_test_contract) {
+            cJSON *testContract = cJSON_CreateObject();
+            if (testContract != ZR_NULL) {
+                cJSON_AddStringToObject(testContract,
+                                       "qualifiedName",
+                                       frames[index].test_qualified_name);
+                cJSON_AddNumberToObject(testContract,
+                                       "functionSymbolId",
+                                       frames[index].test_function_symbol_id);
+                cJSON_AddNumberToObject(testContract,
+                                       "functionTypeId",
+                                       frames[index].test_function_type_id);
+                cJSON_AddNumberToObject(testContract,
+                                       "caseCount",
+                                       frames[index].test_case_count);
+                cJSON_AddBoolToObject(testContract,
+                                     "isAsync",
+                                     frames[index].test_is_async != ZR_FALSE);
+                cJSON_AddItemToObject(frameObject, "testContract", testContract);
+            }
+        }
         if (frames[index].receiver_name[0] != '\0') {
             cJSON *receiverObject = cJSON_CreateObject();
             if (receiverObject != ZR_NULL) {

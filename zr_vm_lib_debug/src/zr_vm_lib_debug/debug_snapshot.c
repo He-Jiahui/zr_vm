@@ -2613,6 +2613,23 @@ TZrBool ZrDebug_EvaluateWithCapabilitiesDetailed(ZrDebugAgent *agent,
                                          errorBufferSize);
 }
 
+static const SZrParserTestEntry *zr_debug_find_test_entry(
+        const ZrDebugAgent *agent,
+        const SZrFunction *function) {
+    if (agent == ZR_NULL || function == ZR_NULL || !agent->hasTestManifest ||
+        agent->entryFunction == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrUInt32 index = 0U; index < agent->testManifest.entryCount; index++) {
+        const SZrParserTestEntry *entry = &agent->testManifest.entries[index];
+        if (entry->callableChildIndex < agent->entryFunction->childFunctionLength &&
+            &agent->entryFunction->childFunctionList[entry->callableChildIndex] == function) {
+            return entry;
+        }
+    }
+    return ZR_NULL;
+}
+
 TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames, TZrSize *outCount) {
     ZrDebugFrameSnapshot *frames;
     TZrUInt32 frameCount = 0;
@@ -2757,6 +2774,22 @@ TZrBool ZrDebug_ReadStack(ZrDebugAgent *agent, ZrDebugFrameSnapshot **outFrames,
                 frames[frameId - 1].async_isolated_requirement_flags = asyncContract.isolatedRequirementFlags;
                 frames[frameId - 1].async_transport_contract_hash = asyncContract.transportContractHash;
                 frames[frameId - 1].async_scheduler_contract_hash = asyncContract.schedulerContractHash;
+            }
+        }
+        {
+            const SZrParserTestEntry *testEntry =
+                    zr_debug_find_test_entry(agent, function);
+            if (testEntry != ZR_NULL) {
+                frames[frameId - 1].has_test_contract = ZR_TRUE;
+                frames[frameId - 1].test_is_async = testEntry->isAsync;
+                frames[frameId - 1].test_function_symbol_id = testEntry->functionSymbolId;
+                frames[frameId - 1].test_function_type_id = testEntry->functionTypeId;
+                frames[frameId - 1].test_case_count = testEntry->caseCount;
+                zr_debug_copy_text(frames[frameId - 1].test_qualified_name,
+                                   sizeof(frames[frameId - 1].test_qualified_name),
+                                   testEntry->qualifiedName != ZR_NULL
+                                           ? testEntry->qualifiedName
+                                           : "");
             }
         }
         zr_debug_copy_text(frames[frameId - 1].module_name, sizeof(frames[frameId - 1].module_name), agent->moduleName);

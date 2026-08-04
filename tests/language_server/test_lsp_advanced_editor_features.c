@@ -1418,22 +1418,31 @@ static void test_lsp_code_lens_exposes_test_command(SZrState *state, int *failur
     SZrString *uri = ZR_NULL;
     SZrLspContext *context;
     SZrArray lenses = {0};
+    TZrBool foundRun = ZR_FALSE;
+    TZrBool foundDebug = ZR_FALSE;
 
     TEST_START(summary);
     context = test_open_document(state, "file:///tmp/zr_lsp_lens.zr", content, &uri);
     if (context == ZR_NULL ||
         !ZrLanguageServer_Lsp_GetCodeLens(state, context, uri, &lenses) ||
-        lenses.length != 1) {
+        lenses.length < 2U) {
         (*failures)++;
-        TEST_FAIL(timer, summary, "codeLens did not return a test command");
+        TEST_FAIL(timer, summary, "codeLens did not return manifest-backed run/debug commands");
     } else {
-        SZrLspCodeLens **lensPtr = (SZrLspCodeLens **)ZrCore_Array_Get(&lenses, 0);
-        const TZrChar *command = (lensPtr != ZR_NULL && *lensPtr != ZR_NULL)
-                                     ? test_string_text((*lensPtr)->command)
-                                     : ZR_NULL;
-        if (command == ZR_NULL || strcmp(command, "zr.runCurrentProject") != 0) {
+        for (TZrSize index = 0U; index < lenses.length; index++) {
+            SZrLspCodeLens **lensPtr =
+                    (SZrLspCodeLens **)ZrCore_Array_Get(&lenses, index);
+            const TZrChar *command = lensPtr != ZR_NULL && *lensPtr != ZR_NULL
+                                             ? test_string_text((*lensPtr)->command)
+                                             : ZR_NULL;
+            foundRun = foundRun ||
+                       (command != ZR_NULL && strcmp(command, "zr.runCurrentProject") == 0);
+            foundDebug = foundDebug ||
+                         (command != ZR_NULL && strcmp(command, "zr.debugCurrentProject") == 0);
+        }
+        if (!foundRun || !foundDebug) {
             (*failures)++;
-            TEST_FAIL(timer, summary, "codeLens command did not match the VS Code run command");
+            TEST_FAIL(timer, summary, "manifest CodeLens omitted run or debug command");
         } else {
             TEST_PASS(timer, summary);
         }
@@ -1482,6 +1491,54 @@ static void test_lsp_code_lens_ignores_unbound_test_like_attribute(
         if (foundRunLens) {
             (*failures)++;
             TEST_FAIL(timer, summary, "unbound test-like attribute produced a run CodeLens");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeLens(state, &lenses);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_lens_rejects_invalid_bound_test_signature(
+        SZrState *state,
+        int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code lens requires a valid TestManifest entry";
+    const TZrChar *content =
+        "#zr.testing.test#\n"
+        "fn invalidTest(): int {\n"
+        "    return 0;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray lenses = {0};
+    TZrBool foundTestLens = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(
+            state, "file:///tmp/zr_lsp_lens_invalid_test.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeLens(state, context, uri, &lenses)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeLens failed for invalid test signature fixture");
+    } else {
+        for (TZrSize index = 0U; index < lenses.length; index++) {
+            SZrLspCodeLens **lensPtr =
+                    (SZrLspCodeLens **)ZrCore_Array_Get(&lenses, index);
+            const TZrChar *title = lensPtr != ZR_NULL && *lensPtr != ZR_NULL
+                                           ? test_string_text((*lensPtr)->commandTitle)
+                                           : ZR_NULL;
+            if (title != ZR_NULL && strstr(title, "Zr test") != ZR_NULL) {
+                foundTestLens = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundTestLens) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "invalid test signature was discovered by AST instead of manifest");
         } else {
             TEST_PASS(timer, summary);
         }
@@ -2214,6 +2271,7 @@ int main(void) {
     test_lsp_code_action_ignores_non_code_missing_import_text(state, &failures);
     test_lsp_code_action_ignores_multiline_block_comment_missing_import(state, &failures);
     test_lsp_code_lens_exposes_test_command(state, &failures);
+    test_lsp_code_lens_rejects_invalid_bound_test_signature(state, &failures);
     test_lsp_code_lens_ignores_non_code_test_markers(state, &failures);
     test_lsp_code_lens_ignores_unbound_test_like_attribute(state, &failures);
     test_lsp_code_lens_exposes_reference_count(state, &failures);

@@ -6,6 +6,119 @@
 #include "compile_expression_contiguous_view.h"
 #include "type_inference_internal.h"
 
+static TZrBool compile_expression_is_testing_throws_call(
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrFunctionCall *call) {
+    const TZrChar *ownerName;
+    const TZrChar *memberName;
+    SZrAstNode *genericArgument;
+
+    if (memberInfo == ZR_NULL || call == ZR_NULL ||
+        memberInfo->ownerTypeName == ZR_NULL || memberInfo->name == ZR_NULL ||
+        call->genericArguments == ZR_NULL || call->genericArguments->count != 1U) {
+        return ZR_FALSE;
+    }
+    ownerName = ZrCore_String_GetNativeString(memberInfo->ownerTypeName);
+    memberName = ZrCore_String_GetNativeString(memberInfo->name);
+    genericArgument = call->genericArguments->nodes[0];
+    return ownerName != ZR_NULL && memberName != ZR_NULL &&
+           strcmp(ownerName, "zr.testing") == 0 && strcmp(memberName, "throws") == 0 &&
+           genericArgument != ZR_NULL && genericArgument->type == ZR_AST_TYPE;
+}
+
+static TZrBool compile_expression_type_inherits_error(
+        SZrCompilerState *cs,
+        SZrString *typeName,
+        TZrUInt32 depth) {
+    SZrTypePrototypeInfo *prototype;
+    const TZrChar *typeNameText;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL ||
+        depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
+        return ZR_FALSE;
+    }
+    typeNameText = ZrCore_String_GetNativeString(typeName);
+    if (typeNameText != ZR_NULL && strcmp(typeNameText, "Error") == 0) {
+        return ZR_TRUE;
+    }
+    prototype = find_compiler_type_prototype(cs, typeName);
+    if (prototype == ZR_NULL ||
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+        return ZR_FALSE;
+    }
+    typeNameText = prototype->name != ZR_NULL
+                           ? ZrCore_String_GetNativeString(prototype->name)
+                           : ZR_NULL;
+    if (typeNameText != ZR_NULL && strcmp(typeNameText, "Error") == 0) {
+        return ZR_TRUE;
+    }
+    return prototype->extendsTypeName != ZR_NULL &&
+           compile_expression_type_inherits_error(
+                   cs, prototype->extendsTypeName, depth + 1U);
+}
+
+static TZrBool compile_expression_validate_testing_throws_action(
+        SZrCompilerState *cs,
+        const SZrFunctionCall *call,
+        SZrFileRange callLocation) {
+    SZrInferredType actionType;
+    SZrInferredType expectedType;
+    const TZrChar *actionTypeName;
+    TZrBool isValid;
+    SZrAstNode *genericArgument;
+
+    if (cs == ZR_NULL || call == ZR_NULL || call->args == ZR_NULL ||
+        call->args->count != 1U || call->args->nodes[0] == ZR_NULL) {
+        ZrParser_Compiler_Error(
+                cs,
+                "zr.testing.throws<E> expects exactly one fn() -> void action",
+                callLocation);
+        return ZR_FALSE;
+    }
+
+    genericArgument = call->genericArguments->nodes[0];
+    ZrParser_InferredType_Init(cs->state, &expectedType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(
+                cs, &genericArgument->data.type, &expectedType)) {
+        ZrParser_InferredType_Free(cs->state, &expectedType);
+        return ZR_FALSE;
+    }
+    isValid = expectedType.baseType == ZR_VALUE_TYPE_OBJECT &&
+              expectedType.typeName != ZR_NULL &&
+              compile_expression_type_inherits_error(
+                      cs, expectedType.typeName, 0U);
+    ZrParser_InferredType_Free(cs->state, &expectedType);
+    if (!isValid) {
+        ZrParser_Compiler_Error(
+                cs,
+                "zr.testing.throws<E> requires E to inherit Error",
+                genericArgument->location);
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &actionType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_ExpressionType_Infer(cs, call->args->nodes[0], &actionType)) {
+        ZrParser_InferredType_Free(cs->state, &actionType);
+        return ZR_FALSE;
+    }
+    actionTypeName = actionType.typeName != ZR_NULL
+                             ? ZrCore_String_GetNativeString(actionType.typeName)
+                             : ZR_NULL;
+    isValid = actionType.baseType == ZR_VALUE_TYPE_CLOSURE &&
+              actionTypeName != ZR_NULL &&
+              strcmp(actionTypeName, "fn() -> null") == 0;
+    ZrParser_InferredType_Free(cs->state, &actionType);
+
+    if (!isValid) {
+        ZrParser_Compiler_Error(
+                cs,
+                "zr.testing.throws<E> action must have signature fn() -> void",
+                call->args->nodes[0]->location);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 static SZrTypePrototypeInfo *find_registered_type_prototype_exact_only(SZrCompilerState *cs,
                                                                        SZrString *typeName) {
     if (cs == ZR_NULL || typeName == ZR_NULL) {
@@ -3465,6 +3578,17 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
                     return;
                 }
+                if (compile_expression_is_testing_throws_call(activeCallMemberInfo, call) &&
+                    !compile_expression_validate_testing_throws_action(
+                            cs, call, member->location)) {
+                    if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                        ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                    }
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    return;
+                }
             }
             if (hasSpreadArgument) {
                 const SZrArray *spreadParameterTypes =
@@ -3730,6 +3854,29 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     }
                     argCount += (TZrUInt32)argsToCompile->count;
                 }
+            }
+
+            if (compile_expression_is_testing_throws_call(activeCallMemberInfo, call)) {
+                SZrAstNode *genericArgument = call->genericArguments->nodes[0];
+                SZrTypeValue expectedTypeIdentity;
+                TZrUInt32 hiddenArgumentSlot = argBaseSlot + compiledMemberArgCount;
+
+                compiler_ensure_stack_slot_available(cs, hiddenArgumentSlot);
+                if (!compiler_build_type_identity_value(cs,
+                                                        &genericArgument->data.type,
+                                                        genericArgument->location,
+                                                        &expectedTypeIdentity)) {
+                    if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                        ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                    }
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    return;
+                }
+                emit_constant_to_slot(cs, hiddenArgumentSlot, &expectedTypeIdentity);
+                argCount++;
+                compiledMemberArgCount++;
             }
 
             if (activeCallMemberInfo != ZR_NULL) {
@@ -4066,4 +4213,3 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
         *ioRootOwnershipQualifier = rootOwnershipQualifier;
     }
 }
-

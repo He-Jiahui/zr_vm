@@ -85,7 +85,10 @@ static void test_percent_test_becomes_typed_ordinary_function(void) {
             &manifest));
     TEST_ASSERT_EQUAL_UINT32(1U, manifest.entryCount);
     TEST_ASSERT_EQUAL_STRING(
-            "testParsesEmptyInput", manifest.entries[0].qualifiedName);
+            "percent_test_migration::testParsesEmptyInput",
+            manifest.entries[0].qualifiedName);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, manifest.entries[0].functionSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0U, manifest.entries[0].functionTypeId);
     ZrParser_TestManifest_Free(g_state, &manifest);
     ZrCore_Function_Free(g_state, function);
 

@@ -6,6 +6,8 @@
 #define ZR_VM_LIB_TESTING_API ZR_API
 #define ZR_VM_LIB_TESTING_SNAPSHOT_CAPACITY 256U
 #define ZR_VM_LIB_TESTING_MESSAGE_CAPACITY 256U
+#define ZR_VM_LIB_TESTING_TYPE_NAME_CAPACITY 128U
+#define ZR_VM_LIB_TESTING_SOURCE_FILE_CAPACITY 256U
 
 typedef enum EZrTestingAssertionKind {
     ZR_TESTING_ASSERTION_KIND_ASSERT = 1,
@@ -14,14 +16,24 @@ typedef enum EZrTestingAssertionKind {
 } EZrTestingAssertionKind;
 
 typedef struct SZrTestingValueSnapshot {
+    TZrChar typeName[ZR_VM_LIB_TESTING_TYPE_NAME_CAPACITY + 1U];
     TZrChar text[ZR_VM_LIB_TESTING_SNAPSHOT_CAPACITY + 1U];
+    TZrBool hasValue;
     TZrBool truncated;
     TZrBool formatterFaulted;
 } SZrTestingValueSnapshot;
 
+typedef struct SZrTestingSourceSpan {
+    TZrChar sourceFile[ZR_VM_LIB_TESTING_SOURCE_FILE_CAPACITY + 1U];
+    TZrUInt32 startLine;
+    TZrUInt32 startColumn;
+    TZrUInt32 endLine;
+    TZrUInt32 endColumn;
+} SZrTestingSourceSpan;
+
 typedef struct SZrTestingAssertionFailure {
     EZrTestingAssertionKind assertionKind;
-    TZrUInt32 sourceLine;
+    SZrTestingSourceSpan sourceSpan;
     TZrChar message[ZR_VM_LIB_TESTING_MESSAGE_CAPACITY + 1U];
     SZrTestingValueSnapshot expected;
     SZrTestingValueSnapshot actual;
