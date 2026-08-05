@@ -1101,7 +1101,10 @@ mod tests {
         let root = temp.path().join("module_run_project");
         let workspace = ProjectWorkspace::scaffold(&root, "module_run_project")?;
         let project_root = workspace.project_root()?;
-        fs::write(project_root.join("src").join("main.zr"), "module main;\nreturn 17;\n")?;
+        fs::write(
+            project_root.join("src").join("main.zr"),
+            "module main;\nreturn 17;\n",
+        )?;
         fs::create_dir_all(project_root.join("src").join("tools"))?;
         fs::write(
             project_root.join("src").join("tools").join("seed.zr"),
