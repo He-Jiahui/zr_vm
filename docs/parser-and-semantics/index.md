@@ -244,6 +244,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - ordinary identifier inference publishes the supplied canonical reference identity without allocating a replacement
   - Debug/REPL keeps frame PlaceId in its validated runtime context and fails closed for unavailable bindings
 
+- `repl-closure-submissions.md`
+  - generation-checked closure environments replace source replay across REPL cells
+  - submission bindings preserve canonical SymbolId, TypeId, PlaceId, declaration range, and callable signatures
+  - ref-like, borrowed, loaned, and invalid identity values fail closed at the cell boundary
+
 - `canonical-type-graph.md`
   - immutable structural type nodes and canonical `TypeId` identity
   - hash-indexed interning and binary `TypeId` lookup

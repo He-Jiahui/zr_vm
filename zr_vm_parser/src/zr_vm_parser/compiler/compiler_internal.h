@@ -30,6 +30,21 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+TZrBool compiler_submission_seed_context(
+        SZrCompilerState *cs,
+        const SZrParserSubmissionContext *context);
+TZrBool compiler_submission_append_declared_capture(
+        SZrCompilerState *cs,
+        SZrString *name,
+        TZrUInt32 *outCaptureIndex);
+TZrBool compiler_submission_append_declared_callable(
+        SZrCompilerState *cs,
+        SZrAstNode *declarationNode,
+        TZrUInt32 *outCaptureIndex);
+TZrBool compiler_submission_publish_result(
+        SZrCompilerState *cs,
+        SZrParserSubmissionResult *outResult);
+
 TZrBool compiler_test_bind_function(
         SZrCompilerState *cs,
         SZrAstNode *functionNode,

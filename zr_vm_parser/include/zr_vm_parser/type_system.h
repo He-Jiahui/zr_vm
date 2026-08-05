@@ -308,6 +308,17 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *stat
                                                                   SZrArray *genericParameters,
                                                                   SZrArray *parameterPassingModes,
                                                                   SZrAstNode *declarationNode);
+/* Registers an externally verified callable without allocating replacement identities. */
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalFunction(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        const SZrArray *parameterTypes,
+        const SZrArray *parameterPassingModes,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId,
+        SZrFileRange declarationRange);
 
 // 查找函数类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result);

@@ -2723,6 +2723,7 @@ static TZrBool compile_variable_register_semantic_local(
         SZrString *name,
         const SZrInferredType *resolvedType,
         TZrUInt32 stackSlot,
+        SZrAstNode *declarationNode,
         SZrFileRange sourceRange,
         TZrBool initialized) {
     SZrInferredType defaultType;
@@ -2736,8 +2737,13 @@ static TZrBool compile_variable_register_semantic_local(
         defaultTypeInitialized = ZR_TRUE;
     }
     success = (TZrBool)(cs->typeEnv != ZR_NULL &&
-                        ZrParser_TypeEnvironment_RegisterVariable(
-                                cs->state, cs->typeEnv, name, type) &&
+                        ZrParser_TypeEnvironment_RegisterVariableEx(
+                                cs->state,
+                                cs->typeEnv,
+                                name,
+                                type,
+                                declarationNode,
+                                sourceRange) &&
                         compiler_semantic_ir_register_local(
                                 cs, name, stackSlot, sourceRange, initialized));
     if (defaultTypeInitialized) {
@@ -2986,6 +2992,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                         varName,
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         reservedVarSlot,
+                        node,
                         node->location,
                         ZR_FALSE);
                 if (!semanticLocalPreRegistered) {
@@ -3023,6 +3030,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                         varName,
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         reservedVarSlot,
+                        node,
                         node->location,
                         ZR_TRUE)) {
                 if (initializerTypeInitialized) {
@@ -3065,6 +3073,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                         varName,
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         varIndex,
+                        node,
                         node->location,
                         ZR_FALSE)) {
                 if (initializerTypeInitialized) {
@@ -3100,6 +3109,37 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compiler_register_callable_value_binding(cs, varName, decl->value);
             compile_statement_register_type_value_alias(cs, varName, decl->value);
             compile_statement_trace("var decl runtime alias registration done");
+        }
+
+        if (cs->submissionContext != ZR_NULL &&
+            cs->currentFunction == cs->submissionEntryFunction) {
+            TZrUInt32 captureIndex = ZR_PARSER_INDEX_NONE;
+
+            if (!compiler_submission_append_declared_capture(
+                        cs, varName, &captureIndex)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to publish submission declaration capture",
+                        node->location);
+            } else if (captureIndex != ZR_PARSER_INDEX_NONE) {
+                emit_instruction(
+                        cs,
+                        create_instruction_2(
+                                ZR_INSTRUCTION_ENUM(SET_CLOSURE),
+                                (TZrUInt16)varIndex,
+                                (TZrUInt16)captureIndex,
+                                0));
+            }
+        }
+
+        if (cs->hasError) {
+            if (resolvedTypeInitialized) {
+                ZrParser_InferredType_Free(cs->state, &resolvedType);
+            }
+            if (initializerTypeInitialized) {
+                ZrParser_InferredType_Free(cs->state, &initializerType);
+            }
+            return;
         }
 
         if (hasResolvedType) {

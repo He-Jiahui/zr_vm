@@ -947,7 +947,9 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
         SZrState *state,
         SZrAstNode *ast,
         SZrString *currentModuleKey,
-        TZrBool emitTestManifest) {
+        TZrBool emitTestManifest,
+        const SZrParserSubmissionContext *submissionContext,
+        SZrParserSubmissionResult *outSubmissionResult) {
     if (state == ZR_NULL || ast == ZR_NULL) {
         return ZR_NULL;
     }
@@ -957,6 +959,11 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     cs.emitTestManifest = emitTestManifest;
     cs.currentAst = ast;
     cs.currentModuleKey = currentModuleKey;
+    cs.submissionContext = submissionContext;
+    if (!compiler_submission_seed_context(&cs, submissionContext)) {
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
     zr_parser_compile_trace("compiler compile core init ast=%p", (void *)ast);
 
     if (!ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast)) {
@@ -987,6 +994,7 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
+    cs.submissionEntryFunction = submissionContext != ZR_NULL ? cs.currentFunction : ZR_NULL;
     zr_parser_compile_trace("compiler current function=%p", (void *)cs.currentFunction);
 
     // 编译脚本
@@ -1026,6 +1034,20 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     }
     zr_parser_compile_trace("assemble final function ok func=%p", (void *)func);
 
+    if (func == cs.currentFunction && cs.closureVars.length > 0u) {
+        TZrUInt32 typedClosureBindingCount = 0u;
+
+        if (!compiler_build_typed_closure_bindings(
+                    &cs,
+                    &func->typedClosureBindings,
+                    &typedClosureBindingCount)) {
+            ZrCore_Function_Free(state, func);
+            ZrParser_CompilerState_Free(&cs);
+            return ZR_NULL;
+        }
+        func->typedClosureBindingLength = typedClosureBindingCount;
+    }
+
     if (!compiler_build_function_semir_metadata(state, func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
@@ -1048,6 +1070,12 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     }
     zr_parser_compile_trace("finalize current source module ok func=%p", (void *)func);
 
+    if (!compiler_submission_publish_result(&cs, outSubmissionResult)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
     ZrParser_CompilerState_Free(&cs);
     return func;
 }
@@ -1056,7 +1084,9 @@ static SZrFunction *zr_parser_compiler_compile_mode(
         SZrState *state,
         SZrAstNode *ast,
         SZrString *currentModuleKey,
-        TZrBool emitTestManifest) {
+        TZrBool emitTestManifest,
+        const SZrParserSubmissionContext *submissionContext,
+        SZrParserSubmissionResult *outSubmissionResult) {
     EZrLibrary_ProviderPhase previousPhase;
     SZrFunction *result;
 
@@ -1071,7 +1101,12 @@ static SZrFunction *zr_parser_compiler_compile_mode(
                     ? ZR_LIBRARY_PROVIDER_PHASE_TEST
                     : ZR_LIBRARY_PROVIDER_PHASE_RUNTIME);
     result = zr_parser_compiler_compile_mode_active(
-            state, ast, currentModuleKey, emitTestManifest);
+            state,
+            ast,
+            currentModuleKey,
+            emitTestManifest,
+            submissionContext,
+            outSubmissionResult);
     ZrLibrary_State_SetProviderPhase(state, previousPhase);
     return result;
 }
@@ -1081,7 +1116,7 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(
         SZrAstNode *ast,
         SZrString *currentModuleKey) {
     return zr_parser_compiler_compile_mode(
-            state, ast, currentModuleKey, ZR_FALSE);
+            state, ast, currentModuleKey, ZR_FALSE, ZR_NULL, ZR_NULL);
 }
 
 // 主编译入口（占位实现）
@@ -1090,7 +1125,8 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 }
 
 SZrFunction *ZrParser_Compiler_CompileTest(SZrState *state, SZrAstNode *ast) {
-    return zr_parser_compiler_compile_mode(state, ast, ZR_NULL, ZR_TRUE);
+    return zr_parser_compiler_compile_mode(
+            state, ast, ZR_NULL, ZR_TRUE, ZR_NULL, ZR_NULL);
 }
 
 ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
@@ -1112,7 +1148,9 @@ static struct SZrFunction *zr_parser_source_compile_mode(
         TZrSize sourceLength,
         struct SZrString *sourceName,
         TZrBool emitTestManifest,
-        SZrParserSourceComptimeCache *comptimeCache) {
+        SZrParserSourceComptimeCache *comptimeCache,
+        const SZrParserSubmissionContext *submissionContext,
+        SZrParserSubmissionResult *outSubmissionResult) {
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
     SZrFileRange importErrorLocation;
     SZrString *currentModuleKey = ZR_NULL;
@@ -1199,7 +1237,12 @@ static struct SZrFunction *zr_parser_source_compile_mode(
     
     // 编译AST为函数
     func = zr_parser_compiler_compile_mode(
-            state, ast, currentModuleKey, emitTestManifest);
+            state,
+            ast,
+            currentModuleKey,
+            emitTestManifest,
+            submissionContext,
+            outSubmissionResult);
     zr_parser_compile_trace("compiler compile finished name='%s' func=%p",
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (void *)func);
@@ -1223,7 +1266,7 @@ struct SZrFunction *ZrParser_Source_Compile(
         TZrSize sourceLength,
         struct SZrString *sourceName) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL);
+            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, ZR_NULL, ZR_NULL);
 }
 
 struct SZrFunction *ZrParser_Source_CompileWithComptimeCache(
@@ -1233,7 +1276,7 @@ struct SZrFunction *ZrParser_Source_CompileWithComptimeCache(
         struct SZrString *sourceName,
         SZrParserSourceComptimeCache *cache) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_FALSE, cache);
+            state, source, sourceLength, sourceName, ZR_FALSE, cache, ZR_NULL, ZR_NULL);
 }
 
 struct SZrFunction *ZrParser_Source_CompileTest(
@@ -1242,7 +1285,33 @@ struct SZrFunction *ZrParser_Source_CompileTest(
         TZrSize sourceLength,
         struct SZrString *sourceName) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_TRUE, ZR_NULL);
+            state, source, sourceLength, sourceName, ZR_TRUE, ZR_NULL, ZR_NULL, ZR_NULL);
+}
+
+struct SZrFunction *ZrParser_Source_CompileSubmission(
+        struct SZrState *state,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        struct SZrString *sourceName,
+        const SZrParserSubmissionContext *context,
+    SZrParserSubmissionResult *outResult) {
+    if (outResult != ZR_NULL) {
+        ZrCore_Memory_RawSet(outResult, 0, sizeof(*outResult));
+    }
+
+    return zr_parser_source_compile_mode(
+            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, context, outResult);
+}
+
+TZrBool ZrParser_CompilerState_SeedSubmissionContext(
+        SZrCompilerState *cs,
+        const SZrParserSubmissionContext *context) {
+    if (cs == ZR_NULL || context == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    cs->submissionContext = context;
+    return compiler_submission_seed_context(cs, context);
 }
 
 // 注册 compileSource 函数到 globalState

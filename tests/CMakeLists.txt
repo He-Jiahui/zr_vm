@@ -512,6 +512,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core(zr_vm_closure_capture_runtime_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_repl_submission_bindings_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_repl_submission_bindings.c
+    )
+    target_include_directories(zr_vm_repl_submission_bindings_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core(zr_vm_repl_submission_bindings_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_type_inference_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_type_inference.c
     )

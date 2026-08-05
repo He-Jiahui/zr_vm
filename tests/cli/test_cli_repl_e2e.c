@@ -843,6 +843,130 @@ cleanup:
     return status;
 }
 
+static int test_repl_persists_generation_backed_binding_until_reset(void) {
+    const char *testName = "repl_persists_generation_backed_binding_until_reset";
+    ZrCliReplE2eProcess process;
+    char cliPath[CLI_REPL_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_REPL_E2E_PATH_CAPACITY];
+    char error[CLI_REPL_E2E_ERROR_CAPACITY];
+    const char *command[2];
+    int status = 1;
+
+    memset(&process, 0, sizeof(process));
+#if !defined(_WIN32)
+    process.stdinFd = -1;
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+
+    command[0] = cliPath;
+    command[1] = NULL;
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "ZR VM REPL", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for REPL banner\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, "var seed = 2;") ||
+        !cli_process_write_line(&process, "") ||
+        !cli_process_write_line(&process, "seed = seed + 3;") ||
+        !cli_process_write_line(&process, "") ||
+        !cli_process_write_line(&process, "seed") ||
+        !cli_process_write_line(&process, "")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit generation-backed REPL cells");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "\n5\n", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "REPL did not preserve the canonical binding across cells\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":type seed") ||
+        !cli_process_wait_for_substring(&process, "Type: int", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type did not consume the active generation binding\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":reset") ||
+        !cli_process_write_line(&process, ":type seed")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to reset the REPL session");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process,
+                                        "REPL binding is unavailable in the active generation",
+                                        CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type did not fail closed after reset\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, "fn increment(value: int): int { return value + 1; }") ||
+        !cli_process_write_line(&process, "") ||
+        !cli_process_write_line(&process, "increment(2)") ||
+        !cli_process_write_line(&process, "")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit a persisted callable scenario");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "\n3\n", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "REPL did not call the canonical callable from a previous cell\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":quit")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to write :quit to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_exit(&process, CLI_REPL_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for repl exit after :quit\nOutput:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "repl exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
 static int test_repl_incomplete_expression_reports_user_input(void) {
     const char *testName = "repl_incomplete_expression_reports_user_input";
     ZrCliReplE2eProcess process;
@@ -925,6 +1049,93 @@ static int test_repl_incomplete_expression_reports_user_input(void) {
         goto cleanup;
     }
 
+    status = 0;
+
+cleanup:
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
+static int test_repl_rejects_missing_statement_semicolon_without_publishing(void) {
+    const char *testName = "repl_rejects_missing_statement_semicolon_without_publishing";
+    ZrCliReplE2eProcess process;
+    char cliPath[CLI_REPL_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_REPL_E2E_PATH_CAPACITY];
+    char error[CLI_REPL_E2E_ERROR_CAPACITY];
+    const char *command[2];
+    int status = 1;
+
+    memset(&process, 0, sizeof(process));
+#if !defined(_WIN32)
+    process.stdinFd = -1;
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+
+    command[0] = cliPath;
+    command[1] = NULL;
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "ZR VM REPL", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS) ||
+        !cli_process_write_line(&process, "var seed = 2;") ||
+        !cli_process_write_line(&process, "") ||
+        !cli_process_write_line(&process, "var missing = 3") ||
+        !cli_process_write_line(&process, "")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit missing-semicolon input");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process,
+                                        "Missing ';' after variable declaration statement",
+                                        CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "REPL accepted a statement by inserting a semicolon\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, "seed") ||
+        !cli_process_write_line(&process, "") ||
+        !cli_process_wait_for_substring(&process, "\n2\n", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "failed cell replaced the active closure environment\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":type missing") ||
+        !cli_process_wait_for_substring(&process,
+                                        "REPL binding is unavailable in the active generation",
+                                        CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "failed submission published a binding\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":quit") ||
+        !cli_process_wait_for_exit(&process, CLI_REPL_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "REPL did not exit after missing-semicolon scenario");
+        goto cleanup;
+    }
+
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "repl exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
     status = 0;
 
 cleanup:
@@ -1092,7 +1303,13 @@ int main(void) {
     if (test_repl_expression_can_use_previous_session_binding() != 0) {
         return 1;
     }
+    if (test_repl_persists_generation_backed_binding_until_reset() != 0) {
+        return 1;
+    }
     if (test_repl_incomplete_expression_reports_user_input() != 0) {
+        return 1;
+    }
+    if (test_repl_rejects_missing_statement_semicolon_without_publishing() != 0) {
         return 1;
     }
     if (test_repl_type_command_reports_expression_inference() != 0) {

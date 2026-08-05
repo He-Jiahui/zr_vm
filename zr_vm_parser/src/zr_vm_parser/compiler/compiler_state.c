@@ -51,6 +51,12 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     // 初始化闭包变量数组
     ZrCore_Array_Init(state, &cs->closureVars, sizeof(SZrFunctionClosureVariable), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->closureVarCount = 0;
+    cs->submissionContext = ZR_NULL;
+    cs->submissionEntryFunction = ZR_NULL;
+    ZrCore_Array_Init(state,
+                      &cs->submissionDeclaredCaptureIndices,
+                      sizeof(TZrUInt32),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     // 初始化指令数组
     ZrCore_Array_Init(state, &cs->instructions, sizeof(TZrInstruction), ZR_PARSER_INSTRUCTION_INITIAL_CAPACITY);
@@ -255,6 +261,13 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     if (cs->closureVars.isValid && cs->closureVars.head != ZR_NULL && cs->closureVars.capacity > 0 &&
         cs->closureVars.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->closureVars);
+    }
+
+    if (cs->submissionDeclaredCaptureIndices.isValid &&
+        cs->submissionDeclaredCaptureIndices.head != ZR_NULL &&
+        cs->submissionDeclaredCaptureIndices.capacity > 0 &&
+        cs->submissionDeclaredCaptureIndices.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->submissionDeclaredCaptureIndices);
     }
 
     // 释放指令数组

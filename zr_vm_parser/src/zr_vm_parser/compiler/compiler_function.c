@@ -849,6 +849,27 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                      (TZrUInt16)functionVarIndex,
                                      (TZrInt32)closureSlot));
 
+        if (cs->submissionContext != ZR_NULL &&
+            oldFunction == cs->submissionEntryFunction) {
+            TZrUInt32 captureIndex = ZR_PARSER_INDEX_NONE;
+
+            if (!compiler_submission_append_declared_callable(
+                        cs, node, &captureIndex)) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to publish submission callable capture",
+                        node->location);
+            } else if (captureIndex != ZR_PARSER_INDEX_NONE) {
+                emit_instruction(
+                        cs,
+                        create_instruction_2(
+                                ZR_INSTRUCTION_ENUM(SET_CLOSURE),
+                                (TZrUInt16)functionVarIndex,
+                                (TZrUInt16)captureIndex,
+                                0));
+            }
+        }
+
         if (cs->isScriptLevel) {
             SZrExportedVariable exportedVar;
             exportedVar.name = functionName;

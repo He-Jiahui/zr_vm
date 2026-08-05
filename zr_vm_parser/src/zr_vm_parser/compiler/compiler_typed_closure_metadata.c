@@ -25,6 +25,45 @@ static TZrBool compiler_typed_closure_binding_matches_source(
            (TZrUInt32)binding->declarationRange.end.column == capture->declarationEndColumn;
 }
 
+static TZrBool compiler_typed_closure_callable_matches_source(
+        const SZrFunctionClosureVariable *capture,
+        const SZrFunctionTypeInfo *callable) {
+    if (capture == ZR_NULL || callable == ZR_NULL ||
+        capture->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        capture->typeId == ZR_SEMANTIC_ID_INVALID ||
+        callable->symbolId != capture->symbolId ||
+        callable->typeId != capture->typeId ||
+        !callable->hasDeclarationRange) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(
+            (TZrUInt32)callable->declarationRange.start.line == capture->declarationStartLine &&
+            (TZrUInt32)callable->declarationRange.start.column == capture->declarationStartColumn &&
+            (TZrUInt32)callable->declarationRange.end.line == capture->declarationEndLine &&
+            (TZrUInt32)callable->declarationRange.end.column == capture->declarationEndColumn);
+}
+
+static const SZrFunctionTypeInfo *compiler_find_typed_closure_callable(
+        const SZrTypeEnvironment *typeEnv,
+        const SZrFunctionClosureVariable *capture) {
+    if (typeEnv == ZR_NULL || capture == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0u; index < typeEnv->functionReturnTypes.length; index++) {
+        const SZrFunctionTypeInfo *const *candidate =
+                (const SZrFunctionTypeInfo *const *)ZrCore_Array_Get(
+                        (SZrArray *)&typeEnv->functionReturnTypes, index);
+
+        if (candidate != ZR_NULL &&
+            compiler_typed_closure_callable_matches_source(capture, *candidate)) {
+            return *candidate;
+        }
+    }
+    return ZR_NULL;
+}
+
 TZrBool compiler_build_typed_closure_bindings(SZrCompilerState *cs,
                                               SZrFunctionTypedClosureBinding **outBindings,
                                               TZrUInt32 *outCount) {
@@ -55,6 +94,7 @@ TZrBool compiler_build_typed_closure_bindings(SZrCompilerState *cs,
         const SZrFunctionClosureVariable *capture =
                 (const SZrFunctionClosureVariable *)ZrCore_Array_Get(&cs->closureVars, captureIndex);
         const SZrTypeBinding *binding;
+        const SZrFunctionTypeInfo *callable;
         SZrFunctionTypedClosureBinding *destination;
 
         if (capture == ZR_NULL || capture->name == ZR_NULL) {
@@ -62,14 +102,25 @@ TZrBool compiler_build_typed_closure_bindings(SZrCompilerState *cs,
         }
 
         binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, capture->name);
-        if (!compiler_typed_closure_binding_matches_source(capture, binding)) {
+        callable = binding == ZR_NULL
+                           ? compiler_find_typed_closure_callable(cs->typeEnv, capture)
+                           : ZR_NULL;
+        if (!compiler_typed_closure_binding_matches_source(capture, binding) && callable == ZR_NULL) {
             continue;
         }
 
         destination = &bindings[bindingCount++];
         ZrCore_Memory_RawSet(destination, 0, sizeof(*destination));
         destination->captureIndex = captureIndex;
-        compiler_typed_type_ref_from_inferred(&destination->type, &binding->type);
+        if (binding != ZR_NULL) {
+            compiler_typed_type_ref_from_inferred(&destination->type, &binding->type);
+        } else {
+            SZrInferredType functionType;
+
+            ZrParser_InferredType_Init(cs->state, &functionType, ZR_VALUE_TYPE_FUNCTION);
+            compiler_typed_type_ref_from_inferred(&destination->type, &functionType);
+            ZrParser_InferredType_Free(cs->state, &functionType);
+        }
         destination->symbolId = capture->symbolId;
         destination->typeId = capture->typeId;
         destination->declarationStartLine = capture->declarationStartLine;

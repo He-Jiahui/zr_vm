@@ -106,6 +106,9 @@ typedef struct SZrCompilerState {
     // 闭包管理
     SZrArray closureVars;               // 闭包变量数组（SZrFunctionClosureVariable）
     TZrSize closureVarCount;             // 闭包变量数量
+    const struct SZrParserSubmissionContext *submissionContext; // borrowed incremental submission input
+    SZrFunction *submissionEntryFunction; // root function allowed to publish submission bindings
+    SZrArray submissionDeclaredCaptureIndices; // TZrUInt32 capture indexes published on success
     
     // 指令生成
     SZrArray instructions;              // 指令数组（TZrInstruction）
@@ -638,10 +641,74 @@ ZR_PARSER_API TZrBool ZrParser_CompileTime_ApplyMemberDecorators(SZrCompilerStat
 ZR_PARSER_API TZrBool ZrParser_Compiler_IsCompileTimeDecorator(SZrCompilerState *cs,
                                                                SZrAstNode *decoratorNode);
 
+typedef enum EZrParserSubmissionBindingKind {
+    ZR_PARSER_SUBMISSION_BINDING_KIND_VALUE = 0,
+    ZR_PARSER_SUBMISSION_BINDING_KIND_CALLABLE = 1
+} EZrParserSubmissionBindingKind;
+
+#define ZR_PARSER_SUBMISSION_CALLABLE_SIGNATURE_NONE ((TZrUInt32)0xFFFFFFFFu)
+
+/* Borrowed canonical callable contract for one persisted REPL binding. */
+typedef struct SZrParserSubmissionCallableSignature {
+    TZrSymbolId symbolId;
+    TZrTypeId typeId;
+    SZrInferredType returnType;
+    SZrArray parameterTypes;         /* SZrInferredType */
+    SZrArray parameterPassingModes;  /* EZrParameterPassingMode */
+    SZrFileRange declarationRange;
+} SZrParserSubmissionCallableSignature;
+
+/* Input bindings are borrowed for the duration of one submission compile. */
+typedef struct SZrParserSubmissionBinding {
+    SZrString *name;
+    EZrParserSubmissionBindingKind kind;
+    SZrInferredType inferredType;
+    TZrSymbolId symbolId;
+    TZrTypeId typeId;
+    TZrUInt32 placeId;
+    SZrFileRange declarationRange;
+    TZrUInt32 captureIndex;
+    TZrUInt32 callableSignatureIndex;
+    TZrUInt64 moduleGeneration;
+    TZrUInt64 environmentGeneration;
+    TZrUInt64 cellGeneration;
+} SZrParserSubmissionBinding;
+
+typedef struct SZrParserSubmissionContext {
+    const SZrParserSubmissionBinding *bindings;
+    TZrSize bindingCount;
+    const SZrParserSubmissionCallableSignature *callableSignatures;
+    TZrSize callableSignatureCount;
+    TZrUInt64 moduleGeneration;
+    TZrUInt64 environmentGeneration;
+    TZrUInt64 cellGeneration;
+} SZrParserSubmissionContext;
+
+typedef struct SZrParserSubmissionResult {
+    SZrParserSubmissionBinding *bindings;
+    TZrSize bindingCount;
+    SZrParserSubmissionCallableSignature *callableSignatures;
+    TZrSize callableSignatureCount;
+} SZrParserSubmissionResult;
+
 // 编译源代码为函数（封装了从解析到编译的全流程）
 // 这是提供给 globalState 的统一接口
 ZR_PARSER_API struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
 ZR_PARSER_API struct SZrFunction *ZrParser_Source_CompileTest(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
+ZR_PARSER_API struct SZrFunction *ZrParser_Source_CompileSubmission(
+        struct SZrState *state,
+        const TZrChar *source,
+        TZrSize sourceLength,
+        struct SZrString *sourceName,
+        const SZrParserSubmissionContext *context,
+        SZrParserSubmissionResult *outResult);
+ZR_PARSER_API void ZrParser_SubmissionResult_Free(
+        struct SZrState *state,
+        SZrParserSubmissionResult *result);
+/* Seeds an existing compiler state with one validated, read-only submission snapshot. */
+ZR_PARSER_API TZrBool ZrParser_CompilerState_SeedSubmissionContext(
+        SZrCompilerState *cs,
+        const SZrParserSubmissionContext *context);
 
 // 注册 compileSource 函数到 globalState
 // 在 global 初始化时调用此函数来注册 parser 模块
