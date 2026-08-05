@@ -2242,6 +2242,8 @@ int main(void) {
             state, &failures);
     test_lsp_code_action_inserts_missing_declaration_body_open(
             state, &failures);
+    test_lsp_code_action_inserts_missing_statement_body_open(
+            state, &failures);
     test_lsp_code_action_inserts_missing_declaration_body_close(
             state, &failures);
     test_lsp_code_action_inserts_missing_condition_close(state, &failures);

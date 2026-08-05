@@ -219,6 +219,106 @@ static void test_lsp_code_action_inserts_missing_declaration_body_open(
     }
 }
 
+static void test_lsp_code_action_inserts_missing_statement_body_open(
+        SZrState *state,
+        int *failures) {
+    const TZrChar *summary =
+            "LSP code action inserts missing statement body open";
+    const TZrChar *content = "if (ready)";
+    const TZrChar *fixedContent = "if (ready){}";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri = ZR_NULL;
+    SZrArray diagnostics = {0};
+    SZrArray actions = {0};
+    const SZrLspDiagnostic *diagnostic;
+    const SZrLspDiagnosticFix *fix = ZR_NULL;
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(
+            state,
+            "file:///tmp/zr_lsp_diagnostic_statement_body_open_fix.zr",
+            content,
+            &uri);
+    ZrCore_Array_Init(
+            state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDiagnostics(
+                state, context, uri, &diagnostics)) {
+        diagnostic = diagnostic_safe_fix_find_code(
+                &diagnostics, "missing_statement_body_open");
+        if (diagnostic != ZR_NULL && diagnostic->fixes.isValid &&
+            diagnostic->fixes.length == 1U) {
+            fix = (const SZrLspDiagnosticFix *)ZrCore_Array_Get(
+                    (SZrArray *)&diagnostic->fixes, 0U);
+        }
+        if (fix != ZR_NULL &&
+            diagnostic->range.start.line == 0 &&
+            diagnostic->range.start.character == 10 &&
+            diagnostic->range.end.line == 0 &&
+            diagnostic->range.end.character == 10 &&
+            fix->applicability == ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE &&
+            fix->editRange.start.line == 0 &&
+            fix->editRange.start.character == 10 &&
+            fix->editRange.end.line == 0 &&
+            fix->editRange.end.character == 10 &&
+            strcmp(test_string_text(fix->title),
+                   "Insert missing statement body") == 0 &&
+            strcmp(test_string_text(fix->editText), "{}") == 0 &&
+            ZrLanguageServer_Lsp_GetCodeActions(
+                    state,
+                    context,
+                    uri,
+                    diagnostic->range,
+                    &actions) &&
+            diagnostic_safe_fix_action_matches(
+                    &actions, "Insert missing statement body", "{}")) {
+            valid = ZR_TRUE;
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    memset(&actions, 0, sizeof(actions));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+
+    if (valid &&
+        ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                fixedContent,
+                strlen(fixedContent),
+                2)) {
+        ZrCore_Array_Init(
+                state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+        valid = ZrLanguageServer_Lsp_GetDiagnostics(
+                        state, context, uri, &diagnostics) &&
+                diagnostic_safe_fix_find_code(
+                        &diagnostics,
+                        "missing_statement_body_open") == ZR_NULL;
+    } else {
+        valid = ZR_FALSE;
+    }
+
+    if (!valid) {
+        (*failures)++;
+        TEST_FAIL(
+                timer,
+                summary,
+                "statement body opener did not publish an exact empty-body fix and clear after rebind");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_code_action_inserts_missing_declaration_body_close(
         SZrState *state,
         int *failures) {

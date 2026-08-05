@@ -76,6 +76,8 @@ parser recovery产生poisoned/unknown facts并限制级联；后续diagnostic标
 
 [2026-08-05 declaration-body-open safe-fix convergence](./02-diagnostics/2026-08-05-declaration-body-open-safe-fix-convergence.md) 已在隔离分支完成`missing_declaration_body_open`的验证，保留existing recovery primary并在同cursor发布零宽`{}` machine fix；`{}`保证自动修复不立即制造body-close diagnostic，通用LSP code-action直接消费structured `fixes[]`并在v2重新绑定后清除该code，不按declaration kind、message、AST或源码文本重建。该记录待主树集成；stdio/CLI全链验收、其他delimiter/replacement family、registry全覆盖和L3整体仍未完成。
 
+[2026-08-05 statement-body-open safe-fix convergence](./02-diagnostics/2026-08-05-statement-body-open-safe-fix-convergence.md) 已在依赖declaration-body-open隔离提交的分支完成`missing_statement_body_open`验证：parser保留recovery primary、在current lexer cursor发布零宽`{}` machine fix，通用LSP code-action消费structured `fixes[]`并在v2重新绑定后清除该code，不按statement kind、message、AST或源码文本重建。该记录待依赖分支和本叶子依序集成主树；stdio/CLI全链验收、其他delimiter/replacement family、registry全覆盖和L3整体仍未完成。
+
 ## Diagnostic Registry 与验收
 
 每个diagnostic registry entry必须声明：stable code、message id/arguments、severity、producing fact/query、primary role、related role集合、suppression/recovery policy和允许的fix applicability。协议层不得从英文message反推code。

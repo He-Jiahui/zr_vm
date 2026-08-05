@@ -189,6 +189,7 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(
     SZrState *state,
     SZrStructuredDiagnostic *out,
     SZrFileRange location,
+    SZrFileRange fixLocation,
     const TZrChar *statementKind);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingBlockClose(
     SZrState *state,
