@@ -82,6 +82,9 @@ doc_type: category-index
   - `zr_vm_debug` / `zr_vm_network` / CLI runtime 的职责边界
   - `zrdbg/1` 请求与事件最小集
   - source / binary 断点解析与 step 语义
+- `debug-variable-handle-generations.md`
+  - paused-state `variablesReference` 的单调分配、generation 失效与 handle-only 数值区间
+  - resume 后旧 children handle 的 `-32002` fail-closed 协议边界
 - `zrp-editor-schema-and-lsp-refresh.md`
   - `.zrp` 作为 JSON 文档的 VS Code 识别路径
   - schema 字段覆盖、必填项与基础校验
@@ -114,10 +117,11 @@ doc_type: category-index
 2. 需要快速确认某个入口模式、flag 组合、报错文案或 `process.arguments` 行为时，再看 `zr-vm-cli-coverage-matrix.md`。
 3. 需要修改 `zr_vm test`、TestManifest discovery、隔离 worker 或退出码时，看 `zr-vm-test-command.md`。
 4. 需要修改调试 launch、断点解析、`zrdbg/1` 协议或 loopback transport 时，再看 `zr-debugger-v1-launch-workflow.md`。
-5. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
-6. 需要修改 VSCode extension 的 grammar、debug commands、native asset sync 或 VSIX 打包时，再看 `vscode-extension-language-support.md`。
-7. 需要修改 language server 的现代编辑器能力、stdio request wiring 或 provider capability 时，再看 `lsp-advanced-editor-features.md`。
-8. 需要修改diagnostic fix的parser ownership、applicability或LSP projection时，再看`lsp-diagnostic-safe-fixes.md`。
-9. 需要修改 rename/code action/fix 的 workspace edit 快照、document version 或 disk/open provenance 时，再看 `lsp-workspace-edit-snapshot-provenance.md`。
-10. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
-11. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+5. 需要修改 paused-state variables、children handle 或 resume 后失效边界时，再看 `debug-variable-handle-generations.md`。
+6. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
+7. 需要修改 VSCode extension 的 grammar、debug commands、native asset sync 或 VSIX 打包时，再看 `vscode-extension-language-support.md`。
+8. 需要修改 language server 的现代编辑器能力、stdio request wiring 或 provider capability 时，再看 `lsp-advanced-editor-features.md`。
+9. 需要修改diagnostic fix的parser ownership、applicability或LSP projection时，再看`lsp-diagnostic-safe-fixes.md`。
+10. 需要修改 rename/code action/fix 的 workspace edit 快照、document version 或 disk/open provenance 时，再看 `lsp-workspace-edit-snapshot-provenance.md`。
+11. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
+12. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

@@ -494,7 +494,7 @@ static ZrDebugVariableHandle *zr_debug_alloc_variable_handle(ZrDebugAgent *agent
     TZrSize newCapacity;
     ZrDebugVariableHandle *handle;
 
-    if (agent == ZR_NULL) {
+    if (agent == ZR_NULL || agent->nextVariableHandleId < ZR_DEBUG_VARIABLE_HANDLE_BASE) {
         return ZR_NULL;
     }
 
@@ -1806,7 +1806,6 @@ void zr_debug_variable_handles_clear(ZrDebugAgent *agent) {
     }
     agent->variableHandleCount = 0;
     agent->variableHandleCapacity = 0;
-    agent->nextVariableHandleId = ZR_DEBUG_VARIABLE_HANDLE_BASE;
 }
 
 static TZrUInt32 zr_debug_find_receiver_slot(SZrFunction *function, TZrUInt32 pc, TZrChar *outName, TZrSize outNameSize) {
@@ -2981,6 +2980,9 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
     }
 
     handle = zr_debug_find_variable_handle(agent, scopeId);
+    if (scopeId >= ZR_DEBUG_VARIABLE_HANDLE_BASE && handle == ZR_NULL) {
+        return ZR_FALSE;
+    }
     if (handle != ZR_NULL) {
         TZrBool ok = ZR_FALSE;
         switch (handle->kind) {

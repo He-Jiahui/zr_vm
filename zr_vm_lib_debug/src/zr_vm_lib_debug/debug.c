@@ -1575,6 +1575,7 @@ TZrBool ZrDebug_AgentStart(SZrState *state,
         zr_debug_copy_text(errorBuffer, errorBufferSize, "failed to allocate debug agent");
         return ZR_FALSE;
     }
+    agent->nextVariableHandleId = ZR_DEBUG_VARIABLE_HANDLE_BASE;
     agent->state = state;
     agent->entryFunction = entryFunction;
     if (entryFunction->testManifestDataLength > 0U) {
