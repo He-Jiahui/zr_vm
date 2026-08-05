@@ -210,6 +210,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen(SZrState *sta
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(SZrState *state,
                                                                     SZrStructuredDiagnostic *out,
                                                                     SZrFileRange location,
+                                                                    SZrFileRange fixLocation,
                                                                     const TZrChar *declarationKind) {
     const TZrChar *kind = declarationKind != ZR_NULL ? declarationKind : "declaration";
     TZrChar message[160];
@@ -229,15 +230,30 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(SZrState *st
              "Insert '}' to close the %s body before continuing.",
              kind);
 
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_declaration_body_close",
-            message,
-            cause,
-            suggestion);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_declaration_body_close",
+                message,
+                cause,
+                suggestion)) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing '}'",
+                fixLocation,
+                "}",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state,

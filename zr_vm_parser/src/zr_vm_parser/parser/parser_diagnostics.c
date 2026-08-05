@@ -148,14 +148,17 @@ void report_missing_declaration_body_close(SZrParserState *ps,
                                            const TZrChar *declarationKind,
                                            SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
+    fixLocation = get_current_token_location(ps);
     if (!ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(ps->state,
                                                                      &diagnostic,
                                                                      location,
+                                                                     fixLocation,
                                                                      declarationKind)) {
         report_error_with_token(ps, "Missing closing '}' for declaration body", ps->lexer->t.token);
         return;

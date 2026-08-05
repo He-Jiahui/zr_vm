@@ -1182,6 +1182,47 @@ static void test_missing_statement_semicolon_builder_publishes_machine_fix(void)
     ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
 }
 
+static void test_missing_declaration_body_close_builder_publishes_machine_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrStructuredDiagnosticFix *fix;
+    SZrFileRange location;
+    SZrFileRange fixLocation;
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(10U, 1, 11),
+            ZrParser_FilePosition_Create(11U, 1, 12),
+            ZR_NULL);
+    fixLocation = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(28U, 2, 17),
+            ZrParser_FilePosition_Create(28U, 2, 17),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(
+            g_state,
+            &diagnostic,
+            location,
+            fixLocation,
+            "class declaration"));
+    TEST_ASSERT_EQUAL_UINT64(10U, diagnostic.location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(11U, diagnostic.location.end.offset);
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic.fixes.length);
+
+    fix = (SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            &diagnostic.fixes, 0U);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Insert missing '}'",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING("}", ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+    TEST_ASSERT_EQUAL_UINT64(28U, fix->editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(28U, fix->editRange.end.offset);
+
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 static void test_missing_condition_close_builder_publishes_machine_fix(void) {
     SZrStructuredDiagnostic diagnostic;
     SZrStructuredDiagnosticFix *fix;
@@ -1715,6 +1756,7 @@ int main(void) {
     RUN_TEST(test_compiler_error_publishes_persistent_semantic_diagnostic_fact);
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
     RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
+    RUN_TEST(test_missing_declaration_body_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_condition_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_index_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_parameter_list_close_builder_publishes_machine_fix);
