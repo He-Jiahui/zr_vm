@@ -2,8 +2,8 @@
 doc_type: milestone-detail
 plan_id: lsp-02-diagnostics
 record_id: 2026-08-05-using-resource-close-safe-fix-convergence
-status: validated_pending_integration
-validated_at: 2026-08-05 17:52 +08:00
+status: completed
+completed_at: 2026-08-05 18:19 +08:00
 source_plans:
   - docs/plans/lsp/02-diagnostics-and-errors.md
   - docs/plans/lsp/03-lsp-robustness-and-position.md
@@ -17,7 +17,7 @@ evidence_scope: using-resource-close-safe-fix-convergence
 
 | 完成时间 | 状态 | 完成项目 |
 |---|---|---|
-| 2026-08-05 17:52 +08:00 | 已验证，待主树集成 | `missing_using_resource_close`从parser structured diagnostic到machine-applicable `)` edit、generic LSP code action与v2 apply-edit-rebind闭环；primary保留using body `{`，fix为current lexer cursor；隔离分支GCC/Clang/MSVC的parser 39/39和advanced editor suite均真实exit 0 |
+| 2026-08-05 18:19 +08:00 | 已完成 | `missing_using_resource_close`从parser structured diagnostic到machine-applicable `)` edit、generic LSP code action与v2 apply-edit-rebind闭环；primary保留using body `{`，fix为current lexer cursor；主树GCC/Clang/MSVC的parser 39/39和advanced editor suite均真实exit 0 |
 
 ## 已实现契约
 
@@ -36,6 +36,6 @@ evidence_scope: using-resource-close-safe-fix-convergence
 
 ## 集成边界
 
-- 本记录保持`validated_pending_integration`，待当前隔离提交以exact path方式合入主树，并在集成基线重放三工具链定向验证后才更新为`completed`及更新集中状态表。
+- 隔离提交`cb74b15`已以主树提交`83f71a6`精确集成；GCC、Clang和MSVC均在该主树基线直接重放parser diagnostics与advanced editor测试后，本记录及集中状态表已升级为`completed`。
 - 不改变diagnostic、semantic query、artifact/binary、code-action snapshot或JSON schema；不修改LSP production、stdio、CLI或CMake。
 - 其他delimiter、replacement、module/property/ownership diagnostics及L3全量registry、性能、cancellation、乱序race证据仍未完成。

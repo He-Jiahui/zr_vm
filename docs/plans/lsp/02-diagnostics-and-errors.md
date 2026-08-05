@@ -82,7 +82,7 @@ parser recovery产生poisoned/unknown facts并限制级联；后续diagnostic标
 
 [2026-08-05 catch-pattern-close safe-fix convergence](./02-diagnostics/2026-08-05-catch-pattern-close-safe-fix-convergence.md) 已完成`missing_catch_pattern_close`验证与主树集成：parser保留catch-body `{` primary、在current lexer cursor发布零宽`)` machine fix，通用LSP code-action消费structured `fixes[]`并在v2重新绑定后清除该code，不按catch AST、message或源码文本重建。主树三工具链定向parser 38/38和advanced editor suite均真实exit 0；stdio/CLI全链验收、其他delimiter/replacement family、registry全覆盖和L3整体仍未完成。
 
-[2026-08-05 using-resource-close safe-fix convergence](./02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md) 已完成隔离叶子验证，待合入主树：`missing_using_resource_close`保留using body `{` primary、在current lexer cursor发布零宽`)` machine fix；通用LSP code-action只消费structured `fixes[]`并在v2重新绑定后清除该code，不按using AST、diagnostic code、message或源码文本重建。GCC、Clang和MSVC定向parser 39/39及advanced editor suite均真实exit 0；stdio/CLI全链验收、其他delimiter/replacement family、registry全覆盖和L3整体仍未完成。
+[2026-08-05 using-resource-close safe-fix convergence](./02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md) 已完成`missing_using_resource_close`验证与主树集成：parser保留using body `{` primary、在current lexer cursor发布零宽`)` machine fix；通用LSP code-action只消费structured `fixes[]`并在v2重新绑定后清除该code，不按using AST、diagnostic code、message或源码文本重建。主树GCC、Clang和MSVC定向parser 39/39及advanced editor suite均真实exit 0；stdio/CLI全链验收、其他delimiter/replacement family、registry全覆盖和L3整体仍未完成。
 
 ## Diagnostic Registry 与验收
 

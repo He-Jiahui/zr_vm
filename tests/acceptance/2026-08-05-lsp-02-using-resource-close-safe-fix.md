@@ -2,8 +2,8 @@
 doc_type: acceptance-record
 plan_id: lsp-02-diagnostics
 record_id: 2026-08-05-lsp-02-using-resource-close-safe-fix
-status: validated_pending_integration
-validated_at: 2026-08-05 17:52 +08:00
+status: completed
+completed_at: 2026-08-05 18:19 +08:00
 related_record: docs/plans/lsp/02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md
 ---
 
@@ -13,7 +13,7 @@ related_record: docs/plans/lsp/02-diagnostics/2026-08-05-using-resource-close-sa
 
 | 完成时间 | 状态 | 完成项目 |
 |---|---|---|
-| 2026-08-05 17:52 +08:00 | 已验证，待主树集成 | malformed using resource的`missing_using_resource_close`保留using body `{` primary、在current cursor发布零宽`)` fix；generic LSP code action应用后v2重新绑定清除该code；隔离分支GCC/Clang/MSVC定向parser 39/39与advanced editor验证均通过 |
+| 2026-08-05 18:19 +08:00 | 已完成 | malformed using resource的`missing_using_resource_close`保留using body `{` primary、在current cursor发布零宽`)` fix；generic LSP code action应用后v2重新绑定清除该code；主树GCC/Clang/MSVC定向parser 39/39与advanced editor验证均通过 |
 
 ## 验收断言
 
@@ -23,6 +23,6 @@ related_record: docs/plans/lsp/02-diagnostics/2026-08-05-using-resource-close-sa
 
 ## 验收结果
 
-- GCC 11.4、Clang 14、MSVC 19.44：隔离分支`zr_vm_compiler_semantic_query_diagnostics_test`均为39 Tests / 0 Failures / 0 Ignored，真实exit 0。
-- GCC 11.4、Clang 14、MSVC 19.44：隔离分支`zr_vm_language_server_lsp_advanced_editor_features_test`均以`0 failure(s)`完成、真实exit 0。
-- 本记录保持`validated_pending_integration`；主树精确集成与集成基线复验完成前，集中状态表不得标记为`completed`。
+- GCC 11.4、Clang 14、MSVC 19.44：主树`zr_vm_compiler_semantic_query_diagnostics_test`均为39 Tests / 0 Failures / 0 Ignored，真实exit 0。
+- GCC 11.4、Clang 14、MSVC 19.44：主树`zr_vm_language_server_lsp_advanced_editor_features_test`均以`0 failure(s)`完成、真实exit 0。
+- 隔离提交`cb74b15`已以主树提交`83f71a6`精确集成；本记录与集中状态表已更新为`completed`。

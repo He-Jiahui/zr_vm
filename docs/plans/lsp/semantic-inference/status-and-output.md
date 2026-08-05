@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-05 17:13 +08:00
+updated_at: 2026-08-05 18:19 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -76,6 +76,7 @@ source_plans:
 | 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 statement-body-open safe fix：`missing_statement_body_open`保留parser recovery primary、在current lexer cursor发布零宽`{}` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按statement kind/message/AST/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Statement-body open safe-fix convergence](../02-diagnostics/2026-08-05-statement-body-open-safe-fix-convergence.md) |
 | 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 block-close safe fix：`missing_block_close`保留opening `{` primary、在current lexer cursor发布零宽`}` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按block AST/message/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Block-close safe-fix convergence](../02-diagnostics/2026-08-05-block-close-safe-fix-convergence.md) |
 | 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 catch-pattern-close safe fix：`missing_catch_pattern_close`保留catch body `{` primary、在current lexer cursor发布零宽`)` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按catch AST/message/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Catch-pattern close safe-fix convergence](../02-diagnostics/2026-08-05-catch-pattern-close-safe-fix-convergence.md) |
+| 2026-08-05 18:19 +08:00 | 已完成 | LSP 02 using-resource-close safe fix：`missing_using_resource_close`保留using body `{` primary、在current lexer cursor发布零宽`)` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按using AST/code/message/source重建；主树GCC/Clang/MSVC定向parser 39/39与advanced editor suite均真实exit 0 | [Using-resource close safe-fix convergence](../02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md) |
 
 ## 当前状态
 
