@@ -41,6 +41,20 @@ fallback, and reports pass/fail/skip/timeout/crash separately. The child
 recompiles only through the Test-phase path and executes in a fresh global
 state with the official `zr.testing` provider.
 
+On Windows, every child argument is quoted with the `CommandLineToArgvW`
+backslash/quote rules, stdin is an inheritable `NUL` handle, and launch failure
+reports the `CreateProcessA` error code. After an assertion exception is caught,
+the worker copies the structured failure and resets the VM thread/call stack
+before freeing the compiled case function. This keeps an expected assertion
+failure distinct from an isolate crash on all supported toolchains.
+
+Manifest identity and source invocation have deliberately different shapes.
+The runner keeps the canonical `module::qualifiedName` in discovery, filtering,
+reporting, and seed calculation. The generated one-source harness appends the
+original source and invokes only the final local function name, because `::` is
+an identity separator rather than current ZR call syntax. Empty or malformed
+manifest names fail harness construction instead of being emitted as source.
+
 Exit code 0 means all selected cases passed or skipped, 1 means assertion/test
 failure or timeout, 2 is command/selection misuse, and 3 is runner/isolate
 failure. Summary output includes counts, deterministic seed, jobs, timeout,

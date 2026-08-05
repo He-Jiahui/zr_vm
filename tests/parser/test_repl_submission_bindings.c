@@ -249,6 +249,10 @@ static void test_submission_declaration_publishes_new_closure_binding(void) {
     TEST_ASSERT_EQUAL_UINT64(context.moduleGeneration, binding->moduleGeneration);
     TEST_ASSERT_EQUAL_UINT64(context.environmentGeneration, binding->environmentGeneration);
     TEST_ASSERT_EQUAL_UINT64(context.cellGeneration, binding->cellGeneration);
+    TEST_ASSERT_EQUAL_INT(1, binding->declarationRange.start.line);
+    TEST_ASSERT_EQUAL_INT(5, binding->declarationRange.start.column);
+    TEST_ASSERT_EQUAL_INT(1, binding->declarationRange.end.line);
+    TEST_ASSERT_EQUAL_INT(10, binding->declarationRange.end.column);
     TEST_ASSERT_EQUAL_UINT32(1u, function->closureValueLength);
     TEST_ASSERT_TRUE(ZrCore_Function_GetClosureCaptureIdentity(
             function,
@@ -260,6 +264,10 @@ static void test_submission_declaration_publishes_new_closure_binding(void) {
     TEST_ASSERT_NOT_NULL(captureType);
     TEST_ASSERT_EQUAL_UINT32(binding->symbolId, captureSymbolId);
     TEST_ASSERT_EQUAL_UINT32(binding->typeId, captureTypeId);
+    TEST_ASSERT_EQUAL_UINT32(1u, captureRange.startLine);
+    TEST_ASSERT_EQUAL_UINT32(5u, captureRange.startColumn);
+    TEST_ASSERT_EQUAL_UINT32(1u, captureRange.endLine);
+    TEST_ASSERT_EQUAL_UINT32(10u, captureRange.endColumn);
 
     ZrParser_SubmissionResult_Free(state, &result);
     ZrTests_Runtime_State_Destroy(state);

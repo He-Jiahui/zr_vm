@@ -29,12 +29,12 @@ void zr_debug_evaluation_effect_classify_resolved_properties(
 TZrBool zr_debug_evaluation_effect_has_canonical_facts(const SZrSemanticContext *context,
                                                        const SZrAstNode *expression,
                                                        const SZrSemanticExpressionFact *expressionFact);
-TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
-                                           TZrUInt32 frameId,
-                                           const TZrChar *expression,
-                                           SZrDebugFormalEvaluationContext *outContext,
-                                           TZrChar *errorBuffer,
-                                           TZrSize errorBufferSize);
+ZR_DEBUG_API TZrBool zr_debug_formal_prepare_expression(ZrDebugAgent *agent,
+                                                        TZrUInt32 frameId,
+                                                        const TZrChar *expression,
+                                                        SZrDebugFormalEvaluationContext *outContext,
+                                                        TZrChar *errorBuffer,
+                                                        TZrSize errorBufferSize);
 TZrBool zr_debug_formal_prepare_expression_with_failure(
         ZrDebugAgent *agent,
         TZrUInt32 frameId,
@@ -43,20 +43,20 @@ TZrBool zr_debug_formal_prepare_expression_with_failure(
         ZrDebugEvaluateFailure *outFailure,
         TZrChar *errorBuffer,
         TZrSize errorBufferSize);
-void zr_debug_formal_free_prepared_expression(SZrDebugFormalEvaluationContext *context);
+ZR_DEBUG_API void zr_debug_formal_free_prepared_expression(SZrDebugFormalEvaluationContext *context);
 TZrBool zr_debug_formal_has_paused_array_index_facts(
         ZrDebugAgent *agent,
         TZrUInt32 frameId,
         const SZrSemanticContext *semanticContext,
         const SZrAstNode *expression,
         const SZrSemanticExpressionFact *expressionFact);
-TZrBool zr_debug_formal_evaluate_node(ZrDebugAgent *agent,
-                                      TZrUInt32 frameId,
-                                      const SZrSemanticContext *semanticContext,
-                                      const SZrAstNode *node,
-                                      SZrTypeValue *outValue,
-                                      TZrBool *outSupported,
-                                      TZrChar *errorBuffer,
-                                      TZrSize errorBufferSize);
+ZR_DEBUG_API TZrBool zr_debug_formal_evaluate_node(ZrDebugAgent *agent,
+                                                   TZrUInt32 frameId,
+                                                   const SZrSemanticContext *semanticContext,
+                                                   const SZrAstNode *node,
+                                                   SZrTypeValue *outValue,
+                                                   TZrBool *outSupported,
+                                                   TZrChar *errorBuffer,
+                                                   TZrSize errorBufferSize);
 
 #endif // ZR_VM_DEBUG_EVALUATION_EFFECT_INTERNAL_H

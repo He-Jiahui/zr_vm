@@ -1337,7 +1337,9 @@ TZrBool ZrParser_TypeInference_RegisterRuntimePrototypes(
                 existingPrototype != ZR_NULL &&
                 existingPrototype->isImportedNative &&
                 existingPrototype->members.length == 0U;
-        if (prototypeName != ZR_NULL &&
+        if ((protoInfo->modifierFlags &
+             ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY) == 0u &&
+            prototypeName != ZR_NULL &&
             (existingPrototype == ZR_NULL || mergeImportedPlaceholder)) {
             const TZrUInt32 *prototypeDecoratorIndices =
                     (const TZrUInt32 *)(currentPos + sizeof(SZrCompiledPrototypeInfo) +

@@ -315,8 +315,8 @@ static void test_lsp_token_equivalent_comment_edit_reuses_semantic_snapshot(
 static void test_lsp_token_coordinate_change_invalidates_semantic_snapshot(
         SZrState *state) {
     const TZrChar *summary = "LSP Token Coordinate Change Invalidates Semantic Snapshot";
-    const TZrChar *initialContent = "compute(): int { return 1; }\n";
-    const TZrChar *updatedContent = "compute(): int {\nreturn 1; }\n";
+    const TZrChar *initialContent = "fn compute(): int { return 1; }\n";
+    const TZrChar *updatedContent = "fn compute(): int {\nreturn 1; }\n";
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
     SZrString *uri;
@@ -378,8 +378,8 @@ static void test_lsp_token_coordinate_change_invalidates_semantic_snapshot(
 static void test_lsp_token_value_change_invalidates_semantic_snapshot(
         SZrState *state) {
     const TZrChar *summary = "LSP Token Value Change Invalidates Semantic Snapshot";
-    const TZrChar *initialContent = "compute(): int { return 1; }\n";
-    const TZrChar *updatedContent = "compute(): int { return 2; }\n";
+    const TZrChar *initialContent = "fn compute(): int { return 1; }\n";
+    const TZrChar *updatedContent = "fn compute(): int { return 2; }\n";
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
     SZrString *uri;
@@ -664,14 +664,9 @@ static void test_lsp_top_level_insertion_records_module_change(
             "fn compute(): int {\n"
             "    return 1;\n"
             "}\n";
-    const TZrChar *insertedDeclaration =
-            "fn added(): int {\n"
-            "    return 0;\n"
-            "}\n";
+    const TZrChar *insertedDeclaration = "var added = 0;\n";
     const TZrChar *updatedContent =
-            "fn added(): int {\n"
-            "    return 0;\n"
-            "}\n"
+            "var added = 0;\n"
             "fn compute(): int {\n"
             "    return 1;\n"
             "}\n";

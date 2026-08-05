@@ -10,6 +10,10 @@ TZrBool backend_aot_c_scalar_locals_has_bool_slot(const SZrAotExecIrFunction *fu
 TZrBool backend_aot_c_scalar_locals_has_f64_slot(const SZrAotExecIrFunction *functionIr, TZrUInt32 slot);
 TZrBool backend_aot_c_scalar_locals_has_i64_slot(const SZrAotExecIrFunction *functionIr, TZrUInt32 slot);
 TZrBool backend_aot_c_scalar_locals_has_u64_slot(const SZrAotExecIrFunction *functionIr, TZrUInt32 slot);
+TZrBool backend_aot_c_scalar_locals_instruction_writes_primitive(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 execInstructionIndex,
+        TZrUInt32 slot);
 TZrBool backend_aot_c_scalar_locals_bool_written_before(const SZrAotExecIrFunction *functionIr,
                                                         TZrUInt32 slot,
                                                         TZrUInt32 execInstructionIndex);

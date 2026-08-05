@@ -748,6 +748,8 @@ async function main() {
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
     const docsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr';
+    const testCodeLensUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-test-code-lens.zr';
     const propertyContractUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-property-contract.zr';
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
@@ -842,13 +844,18 @@ async function main() {
         '    }',
         '}',
         '',
-        '#zr.testing.test#',
-        'fn documentationTest(): int {',
+        'fn documentationValue(): int {',
         '    return ScoreBoard.bonus;',
         '}',
         '',
         'let currentModule = import("zr.math");',
         'let scoreBoard = new ScoreBoard();',
+        '',
+    ].join('\n');
+    const testCodeLensText = [
+        '#zr.testing.test#',
+        'fn codeLensTest(): void {',
+        '}',
         '',
     ].join('\n');
     const legacySemanticText = [
@@ -1796,28 +1803,43 @@ async function main() {
         propertyPrepareRename.range.end.character === 47,
     'unified property prepareRename must preserve the usage selection range');
 
-    const docsCodeLens = await client.request('textDocument/codeLens', {
-        textDocument: { uri: docsUri },
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: testCodeLensUri,
+            languageId: 'zr',
+            version: 1,
+            text: testCodeLensText,
+        },
     });
-    assert(Array.isArray(docsCodeLens) && docsCodeLens.some((lens) =>
+    const testCodeLensDiagnostics =
+        await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(testCodeLensDiagnostics.uri === testCodeLensUri &&
+        Array.isArray(testCodeLensDiagnostics.diagnostics) &&
+        testCodeLensDiagnostics.diagnostics.length === 0,
+    'typed test CodeLens fixture must open without diagnostics');
+    const testCodeLenses = await client.request('textDocument/codeLens', {
+        textDocument: { uri: testCodeLensUri },
+    });
+    const runTestCodeLens = Array.isArray(testCodeLenses) ? testCodeLenses.find((lens) =>
         lens &&
         lens.command &&
         lens.command.command === 'zr.runCurrentProject' &&
         lens.data &&
         lens.data.command === lens.command.command &&
-        lens.data.range),
-        'textDocument/codeLens must expose a run command with resolve data for test attributes');
-    const resolvedDocsCodeLens = await client.request('codeLens/resolve', docsCodeLens[0]);
-    assert(resolvedDocsCodeLens &&
-        resolvedDocsCodeLens.command &&
-        resolvedDocsCodeLens.command.command === docsCodeLens[0].command.command &&
-        resolvedDocsCodeLens.range &&
-        resolvedDocsCodeLens.range.start &&
-        resolvedDocsCodeLens.range.start.line === docsCodeLens[0].range.start.line,
+        lens.data.range) : undefined;
+    assert(runTestCodeLens,
+        `textDocument/codeLens must expose a run command with resolve data for test attributes: ${JSON.stringify(testCodeLenses)}`);
+    const resolvedTestCodeLens = await client.request('codeLens/resolve', runTestCodeLens);
+    assert(resolvedTestCodeLens &&
+        resolvedTestCodeLens.command &&
+        resolvedTestCodeLens.command.command === runTestCodeLens.command.command &&
+        resolvedTestCodeLens.range &&
+        resolvedTestCodeLens.range.start &&
+        resolvedTestCodeLens.range.start.line === runTestCodeLens.range.start.line,
     'codeLens/resolve must preserve resolved command lenses');
     const runCommandResult = await client.request('workspace/executeCommand', {
         command: 'zr.runCurrentProject',
-        arguments: [docsUri],
+        arguments: [testCodeLensUri],
     });
     assert(runCommandResult === null,
         'workspace/executeCommand must acknowledge legacy run command requests');
@@ -3698,6 +3720,11 @@ async function main() {
     });
     client.notify('textDocument/didClose', {
         textDocument: {
+            uri: testCodeLensUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
             uri: propertyContractUri,
         },
     });
@@ -3759,6 +3786,7 @@ async function main() {
         watchedBinaryFixture.mainUri,
         documentUri,
         docsUri,
+        testCodeLensUri,
         propertyContractUri,
         colorUri,
         inlineCompletionUri,

@@ -25,6 +25,19 @@ void compiler_register_scope_cleanup_slot(
         return;
     }
 
+    for (TZrSize index = 0u; index < scope->cleanupRegistrations.length; index++) {
+        const SZrScopeCleanupRegistration *existing =
+                (const SZrScopeCleanupRegistration *)ZrCore_Array_Get(
+                        &scope->cleanupRegistrations, index);
+
+        if (existing != ZR_NULL &&
+            existing->slot == slot &&
+            existing->sourceSlot == sourceSlot &&
+            existing->ownershipBuiltinKind == ownershipBuiltinKind) {
+            return;
+        }
+    }
+
     if (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
         (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
          sourceSlot == slot)) {

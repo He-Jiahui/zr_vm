@@ -36,6 +36,8 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
+static TZrSize g_failed_test_count = 0U;
+
 // 测试日志宏
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
@@ -58,6 +60,7 @@ typedef struct {
 #define TEST_FAIL(timer, summary, reason) do { \
     timer.endTime = clock(); \
     double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
+    g_failed_test_count++; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
 } while(0)
@@ -289,66 +292,54 @@ static void test_lsp_get_parser_diagnostics(SZrState *state) {
     TEST_PASS(timer, "LSP Get Parser Diagnostics");
 }
 
-static void test_lsp_legacy_ownership_type_warning_preserves_current_ast(SZrState *state) {
+static void test_lsp_removed_percent_ownership_is_rejected(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
     SZrString *uri;
     const TZrChar *content =
         "struct Resource { }\n"
-        "var owner: Unique<Resource>;\n"
+        "var owner: %unique Resource;\n"
         "var after = 1;\n";
-    SZrFileVersion *fileVersion;
-    SZrSemanticAnalyzer *analyzer;
     SZrArray diagnostics;
 
-    TEST_START("LSP Legacy Ownership Type Warning Preserves Current AST");
+    TEST_START("LSP Removed Percent Ownership Is Rejected");
     TEST_INFO("Parser warning diagnostics",
-              "Legacy ownership type syntax should publish a warning without forcing fallback AST semantics");
+              "Removed percent ownership syntax must publish a fatal migration diagnostic");
 
     context = ZrLanguageServer_LspContext_New(state);
     if (context == ZR_NULL) {
-        TEST_FAIL(timer, "LSP Legacy Ownership Type Warning Preserves Current AST", "Failed to create LSP context");
+        TEST_FAIL(timer, "LSP Removed Percent Ownership Is Rejected", "Failed to create LSP context");
         return;
     }
 
-    uri = ZrCore_String_Create(state, "file:///legacy_ownership_type_warning.zr", 39);
+    uri = ZrCore_String_Create(state, "file:///removed_percent_ownership.zr", 36);
     if (uri == ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Legacy Ownership Type Warning Preserves Current AST", "Failed to allocate URI");
+        TEST_FAIL(timer, "LSP Removed Percent Ownership Is Rejected", "Failed to allocate URI");
         return;
     }
 
     if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Legacy Ownership Type Warning Preserves Current AST", "Failed to update document");
-        return;
-    }
-
-    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
-    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || fileVersion->usesFallbackAst || analyzer == ZR_NULL) {
-        ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer,
-                  "LSP Legacy Ownership Type Warning Preserves Current AST",
-                  "Parser warnings should keep the current AST and semantic analyzer available");
+        TEST_FAIL(timer, "LSP Removed Percent Ownership Is Rejected", "Failed to update document");
         return;
     }
 
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
-        !diagnostic_array_contains_code_with_severity(&diagnostics, "legacy_ownership_type_syntax", 2) ||
-        !diagnostic_array_contains_message(&diagnostics, "Write Unique<T> instead.")) {
+        !diagnostic_array_contains_code_with_severity(&diagnostics, "legacy_syntax_removed", 1) ||
+        !diagnostic_array_contains_message(&diagnostics, "Legacy syntax '%unique' was removed")) {
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
-                  "LSP Legacy Ownership Type Warning Preserves Current AST",
-                  "Expected legacy ownership syntax warning to be published as LSP severity warning");
+                  "LSP Removed Percent Ownership Is Rejected",
+                  "Expected removed percent ownership syntax to publish an error diagnostic");
         return;
     }
 
     ZrCore_Array_Free(state, &diagnostics);
     ZrLanguageServer_LspContext_Free(state, context);
-    TEST_PASS(timer, "LSP Legacy Ownership Type Warning Preserves Current AST");
+    TEST_PASS(timer, "LSP Removed Percent Ownership Is Rejected");
 }
 
 static void test_lsp_get_missing_right_operand_parser_diagnostic(SZrState *state) {
@@ -1969,7 +1960,7 @@ static void test_lsp_get_document_symbols(SZrState *state) {
     }
 
     SZrString *uri = ZrCore_String_Create(state, "file:///symbols.zr", 18);
-    const TZrChar *content = "var total = 10;\nvalueOf() { return total; }\n";
+    const TZrChar *content = "var total = 10;\nfn valueOf() { return total; }\n";
     TZrSize contentLength = strlen(content);
 
     if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, contentLength, 1)) {
@@ -2789,6 +2780,7 @@ static void test_lsp_function_symbol_range_trimmed_to_body(SZrState *state) {
     SZrLspPosition functionStart;
     SZrLspPosition functionEnd;
     SZrLspSymbolInformation *symbol;
+    TZrChar reason[256];
 
     TEST_START("LSP Function Symbol Range Trimmed To Body");
     TEST_INFO("Function Symbol Range", "Checking function range end does not drift into the next declaration");
@@ -2817,7 +2809,7 @@ static void test_lsp_function_symbol_range_trimmed_to_body(SZrState *state) {
         return;
     }
 
-    if (!lsp_find_position_for_substring(g_callbacks_fixture, "runCallbacksImpl(lin, signal, tensor)", 0, 0, &functionStart) ||
+    if (!lsp_find_position_for_substring(g_callbacks_fixture, "fn runCallbacksImpl(lin, signal, tensor)", 0, 0, &functionStart) ||
         !lsp_find_position_for_substring(g_callbacks_fixture, "}\n\npub var summarizeCallback", 0, 1, &functionEnd)) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, "LSP Function Symbol Range Trimmed To Body", "Failed to compute callbacks fixture positions");
@@ -2838,9 +2830,20 @@ static void test_lsp_function_symbol_range_trimmed_to_body(SZrState *state) {
         symbol->location.range.start.character != functionStart.character ||
         symbol->location.range.end.line != functionEnd.line ||
         symbol->location.range.end.character != functionEnd.character) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected %d:%d..%d:%d, actual %d:%d..%d:%d",
+                 functionStart.line,
+                 functionStart.character,
+                 functionEnd.line,
+                 functionEnd.character,
+                 symbol != ZR_NULL ? symbol->location.range.start.line : -1,
+                 symbol != ZR_NULL ? symbol->location.range.start.character : -1,
+                 symbol != ZR_NULL ? symbol->location.range.end.line : -1,
+                 symbol != ZR_NULL ? symbol->location.range.end.character : -1);
         ZrCore_Array_Free(state, &symbols);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Function Symbol Range Trimmed To Body", "Function range should stop at the closing brace instead of drifting to the next declaration");
+        TEST_FAIL(timer, "LSP Function Symbol Range Trimmed To Body", reason);
         return;
     }
 
@@ -4319,7 +4322,7 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     SZrString *uri;
     const TZrChar *content =
         "native extern(\"fixture\") {\n"
-        "    NativeAdd(lhs: i32, rhs: i32): i32;\n"
+        "    fn NativeAdd(lhs: i32, rhs: i32): i32;\n"
         "}\n"
         "fn use(): i32 {\n"
         "    var sum = NativeAdd(1, 2);\n"
@@ -4336,6 +4339,7 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     SZrArray highlights;
     SZrArray completions;
     SZrLspSignatureHelp *help = ZR_NULL;
+    TZrChar reason[256];
 
     TEST_START("LSP Extern Function Navigation And Signature Help");
     TEST_INFO("Extern function semantic integration",
@@ -4379,11 +4383,40 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, firstCallPosition, &definitions) ||
         !location_array_contains_position(&definitions, definitionPosition.line, definitionPosition.character)) {
+        SZrLspSemanticQuery definitionQuery;
+        TZrBool queryResolved;
+        SZrLspLocation **firstDefinition = definitions.length > 0U
+                ? (SZrLspLocation **)ZrCore_Array_Get(&definitions, 0U)
+                : ZR_NULL;
+        SZrLspLocation *location = firstDefinition != ZR_NULL ? *firstDefinition : ZR_NULL;
+        ZrLanguageServer_LspSemanticQuery_Init(&definitionQuery);
+        queryResolved = ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state,
+                context,
+                uri,
+                firstCallPosition,
+                &definitionQuery);
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected %d:%d, actual count=%zu first=%d:%d..%d:%d query=%d kind=%d symbol=%s",
+                 definitionPosition.line,
+                 definitionPosition.character,
+                 (size_t)definitions.length,
+                 location != ZR_NULL ? location->range.start.line : -1,
+                 location != ZR_NULL ? location->range.start.character : -1,
+                 location != ZR_NULL ? location->range.end.line : -1,
+                 location != ZR_NULL ? location->range.end.character : -1,
+                 queryResolved,
+                 (int)definitionQuery.kind,
+                 definitionQuery.symbol != ZR_NULL && definitionQuery.symbol->name != ZR_NULL
+                         ? test_string_ptr(definitionQuery.symbol->name)
+                         : "<null>");
+        ZrLanguageServer_LspSemanticQuery_Free(state, &definitionQuery);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Extern Function Navigation And Signature Help",
-                  "Goto definition on an extern function call should jump to the source extern declaration");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -4933,7 +4966,7 @@ static void test_lsp_completion_lists_current_keywords_and_meta_methods(SZrState
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, keywordPosition, &completions) ||
         !completion_array_contains_label(&completions, "import") ||
-        completion_array_contains_label(&completions, "import")) {
+        completion_array_contains_label(&completions, "%import")) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
@@ -5673,6 +5706,7 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     SZrArray references;
     SZrArray highlights;
     SZrLspHover *hover = ZR_NULL;
+    TZrChar reason[384];
 
     TEST_START("LSP Semantic Query Unifies Import Target Navigation");
     TEST_INFO("Structured import target query",
@@ -5719,11 +5753,20 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
         hover == ZR_NULL ||
         !hover_contains_text(hover, "module <zr.system>") ||
         !hover_contains_text(hover, "Source: native builtin") ||
-        !lsp_range_equals(hover->range, 0, 29, 0, 40)) {
+        !lsp_range_equals(hover->range, 0, 28, 0, 39)) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected 0:28..0:39 with module/source text, actual %d:%d..%d:%d module=%d source=%d",
+                 hover != ZR_NULL ? hover->range.start.line : -1,
+                 hover != ZR_NULL ? hover->range.start.character : -1,
+                 hover != ZR_NULL ? hover->range.end.line : -1,
+                 hover != ZR_NULL ? hover->range.end.character : -1,
+                 hover_contains_text(hover, "module <zr.system>"),
+                 hover_contains_text(hover, "Source: native builtin"));
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Query Unifies Import Target Navigation",
-                  "Hover on an import literal should be produced through the shared imported-module metadata path with a UTF-16 range");
+                  reason);
         return;
     }
 
@@ -7078,20 +7121,20 @@ static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *sta
     if (!semantic_tokens_contain(&tokens,
                                  realImportPosition.line,
                                  realImportPosition.character,
-                                 7,
+                                 6,
                                  "keyword")) {
         ZrCore_Array_Free(state, &tokens);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Semantic Tokens Ignore Template String Tokens",
-                  "Real import directive should still be classified as a keyword token");
+                  "Real import call should still be classified as a keyword token");
         return;
     }
 
     if (semantic_tokens_contain(&tokens,
                                 templateImportPosition.line,
                                 templateImportPosition.character,
-                                7,
+                                6,
                                 "keyword") ||
         semantic_tokens_contain(&tokens,
                                 templateMetaMethodPosition.line,
@@ -7719,7 +7762,7 @@ int main(void) {
     test_lsp_get_parser_diagnostics(state);
     TEST_DIVIDER();
 
-    test_lsp_legacy_ownership_type_warning_preserves_current_ast(state);
+    test_lsp_removed_percent_ownership_is_rejected(state);
     TEST_DIVIDER();
 
     test_lsp_get_missing_right_operand_parser_diagnostic(state);
@@ -7738,9 +7781,6 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_binary_property_preserves_canonical_contract(state);
-    TEST_DIVIDER();
-
-    test_lsp_legacy_property_migration_consumes_structured_edit(state);
     TEST_DIVIDER();
 
     test_lsp_property_refactor_uses_canonical_query(state);
@@ -7975,5 +8015,5 @@ int main(void) {
     printf("All LSP Interface Tests Completed\n");
     printf("==========\n");
     
-    return 0;
+    return g_failed_test_count == 0U ? 0 : 1;
 }

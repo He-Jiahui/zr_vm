@@ -2995,3 +2995,22 @@ runtime's generic reflection object invocation accepts only explicit value
 parameters, so by-ref callables cannot be erased into the object argument
 vector. GCC and Clang focused matrices pass 49/49 assertions; MSVC passes 46/46
 with three established Unix-only projection cases omitted.
+
+Post-cutover scalar stack-copy provenance update (2026-08-05): generated-C
+analysis treats a copied source as dynamic only when no compatible bool/i64/u64/
+f64 scalar local has been written before that copy. A recognized call-result
+write terminates the backward provenance search for the destination slot, so an
+older dynamic copy cannot poison the newer typed value. Generic numeric and
+shared-library AOT regression cases exercise both the local-written and
+call-result boundaries; no public ABI or artifact schema changes.
+
+Imported contiguous-view layout bridge (2026-08-05): `Span<T>` and
+`ReadOnlySpan<T>` keep their canonical native-provider prototype identity while
+consumer functions serialize a layout-only prototype record for frame-layout
+resolution. The record is marked with
+`ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY`; type inference does not register
+it as a new declaration, and module loading binds the function slot back to the
+exact provider prototype (or its open generic base). This metadata is emitted
+only for imported struct/union types carrying a contiguous-view protocol, so
+other ref-like native guards such as `PoolRef<T>` retain their scoped object
+semantics. VM and generated-C Span fixtures assert equivalent execution.

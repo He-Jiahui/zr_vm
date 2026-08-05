@@ -47,43 +47,6 @@ static TZrBool property_contract_has_refactor_action(SZrArray *actions) {
     return ZR_FALSE;
 }
 
-static TZrBool property_contract_action_contains_migration(
-        SZrArray *actions,
-        const TZrChar *propertyText) {
-    for (TZrSize actionIndex = 0U;
-         actions != ZR_NULL && actionIndex < actions->length;
-         actionIndex++) {
-        SZrLspCodeAction **actionPtr =
-                (SZrLspCodeAction **)ZrCore_Array_Get(actions, actionIndex);
-        SZrLspCodeAction *action =
-                actionPtr != ZR_NULL ? *actionPtr : ZR_NULL;
-        if (action == ZR_NULL || action->title == ZR_NULL ||
-            strstr(test_string_ptr(action->title), "Migrate legacy property") ==
-                    ZR_NULL) {
-            continue;
-        }
-        for (TZrSize editIndex = 0U;
-             editIndex < action->edits.length;
-             editIndex++) {
-            SZrLspTextEdit **editPtr =
-                    (SZrLspTextEdit **)ZrCore_Array_Get(
-                            &action->edits,
-                            editIndex);
-            if (editPtr != ZR_NULL && *editPtr != ZR_NULL &&
-                (*editPtr)->newText != ZR_NULL &&
-                strstr(test_string_ptr((*editPtr)->newText), propertyText) !=
-                        ZR_NULL &&
-                strstr(test_string_ptr((*editPtr)->newText), "get") != ZR_NULL &&
-                strstr(test_string_ptr((*editPtr)->newText), "set") != ZR_NULL &&
-                strstr(test_string_ptr((*editPtr)->newText), "__get_") == ZR_NULL &&
-                strstr(test_string_ptr((*editPtr)->newText), "__set_") == ZR_NULL) {
-                return ZR_TRUE;
-            }
-        }
-    }
-    return ZR_FALSE;
-}
-
 static TZrBool property_contract_has_parameter_identity(
         SZrSemanticAnalyzer *analyzer,
         const TZrChar *name,
@@ -673,95 +636,6 @@ cleanup:
     ZrCore_Array_Free(state, &completions);
     ZrCore_Array_Free(state, &definitions);
     ZrLanguageServer_Lsp_FreeCodeActions(state, &codeActions);
-    if (context != ZR_NULL) {
-        ZrLanguageServer_LspContext_Free(state, context);
-    }
-}
-
-static void test_lsp_legacy_property_migration_consumes_structured_edit(
-        SZrState *state) {
-    const TZrChar *summary =
-            "LSP Legacy Property Migration Consumes Structured Edit";
-    const TZrChar *uriText = "file:///legacy_property_migration.zr";
-    const TZrChar *content =
-            "class Meter {\n"
-            "    pri var stored: int = 7;\n"
-            "    pub get value: int { return this.stored; }\n"
-            "    pub set value(input: int) { this.stored = input; }\n"
-            "}\n";
-    SZrTestTimer timer;
-    SZrLspContext *context = ZR_NULL;
-    SZrString *uri = ZR_NULL;
-    SZrArray diagnostics = {0};
-    SZrArray actions = {0};
-    SZrLspDiagnostic *legacyDiagnostic = ZR_NULL;
-    TZrBool valid = ZR_FALSE;
-
-    TEST_START(summary);
-    TEST_INFO(
-            "Structured property migration",
-            "Adjacent legacy getter/setter declarations must publish an exact parser edit consumed by the generic code-action path");
-    context = ZrLanguageServer_LspContext_New(state);
-    uri = ZrCore_String_Create(
-            state,
-            (TZrNativeString)uriText,
-            strlen(uriText));
-    ZrCore_Array_Init(
-            state,
-            &diagnostics,
-            sizeof(SZrLspDiagnostic *),
-            4U);
-    if (context != ZR_NULL && uri != ZR_NULL &&
-        ZrLanguageServer_Lsp_UpdateDocument(
-                state,
-                context,
-                uri,
-                content,
-                strlen(content),
-                1U) &&
-        ZrLanguageServer_Lsp_GetDiagnostics(
-                state,
-                context,
-                uri,
-                &diagnostics)) {
-        for (TZrSize index = 0U; index < diagnostics.length; index++) {
-            SZrLspDiagnostic **diagnosticPtr =
-                    (SZrLspDiagnostic **)ZrCore_Array_Get(
-                            &diagnostics,
-                            index);
-            if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL &&
-                (*diagnosticPtr)->code != ZR_NULL &&
-                strcmp(
-                        test_string_ptr((*diagnosticPtr)->code),
-                        "legacy_property_syntax") == 0) {
-                legacyDiagnostic = *diagnosticPtr;
-                break;
-            }
-        }
-    }
-    if (legacyDiagnostic != ZR_NULL &&
-        ZrLanguageServer_Lsp_GetCodeActions(
-                state,
-                context,
-                uri,
-                legacyDiagnostic->range,
-                &actions) &&
-        property_contract_action_contains_migration(
-                &actions,
-                "property value: int")) {
-        valid = ZR_TRUE;
-    }
-
-    if (!valid) {
-        TEST_FAIL(
-                timer,
-                summary,
-                "Legacy property diagnostic or structured replacement edit was unavailable");
-    } else {
-        TEST_PASS(timer, summary);
-    }
-    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
-    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
     }

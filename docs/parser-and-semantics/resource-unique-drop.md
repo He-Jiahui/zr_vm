@@ -115,6 +115,11 @@ only initialized managed fields are dropped, and fields are visited in reverse d
 For a fully constructed resource, normal scope exit, early return, throw, break, continue, or
 explicit `drop` all converge on `OWN_RELEASE` exactly once.
 
+Scope cleanup registration is idempotent for an exact `(slot, source slot, ownership action)`
+match. In particular, an inferred `@close` registration followed by `using` on the same local
+emits one `MARK_TO_BE_CLOSED` and one close action; distinct ownership actions remain ordered
+independent registrations.
+
 Resource custom Drop bodies must be non-throwing. The compiler uses CFG exception edges to reject
 a resource destructor that may enter a catch/throw path; ordinary GC class destructor behavior is
 unchanged.

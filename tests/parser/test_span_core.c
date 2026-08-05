@@ -7,7 +7,9 @@
 #include "test_span_semantic_ir_cases.h"
 #include "runtime_support.h"
 #include "zr_vm_common/zr_meta_conf.h"
+#include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_core/exception.h"
+#include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
@@ -182,6 +184,44 @@ static TZrSize count_inline_frame_slots(const SZrFunction *function) {
         }
     }
     return count;
+}
+
+static const SZrCompiledPrototypeInfo *compiled_prototype_at(
+        const SZrFunction *function,
+        TZrUInt32 targetIndex) {
+    const TZrByte *cursor;
+    TZrSize remaining;
+
+    if (function == NULL || function->prototypeData == NULL ||
+        function->prototypeDataLength <= sizeof(TZrUInt32) ||
+        targetIndex >= function->prototypeCount) {
+        return NULL;
+    }
+
+    cursor = function->prototypeData + sizeof(TZrUInt32);
+    remaining = function->prototypeDataLength - sizeof(TZrUInt32);
+    for (TZrUInt32 index = 0u; index < function->prototypeCount; index++) {
+        const SZrCompiledPrototypeInfo *prototype;
+        TZrSize recordSize;
+
+        if (remaining < sizeof(SZrCompiledPrototypeInfo)) {
+            return NULL;
+        }
+        prototype = (const SZrCompiledPrototypeInfo *)cursor;
+        recordSize = sizeof(*prototype) +
+                     (TZrSize)prototype->inheritsCount * sizeof(TZrUInt32) +
+                     (TZrSize)prototype->decoratorsCount * sizeof(TZrUInt32) +
+                     (TZrSize)prototype->membersCount * sizeof(SZrCompiledMemberInfo);
+        if (recordSize > remaining) {
+            return NULL;
+        }
+        if (index == targetIndex) {
+            return prototype;
+        }
+        cursor += recordSize;
+        remaining -= recordSize;
+    }
+    return NULL;
 }
 
 static void test_span_descriptors_publish_ref_like_contiguous_view_contracts(void) {
@@ -645,6 +685,60 @@ static void test_span_slice_lowers_inline_without_native_callback_or_wrapper(voi
     ZrContainerTests_DestroyState(state);
 }
 
+static void test_imported_span_inline_layout_reuses_provider_prototype(void) {
+    static const char kSource[] =
+            "var {Span} = import(\"zr.container\");\n"
+            "var empty: Span<int> = init Span<int>();\n"
+            "return empty.length;\n";
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrObjectModule *module;
+    const SZrTypeValue *spanValue;
+    SZrObjectPrototype *providerSpan;
+    SZrObjectPrototype *resolvedSpan = NULL;
+    SZrFunction *function;
+    TZrInt64 result = -1;
+
+    TEST_ASSERT_NOT_NULL(state);
+    module = ZrContainerTests_ImportNativeModule(state, "zr.container");
+    TEST_ASSERT_NOT_NULL(module);
+    spanValue = ZrContainerTests_GetModuleExportValue(state, module, "Span");
+    TEST_ASSERT_NOT_NULL(spanValue);
+    providerSpan = (SZrObjectPrototype *)ZR_CAST_OBJECT(
+            state, spanValue->value.object);
+    TEST_ASSERT_NOT_NULL(providerSpan);
+
+    function = compile_source(state, "span_imported_inline_layout.zr", kSource);
+    TEST_ASSERT_NOT_NULL(function);
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *slot = &function->frameSlotLayouts[index];
+        const SZrCompiledPrototypeInfo *prototype;
+
+        if (slot->slotKind != ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+            slot->typeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+            continue;
+        }
+        prototype = compiled_prototype_at(function, slot->typeLayoutId);
+        TEST_ASSERT_NOT_NULL(prototype);
+        if ((prototype->modifierFlags &
+             ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY) == 0u) {
+            continue;
+        }
+        TEST_ASSERT_NOT_NULL(ZrCore_Function_ResolvePrototypeFrameTypeLayout(
+                function, slot->typeLayoutId, state));
+        resolvedSpan = ZrCore_Function_ResolvePrototypeFrameStructPrototype(
+                state, function, slot->typeLayoutId);
+        break;
+    }
+
+    TEST_ASSERT_EQUAL_PTR(providerSpan, resolvedSpan);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(0, result);
+
+    ZrCore_Function_Free(state, function);
+    ZrContainerTests_DestroyState(state);
+}
+
 static void test_span_constant_slice_index_elides_only_proven_bounds_checks(void) {
     static const char kConstantIndexSource[] =
             "var container = import(\"zr.container\");\n"
@@ -816,6 +910,7 @@ int main(void) {
     RUN_TEST(test_span_rejects_capability_strengthening_and_element_type_change);
     RUN_TEST(test_span_exact_overload_wins_over_readonly_weakening);
     RUN_TEST(test_span_slice_lowers_inline_without_native_callback_or_wrapper);
+    RUN_TEST(test_imported_span_inline_layout_reuses_provider_prototype);
     RUN_TEST(test_span_constant_slice_index_elides_only_proven_bounds_checks);
     RUN_TEST(test_span_compiler_publishes_structured_view_and_bounds_facts);
     RUN_TEST(test_span_owner_move_and_native_drop_conflict_with_active_view);

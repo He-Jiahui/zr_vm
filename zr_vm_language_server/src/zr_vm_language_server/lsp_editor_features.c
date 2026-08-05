@@ -901,6 +901,8 @@ static TZrBool lsp_code_lens_append_test_roles(SZrState *state,
                                                TZrSize contentLength,
                                                SZrString *uri,
                                                SZrArray *result) {
+    TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrString *sourceName = uri;
     SZrFunction *function;
     SZrParserTestManifest manifest;
     TZrBool success = ZR_TRUE;
@@ -908,7 +910,13 @@ static TZrBool lsp_code_lens_append_test_roles(SZrState *state,
     if (state == ZR_NULL || content == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
-    function = ZrParser_Source_CompileTest(state, content, contentLength, uri);
+    if (ZrLanguageServer_Lsp_FileUriToNativePath(uri, nativePath, sizeof(nativePath))) {
+        sourceName = ZrCore_String_CreateFromNative(state, nativePath);
+        if (sourceName == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
+    function = ZrParser_Source_CompileTest(state, content, contentLength, sourceName);
     if (function == ZR_NULL || function->testManifestData == ZR_NULL ||
         function->testManifestDataLength == 0U ||
         function->testManifestDataLength > (TZrSize)UINT32_MAX) {
@@ -966,6 +974,23 @@ static TZrBool lsp_code_lens_append_test_roles(SZrState *state,
     return success;
 }
 
+static TZrBool lsp_code_lens_has_test_attribute_candidate(const TZrChar *content,
+                                                          TZrSize contentLength) {
+    static const TZrChar marker[] = "#zr.testing.test#";
+    const TZrSize markerLength = sizeof(marker) - 1U;
+
+    if (content == ZR_NULL || contentLength < markerLength) {
+        return ZR_FALSE;
+    }
+    for (TZrSize offset = 0U; offset + markerLength <= contentLength; offset++) {
+        if (memcmp(content + offset, marker, markerLength) == 0 &&
+            lsp_editor_offset_is_code(content, contentLength, offset)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
                                          SZrLspContext *context,
                                          SZrString *uri,
@@ -991,6 +1016,7 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
 
     fileVersion = lsp_editor_get_file_version(context, uri);
     if (!snapshot.usesFallbackAst && fileVersion != ZR_NULL && fileVersion->ast != ZR_NULL &&
+        lsp_code_lens_has_test_attribute_candidate(snapshot.content, snapshot.contentLength) &&
         !lsp_code_lens_append_test_roles(
                 state,
                 snapshot.content,

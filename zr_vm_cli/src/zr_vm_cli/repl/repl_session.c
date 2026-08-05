@@ -261,6 +261,67 @@ static TZrBool zr_cli_repl_session_execute_rooted(
     return ZR_TRUE;
 }
 
+static TZrBool zr_cli_repl_session_refresh_runtime_facts(
+        ZrCliReplSession *session,
+        SZrParserSubmissionBinding *bindings,
+        TZrSize bindingCount) {
+    SZrClosure *closure;
+
+    if (session == ZR_NULL || bindings == ZR_NULL || bindingCount == 0u) {
+        return (TZrBool)(session != ZR_NULL && bindingCount == 0u);
+    }
+
+    closure = zr_cli_repl_session_resolve_closure(session, &session->environmentRoot);
+    if (closure == ZR_NULL || closure->closureValueCount != bindingCount) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0u; index < bindingCount; index++) {
+        SZrParserSubmissionBinding *binding = &bindings[index];
+        SZrClosureValue *capture;
+        SZrTypeValue *value;
+        TZrInt64 exactInteger;
+
+        if (binding->kind != ZR_PARSER_SUBMISSION_BINDING_KIND_VALUE ||
+            binding->captureIndex >= closure->closureValueCount) {
+            continue;
+        }
+        capture = closure->closureValuesExtend[binding->captureIndex];
+        if (capture == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        value = ZrCore_ClosureValue_GetValue(capture);
+        if (value == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        if (ZR_VALUE_IS_TYPE_INT(binding->inferredType.baseType) &&
+            ZR_VALUE_IS_TYPE_INT(value->type)) {
+            if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+                if (value->value.nativeObject.nativeUInt64 > (TZrUInt64)ZR_INT_MAX) {
+                    binding->inferredType.hasRangeConstraint = ZR_FALSE;
+                    ZrParser_InferredType_ResetRangeSegments(&binding->inferredType);
+                    continue;
+                }
+                exactInteger = (TZrInt64)value->value.nativeObject.nativeUInt64;
+            } else {
+                exactInteger = value->value.nativeObject.nativeInt64;
+            }
+            binding->inferredType.minValue = exactInteger;
+            binding->inferredType.maxValue = exactInteger;
+            binding->inferredType.hasRangeConstraint = ZR_TRUE;
+            ZrParser_InferredType_ResetRangeSegments(&binding->inferredType);
+        } else if (ZR_VALUE_IS_TYPE_BOOL(binding->inferredType.baseType) &&
+                   ZR_VALUE_IS_TYPE_BOOL(value->type)) {
+            binding->inferredType.knownBoolValue =
+                    (TZrBool)(value->value.nativeObject.nativeBool != 0u);
+            binding->inferredType.hasKnownBoolValue = ZR_TRUE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool zr_cli_repl_session_publish_result(
         ZrCliReplSession *session,
         SZrParserSubmissionResult *result) {
@@ -345,6 +406,10 @@ static TZrBool zr_cli_repl_session_publish_result(
         binding->moduleGeneration = session->moduleGeneration;
         binding->environmentGeneration = publishedEnvironmentGeneration;
         binding->cellGeneration = session->nextCellGeneration;
+    }
+    if (!zr_cli_repl_session_refresh_runtime_facts(
+                session, newBindings, totalBindingCount)) {
+        goto cleanup;
     }
 
     if (session->bindings != ZR_NULL) {

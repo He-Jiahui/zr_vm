@@ -64,12 +64,18 @@ static TZrBool test_process_append_windows_argument(
         if (*cursor == '"' || *cursor == '\0') {
             TZrSize emitCount = slashCount * 2U + (*cursor == '"' ? 1U : 0U);
             if (emitCount > capacity - used - 1U) return ZR_FALSE;
-            while (emitCount-- > 0U) commandLine[used++] = '\\';
+            while (emitCount > 0U) {
+                commandLine[used++] = '\\';
+                emitCount--;
+            }
             slashCount = 0U;
             if (*cursor == '\0') break;
         } else {
             if (slashCount > capacity - used - 1U) return ZR_FALSE;
-            while (slashCount-- > 0U) commandLine[used++] = '\\';
+            while (slashCount > 0U) {
+                commandLine[used++] = '\\';
+                slashCount--;
+            }
         }
         if (used + 1U >= capacity) return ZR_FALSE;
         commandLine[used++] = *cursor;
@@ -82,8 +88,10 @@ static TZrBool test_process_append_windows_argument(
 
 static TZrBool test_process_create_windows_child(
         const SZrCliTestProcessRequest *request,
+        HANDLE inputHandle,
         HANDLE outputHandle,
-        PROCESS_INFORMATION *processInfo) {
+        PROCESS_INFORMATION *processInfo,
+        DWORD *outError) {
     STARTUPINFOA startupInfo;
     TZrChar commandLine[32768];
     TZrChar *previousValue = ZR_NULL;
@@ -98,7 +106,7 @@ static TZrBool test_process_create_windows_child(
     startupInfo.dwFlags = STARTF_USESTDHANDLES;
     startupInfo.hStdOutput = outputHandle;
     startupInfo.hStdError = outputHandle;
-    startupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startupInfo.hStdInput = inputHandle;
     if (!test_process_append_windows_argument(commandLine, sizeof(commandLine), request->executablePath) ||
         !test_process_append_windows_argument(commandLine, sizeof(commandLine), "test") ||
         !test_process_append_windows_argument(commandLine, sizeof(commandLine), request->targetPath) ||
@@ -133,6 +141,9 @@ static TZrBool test_process_create_windows_child(
             ZR_NULL,
             &startupInfo,
             processInfo);
+    if (outError != ZR_NULL) {
+        *outError = created ? ERROR_SUCCESS : GetLastError();
+    }
     SetEnvironmentVariableA(
             ZR_CLI_TEST_WORKER_CASE_ENV,
             hadPreviousValue ? previousValue : ZR_NULL);
@@ -148,6 +159,7 @@ TZrBool ZrCli_TestProcess_Run(
     PROCESS_INFORMATION processInfo;
     TZrChar temporaryDirectory[MAX_PATH];
     TZrChar temporaryPath[MAX_PATH];
+    HANDLE inputHandle = INVALID_HANDLE_VALUE;
     HANDLE outputHandle = INVALID_HANDLE_VALUE;
     ULONGLONG startedAt;
     DWORD waitMilliseconds;
@@ -155,6 +167,7 @@ TZrBool ZrCli_TestProcess_Run(
     DWORD exitCode = 3U;
     TZrChar readBuffer[512];
     DWORD readLength;
+    DWORD launchError = ERROR_SUCCESS;
     TZrBool success = ZR_FALSE;
 
     if (request == ZR_NULL || outResult == ZR_NULL || request->executablePath == ZR_NULL ||
@@ -182,12 +195,37 @@ TZrBool ZrCli_TestProcess_Run(
         DeleteFileA(temporaryPath);
         return ZR_FALSE;
     }
-    startedAt = GetTickCount64();
-    if (!test_process_create_windows_child(request, outputHandle, &processInfo)) {
+    inputHandle = CreateFileA(
+            "NUL",
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            &securityAttributes,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            ZR_NULL);
+    if (inputHandle == INVALID_HANDLE_VALUE) {
         CloseHandle(outputHandle);
         DeleteFileA(temporaryPath);
         return ZR_FALSE;
     }
+    startedAt = GetTickCount64();
+    if (!test_process_create_windows_child(
+                request,
+                inputHandle,
+                outputHandle,
+                &processInfo,
+                &launchError)) {
+        snprintf(
+                outResult->output,
+                sizeof(outResult->output),
+                "CreateProcessA failed with Windows error %lu",
+                (unsigned long)launchError);
+        CloseHandle(inputHandle);
+        CloseHandle(outputHandle);
+        DeleteFileA(temporaryPath);
+        return ZR_FALSE;
+    }
+    CloseHandle(inputHandle);
     waitMilliseconds = request->timeoutMilliseconds == 0U ||
                        request->timeoutMilliseconds >= (TZrUInt64)INFINITE
                        ? INFINITE

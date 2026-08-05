@@ -9,6 +9,7 @@
 
 #define ZR_TYPE_MODIFIER_FLAG_RESOURCE (1u << 8)
 #define ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC (1u << 9)
+#define ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY (1u << 31)
 
 typedef enum EZrMemberContractRole {
     ZR_MEMBER_CONTRACT_ROLE_NONE = 0,

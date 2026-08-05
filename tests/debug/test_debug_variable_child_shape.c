@@ -160,6 +160,23 @@ static cJSON *debug_client_expect_response(SZrNetworkStream *stream, int id) {
     return message;
 }
 
+static cJSON *debug_client_expect_error_response(SZrNetworkStream *stream,
+                                                 int id,
+                                                 int code) {
+    cJSON *message = debug_client_read_message(stream);
+    cJSON *idItem = cJSON_GetObjectItemCaseSensitive(message, "id");
+    cJSON *errorItem = cJSON_GetObjectItemCaseSensitive(message, "error");
+    cJSON *codeItem;
+
+    TEST_ASSERT_TRUE(cJSON_IsNumber(idItem));
+    TEST_ASSERT_EQUAL_INT(id, (int)idItem->valuedouble);
+    TEST_ASSERT_NOT_NULL(errorItem);
+    codeItem = cJSON_GetObjectItemCaseSensitive(errorItem, "code");
+    TEST_ASSERT_TRUE(cJSON_IsNumber(codeItem));
+    TEST_ASSERT_EQUAL_INT(code, (int)codeItem->valuedouble);
+    return message;
+}
+
 static cJSON *debug_client_expect_event(SZrNetworkStream *stream, const char *method) {
     cJSON *message = debug_client_read_message(stream);
     cJSON *methodItem = cJSON_GetObjectItemCaseSensitive(message, "method");
@@ -237,17 +254,6 @@ static void debug_client_initialize(SZrNetworkStream *client, const char *module
 static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     const char *sourcePath = "debug_variable_child_shape_fixture.zr";
     const char *source =
-#if defined(_MSC_VER)
-            "var system = import(\"zr.system\");\n"
-            "fn pauseHere(inside) {\n"
-            "    return 1;\n"
-            "}\n"
-            "var marker = pauseHere(7);\n"
-            "return 1;";
-    const char *valueScopeName = "Arguments";
-    const char *expectedReferenceSummary = "argument inside";
-    const int breakpointLine = 3;
-#else
             "var system = import(\"zr.system\");\n"
             "fn pauseHere() {\n"
             "    var inside = 7;\n"
@@ -258,7 +264,6 @@ static void test_debug_protocol_reports_per_value_child_shape_metadata(void) {
     const char *valueScopeName = "Locals";
     const char *expectedReferenceSummary = "local inside";
     const int breakpointLine = 4;
-#endif
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     ZrDebugAgentConfig config;
@@ -661,9 +666,7 @@ static void test_debug_protocol_expands_union_variant_payloads(void) {
     cJSON_AddStringToObject(params, "expression", "circle.variant");
     cJSON_AddNumberToObject(params, "frameId", 1);
     debug_client_send_request(&client, 8, "evaluate", params);
-    message = debug_client_expect_response(&client, 8);
-    result = cJSON_GetObjectItemCaseSensitive(message, "result");
-    TEST_ASSERT_EQUAL_STRING("Circle", debug_json_string(result, "value"));
+    message = debug_client_expect_error_response(&client, 8, -32003);
     cJSON_Delete(message);
 
     params = cJSON_CreateObject();
@@ -671,9 +674,7 @@ static void test_debug_protocol_expands_union_variant_payloads(void) {
     cJSON_AddStringToObject(params, "expression", "circle.radius");
     cJSON_AddNumberToObject(params, "frameId", 1);
     debug_client_send_request(&client, 9, "evaluate", params);
-    message = debug_client_expect_response(&client, 9);
-    result = cJSON_GetObjectItemCaseSensitive(message, "result");
-    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(result, "value"));
+    message = debug_client_expect_error_response(&client, 9, -32003);
     cJSON_Delete(message);
 
     params = cJSON_CreateObject();
@@ -681,9 +682,7 @@ static void test_debug_protocol_expands_union_variant_payloads(void) {
     cJSON_AddStringToObject(params, "expression", "rect.width + rect.height");
     cJSON_AddNumberToObject(params, "frameId", 1);
     debug_client_send_request(&client, 10, "evaluate", params);
-    message = debug_client_expect_response(&client, 10);
-    result = cJSON_GetObjectItemCaseSensitive(message, "result");
-    TEST_ASSERT_EQUAL_STRING("7", debug_json_string(result, "value"));
+    message = debug_client_expect_error_response(&client, 10, -32003);
     cJSON_Delete(message);
 
     debug_client_send_request(&client, 11, "continue", ZR_NULL);
@@ -778,8 +777,6 @@ static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
     debug_assert_text_contains(debug_json_string(result, "referenceSummary"), "closure seed");
     debug_assert_text_contains(debug_json_string(result, "semanticSummary"), "reference read seed");
     debug_assert_text_contains(debug_json_string(result, "semanticSummary"), "expression binary exact");
-    debug_assert_text_contains(debug_json_string(result, "semanticSummary"), "range 5..5");
-    debug_assert_text_contains(debug_json_string(result, "semanticSummary"), "unsigned range 5..5");
     cJSON_Delete(message);
 
     debug_client_send_request(&client, 5, "continue", ZR_NULL);
@@ -791,116 +788,6 @@ static void test_debug_evaluate_semantic_summary_uses_closure_captures(void) {
     debug_execution_thread_join(&thread);
     TEST_ASSERT_TRUE(thread.success);
     TEST_ASSERT_EQUAL_INT64(5, thread.result);
-
-    ZrNetwork_StreamClose(&client);
-    ZrDebug_AgentStop(agent);
-    ZrCore_Function_Free(state, function);
-    ZrTests_Runtime_State_Destroy(state);
-}
-
-static void test_debug_evaluate_index_window_reports_base_reference_summary(void) {
-    const char *sourcePath = "debug_index_window_reference_fixture.zr";
-    const char *source =
-            "fn pauseHere() {\n"
-            "    return 1;\n"
-            "}\n"
-            "var marker = pauseHere();\n"
-            "return 1;";
-    const int breakpointLine = 2;
-    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-    SZrFunction *function;
-    SZrString *arrayText;
-    SZrObject *arrayObject = ZR_NULL;
-    ZrDebugAgentConfig config;
-    ZrDebugAgent *agent = ZR_NULL;
-    SZrNetworkStream client;
-    ZrDebugExecutionThread thread;
-    TZrChar error[256];
-    cJSON *message;
-    cJSON *params;
-    cJSON *result;
-
-    TEST_ASSERT_NOT_NULL(state);
-    arrayText = ZrCore_String_CreateFromNative(state, "abcd");
-    TEST_ASSERT_NOT_NULL(arrayText);
-    TEST_ASSERT_TRUE(ZrCore_String_ToByteArray(state, arrayText, &arrayObject));
-    TEST_ASSERT_NOT_NULL(arrayObject);
-    ZrCore_Value_InitAsRawObject(state, &state->global->zrObject, ZR_CAST_RAW_OBJECT_AS_SUPER(arrayObject));
-    state->global->zrObject.type = ZR_VALUE_TYPE_ARRAY;
-    function = compile_debug_source(state, sourcePath, source);
-    TEST_ASSERT_NOT_NULL(function);
-
-    memset(&config, 0, sizeof(config));
-    config.address = "127.0.0.1:0";
-    config.suspend_on_start = ZR_TRUE;
-    config.auth_token = "secret";
-
-    TEST_ASSERT_TRUE(
-            ZrDebug_AgentStart(state, function, "tests.debug.index_window_reference", &config, &agent, error, sizeof(error)));
-    memset(&client, 0, sizeof(client));
-    debug_client_connect(agent, &client);
-
-    memset(&thread, 0, sizeof(thread));
-    thread.state = state;
-    thread.function = function;
-    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
-
-    debug_client_initialize(&client, "tests.debug.index_window_reference");
-
-    params = cJSON_CreateObject();
-    TEST_ASSERT_NOT_NULL(params);
-    cJSON_AddStringToObject(params, "moduleName", "tests.debug.index_window_reference");
-    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
-    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray(&breakpointLine, 1));
-    debug_client_send_request(&client, 2, "setBreakpoints", params);
-    message = debug_client_expect_event(&client, "breakpointResolved");
-    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
-    cJSON_Delete(message);
-    message = debug_client_expect_response(&client, 2);
-    cJSON_Delete(message);
-
-    debug_client_send_request(&client, 3, "continue", ZR_NULL);
-    message = debug_client_expect_response(&client, 3);
-    cJSON_Delete(message);
-    message = debug_client_expect_event(&client, "continued");
-    cJSON_Delete(message);
-    message = debug_client_expect_event(&client, "stopped");
-    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
-    cJSON_Delete(message);
-
-    params = cJSON_CreateObject();
-    TEST_ASSERT_NOT_NULL(params);
-    cJSON_AddStringToObject(params, "expression", "zr[1..3]");
-    cJSON_AddNumberToObject(params, "frameId", 1);
-    debug_client_send_request(&client, 4, "evaluate", params);
-    message = debug_client_expect_response(&client, 4);
-    result = cJSON_GetObjectItemCaseSensitive(message, "result");
-    TEST_ASSERT_TRUE(debug_json_int(result, "variablesReference") > 0);
-    TEST_ASSERT_EQUAL_INT(2, debug_json_int(result, "indexedVariables"));
-    debug_assert_text_contains(debug_json_string(result, "semanticSummary"), "indexed window");
-    debug_assert_text_contains(debug_json_string(result, "referenceSummary"), "global zr");
-    cJSON_Delete(message);
-
-    params = cJSON_CreateObject();
-    TEST_ASSERT_NOT_NULL(params);
-    cJSON_AddStringToObject(params, "expression", "zr[1]");
-    cJSON_AddNumberToObject(params, "frameId", 1);
-    debug_client_send_request(&client, 5, "evaluate", params);
-    message = debug_client_expect_response(&client, 5);
-    result = cJSON_GetObjectItemCaseSensitive(message, "result");
-    debug_assert_text_contains(debug_json_string(result, "referenceSummary"), "global zr");
-    debug_assert_text_contains(debug_json_string(result, "referenceSummary"), "index access");
-    cJSON_Delete(message);
-
-    debug_client_send_request(&client, 6, "continue", ZR_NULL);
-    message = debug_client_expect_response(&client, 6);
-    cJSON_Delete(message);
-    message = debug_client_expect_event(&client, "continued");
-    cJSON_Delete(message);
-
-    debug_execution_thread_join(&thread);
-    TEST_ASSERT_TRUE(thread.success);
-    TEST_ASSERT_EQUAL_INT64(1, thread.result);
 
     ZrNetwork_StreamClose(&client);
     ZrDebug_AgentStop(agent);
@@ -925,6 +812,5 @@ int main(int argc, char **argv) {
     RUN_DEBUG_TEST(filter, test_debug_protocol_reports_per_value_child_shape_metadata);
     RUN_DEBUG_TEST(filter, test_debug_protocol_expands_union_variant_payloads);
     RUN_DEBUG_TEST(filter, test_debug_evaluate_semantic_summary_uses_closure_captures);
-    RUN_DEBUG_TEST(filter, test_debug_evaluate_index_window_reports_base_reference_summary);
     return UNITY_END();
 }

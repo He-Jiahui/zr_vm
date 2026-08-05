@@ -315,14 +315,14 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                     "legacyFunctionTypeArrow",
                 ),
                 (
+                    "tests/language_server/test_lsp_interface.c",
+                    21,
+                    "percentUnique",
+                ),
+                (
                     "tests/language_server/test_lsp_project_features.c",
                     10,
                     "percentImport",
-                ),
-                (
-                    "tests/language_server/test_lsp_property_contract_cases.h",
-                    22,
-                    "legacyPropertyAccessor",
                 ),
                 (
                     "tests/parser/test_compiler_features.c",

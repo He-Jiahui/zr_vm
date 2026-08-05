@@ -2993,7 +2993,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         reservedVarSlot,
                         node,
-                        node->location,
+                        decl->pattern->location,
                         ZR_FALSE);
                 if (!semanticLocalPreRegistered) {
                     if (initializerTypeInitialized) {
@@ -3031,7 +3031,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         reservedVarSlot,
                         node,
-                        node->location,
+                        decl->pattern->location,
                         ZR_TRUE)) {
                 if (initializerTypeInitialized) {
                     ZrParser_InferredType_Free(cs->state, &initializerType);
@@ -3074,7 +3074,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         varIndex,
                         node,
-                        node->location,
+                        decl->pattern->location,
                         ZR_FALSE)) {
                 if (initializerTypeInitialized) {
                     ZrParser_InferredType_Free(cs->state, &initializerType);

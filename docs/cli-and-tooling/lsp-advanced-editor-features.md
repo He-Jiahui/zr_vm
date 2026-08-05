@@ -985,3 +985,12 @@ wsl bash -lc 'cd /mnt/e/Git/zr_vm && ninja -C build/codex-semantic-wsl-clang-deb
 ```
 
 RED：新增 comment/string 中 `%test(...)` 的 CodeLens 断言后，旧 WSL gcc focused advanced-editor target 失败并报告 `non-code %test text produced a run CodeLens`，证明 raw `%test(` marker scan 会把说明文本暴露成可运行命令。GREEN：`lsp_editor_features.c` 在生成 run CodeLens 前调用 `lsp_editor_offset_is_code`；真实 `%test("advanced")` 仍生成 `zr.runCurrentProject`，非代码 `%test(...)` 不再生成 run lens。WSL gcc、WSL clang 和 Windows MSVC focused `zr_vm_language_server_lsp_advanced_editor_features_test` 均通过且输出无 `Fail -`；Clang/MSVC 因 dirty tree glob mismatch 重新配置后通过，本轮不声明全仓库绿色。
+
+2026-08-05 canonical test CodeLens convergence: `textDocument/codeLens` first
+checks for an exact `#zr.testing.test#` marker in a code span, then compiles the
+open snapshot through the typed TestManifest path. File URIs are decoded to a
+native source path before compilation so module/source identity follows the
+same contract as CLI Test phase. The stdio fixture uses a dedicated valid typed
+test document, waits for zero diagnostics, resolves the returned run lens, and
+closes that document explicitly. Ordinary documentation fixtures no longer
+gain a test role merely to exercise CodeLens.

@@ -4,13 +4,13 @@
 #include "debug_internal.h"
 
 TZrUInt32 zr_debug_protocol_evaluate_allowed_effect_flags(const cJSON *contextItem);
-cJSON *zr_debug_protocol_make_evaluate_result(ZrDebugAgent *agent,
-                                               TZrUInt32 threadId,
-                                               TZrUInt32 frameId,
-                                               const TZrChar *expression,
-                                               TZrUInt32 allowedEffectFlags,
-                                               TZrChar *errorBuffer,
-                                               TZrSize errorBufferSize);
+ZR_DEBUG_API cJSON *zr_debug_protocol_make_evaluate_result(ZrDebugAgent *agent,
+                                                           TZrUInt32 threadId,
+                                                           TZrUInt32 frameId,
+                                                           const TZrChar *expression,
+                                                           TZrUInt32 allowedEffectFlags,
+                                                           TZrChar *errorBuffer,
+                                                           TZrSize errorBufferSize);
 cJSON *zr_debug_protocol_make_evaluate_result_detailed(
                                                ZrDebugAgent *agent,
                                                TZrUInt32 threadId,
@@ -20,6 +20,6 @@ cJSON *zr_debug_protocol_make_evaluate_result_detailed(
                                                ZrDebugEvaluateFailure *outFailure,
                                                TZrChar *errorBuffer,
                                                TZrSize errorBufferSize);
-cJSON *zr_debug_protocol_make_evaluate_failure_data(const ZrDebugEvaluateFailure *failure);
+ZR_DEBUG_API cJSON *zr_debug_protocol_make_evaluate_failure_data(const ZrDebugEvaluateFailure *failure);
 
 #endif // ZR_VM_DEBUG_PROTOCOL_EVALUATE_H

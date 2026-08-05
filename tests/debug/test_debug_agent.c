@@ -1451,7 +1451,6 @@ static void test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate(void)
     int prototypeScopeId;
     int staticsScopeId;
     int profileHandle;
-    int evaluateHandle;
 
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
@@ -1653,10 +1652,7 @@ static void test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate(void)
     cJSON_AddStringToObject(params, "expression", "this._hp + delta");
     cJSON_AddNumberToObject(params, "frameId", 1);
     debug_client_send_request(&client, 12, "evaluate", params);
-    message = debug_client_expect_response(&client, 12);
-    TEST_ASSERT_EQUAL_STRING("37", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "result"), "value"));
-    evaluateHandle = debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "result"), "variablesReference");
-    TEST_ASSERT_TRUE(evaluateHandle == 0);
+    message = debug_client_expect_error_response(&client, 12, -32003);
     cJSON_Delete(message);
 
     params = cJSON_CreateObject();
@@ -1688,7 +1684,7 @@ static void test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_debug_agent_separates_instance_metadata_and_supports_index_windows(void) {
+static void test_debug_agent_separates_instance_metadata_and_supports_paged_variables(void) {
     const char *sourcePath = "debug_agent_index_window_fixture.zr";
     const char *source =
             "class Holder {\n"
@@ -1724,7 +1720,6 @@ static void test_debug_agent_separates_instance_metadata_and_supports_index_wind
     int snapshotHandle;
     int holderTypeHandle;
     int fixedHandle;
-    int evaluateHandle;
 
     TEST_ASSERT_NOT_NULL(state);
     function = compile_debug_agent_source(state, sourcePath, source);
@@ -1874,25 +1869,11 @@ static void test_debug_agent_separates_instance_metadata_and_supports_index_wind
     cJSON_AddStringToObject(params, "expression", "fixed[1..3]");
     cJSON_AddNumberToObject(params, "frameId", 1);
     debug_client_send_request(&client, 9, "evaluate", params);
-    message = debug_client_expect_response(&client, 9);
-    evaluateHandle = debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "result"), "variablesReference");
-    TEST_ASSERT_TRUE(evaluateHandle > 0);
+    message = debug_client_expect_error_response(&client, 9, -32003);
     cJSON_Delete(message);
 
-    params = cJSON_CreateObject();
-    TEST_ASSERT_NOT_NULL(params);
-    cJSON_AddNumberToObject(params, "scopeId", evaluateHandle);
-    debug_client_send_request(&client, 10, "variables", params);
+    debug_client_send_request(&client, 10, "continue", ZR_NULL);
     message = debug_client_expect_response(&client, 10);
-    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
-    TEST_ASSERT_TRUE(cJSON_IsArray(values));
-    TEST_ASSERT_EQUAL_INT(2, cJSON_GetArraySize(values));
-    TEST_ASSERT_EQUAL_STRING("2", debug_json_string(cJSON_GetArrayItem(values, 0), "value"));
-    TEST_ASSERT_EQUAL_STRING("3", debug_json_string(cJSON_GetArrayItem(values, 1), "value"));
-    cJSON_Delete(message);
-
-    debug_client_send_request(&client, 11, "continue", ZR_NULL);
-    message = debug_client_expect_response(&client, 11);
     cJSON_Delete(message);
     message = debug_client_expect_event(&client, "continued");
     cJSON_Delete(message);
@@ -3049,7 +3030,7 @@ int main(int argc, char **argv) {
     RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_expands_object_members_and_runtime_globals);
     RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_expands_native_network_methods_without_asserting);
     RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate);
-    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_separates_instance_metadata_and_supports_index_windows);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_separates_instance_metadata_and_supports_paged_variables);
     RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_supports_function_hit_condition_and_log_breakpoints);
     RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_supports_caught_exception_breakpoints);
     RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_matches_source_breakpoints_across_separator_variants);

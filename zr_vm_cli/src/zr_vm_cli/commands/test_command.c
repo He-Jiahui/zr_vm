@@ -259,14 +259,24 @@ static TZrChar *test_command_build_case_source(
         const SZrCliTestCaseReference *reference,
         TZrSize *outLength) {
     SZrCliTestTextBuilder builder = {ZR_NULL, 0U, 0U};
+    const TZrChar *localName;
 
     if (outLength != ZR_NULL) *outLength = 0U;
+    localName = reference != ZR_NULL && reference->entry != ZR_NULL &&
+                        reference->entry->qualifiedName != ZR_NULL
+                    ? strrchr(reference->entry->qualifiedName, ':')
+                    : ZR_NULL;
+    localName = localName != ZR_NULL ? localName + 1 :
+                (reference != ZR_NULL && reference->entry != ZR_NULL
+                         ? reference->entry->qualifiedName
+                         : ZR_NULL);
     if (source == ZR_NULL || reference == ZR_NULL || reference->entry == ZR_NULL ||
+        localName == ZR_NULL || localName[0] == '\0' ||
         !test_command_builder_append_bytes(&builder, source->source, source->sourceLength) ||
         !test_command_builder_append(&builder, "\n") ||
         (reference->entry->isAsync &&
          !test_command_builder_append(&builder, "let __zrCliTestTask = ")) ||
-        !test_command_builder_append(&builder, reference->entry->qualifiedName) ||
+        !test_command_builder_append(&builder, localName) ||
         !test_command_builder_append(&builder, "(")) {
         free(builder.data);
         return ZR_NULL;
@@ -566,6 +576,8 @@ static TZrBool test_command_execute_in_process(
     } else {
         snprintf(result->message, sizeof(result->message), "unhandled test exception");
     }
+    ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE);
+    ZrVmLibTesting_ClearLastFailure();
     success = ZR_TRUE;
 
 cleanup:
@@ -593,7 +605,16 @@ static TZrBool test_command_execute_isolated(
     request.caseId = reference->id;
     request.timeoutMilliseconds = timeoutMilliseconds;
     if (!ZrCli_TestProcess_Run(&request, &processResult)) {
-        snprintf(result->message, sizeof(result->message), "failed to launch test isolate");
+        if (processResult.output[0] != '\0') {
+            snprintf(result->message,
+                     sizeof(result->message),
+                     "failed to launch test isolate: %.470s",
+                     processResult.output);
+        } else {
+            snprintf(result->message,
+                     sizeof(result->message),
+                     "failed to launch test isolate");
+        }
         return ZR_FALSE;
     }
     result->durationMilliseconds = processResult.durationMilliseconds;

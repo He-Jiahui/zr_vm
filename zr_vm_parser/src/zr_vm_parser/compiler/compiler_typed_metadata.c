@@ -1532,9 +1532,19 @@ static TZrBool compiler_prototype_has_inline_frame_layout(const SZrTypePrototype
 }
 
 static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
-    return (TZrBool)(prototypeInfo != ZR_NULL &&
-                     prototypeInfo->name != ZR_NULL &&
-                     !prototypeInfo->isImportedNative);
+    const TZrUInt64 contiguousViewProtocols =
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY);
+
+    if (prototypeInfo == ZR_NULL || prototypeInfo->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!prototypeInfo->isImportedNative) {
+        return ZR_TRUE;
+    }
+    return (TZrBool)(compiler_prototype_has_inline_frame_layout(prototypeInfo) &&
+                     (prototypeInfo->protocolMask &
+                      contiguousViewProtocols) != 0u);
 }
 
 static TZrUInt32 compiler_serialized_type_prototype_count(SZrCompilerState *cs) {

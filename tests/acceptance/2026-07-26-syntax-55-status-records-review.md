@@ -22,6 +22,58 @@
 `completed_with_known_unrelated_markers`。本报告保留这些历史限定；“确认”表示当前
 工作树已用新鲜测试重新证明该记录声明的范围，而不是改写其历史状态文字。
 
+## 2026-08-05 最终复验、旧测试清理与跨平台 review
+
+本轮按当前 selector 再次机械清点：仅扫描 `docs/plans/syntax` 下名称以数字开头的
+直接子目录，递归收集 Markdown，排除 `*-implementation-plan.md` 和独立 support
+record `m5-task4-property-import-bootstrap.md`。结果仍为
+`TOTAL=55 COMPLETE=55 MISSING_OR_NOT_COMPLETE=0`，目录分布为 01=5、02=6、
+03=5、04=7、05=6、06=2、07=1、10=5、12=15、13=3。结论只确认这 55 份
+状态记录各自声明的叶子范围，不把它们自动提升为根 Syntax redesign 全部完成。
+
+生产 parser 静态扫描对 `%module/%compileTime/%extern/%test/%owned/%import/%borrow/`
+`%loan/%unique/%shared/%weak/%func` 的字面量命中为 0。生产代码保留
+`report_removed_percent_syntax` 是有意的拒绝边界：旧关键字进入 error 级
+`legacy_syntax_removed` 后立即停止解析，不生成兼容 AST；migration frontend、负向
+fixture 和历史文档中的旧拼写也不代表双轨。普通 `%` 与 `%=` 仍分别是取模和取模赋值，
+不属于被删除的关键字语法。
+
+旧测试清理删除了 compile-time suite 中 32 个从未注册的过时测试和对应 dead helper，
+保留的 69 项注册用例均可达；debug/LSP fixture 不再期待已删除的 synthetic member、
+index-window、property migration 或 ownership warning 兼容路径。LSP aggregate runner
+现在累计失败并返回非零退出码，避免 `Fail -` 文本存在时进程仍以 0 假绿。CodeLens
+fixture 改为真实 `#zr.testing.test#` typed TestManifest；CLI 保留 canonical case id，
+生成单文件执行 harness 时只调用本地函数名。
+
+跨平台 review 关闭了以下真实缺陷：Windows shared build 的 debug expression 与 LSP
+interface 测试已链接正确但内部调用符号没有导出，现由组件 export macro 显式发布测试
+所需接口；Windows child-process argument builder 的无符号递减下溢曾使启动提前失败，
+现使用有界递减并给子进程继承 `NUL` stdin；断言失败被 `TryRun` 捕获后，worker 在释放
+编译函数前重置 VM thread/call stack，避免 MSVC 下 `0xC0000005`；debug child-shape
+用例删除旧 `_MSC_VER` argument 夹具，三工具链统一验证 local binding 与 formal facts。
+另行修复了 resource cleanup 重复注册、REPL fact refresh、imported Span layout/provider
+prototype 复用以及 AOT scalar latest-write provenance。
+
+最新验证证据如下：
+
+- Windows MSVC 19.44 Debug shared build 完整 CTest 为 **126/126**，0 失败，
+  547.06 秒；其中 `testing_reference`、`language_server`、`debug_expression_diagnostics`
+  和 `debug_variable_child_shape` 均在同一次全量运行中通过。
+- WSL GCC 11.4 Debug 完整 CTest 基线为 **128/128**；本轮最终增量对严格 percent、
+  CLI migration/testing、LSP 和 debug 的 8 个高风险入口复跑为 **8/8**。
+- WSL Clang 14 Debug 完整 CTest 基线为 **126/126**；同一最终高风险矩阵复跑为
+  **8/8**。
+- Syntax migration inventory 协议测试为 **9/9**；当前仓库扫描结果为
+  `SCANNED=902`、`EXCLUDED=456`、`ALLOWLISTED=14`、
+  `REVIEWED_CURRENT=597`、`FINDINGS=0`、`UNKNOWN=0`，所有 finding 分类均为 0。
+- MSVC 全目标构建在修复 export 边界后成功完成；两个 Copilot 报告的 LNK2019
+  不是漏写 `target_link_libraries`，因为目标原本已链接对应 import library，真实原因是
+  DLL import library中缺少未标 export 的内部测试接口。
+
+因此本轮验收结论为：55/55 状态记录在声明范围内完成，严格 `%keyword` 破坏性切换
+保持完成，清理后的当前测试集在三工具链证据下成立；未发现仍需阻止本次提交的 P1/P2
+问题。根 Syntax redesign 的上层 promotion 状态仍以根计划自身记录为准。
+
 ## 2026-08-02 严格切换复验与最终 review
 
 本轮再次按同一叶子规则机械清点：排除 `*-implementation-plan.md` 和单独的

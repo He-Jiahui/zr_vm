@@ -82,6 +82,85 @@ static EZrStaticCType backend_aot_c_scalar_stack_copy_static_type_for_slot(const
     return ZR_STATIC_C_TYPE_DYNAMIC;
 }
 
+static TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 slot,
+        TZrUInt32 execInstructionIndex) {
+    const SZrFunction *function;
+    TZrUInt32 blockStart = 0u;
+    TZrBool foundBlock = ZR_FALSE;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL ||
+        functionIr->function->instructionsList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    for (TZrUInt32 blockIndex = 0u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
+        const SZrAotExecIrBasicBlock *block = &functionIr->basicBlocks[blockIndex];
+        TZrUInt32 blockEnd = block->firstExecInstructionIndex + block->instructionCount;
+
+        if (execInstructionIndex >= block->firstExecInstructionIndex &&
+            execInstructionIndex <= blockEnd) {
+            blockStart = block->firstExecInstructionIndex;
+            foundBlock = ZR_TRUE;
+            break;
+        }
+    }
+    if (!foundBlock || execInstructionIndex > function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 scanIndex = execInstructionIndex; scanIndex > blockStart; scanIndex--) {
+        const TZrInstruction *instruction = &function->instructionsList[scanIndex - 1u];
+        EZrInstructionCode opcode =
+                (EZrInstructionCode)instruction->instruction.operationCode;
+
+        if (opcode == ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2) &&
+            instruction->instruction.operand.operand1[0] == slot) {
+            return ZR_FALSE;
+        }
+        if (instruction->instruction.operandExtra != slot) {
+            continue;
+        }
+        if (opcode == ZR_INSTRUCTION_OP_GET_STACK ||
+            opcode == ZR_INSTRUCTION_OP_SET_STACK) {
+            TZrInt32 copiedSourceSlot = instruction->instruction.operand.operand2[0];
+
+            if (copiedSourceSlot < 0 || (TZrUInt32)copiedSourceSlot == slot) {
+                return ZR_FALSE;
+            }
+            if (backend_aot_c_scalar_stack_copy_static_type_for_slot(
+                        function, (TZrUInt32)copiedSourceSlot) !=
+                ZR_STATIC_C_TYPE_DYNAMIC) {
+                return ZR_TRUE;
+            }
+            return backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+                    functionIr, (TZrUInt32)copiedSourceSlot, scanIndex - 1u);
+        }
+
+        return backend_aot_c_scalar_locals_instruction_writes_primitive(
+                functionIr, scanIndex - 1u, slot);
+    }
+
+    return (TZrBool)(
+            (backend_aot_c_scalar_locals_has_bool_slot(functionIr, slot) &&
+             backend_aot_c_scalar_locals_bool_written_before(
+                     functionIr, slot, execInstructionIndex)) ||
+            (backend_aot_c_scalar_locals_has_i64_slot(functionIr, slot) &&
+             backend_aot_c_scalar_locals_i64_written_before(
+                     functionIr, slot, execInstructionIndex)) ||
+            (backend_aot_c_scalar_locals_has_u64_slot(functionIr, slot) &&
+             backend_aot_c_scalar_locals_u64_written_before(
+                     functionIr, slot, execInstructionIndex)) ||
+            (backend_aot_c_scalar_locals_has_f64_slot(functionIr, slot) &&
+             backend_aot_c_scalar_locals_f64_written_before(
+                     functionIr, slot, execInstructionIndex)));
+}
+
+static TZrBool backend_aot_c_scalar_stack_copy_instruction_is_call_result_write(
+        EZrInstructionCode opcode);
+
 static TZrBool backend_aot_c_scalar_stack_copy_source_has_dynamic_stack_copy_write(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -119,6 +198,11 @@ static TZrBool backend_aot_c_scalar_stack_copy_source_has_dynamic_stack_copy_wri
         EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
         TZrInt32 copiedSourceSlot;
 
+        if (instruction->instruction.operandExtra == sourceSlot &&
+            backend_aot_c_scalar_stack_copy_instruction_is_call_result_write(opcode)) {
+            return ZR_FALSE;
+        }
+
         if ((opcode != ZR_INSTRUCTION_OP_GET_STACK && opcode != ZR_INSTRUCTION_OP_SET_STACK) ||
             instruction->instruction.operandExtra != sourceSlot) {
             continue;
@@ -128,7 +212,9 @@ static TZrBool backend_aot_c_scalar_stack_copy_source_has_dynamic_stack_copy_wri
         if (copiedSourceSlot >= 0 &&
             (TZrUInt32)copiedSourceSlot != sourceSlot &&
             backend_aot_c_scalar_stack_copy_static_type_for_slot(
-                    function, (TZrUInt32)copiedSourceSlot) == ZR_STATIC_C_TYPE_DYNAMIC) {
+                    function, (TZrUInt32)copiedSourceSlot) == ZR_STATIC_C_TYPE_DYNAMIC &&
+            !backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+                    functionIr, (TZrUInt32)copiedSourceSlot, scanIndex - 1u)) {
             return ZR_TRUE;
         }
     }

@@ -1006,10 +1006,10 @@ _REPOSITORY_FINDING_ALLOWLIST = {
         "percentImport",
     ): "expectedRemovedImportSemanticTokenNegative",
     (
-        "tests/language_server/test_lsp_property_contract_cases.h",
-        22,
-        "legacyPropertyAccessor",
-    ): "expectedLegacyPropertyMigrationInput",
+        "tests/language_server/test_lsp_interface.c",
+        21,
+        "percentUnique",
+    ): "expectedRemovedOwnershipDiagnosticNegative",
     (
         "tests/parser/test_compiler_features.c",
         46,

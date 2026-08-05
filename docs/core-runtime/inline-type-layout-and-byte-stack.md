@@ -513,6 +513,23 @@ with an external trace remain address-stable during old-object compaction;
 their children may move and are rewritten. The direct full-compact free path
 now runs object/array finalizers as well as native-data finalizers exactly once.
 
+## Imported Contiguous-View Layouts
+
+Native `Span<T>` and `ReadOnlySpan<T>` remain owned by the provider module, but
+their consumer bytecode still needs a resolvable inline frame layout. The
+compiler therefore serializes a layout-only prototype record for imported
+struct/union types that carry a mutable or readonly contiguous-view protocol.
+`ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY` distinguishes this record from a
+consumer declaration without changing the compiled prototype record size.
+
+The runtime consumes the record for `SZrTypeLayout` resolution, skips prototype
+creation/export, and binds the function's prototype instance to the already
+loaded exact provider type or its open generic base. Import metadata inference
+also ignores the record as a declaration. Types without a contiguous-view
+protocol, including native scoped guards, are not admitted through this bridge.
+This preserves provider pointer identity while allowing inline member-slot
+instructions and AOT metadata to resolve the same layout.
+
 ## Current Boundary
 
 The implemented boundary covers:

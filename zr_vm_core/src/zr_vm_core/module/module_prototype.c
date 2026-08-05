@@ -1157,7 +1157,36 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
 
                 if (parse_compiled_prototype_info(
                             state, entryFunction, currentPos, currentPrototypeSize, &protoInfoData)) {
-                    if (protoInfoData.typeName != ZR_NULL &&
+                    if ((protoInfoData.modifierFlags &
+                         ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY) != 0u) {
+                        SZrObjectPrototype *providerPrototype =
+                                entryFunction->prototypeInstances[i];
+
+                        if (providerPrototype == ZR_NULL &&
+                            protoInfoData.typeName != ZR_NULL) {
+                            SZrString *openGenericBaseName;
+
+                            providerPrototype = find_prototype_by_name(
+                                    state, module, protoInfoData.typeName);
+                            if (providerPrototype == ZR_NULL) {
+                                openGenericBaseName =
+                                        module_prototype_extract_open_generic_base_name(
+                                                state, protoInfoData.typeName);
+                                if (openGenericBaseName != ZR_NULL) {
+                                    providerPrototype = find_prototype_by_name(
+                                            state, module, openGenericBaseName);
+                                }
+                            }
+                            if (providerPrototype != ZR_NULL &&
+                                providerPrototype->type ==
+                                        protoInfoData.prototypeType) {
+                                entryFunction->prototypeInstances[i] =
+                                        providerPrototype;
+                            }
+                        }
+                        ZrCore_Array_Free(
+                                state, &protoInfoData.inheritTypeNames);
+                    } else if (protoInfoData.typeName != ZR_NULL &&
                         protoInfoData.prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID) {
                         TZrBool prototypeWasCreated = ZR_FALSE;
                         SZrObjectPrototype *prototype = entryFunction->prototypeInstances[i];

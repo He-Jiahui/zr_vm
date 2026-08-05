@@ -3470,6 +3470,74 @@ static TZrUInt32 backend_aot_c_scalar_locals_slot_count(const SZrAotExecIrFuncti
     return slotCount;
 }
 
+TZrBool backend_aot_c_scalar_locals_instruction_writes_primitive(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 execInstructionIndex,
+        TZrUInt32 slot) {
+    const SZrFunction *function;
+    EZrAotScalarLocalKind *slotKinds;
+    EZrAotScalarLocalKind *declaredKinds;
+    TZrUInt32 slotCount;
+    TZrBool result;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    function = functionIr->function;
+    slotCount = backend_aot_c_scalar_locals_slot_count(functionIr);
+    if (slot >= slotCount || execInstructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    slotKinds = (EZrAotScalarLocalKind *)calloc(
+            (size_t)slotCount, sizeof(*slotKinds));
+    declaredKinds = (EZrAotScalarLocalKind *)calloc(
+            (size_t)slotCount, sizeof(*declaredKinds));
+    if (slotKinds == ZR_NULL || declaredKinds == ZR_NULL) {
+        free(slotKinds);
+        free(declaredKinds);
+        return ZR_FALSE;
+    }
+
+    backend_aot_c_scalar_locals_record_all(
+            declaredKinds, slotCount, function);
+    for (TZrUInt32 sourceSlot = 0u; sourceSlot < slotCount; sourceSlot++) {
+        if (backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&
+            backend_aot_c_scalar_locals_bool_written_before(
+                    functionIr, sourceSlot, execInstructionIndex)) {
+            slotKinds[sourceSlot] = (EZrAotScalarLocalKind)(
+                    slotKinds[sourceSlot] | ZR_AOT_SCALAR_LOCAL_KIND_BOOL);
+        }
+        if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot) &&
+            backend_aot_c_scalar_locals_i64_written_before(
+                    functionIr, sourceSlot, execInstructionIndex)) {
+            slotKinds[sourceSlot] = (EZrAotScalarLocalKind)(
+                    slotKinds[sourceSlot] | ZR_AOT_SCALAR_LOCAL_KIND_I64);
+        }
+        if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot) &&
+            backend_aot_c_scalar_locals_u64_written_before(
+                    functionIr, sourceSlot, execInstructionIndex)) {
+            slotKinds[sourceSlot] = (EZrAotScalarLocalKind)(
+                    slotKinds[sourceSlot] | ZR_AOT_SCALAR_LOCAL_KIND_U64);
+        }
+        if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot) &&
+            backend_aot_c_scalar_locals_f64_written_before(
+                    functionIr, sourceSlot, execInstructionIndex)) {
+            slotKinds[sourceSlot] = (EZrAotScalarLocalKind)(
+                    slotKinds[sourceSlot] | ZR_AOT_SCALAR_LOCAL_KIND_F64);
+        }
+    }
+
+    slotKinds[slot] = ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+    backend_aot_c_scalar_locals_record_exec_instruction_write(
+            slotKinds, slotCount, declaredKinds, functionIr, function,
+            execInstructionIndex, slot);
+    result = (TZrBool)(slotKinds[slot] != ZR_AOT_SCALAR_LOCAL_KIND_NONE);
+    free(slotKinds);
+    free(declaredKinds);
+    return result;
+}
+
 static TZrBool backend_aot_c_scalar_locals_has_any(const EZrAotScalarLocalKind *slotKinds, TZrUInt32 slotCount) {
     TZrUInt32 slot;
 

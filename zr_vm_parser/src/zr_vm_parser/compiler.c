@@ -249,6 +249,25 @@ static void compiler_log_failure_summary(SZrCompilerState *cs) {
                            reason);
 }
 
+static TZrBool compiler_prototype_serializes_to_function_metadata(
+        const SZrTypePrototypeInfo *info) {
+    const TZrUInt64 contiguousViewProtocols =
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY);
+
+    if (info == ZR_NULL || info->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!info->isImportedNative) {
+        return ZR_TRUE;
+    }
+    return (TZrBool)((info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+                      info->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
+                     info->layoutByteSize > 0u &&
+                     info->layoutByteAlign > 0u &&
+                     (info->protocolMask & contiguousViewProtocols) != 0u);
+}
+
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) {
     if (cs == ZR_NULL || info == ZR_NULL || info->name == ZR_NULL || outData == ZR_NULL || outSize == ZR_NULL) {
@@ -345,7 +364,11 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     protoInfo->decoratorMetadataConstantIndex =
             info->hasDecoratorMetadata ? add_constant(cs, &info->decoratorMetadataValue) : 0;
     protoInfo->decoratorsCount = decoratorsCount;
-    protoInfo->modifierFlags = info->modifierFlags;
+    protoInfo->modifierFlags =
+            info->modifierFlags |
+            (info->isImportedNative
+                     ? ZR_TYPE_MODIFIER_FLAG_IMPORTED_LAYOUT_ONLY
+                     : 0u);
     protoInfo->nextVirtualSlotIndex = info->nextVirtualSlotIndex;
     protoInfo->nextPropertyIdentity = info->nextPropertyIdentity;
     protoInfo->layoutByteSize = info->layoutByteSize;
@@ -866,7 +889,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             // 序列化每个 prototype 信息
             for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
                 SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
-                if (info == ZR_NULL || info->name == ZR_NULL || info->isImportedNative) {
+                if (!compiler_prototype_serializes_to_function_metadata(info)) {
                     prototypeDataArray[i] = ZR_NULL;
                     prototypeDataSizes[i] = 0;
                     continue;

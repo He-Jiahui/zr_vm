@@ -372,7 +372,7 @@ v1 事件集：
 `evaluate`、条件断点和 logpoint 插值共用正式 parser/binder/canonical fact 的安全表达式子集。条件断点和 logpoint 插值以零 capability 且禁用 legacy compatibility 执行；DAP `evaluate` 另按显式 context 授予能力。三者都不建立兼容表达式执行器或按文本回退。该子集只允许无副作用读取和计算：
 
 - literal、局部变量、参数、`this` / `self`
-- member access、index access、debug index window
+- index access
 - unary `!` / `-`
 - numeric `+ - * / %` 和关系比较
 - equality、`&&`、`||`
@@ -447,7 +447,7 @@ variables 目前是只读快照，不支持变量写回或带副作用求值。s
 - `zr`
 - `loadedModules`
 
-`variables` 响应中的每个 value preview 和 `evaluate` 响应都会带 `namedVariables` / `indexedVariables`。这两个字段是协议边界的子形状提示，方便 VS Code/DAP adapter 在不先展开 handle 的情况下判断 named/indexed children。普通 object 的 `namedVariables` 与实际展开计数一致：可见字段加上 `$prototype` 等 synthetic entry，隐藏 `__zr_` 字段不计入；直接 array/index window 使用 `indexedVariables`。
+`variables` 响应中的每个 value preview 和 `evaluate` 响应都会带 `namedVariables` / `indexedVariables`。这两个字段是协议边界的子形状提示，方便 VS Code/DAP adapter 在不先展开 handle 的情况下判断 named/indexed children。普通 object 的 `namedVariables` 与实际展开计数一致：可见字段加上 `$prototype` 等 synthetic entry，隐藏 `__zr_` 字段不计入；直接 array 使用 `indexedVariables`。
 
 所有固定缓冲文本预览都会显式标记截断：超长普通文本保留前缀并追加 `...[+N]`，路径/源码名优先保留尾部并在前缀放置同样的省略计数。长字符串 value/evaluate preview 不放大 `ZR_DEBUG_TEXT_CAPACITY`；当完整字符串达到预览缓冲上限时，preview 保留带标记的短文本，同时返回 `variablesReference` 和按 64-byte 分块计算的 `indexedVariables`。客户端随后用 `variables(start,count)` 惰性读取完整字符串片段，片段名形如 `[64..128)`，片段自身不再带截断标记。
 
@@ -455,7 +455,7 @@ variables 目前是只读快照，不支持变量写回或带副作用求值。s
 
 同一层现在也输出 `semanticSummary`。变量和 value preview 上的内容仍是 runtime snapshot 的短摘要，供 adapter 在变量树、watch、evaluate 面板中直接展示：布尔值显示为 `logical true/false`，整数显示为 `integer <value>`，浮点显示为 `number <value>`，可展开引用显示为 `expandable <type>, named N, indexed M`，带 ownership metadata 的值会追加 `ownership <kind>`。成功的 `evaluate` 结果会在这个 runtime 摘要后追加 parser/type-inference 能在同一个表达式源码上证明的事实，例如 `evaluate("1 + 2")` 会报告 `integer 3, expression binary exact, constant 3, range 3..3, unsigned range 3..3`，`evaluate("true || false")` 会报告 runtime `logical true` 以及 parser-owned `short-circuits` / `unreachable because short-circuit skips evaluation`，`evaluate("true ? 1 : 2")` 会报告被常量条件跳过的 branch reachability，字符串 literal 常量会被转义成一行摘要，避免 quote、backslash、换行、tab 或其它控制字节破坏 adapter 展示。已存在的 parser-owned reference facts 也会进入这条摘要；例如 `evaluate("zr[1]")` 的 parser fact pass 会追加 `reference member access`，而 runtime `referenceSummary` 仍保留实际读取来源 `global zr, index access`。assignment 语义摘要现在也会保留直接 write facts：`globalSeed = 3` 追加 `reference write globalSeed`，`seed.value = 3` 与 `seed[index] = 4` 追加 `reference member write ...`，避免 write/member-write 被同节点 read/access fact 遮蔽。当 evaluate 运行在暂停帧上时，Debug 会先把可见 frame slots 以 runtime value type 注册进临时 parser type environment；同一个 replay 也注册稳定 Debug globals，所以 `evaluate("inside + 1")` 的 `semanticSummary` 能追加 parser-owned `reference read inside`，`evaluate("zr")` 能追加 parser-owned `reference read zr`。当 Debug agent 带有编译入口函数时，semantic-summary fact bridge 还会注册入口函数的 top-level callable metadata；直接语义摘要查询 `pick(1 + 2)` 可追加 parser-owned `call pick args=1`、`reference call pick` 和实参的 `constant 3` / `range 3..3` / `unsigned range 3..3`，`seed[index]` 这类成员表达式摘要可追加 parser-owned `member index`、`reference member access index` 和索引 token 的 `reference read index`，但 safe evaluator 仍按只读策略拒绝实际函数调用或写入。Debug 只消费共享 semantic fact layer，不在 safe evaluator 中重新实现表达式类型、常量折叠、数值范围、unsigned range payload、分支语义推断、引用分类、调用/成员 payload 推断或字符串常量转义策略。
 
-同一协议层还输出 `referenceSummary`。它是 adapter-facing 的引用来源提示，不是完整的 parser reference fact：稳定可解析的顶层 scope 引用会显示为 `argument <name>`、`local <name>`、`closure <name>` 或 `global <name>`；`evaluate` 会累计 safe evaluator 实际解析并读取的 identifier，例如 `evaluate("zr")` 返回 `global zr`，`evaluate("inside + 1")` 返回 `local inside` 或 MSVC fixture 下的 `argument inside`，`evaluate("zr ? loadedModules : missingLocal")` 返回 `global zr, global loadedModules`。debug index-window evaluate 会沿用 base expression 的实际读取归因，例如 `evaluate("zr[1..3]")` 在 indexed-window `semanticSummary` 旁返回 `referenceSummary: global zr`。短路 RHS 和未选中的 `?:` branch 只被语法消费，不会因为里面出现可解析 identifier 就填充 `referenceSummary`；`true || inside`、`false ? inside : 2` 和前述 `missingLocal` 都不会被误报。计算结果、调试器合成入口、展开对象子字段和 member declaration 仍不会伪造 parser source facts。
+同一协议层还输出 `referenceSummary`。它是 adapter-facing 的引用来源提示，不是完整的 parser reference fact：稳定可解析的顶层 scope 引用会显示为 `argument <name>`、`local <name>`、`closure <name>` 或 `global <name>`；`evaluate` 会累计 formal evaluator 实际解析并读取的 identifier，例如 `evaluate("zr")` 返回 `global zr`，`evaluate("inside + 1")` 返回 `local inside`，`evaluate("zr ? loadedModules : missingLocal")` 返回 `global zr, global loadedModules`。短路 RHS 和未选中的 `?:` branch 只被语法消费，不会因为里面出现可解析 identifier 就填充 `referenceSummary`；`true || inside`、`false ? inside : 2` 和前述 `missingLocal` 都不会被误报。计算结果、调试器合成入口、展开对象子字段和 member declaration 仍不会伪造 parser source facts。
 
 成功的 `evaluate` 响应还带 `stateId`、`hasCanonicalType`，并且只在后者为 true 时带
 `canonicalTypeId`。`stateId` 与同一暂停态中产生的 `variablesReference` handle 绑定；恢复、再次
@@ -474,13 +474,7 @@ canonical semantic query，不能由 `type` 显示字符串或 runtime value tag
 
 Both forms preview as `<union Type.Variant>`. The `type` field reports the union type name when metadata is available, and `semanticSummary` reports `union Type.Variant, named N`. Expanding the value returns a synthetic `variant` child, followed by payload children in declaration order. Tuple payloads use the declared payload names when present, otherwise `payload0`, `payload1`, and so on. Struct payloads use their field names. Hidden carrier storage names remain available only to the implementation and are not presented as the primary user-facing children.
 
-Safe `evaluate` resolves the same synthetic members. Examples:
-
-- `circle.variant` returns `Circle`
-- `circle.radius` returns the tuple payload value
-- `rect.width + rect.height` reads struct payload fields and evaluates through the normal numeric safe-evaluate path
-
-Inline union frame slots are materialized to an ignored temporary carrier object only for safe-evaluate member access. This keeps the existing member-access evaluator reusable while preserving the source frame as read-only.
+Formal `evaluate` does not select a compatibility evaluator from these synthetic display names. Paused inline-union carriers currently expose their payload through `variables`; member evaluation remains unavailable until parser-owned canonical member identity is published for that carrier.
 
 ## Detached Backends
 
@@ -580,12 +574,12 @@ Inline union frame slots are materialized to an ignored temporary carrier object
   - `variables` 和 `evaluate` 响应都返回 `semanticSummary`；覆盖 `expandable ... named ...`、`logical true`，以及 `evaluate("1 + 2")` 同时报告 runtime `integer 3` 和 parser-owned `expression binary exact` / `constant 3` / `range 3..3`
   - `evaluate("true || false")` 和 `evaluate("true ? 1 : 2")` 验证成功 evaluate 结果会追加 parser-owned logical flow 和 skipped-branch reachability facts，而不是只显示 runtime boolean/integer 摘要
   - `variables` 中的 `zr` 和 `evaluate("zr")` 都返回 `referenceSummary: global zr`；`evaluate("zr")` 的 `semanticSummary` 还会追加 parser-owned `reference read zr`
-  - `evaluate("inside + 1")` 返回计算值 `8`，把 `referenceSummary` 归因到当前帧里的 `inside`（Linux/Clang fixture 为 `local inside`，MSVC fixture 为 `argument inside`），并在 `semanticSummary` 里追加 parser-owned `reference read inside`
-  - `evaluate("zr[1..3]")` 验证 debug index window 同时报告 indexed-window `semanticSummary` 和 base expression 的 `referenceSummary: global zr`
+  - `evaluate("inside + 1")` 返回计算值 `8`，三工具链都把 `referenceSummary` 归因到当前帧的 `local inside`，并在 `semanticSummary` 里追加 parser-owned `reference read inside`
+  - `evaluate("this._hp + delta")` 和 `evaluate("fixed[1..3]")` 验证 formal DAP evaluator 以 `-32003` 拒绝缺 canonical member identity 与已删除的 debug index-window compatibility
   - `evaluate("true || inside")` 与 `evaluate("false ? inside : 2")` 验证被短路或未选中分支里的 `inside` 不会生成 `referenceSummary`
   - `variables` 中的 `Shape` inline union locals show `<union Shape.Circle>` / `<union Shape.Rect>` previews with named child counts
   - expanding a union variable returns `variant` plus declaration-order payload fields such as `radius`, `width`, and `height`
-  - `evaluate("circle.variant")`, `evaluate("circle.radius")`, and `evaluate("rect.width + rect.height")` verify synthetic union member access for both tuple and struct variants
+  - `evaluate("circle.variant")`, `evaluate("circle.radius")`, and `evaluate("rect.width + rect.height")` verify that synthetic display children do not reopen member-name compatibility evaluation
 - `tests/debug/test_debug_agent.c`
   - invalid token rejection
   - loopback JSON-RPC handshake

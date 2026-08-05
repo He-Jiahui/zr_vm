@@ -405,9 +405,21 @@ static TZrBool compiler_type_member_emits_runtime_descriptor(const SZrTypeMember
 }
 
 static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
-    return prototypeInfo != ZR_NULL &&
-           prototypeInfo->name != ZR_NULL &&
-           !prototypeInfo->isImportedNative;
+    const TZrUInt64 contiguousViewProtocols =
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
+            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY);
+
+    if (prototypeInfo == ZR_NULL || prototypeInfo->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!prototypeInfo->isImportedNative) {
+        return ZR_TRUE;
+    }
+    return (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+            prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
+           prototypeInfo->layoutByteSize > 0u &&
+           prototypeInfo->layoutByteAlign > 0u &&
+           (prototypeInfo->protocolMask & contiguousViewProtocols) != 0u;
 }
 
 static TZrBool compiler_resolve_type_member_runtime_descriptor_binding(SZrCompilerState *cs,

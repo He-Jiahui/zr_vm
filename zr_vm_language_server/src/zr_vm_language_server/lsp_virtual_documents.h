@@ -1,6 +1,7 @@
 #ifndef ZR_VM_LANGUAGE_SERVER_LSP_VIRTUAL_DOCUMENTS_H
 #define ZR_VM_LANGUAGE_SERVER_LSP_VIRTUAL_DOCUMENTS_H
 
+#include "zr_vm_language_server/conf.h"
 #include "module/lsp_module_metadata.h"
 
 typedef enum EZrLspVirtualDeclarationKind {
@@ -24,23 +25,28 @@ typedef struct SZrLspVirtualDeclarationMatch {
     SZrFileRange range;
 } SZrLspVirtualDeclarationMatch;
 
-TZrBool ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(SZrString *uri);
-SZrString *ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(SZrState *state, const TZrChar *moduleName);
-TZrBool ZrLanguageServer_LspVirtualDocuments_ParseDeclarationUri(SZrString *uri,
-                                                                 TZrChar *moduleNameBuffer,
-                                                                 TZrSize bufferSize);
-TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(SZrState *state,
-                                                                     SZrLspProjectIndex *projectIndex,
-                                                                     SZrString *uri,
-                                                                     const ZrLibModuleDescriptor **outDescriptor,
-                                                                     EZrLspImportedModuleSourceKind *outSourceKind,
-                                                                     TZrChar *moduleNameBuffer,
-                                                                     TZrSize bufferSize);
-TZrBool ZrLanguageServer_LspVirtualDocuments_RenderDeclarationText(SZrState *state,
-                                                                   const ZrLibModuleDescriptor *descriptor,
-                                                                   SZrString *uri,
-                                                                   SZrString **outText);
-SZrFileRange ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(SZrString *uri);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(SZrString *uri);
+ZR_LANGUAGE_SERVER_API SZrString *ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(
+        SZrState *state,
+        const TZrChar *moduleName);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspVirtualDocuments_ParseDeclarationUri(
+        SZrString *uri,
+        TZrChar *moduleNameBuffer,
+        TZrSize bufferSize);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(
+        SZrState *state,
+        SZrLspProjectIndex *projectIndex,
+        SZrString *uri,
+        const ZrLibModuleDescriptor **outDescriptor,
+        EZrLspImportedModuleSourceKind *outSourceKind,
+        TZrChar *moduleNameBuffer,
+        TZrSize bufferSize);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspVirtualDocuments_RenderDeclarationText(
+        SZrState *state,
+        const ZrLibModuleDescriptor *descriptor,
+        SZrString *uri,
+        SZrString **outText);
+ZR_LANGUAGE_SERVER_API SZrFileRange ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(SZrString *uri);
 TZrBool ZrLanguageServer_LspVirtualDocuments_FindModuleLinkDeclaration(SZrState *state,
                                                                        const ZrLibModuleDescriptor *descriptor,
                                                                        SZrString *uri,

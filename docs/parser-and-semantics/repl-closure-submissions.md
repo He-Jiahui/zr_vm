@@ -36,6 +36,8 @@ REPL 以代际受保护的 closure environment 持久化已提交 cell，而不�
 
 顶层变量与 callable 声明编译为既有 closure 的 `SET_CLOSURE` 槽；跨 cell 读取使用 `GET_CLOSURE`。因此后续 cell 的赋值更新的是同一个有效 capture，不会创建以同名文本推断出来的替代 binding。
 
+声明与 capture 的 source range 以实际 pattern token 为起点，不再借用整个 statement 的位置。发布 successor closure 前，CLI 会从执行后的 closure value 重新采集 runtime facts，并刷新整数 binding 的精确 range 或布尔 binding 的 known value；因此后续 `:type` 查询消费实际已执行值，而不是声明 initializer 的过期推断。刷新失败会阻止发布 successor，不会留下只有部分事实的环境。
+
 ## 生命周期与 GC 根
 
 CLI session 持有一个 global、环境 closure 的 `SZrGcRootHandle` 与 source-label root。执行下一 cell 前从根重新解析 closure 和 source label，因此 compacting GC 后不会持有过期裸指针。提交成功时替换 environment root；`:reset` 释放 root、清空 binding table，并推进 environment generation。
@@ -58,4 +60,4 @@ REPL 控制器只负责 input buffering、命令分派和受控 `return <express
 
 ## 验证
 
-`test_repl_submission_bindings` 覆盖 capture identity、callable signature、assignment、stale/duplicate identity、ref-like/loaned 拒绝和 owner policy。`test_cli_repl_e2e` 覆盖跨 cell 值与 callable、`:type`、`:reset`、semicolon 边界和失败后环境保持。三工具链还执行语义事实、reference escape 与 semantic query 回归，以及当前 LSP/CLI stdio smoke。
+`test_repl_submission_bindings` 覆盖 capture identity、精确 declaration/capture range、callable signature、assignment、stale/duplicate identity、ref-like/loaned 拒绝和 owner policy。`test_cli_repl_e2e` 覆盖跨 cell 值与 callable、运行后 value fact 刷新、`:type`、`:reset`、semicolon 边界和失败后环境保持。三工具链还执行语义事实、reference escape 与 semantic query 回归，以及当前 LSP/CLI stdio smoke。
