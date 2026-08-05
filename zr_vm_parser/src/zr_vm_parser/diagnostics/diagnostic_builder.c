@@ -383,16 +383,32 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingCatchPatternClose(SZrState *state
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
-                                                                  SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_using_resource_close",
-            "Missing closing ')' in using resource",
-            "The using statement started a resource expression with '(', but the parser reached the using body before a closing ')' appeared.",
-            "Insert ')' after the using resource before the using body.");
+                                                                  SZrFileRange location,
+                                                                  SZrFileRange fixLocation) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_using_resource_close",
+                "Missing closing ')' in using resource",
+                "The using statement started a resource expression with '(', but the parser reached the using body before a closing ')' appeared.",
+                "Insert ')' after the using resource before the using body.")) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ')'",
+                fixLocation,
+                ")",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(SZrState *state,

@@ -235,12 +235,15 @@ void report_missing_catch_pattern_close(SZrParserState *ps, SZrFileRange locatio
 
 void report_missing_using_resource_close(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(
+                ps->state, &diagnostic, location, fixLocation)) {
         report_error_with_token(ps, "Missing closing ')' in using resource", ps->lexer->t.token);
         return;
     }
