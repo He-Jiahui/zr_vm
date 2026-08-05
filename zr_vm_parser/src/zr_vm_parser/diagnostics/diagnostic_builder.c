@@ -353,16 +353,32 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingBlockClose(SZrState *state,
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingCatchPatternClose(SZrState *state,
                                                                  SZrStructuredDiagnostic *out,
-                                                                 SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_catch_pattern_close",
-            "Missing closing ')' in catch pattern",
-            "The catch clause started a pattern with '(', but the parser reached the catch body before a closing ')' appeared.",
-            "Insert ')' after the catch pattern before the catch body.");
+                                                                 SZrFileRange location,
+                                                                 SZrFileRange fixLocation) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_catch_pattern_close",
+                "Missing closing ')' in catch pattern",
+                "The catch clause started a pattern with '(', but the parser reached the catch body before a closing ')' appeared.",
+                "Insert ')' after the catch pattern before the catch body.")) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing ')'",
+                fixLocation,
+                ")",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(SZrState *state,

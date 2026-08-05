@@ -199,7 +199,8 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingBlockClose(
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingCatchPatternClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
