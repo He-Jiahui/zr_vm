@@ -197,12 +197,15 @@ void report_missing_statement_body_open(SZrParserState *ps,
 
 void report_missing_block_close(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingBlockClose(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingBlockClose(
+                ps->state, &diagnostic, location, fixLocation)) {
         report_error_with_token(ps, "Missing closing '}' for block", ps->lexer->t.token);
         return;
     }

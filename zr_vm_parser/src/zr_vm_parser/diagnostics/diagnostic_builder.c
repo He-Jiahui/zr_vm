@@ -323,16 +323,32 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingBlockClose(SZrState *state,
                                                           SZrStructuredDiagnostic *out,
-                                                          SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_block_close",
-            "Missing closing '}' for block",
-            "The block started with '{', but the parser reached the end of input before a closing '}' appeared.",
-            "Insert '}' to close the block before continuing.");
+                                                          SZrFileRange location,
+                                                          SZrFileRange fixLocation) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_block_close",
+                "Missing closing '}' for block",
+                "The block started with '{', but the parser reached the end of input before a closing '}' appeared.",
+                "Insert '}' to close the block before continuing.")) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing '}'",
+                fixLocation,
+                "}",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingCatchPatternClose(SZrState *state,
