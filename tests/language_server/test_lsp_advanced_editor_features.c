@@ -2240,6 +2240,8 @@ int main(void) {
     test_lsp_code_action_skips_semicolon_inside_block_comment(state, &failures);
     test_lsp_code_action_consumes_machine_applicable_diagnostic_fix(
             state, &failures);
+    test_lsp_code_action_inserts_missing_declaration_body_open(
+            state, &failures);
     test_lsp_code_action_inserts_missing_declaration_body_close(
             state, &failures);
     test_lsp_code_action_inserts_missing_condition_close(state, &failures);
