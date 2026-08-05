@@ -172,18 +172,21 @@ void report_missing_declaration_body_close(SZrParserState *ps,
 }
 
 void report_missing_statement_body_open(SZrParserState *ps,
-                                        const TZrChar *statementKind,
-                                        SZrFileRange location) {
+                                         const TZrChar *statementKind,
+                                         SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
+    fixLocation = get_current_token_location(ps);
     if (!ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(ps->state,
-                                                                  &diagnostic,
-                                                                  location,
-                                                                  statementKind)) {
+                                                                    &diagnostic,
+                                                                    location,
+                                                                    fixLocation,
+                                                                    statementKind)) {
         report_error_with_token(ps, "Missing '{' to start statement body", ps->lexer->t.token);
         return;
     }

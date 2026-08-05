@@ -273,9 +273,10 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(SZrState *st
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state,
-                                                                 SZrStructuredDiagnostic *out,
-                                                                 SZrFileRange location,
-                                                                 const TZrChar *statementKind) {
+                                                                  SZrStructuredDiagnostic *out,
+                                                                  SZrFileRange location,
+                                                                  SZrFileRange fixLocation,
+                                                                  const TZrChar *statementKind) {
     const TZrChar *kind = statementKind != ZR_NULL ? statementKind : "statement";
     TZrChar message[160];
     TZrChar cause[256];
@@ -294,15 +295,30 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state
              "Insert '{' after the %s header or wrap the statement body in braces.",
              kind);
 
-    return ZrParser_DiagnosticBuilder_Build(
-            state,
-            out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-            location,
-            "missing_statement_body_open",
-            message,
-            cause,
-            suggestion);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "missing_statement_body_open",
+                message,
+                cause,
+                suggestion)) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Insert missing statement body",
+                fixLocation,
+                "{}",
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingBlockClose(SZrState *state,
