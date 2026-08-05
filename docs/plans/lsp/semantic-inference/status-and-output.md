@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-05 14:14 +08:00
+updated_at: 2026-08-05 17:13 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -72,6 +72,10 @@ source_plans:
 | 2026-08-05 12:18 +08:00 | 已完成 | LSP 04 E5 REPL closure generations：submission context以精确SymbolId、TypeId、PlaceId、declaration range、capture index和module/environment/cell generation进入正常compiler；successor closure仅在成功执行后发布，callable保留formal signature；重复/stale identity、ref/ref-like/PoolRef、borrowed/loaned跨cell均fail closed；`:type`不执行、`:reset`释放root并推进generation，普通source仍要求semicolon；GCC/Clang/MSVC focused和stdio/CLI smoke均真实exit 0 | [REPL closure generations](../04-debug-and-repl/2026-08-05-e5-repl-closure-generations.md) |
 | 2026-08-05 13:15 +08:00 | 已完成 | LSP 04 E4c children-handle generation audit：debug agent 生命周期内单调分配`variablesReference`，paused-state clear不重置编号，wrap exhausted fail-closed；高值仅作为当前registered handle，不能回退scope decoder；两代暂停旧handle请求稳定返回`-32002`，GCC/Clang/MSVC protocol均8/8真实exit 0 | [Generation-checked children handles](../04-debug-and-repl/2026-08-05-e4c-generation-checked-children-handles.md) |
 | 2026-08-05 14:14 +08:00 | 已完成 | LSP 02 declaration-body-close safe fix：`missing_declaration_body_close`保留opening `{` primary、在recovery EOF发布零宽`}` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按declaration kind/message/AST/source重建；GCC/Clang/MSVC定向parser 34/34与advanced editor suite均真实exit 0 | [Declaration-body close safe-fix convergence](../02-diagnostics/2026-08-05-declaration-body-close-safe-fix-convergence.md) |
+| 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 declaration-body-open safe fix：`missing_declaration_body_open`保留recovery primary、在同cursor发布零宽`{}` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按declaration kind/message/AST/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Declaration-body open safe-fix convergence](../02-diagnostics/2026-08-05-declaration-body-open-safe-fix-convergence.md) |
+| 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 statement-body-open safe fix：`missing_statement_body_open`保留parser recovery primary、在current lexer cursor发布零宽`{}` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按statement kind/message/AST/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Statement-body open safe-fix convergence](../02-diagnostics/2026-08-05-statement-body-open-safe-fix-convergence.md) |
+| 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 block-close safe fix：`missing_block_close`保留opening `{` primary、在current lexer cursor发布零宽`}` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按block AST/message/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Block-close safe-fix convergence](../02-diagnostics/2026-08-05-block-close-safe-fix-convergence.md) |
+| 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 catch-pattern-close safe fix：`missing_catch_pattern_close`保留catch body `{` primary、在current lexer cursor发布零宽`)` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按catch AST/message/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Catch-pattern close safe-fix convergence](../02-diagnostics/2026-08-05-catch-pattern-close-safe-fix-convergence.md) |
 
 ## 当前状态
 

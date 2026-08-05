@@ -2,8 +2,8 @@
 doc_type: milestone-detail
 plan_id: lsp-02-diagnostics
 record_id: 2026-08-05-catch-pattern-close-safe-fix-convergence
-status: validated_pending_integration
-validated_at: 2026-08-05 16:53 +08:00
+status: completed
+completed_at: 2026-08-05 17:13 +08:00
 source_plans:
   - docs/plans/lsp/02-diagnostics-and-errors.md
   - docs/plans/lsp/03-lsp-robustness-and-position.md
@@ -17,7 +17,7 @@ evidence_scope: catch-pattern-close-safe-fix-convergence
 
 | 完成时间 | 状态 | 完成项目 |
 |---|---|---|
-| 2026-08-05 16:53 +08:00 | 已验证，待主树集成 | `missing_catch_pattern_close`从parser structured diagnostic到machine-applicable `)` edit、generic LSP code action与v2 apply-edit-rebind闭环；primary保留catch body `{`，fix为current lexer cursor；隔离分支GCC/Clang/MSVC的parser 38/38和advanced editor suite均真实exit 0 |
+| 2026-08-05 17:13 +08:00 | 已完成 | `missing_catch_pattern_close`从parser structured diagnostic到machine-applicable `)` edit、generic LSP code action与v2 apply-edit-rebind闭环；primary保留catch body `{`，fix为current lexer cursor；主树集成后GCC/Clang/MSVC的parser 38/38和advanced editor suite均真实exit 0 |
 
 ## 已实现契约
 
@@ -36,6 +36,6 @@ evidence_scope: catch-pattern-close-safe-fix-convergence
 
 ## 集成边界
 
-- 此记录反映隔离分支已经通过验证；主工作树正由独立任务进行全量验收，未被修改以免作废其快照。依序合入`c817e41`、`5be340b`、`245c9b0`，再合入本叶子后，才将本记录和集中状态表转为`completed`。
+- 隔离叶子已在`ba5da67`、`fefc44e`、`aa2af25`之后通过`24a67c1`合入主树，并在主树集成基线上由GCC、Clang和MSVC直接复验后转为`completed`。
 - 不改变diagnostic、semantic query、artifact/binary、code-action snapshot或JSON schema；不修改LSP production、stdio、CLI或CMake。
 - 其他delimiter、replacement、module/property/ownership diagnostics及L3全量registry、性能、cancellation、乱序race证据仍未完成。
