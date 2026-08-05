@@ -429,6 +429,11 @@ static cJSON *debug_client_expect_response(SZrNetworkStream *stream, int id) {
 
     TEST_ASSERT_TRUE(cJSON_IsNumber(idItem));
     TEST_ASSERT_EQUAL_INT(id, (int)idItem->valuedouble);
+    if (errorItem != ZR_NULL) {
+        char *errorText = cJSON_PrintUnformatted(errorItem);
+        printf("Unexpected debug protocol error: %s\n", errorText != ZR_NULL ? errorText : "<unprintable>");
+        cJSON_free(errorText);
+    }
     TEST_ASSERT_TRUE(errorItem == ZR_NULL);
     TEST_ASSERT_NOT_NULL(cJSON_GetObjectItemCaseSensitive(message, "result"));
     return message;
@@ -3023,24 +3028,40 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
-int main(void) {
+#define RUN_DEBUG_AGENT_TEST(filter, matched, testName) \
+    do { \
+        if ((filter) == ZR_NULL || strcmp((filter), #testName) == 0) { \
+            (matched) = ZR_TRUE; \
+            RUN_TEST(testName); \
+        } \
+    } while (0)
+
+int main(int argc, char **argv) {
+    const char *filter = argc > 1 ? argv[1] : ZR_NULL;
+    TZrBool matched = ZR_FALSE;
+
     UNITY_BEGIN();
-    RUN_TEST(test_debug_agent_rejects_invalid_token_and_continues_execution);
-    RUN_TEST(test_debug_agent_wait_for_client_accepts_initialize_without_auth_token);
-    RUN_TEST(test_debug_agent_wait_for_client_stays_paused_after_invalid_auth);
-    RUN_TEST(test_debug_agent_breakpoint_step_and_variable_snapshots_over_tcp);
-    RUN_TEST(test_debug_agent_exposes_entry_script_locals_with_initializers);
-    RUN_TEST(test_debug_agent_expands_object_members_and_runtime_globals);
-    RUN_TEST(test_debug_agent_expands_native_network_methods_without_asserting);
-    RUN_TEST(test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate);
-    RUN_TEST(test_debug_agent_separates_instance_metadata_and_supports_index_windows);
-    RUN_TEST(test_debug_agent_supports_function_hit_condition_and_log_breakpoints);
-    RUN_TEST(test_debug_agent_supports_caught_exception_breakpoints);
-    RUN_TEST(test_debug_agent_matches_source_breakpoints_across_separator_variants);
-    RUN_TEST(test_debug_agent_step_in_and_out_cross_call_boundaries);
-    RUN_TEST(test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack);
-    RUN_TEST(test_debug_agent_reports_uncaught_exception_from_runtime_without_cli_bridge);
-    RUN_TEST(test_debug_agent_hits_source_breakpoints_on_binary_loaded_functions);
-    RUN_TEST(test_debug_agent_language_gauntlet_project_breakpoint_pause_and_result);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_rejects_invalid_token_and_continues_execution);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_wait_for_client_accepts_initialize_without_auth_token);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_wait_for_client_stays_paused_after_invalid_auth);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_breakpoint_step_and_variable_snapshots_over_tcp);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_exposes_entry_script_locals_with_initializers);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_expands_object_members_and_runtime_globals);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_expands_native_network_methods_without_asserting);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_separates_instance_metadata_and_supports_index_windows);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_supports_function_hit_condition_and_log_breakpoints);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_supports_caught_exception_breakpoints);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_matches_source_breakpoints_across_separator_variants);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_step_in_and_out_cross_call_boundaries);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_reports_uncaught_exception_from_runtime_without_cli_bridge);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_hits_source_breakpoints_on_binary_loaded_functions);
+    RUN_DEBUG_AGENT_TEST(filter, matched, test_debug_agent_language_gauntlet_project_breakpoint_pause_and_result);
+    if (filter != ZR_NULL && !matched) {
+        fprintf(stderr, "Unknown debug-agent test filter: %s\n", filter);
+        (void)UNITY_END();
+        return EXIT_FAILURE;
+    }
     return UNITY_END();
 }

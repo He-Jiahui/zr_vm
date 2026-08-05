@@ -150,7 +150,9 @@ static cJSON *debug_client_expect_response(SZrNetworkStream *stream, int id) {
     TEST_ASSERT_EQUAL_INT(id, (int)idItem->valuedouble);
     if (errorItem != ZR_NULL) {
         char *errorText = cJSON_PrintUnformatted(errorItem);
-        printf("Unexpected debug protocol error: %s\n", errorText != ZR_NULL ? errorText : "<unprintable>");
+        printf("Unexpected debug protocol error for request %d: %s\n",
+               id,
+               errorText != ZR_NULL ? errorText : "<unprintable>");
         cJSON_free(errorText);
     }
     TEST_ASSERT_TRUE(errorItem == ZR_NULL);

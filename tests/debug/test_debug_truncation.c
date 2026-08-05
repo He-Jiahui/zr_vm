@@ -4,6 +4,7 @@
 #include "runtime_support.h"
 #include "unity.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_parser.h"
 
 static void test_copy_text_marks_truncated_plain_text(void) {
     TZrChar buffer[24];
@@ -56,7 +57,9 @@ static void test_long_string_value_preview_marks_truncation(void) {
 
 static void test_long_string_value_preview_exposes_paged_chunks(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *entryFunction;
     SZrString *longString;
+    SZrString *sourceName;
     ZrDebugAgent agent;
     ZrDebugEvaluateResult result;
     ZrDebugValuePreview *chunks = ZR_NULL;
@@ -72,10 +75,20 @@ static void test_long_string_value_preview_exposes_paged_chunks(void) {
             "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
     TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    sourceName = ZrCore_String_CreateFromNative(state, "debug_truncation_fixture.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    entryFunction = ZrParser_Source_Compile(
+            state,
+            "return 0;",
+            strlen("return 0;"),
+            sourceName);
+    TEST_ASSERT_NOT_NULL(entryFunction);
     memset(&agent, 0, sizeof(agent));
     memset(&result, 0, sizeof(result));
     error[0] = '\0';
     agent.state = state;
+    agent.entryFunction = entryFunction;
     agent.runMode = ZR_DEBUG_RUN_MODE_PAUSED;
     agent.nextVariableHandleId = ZR_DEBUG_VARIABLE_HANDLE_BASE;
     longString = ZrCore_String_Create(state, (TZrNativeString)longText, strlen(longText));
@@ -112,6 +125,7 @@ static void test_long_string_value_preview_exposes_paged_chunks(void) {
 
     ZrDebug_Free(chunks);
     ZrDebug_Free(agent.variableHandles);
+    ZrCore_Function_Free(state, entryFunction);
     ZrTests_Runtime_State_Destroy(state);
 }
 
