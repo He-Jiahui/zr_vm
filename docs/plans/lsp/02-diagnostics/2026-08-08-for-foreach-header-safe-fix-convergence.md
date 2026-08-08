@@ -2,8 +2,8 @@
 doc_type: milestone-detail
 plan_id: lsp-02-diagnostics
 record_id: 2026-08-08-for-foreach-header-safe-fix-convergence
-status: validated_pending_integration
-validated_at: 2026-08-08 12:46 +08:00
+status: completed
+completed_at: 2026-08-08 13:20 +08:00
 source_plans:
   - docs/plans/lsp/02-diagnostics-and-errors.md
   - docs/plans/lsp/03-lsp-robustness-and-position.md
@@ -17,7 +17,7 @@ evidence_scope: for-foreach-header-safe-fix-convergence
 
 | 完成时间 | 状态 | 完成项目 |
 |---|---|---|
-| 2026-08-08 12:46 +08:00 | 已验证，待主树集成 | `missing_for_header_close`、`missing_for_header_separator`、`missing_foreach_header_close`与`missing_foreach_in_keyword`均从parser structured diagnostic发布唯一machine-applicable edit，并由generic LSP code action在v2 apply-edit-rebind后清除对应code；隔离GCC/Clang/MSVC parser 43/43与advanced editor suite均真实exit 0 |
+| 2026-08-08 13:20 +08:00 | 已完成 | `missing_for_header_close`、`missing_for_header_separator`、`missing_foreach_header_close`与`missing_foreach_in_keyword`均从parser structured diagnostic发布唯一machine-applicable edit，并由generic LSP code action在v2 apply-edit-rebind后清除对应code；精确代码树已主树集成为`ae63bef`，GCC/Clang/MSVC parser 43/43与advanced editor suite均真实exit 0 |
 
 ## 已实现契约
 
@@ -34,9 +34,10 @@ evidence_scope: for-foreach-header-safe-fix-convergence
 - GCC 11.4、Clang 14和MSVC 19.44分别直接执行`zr_vm_compiler_semantic_query_diagnostics_test`，均为43 Tests / 0 Failures / 0 Ignored、真实exit 0。
 - 三套工具链同样直接执行`zr_vm_language_server_lsp_advanced_editor_features_test`；四项新增for/foreach header code-action测试均Pass，suite均以`0 failure(s)`结束且真实exit 0。
 - advanced suite末尾invalid code-lens fixture仍会打印预期compiler diagnostic；测试进程在三套工具链均以exit 0结束，不是本里程碑失败。
+- 隔离提交`cb2a886`已以主树提交`ae63bef`精确集成，`git diff --exit-code cb2a886 ae63bef`为0。完成时在这同一精确树上再次直接运行GCC 11.4、Clang 14与MSVC 19.44的两项focused executable：三套parser均为43 Tests / 0 Failures / 0 Ignored，advanced editor均以0 failure(s)结束，进程退出码均为0。
 
 ## 集成边界
 
-- 本记录对应隔离叶子，尚未写入主树完成状态。后续只允许clean index下精确集成该叶子提交，并在同一主树基线重放三工具链parser与advanced editor测试后，才可将本记录和集中计划升级为`completed`。
+- 代码叶子`cb2a886`已精确集成为主树`ae63bef`，且两者代码树一致；本记录与集中计划据此完成收口。此状态提交只更新完成记录，主树摘取时不得混入REPL spec、VS Code/WASM worktree或build输出。
 - 不改变diagnostic registry、semantic query、artifact/binary、code-action snapshot或JSON schema；不修改LSP production、stdio、CLI或CMake。
 - 其他delimiter、replacement、module/property/ownership diagnostics及L3全量registry、性能、cancellation、乱序race证据仍未完成。
