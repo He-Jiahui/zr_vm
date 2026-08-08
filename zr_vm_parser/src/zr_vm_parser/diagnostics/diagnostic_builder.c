@@ -596,60 +596,108 @@ TZrBool ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(SZrState *state,
             suggestion);
 }
 
+static TZrBool build_missing_header_fix(SZrState *state,
+                                        SZrStructuredDiagnostic *out,
+                                        SZrFileRange location,
+                                        SZrFileRange fixLocation,
+                                        const TZrChar *code,
+                                        const TZrChar *message,
+                                        const TZrChar *cause,
+                                        const TZrChar *suggestion,
+                                        const TZrChar *title,
+                                        const TZrChar *editText) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                code,
+                message,
+                cause,
+                suggestion)) {
+        return ZR_FALSE;
+    }
+
+    fixLocation.end = fixLocation.start;
+    if (!ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                title,
+                fixLocation,
+                editText,
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderClose(SZrState *state,
                                                               SZrStructuredDiagnostic *out,
-                                                              SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
+                                                              SZrFileRange location,
+                                                              SZrFileRange fixLocation) {
+    return build_missing_header_fix(
             state,
             out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
             location,
+            fixLocation,
             "missing_for_header_close",
             "Missing closing ')' in for header",
             "The for statement header started with '(', but the parser reached the loop body before a closing ')' appeared.",
-            "Insert ')' after the for header before the loop body.");
+            "Insert ')' after the for header before the loop body.",
+            "Insert missing ')'",
+            ")");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderSeparator(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
-                                                                  SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
+                                                                  SZrFileRange location,
+                                                                  SZrFileRange fixLocation) {
+    return build_missing_header_fix(
             state,
             out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
             location,
+            fixLocation,
             "missing_for_header_separator",
             "Missing ';' between for header clauses",
             "A traditional for header requires ';' between initializer, condition, and step clauses, but another clause started first.",
-            "Insert ';' between the for header clauses.");
+            "Insert ';' between the for header clauses.",
+            "Insert missing ';'",
+            ";");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingForeachHeaderClose(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
-                                                                  SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
+                                                                  SZrFileRange location,
+                                                                  SZrFileRange fixLocation) {
+    return build_missing_header_fix(
             state,
             out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
             location,
+            fixLocation,
             "missing_foreach_header_close",
             "Missing closing ')' in foreach header",
             "The foreach header started with '(', but the parser reached the loop body before a closing ')' appeared.",
-            "Insert ')' after the foreach iterable before the loop body.");
+            "Insert ')' after the foreach iterable before the loop body.",
+            "Insert missing ')'",
+            ")");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingForeachInKeyword(SZrState *state,
                                                                SZrStructuredDiagnostic *out,
-                                                               SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
+                                                               SZrFileRange location,
+                                                               SZrFileRange fixLocation) {
+    return build_missing_header_fix(
             state,
             out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
             location,
+            fixLocation,
             "missing_foreach_in_keyword",
             "Missing 'in' in foreach header",
             "The foreach header has a pattern, but the parser did not find 'in' before the iterable expression.",
-            "Insert 'in' between the foreach pattern and iterable expression.");
+            "Insert 'in' between the foreach pattern and iterable expression.",
+            "Insert missing 'in'",
+            "in ");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingSwitchCaseHeaderClose(SZrState *state,

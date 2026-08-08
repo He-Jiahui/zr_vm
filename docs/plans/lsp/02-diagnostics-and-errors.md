@@ -84,6 +84,8 @@ parser recovery产生poisoned/unknown facts并限制级联；后续diagnostic标
 
 [2026-08-05 using-resource-close safe-fix convergence](./02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md) 已完成`missing_using_resource_close`验证与主树集成：parser保留using body `{` primary、在current lexer cursor发布零宽`)` machine fix；通用LSP code-action只消费structured `fixes[]`并在v2重新绑定后清除该code，不按using AST、diagnostic code、message或源码文本重建。主树GCC、Clang和MSVC定向parser 39/39及advanced editor suite均真实exit 0；stdio/CLI全链验收、其他delimiter/replacement family、registry全覆盖和L3整体仍未完成。
 
+[2026-08-08 for/foreach header safe-fix convergence](./02-diagnostics/2026-08-08-for-foreach-header-safe-fix-convergence.md) 已完成隔离叶子验证，待主树精确集成：`missing_for_header_close`、`missing_for_header_separator`、`missing_foreach_header_close`和`missing_foreach_in_keyword`分别保留既有recovery primary，并以current lexer cursor或iterable token start发布零宽`)`、`;`、`)`、`in ` machine fix；通用LSP code-action只消费structured `fixes[]`并在v2重新绑定后清除对应code，不按loop AST、diagnostic code、message或源码文本重建。隔离GCC、Clang和MSVC的parser 43/43与advanced editor suite均真实exit 0；主树重放、stdio/CLI全链验收、其他delimiter/replacement family、registry全覆盖和L3整体仍未完成。
+
 ## Diagnostic Registry 与验收
 
 每个diagnostic registry entry必须声明：stable code、message id/arguments、severity、producing fact/query、primary role、related role集合、suppression/recovery policy和允许的fix applicability。协议层不得从英文message反推code。
