@@ -129,6 +129,32 @@ static void stdio_request_cancel(SZrStdioServer *server, const cJSON *id) {
     free(idKey);
 }
 
+static void stdio_request_mark_input_changed(SZrStdioServer *server) {
+    SZrStdioRequestInputState *input;
+
+    if (server == NULL) {
+        return;
+    }
+
+    input = &server->requestInput;
+    stdio_request_input_lock(input);
+    input->inputGeneration++;
+    stdio_request_input_unlock(input);
+}
+
+static TZrBool stdio_notification_changes_input_state(const char *method) {
+    return method != NULL &&
+           (strcmp(method, ZR_LSP_METHOD_ZR_SELECTED_PROJECT) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_OPEN) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CHANGE) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CLOSE) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DID_SAVE) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WATCHED_FILES) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CREATE_FILES) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_RENAME_FILES) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_DELETE_FILES) == 0);
+}
+
 static void stdio_request_enqueue(SZrStdioServer *server, cJSON *message, TZrBool isParseError) {
     SZrStdioInboundMessage *inbound;
     SZrStdioRequestInputState *input;
@@ -148,6 +174,7 @@ static void stdio_request_enqueue(SZrStdioServer *server, cJSON *message, TZrBoo
     inbound->isParseError = isParseError;
     input = &server->requestInput;
     stdio_request_input_lock(input);
+    inbound->inputGeneration = input->inputGeneration;
     if (input->tail != NULL) {
         input->tail->next = inbound;
     } else {
@@ -182,6 +209,8 @@ static void stdio_request_handle_input_message(SZrStdioServer *server, cJSON *me
     id = cJSON_GetObjectItemCaseSensitive(message, ZR_LSP_JSON_RPC_FIELD_ID);
     if (id != NULL) {
         stdio_request_register(server, id);
+    } else if (stdio_notification_changes_input_state(method)) {
+        stdio_request_mark_input_changed(server);
     }
     stdio_request_enqueue(server, message, ZR_FALSE);
 }
@@ -265,7 +294,8 @@ TZrBool ZrLanguageServer_StdioRequestInput_Start(SZrStdioServer *server) {
 
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
                                                  cJSON **outMessage,
-                                                 TZrBool *outIsParseError) {
+                                                 TZrBool *outIsParseError,
+                                                 TZrUInt64 *outInputGeneration) {
     SZrStdioRequestInputState *input;
     SZrStdioInboundMessage *inbound;
 
@@ -275,7 +305,10 @@ TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
     if (outIsParseError != NULL) {
         *outIsParseError = ZR_FALSE;
     }
-    if (server == NULL || outMessage == NULL || outIsParseError == NULL) {
+    if (outInputGeneration != NULL) {
+        *outInputGeneration = 0;
+    }
+    if (server == NULL || outMessage == NULL || outIsParseError == NULL || outInputGeneration == NULL) {
         return ZR_FALSE;
     }
 
@@ -297,11 +330,14 @@ TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
 
     *outMessage = inbound->message;
     *outIsParseError = inbound->isParseError;
+    *outInputGeneration = inbound->inputGeneration;
     free(inbound);
     return ZR_TRUE;
 }
 
-void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server, const cJSON *id) {
+void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server,
+                                                  const cJSON *id,
+                                                  TZrUInt64 inputGeneration) {
     char *idKey;
 
     if (server == NULL) {
@@ -312,6 +348,7 @@ void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server, const c
     stdio_request_input_lock(&server->requestInput);
     free(server->activeRequestIdKey);
     server->activeRequestIdKey = idKey;
+    server->activeRequestInputGeneration = inputGeneration;
     stdio_request_input_unlock(&server->requestInput);
 }
 
@@ -330,6 +367,20 @@ TZrBool ZrLanguageServer_StdioRequestInput_IsActiveCancelled(SZrStdioServer *ser
     }
     stdio_request_input_unlock(&server->requestInput);
     return cancelled;
+}
+
+TZrBool ZrLanguageServer_StdioRequestInput_IsActiveContentModified(SZrStdioServer *server) {
+    TZrBool modified = ZR_FALSE;
+
+    if (server == NULL) {
+        return ZR_FALSE;
+    }
+
+    stdio_request_input_lock(&server->requestInput);
+    modified = server->activeRequestIdKey != NULL &&
+               server->activeRequestInputGeneration != server->requestInput.inputGeneration;
+    stdio_request_input_unlock(&server->requestInput);
+    return modified;
 }
 
 void ZrLanguageServer_StdioRequestInput_Complete(SZrStdioServer *server, const cJSON *id) {
@@ -359,6 +410,7 @@ void ZrLanguageServer_StdioRequestInput_Complete(SZrStdioServer *server, const c
     }
     free(server->activeRequestIdKey);
     server->activeRequestIdKey = NULL;
+    server->activeRequestInputGeneration = 0;
     stdio_request_input_unlock(input);
     free(idKey);
 }

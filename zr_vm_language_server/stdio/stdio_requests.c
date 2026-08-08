@@ -10,6 +10,18 @@ TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *s
                                                                      SZrLspContext *context,
                                                                      SZrString *uri);
 
+static TZrBool send_active_request_lifecycle_error(SZrStdioServer *server, const cJSON *id) {
+    if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
+        send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
+        return ZR_TRUE;
+    }
+    if (ZrLanguageServer_StdioRequestInput_IsActiveContentModified(server)) {
+        send_error_response(id, ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE, "Content modified");
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
 void handle_request_message(SZrStdioServer *server,
                             const cJSON *id,
                             const char *method,
@@ -20,35 +32,39 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
-    if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
-        send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
+    if (send_active_request_lifecycle_error(server, id)) {
         return;
     }
 
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZE) == 0) {
         result = handle_initialize_request(server, params);
+        if (send_active_request_lifecycle_error(server, id)) {
+            cJSON_Delete(result);
+            return;
+        }
         send_result_response(id, result != NULL ? result : cJSON_CreateNull());
         return;
     }
 
     if (strcmp(method, ZR_LSP_METHOD_SHUTDOWN) == 0) {
         server->shutdownRequested = ZR_TRUE;
+        if (send_active_request_lifecycle_error(server, id)) {
+            return;
+        }
         send_result_response(id, NULL);
         return;
     }
 
     if (!dispatch_request_method(server, method, params, &result)) {
-        if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
-            send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
+        if (send_active_request_lifecycle_error(server, id)) {
             return;
         }
         send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
         return;
     }
 
-    if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
+    if (send_active_request_lifecycle_error(server, id)) {
         cJSON_Delete(result);
-        send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
         return;
     }
 

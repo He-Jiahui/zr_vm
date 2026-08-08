@@ -193,6 +193,7 @@ int main(void) {
     for (;;) {
         cJSON *message = NULL;
         TZrBool isParseError = ZR_FALSE;
+        TZrUInt64 inputGeneration = 0;
         const cJSON *id;
         const cJSON *methodJson;
         const cJSON *params;
@@ -200,7 +201,10 @@ int main(void) {
         int shouldExit = 0;
         int notificationExitCode = 0;
 
-        if (!ZrLanguageServer_StdioRequestInput_Take(&server, &message, &isParseError)) {
+        if (!ZrLanguageServer_StdioRequestInput_Take(&server,
+                                                      &message,
+                                                      &isParseError,
+                                                      &inputGeneration)) {
             break;
         }
 
@@ -224,7 +228,7 @@ int main(void) {
         params = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_PARAMS);
 
         if (id != NULL && method != NULL) {
-            ZrLanguageServer_StdioRequestInput_Activate(&server, id);
+            ZrLanguageServer_StdioRequestInput_Activate(&server, id, inputGeneration);
             handle_request_message(&server, id, method, params);
             ZrLanguageServer_StdioRequestInput_Complete(&server, id);
         } else {

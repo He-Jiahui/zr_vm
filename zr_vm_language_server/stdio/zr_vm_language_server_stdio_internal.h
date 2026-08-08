@@ -55,6 +55,7 @@ typedef enum EZrStdioPositionEncoding {
 typedef struct SZrStdioInboundMessage {
     cJSON *message;
     TZrBool isParseError;
+    TZrUInt64 inputGeneration;
     struct SZrStdioInboundMessage *next;
 } SZrStdioInboundMessage;
 
@@ -75,6 +76,7 @@ typedef struct SZrStdioRequestInputState {
     SZrStdioInboundMessage *head;
     SZrStdioInboundMessage *tail;
     SZrStdioRequestCancellation *requests;
+    TZrUInt64 inputGeneration;
     TZrBool inputClosed;
 } SZrStdioRequestInputState;
 
@@ -86,6 +88,7 @@ typedef struct SZrStdioServer {
     SZrSemanticTokenCache semanticTokenCache;
     SZrStdioRequestInputState requestInput;
     char *activeRequestIdKey;
+    TZrUInt64 activeRequestInputGeneration;
     EZrStdioPositionEncoding positionEncoding;
     TZrBool shutdownRequested;
 } SZrStdioServer;
@@ -107,9 +110,13 @@ TZrBool ZrLanguageServer_StdioRequestInput_Init(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Start(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
                                                  cJSON **outMessage,
-                                                 TZrBool *outIsParseError);
-void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server, const cJSON *id);
+                                                 TZrBool *outIsParseError,
+                                                 TZrUInt64 *outInputGeneration);
+void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server,
+                                                  const cJSON *id,
+                                                  TZrUInt64 inputGeneration);
 TZrBool ZrLanguageServer_StdioRequestInput_IsActiveCancelled(SZrStdioServer *server);
+TZrBool ZrLanguageServer_StdioRequestInput_IsActiveContentModified(SZrStdioServer *server);
 void ZrLanguageServer_StdioRequestInput_Complete(SZrStdioServer *server, const cJSON *id);
 
 cJSON *serialize_position(SZrLspPosition position);

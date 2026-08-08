@@ -3066,6 +3066,33 @@ async function main() {
             !Object.prototype.hasOwnProperty.call(report, 'items')),
     'workspace/diagnostic must return unchanged reports for matching previousResultIds');
 
+    const staleWorkspaceDiagnostics = client.requestWithId('workspace/diagnostic', {});
+    client.notify('textDocument/didChange', {
+        textDocument: { uri: genericUri, version: 2 },
+        contentChanges: [{ text: `${genericText}\n// generation two\n` }],
+    });
+    let contentModifiedError = null;
+    try {
+        await staleWorkspaceDiagnostics.promise;
+    } catch (error) {
+        contentModifiedError = JSON.parse(error.message);
+    }
+    assert(contentModifiedError && contentModifiedError.code === -32801,
+        'workspace/diagnostic must reject a response made stale by didChange');
+    const generationTwoDiagnostics = await waitForDiagnosticsUriVersion(
+        client,
+        genericUri,
+        2,
+        'didChange after an active workspace request must publish diagnostics for version two');
+    assert(Array.isArray(generationTwoDiagnostics.diagnostics),
+        'generation two diagnostics must remain a structured array');
+    const generationTwoWorkspaceDiagnostics = await client.request('workspace/diagnostic', {});
+    assert(generationTwoWorkspaceDiagnostics &&
+        Array.isArray(generationTwoWorkspaceDiagnostics.items) &&
+        generationTwoWorkspaceDiagnostics.items.some((report) =>
+            report && diagnosticRelatedUriMatches(genericUri, report.uri) && report.version === 2),
+    'workspace/diagnostic after didChange must only publish the current document version');
+
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [
             { uri: watchedBinaryFixture.binaryUri, type: 2 },

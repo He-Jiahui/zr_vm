@@ -90,6 +90,8 @@
 
 [2026-08-08 stdio cancellation lifecycle](./03-robustness/2026-08-08-stdio-cancellation-lifecycle.md) 完成reader-thread request cancellation registry、active/queued精确JSON-RPC id取消、workspace diagnostics cooperative stop和`-32800` stale-success suppression；乱序双request smoke以50ms门槛验收。该记录只关闭stdio cancellation leaf，snapshot race、edit/close压力矩阵和完整性能/内存预算仍待后续。
 
+[2026-08-08 stdio content-modified fence](./03-robustness/2026-08-08-stdio-content-modified-fence.md) 完成reader-observed state mutation generation与per-inbound FIFO snapshot；后续`didChange`即使先被reader排队，前序request仍只返回`-32801`而不发布stale success，更新后的request则使用v2。该记录只关闭L6的content-modified leaf，immutable snapshot、完整edit/cancel/close压力和性能/内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。
