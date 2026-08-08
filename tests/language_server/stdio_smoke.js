@@ -306,6 +306,55 @@ function createWatchedProjectFixture() {
     };
 }
 
+function createWorkspaceLatencyFixture() {
+    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-latency-'));
+    const sourcePath = path.join(rootPath, 'src');
+    const projectPath = path.join(rootPath, 'workspace_latency.zrp');
+    const targetPath = path.join(sourcePath, 'target.zr');
+    const imports = [];
+
+    for (let index = 0; index < 99; index += 1) {
+        const name = 'helper_' + String(index).padStart(2, '0');
+
+        imports.push('var ' + name + ' = import("' + name + '");');
+    }
+    const targetText = [
+        'module target;',
+        '',
+        ...imports,
+        '',
+        'pub fn workspace_latency_target(): int {',
+        '    return 1;',
+        '}',
+        '',
+    ].join('\n');
+
+    fs.mkdirSync(sourcePath, { recursive: true });
+    fs.writeFileSync(projectPath, JSON.stringify({
+        name: 'workspace_latency',
+        source: 'src',
+        binary: 'bin',
+        entry: 'target',
+    }, null, 2));
+    fs.writeFileSync(targetPath, targetText);
+    for (let index = 0; index < 99; index += 1) {
+        const name = 'helper_' + String(index).padStart(2, '0');
+
+        fs.writeFileSync(path.join(sourcePath, name + '.zr'), [
+            'module ' + name + ';',
+            'pub fn ' + name + '(): int { return ' + index + '; }',
+            '',
+        ].join('\n'));
+    }
+
+    return {
+        rootPath,
+        projectUri: pathToFileURL(projectPath).toString(),
+        targetUri: pathToFileURL(targetPath).toString(),
+        targetText,
+    };
+}
+
 function createModuleIdentityRenameFixture() {
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-module-rename-'));
     const sourcePath = path.join(rootPath, 'src');
@@ -554,6 +603,7 @@ let importDiagnosticsFixtureRootToCleanup = null;
 let fileOperationsFixtureRootToCleanup = null;
 let moduleIdentityRenameFixtureRootToCleanup = null;
 let descriptorPluginGenericFixtureRootToCleanup = null;
+let workspaceLatencyFixtureRootToCleanup = null;
 
 class LspClient {
     constructor(serverPath) {
@@ -806,6 +856,7 @@ async function main() {
     const moduleIdentityRenameFixture = createModuleIdentityRenameFixture();
     const descriptorPluginGenericFixture =
         createDescriptorPluginGenericCallableFixture(serverPath);
+    const workspaceLatencyFixture = createWorkspaceLatencyFixture();
     watchedFixtureRootToCleanup = watchedFixture.rootPath;
     watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
     importDiagnosticsFixtureRootToCleanup = importDiagnosticsFixture.rootPath;
@@ -813,6 +864,7 @@ async function main() {
     moduleIdentityRenameFixtureRootToCleanup = moduleIdentityRenameFixture.rootPath;
     descriptorPluginGenericFixtureRootToCleanup =
         descriptorPluginGenericFixture.rootPath;
+    workspaceLatencyFixtureRootToCleanup = workspaceLatencyFixture.rootPath;
 
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
@@ -2300,6 +2352,60 @@ async function main() {
     assert(Array.isArray(diagnosticsLatencyClosed.diagnostics) &&
         diagnosticsLatencyClosed.diagnostics.length === 0,
     'warm diagnostics fixture didClose must clear diagnostics');
+
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: workspaceLatencyFixture.projectUri, type: 1 },
+        ],
+    });
+    const workspaceLatencySymbols = await client.request('workspace/symbol', {
+        query: 'workspace_latency_target',
+    });
+    assert(Array.isArray(workspaceLatencySymbols) && workspaceLatencySymbols.some((item) =>
+        item &&
+        item.location &&
+        diagnosticRelatedUriMatches(workspaceLatencyFixture.targetUri, item.location.uri) &&
+        item.name === 'workspace_latency_target'),
+    '100-file workspace fixture must index the target source before latency sampling');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: workspaceLatencyFixture.targetUri,
+            languageId: 'zr',
+            version: 1,
+            text: workspaceLatencyFixture.targetText + '// workspace latency 00\n',
+        },
+    });
+    const workspaceLatencyInitial = await waitForDiagnosticsUriVersion(
+        client,
+        workspaceLatencyFixture.targetUri,
+        1,
+        '100-file workspace latency fixture must publish version one');
+    assert(Array.isArray(workspaceLatencyInitial.diagnostics) &&
+        workspaceLatencyInitial.diagnostics.length === 0,
+    '100-file workspace latency fixture must open without diagnostics');
+    const workspaceIncrementalDiagnosticsLatency = await measureWarmDiagnosticsLatency(
+        client,
+        workspaceLatencyFixture.targetUri,
+        workspaceLatencyFixture.targetText);
+    assertWarmRequestBudget(
+        '100-file workspace incremental diagnostics',
+        workspaceIncrementalDiagnosticsLatency,
+        500);
+    console.log(
+        'LSP 100-file workspace incremental diagnostics latency ms: p50=' +
+        workspaceIncrementalDiagnosticsLatency.p50.toFixed(2) +
+        ' p95=' + workspaceIncrementalDiagnosticsLatency.p95.toFixed(2) +
+        ' p99=' + workspaceIncrementalDiagnosticsLatency.p99.toFixed(2));
+    client.notify('textDocument/didClose', {
+        textDocument: { uri: workspaceLatencyFixture.targetUri },
+    });
+    const workspaceLatencyClosed = await waitForDiagnosticsUri(
+        client,
+        workspaceLatencyFixture.targetUri,
+        '100-file workspace latency fixture didClose diagnostics uri mismatch');
+    assert(Array.isArray(workspaceLatencyClosed.diagnostics) &&
+        workspaceLatencyClosed.diagnostics.length === 0,
+    '100-file workspace latency fixture didClose must clear diagnostics');
 
     client.notify('textDocument/didClose', {
         textDocument: { uri: descriptorPluginGenericFixture.mainUri },
@@ -4022,12 +4128,14 @@ async function main() {
     cleanupPath(fileOperationsFixtureRootToCleanup);
     cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
     cleanupPath(descriptorPluginGenericFixtureRootToCleanup);
+    cleanupPath(workspaceLatencyFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
     fileOperationsFixtureRootToCleanup = null;
     moduleIdentityRenameFixtureRootToCleanup = null;
     descriptorPluginGenericFixtureRootToCleanup = null;
+    workspaceLatencyFixtureRootToCleanup = null;
 }
 
 main().catch((error) => {
@@ -4037,12 +4145,14 @@ main().catch((error) => {
     cleanupPath(fileOperationsFixtureRootToCleanup);
     cleanupPath(moduleIdentityRenameFixtureRootToCleanup);
     cleanupPath(descriptorPluginGenericFixtureRootToCleanup);
+    cleanupPath(workspaceLatencyFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
     fileOperationsFixtureRootToCleanup = null;
     moduleIdentityRenameFixtureRootToCleanup = null;
     descriptorPluginGenericFixtureRootToCleanup = null;
+    workspaceLatencyFixtureRootToCleanup = null;
     console.error(error.stack || String(error));
     process.exit(1);
 });

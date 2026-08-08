@@ -96,6 +96,8 @@
 
 [2026-08-08 single-document diagnostics latency budget](./03-robustness/2026-08-08-single-document-diagnostics-latency-budget.md) 完成versioned trivia edit到同version publishDiagnostics的20样本测量与250ms p95门禁；10次MSVC进程最差p95为10.23ms。100-file和内存预算仍待后续。
 
+[2026-08-08 100-file workspace incremental latency budget](./03-robustness/2026-08-08-100-file-workspace-incremental-latency-budget.md) 完成100个source、target显式依赖99个helper的真实临时项目索引；target的20次versioned trivia edit严格等待同URI/version publishDiagnostics，并以500ms p95为失败门禁。10次MSVC stdio进程最差p95为141.18ms；峰值内存、cache/LRU、跨平台可比性能和完整snapshot stress仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。
