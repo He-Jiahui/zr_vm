@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-08 13:20 +08:00
+updated_at: 2026-08-08 17:02 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -78,10 +78,12 @@ source_plans:
 | 2026-08-05 17:13 +08:00 | 已完成 | LSP 02 catch-pattern-close safe fix：`missing_catch_pattern_close`保留catch body `{` primary、在current lexer cursor发布零宽`)` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按catch AST/message/source重建；主树GCC/Clang/MSVC定向parser 38/38与advanced editor suite均真实exit 0 | [Catch-pattern close safe-fix convergence](../02-diagnostics/2026-08-05-catch-pattern-close-safe-fix-convergence.md) |
 | 2026-08-05 18:19 +08:00 | 已完成 | LSP 02 using-resource-close safe fix：`missing_using_resource_close`保留using body `{` primary、在current lexer cursor发布零宽`)` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按using AST/code/message/source重建；主树GCC/Clang/MSVC定向parser 39/39与advanced editor suite均真实exit 0 | [Using-resource close safe-fix convergence](../02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md) |
 | 2026-08-08 13:20 +08:00 | 已完成 | LSP 02 for/foreach header safe fixes：`missing_for_header_close`、`missing_for_header_separator`、`missing_foreach_header_close`与`missing_foreach_in_keyword`分别发布零宽`)`、`;`、`)`与`in ` machine-applicable edit；generic LSP code action只消费structured fix并在v2重新绑定后清除诊断，不按loop AST/code/message/source重建；隔离提交`cb2a886`已精确集成为主树`ae63bef`，GCC/Clang/MSVC定向parser 43/43与advanced editor suite均真实exit 0 | [For/foreach header safe-fix convergence](../02-diagnostics/2026-08-08-for-foreach-header-safe-fix-convergence.md) |
+| 2026-08-08 17:02 +08:00 | 已完成 | LSP 03 stdio cancellation leaf：reader thread以精确JSON-RPC id登记queued/active request，`$/cancelRequest`直接标记token；`workspace/diagnostic`协作停止且response仅返回`-32800`，乱序双request smoke强制50ms门槛；MSVC stdio E2E 10次通过，GCC/Clang POSIX transport harness真实exit 0，完整L6 matrix仍待后续 | [Stdio cancellation lifecycle](../03-robustness/2026-08-08-stdio-cancellation-lifecycle.md) |
 
 ## 当前状态
 
 - 总体目标进行中。当前记录只表示已验收的子里程碑完成，不表示L1-L8整体完成。
 - LSP 04 E1 已完成计划要求的 module、scope、receiver、generic context和visible SymbolId reconstruction；没有稳定canonical fact时不伪造source `TypeId`或const-generic runtime carrier。下一步是E2b，以E2a正式fragment parser绑定只读debug context并复用Canonical TypeRef/Place query；随后继续E3-E5，以及property/constructor/meta callable target identity、native generic constraint/effectful method contract、public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
 - LSP 04 E2a formal fragment parser、E2b0/E2b1 binding injection、E2b2 canonical Place、E2b3-E2b5 runtime-root carrier/consumer、E2b6a-E2b6d closure artifact/resolver/origin facts/formal consumer，以及E3a DAP capability context、E3b conditional breakpoint、E3c logpoint pure policy、E4a/E4b canonical result/failure transport、E4c children-handle generation audit和E5 REPL generations已完成。后续Debug/LSP consumer继续只能消费已经发布的 canonical facts。任何 stale、trimmed、missing 或 duplicate identity 必须 fail closed。
+- LSP 03 stdio cancellation leaf已完成：输入线程只维护request queue和精确id token，主线程继续独占semantic state/stdout；active或queued `workspace/diagnostic`取消不会发布stale success。L6整体的snapshot race、rapid edit/close压力、可重复性能和内存预算仍未完成。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

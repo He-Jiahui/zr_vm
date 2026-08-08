@@ -88,6 +88,8 @@
 
 [2026-07-21 array element-separator safe-fix convergence](./02-diagnostics/2026-07-21-array-element-separator-safe-fix-convergence.md) 让`missing_array_element_separator`复用同一通用structured-fix consumer与code-action snapshot；next-element token保持primary，token前逗号edit应用后的新version清除诊断，array assignment保持无action，不新增array-AST/code/message/source fallback。其他delimiter producer、并发race/cancellation与性能内存预算仍待后续。
 
+[2026-08-08 stdio cancellation lifecycle](./03-robustness/2026-08-08-stdio-cancellation-lifecycle.md) 完成reader-thread request cancellation registry、active/queued精确JSON-RPC id取消、workspace diagnostics cooperative stop和`-32800` stale-success suppression；乱序双request smoke以50ms门槛验收。该记录只关闭stdio cancellation leaf，snapshot race、edit/close压力矩阵和完整性能/内存预算仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

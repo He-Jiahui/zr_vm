@@ -20,6 +20,11 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
+    if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
+        send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
+        return;
+    }
+
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZE) == 0) {
         result = handle_initialize_request(server, params);
         send_result_response(id, result != NULL ? result : cJSON_CreateNull());
@@ -33,7 +38,17 @@ void handle_request_message(SZrStdioServer *server,
     }
 
     if (!dispatch_request_method(server, method, params, &result)) {
+        if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
+            send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
+            return;
+        }
         send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
+        return;
+    }
+
+    if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
+        cJSON_Delete(result);
+        send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
         return;
     }
 

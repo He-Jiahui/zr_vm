@@ -157,8 +157,6 @@ void free_uri_cache(SZrUriCache *cache) {
 int main(void) {
     SZrStdioServer server;
     SZrCallbackGlobal callbacks = {0};
-    char *payload;
-    size_t payloadLength;
     int exitCode = 1;
 
     memset(&server, 0, sizeof(server));
@@ -186,9 +184,15 @@ int main(void) {
         return 1;
     }
 
+    if (!ZrLanguageServer_StdioRequestInput_Init(&server) ||
+        !ZrLanguageServer_StdioRequestInput_Start(&server)) {
+        return 1;
+    }
+
     server.shutdownRequested = ZR_FALSE;
-    while ((payload = read_message_payload(&payloadLength)) != NULL) {
-        cJSON *message = cJSON_ParseWithLength(payload, payloadLength);
+    for (;;) {
+        cJSON *message = NULL;
+        TZrBool isParseError = ZR_FALSE;
         const cJSON *id;
         const cJSON *methodJson;
         const cJSON *params;
@@ -196,27 +200,33 @@ int main(void) {
         int shouldExit = 0;
         int notificationExitCode = 0;
 
-        free(payload);
+        if (!ZrLanguageServer_StdioRequestInput_Take(&server, &message, &isParseError)) {
+            break;
+        }
 
-        if (message == NULL) {
+        if (isParseError) {
             send_error_response(NULL, ZR_LSP_JSON_RPC_PARSE_ERROR_CODE, "Parse error");
             continue;
         }
 
+        id = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
         methodJson = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_METHOD);
         if (!cJSON_IsString((cJSON *)methodJson)) {
-            id = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
             send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
+            if (id != NULL) {
+                ZrLanguageServer_StdioRequestInput_Complete(&server, id);
+            }
             cJSON_Delete(message);
             continue;
         }
 
         method = cJSON_GetStringValue((cJSON *)methodJson);
-        id = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
         params = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_PARAMS);
 
-        if (id != NULL) {
+        if (id != NULL && method != NULL) {
+            ZrLanguageServer_StdioRequestInput_Activate(&server, id);
             handle_request_message(&server, id, method, params);
+            ZrLanguageServer_StdioRequestInput_Complete(&server, id);
         } else {
             handle_notification_message(&server, method, params, &shouldExit, &notificationExitCode);
             if (shouldExit) {

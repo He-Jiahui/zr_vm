@@ -252,6 +252,10 @@ cJSON *handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *
             for (TZrSize bucketIndex = 0; bucketIndex < fileMap->capacity; bucketIndex++) {
                 SZrHashKeyValuePair *pair = fileMap->buckets[bucketIndex];
                 while (pair != ZR_NULL) {
+                    if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
+                        cJSON_Delete(result);
+                        return NULL;
+                    }
                     if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
                         SZrFileVersion *fileVersion =
                                 (SZrFileVersion *)pair->value.value.nativeObject.nativePointer;

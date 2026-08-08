@@ -641,9 +641,12 @@ class LspClient {
         waiter.resolve(nextParams);
     }
 
-    request(method, params, timeoutMs = 10000) {
+    requestWithId(method, params, timeoutMs = 10000) {
         if (this.closed) {
-            return Promise.reject(new Error('Server already exited'));
+            return {
+                id: null,
+                promise: Promise.reject(new Error('Server already exited')),
+            };
         }
 
         const id = this.nextId++;
@@ -654,7 +657,7 @@ class LspClient {
             params,
         });
 
-        return new Promise((resolve, reject) => {
+        const promise = new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pendingResponses.delete(id);
                 reject(new Error(`Timed out waiting for response to ${method}. stderr=${this.stderr()}`));
@@ -663,6 +666,12 @@ class LspClient {
             this.pendingResponses.set(id, { resolve, reject, timer, method });
             this.child.stdin.write(message);
         });
+
+        return { id, promise };
+    }
+
+    request(method, params, timeoutMs = 10000) {
+        return this.requestWithId(method, params, timeoutMs).promise;
     }
 
     notify(method, params) {
@@ -3018,6 +3027,29 @@ async function main() {
         typeof report.resultId === 'string');
     assert(genericWorkspaceReport && genericWorkspaceReport.version === 1,
         'workspace/diagnostic full reports must include the document version');
+
+    const cancellationStartedAt = process.hrtime.bigint();
+    const cancelledWorkspaceDiagnostics = client.requestWithId('workspace/diagnostic', {});
+    const queuedWorkspaceDiagnostics = client.requestWithId('workspace/diagnostic', {});
+    client.notify('$/cancelRequest', { id: queuedWorkspaceDiagnostics.id });
+    client.notify('$/cancelRequest', { id: cancelledWorkspaceDiagnostics.id });
+    const cancellationErrors = await Promise.all([
+        cancelledWorkspaceDiagnostics.promise,
+        queuedWorkspaceDiagnostics.promise,
+    ].map(async (promise) => {
+        try {
+            await promise;
+            return null;
+        } catch (error) {
+            return JSON.parse(error.message);
+        }
+    }));
+    assert(cancellationErrors.every((error) => error && error.code === -32800),
+        'cancelled workspace/diagnostic requests must return RequestCancelled without stale success results');
+    const cancellationElapsedMs = Number(process.hrtime.bigint() - cancellationStartedAt) / 1e6;
+    assert(cancellationElapsedMs < 50,
+        `workspace/diagnostic cancellation must be observed within 50ms, took ${cancellationElapsedMs.toFixed(2)}ms`);
+
     const unchangedWorkspaceDiagnostics = await client.request('workspace/diagnostic', {
         previousResultIds: [
             { uri: genericWorkspaceReport.uri, value: genericWorkspaceReport.resultId },
