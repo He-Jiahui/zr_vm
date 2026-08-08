@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-08 17:56 +08:00
+updated_at: 2026-08-08 18:14 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -84,6 +84,7 @@ source_plans:
 
 | 2026-08-08 17:47 +08:00 | 已完成 | LSP 03 single-document diagnostics latency leaf：20个v2..v21等长trivia edit严格等待同URI/version publishDiagnostics并采样p50/p95/p99；10个MSVC stdio进程最差p95为10.23ms，满足250ms门禁；100-file、内存与跨平台性能仍待后续 | [Single-document diagnostics latency budget](../03-robustness/2026-08-08-single-document-diagnostics-latency-budget.md) |
 | 2026-08-08 17:56 +08:00 | 已完成 | LSP 03 100-file workspace incremental diagnostics latency leaf：临时.zrp项目含100个source，target显式依赖99个helper；项目经watch索引且target symbol可查询后，20个v2..v21 trivia edit严格等待同URI/version publishDiagnostics并采样p50/p95/p99。10个MSVC stdio进程最差p50/p95/p99为55.63/141.18/349.43ms，满足500ms p95门禁；内存、LRU、跨平台性能和完整snapshot stress仍待后续 | [100-file workspace incremental latency budget](../03-robustness/2026-08-08-100-file-workspace-incremental-latency-budget.md) |
+| 2026-08-08 18:14 +08:00 | 已完成 | LSP 03 two historical text snapshots leaf：每个file version保留current加最近两份历史text block，public historical acquire按新到旧返回精确version/generation，并复用ref-count；已借出的v3/v2快照跨v5历史rollover仍可读。MSVC incremental parser 9/9和source-contract suite均真实exit 0；semantic snapshot LRU、256MiB cache、峰值内存、跨平台和完整stress仍待后续 | [Two historical text snapshots](../03-robustness/2026-08-08-two-historical-text-snapshots.md) |
 
 ## 当前状态
 
@@ -92,4 +93,5 @@ source_plans:
 - LSP 04 E2a formal fragment parser、E2b0/E2b1 binding injection、E2b2 canonical Place、E2b3-E2b5 runtime-root carrier/consumer、E2b6a-E2b6d closure artifact/resolver/origin facts/formal consumer，以及E3a DAP capability context、E3b conditional breakpoint、E3c logpoint pure policy、E4a/E4b canonical result/failure transport、E4c children-handle generation audit和E5 REPL generations已完成。后续Debug/LSP consumer继续只能消费已经发布的 canonical facts。任何 stale、trimmed、missing 或 duplicate identity 必须 fail closed。
 - LSP 03 stdio cancellation与content-modified leaves已完成：输入线程只维护request queue、精确id token和reader-observed input generation，主线程继续独占semantic state/stdout；active或queued `workspace/diagnostic`取消不会发布stale success，后续状态变更使旧FIFO request返回`-32801`。L6整体的immutable snapshot、rapid edit/cancel/close压力、峰值内存和cache/LRU预算仍未完成。
 - LSP 03 warm request、single-document diagnostics和100-file workspace incremental diagnostics latency leaves已完成：前者覆盖canonical native hover、closed-generic completion与signatureHelp，后两者严格等待同URI/version diagnostics；均有20样本p50/p95/p99和p95 CI门禁。峰值内存、cache/LRU、跨平台可比性能和完整snapshot stress仍未完成。
+- LSP 03 two historical text snapshots leaf已完成：每个document的file version只持有current与最新两份历史text block，public acquire仍以ref-count保证已借出快照可跨rollover读取。semantic cache不在该固定文本队列内，256MiB workspace LRU、峰值内存、跨平台可比性能和完整snapshot stress仍未完成。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

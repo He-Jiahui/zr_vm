@@ -22,6 +22,13 @@ typedef struct SZrFileVersionContentBlock {
     TZrSize refCount;
 } SZrFileVersionContentBlock;
 
+typedef struct SZrFileVersionHistoricalContent {
+    SZrFileVersionContentBlock *contentBlock;
+    TZrSize version;
+    TZrBool isOpenDocument;
+    TZrBool usesFallbackAst;
+} SZrFileVersionHistoricalContent;
+
 enum EZrFileChangeImpact {
     ZR_FILE_CHANGE_IMPACT_NONE,
     ZR_FILE_CHANGE_IMPACT_MODULE,
@@ -47,6 +54,9 @@ typedef struct SZrFileVersion {
     TZrSize version;                  // 版本号
     TZrBool isOpenDocument;           // 客户端 overlay，而非 workspace disk cache
     SZrFileVersionContentBlock *textBlock; // 当前内容块
+    SZrFileVersionHistoricalContent
+            historicalContent[ZR_LSP_FILE_VERSION_HISTORICAL_CONTENT_CAPACITY];
+    TZrSize historicalContentCount;   // 按新到旧保存，最多两份
     SZrAstNode *ast;                  // 解析后的 AST
     TZrBool usesFallbackAst;            // 当前 AST 是否是旧版本保留下来的 last-good 快照
     TZrBool isDirty;                    // 是否需要重新解析
@@ -156,5 +166,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_FileVersionContentSnapshot_Acqui
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_FileVersionContentSnapshot_Free(
     SZrState *state,
     SZrFileVersionContentSnapshot *snapshot);
+ZR_LANGUAGE_SERVER_API TZrSize
+ZrLanguageServer_FileVersionHistoricalContentSnapshot_Count(
+    const SZrFileVersion *fileVersion);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+    SZrState *state,
+    SZrFileVersion *fileVersion,
+    TZrSize historyIndex,
+    SZrFileVersionContentSnapshot *outSnapshot);
 
 #endif //ZR_VM_LANGUAGE_SERVER_INCREMENTAL_PARSER_H

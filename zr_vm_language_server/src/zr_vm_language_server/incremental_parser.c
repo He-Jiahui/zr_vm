@@ -161,6 +161,57 @@ static void content_block_release(SZrState *state, SZrFileVersionContentBlock *b
     ZrCore_Memory_RawFree(state->global, block, sizeof(SZrFileVersionContentBlock));
 }
 
+static void file_version_clear_historical_content(
+        SZrState *state,
+        SZrFileVersion *fileVersion) {
+    TZrSize index;
+
+    if (state == ZR_NULL || fileVersion == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < fileVersion->historicalContentCount; index++) {
+        content_block_release(state, fileVersion->historicalContent[index].contentBlock);
+    }
+    memset(fileVersion->historicalContent,
+           0,
+           sizeof(fileVersion->historicalContent));
+    fileVersion->historicalContentCount = 0;
+}
+
+static void file_version_retain_current_content(
+        SZrState *state,
+        SZrFileVersion *fileVersion) {
+    SZrFileVersionHistoricalContent retained;
+    TZrSize index;
+    TZrSize retainedCount;
+
+    if (state == ZR_NULL || fileVersion == ZR_NULL ||
+        fileVersion->textBlock == ZR_NULL ||
+        fileVersion->textBlock->content == ZR_NULL) {
+        return;
+    }
+
+    retained.contentBlock = fileVersion->textBlock;
+    retained.version = fileVersion->version;
+    retained.isOpenDocument = fileVersion->isOpenDocument;
+    retained.usesFallbackAst = fileVersion->usesFallbackAst;
+    retainedCount = fileVersion->historicalContentCount;
+    if (retainedCount == ZR_LSP_FILE_VERSION_HISTORICAL_CONTENT_CAPACITY) {
+        content_block_release(
+                state,
+                fileVersion->historicalContent[retainedCount - 1U].contentBlock);
+        retainedCount--;
+    }
+
+    for (index = retainedCount; index > 0; index--) {
+        fileVersion->historicalContent[index] =
+                fileVersion->historicalContent[index - 1U];
+    }
+    fileVersion->historicalContent[0] = retained;
+    fileVersion->historicalContentCount = retainedCount + 1U;
+}
+
 static TZrBool file_version_content_equals(
         const SZrFileVersion *fileVersion,
         const TZrChar *content,
@@ -197,6 +248,10 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
         ZrCore_Memory_RawFree(state->global, fileVersion, sizeof(SZrFileVersion));
         return ZR_NULL;
     }
+    memset(fileVersion->historicalContent,
+           0,
+           sizeof(fileVersion->historicalContent));
+    fileVersion->historicalContentCount = 0;
     fileVersion->ast = ZR_NULL;
     fileVersion->usesFallbackAst = ZR_FALSE;
     fileVersion->isDirty = ZR_TRUE;
@@ -225,6 +280,7 @@ void ZrLanguageServer_FileVersion_Free(SZrState *state, SZrFileVersion *fileVers
 
     content_block_release(state, fileVersion->textBlock);
     fileVersion->textBlock = ZR_NULL;
+    file_version_clear_historical_content(state, fileVersion);
 
     if (fileVersion->ast != ZR_NULL) {
         ZrParser_Ast_Free(state, fileVersion->ast);
@@ -277,6 +333,49 @@ void ZrLanguageServer_FileVersionContentSnapshot_Free(SZrState *state,
     memset(snapshot, 0, sizeof(SZrFileVersionContentSnapshot));
 }
 
+TZrSize ZrLanguageServer_FileVersionHistoricalContentSnapshot_Count(
+        const SZrFileVersion *fileVersion) {
+    if (fileVersion == ZR_NULL) {
+        return 0;
+    }
+
+    return fileVersion->historicalContentCount;
+}
+
+TZrBool ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+        SZrState *state,
+        SZrFileVersion *fileVersion,
+        TZrSize historyIndex,
+        SZrFileVersionContentSnapshot *outSnapshot) {
+    SZrFileVersionHistoricalContent *historicalContent;
+
+    if (outSnapshot != ZR_NULL) {
+        memset(outSnapshot, 0, sizeof(SZrFileVersionContentSnapshot));
+    }
+    if (state == ZR_NULL || fileVersion == ZR_NULL || outSnapshot == ZR_NULL ||
+        historyIndex >= fileVersion->historicalContentCount) {
+        return ZR_FALSE;
+    }
+
+    historicalContent = &fileVersion->historicalContent[historyIndex];
+    if (historicalContent->contentBlock == ZR_NULL ||
+        historicalContent->contentBlock->content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    content_block_retain(historicalContent->contentBlock);
+    outSnapshot->contentBlock = historicalContent->contentBlock;
+    outSnapshot->content = historicalContent->contentBlock->content;
+    outSnapshot->uri = fileVersion->uri;
+    outSnapshot->version = historicalContent->version;
+    outSnapshot->isOpenDocument = historicalContent->isOpenDocument;
+    outSnapshot->contentLength = historicalContent->contentBlock->contentLength;
+    outSnapshot->contentGeneration =
+            historicalContent->contentBlock->contentGeneration;
+    outSnapshot->usesFallbackAst = historicalContent->usesFallbackAst;
+    return ZR_TRUE;
+}
+
 // 更新文件版本内容
 TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  SZrFileVersion *fileVersion,
@@ -300,7 +399,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
         return ZR_FALSE;
     }
 
-    content_block_release(state, fileVersion->textBlock);
+    file_version_retain_current_content(state, fileVersion);
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
     fileVersion->isDirty = !changeInfo->isTokenEquivalent;

@@ -510,6 +510,145 @@ static void test_lsp_update_promotes_synthetic_version_zero_to_open_document(
     TEST_PASS(timer, "LSP Update Promotes Synthetic Version Zero To Open Document");
 }
 
+static void test_file_version_retains_two_historical_content_snapshots(
+        SZrState *state) {
+    const TZrChar *summary = "File Version Retains Two Historical Content Snapshots";
+    const TZrChar *contents[] = {
+        "var version = 1;",
+        "var version = 2;",
+        "var version = 3;",
+        "var version = 4;",
+        "var version = 5;",
+    };
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot newestHistory = {0};
+    SZrFileVersionContentSnapshot olderHistory = {0};
+    SZrFileVersionContentSnapshot absentHistory = {0};
+    SZrFileVersionContentSnapshot rolloverNewestHistory = {0};
+    SZrFileVersionContentSnapshot rolloverOlderHistory = {0};
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Snapshot retention",
+            "Each document must retain exactly the two newest historical content blocks while acquired snapshots remain independently valid");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///two-history-snapshots.zr",
+            strlen("file:///two-history-snapshots.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, contents[0], strlen(contents[0]), 1U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, contents[1], strlen(contents[1]), 2U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, contents[2], strlen(contents[2]), 3U) ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, contents[3], strlen(contents[3]), 4U)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare four versioned content blocks");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    if (fileVersion == ZR_NULL ||
+        ZrLanguageServer_FileVersionHistoricalContentSnapshot_Count(fileVersion) != 2U ||
+        !ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+                state, fileVersion, 0U, &newestHistory) ||
+        !ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+                state, fileVersion, 1U, &olderHistory) ||
+        ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+                state, fileVersion, 2U, &absentHistory)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &newestHistory);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &olderHistory);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &absentHistory);
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Historical content retention count or ordering was incorrect");
+        return;
+    }
+
+    if (newestHistory.version != 3U ||
+        newestHistory.contentLength != strlen(contents[2]) ||
+        memcmp(newestHistory.content, contents[2], newestHistory.contentLength) != 0 ||
+        olderHistory.version != 2U ||
+        olderHistory.contentLength != strlen(contents[1]) ||
+        memcmp(olderHistory.content, contents[1], olderHistory.contentLength) != 0 ||
+        absentHistory.contentBlock != ZR_NULL ||
+        absentHistory.content != ZR_NULL) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &newestHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &olderHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &absentHistory);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Historical snapshots did not expose the newest two prior versions");
+        return;
+    }
+
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, contents[4], strlen(contents[4]), 5U) ||
+        newestHistory.version != 3U ||
+        olderHistory.version != 2U ||
+        memcmp(newestHistory.content, contents[2], newestHistory.contentLength) != 0 ||
+        memcmp(olderHistory.content, contents[1], olderHistory.contentLength) != 0 ||
+        ZrLanguageServer_FileVersionHistoricalContentSnapshot_Count(fileVersion) != 2U ||
+        !ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+                state, fileVersion, 0U, &rolloverNewestHistory) ||
+        !ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+                state, fileVersion, 1U, &rolloverOlderHistory) ||
+        rolloverNewestHistory.version != 4U ||
+        rolloverNewestHistory.contentLength != strlen(contents[3]) ||
+        memcmp(rolloverNewestHistory.content,
+               contents[3],
+               rolloverNewestHistory.contentLength) != 0 ||
+        rolloverOlderHistory.version != 3U ||
+        rolloverOlderHistory.contentLength != strlen(contents[2]) ||
+        memcmp(rolloverOlderHistory.content,
+               contents[2],
+               rolloverOlderHistory.contentLength) != 0) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &newestHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &olderHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &absentHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &rolloverNewestHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &rolloverOlderHistory);
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Acquired historical snapshots did not survive retention rollover");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+
+    if (memcmp(newestHistory.content, contents[2], newestHistory.contentLength) != 0 ||
+        memcmp(olderHistory.content, contents[1], olderHistory.contentLength) != 0 ||
+        memcmp(rolloverNewestHistory.content,
+               contents[3],
+               rolloverNewestHistory.contentLength) != 0 ||
+        memcmp(rolloverOlderHistory.content,
+               contents[2],
+               rolloverOlderHistory.contentLength) != 0) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &newestHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &olderHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &absentHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &rolloverNewestHistory);
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &rolloverOlderHistory);
+        TEST_FAIL(timer, summary, "Acquired historical snapshots did not survive parser release");
+        return;
+    }
+
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &newestHistory);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &olderHistory);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &absentHistory);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &rolloverNewestHistory);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &rolloverOlderHistory);
+    TEST_PASS(timer, summary);
+}
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -559,7 +698,10 @@ int main(void) {
 
     test_lsp_update_promotes_synthetic_version_zero_to_open_document(state);
     TEST_DIVIDER();
-    
+
+    test_file_version_retains_two_historical_content_snapshots(state);
+    TEST_DIVIDER();
+
     // 清理
     ZrCore_GlobalState_Free(global);
     
