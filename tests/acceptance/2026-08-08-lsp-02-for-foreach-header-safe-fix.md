@@ -2,8 +2,8 @@
 doc_type: acceptance-record
 plan_id: lsp-02-diagnostics
 record_id: 2026-08-08-lsp-02-for-foreach-header-safe-fix
-status: validated_pending_integration
-validated_at: 2026-08-08 12:46 +08:00
+status: completed
+completed_at: 2026-08-08 13:20 +08:00
 related_record: docs/plans/lsp/02-diagnostics/2026-08-08-for-foreach-header-safe-fix-convergence.md
 ---
 
@@ -13,7 +13,7 @@ related_record: docs/plans/lsp/02-diagnostics/2026-08-08-for-foreach-header-safe
 
 | 完成时间 | 状态 | 完成项目 |
 |---|---|---|
-| 2026-08-08 12:46 +08:00 | 已验证，待主树集成 | 四类for/foreach header parser diagnostic均发布唯一machine-applicable零宽edit；generic LSP code action应用后以v2重绑定清除该code；隔离GCC/Clang/MSVC定向parser 43/43与advanced editor suite均通过 |
+| 2026-08-08 13:20 +08:00 | 已完成 | 四类for/foreach header parser diagnostic均发布唯一machine-applicable零宽edit；generic LSP code action应用后以v2重绑定清除该code；主树精确代码提交`ae63bef`与隔离提交`cb2a886`无差异，三工具链定向parser 43/43与advanced editor suite均通过 |
 
 ## 验收断言
 
@@ -25,4 +25,4 @@ related_record: docs/plans/lsp/02-diagnostics/2026-08-08-for-foreach-header-safe
 
 - GCC 11.4、Clang 14、MSVC 19.44：`zr_vm_compiler_semantic_query_diagnostics_test`均为43 Tests / 0 Failures / 0 Ignored，真实exit 0。
 - GCC 11.4、Clang 14、MSVC 19.44：`zr_vm_language_server_lsp_advanced_editor_features_test`均以`0 failure(s)`完成、真实exit 0；四项新增for/foreach header测试均Pass。
-- 本验收仍为隔离叶子证据，待主树精确集成并重放同一验证后才可升级为`completed`。
+- `cb2a886`已经主树精确集成为`ae63bef`，`git diff --exit-code cb2a886 ae63bef`为0；完成时在同一精确树上重放上述六个直接测试，记录与集中状态可升级为`completed`。
