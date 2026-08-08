@@ -92,6 +92,8 @@
 
 [2026-08-08 stdio content-modified fence](./03-robustness/2026-08-08-stdio-content-modified-fence.md) 完成reader-observed state mutation generation与per-inbound FIFO snapshot；后续`didChange`或`didClose`即使先被reader排队，前序request仍只返回`-32801`而不发布stale success，更新后的request则使用v2。该记录只关闭L6的content-modified leaf，immutable snapshot、完整edit/cancel/close压力和性能/内存预算仍待后续。
 
+[2026-08-08 warm request latency budget](./03-robustness/2026-08-08-warm-request-latency-budget.md) 完成已验证canonical hover/completion/signatureHelp的20样本p50/p95/p99测量与p95门禁；10次MSVC stdio进程的最差p95仍满足50/100ms预算。diagnostics、100-file、内存和跨平台可比性能仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

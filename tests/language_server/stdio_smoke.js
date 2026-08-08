@@ -10,6 +10,37 @@ function assert(condition, message) {
     }
 }
 
+function percentile(samples, percent) {
+    const ordered = [...samples].sort((left, right) => left - right);
+    const index = Math.min(ordered.length - 1, Math.ceil(ordered.length * percent) - 1);
+
+    return ordered[index];
+}
+
+async function measureWarmRequestLatency(client, method, params, sampleCount = 20) {
+    const samples = [];
+
+    for (let index = 0; index < sampleCount; index += 1) {
+        const startedAt = process.hrtime.bigint();
+
+        await client.request(method, params);
+        samples.push(Number(process.hrtime.bigint() - startedAt) / 1e6);
+    }
+
+    return {
+        p50: percentile(samples, 0.50),
+        p95: percentile(samples, 0.95),
+        p99: percentile(samples, 0.99),
+    };
+}
+
+function assertWarmRequestBudget(name, latency, limitMs) {
+    assert(latency.p95 <= limitMs,
+        name + ' warm p95 must be <= ' + limitMs + 'ms, got ' +
+        'p50=' + latency.p50.toFixed(2) + 'ms p95=' + latency.p95.toFixed(2) + 'ms ' +
+        'p99=' + latency.p99.toFixed(2) + 'ms');
+}
+
 function diagnosticRelatedUriMatches(expectedUri, actualUri) {
     if (actualUri === expectedUri) {
         return true;
@@ -2170,6 +2201,32 @@ async function main() {
         nativeGenericReceiverHover.contents.value.includes(
             'Returns a value using an unconstrained method generic.'),
     'native generic receiver hover should share the structured generic contract');
+
+    const warmHoverLatency = await measureWarmRequestLatency(client, 'textDocument/hover', {
+        textDocument: { uri: nativeCallableUri },
+        position: findPosition(nativeCallableText, 'gc.set_budget(2000)', 0, 5),
+    });
+    const warmCompletionLatency = await measureWarmRequestLatency(client, 'textDocument/completion', {
+        textDocument: { uri: genericUri },
+        position: genericTypePosition,
+    });
+    const warmSignatureLatency = await measureWarmRequestLatency(client, 'textDocument/signatureHelp', {
+        textDocument: { uri: genericUri },
+        position: genericCallPosition,
+    });
+    assertWarmRequestBudget('hover', warmHoverLatency, 50);
+    assertWarmRequestBudget('completion', warmCompletionLatency, 100);
+    assertWarmRequestBudget('signatureHelp', warmSignatureLatency, 100);
+    console.log(
+        'LSP warm request latency ms: hover p50=' + warmHoverLatency.p50.toFixed(2) +
+        ' p95=' + warmHoverLatency.p95.toFixed(2) +
+        ' p99=' + warmHoverLatency.p99.toFixed(2) +
+        '; completion p50=' + warmCompletionLatency.p50.toFixed(2) +
+        ' p95=' + warmCompletionLatency.p95.toFixed(2) +
+        ' p99=' + warmCompletionLatency.p99.toFixed(2) +
+        '; signatureHelp p50=' + warmSignatureLatency.p50.toFixed(2) +
+        ' p95=' + warmSignatureLatency.p95.toFixed(2) +
+        ' p99=' + warmSignatureLatency.p99.toFixed(2));
 
     client.notify('textDocument/didClose', {
         textDocument: { uri: descriptorPluginGenericFixture.mainUri },
