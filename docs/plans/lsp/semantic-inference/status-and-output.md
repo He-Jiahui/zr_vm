@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-08 17:40 +08:00
+updated_at: 2026-08-08 17:47 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -81,6 +81,8 @@ source_plans:
 | 2026-08-08 17:02 +08:00 | 已完成 | LSP 03 stdio cancellation leaf：reader thread以精确JSON-RPC id登记queued/active request，`$/cancelRequest`直接标记token；`workspace/diagnostic`协作停止且response仅返回`-32800`，乱序双request smoke强制50ms门槛；MSVC stdio E2E 10次通过，GCC/Clang POSIX transport harness真实exit 0，完整L6 matrix仍待后续 | [Stdio cancellation lifecycle](../03-robustness/2026-08-08-stdio-cancellation-lifecycle.md) |
 | 2026-08-08 17:31 +08:00 | 已完成 | LSP 03 stdio content-modified leaf：reader对state-changing notification递增input generation，每条inbound message携带FIFO generation snapshot；后续`didChange`或`didClose`在请求激活前已入队时，旧request仍精确返回`-32801`而不发布stale success，v2后的新request保持可用；MSVC E2E/CTest、10次smoke与GCC/Clang POSIX harness均真实exit 0，完整L6 matrix仍待后续 | [Stdio content-modified fence](../03-robustness/2026-08-08-stdio-content-modified-fence.md) |
 | 2026-08-08 17:40 +08:00 | 已完成 | LSP 03 warm request latency leaf：canonical native hover、closed-generic completion与signatureHelp各采样20次并输出p50/p95/p99；10个MSVC stdio进程的最大p95为20.07/15.16/4.17ms，分别满足50/100/100ms门禁；diagnostics、100-file、峰值内存和跨平台可比性能仍待后续 | [Warm request latency budget](../03-robustness/2026-08-08-warm-request-latency-budget.md) |
+
+| 2026-08-08 17:47 +08:00 | 已完成 | LSP 03 single-document diagnostics latency leaf：20个v2..v21等长trivia edit严格等待同URI/version publishDiagnostics并采样p50/p95/p99；10个MSVC stdio进程最差p95为10.23ms，满足250ms门禁；100-file、内存与跨平台性能仍待后续 | [Single-document diagnostics latency budget](../03-robustness/2026-08-08-single-document-diagnostics-latency-budget.md) |
 
 ## 当前状态
 

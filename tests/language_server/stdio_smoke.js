@@ -41,6 +41,35 @@ function assertWarmRequestBudget(name, latency, limitMs) {
         'p99=' + latency.p99.toFixed(2) + 'ms');
 }
 
+async function measureWarmDiagnosticsLatency(client, uri, baseText, sampleCount = 20) {
+    const samples = [];
+
+    for (let index = 0; index < sampleCount; index += 1) {
+        const version = index + 2;
+        const startedAt = process.hrtime.bigint();
+
+        client.notify('textDocument/didChange', {
+            textDocument: { uri, version },
+            contentChanges: [{ text: baseText + '// diagnostics warm ' + String(index).padStart(2, '0') + '\n' }],
+        });
+        const diagnostics = await waitForDiagnosticsUriVersion(
+            client,
+            uri,
+            version,
+            'warm diagnostics must publish the edited document version');
+
+        assert(Array.isArray(diagnostics.diagnostics) && diagnostics.diagnostics.length === 0,
+            'warm diagnostics latency fixture must remain semantically valid');
+        samples.push(Number(process.hrtime.bigint() - startedAt) / 1e6);
+    }
+
+    return {
+        p50: percentile(samples, 0.50),
+        p95: percentile(samples, 0.95),
+        p99: percentile(samples, 0.99),
+    };
+}
+
 function diagnosticRelatedUriMatches(expectedUri, actualUri) {
     if (actualUri === expectedUri) {
         return true;
@@ -799,6 +828,8 @@ async function main() {
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-parser-diagnostic.zr';
     const missingConditionUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-missing-condition.zr';
+    const diagnosticsLatencyUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-diagnostics-latency.zr';
     const formatEditUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-edit.zr';
     const noopFormatUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-noop.zr';
     const importFoldingUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-import-folding.zr';
@@ -938,6 +969,12 @@ async function main() {
         '    value;',
         '    box.shape(m);',
         '    pick(1 + 2, true || false);',
+        '}',
+        '',
+    ].join('\n');
+    const diagnosticsLatencyBaseText = [
+        'fn diagnostics_latency(): int {',
+        '    return 1;',
         '}',
         '',
     ].join('\n');
@@ -2227,6 +2264,42 @@ async function main() {
         '; signatureHelp p50=' + warmSignatureLatency.p50.toFixed(2) +
         ' p95=' + warmSignatureLatency.p95.toFixed(2) +
         ' p99=' + warmSignatureLatency.p99.toFixed(2));
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: diagnosticsLatencyUri,
+            languageId: 'zr',
+            version: 1,
+            text: diagnosticsLatencyBaseText + '// diagnostics warm 00\n',
+        },
+    });
+    const diagnosticsLatencyInitial = await waitForDiagnosticsUriVersion(
+        client,
+        diagnosticsLatencyUri,
+        1,
+        'warm diagnostics fixture must publish version one');
+    assert(Array.isArray(diagnosticsLatencyInitial.diagnostics) &&
+        diagnosticsLatencyInitial.diagnostics.length === 0,
+    'warm diagnostics fixture must open without diagnostics');
+    const warmDiagnosticsLatency = await measureWarmDiagnosticsLatency(
+        client,
+        diagnosticsLatencyUri,
+        diagnosticsLatencyBaseText);
+    assertWarmRequestBudget('diagnostics', warmDiagnosticsLatency, 250);
+    console.log(
+        'LSP warm diagnostics latency ms: p50=' + warmDiagnosticsLatency.p50.toFixed(2) +
+        ' p95=' + warmDiagnosticsLatency.p95.toFixed(2) +
+        ' p99=' + warmDiagnosticsLatency.p99.toFixed(2));
+    client.notify('textDocument/didClose', {
+        textDocument: { uri: diagnosticsLatencyUri },
+    });
+    const diagnosticsLatencyClosed = await waitForDiagnosticsUri(
+        client,
+        diagnosticsLatencyUri,
+        'warm diagnostics fixture didClose diagnostics uri mismatch');
+    assert(Array.isArray(diagnosticsLatencyClosed.diagnostics) &&
+        diagnosticsLatencyClosed.diagnostics.length === 0,
+    'warm diagnostics fixture didClose must clear diagnostics');
 
     client.notify('textDocument/didClose', {
         textDocument: { uri: descriptorPluginGenericFixture.mainUri },
