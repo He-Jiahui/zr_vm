@@ -1537,6 +1537,102 @@ static void test_missing_foreach_in_keyword_builder_publishes_machine_fix(void) 
     ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
 }
 
+static void test_missing_switch_case_header_close_builder_publishes_machine_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrStructuredDiagnosticFix *fix;
+    SZrFileRange location;
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(21U, 1, 22),
+            ZrParser_FilePosition_Create(22U, 1, 23),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingSwitchCaseHeaderClose(
+            g_state,
+            &diagnostic,
+            location));
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic.fixes.length);
+
+    fix = (SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            &diagnostic.fixes, 0U);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Insert missing ')'",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING(")", ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+    TEST_ASSERT_EQUAL_UINT64(21U, fix->editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(21U, fix->editRange.end.offset);
+
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
+static void test_missing_switch_body_close_builder_publishes_machine_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrStructuredDiagnosticFix *fix;
+    SZrFileRange location;
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(35U, 1, 36),
+            ZrParser_FilePosition_Create(35U, 1, 36),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingSwitchBodyClose(
+            g_state,
+            &diagnostic,
+            location));
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic.fixes.length);
+
+    fix = (SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            &diagnostic.fixes, 0U);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Insert missing '}'",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING("}", ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+    TEST_ASSERT_EQUAL_UINT64(35U, fix->editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(35U, fix->editRange.end.offset);
+
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
+static void test_missing_extern_spec_close_builder_publishes_machine_fix(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrStructuredDiagnosticFix *fix;
+    SZrFileRange location;
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(24U, 1, 25),
+            ZrParser_FilePosition_Create(25U, 1, 26),
+            ZR_NULL);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingExternSpecClose(
+            g_state,
+            &diagnostic,
+            location));
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic.fixes.length);
+
+    fix = (SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            &diagnostic.fixes, 0U);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Insert missing ')'",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING(")", ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+    TEST_ASSERT_EQUAL_UINT64(24U, fix->editRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(24U, fix->editRange.end.offset);
+
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 static void test_missing_declaration_body_close_builder_publishes_machine_fix(void) {
     SZrStructuredDiagnostic diagnostic;
     SZrStructuredDiagnosticFix *fix;
@@ -2120,6 +2216,9 @@ int main(void) {
     RUN_TEST(test_missing_for_header_separator_builder_publishes_machine_fix);
     RUN_TEST(test_missing_foreach_header_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_foreach_in_keyword_builder_publishes_machine_fix);
+    RUN_TEST(test_missing_switch_case_header_close_builder_publishes_machine_fix);
+    RUN_TEST(test_missing_switch_body_close_builder_publishes_machine_fix);
+    RUN_TEST(test_missing_extern_spec_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_declaration_body_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_condition_close_builder_publishes_machine_fix);
     RUN_TEST(test_missing_index_close_builder_publishes_machine_fix);
