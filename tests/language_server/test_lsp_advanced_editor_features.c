@@ -2249,6 +2249,13 @@ int main(void) {
             state, &failures);
     test_lsp_code_action_inserts_missing_using_resource_close(
             state, &failures);
+    test_lsp_code_action_inserts_missing_for_header_close(state, &failures);
+    test_lsp_code_action_inserts_missing_for_header_separator(
+            state, &failures);
+    test_lsp_code_action_inserts_missing_foreach_header_close(
+            state, &failures);
+    test_lsp_code_action_inserts_missing_foreach_in_keyword(
+            state, &failures);
     test_lsp_code_action_inserts_missing_declaration_body_close(
             state, &failures);
     test_lsp_code_action_inserts_missing_condition_close(state, &failures);

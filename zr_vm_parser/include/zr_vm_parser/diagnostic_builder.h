@@ -245,19 +245,23 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderSeparator(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingForeachHeaderClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingForeachInKeyword(
     SZrState *state,
     SZrStructuredDiagnostic *out,
-    SZrFileRange location);
+    SZrFileRange location,
+    SZrFileRange fixLocation);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingSwitchCaseHeaderClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,

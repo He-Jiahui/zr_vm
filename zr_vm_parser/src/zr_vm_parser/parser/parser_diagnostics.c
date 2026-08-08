@@ -291,12 +291,15 @@ void report_import_path_not_constant(SZrParserState *ps,
 
 void report_missing_for_header_close(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingForHeaderClose(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingForHeaderClose(
+                ps->state, &diagnostic, location, fixLocation)) {
         report_error_with_token(ps, "Missing closing ')' in for header", ps->lexer->t.token);
         return;
     }
@@ -307,12 +310,15 @@ void report_missing_for_header_close(SZrParserState *ps, SZrFileRange location) 
 
 void report_missing_for_header_separator(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingForHeaderSeparator(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingForHeaderSeparator(
+                ps->state, &diagnostic, location, fixLocation)) {
         report_error_with_token(ps, "Missing ';' between for header clauses", ps->lexer->t.token);
         return;
     }
@@ -323,12 +329,15 @@ void report_missing_for_header_separator(SZrParserState *ps, SZrFileRange locati
 
 void report_missing_foreach_header_close(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingForeachHeaderClose(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingForeachHeaderClose(
+                ps->state, &diagnostic, location, fixLocation)) {
         report_error_with_token(ps, "Missing closing ')' in foreach header", ps->lexer->t.token);
         return;
     }
@@ -339,12 +348,15 @@ void report_missing_foreach_header_close(SZrParserState *ps, SZrFileRange locati
 
 void report_missing_foreach_in_keyword(SZrParserState *ps, SZrFileRange location) {
     SZrStructuredDiagnostic diagnostic;
+    SZrFileRange fixLocation;
 
     if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
         return;
     }
 
-    if (!ZrParser_DiagnosticBuilder_BuildMissingForeachInKeyword(ps->state, &diagnostic, location)) {
+    fixLocation = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_BuildMissingForeachInKeyword(
+                ps->state, &diagnostic, location, fixLocation)) {
         report_error_with_token(ps, "Missing 'in' in foreach header", ps->lexer->t.token);
         return;
     }

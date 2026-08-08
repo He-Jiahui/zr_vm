@@ -45,6 +45,175 @@ static TZrBool diagnostic_safe_fix_action_matches(
     return ZR_FALSE;
 }
 
+static void test_lsp_code_action_inserts_header_token(
+        SZrState *state,
+        int *failures,
+        const TZrChar *summary,
+        const TZrChar *uriText,
+        const TZrChar *content,
+        const TZrChar *fixedContent,
+        const TZrChar *diagnosticCode,
+        int primaryStart,
+        int primaryEnd,
+        int fixCharacter,
+        const TZrChar *title,
+        const TZrChar *editText) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri = ZR_NULL;
+    SZrArray diagnostics = {0};
+    SZrArray actions = {0};
+    const SZrLspDiagnostic *diagnostic;
+    const SZrLspDiagnosticFix *fix = ZR_NULL;
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, uriText, content, &uri);
+    ZrCore_Array_Init(
+            state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+    if (context != ZR_NULL &&
+        ZrLanguageServer_Lsp_GetDiagnostics(
+                state, context, uri, &diagnostics)) {
+        diagnostic = diagnostic_safe_fix_find_code(&diagnostics, diagnosticCode);
+        if (diagnostic != ZR_NULL && diagnostic->fixes.isValid &&
+            diagnostic->fixes.length == 1U) {
+            fix = (const SZrLspDiagnosticFix *)ZrCore_Array_Get(
+                    (SZrArray *)&diagnostic->fixes, 0U);
+        }
+        if (fix != ZR_NULL &&
+            diagnostic->range.start.line == 1 &&
+            diagnostic->range.start.character == primaryStart &&
+            diagnostic->range.end.line == 1 &&
+            diagnostic->range.end.character == primaryEnd &&
+            fix->applicability == ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE &&
+            fix->editRange.start.line == 1 &&
+            fix->editRange.start.character == fixCharacter &&
+            fix->editRange.end.line == 1 &&
+            fix->editRange.end.character == fixCharacter &&
+            strcmp(test_string_text(fix->title), title) == 0 &&
+            strcmp(test_string_text(fix->editText), editText) == 0 &&
+            ZrLanguageServer_Lsp_GetCodeActions(
+                    state,
+                    context,
+                    uri,
+                    diagnostic->range,
+                    &actions) &&
+            diagnostic_safe_fix_action_matches(&actions, title, editText)) {
+            valid = ZR_TRUE;
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    memset(&actions, 0, sizeof(actions));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+
+    if (valid &&
+        ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                fixedContent,
+                strlen(fixedContent),
+                2)) {
+        ZrCore_Array_Init(
+                state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+        valid = ZrLanguageServer_Lsp_GetDiagnostics(
+                        state, context, uri, &diagnostics) &&
+                diagnostic_safe_fix_find_code(&diagnostics, diagnosticCode) == ZR_NULL;
+    } else {
+        valid = ZR_FALSE;
+    }
+
+    if (!valid) {
+        (*failures)++;
+        TEST_FAIL(
+                timer,
+                summary,
+                "header diagnostic did not publish an exact machine-applicable fix and clear after rebind");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_inserts_missing_for_header_close(
+        SZrState *state,
+        int *failures) {
+    test_lsp_code_action_inserts_header_token(
+            state,
+            failures,
+            "LSP code action inserts missing for header close",
+            "file:///tmp/zr_lsp_diagnostic_for_header_close_fix.zr",
+            "var ready = true;\nfor (; ready; ready = false { return 1; }",
+            "var ready = true;\nfor (; ready; ready = false ) { return 1; }",
+            "missing_for_header_close",
+            28,
+            29,
+            28,
+            "Insert missing ')'",
+            ")");
+}
+
+static void test_lsp_code_action_inserts_missing_for_header_separator(
+        SZrState *state,
+        int *failures) {
+    test_lsp_code_action_inserts_header_token(
+            state,
+            failures,
+            "LSP code action inserts missing for header separator",
+            "file:///tmp/zr_lsp_diagnostic_for_header_separator_fix.zr",
+            "var i = 0;\nfor (i = 0 i < 3; i = i + 1) { out i; }",
+            "var i = 0;\nfor (i = 0 ;i < 3; i = i + 1) { out i; }",
+            "missing_for_header_separator",
+            11,
+            12,
+            11,
+            "Insert missing ';'",
+            ";");
+}
+
+static void test_lsp_code_action_inserts_missing_foreach_header_close(
+        SZrState *state,
+        int *failures) {
+    test_lsp_code_action_inserts_header_token(
+            state,
+            failures,
+            "LSP code action inserts missing foreach header close",
+            "file:///tmp/zr_lsp_diagnostic_foreach_header_close_fix.zr",
+            "var items = [1, 2];\nfor (var item in items { return item; }",
+            "var items = [1, 2];\nfor (var item in items ) { return item; }",
+            "missing_foreach_header_close",
+            23,
+            24,
+            23,
+            "Insert missing ')'",
+            ")");
+}
+
+static void test_lsp_code_action_inserts_missing_foreach_in_keyword(
+        SZrState *state,
+        int *failures) {
+    test_lsp_code_action_inserts_header_token(
+            state,
+            failures,
+            "LSP code action inserts missing foreach in keyword",
+            "file:///tmp/zr_lsp_diagnostic_foreach_in_keyword_fix.zr",
+            "var items = [1, 2];\nfor (var item items) { return item; }",
+            "var items = [1, 2];\nfor (var item in items) { return item; }",
+            "missing_foreach_in_keyword",
+            14,
+            19,
+            14,
+            "Insert missing 'in'",
+            "in ");
+}
+
 static void test_lsp_code_action_consumes_machine_applicable_diagnostic_fix(
         SZrState *state,
         int *failures) {
