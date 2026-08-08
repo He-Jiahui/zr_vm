@@ -100,6 +100,8 @@
 
 [2026-08-08 two historical text snapshots](./03-robustness/2026-08-08-two-historical-text-snapshots.md) 完成每个file version的当前text block加最近两份历史text block；历史Acquire严格按新到旧并共享现有ref-count，借出的v3/v2快照跨v5 rollover仍有效。semantic snapshot LRU、workspace 256MiB cache、峰值内存、跨平台和完整snapshot stress仍待后续。
 
+[2026-08-08 rapid stdio stale-response churn](./03-robustness/2026-08-08-rapid-stdio-stale-response-churn.md) 完成独立URI的100轮`didOpen -> cancellation -> didChange -> didClose`交错压力；每轮两个取消请求都精确返回`-32800`，change/close前的workspace request都精确返回`-32801`，并等待替换版本诊断与close清理，禁止stale success。该记录只关闭rapid edit/cancel/close protocol leaf；semantic snapshot、workspace 256MiB LRU、峰值内存和跨平台可比验证仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

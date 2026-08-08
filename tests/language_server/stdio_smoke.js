@@ -3329,6 +3329,90 @@ async function main() {
             report && diagnosticRelatedUriMatches(genericUri, report.uri) && report.version === 2),
     'workspace/diagnostic after didChange must only publish the current document version');
 
+    const rapidStaleUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-rapid-stale-churn.zr';
+    const rapidStaleText = [
+        'fn rapid_stale(value: int): int {',
+        '    return value;',
+        '}',
+        '',
+    ].join('\n');
+    let rapidStaleVersion = 1;
+    for (let iteration = 0; iteration < 100; iteration += 1) {
+        const openedVersion = rapidStaleVersion;
+        const changedVersion = openedVersion + 1;
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: rapidStaleUri,
+                languageId: 'zr',
+                version: openedVersion,
+                text: rapidStaleText + '// open generation ' + openedVersion + '\n',
+            },
+        });
+        await waitForDiagnosticsUriVersion(
+            client,
+            rapidStaleUri,
+            openedVersion,
+            'rapid stale churn didOpen must publish diagnostics for its exact version');
+
+        const cancelledDiagnostics = client.requestWithId('workspace/diagnostic', {});
+        const queuedCancelledDiagnostics = client.requestWithId('workspace/diagnostic', {});
+        client.notify('$/cancelRequest', { id: queuedCancelledDiagnostics.id });
+        client.notify('$/cancelRequest', { id: cancelledDiagnostics.id });
+        const rapidCancellationErrors = await Promise.all([
+            cancelledDiagnostics.promise,
+            queuedCancelledDiagnostics.promise,
+        ].map(async (promise) => {
+            try {
+                await promise;
+                return null;
+            } catch (error) {
+                return JSON.parse(error.message);
+            }
+        }));
+        assert(rapidCancellationErrors.every((error) => error && error.code === -32800),
+            'rapid stale churn cancellation must never publish workspace diagnostic success');
+
+        const staleAfterChange = client.requestWithId('workspace/diagnostic', {});
+        client.notify('textDocument/didChange', {
+            textDocument: { uri: rapidStaleUri, version: changedVersion },
+            contentChanges: [{ text: rapidStaleText + '// changed generation ' + changedVersion + '\n' }],
+        });
+        let staleChangeError = null;
+        try {
+            await staleAfterChange.promise;
+        } catch (error) {
+            staleChangeError = JSON.parse(error.message);
+        }
+        assert(staleChangeError && staleChangeError.code === -32801,
+            'rapid stale churn didChange must reject the prior workspace request as ContentModified');
+        await waitForDiagnosticsUriVersion(
+            client,
+            rapidStaleUri,
+            changedVersion,
+            'rapid stale churn didChange must publish diagnostics for its exact replacement version');
+
+        const staleAfterClose = client.requestWithId('workspace/diagnostic', {});
+        client.notify('textDocument/didClose', {
+            textDocument: { uri: rapidStaleUri },
+        });
+        let staleCloseError = null;
+        try {
+            await staleAfterClose.promise;
+        } catch (error) {
+            staleCloseError = JSON.parse(error.message);
+        }
+        assert(staleCloseError && staleCloseError.code === -32801,
+            'rapid stale churn didClose must reject the prior workspace request as ContentModified');
+        const rapidCloseDiagnostics = await waitForDiagnosticsUri(
+            client,
+            rapidStaleUri,
+            'rapid stale churn didClose diagnostics uri mismatch');
+        assert(Array.isArray(rapidCloseDiagnostics.diagnostics) && rapidCloseDiagnostics.diagnostics.length === 0,
+            'rapid stale churn didClose must clear diagnostics before the next open generation');
+        rapidStaleVersion = changedVersion + 1;
+    }
+
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [
             { uri: watchedBinaryFixture.binaryUri, type: 2 },
