@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-08 17:26 +08:00
+updated_at: 2026-08-08 17:31 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -79,7 +79,7 @@ source_plans:
 | 2026-08-05 18:19 +08:00 | 已完成 | LSP 02 using-resource-close safe fix：`missing_using_resource_close`保留using body `{` primary、在current lexer cursor发布零宽`)` machine-applicable edit；generic LSP code action直接消费structured fix并在v2重新绑定后清除诊断，不按using AST/code/message/source重建；主树GCC/Clang/MSVC定向parser 39/39与advanced editor suite均真实exit 0 | [Using-resource close safe-fix convergence](../02-diagnostics/2026-08-05-using-resource-close-safe-fix-convergence.md) |
 | 2026-08-08 13:20 +08:00 | 已完成 | LSP 02 for/foreach header safe fixes：`missing_for_header_close`、`missing_for_header_separator`、`missing_foreach_header_close`与`missing_foreach_in_keyword`分别发布零宽`)`、`;`、`)`与`in ` machine-applicable edit；generic LSP code action只消费structured fix并在v2重新绑定后清除诊断，不按loop AST/code/message/source重建；隔离提交`cb2a886`已精确集成为主树`ae63bef`，GCC/Clang/MSVC定向parser 43/43与advanced editor suite均真实exit 0 | [For/foreach header safe-fix convergence](../02-diagnostics/2026-08-08-for-foreach-header-safe-fix-convergence.md) |
 | 2026-08-08 17:02 +08:00 | 已完成 | LSP 03 stdio cancellation leaf：reader thread以精确JSON-RPC id登记queued/active request，`$/cancelRequest`直接标记token；`workspace/diagnostic`协作停止且response仅返回`-32800`，乱序双request smoke强制50ms门槛；MSVC stdio E2E 10次通过，GCC/Clang POSIX transport harness真实exit 0，完整L6 matrix仍待后续 | [Stdio cancellation lifecycle](../03-robustness/2026-08-08-stdio-cancellation-lifecycle.md) |
-| 2026-08-08 17:26 +08:00 | 已完成 | LSP 03 stdio content-modified leaf：reader对state-changing notification递增input generation，每条inbound message携带FIFO generation snapshot；后续`didChange`在请求激活前已入队时，旧request仍精确返回`-32801`而不发布stale success，v2后的新request保持可用；MSVC E2E/CTest、10次smoke与GCC/Clang POSIX harness均真实exit 0，完整L6 matrix仍待后续 | [Stdio content-modified fence](../03-robustness/2026-08-08-stdio-content-modified-fence.md) |
+| 2026-08-08 17:31 +08:00 | 已完成 | LSP 03 stdio content-modified leaf：reader对state-changing notification递增input generation，每条inbound message携带FIFO generation snapshot；后续`didChange`或`didClose`在请求激活前已入队时，旧request仍精确返回`-32801`而不发布stale success，v2后的新request保持可用；MSVC E2E/CTest、10次smoke与GCC/Clang POSIX harness均真实exit 0，完整L6 matrix仍待后续 | [Stdio content-modified fence](../03-robustness/2026-08-08-stdio-content-modified-fence.md) |
 
 ## 当前状态
 

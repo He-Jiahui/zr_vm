@@ -24,7 +24,7 @@ doc_type: milestone-detail
 plan_id: lsp-03-robustness
 record_id: 2026-08-08-stdio-content-modified-fence
 status: completed
-completed_at: 2026-08-08 17:26 +08:00
+completed_at: 2026-08-08 17:31 +08:00
 evidence_scope: stdio-input-generation-content-modified-fence
 ---
 
@@ -34,7 +34,7 @@ evidence_scope: stdio-input-generation-content-modified-fence
 
 | 完成时间 | 状态 | 完成项目 |
 |---|---|---|
-| 2026-08-08 17:26 +08:00 | 已完成 | reader-observed document/workspace mutation generation、per-inbound FIFO snapshot、active request stale-response fence、`ContentModified` JSON-RPC error与rapid `didChange` smoke。 |
+| 2026-08-08 17:31 +08:00 | 已完成 | reader-observed document/workspace mutation generation、per-inbound FIFO snapshot、active request stale-response fence、`ContentModified` JSON-RPC error与rapid `didChange`/`didClose` smoke。 |
 
 ## 已实现契约
 
@@ -46,7 +46,7 @@ evidence_scope: stdio-input-generation-content-modified-fence
 ## TDD 与验证
 
 - RED：对提交`ea49934`前的MSVC stdio server运行新增smoke，以exit 1失败：`workspace/diagnostic must reject a response made stale by didChange`。这证明仅有cancellation registry仍会让旧diagnostic response成功返回。
-- GREEN：MSVC重建`zr_vm_language_server_stdio`后，新增流程先完成v1 workspace diagnostic，再发送active `workspace/diagnostic`与紧随的`textDocument/didChange` v2。首request精确断言error `-32801`，随后诊断发布与新workspace request均精确观察v2。
+- GREEN：MSVC重建`zr_vm_language_server_stdio`后，新增流程先完成v1 workspace diagnostic，再发送active `workspace/diagnostic`与紧随的`textDocument/didChange` v2。首request精确断言error `-32801`，随后诊断发布与新workspace request均精确观察v2。相同流程对`textDocument/didClose`重复执行，旧request也只能返回`-32801`，而close notification继续发布空diagnostics。
 - MSVC：直接Node smoke、`ctest --test-dir .codex/build-e5-closure-msvc --output-on-failure -R '^language_server_stdio_smoke$'`均为1/1、真实exit 0；同一stdio smoke连续10次为10/10真实exit 0；`zr_vm_language_server_lsp_interface_test.exe`真实exit 0。
 - POSIX：WSL GCC 11.4和Clang 14以C11 warning/include设置编译`stdio_transport.c`与cJSON，并运行最小stdin request/didChange harness。两套harness均真实exit 0，覆盖“后续通知已被reader排队、前request才激活”的原始竞态。
 

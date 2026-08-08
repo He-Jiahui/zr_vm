@@ -3215,11 +3215,21 @@ async function main() {
         watchedBinaryHoverAfter.contents.value.includes('Source: binary metadata'),
     'workspace/didChangeWatchedFiles binary refresh must keep open analyzers usable for imported binary metadata');
 
+    const staleCloseWorkspaceDiagnostics = client.requestWithId('workspace/diagnostic', {});
     client.notify('textDocument/didClose', {
         textDocument: {
             uri: genericUri,
         },
     });
+
+    let closeContentModifiedError = null;
+    try {
+        await staleCloseWorkspaceDiagnostics.promise;
+    } catch (error) {
+        closeContentModifiedError = JSON.parse(error.message);
+    }
+    assert(closeContentModifiedError && closeContentModifiedError.code === -32801,
+        'workspace/diagnostic must reject a response made stale by didClose');
 
     const genericCloseDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(genericCloseDiagnostics.uri === genericUri, 'generic didClose diagnostics uri mismatch');
