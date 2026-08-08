@@ -214,6 +214,60 @@ static void test_lsp_code_action_inserts_missing_foreach_in_keyword(
             "in ");
 }
 
+static void test_lsp_code_action_inserts_missing_switch_case_header_close(
+        SZrState *state,
+        int *failures) {
+    test_lsp_code_action_inserts_header_token(
+            state,
+            failures,
+            "LSP code action inserts missing switch case header close",
+            "file:///tmp/zr_lsp_diagnostic_switch_case_header_close_fix.zr",
+            "var choice = 1;\nswitch (choice) { (1 { return 1; } }",
+            "var choice = 1;\nswitch (choice) { (1 ) { return 1; } }",
+            "missing_switch_case_header_close",
+            21,
+            22,
+            21,
+            "Insert missing ')'",
+            ")");
+}
+
+static void test_lsp_code_action_inserts_missing_switch_body_close(
+        SZrState *state,
+        int *failures) {
+    test_lsp_code_action_inserts_header_token(
+            state,
+            failures,
+            "LSP code action inserts missing switch body close",
+            "file:///tmp/zr_lsp_diagnostic_switch_body_close_fix.zr",
+            "var choice = 1;\nswitch (choice) { (1) { return 1; }",
+            "var choice = 1;\nswitch (choice) { (1) { return 1; } }",
+            "missing_switch_body_close",
+            35,
+            35,
+            35,
+            "Insert missing '}'",
+            "}");
+}
+
+static void test_lsp_code_action_inserts_missing_extern_spec_close(
+        SZrState *state,
+        int *failures) {
+    test_lsp_code_action_inserts_header_token(
+            state,
+            failures,
+            "LSP code action inserts missing extern spec close",
+            "file:///tmp/zr_lsp_diagnostic_extern_spec_close_fix.zr",
+            "var ready = true;\nnative extern(\"fixture\" { NativeAdd(value: int): int; }",
+            "var ready = true;\nnative extern(\"fixture\" ) { NativeAdd(value: int): int; }",
+            "missing_extern_spec_close",
+            24,
+            25,
+            24,
+            "Insert missing ')'",
+            ")");
+}
+
 static void test_lsp_code_action_consumes_machine_applicable_diagnostic_fix(
         SZrState *state,
         int *failures) {

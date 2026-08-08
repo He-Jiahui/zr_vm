@@ -703,43 +703,49 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingForeachInKeyword(SZrState *state,
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingSwitchCaseHeaderClose(SZrState *state,
                                                                      SZrStructuredDiagnostic *out,
                                                                      SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
+    return build_missing_header_fix(
             state,
             out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
             location,
             "missing_switch_case_header_close",
             "Missing closing ')' in switch case header",
             "The switch case header started with '(', but the parser reached the case body before a closing ')' appeared.",
-            "Insert ')' after the switch case expression before the case body.");
+            "Insert ')' after the switch case expression before the case body.",
+            "Insert missing ')'",
+            ")");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingSwitchBodyClose(SZrState *state,
                                                                SZrStructuredDiagnostic *out,
                                                                SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
+    return build_missing_header_fix(
             state,
             out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
             location,
             "missing_switch_body_close",
             "Missing closing '}' for switch body",
             "The switch body started with '{', but the parser reached the end of input before a closing '}' appeared.",
-            "Insert '}' to close the switch body before continuing.");
+            "Insert '}' to close the switch body before continuing.",
+            "Insert missing '}'",
+            "}");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingExternSpecClose(SZrState *state,
                                                                SZrStructuredDiagnostic *out,
                                                                SZrFileRange location) {
-    return ZrParser_DiagnosticBuilder_Build(
+    return build_missing_header_fix(
             state,
             out,
-            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
             location,
             "missing_extern_spec_close",
             "Missing closing ')' in extern block spec",
             "The extern block started a library spec with '(', but the parser reached the extern block body before a closing ')' appeared.",
-            "Insert ')' after the extern block spec before the extern block body.");
+            "Insert ')' after the extern block spec before the extern block body.",
+            "Insert missing ')'",
+            ")");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingTestNameClose(SZrState *state,

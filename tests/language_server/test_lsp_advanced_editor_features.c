@@ -2256,6 +2256,10 @@ int main(void) {
             state, &failures);
     test_lsp_code_action_inserts_missing_foreach_in_keyword(
             state, &failures);
+    test_lsp_code_action_inserts_missing_switch_case_header_close(
+            state, &failures);
+    test_lsp_code_action_inserts_missing_switch_body_close(state, &failures);
+    test_lsp_code_action_inserts_missing_extern_spec_close(state, &failures);
     test_lsp_code_action_inserts_missing_declaration_body_close(
             state, &failures);
     test_lsp_code_action_inserts_missing_condition_close(state, &failures);
