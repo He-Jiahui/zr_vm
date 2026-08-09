@@ -68,6 +68,17 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_EnsureCacheStorage(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer);
 
+SZrSemanticAnalyzer *
+ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *retainedAst,
+        TZrBool preserveScopedQueryAnalyzer);
+void ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzerBorrowingAst(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        const SZrAstNode *borrowedAst);
+
 void ZrLanguageServer_SemanticAnalyzer_ClearCachedDiagnosticRefs(
     SZrSemanticAnalyzer *analyzer);
 void ZrLanguageServer_SemanticAnalyzer_ReleaseDiagnostics(

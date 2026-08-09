@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-09 22:31 +08:00
+updated_at: 2026-08-09 23:37 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -87,6 +87,7 @@ source_plans:
 | 2026-08-08 18:14 +08:00 | 已完成 | LSP 03 two historical text snapshots leaf：每个file version保留current加最近两份历史text block，public historical acquire按新到旧返回精确version/generation，并复用ref-count；已借出的v3/v2快照跨v5历史rollover仍可读。MSVC incremental parser 9/9和source-contract suite均真实exit 0；semantic snapshot LRU、256MiB cache、峰值内存、跨平台和完整stress仍待后续 | [Two historical text snapshots](../03-robustness/2026-08-08-two-historical-text-snapshots.md) |
 | 2026-08-08 19:29 +08:00 | 已完成 | LSP 03 rapid stdio stale-response churn leaf：独立URI连续100轮`didOpen -> cancel -> didChange -> didClose`；每轮双取消只返回`-32800`，change/close前workspace诊断请求只返回`-32801`，并严格等待对应版本diagnostics与close清理，未接受stale success。MSVC direct stdio与CTest `language_server_stdio_smoke`均真实exit 0；semantic snapshot、256MiB workspace LRU、peak memory与跨平台验证仍待后续 | [Rapid stdio stale-response churn](../03-robustness/2026-08-08-rapid-stdio-stale-response-churn.md) |
 | 2026-08-09 22:31 +08:00 | 已完成 | LSP 03 semantic cache storage support：primary/scoped `SZrAnalysisCache` 按结构和pointer-array capacity精确计量，递归release只回收计量cache storage并保留scoped analyzer identity，后续analysis按需重新初始化；GCC/Clang/MSVC semantic analyzer focused均真实exit 0。此项不是256MiB workspace LRU、historical semantic snapshot或peak-memory报告 | [Semantic cache storage accounting](../03-robustness/2026-08-09-semantic-cache-storage-accounting.md) |
+| 2026-08-09 23:37 +08:00 | 已完成 | LSP 03 two historical semantic snapshots：每URI保留最近两份完整历史semantic analyzer state，newest-first query返回精确version/generation与readonly analyzer；主analyzer identity保持，scoped cache借用旧AST并在rollover先失效，避免stale hit/double free；GCC/Clang/MSVC interface与local semantic-query focused均真实exit 0。此项不是256MiB workspace LRU、peak-memory或完整L6矩阵 | [Two historical semantic snapshots](../03-robustness/2026-08-09-two-historical-semantic-snapshots.md) |
 
 ## 当前状态
 
@@ -96,5 +97,5 @@ source_plans:
 - LSP 03 stdio cancellation、content-modified与rapid edit/cancel/close leaves已完成：输入线程只维护request queue、精确id token和reader-observed input generation，主线程继续独占semantic state/stdout；active或queued `workspace/diagnostic`取消不会发布stale success，后续状态变更使旧FIFO request返回`-32801`。独立URI的100轮交错测试逐轮确认取消、变更、关闭和diagnostic清理。L6整体的immutable semantic snapshot、峰值内存和cache/LRU预算仍未完成。
 - LSP 03 warm request、single-document diagnostics和100-file workspace incremental diagnostics latency leaves已完成：前者覆盖canonical native hover、closed-generic completion与signatureHelp，后两者严格等待同URI/version diagnostics；均有20样本p50/p95/p99和p95 CI门禁。峰值内存、cache/LRU、跨平台可比性能和完整snapshot stress仍未完成。
 - LSP 03 two historical text snapshots leaf已完成：每个document的file version只持有current与最新两份历史text block，public acquire仍以ref-count保证已借出快照可跨rollover读取。semantic cache不在该固定文本队列内，256MiB workspace LRU、峰值内存、跨平台可比性能和完整snapshot stress仍未完成。
-- LSP 03 semantic cache storage accounting leaf已完成：primary/scoped `SZrAnalysisCache` 现有真实capacity-storage计量与cache-only递归释放，后续analysis可重新初始化primary cache。workspace context尚未消费该计量实施256MiB LRU，semantic snapshot history与peak-memory report仍未完成。
+- LSP 03 semantic cache storage accounting和two historical semantic snapshots leaves已完成：primary/scoped `SZrAnalysisCache` 已有真实capacity-storage计量与cache-only递归释放；每URI已保留两份完整历史semantic analyzer state，并在scoped cache借用旧AST时安全淘汰。workspace context尚未消费计量实施256MiB LRU，peak-memory report与完整L6矩阵仍未完成。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

@@ -331,7 +331,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareScopedQueryCacheForChange(
     }
 
     *retainCurrentAst = scopedAnalyzer->ast == currentAst &&
-                        scopedAnalyzer->ownedAst == ZR_NULL;
+                        scopedAnalyzer->ownedAst == ZR_NULL &&
+                        scopedAnalyzer->borrowedAst == ZR_NULL;
     return ZR_TRUE;
 }
 
@@ -383,7 +384,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_CommitScopedQueryCachePreservation(
                                 newScopeRoot) &&
                 (retainedAst == ZR_NULL ||
                  (scopedAnalyzer->ast == retainedAst &&
-                  scopedAnalyzer->ownedAst == ZR_NULL));
+                  scopedAnalyzer->ownedAst == ZR_NULL &&
+                  scopedAnalyzer->borrowedAst == ZR_NULL));
     if (!canCommit) {
         TZrBool cacheOwnsRetainedAst = scopedAnalyzer->ownedAst == retainedAst;
 

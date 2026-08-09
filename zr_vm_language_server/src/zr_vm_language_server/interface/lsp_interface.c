@@ -918,6 +918,7 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     context->state = state;
     context->parser = ZrLanguageServer_IncrementalParser_New(state);
     context->analyzer = ZR_NULL; // 延迟创建，每个文件一个分析器
+    context->semanticSnapshotCache = ZR_NULL;
     ZrCore_HashSet_Construct(&context->uriToAnalyzerMap);
     ZrCore_HashSet_Init(state, &context->uriToAnalyzerMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     ZrCore_Array_Init(state,
@@ -932,6 +933,11 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
         ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
         return ZR_NULL;
     }
+    context->semanticSnapshotCache = ZrLanguageServer_LspSemanticSnapshotCache_New(state);
+    if (context->semanticSnapshotCache == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        return ZR_NULL;
+    }
     
     return context;
 }
@@ -941,6 +947,8 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
     if (state == ZR_NULL || context == ZR_NULL) {
         return;
     }
+
+    ZrLanguageServer_LspSemanticSnapshotCache_Free(state, context);
 
     // 释放所有分析器
     if (context->uriToAnalyzerMap.isValid && context->uriToAnalyzerMap.buckets != ZR_NULL) {
@@ -1112,6 +1120,7 @@ void ZrLanguageServer_Lsp_RemoveAnalyzer(SZrState *state, SZrLspContext *context
     }
 
     analyzer = (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+    ZrLanguageServer_LspSemanticSnapshotCache_RemoveUri(state, context, uri);
     key = pair->key;
     ZrCore_HashSet_Remove(state, &context->uriToAnalyzerMap, &key);
     ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -1157,6 +1166,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
     TZrBool analyzeSuccess;
     TZrBool preserveScopedQueryCache = ZR_FALSE;
     TZrBool retainCurrentAst = ZR_FALSE;
+    TZrBool retainPreviousSemanticAst = ZR_FALSE;
     SZrSemanticAnalyzer *existingAnalyzer = ZR_NULL;
     SZrAstNode *retainedAst = ZR_NULL;
 
@@ -1237,11 +1247,16 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
                             fileVersion->ast,
                             &fileVersion->lastChangeInfo,
                             &retainCurrentAst);
+            retainPreviousSemanticAst = !fileVersion->usesFallbackAst &&
+                                        fileVersion->ast != ZR_NULL &&
+                                        existingAnalyzer->ast == fileVersion->ast &&
+                                        existingAnalyzer->ownedAst == ZR_NULL &&
+                                        existingAnalyzer->borrowedAst == ZR_NULL;
         }
     }
     
     // 重新解析
-    if (!(retainCurrentAst
+    if (!((retainCurrentAst || retainPreviousSemanticAst)
                   ? ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
                         state,
                         context->parser,
@@ -1280,33 +1295,47 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return ZR_FALSE;
         }
 
-        if (preserveScopedQueryCache && !fileVersion->usesFallbackAst &&
-            fileVersion->ast != ZR_NULL) {
-            preserveScopedQueryCache =
-                    ZrLanguageServer_SemanticAnalyzer_CommitScopedQueryCachePreservation(
-                            state,
-                            existingAnalyzer,
-                            fileVersion->ast,
-                            retainedAst);
-            retainedAst = ZR_NULL;
-        } else if (retainedAst != ZR_NULL) {
-            if (existingAnalyzer != ZR_NULL) {
-                ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
-                        state,
-                        existingAnalyzer);
-            }
-            ZrParser_Ast_Free(state, retainedAst);
-            retainedAst = ZR_NULL;
-        }
-
         if (fileVersion->parserDiagnostics.length > 0 && fileVersion->usesFallbackAst && existingAnalyzer != ZR_NULL) {
             return ZR_TRUE;
         }
 
         ast = fileVersion->ast;
         if (ast == ZR_NULL) {
+            if (retainedAst != ZR_NULL) {
+                ZrParser_Ast_Free(state, retainedAst);
+            }
             ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
             return fileVersion->parserDiagnostics.length > 0;
+        }
+
+        if (retainedAst != ZR_NULL) {
+            if (existingAnalyzer == ZR_NULL ||
+                !ZrLanguageServer_LspSemanticSnapshotCache_Capture(
+                        state,
+                        context,
+                        uri,
+                        fileVersion,
+                        existingAnalyzer,
+                        retainedAst,
+                        preserveScopedQueryCache)) {
+                if (existingAnalyzer != ZR_NULL) {
+                    ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
+                            state,
+                            existingAnalyzer);
+                }
+                ZrParser_Ast_Free(state, retainedAst);
+                preserveScopedQueryCache = ZR_FALSE;
+            }
+            retainedAst = ZR_NULL;
+        }
+
+        if (preserveScopedQueryCache && existingAnalyzer != ZR_NULL) {
+            preserveScopedQueryCache =
+                    ZrLanguageServer_SemanticAnalyzer_CommitScopedQueryCachePreservation(
+                            state,
+                            existingAnalyzer,
+                            ast,
+                            ZR_NULL);
         }
 
         analyzer = existingAnalyzer != ZR_NULL

@@ -153,7 +153,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
             analyzer->metrics.cacheHitCount++;
             return ZR_TRUE;
         }
-        if (previousAst != ast && analyzer->ownedAst == previousAst &&
+        if (previousAst != ast &&
+            (analyzer->ownedAst == previousAst ||
+             analyzer->borrowedAst == previousAst) &&
             analyzer->cache->isValid &&
             analyzer->cache->scopeAstHash == scopeAstHash &&
             semantic_analysis_ranges_equal(
@@ -174,6 +176,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
     if (analyzer->ownedAst != ZR_NULL && analyzer->ownedAst != ast) {
         ZrParser_Ast_Free(state, analyzer->ownedAst);
         analyzer->ownedAst = ZR_NULL;
+    }
+    if (analyzer->borrowedAst != ZR_NULL && analyzer->borrowedAst != ast) {
+        analyzer->borrowedAst = ZR_NULL;
     }
 
     ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, ast);

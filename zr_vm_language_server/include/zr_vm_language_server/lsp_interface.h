@@ -193,9 +193,16 @@ typedef struct SZrLspContext {
     SZrIncrementalParser *parser;
     SZrSemanticAnalyzer *analyzer;
     SZrHashSet uriToAnalyzerMap;      // URI 到分析器的映射（值为SZrSemanticAnalyzer*）
+    struct SZrLspSemanticSnapshotCache *semanticSnapshotCache;
     SZrArray projectIndexes;          // 已打开项目索引（SZrLspProjectIndex*，内部使用）
     TZrChar *clientSelectedZrpNativePath; /*!< IDE 选中的 .zrp 绝对路径（原生路径，可为 ZR_NULL） */
 } SZrLspContext;
+
+typedef struct SZrLspHistoricalSemanticSnapshot {
+    TZrSize version;
+    TZrSize contentGeneration;
+    const SZrSemanticAnalyzer *analyzer;
+} SZrLspHistoricalSemanticSnapshot;
 
 // LSP 接口管理函数
 
@@ -204,6 +211,12 @@ ZR_LANGUAGE_SERVER_API SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *
 
 // 释放 LSP 上下文
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+        const SZrLspContext *context,
+        const SZrString *uri,
+        TZrSize historyIndex,
+        SZrLspHistoricalSemanticSnapshot *outSnapshot);
 
 // 设置 IDE 选中的工程文件（.zrp）URI，用于多工程目录下消除 discover 歧义；uri 为 ZR_NULL 时清除
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_SetClientSelectedZrpUri(SZrState *state,

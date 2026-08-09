@@ -104,6 +104,8 @@
 
 [2026-08-09 semantic cache storage accounting](./03-robustness/2026-08-09-semantic-cache-storage-accounting.md) 发布primary/scoped `SZrAnalysisCache` 的精确capacity-storage计量、递归cache-only release与analysis-time rehydration；scoped analyzer identity保留，不把未计量semantic/AST状态伪称为cache storage。该记录只是workspace LRU的支持层，256MiB预算、victim选择、历史semantic snapshot与peak memory报告仍待后续。
 
+[2026-08-09 two historical semantic snapshots](./03-robustness/2026-08-09-two-historical-semantic-snapshots.md) 完成每URI最近两份完整semantic analyzer state的newest-first query、稳定primary analyzer identity、历史AST单一所有权与scoped-query borrowed-AST rollover失效；GCC/Clang/MSVC interface和local semantic-query focused均真实exit 0。workspace 256MiB LRU、victim选择、peak memory和完整L6矩阵仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

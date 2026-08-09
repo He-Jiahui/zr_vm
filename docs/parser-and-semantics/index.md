@@ -395,6 +395,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - primary/scoped `SZrAnalysisCache` 的 exact capacity-storage accounting
   - cache-only recursive release、scoped analyzer identity preservation 与 analysis-time rehydration
   - workspace LRU、256MiB budget、historical semantic snapshots 与 peak-memory report 的明确后续边界
+- `lsp-historical-semantic-snapshots.md`
+  - 每 URI 两份完整 historical semantic analyzer state 的 newest-first query
+  - primary analyzer identity 保持、历史 AST 单一所有权与 scoped-cache borrowed-AST rollover 失效
+  - workspace 256MiB LRU、全局内存报告与完整 L6 stress matrix 的明确后续边界
 - `lsp-binary-metadata-coordinate-projection.md`
   - binary typed-export 的 one-based byte line/column 与 LSP UTF-16 range 之间的窄转换合同
   - 有 source snapshot 时按 byte offset 精确转换；无 snapshot 时保留 artifact structural coordinates

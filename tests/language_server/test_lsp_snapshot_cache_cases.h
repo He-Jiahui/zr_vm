@@ -885,4 +885,134 @@ static void test_lsp_non_monotonic_versions_are_rejected_before_semantic_work(
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_retains_two_historical_semantic_snapshots(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Retains Two Historical Semantic Snapshots";
+    const TZrChar *versionOne = "fn value(): int { return 1; }\n";
+    const TZrChar *versionTwo = "fn value(): int { return 2; }\n";
+    const TZrChar *versionThree = "fn value(): int { return 3; }\n";
+    const TZrChar *versionFour = "fn value(): int { return 4; }\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrSemanticAnalyzer *currentAnalyzer;
+    SZrAstNode *firstAst;
+    SZrAstNode *secondAst;
+    SZrAstNode *thirdAst;
+    SZrSemanticContext *firstSemanticContext;
+    SZrSemanticContext *secondSemanticContext;
+    SZrSemanticContext *thirdSemanticContext;
+    SZrLspHistoricalSemanticSnapshot newest = {0};
+    SZrLspHistoricalSemanticSnapshot oldest = {0};
+    SZrLspHistoricalSemanticSnapshot overflow = {0};
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///historical_semantic_snapshots.zr",
+            strlen("file:///historical_semantic_snapshots.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, versionOne, strlen(versionOne), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the first semantic snapshot");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    currentAnalyzer = find_test_analyzer(state, context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL ||
+        currentAnalyzer == ZR_NULL || currentAnalyzer->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "The first snapshot was incomplete");
+        return;
+    }
+    firstAst = fileVersion->ast;
+    firstSemanticContext = currentAnalyzer->semanticContext;
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, versionTwo, strlen(versionTwo), 2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to prepare the second semantic snapshot");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL ||
+        currentAnalyzer != find_test_analyzer(state, context, uri) ||
+        currentAnalyzer->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "The second snapshot did not preserve current analyzer identity");
+        return;
+    }
+    secondAst = fileVersion->ast;
+    secondSemanticContext = currentAnalyzer->semanticContext;
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, versionThree, strlen(versionThree), 3) ||
+        !ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+                context, uri, 0, &newest) ||
+        !ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+                context, uri, 1, &oldest)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to publish two historical semantic snapshots");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->version != 3 ||
+        fileVersion->ast == ZR_NULL || currentAnalyzer !=
+                find_test_analyzer(state, context, uri) ||
+        newest.version != 2 || newest.contentGeneration != 2 ||
+        oldest.version != 1 || oldest.contentGeneration != 1 ||
+        newest.analyzer == ZR_NULL || oldest.analyzer == ZR_NULL ||
+        newest.analyzer == currentAnalyzer || oldest.analyzer == currentAnalyzer ||
+        newest.analyzer->ast != secondAst ||
+        oldest.analyzer->ast != firstAst ||
+        newest.analyzer->semanticContext != secondSemanticContext ||
+        oldest.analyzer->semanticContext != firstSemanticContext ||
+        newest.analyzer->ownedAst != secondAst ||
+        oldest.analyzer->ownedAst != firstAst) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Historical snapshots did not retain the prior semantic states");
+        return;
+    }
+
+    thirdAst = fileVersion->ast;
+    thirdSemanticContext = currentAnalyzer->semanticContext;
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, versionFour, strlen(versionFour), 4) ||
+        !ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+                context, uri, 0, &newest) ||
+        !ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+                context, uri, 1, &oldest) ||
+        ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+                context, uri, 2, &overflow)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Historical semantic snapshots did not roll over at two versions");
+        return;
+    }
+
+    if (newest.version != 3 || newest.contentGeneration != 3 ||
+        oldest.version != 2 || oldest.contentGeneration != 2 ||
+        overflow.version != 0 || overflow.contentGeneration != 0 ||
+        overflow.analyzer != ZR_NULL ||
+        newest.analyzer == ZR_NULL || oldest.analyzer == ZR_NULL ||
+        newest.analyzer->ast != thirdAst ||
+        newest.analyzer->semanticContext != thirdSemanticContext ||
+        oldest.analyzer->ast != secondAst ||
+        oldest.analyzer->semanticContext != secondSemanticContext) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "The oldest semantic snapshot was not evicted on rollover");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif // ZR_VM_TEST_LSP_SNAPSHOT_CACHE_CASES_H

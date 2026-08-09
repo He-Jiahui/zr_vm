@@ -2186,6 +2186,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->hirModule = ZR_NULL;
     analyzer->scopedQueryAnalyzer = ZR_NULL;
     analyzer->ownedAst = ZR_NULL;
+    analyzer->borrowedAst = ZR_NULL;
     analyzer->preserveScopedQueryAnalyzerOnNextAstChange = ZR_FALSE;
     memset(&analyzer->metrics, 0, sizeof(analyzer->metrics));
     
@@ -2238,11 +2239,93 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
         ZrParser_Ast_Free(state, analyzer->ownedAst);
         analyzer->ownedAst = ZR_NULL;
     }
+    analyzer->borrowedAst = ZR_NULL;
 
     analyzer->semanticContext = ZR_NULL;
     analyzer->hirModule = ZR_NULL;
 
     ZrCore_Memory_RawFree(state->global, analyzer, sizeof(SZrSemanticAnalyzer));
+}
+
+SZrSemanticAnalyzer *
+ZrLanguageServer_SemanticAnalyzer_DetachCurrentStateForSnapshot(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *retainedAst,
+        TZrBool preserveScopedQueryAnalyzer) {
+    SZrSemanticAnalyzer *replacement;
+    SZrSemanticAnalyzer *snapshot;
+    SZrSemanticAnalyzer *scopedAnalyzer;
+    SZrSemanticAnalysisMetrics metrics;
+    TZrBool enableCache;
+    TZrBool preserveOnNextAstChange;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || analyzer == ZR_NULL ||
+        retainedAst == ZR_NULL || analyzer->ast != retainedAst ||
+        analyzer->ownedAst != ZR_NULL || analyzer->borrowedAst != ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    replacement = ZrLanguageServer_SemanticAnalyzer_New(state);
+    if (replacement == ZR_NULL) {
+        return ZR_NULL;
+    }
+    snapshot = (SZrSemanticAnalyzer *)ZrCore_Memory_RawMalloc(
+            state->global,
+            sizeof(SZrSemanticAnalyzer));
+    if (snapshot == ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, replacement);
+        return ZR_NULL;
+    }
+
+    metrics = analyzer->metrics;
+    enableCache = analyzer->enableCache;
+    preserveOnNextAstChange = analyzer->preserveScopedQueryAnalyzerOnNextAstChange;
+    *snapshot = *analyzer;
+    scopedAnalyzer = snapshot->scopedQueryAnalyzer;
+    snapshot->ownedAst = retainedAst;
+    snapshot->borrowedAst = ZR_NULL;
+
+    *analyzer = *replacement;
+    ZrCore_Memory_RawFree(
+            state->global,
+            replacement,
+            sizeof(SZrSemanticAnalyzer));
+    analyzer->metrics = metrics;
+    analyzer->enableCache = enableCache;
+    analyzer->preserveScopedQueryAnalyzerOnNextAstChange =
+            preserveOnNextAstChange;
+    analyzer->scopedQueryAnalyzer = preserveScopedQueryAnalyzer
+                                            ? scopedAnalyzer
+                                            : ZR_NULL;
+
+    if (preserveScopedQueryAnalyzer && scopedAnalyzer != ZR_NULL) {
+        /* The scoped analyzer stays with the live analyzer, even when it
+         * already borrows an older historical AST. */
+        snapshot->scopedQueryAnalyzer = ZR_NULL;
+        if (scopedAnalyzer->ast == retainedAst &&
+            scopedAnalyzer->ownedAst == ZR_NULL &&
+            scopedAnalyzer->borrowedAst == ZR_NULL) {
+            scopedAnalyzer->borrowedAst = retainedAst;
+        }
+    }
+    return snapshot;
+}
+
+void ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzerBorrowingAst(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        const SZrAstNode *borrowedAst) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || borrowedAst == ZR_NULL ||
+        analyzer->scopedQueryAnalyzer == ZR_NULL ||
+        analyzer->scopedQueryAnalyzer->borrowedAst != borrowedAst) {
+        return;
+    }
+
+    analyzer->metrics.scopedCacheInvalidationCount++;
+    ZrLanguageServer_SemanticAnalyzer_InvalidateScopedQueryAnalyzer(
+            state,
+            analyzer);
 }
 
 // 辅助函数：从 AST 节点提取标识符名称
