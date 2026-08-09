@@ -1,6 +1,7 @@
 ---
 related_code:
   - tests/language_server/stdio_smoke.js
+  - tests/language_server/stdio_position_encoding_smoke.js
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
 tests:
   - tests/language_server/stdio_smoke.js
@@ -30,6 +31,22 @@ test accepts only a lifecycle error when the later input was observed first,
 or a workspace report containing the exact document version at the request
 linearization point. It rejects a mixed or newer snapshot. A separate request
 cancellation case retains the strict 50ms `RequestCancelled` budget.
+
+## Position-Encoding Handshake
+
+The position-encoding smoke uses a request/response client. It waits for the
+`initialize` response before sending `initialized` and `didOpen`, then requests
+hover and waits for `shutdown` before `exit`. A one-shot batch can let the
+reader thread observe `didOpen` before initialize activates; the resulting
+`ContentModified` response correctly enforces the input-generation fence but
+does not represent a legal LSP client handshake.
+
+## Matrix
+
+The L6 final matrix runs every CTest whose name begins
+`language_server_stdio` or `cli_`: five stdio protocol smokes and 28 CLI
+smokes/integration suites. Run GCC and Clang CTest from WSL so the configured
+`/usr/bin/node` is valid; run MSVC CTest from the native Visual Studio shell.
 
 ## Scope
 

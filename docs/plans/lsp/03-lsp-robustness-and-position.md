@@ -100,7 +100,7 @@
 
 [2026-08-08 two historical text snapshots](./03-robustness/2026-08-08-two-historical-text-snapshots.md) 完成每个file version的当前text block加最近两份历史text block；历史Acquire严格按新到旧并共享现有ref-count，借出的v3/v2快照跨v5 rollover仍有效。semantic snapshot LRU、workspace 256MiB cache、峰值内存、跨平台和完整snapshot stress仍待后续。
 
-[2026-08-08 rapid stdio stale-response churn](./03-robustness/2026-08-08-rapid-stdio-stale-response-churn.md) 完成独立URI的100轮`didOpen -> cancellation -> didChange -> didClose`交错压力；每轮两个取消请求都精确返回`-32800`，change/close前的workspace request都精确返回`-32801`，并等待替换版本诊断与close清理，禁止stale success。该记录只关闭rapid edit/cancel/close protocol leaf；semantic snapshot、workspace 256MiB LRU、峰值内存和跨平台可比验证仍待后续。
+[2026-08-08 rapid stdio stale-response churn](./03-robustness/2026-08-08-rapid-stdio-stale-response-churn.md) 完成独立URI的100轮`didOpen -> cancellation -> didChange -> didClose`交错压力；reader先观察lifecycle notification时请求返回`-32800`或`-32801`，请求先线性化时只接受相同document version的report，并等待替换版本诊断与close清理，禁止mixed/newer snapshot。该记录只关闭rapid edit/cancel/close protocol leaf；semantic snapshot、workspace 256MiB LRU、峰值内存和跨平台可比验证仍待后续。
 
 [2026-08-09 semantic cache storage accounting](./03-robustness/2026-08-09-semantic-cache-storage-accounting.md) 发布primary/scoped `SZrAnalysisCache` 的精确capacity-storage计量、递归cache-only release与analysis-time rehydration；scoped analyzer identity保留，不把未计量semantic/AST状态伪称为cache storage。该记录只是workspace LRU的支持层，256MiB预算、victim选择、历史semantic snapshot与peak memory报告仍待后续。
 
@@ -109,6 +109,8 @@
 [2026-08-10 workspace semantic cache LRU](./03-robustness/2026-08-10-workspace-semantic-cache-lru.md) 完成每个LSP context默认256MiB exact `SZrAnalysisCache` storage budget、primary/scoped/history analyzer扫描、access-order LRU victim和cache-only release；公共API报告limit/current/peak/evictions/released bytes，GCC/Clang/MSVC interface与local semantic-query focused均真实exit 0。process peak memory与完整L6 stdio/CLI矩阵仍待后续。
 
 [2026-08-10 stdio process peak memory](./03-robustness/2026-08-10-stdio-process-peak-memory.md) 完成native stdio server child的OS process high-water测量与默认512MiB失败门禁：Linux消费`VmHWM`、Windows消费`PeakWorkingSet64`，并修正100轮cancel/change/close churn为只接受lifecycle error或精确线性化snapshot。GCC/Clang/MSVC完整stdio smoke均真实exit 0；完整L6 stdio/CLI矩阵仍待后续。
+
+[2026-08-10 L6 final stdio/CLI matrix](./03-robustness/2026-08-10-l6-final-stdio-cli-matrix.md) 完成5个stdio与28个CLI registered CTest的三工具链矩阵：GCC 33/33、Clang 33/33、MSVC 33/33，均真实exit 0。position-encoding smoke以合法异步initialize handshake保留UTF-8 byte-range断言；L6退出条件已收口，后续LSP计划独立推进。
 
 ## 增量图与资源预算
 
