@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-10 00:20 +08:00
+updated_at: 2026-08-10 01:30 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -37,6 +37,7 @@ source_plans:
 | 2026-07-20 19:30 +08:00 | 已完成 | native builtin与descriptor-plugin module function通过统一query消费structured function descriptor；hover/signature help共享canonical label与参数文档；plugin generation reload不复用旧contract；unavailable阻断name/AST fallback；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Native descriptor function callable parity](../01-semantic-core/2026-07-20-native-descriptor-function-callable-parity.md) |
 | 2026-07-20 20:18 +08:00 | 已完成 | native builtin与descriptor-plugin instance method call-site合并exact metadata identity和parser canonical function TypeId；hover/signature help共享closed parameter/return types、receiver effect及descriptor参数名/文档；reload跟随provider generation；incomplete contract阻断name/AST/raw-owner fallback；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Native receiver method callable parity](../01-semantic-core/2026-07-20-native-receiver-method-callable-parity.md) |
 | 2026-07-20 22:33 +08:00 | 已完成 | descriptor-plugin unconstrained generic instance method由exact metadata identity与parser closed callable TypeId共同投影；hover/signature help共享`fn echo<T>(value: int): int`；generic name和参数名来自structured descriptor，closed类型与receiver effect来自canonical fact；constraint-bearing与字段缺失合同保持unavailable；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Native generic receiver callable parity](../01-semantic-core/2026-07-20-native-generic-receiver-callable-parity.md) |
+| 2026-07-24 08:16 +08:00 | 已完成 | L5 property source/binary canonical consumer：hover、completion、definition、prepareRename、semantic tokens、迁移/refactor与incremental identity统一消费`PropertyAt`/`PropertyBySymbolId`；缺失、重复或二义identity fail closed，不按`__get_*`/`__set_*`、属性名或AST配对重建 | [Canonical property consumer parity](../01-semantic-core/2026-07-24-canonical-property-consumer-parity.md) |
 | 2026-07-20 23:50 +08:00 | 已完成 | source rename workspace edit按edited URI记录open-state/version/generation/length/stable hash；opened version/content或unopened disk content变化在JSON提交前拒绝整批plan；documentChanges只消费captured version且unopened source为null；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [Source rename workspace edit snapshot revalidation](../03-robustness/2026-07-20-source-rename-workspace-edit-snapshot-revalidation.md) |
 | 2026-07-21 01:27 +08:00 | 已完成 | 显式区分opened overlay与disk cache provenance；允许synthetic disk version 0到client didOpen version 0的一次origin transition；普通`textDocument/rename`与source rename共享URI/version/generation/open-state/length/hash提交前复验及captured-version序列化；三工具链十六目标矩阵与stdio/CLI烟测且marker归零 | [General rename workspace edit snapshot revalidation](../03-robustness/2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md) |
 | 2026-07-21 02:45 +08:00 | 已完成 | code action生成前捕获单document fingerprint、生成后复验并只序列化captured version；opaque data保留version/generation/open-state/length/hash；resolve对stale或malformed action删除edit并disabled，不按title/kind/text重建；三工具链十七目标矩阵与stdio/CLI烟测且marker归零 | [Code action workspace edit snapshot revalidation](../03-robustness/2026-07-21-code-action-workspace-edit-snapshot-revalidation.md) |
