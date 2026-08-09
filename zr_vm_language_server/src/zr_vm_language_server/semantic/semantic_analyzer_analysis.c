@@ -139,6 +139,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
                     analyzer);
         }
     }
+    if (analyzer->enableCache && analyzer->cache == ZR_NULL) {
+        (void)ZrLanguageServer_SemanticAnalyzer_EnsureCacheStorage(state, analyzer);
+    }
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
         analysisHash = semantic_analysis_cache_hash(ast, scopeRoot);
         scopeAstHash = ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(scopeRoot);

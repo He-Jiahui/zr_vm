@@ -4411,6 +4411,70 @@ static void test_semantic_analyzer_cache(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Cache");
 }
 
+static void test_semantic_analyzer_releases_cache_storage(SZrState *state) {
+    const TZrChar *summary = "Semantic Analyzer Releases Cache Storage";
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer;
+    SZrSemanticAnalyzer *scopedAnalyzer;
+    SZrAstNode *ast;
+    SZrString *sourceName;
+    const TZrChar *source = "var cached = 1;";
+    TZrSize primaryCacheBytes;
+    TZrSize totalCacheBytes;
+
+    TEST_START(summary);
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    if (analyzer == ZR_NULL) {
+        TEST_FAIL(timer, summary, "Failed to create semantic analyzer");
+        return;
+    }
+
+    primaryCacheBytes = ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzer);
+    scopedAnalyzer = ZrLanguageServer_SemanticAnalyzer_GetOrCreateScopedQueryAnalyzer(
+            state,
+            analyzer);
+    totalCacheBytes = ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzer);
+    if (primaryCacheBytes == 0 || scopedAnalyzer == ZR_NULL ||
+        totalCacheBytes <= primaryCacheBytes) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  summary,
+                  "Cache storage accounting did not include primary and scoped analyzers");
+        return;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_ReleaseCacheStorage(state, analyzer);
+    if (analyzer->cache != ZR_NULL || analyzer->scopedQueryAnalyzer != scopedAnalyzer ||
+        scopedAnalyzer->cache != ZR_NULL ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzer) != 0) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  summary,
+                  "Releasing cache storage retained a cache allocation or lost scoped state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state, "cache_release.zr", 16);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast) ||
+        analyzer->cache == ZR_NULL ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzer) == 0) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  summary,
+                  "Analyzing after release did not rehydrate cache storage");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, summary);
+}
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -4575,6 +4639,9 @@ int main(void) {
     TEST_DIVIDER();
     
     test_semantic_analyzer_cache(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_releases_cache_storage(state);
     TEST_DIVIDER();
     
     // 清理

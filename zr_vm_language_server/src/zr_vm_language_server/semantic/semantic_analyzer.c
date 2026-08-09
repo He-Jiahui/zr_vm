@@ -2114,6 +2114,57 @@ static void semantic_append_imported_module_completions(SZrState *state,
     }
 }
 
+TZrBool ZrLanguageServer_SemanticAnalyzer_EnsureCacheStorage(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer) {
+    if (state == ZR_NULL || state->global == ZR_NULL || analyzer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (analyzer->cache != ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    analyzer->cache = (SZrAnalysisCache *)ZrCore_Memory_RawMalloc(
+            state->global,
+            sizeof(SZrAnalysisCache));
+    if (analyzer->cache == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    analyzer->cache->isValid = ZR_FALSE;
+    analyzer->cache->astHash = 0;
+    analyzer->cache->scopeAstHash = 0;
+    analyzer->cache->cacheRange = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(0, 1, 1),
+            ZrParser_FilePosition_Create(0, 1, 1),
+            ZR_NULL);
+    ZrCore_Array_Init(state,
+                      &analyzer->cache->cachedDiagnostics,
+                      sizeof(SZrDiagnostic *),
+                      ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    ZrCore_Array_Init(state,
+                      &analyzer->cache->cachedSymbols,
+                      sizeof(SZrSymbol *),
+                      ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    return ZR_TRUE;
+}
+
+static void semantic_analyzer_free_cache_storage(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer) {
+    if (state == ZR_NULL || state->global == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->cache == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Array_Free(state, &analyzer->cache->cachedDiagnostics);
+    ZrCore_Array_Free(state, &analyzer->cache->cachedSymbols);
+    ZrCore_Memory_RawFree(state->global,
+                          analyzer->cache,
+                          sizeof(SZrAnalysisCache));
+    analyzer->cache = ZR_NULL;
+}
+
 SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -2152,25 +2203,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     
     ZrCore_Array_Init(state, &analyzer->diagnostics, sizeof(SZrDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     
-    // 创建缓存
-    analyzer->cache = (SZrAnalysisCache *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrAnalysisCache));
-    if (analyzer->cache != ZR_NULL) {
-        analyzer->cache->isValid = ZR_FALSE;
-        analyzer->cache->astHash = 0;
-        analyzer->cache->scopeAstHash = 0;
-        analyzer->cache->cacheRange = ZrParser_FileRange_Create(
-                ZrParser_FilePosition_Create(0, 1, 1),
-                ZrParser_FilePosition_Create(0, 1, 1),
-                ZR_NULL);
-        ZrCore_Array_Init(state,
-                          &analyzer->cache->cachedDiagnostics,
-                          sizeof(SZrDiagnostic *),
-                          ZR_LSP_ARRAY_INITIAL_CAPACITY);
-        ZrCore_Array_Init(state,
-                          &analyzer->cache->cachedSymbols,
-                          sizeof(SZrSymbol *),
-                          ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    }
+    (void)ZrLanguageServer_SemanticAnalyzer_EnsureCacheStorage(state, analyzer);
     
     return analyzer;
 }
@@ -2185,19 +2218,7 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
     ZrLanguageServer_SemanticAnalyzer_ReleaseDiagnostics(state, analyzer, ZR_FALSE);
     ZrCore_Array_Free(state, &analyzer->diagnostics);
     
-    // 释放缓存
-    if (analyzer->cache != ZR_NULL) {
-        // 释放缓存的诊断信息
-        for (TZrSize i = 0; i < analyzer->cache->cachedDiagnostics.length; i++) {
-            SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->cache->cachedDiagnostics, i);
-            if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-                // 注意：诊断可能在 analyzer->diagnostics 中，避免重复释放
-            }
-        }
-        ZrCore_Array_Free(state, &analyzer->cache->cachedDiagnostics);
-        ZrCore_Array_Free(state, &analyzer->cache->cachedSymbols);
-        ZrCore_Memory_RawFree(state->global, analyzer->cache, sizeof(SZrAnalysisCache));
-    }
+    semantic_analyzer_free_cache_storage(state, analyzer);
 
     if (analyzer->referenceTracker != ZR_NULL) {
         ZrLanguageServer_ReferenceTracker_Free(state, analyzer->referenceTracker);
@@ -2866,4 +2887,61 @@ void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrState *state, SZrSemanticAn
     
     ZrLanguageServer_SemanticAnalyzer_ClearCachedDiagnosticRefs(analyzer);
     analyzer->cache->cachedSymbols.length = 0;
+}
+
+TZrSize ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(
+        const SZrSemanticAnalyzer *analyzer) {
+    TZrSize bytes;
+    TZrSize diagnosticBytes;
+    TZrSize symbolBytes;
+
+    if (analyzer == ZR_NULL) {
+        return 0;
+    }
+
+    bytes = 0;
+    if (analyzer->cache != ZR_NULL) {
+        if (analyzer->cache->cachedDiagnostics.capacity >
+            (ZR_MAX_SIZE - sizeof(SZrAnalysisCache)) /
+                    sizeof(SZrDiagnostic *)) {
+            return ZR_MAX_SIZE;
+        }
+        diagnosticBytes = analyzer->cache->cachedDiagnostics.capacity *
+                          sizeof(SZrDiagnostic *);
+        if (analyzer->cache->cachedSymbols.capacity >
+            (ZR_MAX_SIZE - sizeof(SZrAnalysisCache) - diagnosticBytes) /
+                    sizeof(SZrSymbol *)) {
+            return ZR_MAX_SIZE;
+        }
+        symbolBytes = analyzer->cache->cachedSymbols.capacity *
+                      sizeof(SZrSymbol *);
+        bytes = sizeof(SZrAnalysisCache) + diagnosticBytes + symbolBytes;
+    }
+    if (analyzer->scopedQueryAnalyzer != ZR_NULL &&
+        analyzer->scopedQueryAnalyzer != analyzer) {
+        TZrSize scopedBytes =
+                ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(
+                        analyzer->scopedQueryAnalyzer);
+        if (scopedBytes > ZR_MAX_SIZE - bytes) {
+            return ZR_MAX_SIZE;
+        }
+        bytes += scopedBytes;
+    }
+    return bytes;
+}
+
+void ZrLanguageServer_SemanticAnalyzer_ReleaseCacheStorage(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer) {
+    if (state == ZR_NULL || analyzer == ZR_NULL) {
+        return;
+    }
+
+    if (analyzer->scopedQueryAnalyzer != ZR_NULL &&
+        analyzer->scopedQueryAnalyzer != analyzer) {
+        ZrLanguageServer_SemanticAnalyzer_ReleaseCacheStorage(
+                state,
+                analyzer->scopedQueryAnalyzer);
+    }
+    semantic_analyzer_free_cache_storage(state, analyzer);
 }

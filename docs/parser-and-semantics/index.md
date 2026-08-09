@@ -391,6 +391,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - `import("zr.math")` 如何在语义分析阶段预热 native metadata，支撑 `init math.Vector3(...).y`
   - imported type 只允许 `module.Type` 或 `var {Type} = import(...)` 两种显式绑定路径
   - nested native module lookup 与 compile-only imported stub 如何避免递归和 runtime prototype 污染
+- `lsp-semantic-cache-storage.md`
+  - primary/scoped `SZrAnalysisCache` 的 exact capacity-storage accounting
+  - cache-only recursive release、scoped analyzer identity preservation 与 analysis-time rehydration
+  - workspace LRU、256MiB budget、historical semantic snapshots 与 peak-memory report 的明确后续边界
 - `lsp-binary-metadata-coordinate-projection.md`
   - binary typed-export 的 one-based byte line/column 与 LSP UTF-16 range 之间的窄转换合同
   - 有 source snapshot 时按 byte offset 精确转换；无 snapshot 时保留 artifact structural coordinates
@@ -453,4 +457,5 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 27. 再看 `compile-time-typed-generation.md`，了解 Gate 11 typed descriptor、attribute、comptime 与 declaration Patch 的当前实现和明确缺口。
 28. 再看 `legacy-syntax-migration-frontend.md`，了解 M2 parser plan、可发布 edit 和 formal cutover
    前的 LSP 边界。
-29. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+29. 再看 `lsp-semantic-cache-storage.md`，了解 semantic cache 的计量、释放和重新初始化边界。
+30. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

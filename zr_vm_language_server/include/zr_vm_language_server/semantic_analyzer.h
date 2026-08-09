@@ -119,6 +119,13 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(SZ
 
 // 清除缓存
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrState *state, SZrSemanticAnalyzer *analyzer);
+ZR_LANGUAGE_SERVER_API TZrSize
+ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(
+        const SZrSemanticAnalyzer *analyzer);
+ZR_LANGUAGE_SERVER_API void
+ZrLanguageServer_SemanticAnalyzer_ReleaseCacheStorage(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_SemanticAnalyzer_GetMetrics(
     const SZrSemanticAnalyzer *analyzer,
     SZrSemanticAnalysisMetrics *outMetrics);

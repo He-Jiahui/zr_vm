@@ -64,6 +64,10 @@ void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForRange(SZrState *
 
 TZrSize ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(SZrAstNode *ast);
 
+TZrBool ZrLanguageServer_SemanticAnalyzer_EnsureCacheStorage(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer);
+
 void ZrLanguageServer_SemanticAnalyzer_ClearCachedDiagnosticRefs(
     SZrSemanticAnalyzer *analyzer);
 void ZrLanguageServer_SemanticAnalyzer_ReleaseDiagnostics(
