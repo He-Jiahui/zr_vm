@@ -26,6 +26,11 @@
 #include <math.h>
 #include <limits.h>
 
+static void type_inference_record_type_use_reference_fact(
+        SZrCompilerState *cs,
+        const SZrType *astType,
+        TZrTypeId typeId);
+
 void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, const SZrInferredType *expectedType, const SZrInferredType *actualType, SZrFileRange location) {
     TZrChar actualTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     const TZrChar *actualName = "unknown";
@@ -3286,11 +3291,16 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
 
             result->ownershipQualifier = ownershipGenericQualifier;
             if (cs->semanticContext != ZR_NULL && result->typeName != ZR_NULL) {
-                ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
-                                                       result,
-                                                       ZR_SEMANTIC_TYPE_KIND_REFERENCE,
-                                                       result->typeName,
-                                                       astType->name);
+                registeredTypeId = ZrParser_Semantic_RegisterInferredType(
+                        cs->semanticContext,
+                        result,
+                        ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                        result->typeName,
+                        astType->name);
+                type_inference_record_type_use_reference_fact(
+                        cs,
+                        astType,
+                        registeredTypeId);
             }
             return ZR_TRUE;
         }
@@ -3775,6 +3785,49 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
     ZrParser_InferredType_Copy(cs->state, result, &currentType);
     ZrParser_InferredType_Free(cs->state, &currentType);
     return ZR_TRUE;
+}
+
+static void type_inference_record_type_use_reference_fact(
+        SZrCompilerState *cs,
+        const SZrType *astType,
+        TZrTypeId typeId) {
+    SZrSemanticReferenceFact fact;
+    SZrAstNode *typeNode;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || astType == ZR_NULL ||
+        astType->name == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+
+    typeNode = astType->name;
+    if (ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                cs->semanticContext,
+                typeNode,
+                ZR_SEMANTIC_REFERENCE_TYPE) != ZR_NULL) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = typeNode;
+    fact.range = typeNode->location;
+    if (typeNode->type == ZR_AST_GENERIC_TYPE &&
+        typeNode->data.genericType.name != ZR_NULL &&
+        typeNode->data.genericType.name->name != ZR_NULL) {
+        TZrSize nameLength =
+                ZrCore_String_GetByteLength(typeNode->data.genericType.name->name);
+        if (fact.range.start.offset >= nameLength + 1U &&
+            fact.range.start.column >= (TZrInt32)(nameLength + 1U)) {
+            fact.range.end = fact.range.start;
+            fact.range.end.offset--;
+            fact.range.end.column--;
+            fact.range.start.offset -= nameLength + 1U;
+            fact.range.start.column -= (TZrInt32)(nameLength + 1U);
+        }
+    }
+    fact.kind = ZR_SEMANTIC_REFERENCE_TYPE;
+    fact.typeId = typeId;
+    fact.isResolved = ZR_TRUE;
+    (void)ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
 // 将AST类型注解转换为推断类型

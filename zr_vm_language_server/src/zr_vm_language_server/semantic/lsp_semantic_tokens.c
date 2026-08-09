@@ -65,6 +65,13 @@ static TZrInt32 semantic_token_resolve_query_type(SZrState *state,
                                                   SZrString *uri,
                                                   TZrUInt32 line,
                                                   TZrUInt32 character);
+static TZrInt32 semantic_token_resolve_canonical_owner_type(
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        TZrSize startOffset,
+        TZrSize length,
+        TZrUInt32 line,
+        TZrUInt32 character);
 static TZrInt32 semantic_token_resolve_metadata_chain_member(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrSemanticAnalyzer *analyzer,
@@ -259,6 +266,55 @@ static TZrInt32 semantic_token_resolve_query_type(SZrState *state,
     }
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     return tokenType;
+}
+
+static TZrInt32 semantic_token_resolve_canonical_owner_type(
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        TZrSize startOffset,
+        TZrSize length,
+        TZrUInt32 line,
+        TZrUInt32 character) {
+    SZrParserSemanticTypeQuery query;
+    const SZrCanonicalTypeNode *type;
+    SZrInferredType inferredType;
+    SZrFilePosition start;
+    SZrFilePosition end;
+    SZrFileRange range;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || uri == ZR_NULL ||
+        length == 0U) {
+        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+    }
+
+    start = ZrParser_FilePosition_Create(startOffset, line, character);
+    end = ZrParser_FilePosition_Create(startOffset + length, line, character + (TZrUInt32)length);
+    range = ZrParser_FileRange_Create(start, end, uri);
+    if (!ZrParser_SemanticQuery_CanonicalTypeAt(
+                analyzer->semanticContext,
+                range,
+                ZR_NULL,
+                &query) || query.typeId == ZR_SEMANTIC_ID_INVALID) {
+        ZrParser_InferredType_Init(analyzer->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(
+                    analyzer->state, analyzer, range, &inferredType)) {
+            ZrParser_InferredType_Free(analyzer->state, &inferredType);
+            return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+        }
+        ZrParser_InferredType_Free(analyzer->state, &inferredType);
+        if (!ZrParser_SemanticQuery_CanonicalTypeAt(
+                    analyzer->semanticContext,
+                    range,
+                    ZR_NULL,
+                    &query) || query.typeId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+        }
+    }
+
+    type = ZrParser_CanonicalType_Find(analyzer->semanticContext, query.typeId);
+    return type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_OWNER
+                   ? ZR_LSP_SEMANTIC_TOKEN_CLASS
+                   : ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
 }
 
 static TZrInt32 semantic_token_resolve_canonical_parameter(
@@ -806,22 +862,6 @@ static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize lengt
     return ZR_FALSE;
 }
 
-static TZrBool semantic_token_is_ownership_type_word(const TZrChar *text, TZrSize length) {
-    static const TZrChar *const ownershipTypeWords[] = {
-        "Unique", "Shared", "Weak"
-    };
-
-    for (TZrSize index = 0; index < sizeof(ownershipTypeWords) / sizeof(ownershipTypeWords[0]); index++) {
-        TZrSize wordLength = strlen(ownershipTypeWords[index]);
-
-        if (length == wordLength && memcmp(text, ownershipTypeWords[index], length) == 0) {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
 static TZrInt32 semantic_token_guess_member_type(const TZrChar *content,
                                                  TZrSize contentLength,
                                                  TZrSize segmentEnd,
@@ -1016,7 +1056,13 @@ static void semantic_token_scan_source(SZrState *state,
                                               start,
                                               offset,
                                               ZR_LSP_SEMANTIC_TOKEN_KEYWORD);
-            } else if (semantic_token_is_ownership_type_word(content + start, length)) {
+            } else if (semantic_token_resolve_canonical_owner_type(
+                               analyzer,
+                               uri,
+                               start,
+                               length,
+                               startLine,
+                               startCharacter) == ZR_LSP_SEMANTIC_TOKEN_CLASS) {
                 semantic_token_add_utf16_span(state,
                                               entries,
                                               content,

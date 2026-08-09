@@ -7064,6 +7064,136 @@ static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state)
     TEST_PASS(timer, "LSP Semantic Tokens Cover Import Chain Members");
 }
 
+static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+            "resource class Socket { }\n"
+            "fn consume(owner: Unique<Socket>) { }\n"
+            "fn run() {\n"
+            "    var Unique: int = 0;\n"
+            "    return Unique;\n"
+            "}\n";
+    SZrLspPosition ownershipTypePosition;
+    SZrLspPosition localPosition;
+    SZrSemanticAnalyzer *analyzer;
+    SZrFilePosition ownershipTypeFilePosition;
+    SZrFilePosition ownershipTypeEndFilePosition;
+    SZrFileRange ownershipTypeRange;
+    SZrParserSemanticTypeQuery ownershipTypeQuery;
+    const SZrSemanticReferenceFact *ownershipReference;
+    const SZrCanonicalTypeNode *ownershipType;
+    SZrInferredType resolvedOwnershipType;
+    SZrArray tokens;
+
+    TEST_START("LSP Semantic Tokens Use Canonical Ownership Type Identity");
+    TEST_INFO("Canonical ownership type token",
+              "Unique<Resource> must be a canonical owner type while a same-named local remains a variable");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Use Canonical Ownership Type Identity",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "file:///semantic_tokens_canonical_owner_type.zr",
+                               strlen("file:///semantic_tokens_canonical_owner_type.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(
+                content, "Unique<Socket>", 0, 0, &ownershipTypePosition) ||
+        !lsp_find_position_for_substring(content, "var Unique", 0, 4, &localPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Use Canonical Ownership Type Identity",
+                  "Failed to prepare canonical ownership type fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    ownershipTypeFilePosition =
+            ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, ownershipTypePosition);
+    ownershipTypeEndFilePosition = ZrParser_FilePosition_Create(
+            ownershipTypeFilePosition.offset + sizeof("Unique") - 1U,
+            ownershipTypeFilePosition.line,
+            ownershipTypeFilePosition.column + (TZrUInt32)(sizeof("Unique") - 1U));
+    ownershipTypeRange = ZrParser_FileRange_Create(ownershipTypeFilePosition,
+                                                    ownershipTypeEndFilePosition,
+                                                    uri);
+    ZrParser_InferredType_Init(state, &resolvedOwnershipType, ZR_VALUE_TYPE_OBJECT);
+    if (analyzer == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(
+                state, analyzer, ownershipTypeRange, &resolvedOwnershipType)) {
+        ZrParser_InferredType_Free(state, &resolvedOwnershipType);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Use Canonical Ownership Type Identity",
+                  "The shared type resolver must materialize the ownership type annotation");
+        return;
+    }
+    ZrParser_InferredType_Free(state, &resolvedOwnershipType);
+    ownershipReference = analyzer != ZR_NULL && analyzer->semanticContext != ZR_NULL
+                             ? ZrParser_SemanticFacts_FindReferenceAtPosition(
+                                     analyzer->semanticContext, ownershipTypeRange)
+                             : ZR_NULL;
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || ownershipReference == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Use Canonical Ownership Type Identity",
+                  "The ownership type annotation must publish a reference fact");
+        return;
+    }
+    if (ownershipReference->kind != ZR_SEMANTIC_REFERENCE_TYPE ||
+        ownershipReference->typeId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrParser_SemanticQuery_CanonicalTypeAt(analyzer->semanticContext,
+                                                ownershipTypeRange,
+                                                ZR_NULL,
+                                                &ownershipTypeQuery) ||
+        (ownershipType = ZrParser_CanonicalType_Find(
+                 analyzer->semanticContext, ownershipTypeQuery.typeId)) == ZR_NULL ||
+        ownershipType->kind != ZR_CANONICAL_TYPE_OWNER) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Use Canonical Ownership Type Identity",
+                  "The ownership type annotation must publish a canonical owner TypeId");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
+        !semantic_tokens_contain(&tokens,
+                                  ownershipTypePosition.line,
+                                  ownershipTypePosition.character,
+                                  6,
+                                  "class") ||
+        !semantic_tokens_contain(&tokens,
+                                  localPosition.line,
+                                  localPosition.character,
+                                  6,
+                                  "variable") ||
+        semantic_tokens_contain(&tokens,
+                                 localPosition.line,
+                                 localPosition.character,
+                                 6,
+                                 "class")) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Use Canonical Ownership Type Identity",
+                  "Ownership tokens must come from canonical type identity, not the Unique spelling");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Tokens Use Canonical Ownership Type Identity");
+}
+
 static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7981,6 +8111,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_import_chain_members(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_tokens_use_canonical_ownership_type_identity(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_ignore_template_string_tokens(state);

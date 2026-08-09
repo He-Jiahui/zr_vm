@@ -1764,19 +1764,73 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BootstrapTypePrototypes(SZrState *stat
     return ZR_TRUE;
 }
 
+static void semantic_type_prototypes_publish_declared_type_reference(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrType *typeNode,
+        const SZrInferredType *inferredType) {
+    SZrSemanticReferenceFact fact;
+    TZrTypeId typeId;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || typeNode == ZR_NULL ||
+        typeNode->name == ZR_NULL || inferredType == ZR_NULL || inferredType->typeName == ZR_NULL ||
+        ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                analyzer->semanticContext,
+                typeNode->name,
+                ZR_SEMANTIC_REFERENCE_TYPE) != ZR_NULL) {
+        return;
+    }
+
+    typeId = ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
+                                                     inferredType,
+                                                     ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                                                     inferredType->typeName,
+                                                     typeNode->name);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = typeNode->name;
+    fact.range = typeNode->name->location;
+    if (typeNode->name->type == ZR_AST_GENERIC_TYPE &&
+        typeNode->name->data.genericType.name != ZR_NULL &&
+        typeNode->name->data.genericType.name->name != ZR_NULL) {
+        TZrSize nameLength = ZrCore_String_GetByteLength(
+                typeNode->name->data.genericType.name->name);
+        if (fact.range.start.offset >= nameLength + 1U &&
+            fact.range.start.column >= (TZrInt32)(nameLength + 1U)) {
+            fact.range.end = fact.range.start;
+            fact.range.end.offset--;
+            fact.range.end.column--;
+            fact.range.start.offset -= nameLength + 1U;
+            fact.range.start.column -= (TZrInt32)(nameLength + 1U);
+        }
+    }
+    fact.kind = ZR_SEMANTIC_REFERENCE_TYPE;
+    fact.typeId = typeId;
+    fact.isResolved = ZR_TRUE;
+    (void)ZrParser_SemanticFacts_AppendReference(analyzer->semanticContext, &fact);
+}
+
 TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ownerTypeNode,
         SZrAstNode *functionNode,
         const SZrType *typeNode,
         SZrInferredType *outType) {
+    TZrBool isResolved;
+
     if (analyzer == ZR_NULL || typeNode == ZR_NULL || outType == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    return semantic_type_prototypes_build_inferred_type(analyzer,
-                                                        ownerTypeNode,
-                                                        functionNode,
-                                                        typeNode,
-                                                        outType);
+    isResolved = semantic_type_prototypes_build_inferred_type(analyzer,
+                                                               ownerTypeNode,
+                                                               functionNode,
+                                                               typeNode,
+                                                               outType);
+    if (isResolved) {
+        semantic_type_prototypes_publish_declared_type_reference(analyzer, typeNode, outType);
+    }
+    return isResolved;
 }

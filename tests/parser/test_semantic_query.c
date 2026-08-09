@@ -317,6 +317,44 @@ static void test_semantic_query_owner_hover_and_diagnostic_share_canonical_facts
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_query_canonical_type_at_reads_type_reference_fact(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *moduleIdentity = ZrCore_String_CreateFromNative(g_state, "app.resource");
+    SZrString *resourceName = ZrCore_String_CreateFromNative(g_state, "Socket");
+    SZrAstNode typeNode;
+    SZrSemanticReferenceFact fact;
+    SZrParserSemanticTypeQuery query;
+    TZrTypeId resourceType;
+    TZrTypeId uniqueType;
+
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_NOT_NULL(moduleIdentity);
+    TEST_ASSERT_NOT_NULL(resourceName);
+    resourceType = ZrParser_CanonicalType_InternNominal(
+            context, moduleIdentity, resourceName, 0x02000001u);
+    uniqueType = ZrParser_CanonicalType_InternOwner(
+            context, resourceType, ZR_CANONICAL_OWNER_UNIQUE);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, uniqueType);
+
+    init_node(&typeNode, ZR_AST_GENERIC_TYPE, 4, 18);
+    memset(&fact, 0, sizeof(fact));
+    fact.node = &typeNode;
+    fact.range = typeNode.location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_TYPE;
+    fact.typeId = uniqueType;
+    fact.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+
+    memset(&query, 0, sizeof(query));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            context, test_range(6, 6), ZR_NULL, &query));
+    TEST_ASSERT_EQUAL_UINT32(uniqueType, query.typeId);
+    TEST_ASSERT_NOT_NULL(query.reference);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_TYPE, query.reference->kind);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_query_definition_of_returns_matching_declaration(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode declarationNode;
@@ -1014,6 +1052,7 @@ int main(void) {
     RUN_TEST(test_semantic_query_type_at_copies_narrowest_expression_type);
     RUN_TEST(test_semantic_query_facts_at_collects_matching_facts);
     RUN_TEST(test_semantic_query_owner_hover_and_diagnostic_share_canonical_facts);
+    RUN_TEST(test_semantic_query_canonical_type_at_reads_type_reference_fact);
     RUN_TEST(test_semantic_query_definition_of_returns_matching_declaration);
     RUN_TEST(test_semantic_query_definition_of_prefers_reaching_write_definition);
     RUN_TEST(test_semantic_query_definitions_of_returns_multiple_reaching_writes);
