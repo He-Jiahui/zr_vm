@@ -108,6 +108,8 @@
 
 [2026-08-10 workspace semantic cache LRU](./03-robustness/2026-08-10-workspace-semantic-cache-lru.md) 完成每个LSP context默认256MiB exact `SZrAnalysisCache` storage budget、primary/scoped/history analyzer扫描、access-order LRU victim和cache-only release；公共API报告limit/current/peak/evictions/released bytes，GCC/Clang/MSVC interface与local semantic-query focused均真实exit 0。process peak memory与完整L6 stdio/CLI矩阵仍待后续。
 
+[2026-08-10 stdio process peak memory](./03-robustness/2026-08-10-stdio-process-peak-memory.md) 完成native stdio server child的OS process high-water测量与默认512MiB失败门禁：Linux消费`VmHWM`、Windows消费`PeakWorkingSet64`，并修正100轮cancel/change/close churn为只接受lifecycle error或精确线性化snapshot。GCC/Clang/MSVC完整stdio smoke均真实exit 0；完整L6 stdio/CLI矩阵仍待后续。
+
 ## 增量图与资源预算
 
 输入包括versioned document edits、workspace/module dependency graph、source encoding、artifact/module generation和cancellation token；任何输入版本不一致都必须先拒绝而非尝试合并。

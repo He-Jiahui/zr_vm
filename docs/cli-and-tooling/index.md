@@ -105,6 +105,9 @@ doc_type: category-index
   - opened overlay 与 disk cache 的显式 provenance，含合法 client version 0
   - workspace edit 的 URI/version/generation/open-state/length/hash 捕获与提交前复验
   - 普通 rename 与 source-file rename 的 captured-version 序列化和整批失败边界
+- `lsp-stdio-validation.md`
+  - stdio server child process 的 OS peak working-set budget 与跨平台采集
+  - request/cancel/change/close 的 reader-thread 线性化和精确 snapshot 验证
 - `zr-vm-rust-binding.md`
   - `zr_vm_rust_binding` 稳定 C ABI、Rust sys/safe crate 与 opaque handle 设计
   - project scaffold/open/compile/run 与 `callModuleExport` 的 host lifecycle
@@ -123,5 +126,6 @@ doc_type: category-index
 8. 需要修改 language server 的现代编辑器能力、stdio request wiring 或 provider capability 时，再看 `lsp-advanced-editor-features.md`。
 9. 需要修改diagnostic fix的parser ownership、applicability或LSP projection时，再看`lsp-diagnostic-safe-fixes.md`。
 10. 需要修改 rename/code action/fix 的 workspace edit 快照、document version 或 disk/open provenance 时，再看 `lsp-workspace-edit-snapshot-provenance.md`。
-11. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
-12. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+11. 需要修改 stdio smoke 的性能、process memory 或 request lifecycle race 时，再看 `lsp-stdio-validation.md`。
+12. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
+13. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

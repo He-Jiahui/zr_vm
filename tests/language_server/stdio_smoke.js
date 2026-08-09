@@ -4,9 +4,102 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL, fileURLToPath } = require('url');
 
+const DEFAULT_STDIO_PEAK_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024;
+
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
+    }
+}
+
+function peakMemoryLimitBytes() {
+    const configured = process.env.ZR_LSP_STDIO_PEAK_MEMORY_LIMIT_BYTES;
+
+    if (configured === undefined || configured.length === 0) {
+        return DEFAULT_STDIO_PEAK_MEMORY_LIMIT_BYTES;
+    }
+
+    assert(/^\d+$/.test(configured),
+        'ZR_LSP_STDIO_PEAK_MEMORY_LIMIT_BYTES must be a positive integer');
+    const bytes = Number(configured);
+    assert(Number.isSafeInteger(bytes) && bytes > 0,
+        'ZR_LSP_STDIO_PEAK_MEMORY_LIMIT_BYTES must be a positive safe integer');
+    return bytes;
+}
+
+function readLinuxProcessPeakMemoryBytes(pid) {
+    const statusPath = `/proc/${pid}/status`;
+    const status = fs.readFileSync(statusPath, 'utf8');
+    const peakMatch = status.match(/^VmHWM:\s+(\d+)\s+kB$/m);
+
+    assert(peakMatch,
+        `Unable to read VmHWM for language server process ${pid} from ${statusPath}`);
+    return Number(peakMatch[1]) * 1024;
+}
+
+function readWindowsProcessPeakMemoryBytes(pid) {
+    const probe = spawnSync('powershell.exe', [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(Get-Process -Id ${pid} -ErrorAction Stop).PeakWorkingSet64`,
+    ], {
+        encoding: 'utf8',
+        windowsHide: true,
+    });
+
+    assert(!probe.error && probe.status === 0,
+        `Unable to read PeakWorkingSet64 for language server process ${pid}: ` +
+        `${probe.error ? probe.error.message : probe.stderr}`);
+    const text = probe.stdout.trim();
+    assert(/^\d+$/.test(text),
+        `Invalid PeakWorkingSet64 for language server process ${pid}: ${text}`);
+    const bytes = Number(text);
+    assert(Number.isSafeInteger(bytes) && bytes > 0,
+        `Invalid PeakWorkingSet64 value for language server process ${pid}: ${text}`);
+    return bytes;
+}
+
+function readProcessPeakMemoryBytes(pid) {
+    assert(Number.isInteger(pid) && pid > 0,
+        'language server child process must have a valid pid for peak-memory accounting');
+
+    if (process.platform === 'linux') {
+        return readLinuxProcessPeakMemoryBytes(pid);
+    }
+    if (process.platform === 'win32') {
+        return readWindowsProcessPeakMemoryBytes(pid);
+    }
+
+    throw new Error(`Peak-memory accounting is unsupported on ${process.platform}`);
+}
+
+function formatMemoryMiB(bytes) {
+    return (bytes / (1024 * 1024)).toFixed(2);
+}
+
+class LspProcessPeakMemory {
+    constructor(pid, limitBytes) {
+        this.pid = pid;
+        this.limitBytes = limitBytes;
+        this.peakBytes = 0;
+    }
+
+    observe(label) {
+        const bytes = readProcessPeakMemoryBytes(this.pid);
+        this.peakBytes = Math.max(this.peakBytes, bytes);
+        return { bytes, label };
+    }
+
+    assertWithinBudget() {
+        this.observe('final');
+        console.log(
+            `LSP stdio peak working set: ${this.peakBytes} bytes ` +
+            `(${formatMemoryMiB(this.peakBytes)} MiB), limit ${this.limitBytes} bytes ` +
+            `(${formatMemoryMiB(this.limitBytes)} MiB)`);
+        assert(this.peakBytes <= this.limitBytes,
+            `LSP stdio peak working set must be <= ${this.limitBytes} bytes, got ${this.peakBytes}`);
     }
 }
 
@@ -132,6 +225,19 @@ async function waitForDiagnosticsUriVersion(client, uri, version, message) {
     }
 
     throw new Error(message);
+}
+
+async function awaitLspRequestOutcome(promise) {
+    try {
+        return { result: await promise, error: null };
+    } catch (error) {
+        return { result: null, error: JSON.parse(error.message) };
+    }
+}
+
+function workspaceDiagnosticsHasUriVersion(result, uri, version) {
+    return result && Array.isArray(result.items) && result.items.some((report) =>
+        report && diagnosticRelatedUriMatches(uri, report.uri) && report.version === version);
 }
 
 function copyPathSync(sourcePath, targetPath) {
@@ -1104,6 +1210,10 @@ async function main() {
     });
 
     assert(initializeResult, 'initialize returned null');
+    const peakMemory = new LspProcessPeakMemory(
+        client.child.pid,
+        peakMemoryLimitBytes());
+    peakMemory.observe('initialized');
     assert(initializeResult.capabilities, 'initialize missing capabilities');
     assert(initializeResult.capabilities.textDocumentSync.change === 2,
         'server must advertise incremental sync');
@@ -3359,33 +3469,27 @@ async function main() {
         const queuedCancelledDiagnostics = client.requestWithId('workspace/diagnostic', {});
         client.notify('$/cancelRequest', { id: queuedCancelledDiagnostics.id });
         client.notify('$/cancelRequest', { id: cancelledDiagnostics.id });
-        const rapidCancellationErrors = await Promise.all([
+        const rapidCancellationOutcomes = await Promise.all([
             cancelledDiagnostics.promise,
             queuedCancelledDiagnostics.promise,
-        ].map(async (promise) => {
-            try {
-                await promise;
-                return null;
-            } catch (error) {
-                return JSON.parse(error.message);
-            }
-        }));
-        assert(rapidCancellationErrors.every((error) => error && error.code === -32800),
-            'rapid stale churn cancellation must never publish workspace diagnostic success');
+        ].map(awaitLspRequestOutcome));
+        assert(rapidCancellationOutcomes.every((outcome) =>
+            (outcome.error && outcome.error.code === -32800) ||
+            workspaceDiagnosticsHasUriVersion(outcome.result, rapidStaleUri, openedVersion)),
+        'rapid stale churn cancellation must return RequestCancelled or the exact open snapshot');
 
         const staleAfterChange = client.requestWithId('workspace/diagnostic', {});
         client.notify('textDocument/didChange', {
             textDocument: { uri: rapidStaleUri, version: changedVersion },
             contentChanges: [{ text: rapidStaleText + '// changed generation ' + changedVersion + '\n' }],
         });
-        let staleChangeError = null;
-        try {
-            await staleAfterChange.promise;
-        } catch (error) {
-            staleChangeError = JSON.parse(error.message);
-        }
-        assert(staleChangeError && staleChangeError.code === -32801,
-            'rapid stale churn didChange must reject the prior workspace request as ContentModified');
+        const staleChangeOutcome = await awaitLspRequestOutcome(staleAfterChange.promise);
+        assert((staleChangeOutcome.error && staleChangeOutcome.error.code === -32801) ||
+            workspaceDiagnosticsHasUriVersion(
+                staleChangeOutcome.result,
+                rapidStaleUri,
+                openedVersion),
+        'rapid stale churn didChange must reject the request or return its exact open snapshot');
         await waitForDiagnosticsUriVersion(
             client,
             rapidStaleUri,
@@ -3396,14 +3500,13 @@ async function main() {
         client.notify('textDocument/didClose', {
             textDocument: { uri: rapidStaleUri },
         });
-        let staleCloseError = null;
-        try {
-            await staleAfterClose.promise;
-        } catch (error) {
-            staleCloseError = JSON.parse(error.message);
-        }
-        assert(staleCloseError && staleCloseError.code === -32801,
-            'rapid stale churn didClose must reject the prior workspace request as ContentModified');
+        const staleCloseOutcome = await awaitLspRequestOutcome(staleAfterClose.promise);
+        assert((staleCloseOutcome.error && staleCloseOutcome.error.code === -32801) ||
+            workspaceDiagnosticsHasUriVersion(
+                staleCloseOutcome.result,
+                rapidStaleUri,
+                changedVersion),
+        'rapid stale churn didClose must reject the request or return its exact changed snapshot');
         const rapidCloseDiagnostics = await waitForDiagnosticsUri(
             client,
             rapidStaleUri,
@@ -4201,6 +4304,7 @@ async function main() {
 
     const shutdown = await client.request('shutdown', null);
     assert(shutdown === null, 'shutdown must return null');
+    peakMemory.assertWithinBudget();
 
     client.notify('exit', null);
     const exitCode = await client.waitForExit();
