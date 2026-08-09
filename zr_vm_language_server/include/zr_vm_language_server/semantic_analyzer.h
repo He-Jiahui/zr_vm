@@ -107,6 +107,7 @@ typedef struct SZrSemanticAnalyzer {
     SZrAstNode *ownedAst;              // scoped cache保留的旧AST（可选，所有）
     SZrAstNode *borrowedAst;           // 由历史semantic snapshot持有的旧AST（可选，借用）
     TZrBool preserveScopedQueryAnalyzerOnNextAstChange;
+    TZrSize cacheStorageAccessOrder;   // workspace cache LRU access order
     SZrSemanticAnalysisMetrics metrics;
 } SZrSemanticAnalyzer;
 

@@ -194,6 +194,7 @@ typedef struct SZrLspContext {
     SZrSemanticAnalyzer *analyzer;
     SZrHashSet uriToAnalyzerMap;      // URI 到分析器的映射（值为SZrSemanticAnalyzer*）
     struct SZrLspSemanticSnapshotCache *semanticSnapshotCache;
+    struct SZrLspSemanticCacheLru *semanticCacheLru;
     SZrArray projectIndexes;          // 已打开项目索引（SZrLspProjectIndex*，内部使用）
     TZrChar *clientSelectedZrpNativePath; /*!< IDE 选中的 .zrp 绝对路径（原生路径，可为 ZR_NULL） */
 } SZrLspContext;
@@ -203,6 +204,14 @@ typedef struct SZrLspHistoricalSemanticSnapshot {
     TZrSize contentGeneration;
     const SZrSemanticAnalyzer *analyzer;
 } SZrLspHistoricalSemanticSnapshot;
+
+typedef struct SZrLspSemanticCacheStorageInfo {
+    TZrSize limitBytes;
+    TZrSize storageBytes;
+    TZrSize peakStorageBytes;
+    TZrSize evictionCount;
+    TZrSize releasedBytes;
+} SZrLspSemanticCacheStorageInfo;
 
 // LSP 接口管理函数
 
@@ -217,6 +226,15 @@ ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
         const SZrString *uri,
         TZrSize historyIndex,
         SZrLspHistoricalSemanticSnapshot *outSnapshot);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_Lsp_SetSemanticCacheStorageLimit(
+        SZrState *state,
+        SZrLspContext *context,
+        TZrSize limitBytes);
+ZR_LANGUAGE_SERVER_API TZrBool
+ZrLanguageServer_Lsp_GetSemanticCacheStorageInfo(
+        const SZrLspContext *context,
+        SZrLspSemanticCacheStorageInfo *outInfo);
 
 // 设置 IDE 选中的工程文件（.zrp）URI，用于多工程目录下消除 discover 歧义；uri 为 ZR_NULL 时清除
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_SetClientSelectedZrpUri(SZrState *state,

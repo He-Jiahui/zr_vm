@@ -7742,6 +7742,8 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_retains_two_historical_semantic_snapshots(state);
+    test_lsp_workspace_semantic_cache_lru_evicts_oldest_storage(state);
+    test_lsp_workspace_semantic_cache_lru_releases_history_storage(state);
     TEST_DIVIDER();
 
     test_lsp_body_edit_records_minimal_change_and_declaration_scope(state);

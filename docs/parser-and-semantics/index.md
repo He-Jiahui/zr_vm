@@ -398,7 +398,11 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 - `lsp-historical-semantic-snapshots.md`
   - 每 URI 两份完整 historical semantic analyzer state 的 newest-first query
   - primary analyzer identity 保持、历史 AST 单一所有权与 scoped-cache borrowed-AST rollover 失效
-  - workspace 256MiB LRU、全局内存报告与完整 L6 stress matrix 的明确后续边界
+  - historical semantic state 与 cache-storage eviction 的所有权边界
+- `lsp-workspace-semantic-cache-lru.md`
+  - primary/scoped/history analyzer 的 exact cache-storage workspace LRU
+  - 默认 256MiB budget、可配置 hard cap、recency、cache-only release 与公共统计
+  - process peak memory 和完整 L6 stress matrix 的明确后续边界
 - `lsp-binary-metadata-coordinate-projection.md`
   - binary typed-export 的 one-based byte line/column 与 LSP UTF-16 range 之间的窄转换合同
   - 有 source snapshot 时按 byte offset 精确转换；无 snapshot 时保留 artifact structural coordinates
@@ -462,4 +466,5 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 28. 再看 `legacy-syntax-migration-frontend.md`，了解 M2 parser plan、可发布 edit 和 formal cutover
    前的 LSP 边界。
 29. 再看 `lsp-semantic-cache-storage.md`，了解 semantic cache 的计量、释放和重新初始化边界。
-30. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+30. 再看 `lsp-workspace-semantic-cache-lru.md`，了解 workspace 预算如何只淘汰精确计量的 cache storage。
+31. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

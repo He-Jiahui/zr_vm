@@ -919,6 +919,7 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     context->parser = ZrLanguageServer_IncrementalParser_New(state);
     context->analyzer = ZR_NULL; // 延迟创建，每个文件一个分析器
     context->semanticSnapshotCache = ZR_NULL;
+    context->semanticCacheLru = ZR_NULL;
     ZrCore_HashSet_Construct(&context->uriToAnalyzerMap);
     ZrCore_HashSet_Init(state, &context->uriToAnalyzerMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     ZrCore_Array_Init(state,
@@ -938,6 +939,11 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
         ZrLanguageServer_LspContext_Free(state, context);
         return ZR_NULL;
     }
+    context->semanticCacheLru = ZrLanguageServer_LspSemanticCacheLru_New(state);
+    if (context->semanticCacheLru == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        return ZR_NULL;
+    }
     
     return context;
 }
@@ -949,6 +955,7 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
     }
 
     ZrLanguageServer_LspSemanticSnapshotCache_Free(state, context);
+    ZrLanguageServer_LspSemanticCacheLru_Free(state, context);
 
     // 释放所有分析器
     if (context->uriToAnalyzerMap.isValid && context->uriToAnalyzerMap.buckets != ZR_NULL) {
@@ -1062,7 +1069,10 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, S
     }
     if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
         // 从原生指针中获取 SZrSemanticAnalyzer
-        return (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+        SZrSemanticAnalyzer *existing =
+                (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+        ZrLanguageServer_LspSemanticCacheLru_Touch(context, existing);
+        return existing;
     }
     
     // 创建新分析器
@@ -1078,6 +1088,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, S
         }
     }
     
+    ZrLanguageServer_LspSemanticCacheLru_Touch(context, analyzer);
     return analyzer;
 }
 
@@ -1095,7 +1106,10 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspCo
         pair = ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(state, &context->uriToAnalyzerMap, uri);
     }
     if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-        return (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+        SZrSemanticAnalyzer *analyzer =
+                (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+        ZrLanguageServer_LspSemanticCacheLru_Touch(context, analyzer);
+        return analyzer;
     }
 
     return ZR_NULL;
@@ -1362,6 +1376,9 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast);
             if (!analyzeSuccess) {
                 ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
+            } else {
+                ZrLanguageServer_LspSemanticCacheLru_Touch(context, analyzer);
+                ZrLanguageServer_LspSemanticCacheLru_Enforce(state, context);
             }
             return analyzeSuccess;
         }
@@ -1374,6 +1391,9 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return ZR_FALSE;
         }
 
+        ZrLanguageServer_LspSemanticCacheLru_Touch(context, analyzer);
+        ZrLanguageServer_LspSemanticCacheLru_Enforce(state, context);
+
         return ZR_TRUE;
     }
 }
@@ -1385,6 +1405,22 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocument(SZrState *state,
                           TZrSize contentLength,
                           TZrSize version) {
     return ZrLanguageServer_Lsp_UpdateDocumentCore(state, context, uri, content, contentLength, version, ZR_TRUE);
+}
+
+TZrBool ZrLanguageServer_Lsp_SetSemanticCacheStorageLimit(
+        SZrState *state,
+        SZrLspContext *context,
+        TZrSize limitBytes) {
+    return ZrLanguageServer_LspSemanticCacheLru_SetLimit(
+            state,
+            context,
+            limitBytes);
+}
+
+TZrBool ZrLanguageServer_Lsp_GetSemanticCacheStorageInfo(
+        const SZrLspContext *context,
+        SZrLspSemanticCacheStorageInfo *outInfo) {
+    return ZrLanguageServer_LspSemanticCacheLru_GetInfo(context, outInfo);
 }
 
 // 获取诊断

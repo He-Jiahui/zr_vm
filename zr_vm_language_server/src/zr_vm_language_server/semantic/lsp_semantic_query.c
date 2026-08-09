@@ -2,6 +2,7 @@
 #include "semantic/lsp_semantic_definition_query.h"
 #include "semantic/lsp_semantic_import_chain.h"
 #include "semantic/semantic_analyzer_internal.h"
+#include "interface/lsp_semantic_cache_lru.h"
 #include "project/lsp_project_internal.h"
 
 #include "zr_vm_library/file.h"
@@ -3097,6 +3098,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
     }
     ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
+    ZrLanguageServer_LspSemanticCacheLru_Touch(context, analyzer);
+    ZrLanguageServer_LspSemanticCacheLru_Enforce(state, context);
     return ZR_TRUE;
 }
 

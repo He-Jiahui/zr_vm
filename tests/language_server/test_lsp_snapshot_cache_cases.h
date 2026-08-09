@@ -1015,4 +1015,168 @@ static void test_lsp_retains_two_historical_semantic_snapshots(
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_workspace_semantic_cache_lru_evicts_oldest_storage(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Workspace Semantic Cache LRU Evicts Oldest Storage";
+    const TZrChar *contentAOne = "fn first(): int { return 1; }\n";
+    const TZrChar *contentATwo = "fn first(): int { return 2; }\n";
+    const TZrChar *contentB = "fn second(): int { return 3; }\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uriA;
+    SZrString *uriB;
+    SZrSemanticAnalyzer *analyzerA;
+    SZrSemanticAnalyzer *analyzerB;
+    SZrLspSemanticCacheStorageInfo info = {0};
+    TZrSize storageA;
+    TZrSize storageB;
+    TZrSize limit;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uriA = ZrCore_String_Create(
+            state,
+            "file:///semantic_cache_lru_a.zr",
+            strlen("file:///semantic_cache_lru_a.zr"));
+    uriB = ZrCore_String_Create(
+            state,
+            "file:///semantic_cache_lru_b.zr",
+            strlen("file:///semantic_cache_lru_b.zr"));
+    if (context == ZR_NULL || uriA == ZR_NULL || uriB == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uriA, contentAOne, strlen(contentAOne), 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uriB, contentB, strlen(contentB), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare two semantic cache owners");
+        return;
+    }
+
+    analyzerA = find_test_analyzer(state, context, uriA);
+    analyzerB = find_test_analyzer(state, context, uriB);
+    storageA = ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzerA);
+    storageB = ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzerB);
+    limit = storageA > storageB ? storageA : storageB;
+    if (analyzerA == ZR_NULL || analyzerB == ZR_NULL || storageA == 0U ||
+        storageB == 0U || limit == 0U ||
+        !ZrLanguageServer_Lsp_SetSemanticCacheStorageLimit(
+                state, context, limit) ||
+        !ZrLanguageServer_Lsp_GetSemanticCacheStorageInfo(context, &info)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to configure the exact workspace cache budget");
+        return;
+    }
+
+    if (info.limitBytes != limit || info.storageBytes > limit ||
+        info.peakStorageBytes < storageA + storageB ||
+        info.evictionCount != 1U || info.releasedBytes != storageA ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzerA) != 0U ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzerB) != storageB ||
+        analyzerA->semanticContext == ZR_NULL || analyzerB->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "Lowering the budget did not evict only the oldest cache storage");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uriA, contentATwo, strlen(contentATwo), 2) ||
+        !ZrLanguageServer_Lsp_GetSemanticCacheStorageInfo(context, &info)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to rehydrate the most recently used cache owner");
+        return;
+    }
+
+    if (info.storageBytes > limit || info.evictionCount != 2U ||
+        info.releasedBytes != storageA + storageB ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzerA) == 0U ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(analyzerB) != 0U ||
+        analyzerA->semanticContext == ZR_NULL || analyzerB->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "LRU rehydration did not evict the older cache with exact accounting");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_workspace_semantic_cache_lru_releases_history_storage(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Workspace Semantic Cache LRU Releases History Storage";
+    const TZrChar *versionOne = "fn value(): int { return 1; }\n";
+    const TZrChar *versionTwo = "fn value(): int { return 2; }\n";
+    const TZrChar *versionThree = "fn value(): int { return 3; }\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri;
+    SZrSemanticAnalyzer *currentAnalyzer;
+    SZrLspHistoricalSemanticSnapshot newest = {0};
+    SZrLspHistoricalSemanticSnapshot oldest = {0};
+    SZrLspSemanticCacheStorageInfo info = {0};
+    TZrSize currentStorage;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///semantic_cache_lru_history.zr",
+            strlen("file:///semantic_cache_lru_history.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, versionOne, strlen(versionOne), 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, versionTwo, strlen(versionTwo), 2) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, versionThree, strlen(versionThree), 3)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare current plus two history analyzers");
+        return;
+    }
+
+    currentAnalyzer = find_test_analyzer(state, context, uri);
+    currentStorage = ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(
+            currentAnalyzer);
+    if (currentAnalyzer == ZR_NULL || currentStorage == 0U ||
+        !ZrLanguageServer_Lsp_SetSemanticCacheStorageLimit(
+                state, context, currentStorage) ||
+        !ZrLanguageServer_Lsp_GetSemanticCacheStorageInfo(context, &info) ||
+        !ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+                context, uri, 0U, &newest) ||
+        !ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
+                context, uri, 1U, &oldest)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to apply the current-cache-only budget");
+        return;
+    }
+
+    if (info.storageBytes > currentStorage || info.evictionCount != 2U ||
+        newest.version != 2U || oldest.version != 1U ||
+        newest.analyzer == ZR_NULL || oldest.analyzer == ZR_NULL ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(currentAnalyzer) == 0U ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(
+                newest.analyzer) != 0U ||
+        ZrLanguageServer_SemanticAnalyzer_GetCacheStorageBytes(
+                oldest.analyzer) != 0U ||
+        currentAnalyzer->semanticContext == ZR_NULL ||
+        newest.analyzer->semanticContext == ZR_NULL ||
+        oldest.analyzer->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "LRU did not release only historical cache storage");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif // ZR_VM_TEST_LSP_SNAPSHOT_CACHE_CASES_H

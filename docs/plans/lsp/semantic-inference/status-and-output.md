@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-09 23:37 +08:00
+updated_at: 2026-08-10 00:20 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -88,14 +88,15 @@ source_plans:
 | 2026-08-08 19:29 +08:00 | 已完成 | LSP 03 rapid stdio stale-response churn leaf：独立URI连续100轮`didOpen -> cancel -> didChange -> didClose`；每轮双取消只返回`-32800`，change/close前workspace诊断请求只返回`-32801`，并严格等待对应版本diagnostics与close清理，未接受stale success。MSVC direct stdio与CTest `language_server_stdio_smoke`均真实exit 0；semantic snapshot、256MiB workspace LRU、peak memory与跨平台验证仍待后续 | [Rapid stdio stale-response churn](../03-robustness/2026-08-08-rapid-stdio-stale-response-churn.md) |
 | 2026-08-09 22:31 +08:00 | 已完成 | LSP 03 semantic cache storage support：primary/scoped `SZrAnalysisCache` 按结构和pointer-array capacity精确计量，递归release只回收计量cache storage并保留scoped analyzer identity，后续analysis按需重新初始化；GCC/Clang/MSVC semantic analyzer focused均真实exit 0。此项不是256MiB workspace LRU、historical semantic snapshot或peak-memory报告 | [Semantic cache storage accounting](../03-robustness/2026-08-09-semantic-cache-storage-accounting.md) |
 | 2026-08-09 23:37 +08:00 | 已完成 | LSP 03 two historical semantic snapshots：每URI保留最近两份完整历史semantic analyzer state，newest-first query返回精确version/generation与readonly analyzer；主analyzer identity保持，scoped cache借用旧AST并在rollover先失效，避免stale hit/double free；GCC/Clang/MSVC interface与local semantic-query focused均真实exit 0。此项不是256MiB workspace LRU、peak-memory或完整L6矩阵 | [Two historical semantic snapshots](../03-robustness/2026-08-09-two-historical-semantic-snapshots.md) |
+| 2026-08-10 00:20 +08:00 | 已完成 | LSP 03 workspace semantic cache LRU：每个context默认256MiB，只汇总primary/scoped/history `SZrAnalysisCache` 的精确capacity storage；按access order释放oldest cache storage并保留AST/semantic context/analyzer identity；public storage info报告limit/current/peak/evictions/released bytes。GCC/Clang/MSVC interface与local semantic-query focused均真实exit 0；不代表process peak或完整L6矩阵 | [Workspace semantic cache LRU](../03-robustness/2026-08-10-workspace-semantic-cache-lru.md) |
 
 ## 当前状态
 
 - 总体目标进行中。当前记录只表示已验收的子里程碑完成，不表示L1-L8整体完成。
 - LSP 04 E1 已完成计划要求的 module、scope、receiver、generic context和visible SymbolId reconstruction；没有稳定canonical fact时不伪造source `TypeId`或const-generic runtime carrier。下一步是E2b，以E2a正式fragment parser绑定只读debug context并复用Canonical TypeRef/Place query；随后继续E3-E5，以及property/constructor/meta callable target identity、native generic constraint/effectful method contract、public type/layout、binary/native/artifact provider contract parity、public import/package alias变化的反向依赖传播、其他delimiter family/replacement structured diagnostic safe fix、其他workspace edit producer的snapshot复验和性能/内存预算证据。
 - LSP 04 E2a formal fragment parser、E2b0/E2b1 binding injection、E2b2 canonical Place、E2b3-E2b5 runtime-root carrier/consumer、E2b6a-E2b6d closure artifact/resolver/origin facts/formal consumer，以及E3a DAP capability context、E3b conditional breakpoint、E3c logpoint pure policy、E4a/E4b canonical result/failure transport、E4c children-handle generation audit和E5 REPL generations已完成。后续Debug/LSP consumer继续只能消费已经发布的 canonical facts。任何 stale、trimmed、missing 或 duplicate identity 必须 fail closed。
-- LSP 03 stdio cancellation、content-modified与rapid edit/cancel/close leaves已完成：输入线程只维护request queue、精确id token和reader-observed input generation，主线程继续独占semantic state/stdout；active或queued `workspace/diagnostic`取消不会发布stale success，后续状态变更使旧FIFO request返回`-32801`。独立URI的100轮交错测试逐轮确认取消、变更、关闭和diagnostic清理。L6整体的immutable semantic snapshot、峰值内存和cache/LRU预算仍未完成。
-- LSP 03 warm request、single-document diagnostics和100-file workspace incremental diagnostics latency leaves已完成：前者覆盖canonical native hover、closed-generic completion与signatureHelp，后两者严格等待同URI/version diagnostics；均有20样本p50/p95/p99和p95 CI门禁。峰值内存、cache/LRU、跨平台可比性能和完整snapshot stress仍未完成。
-- LSP 03 two historical text snapshots leaf已完成：每个document的file version只持有current与最新两份历史text block，public acquire仍以ref-count保证已借出快照可跨rollover读取。semantic cache不在该固定文本队列内，256MiB workspace LRU、峰值内存、跨平台可比性能和完整snapshot stress仍未完成。
-- LSP 03 semantic cache storage accounting和two historical semantic snapshots leaves已完成：primary/scoped `SZrAnalysisCache` 已有真实capacity-storage计量与cache-only递归释放；每URI已保留两份完整历史semantic analyzer state，并在scoped cache借用旧AST时安全淘汰。workspace context尚未消费计量实施256MiB LRU，peak-memory report与完整L6矩阵仍未完成。
+- LSP 03 stdio cancellation、content-modified与rapid edit/cancel/close leaves已完成：输入线程只维护request queue、精确id token和reader-observed input generation，主线程继续独占semantic state/stdout；active或queued `workspace/diagnostic`取消不会发布stale success，后续状态变更使旧FIFO request返回`-32801`。独立URI的100轮交错测试逐轮确认取消、变更、关闭和diagnostic清理。L6的semantic snapshot和exact cache-storage LRU已完成，峰值内存与完整最终矩阵仍未完成。
+- LSP 03 warm request、single-document diagnostics和100-file workspace incremental diagnostics latency leaves已完成：前者覆盖canonical native hover、closed-generic completion与signatureHelp，后两者严格等待同URI/version diagnostics；均有20样本p50/p95/p99和p95 CI门禁。峰值内存、跨平台可比性能和完整最终矩阵仍未完成。
+- LSP 03 two historical text snapshots leaf已完成：每个document的file version只持有current与最新两份历史text block，public acquire仍以ref-count保证已借出快照可跨rollover读取。semantic cache不在该固定文本队列内；其单独的256MiB exact cache-storage LRU现已完成，峰值内存和完整最终矩阵仍未完成。
+- LSP 03 semantic cache storage accounting、two historical semantic snapshots和workspace LRU leaves已完成：primary/scoped/history `SZrAnalysisCache` 有真实capacity-storage计量、cache-only递归释放和context-local 256MiB access-order eviction；每URI已保留两份完整历史semantic analyzer state，并在scoped cache借用旧AST时安全滚动淘汰。process peak-memory report与完整L6矩阵仍未完成。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

@@ -2188,6 +2188,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     analyzer->ownedAst = ZR_NULL;
     analyzer->borrowedAst = ZR_NULL;
     analyzer->preserveScopedQueryAnalyzerOnNextAstChange = ZR_FALSE;
+    analyzer->cacheStorageAccessOrder = 0U;
     memset(&analyzer->metrics, 0, sizeof(analyzer->metrics));
     
     if (analyzer->symbolTable == ZR_NULL) {

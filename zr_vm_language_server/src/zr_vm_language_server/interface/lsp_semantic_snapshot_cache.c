@@ -1,4 +1,5 @@
 #include "interface/lsp_interface_internal.h"
+#include "interface/lsp_semantic_cache_lru.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include <string.h>
@@ -240,6 +241,28 @@ TZrBool ZrLanguageServer_LspSemanticSnapshotCache_Capture(
     return ZR_TRUE;
 }
 
+void ZrLanguageServer_LspSemanticSnapshotCache_VisitAnalyzers(
+        const SZrLspContext *context,
+        TZrLspSemanticSnapshotAnalyzerVisitor visitor,
+        void *userData) {
+    const SZrLspSemanticSnapshotCache *cache;
+
+    if (context == ZR_NULL || visitor == ZR_NULL ||
+        context->semanticSnapshotCache == ZR_NULL) {
+        return;
+    }
+    cache = context->semanticSnapshotCache;
+    for (TZrSize index = 0U; index < cache->entries.length; index++) {
+        const SZrLspSemanticSnapshotEntry *entry =
+                (const SZrLspSemanticSnapshotEntry *)ZrCore_Array_Get(
+                        (SZrArray *)&cache->entries,
+                        index);
+        if (entry != ZR_NULL && entry->analyzer != ZR_NULL) {
+            visitor(entry->analyzer, userData);
+        }
+    }
+}
+
 TZrBool ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
         const SZrLspContext *context,
         const SZrString *uri,
@@ -281,5 +304,8 @@ TZrBool ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
     outSnapshot->version = newest->version;
     outSnapshot->contentGeneration = newest->contentGeneration;
     outSnapshot->analyzer = newest->analyzer;
+    ZrLanguageServer_LspSemanticCacheLru_Touch(
+            (SZrLspContext *)context,
+            newest->analyzer);
     return ZR_TRUE;
 }

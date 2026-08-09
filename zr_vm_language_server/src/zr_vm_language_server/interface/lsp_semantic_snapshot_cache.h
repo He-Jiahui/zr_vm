@@ -4,6 +4,9 @@
 #include "zr_vm_language_server/lsp_interface.h"
 
 typedef struct SZrLspSemanticSnapshotCache SZrLspSemanticSnapshotCache;
+typedef void (*TZrLspSemanticSnapshotAnalyzerVisitor)(
+        SZrSemanticAnalyzer *analyzer,
+        void *userData);
 
 SZrLspSemanticSnapshotCache *ZrLanguageServer_LspSemanticSnapshotCache_New(
         SZrState *state);
@@ -22,5 +25,9 @@ TZrBool ZrLanguageServer_LspSemanticSnapshotCache_Capture(
         SZrSemanticAnalyzer *currentAnalyzer,
         SZrAstNode *retainedAst,
         TZrBool preserveScopedQueryAnalyzer);
+void ZrLanguageServer_LspSemanticSnapshotCache_VisitAnalyzers(
+        const SZrLspContext *context,
+        TZrLspSemanticSnapshotAnalyzerVisitor visitor,
+        void *userData);
 
 #endif
