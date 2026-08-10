@@ -7894,6 +7894,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_snapshot_cache_cases.h"
 #include "test_lsp_reference_callable_consumer_cases.h"
 #include "test_lsp_property_contract_cases.h"
+#include "test_lsp_canonical_receiver_member_type_cases.h"
 #include "test_lsp_property_incremental_cases.h"
 #include "test_lsp_property_refactor_cases.h"
 #include "test_lsp_compile_tool_projection_cases.h"
@@ -7993,6 +7994,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_binary_property_preserves_canonical_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_receiver_member_type_fails_closed_without_declaration_fact(state);
     TEST_DIVIDER();
 
     test_lsp_property_refactor_uses_canonical_query(state);

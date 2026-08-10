@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-10 16:08 +08:00
+updated_at: 2026-08-10 18:24 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -98,6 +98,7 @@ source_plans:
 | 2026-08-10 14:00 +08:00 | 已完成 | LSP 08 canonical inlay declaration type独立合同：新增按精确`SymbolId`查询resolved declaration fact的Q2 API；source inlay type display要求声明`TypeId`与symbol snapshot一致并只用canonical formatter，删除`TypeNameString_Get`显示回退，identity unavailable时不生成提示；GCC/Clang/MSVC parser query 29/29、focused 10/10、interface与完整stdio smoke均真实exit 0 | [Canonical inlay declaration type](../01-semantic-core/2026-08-10-canonical-inlay-declaration-type.md) |
 | 2026-08-10 15:23 +08:00 | 已完成 | LSP 08 canonical symbol documentation type独立合同：source hover/completion markdown显式接收owning analyzer，按精确`SymbolId`声明事实与匹配`TypeId`格式化类型；删除`symbol->typeInfo`显示回退并与inlay复用独立canonical helper，identity unavailable时保留symbol documentation但省略type section；GCC/Clang/MSVC focused 9/9、inlay 10/10、interface/local query/project与完整stdio均真实exit 0 | [Canonical symbol documentation type](../01-semantic-core/2026-08-10-canonical-symbol-documentation-type.md) |
 | 2026-08-10 16:08 +08:00 | 已完成 | LSP 08 canonical property signature type独立合同：source property hover/completion文档按Property SymbolId重新查询canonical PropertyDef，校验symbol/type identity并格式化canonical TypeId；删除`symbol->typeInfo`与copied contract独立显示授权，缺fact时保留普通symbol文档但省略property signature；GCC/Clang/MSVC expression facts 9/9、local query/interface/project与完整stdio均真实exit 0 | [Canonical property signature type](../01-semantic-core/2026-08-10-canonical-property-signature-type.md) |
+| 2026-08-10 18:24 +08:00 | 已完成 | LSP 08 canonical receiver member type独立合同：project source receiver member保留精确declaration identity，但type text只按同一SymbolId的resolved declaration fact与匹配canonical TypeId格式化；删除`declarationSymbol->typeInfo`显示回退，fact unavailable时保留导航而省略type；`b452bb5`关闭相邻postfix range公共query回归；GCC/Clang/MSVC semantic facts 13/13、expression/local query/interface/project与完整stdio均真实exit 0 | [Canonical receiver member type](../01-semantic-core/2026-08-10-canonical-receiver-member-type.md) |
 
 ## 当前状态
 
@@ -108,5 +109,5 @@ source_plans:
 - LSP 03 warm request、single-document diagnostics和100-file workspace incremental diagnostics latency leaves已完成：前者覆盖canonical native hover、closed-generic completion与signatureHelp，后两者严格等待同URI/version diagnostics；均有20样本p50/p95/p99和p95 CI门禁。native stdio process peak-memory、position UTF-8 handshake和三工具链完整matrix均已有证据；更广性能比较可在后续计划单独扩展。
 - LSP 03 two historical text snapshots leaf已完成：每个document的file version只持有current与最新两份历史text block，public acquire仍以ref-count保证已借出快照可跨rollover读取。semantic cache不在该固定文本队列内；其单独的256MiB exact cache-storage LRU、native stdio process peak-memory和L6 final matrix均已完成。
 - LSP 03 semantic cache storage accounting、two historical semantic snapshots和workspace LRU leaves已完成：primary/scoped/history `SZrAnalysisCache` 有真实capacity-storage计量、cache-only递归释放和context-local 256MiB access-order eviction；每URI已保留两份完整历史semantic analyzer state，并在scoped cache借用旧AST时安全滚动淘汰。native stdio process peak-memory report和完整L6矩阵也已完成。
-- LSP 08仅完成canonical generic owner type、member token、source declaration type display、source inlay declaration type、source symbol documentation type和source property signature type六个独立合同：resolved generic owner type use的reference fact和`CanonicalTypeAt`为generic owner base identifier提供精确identity，semantic tokens不再从`Unique`/`Shared`/`Weak`名称推断类型，也不会从`.`、后续`.`或`(`猜测member kind；显式声明hover/completion、inlay hint与symbol markdown都只按resolved canonical fact格式化，property signature只按Property SymbolId查询PropertyDef和匹配TypeId，并在identity unavailable时fail closed。其余L8本地fallback删除、provider/project覆盖和完整protocol矩阵仍未完成。
+- LSP 08仅完成canonical generic owner type、member token、source declaration type display、source inlay declaration type、source symbol documentation type、source property signature type和project receiver member type七个独立合同：resolved generic owner type use的reference fact和`CanonicalTypeAt`为generic owner base identifier提供精确identity，semantic tokens不再从`Unique`/`Shared`/`Weak`名称推断类型，也不会从`.`、后续`.`或`(`猜测member kind；显式声明hover/completion、inlay hint与symbol markdown都只按resolved canonical fact格式化，property signature只按Property SymbolId查询PropertyDef和匹配TypeId，project receiver declaration type同样要求精确SymbolId声明事实与匹配TypeId，并在identity unavailable时fail closed。其余L8本地fallback删除、provider/project覆盖和完整protocol矩阵仍未完成。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

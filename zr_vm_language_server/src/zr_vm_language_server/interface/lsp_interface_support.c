@@ -2877,20 +2877,28 @@ static void receiver_project_member_set_type_text(SZrState *state,
     }
 }
 
-static void receiver_project_set_type_text_from_symbol(SZrState *state,
-                                                       SZrSymbol *symbol,
-                                                       SZrLspResolvedMetadataMember *outResolved) {
+static void receiver_project_set_type_text_from_symbol(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrSymbol *symbol,
+        SZrLspResolvedMetadataMember *outResolved) {
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-    const TZrChar *typeText;
 
-    if (state == ZR_NULL || symbol == ZR_NULL || symbol->typeInfo == ZR_NULL || outResolved == ZR_NULL ||
+    if (state == ZR_NULL || analyzer == ZR_NULL || symbol == ZR_NULL ||
+        outResolved == ZR_NULL ||
         outResolved->resolvedTypeText != ZR_NULL) {
         return;
     }
 
-    typeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
-    if (typeText != ZR_NULL && typeText[0] != '\0') {
-        outResolved->resolvedTypeText = ZrCore_String_Create(state, (TZrNativeString)typeText, strlen(typeText));
+    if (ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
+                analyzer,
+                symbol,
+                typeBuffer,
+                sizeof(typeBuffer))) {
+        outResolved->resolvedTypeText = ZrCore_String_Create(
+                state,
+                (TZrNativeString)typeBuffer,
+                strlen(typeBuffer));
     }
 }
 
@@ -3925,7 +3933,11 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
             outResolved->hasDeclaration = ZR_TRUE;
             outResolved->declarationSymbol =
                 ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, declarationRange);
-            receiver_project_set_type_text_from_symbol(state, outResolved->declarationSymbol, outResolved);
+            receiver_project_set_type_text_from_symbol(
+                    state,
+                    analyzer,
+                    outResolved->declarationSymbol,
+                    outResolved);
         }
     }
 
@@ -3977,7 +3989,11 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
                 outResolved->hasDeclaration = ZR_TRUE;
                 outResolved->declarationSymbol =
                     ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, declarationRange);
-                receiver_project_set_type_text_from_symbol(state, outResolved->declarationSymbol, outResolved);
+                receiver_project_set_type_text_from_symbol(
+                        state,
+                        analyzer,
+                        outResolved->declarationSymbol,
+                        outResolved);
             }
         }
     }

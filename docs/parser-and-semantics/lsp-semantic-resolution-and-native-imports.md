@@ -643,6 +643,15 @@ agreement rule. The helper lives in the private
 `interface/lsp_canonical_symbol_display` module rather than adding another
 responsibility to the large interface support source.
 
+Project receiver member type projection applies the same rule after resolving
+an exact source declaration. `TryResolveReceiverProjectMember` may preserve the
+member declaration URI/range and SymbolId for navigation, but it sets
+`resolvedTypeText` from a declaration symbol only through the shared canonical
+helper. If that declaration fact is unresolved, invalid, or disagrees with the
+symbol TypeId, member type text remains unavailable. The consumer does not use
+`declarationSymbol->typeInfo`, member spelling, or AST type syntax as a display
+fallback.
+
 ## Canonical property consumers
 
 Unified properties are projected from parser `PropertyAt`/`PropertyBySymbolId` results. Hover,
