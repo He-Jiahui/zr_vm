@@ -60,8 +60,9 @@ SyntaxSnapshot可以增量；SemanticSnapshot按dependency/SymbolId/ModuleIdenti
 - [Canonical symbol documentation type](./01-semantic-core/2026-08-10-canonical-symbol-documentation-type.md)
 - [Canonical property signature type](./01-semantic-core/2026-08-10-canonical-property-signature-type.md)
 - [Canonical receiver member type](./01-semantic-core/2026-08-10-canonical-receiver-member-type.md)
+- [Canonical project symbol type](./01-semantic-core/2026-08-10-canonical-project-symbol-type.md)
 
-这些记录证明query机制可用，并完成Q4中source resolved callable identity/display consumer、Q5中source module public-contract hash的首个canonical query，以及Q5/Q6中的binary export location、descriptor-plugin type-member、native module-function、instance-method与unconstrained generic instance-method call-site callable parity切片；L8 source declaration、inlay、symbol markdown、property signature与project receiver member type display均已删除对应本地AST/inferred type文本重建，只按精确SymbolId声明/PropertyDef事实与canonical TypeId格式化，并在canonical identity不可用时fail closed。不表示全部Canonical/Place/Module facts或binary/native provider parity已覆盖。
+这些记录证明query机制可用，并完成Q4中source resolved callable identity/display consumer、Q5中source module public-contract hash的首个canonical query，以及Q5/Q6中的binary export location、descriptor-plugin type-member、native module-function、instance-method与unconstrained generic instance-method call-site callable parity切片；L8 source declaration、inlay、symbol markdown、property signature、project receiver member和project imported symbol type display均已删除对应本地AST/inferred type文本重建，只按精确SymbolId声明/PropertyDef事实与canonical TypeId格式化，并在canonical identity不可用时fail closed。不表示全部Canonical/Place/Module facts或binary/native provider parity已覆盖。
 
 ## Query Schema 实施阶段
 

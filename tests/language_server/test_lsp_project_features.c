@@ -5846,8 +5846,9 @@ static void test_lsp_source_module_refresh_reanalyzes_open_documents(SZrState *s
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, completionPosition, &completions) ||
         !completion_array_contains_label(&completions, "answer") ||
-        !completion_detail_contains_fragment(&completions, "answer", "float") ||
-        completion_detail_contains_fragment(&completions, "answer", "int")) {
+        !completion_detail_contains_fragment(&completions, "answer", "double") ||
+        completion_detail_contains_fragment(&completions, "answer", "int") ||
+        completion_detail_contains_fragment(&completions, "answer", "float")) {
         free(mainContent);
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -7717,6 +7718,7 @@ static void test_lsp_native_value_constructor_members_surface_hover_and_completi
 #include "test_lsp_project_native_callable_signature_cases.h"
 #include "test_lsp_project_native_receiver_callable_cases.h"
 #include "test_lsp_project_source_rename_edit_cases.h"
+#include "test_lsp_project_canonical_symbol_type_cases.h"
 #include "test_lsp_stable_slot_contract_cases.h"
 
 int main(void) {
@@ -7864,6 +7866,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_source_module_refresh_reanalyzes_open_documents(state);
+    TEST_DIVIDER();
+
+    test_lsp_project_source_symbol_type_uses_canonical_declaration(state);
     TEST_DIVIDER();
 
     test_lsp_source_module_refresh_uses_canonical_public_contract_hash(state);

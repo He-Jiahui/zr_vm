@@ -1,4 +1,5 @@
 #include "metadata/lsp_metadata_provider.h"
+#include "interface/lsp_canonical_symbol_display.h"
 #include "interface/lsp_interface_internal.h"
 #include "lsp_virtual_documents.h"
 #include "semantic/lsp_external_callable_contract.h"
@@ -74,40 +75,27 @@ static void metadata_provider_set_type_text(SZrState *state,
         ZrCore_String_Create(state, (TZrNativeString)storedTypeText, strlen(storedTypeText));
 }
 
-static void metadata_provider_set_type_text_from_inferred(SZrState *state,
-                                                          SZrLspResolvedMetadataMember *outResolved,
-                                                          SZrInferredType *typeInfo) {
+static void metadata_provider_set_type_text_from_symbol(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrLspResolvedMetadataMember *outResolved,
+        SZrSymbol *symbol) {
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-    const TZrChar *typeText;
 
-    if (state == ZR_NULL || outResolved == ZR_NULL || typeInfo == ZR_NULL) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || outResolved == ZR_NULL ||
+        symbol == ZR_NULL) {
         return;
     }
 
-    typeText = ZrParser_TypeNameString_Get(state, typeInfo, typeBuffer, sizeof(typeBuffer));
     metadata_provider_set_type_text(state,
                                     outResolved,
-                                    metadata_provider_type_text_is_specific(typeText) ? typeText : ZR_NULL);
-}
-
-static const TZrChar *metadata_provider_precise_inferred_type_text(SZrState *state,
-                                                                   const SZrInferredType *typeInfo,
-                                                                   TZrChar *buffer,
-                                                                   TZrSize bufferSize) {
-    const TZrChar *typeText = ZR_NULL;
-
-    if (state != ZR_NULL &&
-        typeInfo != ZR_NULL &&
-        !(typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
-          typeInfo->typeName == ZR_NULL &&
-          (!typeInfo->elementTypes.isValid || typeInfo->elementTypes.length == 0))) {
-        typeText = ZrParser_TypeNameString_Get(state, typeInfo, buffer, bufferSize);
-        if (metadata_provider_type_text_is_specific(typeText)) {
-            return typeText;
-        }
-    }
-
-    return metadata_provider_exact_type_failure_text();
+                                    ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
+                                        analyzer,
+                                        symbol,
+                                        typeBuffer,
+                                        sizeof(typeBuffer))
+                                        ? typeBuffer
+                                        : ZR_NULL);
 }
 
 static SZrString *metadata_provider_create_markdown_text(SZrState *state, const TZrChar *text) {
@@ -727,10 +715,13 @@ static const TZrChar *metadata_provider_symbol_kind_text(EZrSymbolType type) {
     }
 }
 
-static void metadata_provider_resolve_symbol_descriptor(SZrState *state,
-                                                        SZrSymbol *symbol,
-                                                        SZrLspResolvedMetadataMember *outResolved) {
-    if (state == ZR_NULL || symbol == ZR_NULL || outResolved == ZR_NULL) {
+static void metadata_provider_resolve_symbol_descriptor(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrSymbol *symbol,
+        SZrLspResolvedMetadataMember *outResolved) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || symbol == ZR_NULL ||
+        outResolved == ZR_NULL) {
         return;
     }
 
@@ -746,7 +737,7 @@ static void metadata_provider_resolve_symbol_descriptor(SZrState *state,
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_CONSTANT;
     }
 
-    metadata_provider_set_type_text_from_inferred(state, outResolved, symbol->typeInfo);
+    metadata_provider_set_type_text_from_symbol(state, analyzer, outResolved, symbol);
 }
 
 static void metadata_provider_attach_native_hint_metadata(const ZrLibModuleDescriptor *descriptor,
@@ -1044,19 +1035,25 @@ static void metadata_provider_resolve_module_prototype_member(SZrState *state,
                                         : metadata_provider_string_text(member->fieldTypeName));
 }
 
-static void metadata_provider_append_project_symbol_completion(SZrState *state,
-                                                               SZrSymbol *symbol,
-                                                               SZrArray *result) {
+static void metadata_provider_append_project_symbol_completion(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrSymbol *symbol,
+        SZrArray *result) {
     TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
     const TZrChar *typeText = metadata_provider_exact_type_failure_text();
     SZrCompletionItem *item;
 
-    if (state == ZR_NULL || symbol == ZR_NULL || result == ZR_NULL || symbol->name == ZR_NULL) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || symbol == ZR_NULL ||
+        result == ZR_NULL || symbol->name == ZR_NULL) {
         return;
     }
 
-    typeText = metadata_provider_precise_inferred_type_text(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
+    if (ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
+            analyzer, symbol, typeBuffer, sizeof(typeBuffer))) {
+        typeText = typeBuffer;
+    }
 
     snprintf(detail,
              sizeof(detail),
@@ -1558,9 +1555,10 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration
         outResolved->declarationSymbol =
             ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(targetAnalyzer, outResolved->declarationRange);
         if (outResolved->resolvedTypeText == ZR_NULL && outResolved->declarationSymbol != ZR_NULL) {
-            metadata_provider_set_type_text_from_inferred(provider->state,
-                                                          outResolved,
-                                                          outResolved->declarationSymbol->typeInfo);
+            metadata_provider_set_type_text_from_symbol(provider->state,
+                                                        targetAnalyzer,
+                                                        outResolved,
+                                                        outResolved->declarationSymbol);
         }
         return outResolved->hasDeclaration;
     }
@@ -1766,6 +1764,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
         }
         if (outResolved->declarationSymbol != ZR_NULL) {
             metadata_provider_resolve_symbol_descriptor(provider->state,
+                                                        outResolved->declarationAnalyzer,
                                                         outResolved->declarationSymbol,
                                                         outResolved);
             outResolved->declarationUri = outResolved->module.sourceRecord->uri;
@@ -1867,6 +1866,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
     SZrHoverInfo *hoverInfo = ZR_NULL;
     TZrBool contentHasSource = ZR_FALSE;
     TZrBool hasSnapshot = ZR_FALSE;
+    TZrBool useAnalyzerSymbolHover;
     SZrSemanticAnalyzer *targetAnalyzer = analyzer;
 
     if (provider == ZR_NULL || resolvedMember == ZR_NULL || result == ZR_NULL) {
@@ -1876,7 +1876,9 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
     memberText = metadata_provider_string_text(resolvedMember->memberName);
     sourceKind = ZrLanguageServer_LspMetadataProvider_SourceKindLabel(resolvedMember->module.sourceKind);
     hoverSourceText = metadata_provider_hover_source_text(resolvedMember,
-                                                          sourceKind != ZR_NULL ? sourceKind : "project source");
+                                                           sourceKind != ZR_NULL ? sourceKind : "project source");
+    useAnalyzerSymbolHover =
+            resolvedMember->module.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
     if (resolvedMember->declarationUri != ZR_NULL) {
         hoverUri = resolvedMember->declarationUri;
     } else if (resolvedMember->module.sourceRecord != ZR_NULL) {
@@ -1887,7 +1889,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
     } else if (hoverUri != ZR_NULL && provider->context != ZR_NULL) {
         metadata_provider_try_get_analyzer_for_uri(provider->state, provider->context, hoverUri, &targetAnalyzer);
     }
-    if (resolvedMember->declarationSymbol != ZR_NULL &&
+    if (useAnalyzerSymbolHover && resolvedMember->declarationSymbol != ZR_NULL &&
         hoverUri != ZR_NULL &&
         provider->context != ZR_NULL) {
         fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, hoverUri);
@@ -2250,7 +2252,10 @@ TZrBool ZrLanguageServer_LspMetadataProvider_AppendImportedModuleCompletions(
                     (SZrSymbol **)ZrCore_Array_Get(&targetAnalyzer->symbolTable->globalScope->symbols, index);
                 if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL &&
                     (*symbolPtr)->accessModifier == ZR_ACCESS_PUBLIC) {
-                    metadata_provider_append_project_symbol_completion(provider->state, *symbolPtr, result);
+                    metadata_provider_append_project_symbol_completion(provider->state,
+                                                                       targetAnalyzer,
+                                                                       *symbolPtr,
+                                                                       result);
                 }
             }
         }

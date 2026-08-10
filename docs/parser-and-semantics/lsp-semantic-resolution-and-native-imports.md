@@ -652,6 +652,15 @@ symbol TypeId, member type text remains unavailable. The consumer does not use
 `declarationSymbol->typeInfo`, member spelling, or AST type syntax as a display
 fallback.
 
+Project-source imported module members use the same declaration identity for
+both completion details and hover. The metadata provider formats
+`resolvedTypeText` only through the shared helper. It also bypasses the generic
+symbol-hover builder for this source kind, because that builder would otherwise
+reintroduce the independent inferred-type display authority. A missing or
+mismatched declaration fact therefore reaches both consumers as `cannot infer
+exact type`, without a symbol-type, module-prototype, member-name, or AST
+fallback.
+
 ## Canonical property consumers
 
 Unified properties are projected from parser `PropertyAt`/`PropertyBySymbolId` results. Hover,
