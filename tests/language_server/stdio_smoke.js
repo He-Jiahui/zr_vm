@@ -980,6 +980,8 @@ async function main() {
     const propertyContractUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-property-contract.zr';
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
+    const canonicalDisplayUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-canonical-display.zr';
     const nativeCallableUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-native-callable.zr';
     const parserDiagnosticUri =
@@ -1140,6 +1142,15 @@ async function main() {
         '    value;',
         '    box.shape(m);',
         '    pick(1 + 2, true || false);',
+        '}',
+        '',
+    ].join('\n');
+    const canonicalDisplayText = [
+        'fn redact(value: MissingType): MissingType {',
+        '    return value;',
+        '}',
+        'fn use(): void {',
+        '    redact(null);',
         '}',
         '',
     ].join('\n');
@@ -2292,6 +2303,41 @@ async function main() {
             signature.parameters[1].documentation.value.includes('logical true') &&
             signature.parameters[1].documentation.value.includes('short-circuits')),
     'signatureHelp parameter documentation should serialize argument logical semantic facts');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: canonicalDisplayUri,
+            languageId: 'zr',
+            version: 1,
+            text: canonicalDisplayText,
+        },
+    });
+    const canonicalDisplayDiagnostics =
+        await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(canonicalDisplayDiagnostics.uri === canonicalDisplayUri,
+        'canonical display diagnostics uri mismatch');
+    const canonicalDisplayPosition = findPosition(canonicalDisplayText, 'redact(null)', 0, 0);
+    const canonicalDisplayCompletions = await client.request('textDocument/completion', {
+        textDocument: { uri: canonicalDisplayUri },
+        position: canonicalDisplayPosition,
+    });
+    const redactCompletion = Array.isArray(canonicalDisplayCompletions) ?
+        canonicalDisplayCompletions.find((item) => item && item.label === 'redact') : undefined;
+    assert(redactCompletion && typeof redactCompletion.detail === 'string' &&
+        redactCompletion.detail.includes('value: cannot infer exact type') &&
+        redactCompletion.detail.includes('): cannot infer exact type') &&
+        !redactCompletion.detail.includes('MissingType'),
+    `completion must fail closed when an explicit declaration type lacks a resolved canonical fact: ${JSON.stringify(redactCompletion)}`);
+    const canonicalDisplayHover = await client.request('textDocument/hover', {
+        textDocument: { uri: canonicalDisplayUri },
+        position: canonicalDisplayPosition,
+    });
+    assert(canonicalDisplayHover && canonicalDisplayHover.contents &&
+        typeof canonicalDisplayHover.contents.value === 'string' &&
+        canonicalDisplayHover.contents.value.includes('value: cannot infer exact type') &&
+        canonicalDisplayHover.contents.value.includes('): cannot infer exact type') &&
+        !canonicalDisplayHover.contents.value.includes('MissingType'),
+    `hover must fail closed when an explicit declaration type lacks a resolved canonical fact: ${JSON.stringify(canonicalDisplayHover)}`);
 
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -4269,6 +4315,11 @@ async function main() {
     });
     client.notify('textDocument/didClose', {
         textDocument: {
+            uri: canonicalDisplayUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
             uri: testCodeLensUri,
         },
     });
@@ -4336,6 +4387,7 @@ async function main() {
         documentUri,
         docsUri,
         unresolvedSemanticTokenUri,
+        canonicalDisplayUri,
         testCodeLensUri,
         propertyContractUri,
         colorUri,

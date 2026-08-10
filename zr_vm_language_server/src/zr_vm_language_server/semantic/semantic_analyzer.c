@@ -6,6 +6,9 @@
 #include "module/lsp_module_metadata.h"
 #include "semantic/lsp_stable_slot_contract.h"
 
+#include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_query.h"
+
 #include <stdarg.h>
 
 #define ZR_LSP_NATIVE_MODULE_COMPLETION_MAX_DEPTH ((TZrSize)4)
@@ -869,248 +872,6 @@ static TZrSize semantic_buffer_append(TZrChar *buffer,
     return offset + (TZrSize)written;
 }
 
-static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
-                                             TZrChar *buffer,
-                                             TZrSize bufferSize,
-                                             TZrSize *offset);
-
-static const TZrChar *semantic_ast_ownership_prefix(EZrOwnershipQualifier ownershipQualifier) {
-    switch (ownershipQualifier) {
-        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return "Unique<";
-        case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return "Shared<";
-        case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "Weak<";
-        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return "ref readonly ";
-        case ZR_OWNERSHIP_QUALIFIER_LOANED:
-            return "ref ";
-        default:
-            return "";
-    }
-}
-
-static TZrBool semantic_ast_ownership_is_type_wrapper(EZrOwnershipQualifier ownershipQualifier) {
-    return ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
-           ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
-           ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
-}
-
-static TZrBool semantic_ast_type_unwrap_ownership_display(SZrType *typeInfo,
-                                                          EZrOwnershipQualifier *qualifier,
-                                                          SZrType **innerTypeInfo) {
-    SZrGenericType *genericType;
-    SZrAstNode *argumentNode;
-    EZrOwnershipQualifier ownershipQualifier;
-
-    if (qualifier != ZR_NULL) {
-        *qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-    }
-    if (innerTypeInfo != ZR_NULL) {
-        *innerTypeInfo = ZR_NULL;
-    }
-
-    if (typeInfo == ZR_NULL ||
-        typeInfo->name == ZR_NULL ||
-        typeInfo->name->type != ZR_AST_GENERIC_TYPE ||
-        qualifier == ZR_NULL ||
-        innerTypeInfo == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    genericType = &typeInfo->name->data.genericType;
-    if (genericType->name == ZR_NULL ||
-        !ZrParser_OwnershipGenericNameToQualifier(genericType->name->name, &ownershipQualifier) ||
-        genericType->params == ZR_NULL ||
-        genericType->params->count != 1) {
-        return ZR_FALSE;
-    }
-
-    argumentNode = genericType->params->nodes[0];
-    if (argumentNode == ZR_NULL || argumentNode->type != ZR_AST_TYPE) {
-        return ZR_FALSE;
-    }
-
-    *qualifier = ownershipQualifier;
-    *innerTypeInfo = &argumentNode->data.type;
-    return ZR_TRUE;
-}
-
-static TZrBool semantic_append_ast_generic_argument_decl(SZrAstNode *node,
-                                                         TZrChar *buffer,
-                                                         TZrSize bufferSize,
-                                                         TZrSize *offset) {
-    TZrSize nextOffset;
-
-    if (node == ZR_NULL || buffer == ZR_NULL || offset == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nextOffset = *offset;
-    switch (node->type) {
-        case ZR_AST_TYPE:
-            if (!semantic_append_ast_type_decl(&node->data.type, buffer, bufferSize, &nextOffset)) {
-                return ZR_FALSE;
-            }
-            break;
-
-        case ZR_AST_IDENTIFIER_LITERAL:
-            nextOffset = semantic_buffer_append(buffer,
-                                                bufferSize,
-                                                nextOffset,
-                                                "%s",
-                                                semantic_string_native(node->data.identifier.name));
-            break;
-
-        case ZR_AST_INTEGER_LITERAL:
-            nextOffset = semantic_buffer_append(buffer,
-                                                bufferSize,
-                                                nextOffset,
-                                                "%lld",
-                                                (long long)node->data.integerLiteral.value);
-            break;
-
-        default:
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "?");
-            break;
-    }
-
-    *offset = nextOffset;
-    return ZR_TRUE;
-}
-
-static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
-                                             TZrChar *buffer,
-                                             TZrSize bufferSize,
-                                             TZrSize *offset) {
-    TZrSize nextOffset;
-    const TZrChar *ownershipPrefix;
-    EZrOwnershipQualifier wrappedOwnershipQualifier;
-    EZrOwnershipQualifier ownershipQualifier;
-    SZrType *innerTypeInfo;
-    TZrBool ownershipIsTypeWrapper;
-
-    if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL || buffer == ZR_NULL || offset == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nextOffset = *offset;
-    if (semantic_ast_type_unwrap_ownership_display(typeInfo, &wrappedOwnershipQualifier, &innerTypeInfo)) {
-        ownershipQualifier = typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE
-                ? typeInfo->ownershipQualifier
-                : wrappedOwnershipQualifier;
-        ownershipPrefix = semantic_ast_ownership_prefix(ownershipQualifier);
-        ownershipIsTypeWrapper = semantic_ast_ownership_is_type_wrapper(ownershipQualifier);
-        if (ownershipPrefix[0] != '\0') {
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "%s", ownershipPrefix);
-        }
-        if (!semantic_append_ast_type_decl(innerTypeInfo, buffer, bufferSize, &nextOffset)) {
-            return ZR_FALSE;
-        }
-        if (ownershipIsTypeWrapper) {
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ">");
-        }
-        if (typeInfo->subType != ZR_NULL) {
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ".");
-            if (!semantic_append_ast_type_decl(typeInfo->subType, buffer, bufferSize, &nextOffset)) {
-                return ZR_FALSE;
-            }
-        }
-        for (TZrInt32 dimension = 0; dimension < typeInfo->dimensions; dimension++) {
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "[]");
-        }
-
-        *offset = nextOffset;
-        return ZR_TRUE;
-    }
-
-    ownershipQualifier = typeInfo->ownershipQualifier;
-    ownershipPrefix = semantic_ast_ownership_prefix(ownershipQualifier);
-    ownershipIsTypeWrapper = semantic_ast_ownership_is_type_wrapper(ownershipQualifier);
-    if (ownershipPrefix[0] != '\0') {
-        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "%s", ownershipPrefix);
-    }
-
-    switch (typeInfo->name->type) {
-        case ZR_AST_IDENTIFIER_LITERAL:
-            nextOffset = semantic_buffer_append(buffer,
-                                                bufferSize,
-                                                nextOffset,
-                                                "%s",
-                                                semantic_string_native(typeInfo->name->data.identifier.name));
-            break;
-
-        case ZR_AST_GENERIC_TYPE: {
-            SZrGenericType *genericType = &typeInfo->name->data.genericType;
-
-            nextOffset = semantic_buffer_append(buffer,
-                                                bufferSize,
-                                                nextOffset,
-                                                "%s<",
-                                                semantic_string_native(genericType->name != ZR_NULL
-                                                                           ? genericType->name->name
-                                                                           : ZR_NULL));
-            if (genericType->params != ZR_NULL) {
-                for (TZrSize index = 0; index < genericType->params->count; index++) {
-                    if (index > 0) {
-                        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ", ");
-                    }
-                    if (!semantic_append_ast_generic_argument_decl(genericType->params->nodes[index],
-                                                                   buffer,
-                                                                   bufferSize,
-                                                                   &nextOffset)) {
-                        return ZR_FALSE;
-                    }
-                }
-            }
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ">");
-            break;
-        }
-
-        case ZR_AST_TUPLE_TYPE: {
-            SZrTupleType *tupleType = &typeInfo->name->data.tupleType;
-
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "(");
-            if (tupleType->elements != ZR_NULL) {
-                for (TZrSize index = 0; index < tupleType->elements->count; index++) {
-                    if (index > 0) {
-                        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ", ");
-                    }
-                    if (!semantic_append_ast_generic_argument_decl(tupleType->elements->nodes[index],
-                                                                   buffer,
-                                                                   bufferSize,
-                                                                   &nextOffset)) {
-                        return ZR_FALSE;
-                    }
-                }
-            }
-            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ")");
-            break;
-        }
-
-        default:
-            return ZR_FALSE;
-    }
-
-    if (typeInfo->subType != ZR_NULL) {
-        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ".");
-        if (!semantic_append_ast_type_decl(typeInfo->subType, buffer, bufferSize, &nextOffset)) {
-            return ZR_FALSE;
-        }
-    }
-
-    for (TZrInt32 dimension = 0; dimension < typeInfo->dimensions; dimension++) {
-        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "[]");
-    }
-    if (ownershipIsTypeWrapper) {
-        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ">");
-    }
-
-    *offset = nextOffset;
-    return ZR_TRUE;
-}
-
 static TZrSize semantic_append_symbol_ffi_hover_metadata(SZrSymbol *symbol,
                                                          TZrChar *buffer,
                                                          TZrSize bufferSize,
@@ -1180,40 +941,75 @@ static const TZrChar *semantic_precise_inferred_type_text(SZrState *state,
     return semantic_exact_type_failure_text();
 }
 
+static TZrBool semantic_type_reference_range(const SZrType *typeNode, SZrFileRange *outRange) {
+    SZrGenericType *genericType;
+    TZrSize nameLength;
+
+    if (typeNode == ZR_NULL || typeNode->name == ZR_NULL || outRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outRange = typeNode->name->location;
+    if (typeNode->name->type != ZR_AST_GENERIC_TYPE) {
+        return ZR_TRUE;
+    }
+
+    genericType = (SZrGenericType *)&typeNode->name->data.genericType;
+    if (genericType->name == ZR_NULL || genericType->name->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nameLength = ZrCore_String_GetByteLength(genericType->name->name);
+    if (nameLength == 0u ||
+        outRange->start.offset < nameLength + 1u ||
+        outRange->start.column < (TZrInt32)(nameLength + 1u)) {
+        return ZR_FALSE;
+    }
+
+    outRange->end = outRange->start;
+    outRange->end.offset--;
+    outRange->end.column--;
+    outRange->start.offset -= nameLength + 1u;
+    outRange->start.column -= (TZrInt32)(nameLength + 1u);
+    return ZR_TRUE;
+}
+
 static void semantic_format_type_from_ast(SZrState *state,
                                           SZrCompilerState *compilerState,
+                                          SZrSemanticAnalyzer *analyzer,
+                                          SZrAstNode *ownerTypeNode,
+                                          SZrAstNode *functionNode,
                                           SZrType *typeNode,
                                           TZrChar *buffer,
                                           TZrSize bufferSize) {
-    TZrSize offset = 0;
-
-    ZR_UNUSED_PARAMETER(state);
-    ZR_UNUSED_PARAMETER(compilerState);
+    SZrParserSemanticTypeQuery query = {0};
+    SZrFileRange range;
+    SZrInferredType inferredType;
+    TZrBool hasCanonicalType = ZR_FALSE;
 
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
     }
 
-    buffer[0] = '\0';
-    if (typeNode != ZR_NULL &&
-        semantic_append_ast_type_decl(typeNode, buffer, bufferSize, &offset) &&
-        buffer[0] != '\0') {
-        return;
+    if (state != ZR_NULL && compilerState != ZR_NULL && compilerState->semanticContext != ZR_NULL &&
+        semantic_type_reference_range(typeNode, &range)) {
+        hasCanonicalType = ZrParser_SemanticQuery_CanonicalTypeAt(
+                compilerState->semanticContext, range, ZR_NULL, &query);
+        if (!hasCanonicalType && analyzer != ZR_NULL) {
+            ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+            (void)ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
+                    analyzer, ownerTypeNode, functionNode, typeNode, &inferredType);
+            ZrParser_InferredType_Free(state, &inferredType);
+            hasCanonicalType = ZrParser_SemanticQuery_CanonicalTypeAt(
+                    compilerState->semanticContext, range, ZR_NULL, &query);
+        }
     }
 
-    if (typeNode != ZR_NULL &&
-        typeNode->name != ZR_NULL &&
-        typeNode->name->type == ZR_AST_IDENTIFIER_LITERAL &&
-        typeNode->name->data.identifier.name != ZR_NULL) {
-        TZrNativeString nameText;
-        TZrSize nameLength;
-
-        semantic_get_string_view(typeNode->name->data.identifier.name, &nameText, &nameLength);
-        if (nameText != ZR_NULL && nameLength < bufferSize) {
-            memcpy(buffer, nameText, nameLength);
-            buffer[nameLength] = '\0';
-            return;
-        }
+    if (hasCanonicalType && query.typeId != ZR_SEMANTIC_ID_INVALID &&
+        query.reference != ZR_NULL && query.reference->kind == ZR_SEMANTIC_REFERENCE_TYPE &&
+        query.reference->isResolved &&
+        ZrParser_CanonicalType_Format(compilerState->semanticContext, query.typeId, buffer, bufferSize)) {
+        return;
     }
 
     snprintf(buffer, bufferSize, "%s", semantic_exact_type_failure_text());
@@ -1221,6 +1017,9 @@ static void semantic_format_type_from_ast(SZrState *state,
 
 static void semantic_format_display_type_from_ast_or_inferred(SZrState *state,
                                                               SZrCompilerState *compilerState,
+                                                              SZrSemanticAnalyzer *analyzer,
+                                                              SZrAstNode *ownerTypeNode,
+                                                              SZrAstNode *functionNode,
                                                               SZrType *typeNode,
                                                               const SZrInferredType *fallbackTypeInfo,
                                                               TZrChar *buffer,
@@ -1231,8 +1030,20 @@ static void semantic_format_display_type_from_ast_or_inferred(SZrState *state,
         return;
     }
 
-    semantic_format_type_from_ast(state, compilerState, typeNode, buffer, bufferSize);
+    semantic_format_type_from_ast(state,
+                                  compilerState,
+                                  analyzer,
+                                  ownerTypeNode,
+                                  functionNode,
+                                  typeNode,
+                                  buffer,
+                                  bufferSize);
     if (semantic_type_text_is_specific(buffer)) {
+        return;
+    }
+
+    /* An explicit declaration must be rendered by its resolved canonical fact. */
+    if (typeNode != ZR_NULL) {
         return;
     }
 
@@ -1244,6 +1055,9 @@ static void semantic_format_display_type_from_ast_or_inferred(SZrState *state,
 
 static TZrSize semantic_append_generic_parameter_decl(SZrState *state,
                                                       SZrCompilerState *compilerState,
+                                                      SZrSemanticAnalyzer *analyzer,
+                                                      SZrAstNode *ownerTypeNode,
+                                                      SZrAstNode *functionNode,
                                                       TZrChar *buffer,
                                                       TZrSize bufferSize,
                                                       TZrSize offset,
@@ -1260,7 +1074,14 @@ static TZrSize semantic_append_generic_parameter_decl(SZrState *state,
     parameter = &paramNode->data.parameter;
     semantic_get_string_view(parameter->name->name, &nameText, &nameLength);
     if (parameter->genericKind == ZR_GENERIC_PARAMETER_CONST_INT) {
-        semantic_format_type_from_ast(state, compilerState, parameter->typeInfo, typeBuffer, sizeof(typeBuffer));
+        semantic_format_type_from_ast(state,
+                                      compilerState,
+                                      analyzer,
+                                      ownerTypeNode,
+                                      functionNode,
+                                      parameter->typeInfo,
+                                      typeBuffer,
+                                      sizeof(typeBuffer));
         return semantic_buffer_append(buffer,
                                       bufferSize,
                                       offset,
@@ -1286,6 +1107,9 @@ static TZrSize semantic_append_generic_parameter_decl(SZrState *state,
 
 static TZrSize semantic_append_generic_declaration(SZrState *state,
                                                    SZrCompilerState *compilerState,
+                                                   SZrSemanticAnalyzer *analyzer,
+                                                   SZrAstNode *ownerTypeNode,
+                                                   SZrAstNode *functionNode,
                                                    TZrChar *buffer,
                                                    TZrSize bufferSize,
                                                    TZrSize offset,
@@ -1301,6 +1125,9 @@ static TZrSize semantic_append_generic_declaration(SZrState *state,
         }
         offset = semantic_append_generic_parameter_decl(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        ownerTypeNode,
+                                                        functionNode,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
@@ -1319,6 +1146,9 @@ static TZrBool semantic_parameter_has_constraints(SZrParameter *parameter) {
 
 static TZrSize semantic_append_generic_constraints(SZrState *state,
                                                    SZrCompilerState *compilerState,
+                                                   SZrSemanticAnalyzer *analyzer,
+                                                   SZrAstNode *ownerTypeNode,
+                                                   SZrAstNode *functionNode,
                                                    TZrChar *buffer,
                                                    TZrSize bufferSize,
                                                    TZrSize offset,
@@ -1355,6 +1185,9 @@ static TZrSize semantic_append_generic_constraints(SZrState *state,
             }
             semantic_format_type_from_ast(state,
                                           compilerState,
+                                          analyzer,
+                                          ownerTypeNode,
+                                          functionNode,
                                           &constraintNode->data.type,
                                           typeBuffer,
                                           sizeof(typeBuffer));
@@ -1380,6 +1213,9 @@ static TZrSize semantic_append_generic_constraints(SZrState *state,
 
 static TZrSize semantic_append_where_clauses(SZrState *state,
                                              SZrCompilerState *compilerState,
+                                             SZrSemanticAnalyzer *analyzer,
+                                             SZrAstNode *ownerTypeNode,
+                                             SZrAstNode *functionNode,
                                              TZrChar *buffer,
                                              TZrSize bufferSize,
                                              TZrSize offset,
@@ -1395,6 +1231,9 @@ static TZrSize semantic_append_where_clauses(SZrState *state,
         }
         offset = semantic_append_generic_constraints(state,
                                                      compilerState,
+                                                     analyzer,
+                                                     ownerTypeNode,
+                                                     functionNode,
                                                      buffer,
                                                      bufferSize,
                                                      offset,
@@ -1406,6 +1245,9 @@ static TZrSize semantic_append_where_clauses(SZrState *state,
 
 static TZrSize semantic_append_inheritance_clause(SZrState *state,
                                                   SZrCompilerState *compilerState,
+                                                  SZrSemanticAnalyzer *analyzer,
+                                                  SZrAstNode *ownerTypeNode,
+                                                  SZrAstNode *functionNode,
                                                   TZrChar *buffer,
                                                   TZrSize bufferSize,
                                                   TZrSize offset,
@@ -1433,6 +1275,9 @@ static TZrSize semantic_append_inheritance_clause(SZrState *state,
 
         semantic_format_type_from_ast(state,
                                       compilerState,
+                                      analyzer,
+                                      ownerTypeNode,
+                                      functionNode,
                                       &inheritNode->data.type,
                                       typeBuffer,
                                       sizeof(typeBuffer));
@@ -1444,6 +1289,9 @@ static TZrSize semantic_append_inheritance_clause(SZrState *state,
 
 static TZrSize semantic_append_parameter_list(SZrState *state,
                                               SZrCompilerState *compilerState,
+                                              SZrSemanticAnalyzer *analyzer,
+                                              SZrAstNode *ownerTypeNode,
+                                              SZrAstNode *functionNode,
                                               TZrChar *buffer,
                                               TZrSize bufferSize,
                                               TZrSize offset,
@@ -1466,7 +1314,14 @@ static TZrSize semantic_append_parameter_list(SZrState *state,
                 offset = semantic_buffer_append(buffer, bufferSize, offset, ", ");
             }
 
-            semantic_format_type_from_ast(state, compilerState, parameter->typeInfo, typeBuffer, sizeof(typeBuffer));
+            semantic_format_type_from_ast(state,
+                                          compilerState,
+                                          analyzer,
+                                          ownerTypeNode,
+                                          functionNode,
+                                          parameter->typeInfo,
+                                          typeBuffer,
+                                          sizeof(typeBuffer));
             sourceFormText = semantic_parameter_source_form_text(parameter->sourcePassingForm);
             offset = semantic_buffer_append(buffer,
                                             bufferSize,
@@ -1484,6 +1339,7 @@ static TZrSize semantic_append_parameter_list(SZrState *state,
 
 static TZrBool semantic_build_ast_signature(SZrState *state,
                                             SZrCompilerState *compilerState,
+                                            SZrSemanticAnalyzer *analyzer,
                                             const SZrInferredType *fallbackTypeInfo,
                                             SZrAstNode *node,
                                             TZrChar *buffer,
@@ -1510,18 +1366,27 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(funcDecl->name->name));
             offset = semantic_append_generic_declaration(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        ZR_NULL,
+                                                        node,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         funcDecl->generic);
             offset = semantic_append_parameter_list(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   ZR_NULL,
+                                                   node,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
                                                    funcDecl->params);
             semantic_format_display_type_from_ast_or_inferred(state,
                                                               compilerState,
+                                                              analyzer,
+                                                              ZR_NULL,
+                                                              node,
                                                               funcDecl->returnType,
                                                               fallbackTypeInfo,
                                                               typeBuffer,
@@ -1529,6 +1394,9 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
             offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
             offset = semantic_append_where_clauses(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   ZR_NULL,
+                                                   node,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
@@ -1549,12 +1417,18 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(funcDecl->name->name));
             offset = semantic_append_parameter_list(state,
                                                     compilerState,
+                                                    analyzer,
+                                                    ZR_NULL,
+                                                    node,
                                                     buffer,
                                                     bufferSize,
                                                     offset,
                                                     funcDecl->params);
             semantic_format_display_type_from_ast_or_inferred(state,
                                                               compilerState,
+                                                              analyzer,
+                                                              ZR_NULL,
+                                                              node,
                                                               funcDecl->returnType,
                                                               fallbackTypeInfo,
                                                               typeBuffer,
@@ -1576,12 +1450,18 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(delegateDecl->name->name));
             offset = semantic_append_parameter_list(state,
                                                     compilerState,
+                                                    analyzer,
+                                                    ZR_NULL,
+                                                    node,
                                                     buffer,
                                                     bufferSize,
                                                     offset,
                                                     delegateDecl->params);
             semantic_format_display_type_from_ast_or_inferred(state,
                                                               compilerState,
+                                                              analyzer,
+                                                              ZR_NULL,
+                                                              node,
                                                               delegateDecl->returnType,
                                                               fallbackTypeInfo,
                                                               typeBuffer,
@@ -1603,18 +1483,27 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(method->name->name));
             offset = semantic_append_generic_declaration(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        ZR_NULL,
+                                                        node,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         method->generic);
             offset = semantic_append_parameter_list(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   ZR_NULL,
+                                                   node,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
                                                    method->params);
             semantic_format_display_type_from_ast_or_inferred(state,
                                                               compilerState,
+                                                              analyzer,
+                                                              ZR_NULL,
+                                                              node,
                                                               method->returnType,
                                                               fallbackTypeInfo,
                                                               typeBuffer,
@@ -1622,6 +1511,9 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
             offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
             offset = semantic_append_where_clauses(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   ZR_NULL,
+                                                   node,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
@@ -1642,18 +1534,27 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(method->name->name));
             offset = semantic_append_generic_declaration(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        ZR_NULL,
+                                                        node,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         method->generic);
             offset = semantic_append_parameter_list(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   ZR_NULL,
+                                                   node,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
                                                    method->params);
             semantic_format_display_type_from_ast_or_inferred(state,
                                                               compilerState,
+                                                              analyzer,
+                                                              ZR_NULL,
+                                                              node,
                                                               method->returnType,
                                                               fallbackTypeInfo,
                                                               typeBuffer,
@@ -1661,6 +1562,9 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
             offset = semantic_buffer_append(buffer, bufferSize, offset, ": %s", typeBuffer);
             offset = semantic_append_where_clauses(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   ZR_NULL,
+                                                   node,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
@@ -1681,18 +1585,27 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(classDecl->name->name));
             offset = semantic_append_generic_declaration(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        node,
+                                                        ZR_NULL,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         classDecl->generic);
             offset = semantic_append_inheritance_clause(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        node,
+                                                        ZR_NULL,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         classDecl->inherits);
             offset = semantic_append_where_clauses(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   node,
+                                                   ZR_NULL,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
@@ -1713,18 +1626,27 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(structDecl->name->name));
             offset = semantic_append_generic_declaration(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        node,
+                                                        ZR_NULL,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         structDecl->generic);
             offset = semantic_append_inheritance_clause(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        node,
+                                                        ZR_NULL,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         structDecl->inherits);
             offset = semantic_append_where_clauses(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   node,
+                                                   ZR_NULL,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
@@ -1745,18 +1667,27 @@ static TZrBool semantic_build_ast_signature(SZrState *state,
                                             semantic_string_native(interfaceDecl->name->name));
             offset = semantic_append_generic_declaration(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        node,
+                                                        ZR_NULL,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         interfaceDecl->generic);
             offset = semantic_append_inheritance_clause(state,
                                                         compilerState,
+                                                        analyzer,
+                                                        node,
+                                                        ZR_NULL,
                                                         buffer,
                                                         bufferSize,
                                                         offset,
                                                         interfaceDecl->inherits);
             offset = semantic_append_where_clauses(state,
                                                    compilerState,
+                                                   analyzer,
+                                                   node,
+                                                   ZR_NULL,
                                                    buffer,
                                                    bufferSize,
                                                    offset,
@@ -1797,6 +1728,7 @@ static void semantic_build_symbol_detail(SZrState *state,
         signatureNode != ZR_NULL &&
         semantic_build_ast_signature(state,
                                      compilerState,
+                                     analyzer,
                                      signatureTypeInfo,
                                      signatureNode,
                                      signatureBuffer,
@@ -2527,6 +2459,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
     }
     if (semantic_build_ast_signature(state,
                                      analyzer->compilerState,
+                                     analyzer,
                                      signatureTypeInfo,
                                      signatureNode,
                                      signatureBuffer,

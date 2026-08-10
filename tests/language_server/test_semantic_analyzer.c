@@ -2491,6 +2491,105 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
     TEST_PASS(timer, "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers");
 }
 
+static void test_semantic_analyzer_signature_type_display_fails_closed_without_canonical_fact(
+        SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact");
+
+    TEST_INFO("Canonical declaration signature display",
+              "Hover and completion signatures must not render an unresolved AST type as an exact type");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+                "fn redact(value: MissingType): MissingType {\n"
+                "    return value;\n"
+                "}\n"
+                "fn use(): void {\n"
+                "    redact(null);\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(
+                state,
+                "signature_type_display_fail_closed_test.zr",
+                strlen("signature_type_display_fail_closed_test.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange completionPosition;
+        SZrFileRange hoverPosition;
+        SZrArray completions;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const TZrChar *detailText;
+        const TZrChar *hoverText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact",
+                      "Failed to parse test code");
+            return;
+        }
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact",
+                      "Failed to analyze unresolved declaration type fixture");
+            return;
+        }
+        completionPosition = file_range_for_nth_substring(testCode, "redact(null)", 0, ZR_FALSE);
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
+        detailText = completion_detail_for_label(&completions, "redact");
+        if (detailText == ZR_NULL ||
+            strstr(detailText, "value: cannot infer exact type") == ZR_NULL ||
+            strstr(detailText, "): cannot infer exact type") == ZR_NULL ||
+            strstr(detailText, "MissingType") != ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact",
+                      detailText != ZR_NULL ? detailText : "<null completion detail>");
+            return;
+        }
+        hoverPosition = completionPosition;
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact",
+                      "Failed to get hover information for unresolved declaration type");
+            return;
+        }
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "value: cannot infer exact type") == ZR_NULL ||
+            strstr(hoverText, "): cannot infer exact type") == ZR_NULL ||
+            strstr(hoverText, "MissingType") != ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact");
+}
+
 static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Generic Type Symbols Surface Signature Detail");
@@ -4582,6 +4681,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_function_signatures_preserve_ownership_qualifiers(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_signature_type_display_fails_closed_without_canonical_fact(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_generic_type_symbols_surface_signature_detail(state);

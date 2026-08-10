@@ -656,6 +656,32 @@ static TZrBool semantic_type_prototypes_generic_declaration_has_const_parameter(
     return ZR_FALSE;
 }
 
+static TZrBool semantic_type_prototypes_generic_declaration_has_type_parameter(
+        SZrGenericDeclaration *genericDeclaration,
+        SZrString *name) {
+    if (genericDeclaration == ZR_NULL || genericDeclaration->params == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < genericDeclaration->params->count; index++) {
+        SZrAstNode *parameterNode = genericDeclaration->params->nodes[index];
+        SZrParameter *parameter;
+
+        if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        parameter = &parameterNode->data.parameter;
+        if (parameter->genericKind == ZR_GENERIC_PARAMETER_TYPE &&
+            parameter->name != ZR_NULL && parameter->name->name != ZR_NULL &&
+            ZrCore_String_Equal(parameter->name->name, name)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool semantic_type_prototypes_is_const_generic_parameter_reference(
         SZrAstNode *ownerTypeNode,
         SZrAstNode *functionNode,
@@ -666,6 +692,35 @@ static TZrBool semantic_type_prototypes_is_const_generic_parameter_reference(
            semantic_type_prototypes_generic_declaration_has_const_parameter(
                    semantic_type_prototypes_generic_declaration_for_owner(ownerTypeNode),
                    name);
+}
+
+static TZrBool semantic_type_prototypes_is_type_generic_parameter_reference(
+        SZrAstNode *ownerTypeNode,
+        SZrAstNode *functionNode,
+        SZrString *name) {
+    return semantic_type_prototypes_generic_declaration_has_type_parameter(
+                   semantic_type_prototypes_generic_declaration_for_callable(functionNode),
+                   name) ||
+           semantic_type_prototypes_generic_declaration_has_type_parameter(
+                   semantic_type_prototypes_generic_declaration_for_owner(ownerTypeNode),
+                   name);
+}
+
+static SZrString *semantic_type_prototypes_root_type_name(const SZrType *typeNode) {
+    if (typeNode == ZR_NULL || typeNode->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeNode->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return typeNode->name->data.identifier.name;
+    }
+
+    if (typeNode->name->type == ZR_AST_GENERIC_TYPE &&
+        typeNode->name->data.genericType.name != ZR_NULL) {
+        return typeNode->name->data.genericType.name->name;
+    }
+
+    return ZR_NULL;
 }
 
 static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer *analyzer,
@@ -1764,8 +1819,92 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BootstrapTypePrototypes(SZrState *stat
     return ZR_TRUE;
 }
 
+static TZrBool semantic_type_prototypes_declared_type_is_resolved(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ownerTypeNode,
+        SZrAstNode *functionNode,
+        const SZrType *typeNode) {
+    EZrOwnershipQualifier ownershipQualifier;
+    const SZrType *innerTypeNode;
+    SZrString *rootTypeName;
+    EZrValueType baseType;
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        typeNode == ZR_NULL || typeNode->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrParser_AstType_TryUnwrapOwnershipGeneric(
+                typeNode, &ownershipQualifier, &innerTypeNode)) {
+        return semantic_type_prototypes_declared_type_is_resolved(
+                analyzer, ownerTypeNode, functionNode, innerTypeNode);
+    }
+
+    if (typeNode->dimensions > 0) {
+        SZrType elementTypeNode = *typeNode;
+        elementTypeNode.dimensions--;
+        elementTypeNode.arrayFixedSize = 0;
+        elementTypeNode.arrayMinSize = 0;
+        elementTypeNode.arrayMaxSize = 0;
+        elementTypeNode.hasArraySizeConstraint = ZR_FALSE;
+        elementTypeNode.arraySizeExpression = ZR_NULL;
+        return semantic_type_prototypes_declared_type_is_resolved(
+                analyzer, ownerTypeNode, functionNode, &elementTypeNode);
+    }
+
+    if (typeNode->name->type == ZR_AST_TUPLE_TYPE) {
+        SZrTupleType *tupleType = (SZrTupleType *)&typeNode->name->data.tupleType;
+        if (tupleType->elements == ZR_NULL) {
+            return ZR_TRUE;
+        }
+        for (TZrSize index = 0; index < tupleType->elements->count; index++) {
+            SZrAstNode *elementNode = tupleType->elements->nodes[index];
+            if (elementNode == ZR_NULL || elementNode->type != ZR_AST_TYPE ||
+                !semantic_type_prototypes_declared_type_is_resolved(
+                        analyzer, ownerTypeNode, functionNode, &elementNode->data.type)) {
+                return ZR_FALSE;
+            }
+        }
+        return ZR_TRUE;
+    }
+
+    rootTypeName = semantic_type_prototypes_root_type_name(typeNode);
+    if (rootTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    baseType = semantic_type_prototypes_base_type_from_name(rootTypeName, typeNode);
+    if (baseType != ZR_VALUE_TYPE_OBJECT ||
+        semantic_type_prototypes_is_type_generic_parameter_reference(
+                ownerTypeNode, functionNode, rootTypeName)) {
+        return ZR_TRUE;
+    }
+
+    if (find_compiler_type_prototype_inference(analyzer->compilerState, rootTypeName) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeNode->name->type == ZR_AST_GENERIC_TYPE) {
+        SZrGenericType *genericType = &typeNode->name->data.genericType;
+        if (genericType->params != ZR_NULL) {
+            for (TZrSize index = 0; index < genericType->params->count; index++) {
+                SZrAstNode *argumentNode = genericType->params->nodes[index];
+                if (argumentNode != ZR_NULL && argumentNode->type == ZR_AST_TYPE &&
+                    !semantic_type_prototypes_declared_type_is_resolved(
+                            analyzer, ownerTypeNode, functionNode, &argumentNode->data.type)) {
+                    return ZR_FALSE;
+                }
+            }
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static void semantic_type_prototypes_publish_declared_type_reference(
         SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ownerTypeNode,
+        SZrAstNode *functionNode,
         const SZrType *typeNode,
         const SZrInferredType *inferredType) {
     SZrSemanticReferenceFact fact;
@@ -1808,7 +1947,8 @@ static void semantic_type_prototypes_publish_declared_type_reference(
     }
     fact.kind = ZR_SEMANTIC_REFERENCE_TYPE;
     fact.typeId = typeId;
-    fact.isResolved = ZR_TRUE;
+    fact.isResolved = semantic_type_prototypes_declared_type_is_resolved(
+            analyzer, ownerTypeNode, functionNode, typeNode);
     (void)ZrParser_SemanticFacts_AppendReference(analyzer->semanticContext, &fact);
 }
 
@@ -1830,7 +1970,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
                                                                typeNode,
                                                                outType);
     if (isResolved) {
-        semantic_type_prototypes_publish_declared_type_reference(analyzer, typeNode, outType);
+        semantic_type_prototypes_publish_declared_type_reference(
+                analyzer, ownerTypeNode, functionNode, typeNode, outType);
     }
     return isResolved;
 }

@@ -12,20 +12,61 @@
 #include <ctype.h>
 #include <string.h>
 
-static void semantic_query_copy_type_text(SZrState *state,
-                                          SZrInferredType *typeInfo,
-                                          SZrLspResolvedTypeInfo *outInfo) {
+static TZrBool semantic_query_type_id_is_available(
+        const SZrSemanticContext *semanticContext,
+        TZrTypeId typeId) {
+    TZrBool hasTypeReference = ZR_FALSE;
+
+    if (semanticContext == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < semanticContext->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *reference =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&semanticContext->referenceFacts, index);
+        if (reference == ZR_NULL || reference->kind != ZR_SEMANTIC_REFERENCE_TYPE ||
+            reference->typeId != typeId) {
+            continue;
+        }
+
+        hasTypeReference = ZR_TRUE;
+        if (reference->isResolved) {
+            return ZR_TRUE;
+        }
+    }
+
+    return !hasTypeReference;
+}
+
+static TZrBool semantic_query_copy_canonical_type_at(
+        SZrState *state,
+        const SZrSemanticContext *semanticContext,
+        SZrFileRange range,
+        SZrLspResolvedTypeInfo *outInfo) {
+    SZrParserSemanticTypeQuery typeQuery;
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-    const TZrChar *typeText;
 
-    if (state == ZR_NULL || typeInfo == ZR_NULL || outInfo == ZR_NULL) {
-        return;
+    if (state == ZR_NULL || semanticContext == ZR_NULL || outInfo == ZR_NULL ||
+        !ZrParser_SemanticQuery_CanonicalTypeAt(semanticContext, range, ZR_NULL, &typeQuery) ||
+        typeQuery.typeId == ZR_SEMANTIC_ID_INVALID ||
+        !((typeQuery.reference != ZR_NULL &&
+           typeQuery.reference->kind == ZR_SEMANTIC_REFERENCE_TYPE &&
+           typeQuery.reference->isResolved) ||
+          (typeQuery.expression != ZR_NULL &&
+           typeQuery.expression->exactness == ZR_SEMANTIC_FACT_EXACT &&
+           typeQuery.expression->typeId == typeQuery.typeId &&
+           ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(
+                   &typeQuery.expression->inferredType) &&
+           semantic_query_type_id_is_available(semanticContext, typeQuery.typeId))) ||
+        !ZrParser_CanonicalType_Format(
+                semanticContext, typeQuery.typeId, typeBuffer, sizeof(typeBuffer))) {
+        return ZR_FALSE;
     }
 
-    typeText = ZrParser_TypeNameString_Get(state, typeInfo, typeBuffer, sizeof(typeBuffer));
-    if (typeText != ZR_NULL && typeText[0] != '\0') {
-        outInfo->resolvedTypeText = ZrCore_String_Create(state, (TZrNativeString)typeText, strlen(typeText));
-    }
+    outInfo->resolvedTypeText =
+            ZrCore_String_Create(state, (TZrNativeString)typeBuffer, strlen(typeBuffer));
+    return outInfo->resolvedTypeText != ZR_NULL;
 }
 
 static void semantic_query_copy_resolved_member_type(SZrState *state,
@@ -2757,23 +2798,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL;
     query->resolvedTypeInfo.origin = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
     query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_SYMBOL;
-    {
-        SZrInferredType resolvedType;
-
-        ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
-        if (ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(state,
-                                                                    analyzer,
-                                                                    query->queryRange,
-                                                                    &resolvedType)) {
-            semantic_query_copy_type_text(state, &resolvedType, &query->resolvedTypeInfo);
-            if (query->symbol->type == ZR_SYMBOL_CLASS || query->symbol->type == ZR_SYMBOL_STRUCT ||
-                query->symbol->type == ZR_SYMBOL_INTERFACE || query->symbol->type == ZR_SYMBOL_ENUM) {
-                query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_TYPE;
-            }
-        } else {
-            semantic_query_copy_type_text(state, query->symbol->typeInfo, &query->resolvedTypeInfo);
-        }
-        ZrParser_InferredType_Free(state, &resolvedType);
+    if (semantic_query_copy_canonical_type_at(
+                state, analyzer->semanticContext, query->queryRange, &query->resolvedTypeInfo) &&
+        (query->symbol->type == ZR_SYMBOL_CLASS || query->symbol->type == ZR_SYMBOL_STRUCT ||
+         query->symbol->type == ZR_SYMBOL_INTERFACE || query->symbol->type == ZR_SYMBOL_ENUM)) {
+        query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_TYPE;
     }
     return ZR_TRUE;
 }

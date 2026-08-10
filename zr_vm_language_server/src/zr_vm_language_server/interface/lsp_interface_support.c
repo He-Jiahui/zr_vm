@@ -823,7 +823,8 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
         append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, "`");
     }
 
-    if (symbol->typeInfo != ZR_NULL && propertySignature == ZR_NULL) {
+    if (symbol->typeInfo != ZR_NULL && propertySignature == ZR_NULL &&
+        symbol->type != ZR_SYMBOL_FUNCTION && symbol->type != ZR_SYMBOL_METHOD) {
         const TZrChar *typeText =
             ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
         if (typeText != ZR_NULL && typeText[0] != '\0') {
