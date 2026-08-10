@@ -74,6 +74,8 @@ static EZrSemanticExpressionFactKind type_inference_expression_fact_kind(SZrAstN
                    node->data.constructExpression.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE
                            ? ZR_SEMANTIC_EXPRESSION_FACT_OWNERSHIP_BUILTIN
                            : ZR_SEMANTIC_EXPRESSION_FACT_CALL;
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:
+            return ZR_SEMANTIC_EXPRESSION_FACT_OWNERSHIP_BUILTIN;
         case ZR_AST_BINARY_EXPRESSION:
         case ZR_AST_LOGICAL_EXPRESSION:
             return ZR_SEMANTIC_EXPRESSION_FACT_BINARY;
@@ -923,32 +925,6 @@ void type_inference_record_ownership_builtin_fact(SZrCompilerState *cs,
     fact.lifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
     fact.ownerLifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
     fact.relatedNode = node->data.constructExpression.target;
-    fact.isViolation = ZR_FALSE;
-    ZrParser_SemanticFacts_AppendOwnership(cs->semanticContext, &fact);
-}
-
-void type_inference_record_ownership_member_fact(SZrCompilerState *cs,
-                                                 SZrAstNode *node,
-                                                 SZrAstNode *target,
-                                                 EZrOwnershipBuiltinKind builtinKind,
-                                                 EZrOwnershipQualifier qualifier) {
-    SZrSemanticOwnershipFact fact;
-
-    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
-        node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION ||
-        target == ZR_NULL || builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
-        return;
-    }
-
-    memset(&fact, 0, sizeof(fact));
-    fact.node = node;
-    fact.range = node->location;
-    fact.kind = ownership_fact_kind_for_builtin(builtinKind);
-    fact.qualifier = qualifier;
-    fact.symbolId = ZR_SEMANTIC_ID_INVALID;
-    fact.lifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
-    fact.ownerLifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
-    fact.relatedNode = target;
     fact.isViolation = ZR_FALSE;
     ZrParser_SemanticFacts_AppendOwnership(cs->semanticContext, &fact);
 }

@@ -280,40 +280,6 @@ static TZrBool ownership_move_expression_contains_call(
         SZrAstNode *expression,
         const SZrSemanticReferenceFact *fact);
 
-static TZrBool ownership_move_primary_consumes_receiver(
-        SZrAstNode *primaryNode,
-        const SZrSemanticReferenceFact *fact) {
-    SZrAstNodeArray *members;
-
-    if (primaryNode == ZR_NULL || fact == ZR_NULL ||
-        primaryNode->type != ZR_AST_PRIMARY_EXPRESSION ||
-        !ownership_move_expression_is_direct_reference(
-                primaryNode->data.primaryExpression.property, fact)) {
-        return ZR_FALSE;
-    }
-    members = primaryNode->data.primaryExpression.members;
-    for (TZrSize index = 0u; members != ZR_NULL && index + 1u < members->count; index++) {
-        SZrAstNode *member = members->nodes[index];
-        SZrAstNode *call = members->nodes[index + 1u];
-        EZrOwnershipBuiltinKind builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-
-        if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
-            member->data.memberExpression.computed ||
-            member->data.memberExpression.property == ZR_NULL ||
-            member->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
-            call == ZR_NULL || call->type != ZR_AST_FUNCTION_CALL ||
-            !ZrParser_OwnershipMemberNameToBuiltinKind(
-                    member->data.memberExpression.property->data.identifier.name,
-                    &builtinKind)) {
-            continue;
-        }
-        if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC) {
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
 static TZrBool ownership_move_primary_contains_call(const SZrSemanticContext *context,
                                                      SZrAstNode *primaryNode,
                                                      const SZrSemanticReferenceFact *fact) {
@@ -322,9 +288,6 @@ static TZrBool ownership_move_primary_contains_call(const SZrSemanticContext *co
 
     if (primaryNode == ZR_NULL || primaryNode->type != ZR_AST_PRIMARY_EXPRESSION) {
         return ZR_FALSE;
-    }
-    if (ownership_move_primary_consumes_receiver(primaryNode, fact)) {
-        return ZR_TRUE;
     }
     members = primaryNode->data.primaryExpression.members;
     for (memberIndex = 0; members != ZR_NULL && memberIndex < members->count; memberIndex++) {
@@ -364,27 +327,22 @@ static TZrBool ownership_weak_expression_requires_upgrade(
         SZrAstNode *expression,
         const SZrSemanticReferenceFact *fact);
 
-static TZrBool ownership_weak_primary_invokes_upgrade(
+static TZrBool ownership_weak_primary_has_receiver_guard(
+        const SZrSemanticContext *context,
         const SZrAstNodeArray *members,
         TZrSize callIndex) {
-    SZrAstNode *member;
-    EZrOwnershipBuiltinKind builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    SZrAstNode *guardedSegment;
+    const SZrReceiverGuardFact *guard;
 
-    if (members == ZR_NULL || callIndex == 0U) {
+    if (context == ZR_NULL || members == ZR_NULL ||
+        members->nodes == ZR_NULL || callIndex >= members->count) {
         return ZR_FALSE;
     }
-    member = members->nodes[callIndex - 1U];
-    if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
-        member->data.memberExpression.computed ||
-        member->data.memberExpression.property == ZR_NULL ||
-        member->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL) {
-        return ZR_FALSE;
-    }
-
-    return ZrParser_OwnershipMemberNameToBuiltinKind(
-                   member->data.memberExpression.property->data.identifier.name,
-                   &builtinKind) &&
-           builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE;
+    guardedSegment = callIndex > 0u ? members->nodes[callIndex - 1u]
+                                    : members->nodes[callIndex];
+    guard = ZrParser_SemanticFacts_FindReceiverGuardByNode(
+            context, guardedSegment);
+    return guard != ZR_NULL && guard->kind == ZR_RECEIVER_GUARD_WEAK_WAKE;
 }
 
 static TZrBool ownership_weak_primary_requires_upgrade(
@@ -408,7 +366,8 @@ static TZrBool ownership_weak_primary_requires_upgrade(
             ownership_move_node_contains_fact(
                     primaryNode->data.primaryExpression.property,
                     fact) &&
-            !ownership_weak_primary_invokes_upgrade(members, memberIndex)) {
+            !ownership_weak_primary_has_receiver_guard(
+                    context, members, memberIndex)) {
             return ZR_TRUE;
         }
         if (member == ZR_NULL || member->type != ZR_AST_FUNCTION_CALL) {
@@ -471,6 +430,18 @@ static TZrBool ownership_weak_expression_requires_upgrade(
         case ZR_AST_TYPE_CAST_EXPRESSION:
             return ownership_weak_expression_requires_upgrade(
                     context, expression->data.typeCastExpression.expression, fact);
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:
+            if (expression->data.ownershipIntrinsicExpression.operation ==
+                    ZR_OWNERSHIP_INTRINSIC_WAKE &&
+                ownership_move_node_contains_fact(
+                        expression->data.ownershipIntrinsicExpression.argument,
+                        fact)) {
+                return ZR_FALSE;
+            }
+            return ownership_weak_expression_requires_upgrade(
+                    context,
+                    expression->data.ownershipIntrinsicExpression.argument,
+                    fact);
         default:
             return ZR_FALSE;
     }
@@ -514,6 +485,22 @@ static TZrBool ownership_move_expression_contains_call(
         case ZR_AST_TYPE_CAST_EXPRESSION:
             return ownership_move_expression_contains_call(
                     context, expression->data.typeCastExpression.expression, fact);
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:
+            if ((expression->data.ownershipIntrinsicExpression.operation ==
+                         ZR_OWNERSHIP_INTRINSIC_SHARE ||
+                 expression->data.ownershipIntrinsicExpression.operation ==
+                         ZR_OWNERSHIP_INTRINSIC_INTO_GC ||
+                 expression->data.ownershipIntrinsicExpression.operation ==
+                         ZR_OWNERSHIP_INTRINSIC_DROP) &&
+                ownership_move_node_contains_fact(
+                        expression->data.ownershipIntrinsicExpression.argument,
+                        fact)) {
+                return ZR_TRUE;
+            }
+            return ownership_move_expression_contains_call(
+                    context,
+                    expression->data.ownershipIntrinsicExpression.argument,
+                    fact);
         default:
             return ZR_FALSE;
     }

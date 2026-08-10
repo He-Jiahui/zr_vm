@@ -45,6 +45,7 @@ void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node);
+void compile_ownership_intrinsic_expression(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 compile_ownership_construct_expression_into_slot(SZrCompilerState *cs,
                                                             SZrAstNode *node,
                                                             TZrUInt32 targetSlot);

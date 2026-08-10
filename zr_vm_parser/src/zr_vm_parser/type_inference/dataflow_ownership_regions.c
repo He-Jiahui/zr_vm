@@ -78,47 +78,26 @@ static TZrBool ownership_region_current_member_projection(
         SZrAstNode *node,
         EZrOwnershipBuiltinKind *outBuiltinKind,
         SZrAstNode **outTarget) {
-    SZrAstNodeArray *members;
-
     if (outBuiltinKind != ZR_NULL) {
         *outBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     }
     if (outTarget != ZR_NULL) {
         *outTarget = ZR_NULL;
     }
-    if (node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION ||
-        node->data.primaryExpression.property == ZR_NULL) {
+    if (node == ZR_NULL ||
+        node->type != ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION ||
+        node->data.ownershipIntrinsicExpression.operation !=
+                ZR_OWNERSHIP_INTRINSIC_DEGRADE ||
+        node->data.ownershipIntrinsicExpression.argument == ZR_NULL) {
         return ZR_FALSE;
     }
-
-    members = node->data.primaryExpression.members;
-    for (TZrSize index = 0U; members != ZR_NULL && index + 1U < members->count; index++) {
-        SZrAstNode *member = members->nodes[index];
-        SZrAstNode *call = members->nodes[index + 1U];
-        EZrOwnershipBuiltinKind builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-
-        if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
-            member->data.memberExpression.computed ||
-            member->data.memberExpression.property == ZR_NULL ||
-            member->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
-            call == ZR_NULL || call->type != ZR_AST_FUNCTION_CALL ||
-            (call->data.functionCall.args != ZR_NULL && call->data.functionCall.args->count != 0U) ||
-            !ZrParser_OwnershipMemberNameToBuiltinKind(
-                    member->data.memberExpression.property->data.identifier.name,
-                    &builtinKind) ||
-            builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_WEAK) {
-            continue;
-        }
-
-        if (outBuiltinKind != ZR_NULL) {
-            *outBuiltinKind = builtinKind;
-        }
-        if (outTarget != ZR_NULL) {
-            *outTarget = node->data.primaryExpression.property;
-        }
-        return ZR_TRUE;
+    if (outBuiltinKind != ZR_NULL) {
+        *outBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
     }
-    return ZR_FALSE;
+    if (outTarget != ZR_NULL) {
+        *outTarget = node->data.ownershipIntrinsicExpression.argument;
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrParser_DataflowOwnership_StatementRegionBinding(
@@ -232,6 +211,13 @@ static TZrBool ownership_region_expression_releases_read(
                        ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
                ownership_region_node_contains_reference(
                        expression->data.constructExpression.target,
+                       fact);
+    }
+    if (expression->type == ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION) {
+        return expression->data.ownershipIntrinsicExpression.operation ==
+                       ZR_OWNERSHIP_INTRINSIC_DROP &&
+               ownership_region_node_contains_reference(
+                       expression->data.ownershipIntrinsicExpression.argument,
                        fact);
     }
     if (expression->type == ZR_AST_ASSIGNMENT_EXPRESSION &&

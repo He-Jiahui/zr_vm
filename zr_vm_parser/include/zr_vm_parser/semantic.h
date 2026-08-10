@@ -152,6 +152,8 @@ typedef struct SZrSemanticContext {
     SZrArray reachabilityFacts; // SZrSemanticReachabilityFact
     SZrArray logicalFacts;      // SZrSemanticLogicalFact
     SZrArray ownershipFacts;    // SZrSemanticOwnershipFact
+    SZrArray ownershipIntrinsicFacts; // SZrOwnershipIntrinsicFact
+    SZrArray receiverGuardFacts; // SZrReceiverGuardFact
     SZrArray diagnosticFacts;   // SZrSemanticDiagnosticFact
     SZrArray propertyContracts; // SZrSemanticPropertyContract
 } SZrSemanticContext;

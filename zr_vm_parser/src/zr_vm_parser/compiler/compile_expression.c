@@ -2751,6 +2751,10 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
             compile_construct_expression(cs, node);
             break;
 
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:
+            compile_ownership_intrinsic_expression(cs, node);
+            break;
+
         case ZR_AST_STRUCT_INIT_EXPRESSION:
             compile_struct_init_expression(cs, node);
             break;

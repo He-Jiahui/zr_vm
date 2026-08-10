@@ -158,6 +158,17 @@ TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
 ZR_PARSER_API TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                                                       SZrAstNode *node,
                                                       SZrInferredType *result);
+TZrBool infer_ownership_intrinsic_expression_type(SZrCompilerState *cs,
+                                                  SZrAstNode *node,
+                                                  SZrInferredType *result);
+TZrBool infer_receiver_guard_for_segment(
+        SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
+        SZrAstNodeArray *segments,
+        TZrSize segmentIndex,
+        SZrAstNode *segment,
+        SZrInferredType *receiverType,
+        TZrBool *outResultLifted);
 TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
                                           SZrAstNode *node,
                                           SZrInferredType *result);

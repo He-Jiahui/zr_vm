@@ -110,10 +110,4 @@ void type_inference_record_ownership_builtin_fact(SZrCompilerState *cs,
                                                   EZrOwnershipBuiltinKind builtinKind,
                                                   EZrOwnershipQualifier qualifier);
 
-void type_inference_record_ownership_member_fact(SZrCompilerState *cs,
-                                                 SZrAstNode *node,
-                                                 SZrAstNode *target,
-                                                 EZrOwnershipBuiltinKind builtinKind,
-                                                 EZrOwnershipQualifier qualifier);
-
 #endif

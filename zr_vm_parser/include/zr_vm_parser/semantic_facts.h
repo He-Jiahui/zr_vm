@@ -237,6 +237,49 @@ typedef struct SZrSemanticOwnershipFact {
     SZrString *diagnosticMessage;
 } SZrSemanticOwnershipFact;
 
+typedef struct SZrOwnershipIntrinsicFact {
+    SZrAstNode *node;
+    SZrAstNode *argument;
+    SZrFileRange range;
+    SZrFileRange nameRange;
+    SZrFileRange argumentRange;
+    EZrOwnershipIntrinsicOperation operation;
+    SZrInferredType inputType;
+    SZrInferredType resultType;
+    TZrUInt32 placeId;
+    TZrUInt32 loanId;
+    TZrBool consuming;
+} SZrOwnershipIntrinsicFact;
+
+typedef enum EZrReceiverGuardKind {
+    ZR_RECEIVER_GUARD_NULL = 0,
+    ZR_RECEIVER_GUARD_WEAK_WAKE,
+} EZrReceiverGuardKind;
+
+typedef enum EZrReceiverGuardMode {
+    ZR_RECEIVER_GUARD_DIRECT = 0,
+    ZR_RECEIVER_GUARD_OPTIONAL,
+} EZrReceiverGuardMode;
+
+typedef enum EZrReceiverGuardResultLift {
+    ZR_RECEIVER_GUARD_RESULT_UNCHANGED = 0,
+    ZR_RECEIVER_GUARD_RESULT_NULLABLE,
+} EZrReceiverGuardResultLift;
+
+typedef struct SZrReceiverGuardFact {
+    SZrAstNode *node;
+    SZrAstNode *receiver;
+    SZrAstNode *firstSegment;
+    SZrFileRange range;
+    EZrReceiverGuardKind kind;
+    EZrReceiverGuardMode mode;
+    EZrReceiverGuardResultLift resultLift;
+    TZrSize chainSegmentStart;
+    TZrSize chainSegmentEnd;
+    SZrInferredType receiverType;
+    SZrInferredType guardedType;
+} SZrReceiverGuardFact;
+
 typedef struct SZrSemanticDiagnosticFact {
     SZrAstNode *node;
     SZrStructuredDiagnostic diagnostic;
@@ -277,6 +320,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendLogical(SZrSemanticContext *c
                                                            const SZrSemanticLogicalFact *fact);
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendOwnership(SZrSemanticContext *context,
                                                              const SZrSemanticOwnershipFact *fact);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendOwnershipIntrinsic(
+        SZrSemanticContext *context,
+        const SZrOwnershipIntrinsicFact *fact);
+ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendReceiverGuard(
+        SZrSemanticContext *context,
+        const SZrReceiverGuardFact *fact);
 
 ZR_PARSER_API const SZrSemanticExpressionFact *ZrParser_SemanticFacts_FindExpressionByNode(
         const SZrSemanticContext *context,
@@ -313,5 +362,12 @@ ZR_PARSER_API const SZrSemanticOwnershipFact *ZrParser_SemanticFacts_FindOwnersh
 ZR_PARSER_API const SZrSemanticOwnershipFact *ZrParser_SemanticFacts_FindOwnershipAtPosition(
         const SZrSemanticContext *context,
         SZrFileRange position);
+ZR_PARSER_API const SZrOwnershipIntrinsicFact *
+ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node);
+ZR_PARSER_API const SZrReceiverGuardFact *ZrParser_SemanticFacts_FindReceiverGuardByNode(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node);
 
 #endif // ZR_VM_PARSER_SEMANTIC_FACTS_H

@@ -2808,6 +2808,9 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         case ZR_AST_CONSTRUCT_EXPRESSION:
             success = infer_construct_expression_type(cs, node, result);
             break;
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:
+            success = infer_ownership_intrinsic_expression_type(cs, node, result);
+            break;
         case ZR_AST_STRUCT_INIT_EXPRESSION:
             success = infer_struct_init_expression_type(cs, node, result);
             break;

@@ -3758,21 +3758,6 @@ static void type_inference_normalize_array_type_from_name(SZrCompilerState *cs, 
     ZrParser_InferredType_Free(cs->state, &normalizedType);
 }
 
-static TZrBool type_inference_function_call_has_no_arguments(SZrAstNode *node) {
-    SZrFunctionCall *call;
-
-    if (node == ZR_NULL || node->type != ZR_AST_FUNCTION_CALL) {
-        return ZR_FALSE;
-    }
-
-    call = &node->data.functionCall;
-    return (TZrBool)(call->args == ZR_NULL || call->args->count == 0u);
-}
-
-static TZrBool type_inference_member_name_is_plain_share(SZrString *memberName) {
-    return zr_string_equals_cstr(memberName, "share");
-}
-
 static TZrBool type_inference_array_index_type_is_known_non_integer(
         const SZrInferredType *indexType) {
     if (indexType == ZR_NULL ||
@@ -3891,6 +3876,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                         SZrInferredType *result) {
     SZrInferredType currentType;
     TZrBool currentIsPrototypeReference = baseIsPrototypeReference;
+    TZrBool resultLifted = ZR_FALSE;
 
     if (cs == ZR_NULL || baseType == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -3906,6 +3892,17 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
 
             if (memberNode == ZR_NULL) {
                 continue;
+            }
+            if (!infer_receiver_guard_for_segment(
+                        cs,
+                        primaryNode,
+                        members,
+                        i,
+                        memberNode,
+                        &currentType,
+                        &resultLifted)) {
+                ZrParser_InferredType_Free(cs->state, &currentType);
+                return ZR_FALSE;
             }
 
             if (memberNode->type == ZR_AST_MEMBER_EXPRESSION) {
@@ -4017,123 +4014,12 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     continue;
                 }
 
-                if (nextIsFunctionCall &&
-                    !currentIsPrototypeReference &&
-                    currentType.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
-                    memberLookupName != ZR_NULL) {
-                    EZrOwnershipBuiltinKind ownershipMemberKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-                    const TZrChar *removedCompatibilityMessage =
-                            ZrParser_OwnershipRemovedCompatibilityMemberMessage(memberLookupName);
-
-                    if (removedCompatibilityMessage != ZR_NULL) {
-                        ZrParser_Compiler_Error(cs,
-                                                removedCompatibilityMessage,
-                                                memberNode->location);
-                        ZrParser_InferredType_Free(cs->state, &currentType);
-                        return ZR_FALSE;
-                    }
-
-                    if (ZrParser_OwnershipMemberNameToBuiltinKind(memberLookupName, &ownershipMemberKind)) {
-                        if (!type_inference_function_call_has_no_arguments(members->nodes[i + 1])) {
-                            ZrParser_Compiler_Error(cs,
-                                                    "Ownership member calls do not take arguments",
-                                                    members->nodes[i + 1]->location);
-                            ZrParser_InferredType_Free(cs->state, &currentType);
-                            return ZR_FALSE;
-                        }
-                        if (!ZrParser_OwnershipBuiltinCanApplyToQualifier(ownershipMemberKind,
-                                                                          currentType.ownershipQualifier)) {
-                            ZrParser_Compiler_Error(cs,
-                                                    ZrParser_OwnershipMemberCallErrorMessage(ownershipMemberKind),
-                                                    memberNode->location);
-                            ZrParser_InferredType_Free(cs->state, &currentType);
-                            return ZR_FALSE;
-                        }
-                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC) {
-                            SZrTypePrototypeInfo *resourcePrototype =
-                                    currentType.typeName != ZR_NULL
-                                            ? find_compiler_type_prototype_inference(
-                                                      cs, currentType.typeName)
-                                            : ZR_NULL;
-                            if (resourcePrototype == ZR_NULL ||
-                                (resourcePrototype->modifierFlags &
-                                 ZR_DECLARATION_MODIFIER_RESOURCE) == 0u) {
-                                ZrParser_Compiler_Error(
-                                        cs,
-                                        "intoGc() requires a Unique<T> resource owner",
-                                        memberNode->location);
-                                ZrParser_InferredType_Free(cs->state, &currentType);
-                                return ZR_FALSE;
-                            }
-                        }
-
-                        ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
-                        ZrParser_InferredType_Copy(cs->state, &nextType, &currentType);
-                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
-                            ZrParser_InferredType_Free(cs->state, &nextType);
-                            ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_NULL);
-                        } else if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE) {
-                            nextType.isNullable = ZR_TRUE;
-                        } else {
-                            nextType.isNullable = currentType.isNullable;
-                        }
-                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC) {
-                            nextType.gcBridgeKind = ZR_GC_BRIDGE_BOX;
-                        }
-                        nextType.ownershipQualifier =
-                                ZrParser_OwnershipBuiltinResultQualifier(ownershipMemberKind,
-                                                                         currentType.ownershipQualifier);
-                        if (ownershipMemberKind == ZR_OWNERSHIP_BUILTIN_KIND_WEAK &&
-                            primaryNode != ZR_NULL &&
-                            primaryNode->type == ZR_AST_PRIMARY_EXPRESSION) {
-                            type_inference_record_ownership_member_fact(
-                                    cs,
-                                    primaryNode,
-                                    primaryNode->data.primaryExpression.property,
-                                    ownershipMemberKind,
-                                    nextType.ownershipQualifier);
-                        }
-
-                        ZrParser_InferredType_Free(cs->state, &currentType);
-                        ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
-                        ZrParser_InferredType_Copy(cs->state, &currentType, &nextType);
-                        ZrParser_InferredType_Free(cs->state, &nextType);
-                        currentIsPrototypeReference = ZR_FALSE;
-                        i++;
-                        continue;
-                    }
-                }
-
-                if (nextIsFunctionCall &&
-                    !currentIsPrototypeReference &&
-                    currentType.typeName != ZR_NULL &&
-                    type_inference_member_name_is_plain_share(memberLookupName) &&
-                    type_inference_function_call_has_no_arguments(members->nodes[i + 1])) {
-                    if (!type_name_is_module_prototype_inference(cs, currentType.typeName)) {
-                        type_inference_ensure_imported_module_runtime_metadata(cs, currentType.typeName);
-                    }
-                    if (!type_name_is_module_prototype_inference(cs, currentType.typeName)) {
-                        goto infer_regular_member_access;
-                    }
-                    ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
-                    ZrParser_InferredType_Copy(cs->state, &nextType, &currentType);
-                    nextType.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
-                    ZrParser_InferredType_Free(cs->state, &currentType);
-                    ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
-                    ZrParser_InferredType_Copy(cs->state, &currentType, &nextType);
-                    ZrParser_InferredType_Free(cs->state, &nextType);
-                    currentIsPrototypeReference = ZR_FALSE;
-                    i++;
-                    continue;
-                }
-
                 if (currentType.typeName == ZR_NULL) {
                     ZrParser_InferredType_Free(cs->state, &currentType);
                     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
                     return ZR_TRUE;
                 }
 
-infer_regular_member_access:
                 if (nextIsFunctionCall) {
                     if (!find_compiler_type_member_call_inference(cs,
                                                                   currentType.typeName,
@@ -4471,6 +4357,9 @@ infer_regular_member_access:
         }
     }
     ZrParser_InferredType_Copy(cs->state, result, &currentType);
+    if (resultLifted && result->baseType != ZR_VALUE_TYPE_NULL) {
+        result->isNullable = ZR_TRUE;
+    }
     ZrParser_InferredType_Free(cs->state, &currentType);
     return ZR_TRUE;
 }

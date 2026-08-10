@@ -322,6 +322,39 @@ static void semantic_facts_free_numeric_facts(SZrSemanticContext *context) {
     }
 }
 
+static void semantic_facts_free_ownership_intrinsic_facts(
+        SZrSemanticContext *context) {
+    if (context == ZR_NULL || !context->ownershipIntrinsicFacts.isValid) {
+        return;
+    }
+    for (TZrSize index = 0u;
+         index < context->ownershipIntrinsicFacts.length;
+         index++) {
+        SZrOwnershipIntrinsicFact *fact =
+                (SZrOwnershipIntrinsicFact *)ZrCore_Array_Get(
+                        &context->ownershipIntrinsicFacts, index);
+        if (fact != ZR_NULL) {
+            ZrParser_InferredType_Free(context->state, &fact->inputType);
+            ZrParser_InferredType_Free(context->state, &fact->resultType);
+        }
+    }
+}
+
+static void semantic_facts_free_receiver_guard_facts(SZrSemanticContext *context) {
+    if (context == ZR_NULL || !context->receiverGuardFacts.isValid) {
+        return;
+    }
+    for (TZrSize index = 0u; index < context->receiverGuardFacts.length; index++) {
+        SZrReceiverGuardFact *fact =
+                (SZrReceiverGuardFact *)ZrCore_Array_Get(
+                        &context->receiverGuardFacts, index);
+        if (fact != ZR_NULL) {
+            ZrParser_InferredType_Free(context->state, &fact->receiverType);
+            ZrParser_InferredType_Free(context->state, &fact->guardedType);
+        }
+    }
+}
+
 static SZrString *semantic_facts_clone_string(SZrSemanticContext *context, SZrString *value) {
     TZrNativeString text;
 
@@ -357,6 +390,12 @@ void ZrParser_SemanticFacts_Init(SZrSemanticContext *context) {
     semantic_facts_init_array(context, &context->reachabilityFacts, sizeof(SZrSemanticReachabilityFact));
     semantic_facts_init_array(context, &context->logicalFacts, sizeof(SZrSemanticLogicalFact));
     semantic_facts_init_array(context, &context->ownershipFacts, sizeof(SZrSemanticOwnershipFact));
+    semantic_facts_init_array(
+            context,
+            &context->ownershipIntrinsicFacts,
+            sizeof(SZrOwnershipIntrinsicFact));
+    semantic_facts_init_array(
+            context, &context->receiverGuardFacts, sizeof(SZrReceiverGuardFact));
     semantic_facts_init_array(context, &context->diagnosticFacts, sizeof(SZrSemanticDiagnosticFact));
 }
 
@@ -392,6 +431,14 @@ void ZrParser_SemanticFacts_Reset(SZrSemanticContext *context) {
     if (context->ownershipFacts.isValid) {
         context->ownershipFacts.length = 0;
     }
+    if (context->ownershipIntrinsicFacts.isValid) {
+        semantic_facts_free_ownership_intrinsic_facts(context);
+        context->ownershipIntrinsicFacts.length = 0;
+    }
+    if (context->receiverGuardFacts.isValid) {
+        semantic_facts_free_receiver_guard_facts(context);
+        context->receiverGuardFacts.length = 0;
+    }
     if (context->diagnosticFacts.isValid) {
         for (index = 0U; index < context->diagnosticFacts.length; index++) {
             SZrSemanticDiagnosticFact *fact =
@@ -418,6 +465,8 @@ void ZrParser_SemanticFacts_Free(SZrSemanticContext *context) {
     ZrCore_Array_Free(context->state, &context->reachabilityFacts);
     ZrCore_Array_Free(context->state, &context->logicalFacts);
     ZrCore_Array_Free(context->state, &context->ownershipFacts);
+    ZrCore_Array_Free(context->state, &context->ownershipIntrinsicFacts);
+    ZrCore_Array_Free(context->state, &context->receiverGuardFacts);
     ZrCore_Array_Free(context->state, &context->diagnosticFacts);
 }
 
@@ -650,6 +699,38 @@ TZrBool ZrParser_SemanticFacts_AppendOwnership(SZrSemanticContext *context,
         }
     }
     ZrCore_Array_Push(context->state, &context->ownershipFacts, &copy);
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_SemanticFacts_AppendOwnershipIntrinsic(
+        SZrSemanticContext *context,
+        const SZrOwnershipIntrinsicFact *fact) {
+    SZrOwnershipIntrinsicFact copy;
+
+    if (context == ZR_NULL || fact == ZR_NULL ||
+        !context->ownershipIntrinsicFacts.isValid) {
+        return ZR_FALSE;
+    }
+    copy = *fact;
+    ZrParser_InferredType_Copy(context->state, &copy.inputType, &fact->inputType);
+    ZrParser_InferredType_Copy(context->state, &copy.resultType, &fact->resultType);
+    ZrCore_Array_Push(context->state, &context->ownershipIntrinsicFacts, &copy);
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_SemanticFacts_AppendReceiverGuard(
+        SZrSemanticContext *context,
+        const SZrReceiverGuardFact *fact) {
+    SZrReceiverGuardFact copy;
+
+    if (context == ZR_NULL || fact == ZR_NULL ||
+        !context->receiverGuardFacts.isValid) {
+        return ZR_FALSE;
+    }
+    copy = *fact;
+    ZrParser_InferredType_Copy(context->state, &copy.receiverType, &fact->receiverType);
+    ZrParser_InferredType_Copy(context->state, &copy.guardedType, &fact->guardedType);
+    ZrCore_Array_Push(context->state, &context->receiverGuardFacts, &copy);
     return ZR_TRUE;
 }
 
@@ -977,6 +1058,44 @@ const SZrSemanticOwnershipFact *ZrParser_SemanticFacts_FindOwnershipAtPosition(
         const SZrSemanticOwnershipFact *fact =
             (const SZrSemanticOwnershipFact *)ZrCore_Array_Get((SZrArray *)&context->ownershipFacts, i);
         if (fact != ZR_NULL && semantic_facts_range_contains_position(&fact->range, &position)) {
+            return fact;
+        }
+    }
+    return ZR_NULL;
+}
+
+const SZrOwnershipIntrinsicFact *ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node) {
+    if (context == ZR_NULL || node == ZR_NULL ||
+        !context->ownershipIntrinsicFacts.isValid) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0u;
+         index < context->ownershipIntrinsicFacts.length;
+         index++) {
+        const SZrOwnershipIntrinsicFact *fact =
+                (const SZrOwnershipIntrinsicFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->ownershipIntrinsicFacts, index);
+        if (fact != ZR_NULL && fact->node == node) {
+            return fact;
+        }
+    }
+    return ZR_NULL;
+}
+
+const SZrReceiverGuardFact *ZrParser_SemanticFacts_FindReceiverGuardByNode(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node) {
+    if (context == ZR_NULL || node == ZR_NULL ||
+        !context->receiverGuardFacts.isValid) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0u; index < context->receiverGuardFacts.length; index++) {
+        const SZrReceiverGuardFact *fact =
+                (const SZrReceiverGuardFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->receiverGuardFacts, index);
+        if (fact != ZR_NULL && fact->node == node) {
             return fact;
         }
     }

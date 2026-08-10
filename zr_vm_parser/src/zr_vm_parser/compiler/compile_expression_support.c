@@ -593,9 +593,9 @@ static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnersh
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return "A mutable reference requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
-            return "upgrade() requires a Weak owner";
+            return "wake() requires a Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
-            return "drop() requires a Unique or Shared owner";
+            return "drop() requires a Unique, Shared, or Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return "intoGc() requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
@@ -620,6 +620,9 @@ static TZrBool compile_ownership_builtin_operand_matches_qualifier(EZrOwnershipB
         case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
         case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                   qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+                   qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
@@ -740,7 +743,8 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
 
     shouldResetConsumedIdentifier =
             (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED ||
-             builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN) &&
+             builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN ||
+             builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC) &&
             constructExpr->target != ZR_NULL &&
             constructExpr->target->type == ZR_AST_IDENTIFIER_LITERAL &&
             infer_expression_ownership_qualifier_local(cs, constructExpr->target) ==

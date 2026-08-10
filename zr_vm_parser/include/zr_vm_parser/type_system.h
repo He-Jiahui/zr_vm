@@ -180,12 +180,6 @@ ZR_PARSER_API TZrBool ZrParser_AstType_TryUnwrapGcBridgeGeneric(const SZrType *t
                                                                  EZrGcBridgeKind *kind,
                                                                  const SZrType **innerType);
 
-ZR_PARSER_API TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
-                                                                 EZrOwnershipBuiltinKind *builtinKind);
-
-ZR_PARSER_API const TZrChar *ZrParser_OwnershipRemovedCompatibilityMemberMessage(
-        SZrString *name);
-
 ZR_PARSER_API TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind builtinKind,
                                                                     EZrOwnershipQualifier qualifier);
 

@@ -163,54 +163,6 @@ TZrBool ZrParser_AstType_TryUnwrapGcBridgeGeneric(const SZrType *type,
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_OwnershipMemberNameToBuiltinKind(SZrString *name,
-                                                  EZrOwnershipBuiltinKind *builtinKind) {
-    if (builtinKind != ZR_NULL) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-    }
-    if (name == ZR_NULL || builtinKind == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (zr_parser_string_equals_cstr(name, "share")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
-        return ZR_TRUE;
-    }
-    if (zr_parser_string_equals_cstr(name, "weak")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
-        return ZR_TRUE;
-    }
-    if (zr_parser_string_equals_cstr(name, "upgrade")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE;
-        return ZR_TRUE;
-    }
-    if (zr_parser_string_equals_cstr(name, "intoGc")) {
-        *builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC;
-        return ZR_TRUE;
-    }
-
-    return ZR_FALSE;
-}
-
-const TZrChar *ZrParser_OwnershipRemovedCompatibilityMemberMessage(SZrString *name) {
-    if (name == ZR_NULL) {
-        return ZR_NULL;
-    }
-    if (zr_parser_string_equals_cstr(name, "borrow")) {
-        return "Ownership compatibility member borrow() is removed; use a ref readonly binding";
-    }
-    if (zr_parser_string_equals_cstr(name, "loan")) {
-        return "Ownership compatibility member loan() is removed; use a scoped ref binding";
-    }
-    if (zr_parser_string_equals_cstr(name, "release")) {
-        return "Ownership compatibility member release() is removed; use drop(value)";
-    }
-    if (zr_parser_string_equals_cstr(name, "detach")) {
-        return "Ownership compatibility member detach() is removed; use Unique<T>.intoGc()";
-    }
-    return ZR_NULL;
-}
-
 TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind builtinKind,
                                                      EZrOwnershipQualifier qualifier) {
     switch (builtinKind) {
