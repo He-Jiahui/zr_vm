@@ -190,6 +190,47 @@ static void test_semantic_expression_fact_roundtrip_by_node_and_position(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_reference_position_prefers_segment_start_at_shared_boundary(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode baseNode;
+    SZrAstNode segmentNode;
+    const SZrSemanticReferenceFact *found;
+
+    TEST_ASSERT_NOT_NULL(context);
+    init_identifier_node(&baseNode, 65, 69);
+    init_identifier_node(&segmentNode, 69, 76);
+    append_reference_fact(
+            context,
+            &baseNode,
+            ZR_SEMANTIC_REFERENCE_READ,
+            41,
+            baseNode.location);
+    append_reference_fact(
+            context,
+            &segmentNode,
+            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS,
+            42,
+            segmentNode.location);
+
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(
+            context, test_range(69, 69));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS, found->kind);
+    TEST_ASSERT_EQUAL_UINT64(69, found->range.start.offset);
+
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(
+            context, test_range(68, 68));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_READ, found->kind);
+
+    found = ZrParser_SemanticFacts_FindReferenceAtPosition(
+            context, test_range(70, 70));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS, found->kind);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_logical_fact_roundtrip_by_node_and_position(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode fakeNode;
@@ -793,6 +834,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_context_initializes_fact_arrays);
     RUN_TEST(test_semantic_expression_fact_roundtrip_by_node_and_position);
+    RUN_TEST(test_reference_position_prefers_segment_start_at_shared_boundary);
     RUN_TEST(test_semantic_logical_fact_roundtrip_by_node_and_position);
     RUN_TEST(test_semantic_numeric_fact_by_node_prefers_segmented_range);
     RUN_TEST(test_semantic_reachability_position_prefers_direct_exit_cause);

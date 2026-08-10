@@ -73,6 +73,25 @@ static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
     return ZR_TRUE;
 }
 
+static TZrBool semantic_facts_range_starts_at_position(
+        const SZrFileRange *range,
+        const SZrFileRange *position) {
+    if (range == ZR_NULL || position == ZR_NULL ||
+        !semantic_facts_same_source(range->source, position->source)) {
+        return ZR_FALSE;
+    }
+
+    if ((semantic_facts_has_offset(&range->start) ||
+         semantic_facts_has_offset(&range->end)) &&
+        (semantic_facts_has_offset(&position->start) ||
+         semantic_facts_has_offset(&position->end))) {
+        return range->start.offset == position->start.offset;
+    }
+
+    return (TZrBool)(range->start.line == position->start.line &&
+                     range->start.column == position->start.column);
+}
+
 static TZrSize semantic_facts_range_width(const SZrFileRange *range) {
     if (range == ZR_NULL) {
         return 0;
@@ -696,9 +715,16 @@ const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceAtPosition(
         if (fact != ZR_NULL && semantic_facts_range_contains_position(&fact->range, &position)) {
             TZrSize width = semantic_facts_range_width(&fact->range);
             TZrInt32 priority = semantic_facts_reference_priority(fact->kind);
+            TZrBool startsAtPosition =
+                    semantic_facts_range_starts_at_position(&fact->range, &position);
+            TZrBool bestStartsAtPosition =
+                    best != ZR_NULL &&
+                    semantic_facts_range_starts_at_position(&best->range, &position);
             if (best == ZR_NULL ||
-                width < bestWidth ||
-                (width == bestWidth && priority > bestPriority)) {
+                (startsAtPosition && !bestStartsAtPosition) ||
+                (startsAtPosition == bestStartsAtPosition &&
+                 (width < bestWidth ||
+                  (width == bestWidth && priority > bestPriority)))) {
                 best = fact;
                 bestWidth = width;
                 bestPriority = priority;
