@@ -862,28 +862,6 @@ static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize lengt
     return ZR_FALSE;
 }
 
-static TZrInt32 semantic_token_guess_member_type(const TZrChar *content,
-                                                 TZrSize contentLength,
-                                                 TZrSize segmentEnd,
-                                                 TZrBool hasFollowingDot) {
-    TZrSize lookahead = segmentEnd;
-
-    if (hasFollowingDot) {
-        return ZR_LSP_SEMANTIC_TOKEN_NAMESPACE;
-    }
-
-    while (lookahead < contentLength && isspace((unsigned char)content[lookahead])) {
-        if (content[lookahead] == '\n' || content[lookahead] == '\r') {
-            break;
-        }
-        lookahead++;
-    }
-
-    return lookahead < contentLength && content[lookahead] == '('
-               ? ZR_LSP_SEMANTIC_TOKEN_METHOD
-               : ZR_LSP_SEMANTIC_TOKEN_PROPERTY;
-}
-
 static void semantic_token_scan_source(SZrState *state,
                                        SZrLspContext *context,
                                        SZrString *uri,
@@ -1087,12 +1065,6 @@ static void semantic_token_scan_source(SZrState *state,
             if (previous > 0 && content[previous - 1] == '.') {
                 TZrInt32 tokenType =
                     semantic_token_resolve_query_type(state, context, uri, startLine, startCharacter);
-                if (tokenType < 0) {
-                    tokenType = semantic_token_guess_member_type(content,
-                                                                 contentLength,
-                                                                 offset,
-                                                                 ZR_FALSE);
-                }
                 if (tokenType >= 0) {
                     semantic_token_add_utf16_span(state,
                                                   entries,
@@ -1162,8 +1134,6 @@ static void semantic_token_scan_source(SZrState *state,
                     TZrUInt32 segmentCharacter;
                     TZrSize segmentStart;
                     TZrSize segmentLength;
-                    TZrSize lookahead;
-                    TZrBool hasFollowingDot;
                     TZrInt32 tokenType;
                     TZrInt32 fallbackTokenType = ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
                     SZrString *nextModuleName = ZR_NULL;
@@ -1207,15 +1177,6 @@ static void semantic_token_scan_source(SZrState *state,
                         segmentCharacter = (TZrUInt32)segmentPosition.character;
                     }
 
-                    lookahead = chainOffset;
-                    while (lookahead < contentLength &&
-                           isspace((unsigned char)content[lookahead]) &&
-                           content[lookahead] != '\n' &&
-                           content[lookahead] != '\r') {
-                        lookahead++;
-                    }
-                    hasFollowingDot = lookahead < contentLength && content[lookahead] == '.';
-
                     tokenType = semantic_token_resolve_query_type(state,
                                                                   context,
                                                                   uri,
@@ -1235,20 +1196,15 @@ static void semantic_token_scan_source(SZrState *state,
                     if (semantic_token_should_prefer_chain_fallback(tokenType, fallbackTokenType)) {
                         tokenType = fallbackTokenType;
                     }
-                    if (tokenType < 0) {
-                        tokenType = semantic_token_guess_member_type(content,
-                                                                     contentLength,
-                                                                     chainOffset,
-                                                                     hasFollowingDot);
+                    if (tokenType >= 0) {
+                        semantic_token_add_utf16_span(state,
+                                                      entries,
+                                                      content,
+                                                      contentLength,
+                                                      segmentStart,
+                                                      segmentStart + segmentLength,
+                                                      (TZrUInt32)tokenType);
                     }
-
-                    semantic_token_add_utf16_span(state,
-                                                  entries,
-                                                  content,
-                                                  contentLength,
-                                                  segmentStart,
-                                                  segmentStart + segmentLength,
-                                                  (TZrUInt32)tokenType);
                 }
 
                 offset = chainOffset;

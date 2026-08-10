@@ -54,6 +54,7 @@ SyntaxSnapshot可以增量；SemanticSnapshot按dependency/SymbolId/ModuleIdenti
 - [Native descriptor function callable parity](./01-semantic-core/2026-07-20-native-descriptor-function-callable-parity.md)
 - [Native receiver method callable parity](./01-semantic-core/2026-07-20-native-receiver-method-callable-parity.md)
 - [Native generic receiver callable parity](./01-semantic-core/2026-07-20-native-generic-receiver-callable-parity.md)
+- [Canonical member token fail-closed](./01-semantic-core/2026-08-10-canonical-member-token-fail-closed.md)
 
 这些记录证明query机制可用，并完成Q4中source resolved callable identity/display consumer、Q5中source module public-contract hash的首个canonical query，以及Q5/Q6中的binary export location、descriptor-plugin type-member、native module-function、instance-method与unconstrained generic instance-method call-site callable parity切片；不表示全部Canonical/Place/Module facts或binary/native provider parity已覆盖。
 

@@ -7194,6 +7194,83 @@ static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
     TEST_PASS(timer, "LSP Semantic Tokens Use Canonical Ownership Type Identity");
 }
 
+static void test_lsp_semantic_tokens_do_not_guess_unresolved_members(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+            "class Device {\n"
+            "    fn resolved(): int { return 1; }\n"
+            "}\n"
+            "fn run() {\n"
+            "    var target = new Device();\n"
+            "    target.resolved();\n"
+            "    target.unresolved();\n"
+            "}\n";
+    SZrLspPosition resolvedPosition;
+    SZrLspPosition unresolvedPosition;
+    SZrArray tokens;
+
+    TEST_START("LSP Semantic Tokens Do Not Guess Unresolved Members");
+    TEST_INFO("Unresolved member token", "Member punctuation must not synthesize a semantic token kind");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Do Not Guess Unresolved Members",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "file:///semantic_tokens_unresolved_member.zr",
+                               strlen("file:///semantic_tokens_unresolved_member.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "resolved", 1, 0, &resolvedPosition) ||
+        !lsp_find_position_for_substring(content, "unresolved", 0, 0, &unresolvedPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Do Not Guess Unresolved Members",
+                  "Failed to prepare unresolved member fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 16);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens) ||
+        !semantic_tokens_contain(&tokens,
+                                 resolvedPosition.line,
+                                 resolvedPosition.character,
+                                 (TZrInt32)strlen("resolved"),
+                                 "method") ||
+        semantic_tokens_contain(&tokens,
+                                 unresolvedPosition.line,
+                                 unresolvedPosition.character,
+                                 (TZrInt32)strlen("unresolved"),
+                                 "namespace") ||
+        semantic_tokens_contain(&tokens,
+                                 unresolvedPosition.line,
+                                 unresolvedPosition.character,
+                                 (TZrInt32)strlen("unresolved"),
+                                 "method") ||
+        semantic_tokens_contain(&tokens,
+                                 unresolvedPosition.line,
+                                 unresolvedPosition.character,
+                                 (TZrInt32)strlen("unresolved"),
+                                 "property")) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Do Not Guess Unresolved Members",
+                  "An unresolved member must remain unclassified without a canonical query result");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Tokens Do Not Guess Unresolved Members");
+}
+
 static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8114,6 +8191,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_use_canonical_ownership_type_identity(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_tokens_do_not_guess_unresolved_members(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_ignore_template_string_tokens(state);

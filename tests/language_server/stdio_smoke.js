@@ -994,6 +994,8 @@ async function main() {
     const moduleImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-module-imports.zr';
     const legacySemanticUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-legacy-semantic.zr';
+    const unresolvedSemanticTokenUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-unresolved-semantic-token.zr';
     const semanticDeltaUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-semantic-delta.zr';
     const colorUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-colors.zr';
     const inlineCompletionUri =
@@ -1091,6 +1093,17 @@ async function main() {
         '%import("zr.system");',
         'let remainder = rate % divisor;',
         'using (resource) { }',
+        '',
+    ].join('\n');
+    const unresolvedSemanticTokenText = [
+        'class Device {',
+        '    fn resolved(): int { return 1; }',
+        '}',
+        'fn run() {',
+        '    var target = new Device();',
+        '    target.resolved();',
+        '    target.unresolved();',
+        '}',
         '',
     ].join('\n');
     const propertyContractText = [
@@ -4115,6 +4128,45 @@ async function main() {
         keywordTokenType,
         0),
     'semanticTokens/full must not classify a removed using form as a current keyword');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: unresolvedSemanticTokenUri,
+            languageId: 'zr',
+            version: 1,
+            text: unresolvedSemanticTokenText,
+        },
+    });
+    await waitForDiagnosticsUri(
+        client,
+        unresolvedSemanticTokenUri,
+        'unresolved semantic token didOpen diagnostics uri mismatch');
+    const unresolvedSemanticTokens = await client.request('textDocument/semanticTokens/full', {
+        textDocument: { uri: unresolvedSemanticTokenUri },
+    });
+    const decodedUnresolvedSemanticTokens = decodeSemanticTokens(unresolvedSemanticTokens.data);
+    const resolvedPosition = findPosition(unresolvedSemanticTokenText, 'resolved', 1);
+    const unresolvedPosition = findPosition(unresolvedSemanticTokenText, 'unresolved');
+    assert(hasSemanticToken(decodedUnresolvedSemanticTokens,
+        resolvedPosition,
+        'resolved'.length,
+        semanticTokenTypes.indexOf('method'),
+        0) &&
+        !hasSemanticToken(decodedUnresolvedSemanticTokens,
+        unresolvedPosition,
+        'unresolved'.length,
+        semanticTokenTypes.indexOf('namespace'),
+        0) &&
+        !hasSemanticToken(decodedUnresolvedSemanticTokens,
+            unresolvedPosition,
+            'unresolved'.length,
+            semanticTokenTypes.indexOf('method'),
+            0) &&
+        !hasSemanticToken(decodedUnresolvedSemanticTokens,
+            unresolvedPosition,
+            'unresolved'.length,
+            semanticTokenTypes.indexOf('property'),
+            0),
+    'semanticTokens/full must not infer an unresolved member token from punctuation');
     const staleSemanticResultId = `zr-semantic:${semanticTokens.data.length}:stale`;
     const semanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
         textDocument: { uri: docsUri },
@@ -4212,6 +4264,11 @@ async function main() {
     });
     client.notify('textDocument/didClose', {
         textDocument: {
+            uri: unresolvedSemanticTokenUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
             uri: testCodeLensUri,
         },
     });
@@ -4278,6 +4335,7 @@ async function main() {
         watchedBinaryFixture.mainUri,
         documentUri,
         docsUri,
+        unresolvedSemanticTokenUri,
         testCodeLensUri,
         propertyContractUri,
         colorUri,

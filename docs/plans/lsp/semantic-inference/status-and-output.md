@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-10 07:49 +08:00
+updated_at: 2026-08-10 08:34 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -93,6 +93,7 @@ source_plans:
 | 2026-08-10 00:57 +08:00 | 已完成 | LSP 03 stdio process peak memory：完整stdio workload在child退出前读取Linux `VmHWM`或Windows `PeakWorkingSet64`，默认512MiB越界失败；GCC/Clang/MSVC分别报告31.53/29.54/36.53MiB且真实exit 0。100轮churn只接受reader-observed lifecycle error或请求精确version report，不接受mixed/newer snapshot | [Stdio process peak memory](../03-robustness/2026-08-10-stdio-process-peak-memory.md) |
 | 2026-08-10 01:17 +08:00 | 已完成 | LSP 03 L6 final stdio/CLI matrix：position-encoding smoke改为合法async initialize handshake，保留UTF-8 byte-column hover断言；每套构建生成registered executable后，GCC/Clang/MSVC `^(language_server_stdio|cli_)` 均33/33真实exit 0。L6 position/snapshot/cache/latency/peak-memory/final-matrix退出条件收口 | [L6 final stdio/CLI matrix](../03-robustness/2026-08-10-l6-final-stdio-cli-matrix.md) |
 | 2026-08-10 07:49 +08:00 | 已完成 | LSP 08 canonical owner type token独立合同：`ZR_SEMANTIC_REFERENCE_TYPE`和`CanonicalTypeAt`发布/消费generic owner的精确base identifier range；semantic tokens删除`Unique`/`Shared`/`Weak`名称表，同名local保持variable；GCC/Clang/MSVC focused semantic query 28/28和LSP interface真实exit 0 | [Canonical owner type token identity](../01-semantic-core/2026-08-10-canonical-owner-type-token-identity.md) |
+| 2026-08-10 08:34 +08:00 | 已完成 | LSP 08 canonical member token fail-closed独立合同：semantic tokens只消费semantic query或structured import metadata；删除从`.`、后续`.`或`(`猜测namespace/method/property的路径，resolved source member保持method、unresolved member保持unclassified；GCC/Clang/MSVC interface与stdio JSON-RPC smoke均真实exit 0 | [Canonical member token fail-closed](../01-semantic-core/2026-08-10-canonical-member-token-fail-closed.md) |
 
 ## 当前状态
 
@@ -103,5 +104,5 @@ source_plans:
 - LSP 03 warm request、single-document diagnostics和100-file workspace incremental diagnostics latency leaves已完成：前者覆盖canonical native hover、closed-generic completion与signatureHelp，后两者严格等待同URI/version diagnostics；均有20样本p50/p95/p99和p95 CI门禁。native stdio process peak-memory、position UTF-8 handshake和三工具链完整matrix均已有证据；更广性能比较可在后续计划单独扩展。
 - LSP 03 two historical text snapshots leaf已完成：每个document的file version只持有current与最新两份历史text block，public acquire仍以ref-count保证已借出快照可跨rollover读取。semantic cache不在该固定文本队列内；其单独的256MiB exact cache-storage LRU、native stdio process peak-memory和L6 final matrix均已完成。
 - LSP 03 semantic cache storage accounting、two historical semantic snapshots和workspace LRU leaves已完成：primary/scoped/history `SZrAnalysisCache` 有真实capacity-storage计量、cache-only递归释放和context-local 256MiB access-order eviction；每URI已保留两份完整历史semantic analyzer state，并在scoped cache借用旧AST时安全滚动淘汰。native stdio process peak-memory report和完整L6矩阵也已完成。
-- LSP 08仅完成canonical owner type token独立合同：resolved generic owner type use的reference fact和`CanonicalTypeAt`为generic owner base identifier提供精确identity，semantic tokens不再从`Unique`/`Shared`/`Weak`名称推断类型。其余L8本地fallback删除、provider/project覆盖和完整protocol矩阵仍未完成。
+- LSP 08仅完成canonical generic owner type与member token两个独立合同：resolved generic owner type use的reference fact和`CanonicalTypeAt`为generic owner base identifier提供精确identity，semantic tokens不再从`Unique`/`Shared`/`Weak`名称推断类型，也不会从`.`、后续`.`或`(`猜测member kind。其余L8本地fallback删除、provider/project覆盖和完整protocol矩阵仍未完成。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。
