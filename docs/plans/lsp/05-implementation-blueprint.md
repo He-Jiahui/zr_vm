@@ -53,6 +53,7 @@
 - [Canonical owner type token identity](./01-semantic-core/2026-08-10-canonical-owner-type-token-identity.md)
 - [Canonical member token fail-closed](./01-semantic-core/2026-08-10-canonical-member-token-fail-closed.md)
 - [Canonical declaration type display](./01-semantic-core/2026-08-10-canonical-declaration-type-display.md)
+- [Canonical inlay declaration type](./01-semantic-core/2026-08-10-canonical-inlay-declaration-type.md)
 - [Source rename workspace edit snapshot revalidation](./03-robustness/2026-07-20-source-rename-workspace-edit-snapshot-revalidation.md)
 - [General rename workspace edit snapshot revalidation](./03-robustness/2026-07-21-general-rename-workspace-edit-snapshot-revalidation.md)
 - [Code action workspace edit snapshot revalidation](./03-robustness/2026-07-21-code-action-workspace-edit-snapshot-revalidation.md)
@@ -73,4 +74,4 @@
 
 这些记录只对应L1/L2/L3/L6的部分历史能力；source-file rename、普通`textDocument/rename`和当前code action已共享workspace-edit snapshot重校验，code action还在resolve时拒绝stale edit；semicolon、condition-close、index-close、parameter-list-close、call-close、group-close、array-close、array-element-separator、object-close、object-computed-key-close、object-property-colon、reachable object-property-separator与conditional-colon local insertion已完成structured fact到apply-edit-rebind闭环，但其他delimiter family/replacement、其他diagnostic fix producer、并发race/cancellation、性能与峰值内存报告仍缺失，不改变L3整体、L4-L8及完整L6状态。
 
-L8目前完成了三个独立合同：resolved type-reference fact以generic owner base identifier的精确range进入`CanonicalTypeAt`，semantic tokens删除`Unique`/`Shared`/`Weak`名称表；member token只消费semantic query或structured metadata，不能从`.`或`(`推断namespace/method/property；source declaration hover/completion type display只消费resolved canonical type fact，删除AST type/ownership字符串重建并在identity unavailable时显示`cannot infer exact type`。同名local变量保持variable，unresolved member保持unclassified；其余本地fallback删除、provider/project覆盖与完整protocol矩阵仍未完成，不改变L8整体状态。
+L8目前完成了四个独立合同：resolved type-reference fact以generic owner base identifier的精确range进入`CanonicalTypeAt`，semantic tokens删除`Unique`/`Shared`/`Weak`名称表；member token只消费semantic query或structured metadata，不能从`.`或`(`推断namespace/method/property；source declaration hover/completion type display只消费resolved canonical type fact，删除AST type/ownership字符串重建并在identity unavailable时显示`cannot infer exact type`；source inlay type display只消费精确SymbolId声明事实和canonical TypeId，identity unavailable时不生成提示。同名local变量保持variable，unresolved member保持unclassified；其余本地fallback删除、provider/project覆盖与完整protocol矩阵仍未完成，不改变L8整体状态。

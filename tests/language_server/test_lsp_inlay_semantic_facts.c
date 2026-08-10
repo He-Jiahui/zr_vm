@@ -105,6 +105,32 @@ static TZrBool inlay_hint_array_contains_label_fragments(SZrArray *hints,
     return ZR_FALSE;
 }
 
+static TZrBool invalidate_declaration_fact_for_name(SZrSemanticAnalyzer *analyzer,
+                                                     const TZrChar *name) {
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < analyzer->semanticContext->referenceFacts.length; index++) {
+        SZrSemanticReferenceFact *fact = (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                &analyzer->semanticContext->referenceFacts, index);
+        const TZrChar *factName;
+
+        if (fact == ZR_NULL || fact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+            !fact->isResolved || fact->typeId == ZR_SEMANTIC_ID_INVALID) {
+            continue;
+        }
+
+        factName = test_string_ptr(fact->name);
+        if (factName != ZR_NULL && strcmp(factName, name) == 0) {
+            fact->isResolved = ZR_FALSE;
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static SZrLspCompletionItem *completion_item_find_by_label(SZrArray *items, const TZrChar *label) {
     if (items == ZR_NULL || label == ZR_NULL) {
         return ZR_NULL;
@@ -226,6 +252,69 @@ static void test_inlay_hint_uses_initializer_numeric_fact(SZrState *state) {
         snprintf(reason,
                  sizeof(reason),
                  "Expected local type inlay hint to include initializer numeric range from semantic facts; hintCount=%llu",
+                 (unsigned long long)hints.length);
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_inlay_hint_fails_closed_without_resolved_declaration_fact(SZrState *state) {
+    const TZrChar *summary = "LSP Inlay Hint Fails Closed Without Resolved Declaration Fact";
+    const TZrChar *uriText = "file:///inlay_canonical_type_fail_closed.zr";
+    const TZrChar *content =
+        "fn run(): void {\n"
+        "    var exact = 1;\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrLspRange range;
+    SZrArray hints;
+    TZrChar reason[512];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare canonical inlay fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    if (!invalidate_declaration_fact_for_name(analyzer, "exact")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to invalidate the exact declaration fact");
+        return;
+    }
+
+    range.start.line = 0;
+    range.start.character = 0;
+    range.end.line = 4;
+    range.end.character = 0;
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
+    if (!ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints)) {
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Inlay hint request failed");
+        return;
+    }
+
+    if (inlay_hint_array_contains_label_fragments(&hints, ": int", "int")) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Unavailable declaration identity must not fall back to inferred type text; hintCount=%llu",
                  (unsigned long long)hints.length);
         ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -895,6 +984,7 @@ int main(void) {
     ZrCore_GlobalState_InitRegistry(state, global);
 
     test_inlay_hint_uses_initializer_numeric_fact(state);
+    test_inlay_hint_fails_closed_without_resolved_declaration_fact(state);
     test_completion_detail_uses_initializer_numeric_fact(state);
     test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_signature(state);
     test_completion_detail_uses_initializer_expression_fact(state);

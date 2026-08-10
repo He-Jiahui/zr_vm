@@ -1,6 +1,8 @@
 #include "interface/lsp_interface_internal.h"
 #include "semantic/lsp_numeric_range_text.h"
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_query.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -52,26 +54,44 @@ static TZrBool lsp_inlay_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
-static TZrBool lsp_inlay_symbol_has_exact_type_text(SZrState *state,
-                                                    SZrSymbol *symbol,
-                                                    TZrChar *buffer,
-                                                    TZrSize bufferSize,
-                                                    const TZrChar **outTypeText) {
+static TZrBool lsp_inlay_symbol_has_exact_canonical_type_text(
+        SZrSemanticAnalyzer *analyzer,
+        SZrSymbol *symbol,
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        const TZrChar **outTypeText) {
+    const SZrSemanticReferenceFact *definition;
+
     if (outTypeText != ZR_NULL) {
         *outTypeText = ZR_NULL;
     }
-    if (state == ZR_NULL ||
+    if (analyzer == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL ||
         symbol == ZR_NULL ||
         buffer == ZR_NULL ||
         bufferSize == 0 ||
         outTypeText == ZR_NULL ||
+        symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        symbol->semanticTypeId == ZR_SEMANTIC_ID_INVALID ||
         symbol->typeInfo == ZR_NULL ||
         !ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
         return ZR_FALSE;
     }
 
-    *outTypeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, buffer, bufferSize);
-    return *outTypeText != ZR_NULL && (*outTypeText)[0] != '\0';
+    definition = ZrParser_SemanticQuery_DeclarationOf(
+            analyzer->semanticContext, symbol->semanticId, ZR_NULL);
+    if (definition == ZR_NULL ||
+        definition->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+        !definition->isResolved ||
+        definition->symbolId != symbol->semanticId ||
+        definition->typeId != symbol->semanticTypeId ||
+        !ZrParser_CanonicalType_Format(
+                analyzer->semanticContext, definition->typeId, buffer, bufferSize)) {
+        return ZR_FALSE;
+    }
+
+    *outTypeText = buffer;
+    return buffer[0] != '\0';
 }
 
 static TZrBool lsp_inlay_append_hint(SZrState *state,
@@ -253,7 +273,8 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
     SZrLspPosition position;
     SZrAstNode *astNode;
 
-    if (!lsp_inlay_symbol_has_exact_type_text(state, symbol, typeBuffer, sizeof(typeBuffer), &typeText)) {
+    if (!lsp_inlay_symbol_has_exact_canonical_type_text(
+                analyzer, symbol, typeBuffer, sizeof(typeBuffer), &typeText)) {
         return ZR_TRUE;
     }
 

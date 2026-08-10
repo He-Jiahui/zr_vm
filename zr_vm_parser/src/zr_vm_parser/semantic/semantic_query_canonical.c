@@ -74,6 +74,40 @@ TZrBool ZrParser_SemanticQuery_CanonicalTypeAt(
     return ZR_FALSE;
 }
 
+const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DeclarationOf(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        const SZrParserSemanticQueryScope *scope) {
+    const SZrSemanticReferenceFact *best = ZR_NULL;
+    TZrSize bestWidth = ZR_MAX_SIZE;
+
+    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID ||
+        !context->referenceFacts.isValid) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < context->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *fact =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->referenceFacts, index);
+        TZrSize width;
+
+        if (fact == ZR_NULL || fact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+            !fact->isResolved || fact->symbolId != symbolId ||
+            !canonical_query_scope_allows(scope, &fact->range)) {
+            continue;
+        }
+
+        width = canonical_query_width(&fact->range);
+        if (best == ZR_NULL || width < bestWidth) {
+            best = fact;
+            bestWidth = width;
+        }
+    }
+
+    return best;
+}
+
 TZrBool ZrParser_SemanticQuery_CallAt(
         const SZrSemanticContext *context,
         SZrFileRange position,

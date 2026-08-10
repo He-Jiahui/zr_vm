@@ -385,6 +385,52 @@ static void test_semantic_query_definition_of_returns_matching_declaration(void)
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_query_declaration_of_uses_exact_symbol_identity(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode callableDeclarationNode;
+    SZrAstNode returnDeclarationNode;
+    SZrSemanticReferenceFact fact;
+    SZrSemanticReferenceFact *returnDeclaration;
+    const SZrSemanticReferenceFact *declaration;
+
+    TEST_ASSERT_NOT_NULL(context);
+    init_node(&callableDeclarationNode, ZR_AST_IDENTIFIER_LITERAL, 0, 3);
+    init_node(&returnDeclarationNode, ZR_AST_IDENTIFIER_LITERAL, 0, 3);
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = &callableDeclarationNode;
+    fact.range = callableDeclarationNode.location;
+    fact.declarationRange = callableDeclarationNode.location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
+    fact.symbolId = 11;
+    fact.typeId = 8;
+    fact.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = &returnDeclarationNode;
+    fact.range = returnDeclarationNode.location;
+    fact.declarationRange = returnDeclarationNode.location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
+    fact.symbolId = 12;
+    fact.typeId = 7;
+    fact.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+
+    declaration = ZrParser_SemanticQuery_DeclarationOf(context, 12, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_UINT32(12, declaration->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(7, declaration->typeId);
+
+    returnDeclaration = (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+            &context->referenceFacts, 1);
+    TEST_ASSERT_NOT_NULL(returnDeclaration);
+    returnDeclaration->isResolved = ZR_FALSE;
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_DeclarationOf(context, 12, ZR_NULL));
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_query_definition_of_prefers_reaching_write_definition(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode declarationNode;
@@ -1054,6 +1100,7 @@ int main(void) {
     RUN_TEST(test_semantic_query_owner_hover_and_diagnostic_share_canonical_facts);
     RUN_TEST(test_semantic_query_canonical_type_at_reads_type_reference_fact);
     RUN_TEST(test_semantic_query_definition_of_returns_matching_declaration);
+    RUN_TEST(test_semantic_query_declaration_of_uses_exact_symbol_identity);
     RUN_TEST(test_semantic_query_definition_of_prefers_reaching_write_definition);
     RUN_TEST(test_semantic_query_definitions_of_returns_multiple_reaching_writes);
     RUN_TEST(test_semantic_query_references_of_collects_symbol_references_in_scope);
