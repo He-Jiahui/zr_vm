@@ -1,9 +1,7 @@
 #include "interface/lsp_interface_internal.h"
+#include "interface/lsp_canonical_symbol_display.h"
 #include "semantic/lsp_numeric_range_text.h"
 #include "semantic/semantic_analyzer_internal.h"
-#include "zr_vm_parser/canonical_type.h"
-#include "zr_vm_parser/semantic_query.h"
-
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -60,8 +58,6 @@ static TZrBool lsp_inlay_symbol_has_exact_canonical_type_text(
         TZrChar *buffer,
         TZrSize bufferSize,
         const TZrChar **outTypeText) {
-    const SZrSemanticReferenceFact *definition;
-
     if (outTypeText != ZR_NULL) {
         *outTypeText = ZR_NULL;
     }
@@ -78,15 +74,8 @@ static TZrBool lsp_inlay_symbol_has_exact_canonical_type_text(
         return ZR_FALSE;
     }
 
-    definition = ZrParser_SemanticQuery_DeclarationOf(
-            analyzer->semanticContext, symbol->semanticId, ZR_NULL);
-    if (definition == ZR_NULL ||
-        definition->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
-        !definition->isResolved ||
-        definition->symbolId != symbol->semanticId ||
-        definition->typeId != symbol->semanticTypeId ||
-        !ZrParser_CanonicalType_Format(
-                analyzer->semanticContext, definition->typeId, buffer, bufferSize)) {
+    if (!ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
+                analyzer, symbol, buffer, bufferSize)) {
         return ZR_FALSE;
     }
 

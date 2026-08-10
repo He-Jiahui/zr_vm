@@ -2884,6 +2884,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
         }
         if (content == ZR_NULL && query->symbol != ZR_NULL && hasSnapshot) {
             content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(state,
+                                                                             query->analyzer,
                                                                              query->symbol,
                                                                              snapshot.content,
                                                                              snapshot.contentLength);

@@ -144,6 +144,52 @@ static TZrBool completion_contains_label(SZrArray *completions, const TZrChar *l
     return ZR_FALSE;
 }
 
+static SZrLspCompletionItem *completion_find_item(SZrArray *completions,
+                                                  const TZrChar *label) {
+    if (completions == ZR_NULL || label == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0u; index < completions->length; index++) {
+        SZrLspCompletionItem **itemPtr =
+                (SZrLspCompletionItem **)ZrCore_Array_Get(completions, index);
+        if (itemPtr != ZR_NULL && *itemPtr != ZR_NULL &&
+            (*itemPtr)->label != ZR_NULL &&
+            strcmp(string_text((*itemPtr)->label), label) == 0) {
+            return *itemPtr;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool invalidate_declaration_fact_for_name(SZrSemanticAnalyzer *analyzer,
+                                                     const TZrChar *name) {
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0u;
+         index < analyzer->semanticContext->referenceFacts.length;
+         index++) {
+        SZrSemanticReferenceFact *fact =
+                (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        &analyzer->semanticContext->referenceFacts, index);
+        if (fact == ZR_NULL ||
+            fact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+            !fact->isResolved ||
+            fact->name == ZR_NULL ||
+            strcmp(string_text(fact->name), name) != 0) {
+            continue;
+        }
+
+        fact->isResolved = ZR_FALSE;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool string_constant_equals(SZrString *value, const TZrChar *expected, TZrSize expectedLength) {
     const TZrChar *text = string_text(value);
 
@@ -835,6 +881,78 @@ static TZrBool test_lsp_completion_respects_reflection_descriptor_hierarchy(SZrS
     return passed;
 }
 
+static TZrBool test_completion_documentation_fails_closed_without_declaration_fact(
+        SZrState *state) {
+    const TZrChar *uriText = "file:///completion_documentation_canonical_type.zr";
+    const TZrChar *content =
+        "fn run(): void {\n"
+        "    var exact = 1;\n"
+        "    exact;\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrLspPosition completionPosition;
+    SZrArray completions;
+    SZrLspCompletionItem *exactItem;
+    const TZrChar *documentation;
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "exact;", 0u, &completionPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare canonical completion documentation fixture\n");
+        return ZR_FALSE;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    completionPosition.character += 3;
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    passed = ZrLanguageServer_Lsp_GetCompletion(
+            state, context, uri, completionPosition, &completions);
+    exactItem = passed ? completion_find_item(&completions, "exact") : ZR_NULL;
+    documentation = exactItem != ZR_NULL && exactItem->documentation != ZR_NULL
+                            ? string_text(exactItem->documentation)
+                            : ZR_NULL;
+    passed = passed &&
+             exactItem != ZR_NULL &&
+             documentation != ZR_NULL &&
+             strstr(documentation, "Type: int") != ZR_NULL;
+    if (!passed) {
+        printf("FAIL: resolved declaration identity did not expose canonical type; documentation=%s\n",
+               documentation != ZR_NULL ? documentation : "<missing>");
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    passed = passed &&
+             invalidate_declaration_fact_for_name(analyzer, "exact") &&
+             ZrLanguageServer_Lsp_GetCompletion(
+                     state, context, uri, completionPosition, &completions);
+    exactItem = passed ? completion_find_item(&completions, "exact") : ZR_NULL;
+    documentation = exactItem != ZR_NULL && exactItem->documentation != ZR_NULL
+                            ? string_text(exactItem->documentation)
+                            : ZR_NULL;
+    passed = passed &&
+             exactItem != ZR_NULL &&
+             documentation != ZR_NULL &&
+             strstr(documentation, "Type: int") == ZR_NULL;
+    if (!passed) {
+        printf("FAIL: unavailable declaration identity exposed local type text; documentation=%s\n",
+               documentation != ZR_NULL ? documentation : "<missing>");
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -847,6 +965,7 @@ int main(void) {
     TZrBool canonicalTypeHoverPassed;
     TZrBool reflectionQueryHoverPassed;
     TZrBool reflectionQueryCompletionPassed;
+    TZrBool canonicalCompletionDocumentationPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -886,6 +1005,10 @@ int main(void) {
         test_lsp_completion_respects_reflection_descriptor_hierarchy(state);
     printf("%s: LSP Completion Respects Reflection Descriptor Hierarchy\n",
            reflectionQueryCompletionPassed ? "PASS" : "FAIL");
+    canonicalCompletionDocumentationPassed =
+        test_completion_documentation_fails_closed_without_declaration_fact(state);
+    printf("%s: Completion Documentation Fails Closed Without Declaration Fact\n",
+           canonicalCompletionDocumentationPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
     return expressionHoverPassed &&
@@ -895,7 +1018,8 @@ int main(void) {
                    stringHoverPassed &&
                    canonicalTypeHoverPassed &&
                    reflectionQueryHoverPassed &&
-                   reflectionQueryCompletionPassed
+                   reflectionQueryCompletionPassed &&
+                   canonicalCompletionDocumentationPassed
                ? 0
                : 1;
 }

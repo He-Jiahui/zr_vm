@@ -44,6 +44,7 @@ TZrBool ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(const TZrChar *content,
                                                       TZrSize contentLength,
                                                       TZrSize offset);
 SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
+                                                                 SZrSemanticAnalyzer *analyzer,
                                                                  SZrSymbol *symbol,
                                                                  const TZrChar *content,
                                                                  TZrSize contentLength);

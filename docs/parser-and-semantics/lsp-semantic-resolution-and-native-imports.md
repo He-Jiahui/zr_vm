@@ -627,6 +627,22 @@ server 不再只把 `.zrp` 刷新当成 document-sync 副作用。外部 metadat
 - metadata 先变、project 还没被任何 source doc 触发发现，导致 watched-files 事件根本进不了 project refresh
 - watched plugin refresh 之后，importer locals 仍然停留在旧的 descriptor return type，而没有重新走 compiler-side local inference
 
+## Canonical symbol documentation types
+
+Source symbol markdown no longer treats the symbol table's inferred type object
+as an independent display authority. Hover and completion documentation pass
+the owning analyzer to a shared canonical display helper, query the exact
+resolved declaration by SymbolId, require its TypeId to match the symbol
+snapshot, and format only through `ZrParser_CanonicalType_Format`.
+
+Missing analyzer, unresolved declaration, invalid identity, or mismatched
+TypeId omits the type section. The consumer does not rebuild text from
+`symbol->typeInfo`, declaration syntax, ownership names, or member names.
+Inlay hints reuse the same helper, so both paths apply the same identity
+agreement rule. The helper lives in the private
+`interface/lsp_canonical_symbol_display` module rather than adding another
+responsibility to the large interface support source.
+
 ## Canonical property consumers
 
 Unified properties are projected from parser `PropertyAt`/`PropertyBySymbolId` results. Hover,

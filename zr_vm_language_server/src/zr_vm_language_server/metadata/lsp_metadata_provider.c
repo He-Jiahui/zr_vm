@@ -1915,6 +1915,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
 
             if (content == ZR_NULL) {
                 content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(provider->state,
+                                                                                targetAnalyzer,
                                                                                 resolvedMember->declarationSymbol,
                                                                                 snapshot.content,
                                                                                 snapshot.contentLength);

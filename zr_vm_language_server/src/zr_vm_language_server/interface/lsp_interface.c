@@ -1733,6 +1733,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                 &contentSnapshot)) {
         content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(
                 state,
+                analyzer,
                 symbol,
                 contentSnapshot.content,
                 contentSnapshot.contentLength);
@@ -1879,6 +1880,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &contentSnapshot)) {
         hasContentSnapshot = ZR_TRUE;
         content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(state,
+                                                                        analyzer,
                                                                         symbol,
                                                                         contentSnapshot.content,
                                                                         contentSnapshot.contentLength);

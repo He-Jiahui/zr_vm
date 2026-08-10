@@ -3,6 +3,7 @@
 //
 
 #include "interface/lsp_interface_internal.h"
+#include "interface/lsp_canonical_symbol_display.h"
 #include "interface/lsp_diagnostic_fixes.h"
 #include "metadata/lsp_metadata_provider.h"
 #include "module/lsp_module_metadata.h"
@@ -786,9 +787,10 @@ SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
 }
 
 SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
-                                                      SZrSymbol *symbol,
-                                                      const TZrChar *content,
-                                                      TZrSize contentLength) {
+                                                                 SZrSemanticAnalyzer *analyzer,
+                                                                 SZrSymbol *symbol,
+                                                                 const TZrChar *content,
+                                                                 TZrSize contentLength) {
     TZrNativeString nameText;
     TZrSize nameLength;
     const TZrChar *kindText;
@@ -823,14 +825,12 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
         append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, "`");
     }
 
-    if (symbol->typeInfo != ZR_NULL && propertySignature == ZR_NULL &&
-        symbol->type != ZR_SYMBOL_FUNCTION && symbol->type != ZR_SYMBOL_METHOD) {
-        const TZrChar *typeText =
-            ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
-        if (typeText != ZR_NULL && typeText[0] != '\0') {
-            append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, "\n\nType: ");
-            append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, typeText);
-        }
+    if (propertySignature == ZR_NULL &&
+        symbol->type != ZR_SYMBOL_FUNCTION && symbol->type != ZR_SYMBOL_METHOD &&
+        ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
+                analyzer, symbol, typeBuffer, sizeof(typeBuffer))) {
+        append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, "\n\nType: ");
+        append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, typeBuffer);
     }
 
     append_symbol_ffi_hover_metadata(symbol, markdownBuffer, sizeof(markdownBuffer), &used);
@@ -909,10 +909,8 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
     }
 
     if (symbol != ZR_NULL && item->documentation == ZR_NULL) {
-        item->documentation = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(state,
-                                                                  symbol,
-                                                                  content,
-                                                                  contentLength);
+        item->documentation = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(
+                state, analyzer, symbol, content, contentLength);
     }
 
     ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(state, analyzer, symbol, item);
