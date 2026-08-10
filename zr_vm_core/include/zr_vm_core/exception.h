@@ -45,6 +45,12 @@ ZR_CORE_API TZrBool ZrCore_Exception_NormalizeThrownValue(struct SZrState *state
 ZR_CORE_API TZrBool ZrCore_Exception_NormalizeStatus(struct SZrState *state,
                                                EZrThreadStatus status);
 
+ZR_CORE_API TZrBool ZrCore_Exception_RaiseNamedRuntimeError(
+        struct SZrState *state,
+        const TZrChar *prototypeName,
+        const TZrChar *message,
+        struct SZrCallInfo *throwCallInfo);
+
 ZR_CORE_API TZrBool ZrCore_Exception_CatchMatchesTypeName(struct SZrState *state,
                                                     const SZrTypeValue *errorValue,
                                                     struct SZrString *typeName);

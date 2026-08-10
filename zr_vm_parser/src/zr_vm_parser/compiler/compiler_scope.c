@@ -369,6 +369,29 @@ TZrSize create_label(SZrCompilerState *cs) {
     return cs->labels.length - 1;
 }
 
+static void compiler_store_relative_jump_offset(
+        TZrInstruction *instruction,
+        TZrInt32 offset) {
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL) {
+        return;
+    }
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+        opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
+        instruction->instruction.operand.operand1[1] =
+                (TZrUInt16)(TZrInt16)offset;
+        return;
+    }
+    instruction->instruction.operand.operand2[0] = offset;
+}
+
 // 解析标签
 void resolve_label(SZrCompilerState *cs, TZrSize labelId) {
     if (cs == ZR_NULL || cs->hasError || labelId >= cs->labels.length) {
@@ -391,7 +414,7 @@ void resolve_label(SZrCompilerState *cs, TZrSize labelId) {
                     // 计算相对偏移：目标指令索引 - (当前指令索引 + 1)
                     // 因为 ZR_INSTRUCTION_FETCH 已经将 PC 指向下一条指令，所以需要 -1
                     TZrInt32 offset = (TZrInt32) label->instructionIndex - (TZrInt32) pendingJump->instructionIndex - 1;
-                    jumpInst->instruction.operand.operand2[0] = offset;
+                    compiler_store_relative_jump_offset(jumpInst, offset);
                 }
             }
         }
@@ -425,8 +448,10 @@ void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize la
             TZrInstruction *jumpInst =
                     (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, instructionIndex);
             if (jumpInst != ZR_NULL) {
-                jumpInst->instruction.operand.operand2[0] =
-                        (TZrInt32)label->instructionIndex - (TZrInt32)instructionIndex - 1;
+                compiler_store_relative_jump_offset(
+                        jumpInst,
+                        (TZrInt32)label->instructionIndex -
+                                (TZrInt32)instructionIndex - 1);
             }
             return;
         }

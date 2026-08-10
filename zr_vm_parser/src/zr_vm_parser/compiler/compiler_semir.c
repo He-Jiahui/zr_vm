@@ -1010,6 +1010,14 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
                                                   instruction->instruction.operand.operand1[0],
                                                   instruction->instruction.operand.operand1[1]);
             return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
+            outMapped->opcode = ZR_SEMIR_OPCODE_REQUIRE_NON_NULL;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;
+            outMapped->needsDeopt = ZR_TRUE;
+            outMapped->hasExplicitOperands = ZR_TRUE;
+            outMapped->destinationSlot = instruction->instruction.operandExtra;
+            outMapped->operand0 = instruction->instruction.operandExtra;
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(SET_MEMBER):
             outMapped->opcode = ZR_SEMIR_OPCODE_META_SET;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;

@@ -1033,6 +1033,9 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
                 fprintf(file, "JUMP_IF_NULL");
                 break;
+            case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
+                fprintf(file, "REQUIRE_NON_NULL");
+                break;
             case ZR_INSTRUCTION_ENUM(NOP):
                 fprintf(file, "NOP");
                 break;
@@ -1084,6 +1087,11 @@ static void writer_intermediate_write_nested_function(FILE *file,
                         ", value_slot=%u, jump_if_null_offset=%d",
                         inst->instruction.operandExtra,
                         (TZrInt16)inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
+                fprintf(file,
+                        ", value_slot=%u",
+                        inst->instruction.operandExtra);
                 break;
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
                 fprintf(file,
@@ -2072,6 +2080,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
                 fprintf(file, "JUMP_IF_NULL");
                 break;
+            case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
+                fprintf(file, "REQUIRE_NON_NULL");
+                break;
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
                 fprintf(file, "CREATE_CLOSURE");
                 break;
@@ -2223,6 +2234,11 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                         ", value_slot=%u, jump_if_null_offset=%d",
                         inst->instruction.operandExtra,
                         (TZrInt16)inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
+                fprintf(file,
+                        ", value_slot=%u",
+                        inst->instruction.operandExtra);
                 break;
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
                 fprintf(file,

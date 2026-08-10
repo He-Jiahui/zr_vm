@@ -2087,6 +2087,7 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
             return compiler_instruction_extra_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):

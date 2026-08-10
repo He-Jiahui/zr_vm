@@ -754,6 +754,7 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(JUMP_IF):
             case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+            case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 break;

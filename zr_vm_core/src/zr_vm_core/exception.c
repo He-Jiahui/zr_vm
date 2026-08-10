@@ -490,6 +490,45 @@ static TZrBool exception_create_status_error(SZrState *state,
     return exception_set_current_error_object(state, errorObject, status);
 }
 
+TZrBool ZrCore_Exception_RaiseNamedRuntimeError(
+        SZrState *state,
+        const TZrChar *prototypeName,
+        const TZrChar *message,
+        SZrCallInfo *throwCallInfo) {
+    SZrObjectPrototype *prototype;
+    SZrObject *errorObject;
+    SZrString *messageString;
+    SZrTypeValue messageValue;
+
+    if (state == ZR_NULL || prototypeName == ZR_NULL || message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    prototype = exception_lookup_prototype_cstring(state, prototypeName);
+    if (prototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    errorObject = ZrCore_Object_New(state, prototype);
+    if (errorObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Object_Init(state, errorObject);
+
+    messageString = ZrCore_String_CreateFromNative(
+            state, (TZrNativeString)message);
+    if (messageString == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Value_InitAsRawObject(
+            state, &messageValue, ZR_CAST_RAW_OBJECT_AS_SUPER(messageString));
+    messageValue.type = ZR_VALUE_TYPE_STRING;
+    if (!exception_apply_error_fields(
+                state, errorObject, &messageValue, ZR_NULL, throwCallInfo)) {
+        return ZR_FALSE;
+    }
+    return exception_set_current_error_object(
+            state, errorObject, ZR_THREAD_STATUS_RUNTIME_ERROR);
+}
+
 EZrThreadStatus ZrCore_Exception_TryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
     TZrUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
     SZrExceptionLongJump exceptionLongJump;

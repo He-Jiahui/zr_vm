@@ -284,6 +284,7 @@ SZrTypeMemberInfo *find_hidden_property_accessor_member(SZrCompilerState *cs,
                                                                EZrPropertyAccessorRole expectedRole);
 TZrBool can_use_property_accessor(TZrBool rootIsTypeReference, SZrTypeMemberInfo *accessorMember);
 void compile_primary_member_chain(SZrCompilerState *cs,
+                                  SZrAstNode *primaryNode,
                                   SZrAstNode *propertyNode,
                                   SZrAstNodeArray *members,
                                   TZrSize memberStartIndex,
@@ -294,6 +295,39 @@ void compile_primary_member_chain(SZrCompilerState *cs,
                                   TZrBool rootUsesSuperLookup,
                                   TZrUInt32 superReceiverSlot,
                                   TZrUInt32 preferredDirectMemberCallResultSlot);
+
+typedef struct SZrReceiverGuardLoweringContext {
+    SZrArray frames;
+} SZrReceiverGuardLoweringContext;
+
+void compiler_receiver_guard_lowering_init(
+        SZrCompilerState *cs,
+        SZrReceiverGuardLoweringContext *context,
+        TZrSize capacity);
+void compiler_receiver_guard_lowering_free(
+        SZrCompilerState *cs,
+        SZrReceiverGuardLoweringContext *context);
+TZrBool compiler_receiver_guard_prepare_facts(
+        SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
+        SZrAstNode *propertyNode,
+        SZrAstNodeArray *members,
+        EZrOwnershipQualifier rootOwnershipQualifier);
+TZrBool compiler_receiver_guard_begin_segment(
+        SZrCompilerState *cs,
+        SZrAstNode *segment,
+        TZrSize segmentIndex,
+        TZrUInt32 *ioCurrentSlot,
+        SZrString **ioRootTypeName,
+        TZrBool *ioRootIsTypeReference,
+        EZrOwnershipQualifier *ioRootOwnershipQualifier,
+        SZrReceiverGuardLoweringContext *context,
+        TZrBool *outChangedSlot,
+        TZrBool *outGuarded);
+TZrBool compiler_receiver_guard_finish(
+        SZrCompilerState *cs,
+        TZrUInt32 *ioCurrentSlot,
+        SZrReceiverGuardLoweringContext *context);
 
 SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName);
 SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs,

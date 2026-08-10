@@ -791,7 +791,7 @@ static TZrUInt32 compile_primary_expression_result_slot(SZrCompilerState *cs,
             }
         }
     }
-    compile_primary_member_chain(cs, primary->property, primary->members, memberStartIndex, &currentSlot,
+    compile_primary_member_chain(cs, node, primary->property, primary->members, memberStartIndex, &currentSlot,
                                  &rootTypeName, &rootIsTypeReference, &rootOwnershipQualifier,
                                  rootUsesSuperLookup, superReceiverSlot, preferredDirectMemberCallResultSlot);
     if (cs->hasError) {
@@ -1095,6 +1095,7 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
         }
 
         compile_primary_member_chain(cs,
+                                     node,
                                      primary->property,
                                      primary->members,
                                      0,
@@ -1156,6 +1157,7 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
     }
 
     compile_primary_member_chain(cs,
+                                 node,
                                  primary->property,
                                  primary->members,
                                  0,

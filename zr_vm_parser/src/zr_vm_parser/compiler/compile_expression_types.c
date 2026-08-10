@@ -2557,7 +2557,8 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
     return ZR_TRUE;
 }
 
-void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode, SZrAstNodeArray *members,
+void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
+                                         SZrAstNode *propertyNode, SZrAstNodeArray *members,
                                          TZrSize memberStartIndex, TZrUInt32 *ioCurrentSlot,
                                          SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference,
                                          EZrOwnershipQualifier *ioRootOwnershipQualifier,
@@ -2585,12 +2586,21 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     EZrOwnershipQualifier rootOwnershipQualifier =
             ioRootOwnershipQualifier != ZR_NULL ? *ioRootOwnershipQualifier : ZR_OWNERSHIP_QUALIFIER_NONE;
     TZrBool superLookupActive = rootUsesSuperLookup ? ZR_TRUE : ZR_FALSE;
+    SZrReceiverGuardLoweringContext receiverGuards;
 
     if (cs == ZR_NULL || ioCurrentSlot == ZR_NULL || members == ZR_NULL || cs->hasError) {
         return;
     }
 
+    compiler_receiver_guard_lowering_init(cs, &receiverGuards, members->count);
     currentSlot = *ioCurrentSlot;
+    if (!compiler_receiver_guard_prepare_facts(cs,
+                                               primaryNode,
+                                               propertyNode,
+                                               members,
+                                               rootOwnershipQualifier)) {
+        goto cleanup;
+    }
     {
         TZrUInt32 rootLocalSlot =
                 primary_member_chain_direct_local_slot(cs, propertyNode);
@@ -2601,8 +2611,32 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     }
     for (TZrSize i = memberStartIndex; i < members->count; i++) {
         SZrAstNode *member = members->nodes[i];
+        TZrBool currentSegmentGuarded = ZR_FALSE;
         if (member == ZR_NULL) {
             continue;
+        }
+
+        {
+            TZrBool changedSlot = ZR_FALSE;
+            if (!compiler_receiver_guard_begin_segment(
+                        cs,
+                        member,
+                        i,
+                        &currentSlot,
+                        &rootTypeName,
+                        &rootIsTypeReference,
+                        &rootOwnershipQualifier,
+                        &receiverGuards,
+                        &changedSlot,
+                        &currentSegmentGuarded)) {
+                goto cleanup;
+            }
+            if (changedSlot) {
+                currentSemanticPlace = ZR_PLACE_ID_INVALID;
+            }
+            if (currentSegmentGuarded) {
+                preferredDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
+            }
         }
 
         if (member->type == ZR_AST_MEMBER_EXPRESSION) {
@@ -2645,7 +2679,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                   &members->nodes[i + 1]->data.functionCall,
                                                                   members->nodes[i + 1]->location,
                                                                   &typeMember)) {
-                        return;
+                        goto cleanup;
                     }
                 } else {
                     typeMember = find_compiler_type_member(cs, rootTypeName, memberName);
@@ -2661,7 +2695,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 cs,
                                 "Property accessors cannot be called directly",
                                 member->location);
-                        return;
+                        goto cleanup;
                     }
                 }
                 if (typeMember != ZR_NULL && typeMember->isStatic) {
@@ -2700,7 +2734,9 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     if (typeMember != ZR_NULL &&
                         !compiler_validate_receiver_call(
                                 cs,
-                                i == memberStartIndex ? propertyNode : ZR_NULL,
+                                i == memberStartIndex && !currentSegmentGuarded
+                                        ? propertyNode
+                                        : ZR_NULL,
                                 rootTypeName,
                                 rootOwnershipQualifier,
                                 getterAccessor,
@@ -2709,7 +2745,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                   cs, propertyNode) !=
                                                   ZR_PARSER_SLOT_NONE),
                                 member->location)) {
-                        return;
+                        goto cleanup;
                     }
                     if (memberUsesSuperLookup) {
                         if (!emit_super_accessor_call_from_prototype(cs,
@@ -2719,7 +2755,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                      ZR_NULL,
                                                                      0,
                                                                      member->location)) {
-                            return;
+                            goto cleanup;
                         }
                     } else {
                         if (!emit_property_getter_call(cs,
@@ -2736,7 +2772,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                        typeMember,
                                                        getterAccessor,
                                                        member->location)) {
-                            return;
+                            goto cleanup;
                         }
                     }
                     if (typeMember != ZR_NULL &&
@@ -2747,7 +2783,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         !cs->preservePropertyReferenceResult &&
                         !compiler_property_reference_load(
                                 cs, currentSlot, currentSlot, member->location)) {
-                        return;
+                        goto cleanup;
                     }
                     pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
                     pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
@@ -2765,12 +2801,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 cs,
                                 "Property does not declare an accessible getter",
                                 member->location);
-                        return;
+                        goto cleanup;
                     }
                     if (nextIsFunctionCall && typeMember != ZR_NULL &&
                         !compiler_validate_receiver_call(
                                 cs,
-                                i == memberStartIndex ? propertyNode : ZR_NULL,
+                                i == memberStartIndex && !currentSegmentGuarded
+                                        ? propertyNode
+                                        : ZR_NULL,
                                 rootTypeName,
                                 rootOwnershipQualifier,
                                 typeMember,
@@ -2779,7 +2817,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                   cs, propertyNode) !=
                                                   ZR_PARSER_SLOT_NONE),
                                 members->nodes[i + 1]->location)) {
-                        return;
+                        goto cleanup;
                     }
 
                     if (nextIsFunctionCall && typeMember != ZR_NULL && !typeMember->isStatic &&
@@ -2790,7 +2828,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         ZrParser_Compiler_Error(cs,
                                                 receiver_ownership_call_error_local(rootOwnershipQualifier),
                                                 members->nodes[i + 1]->location);
-                        return;
+                        goto cleanup;
                     }
 
                     if (nextIsFunctionCall && bindReceiverForCall) {
@@ -2807,7 +2845,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                             superReceiverSlot,
                                             member->location);
                         } else if (typeMember != ZR_NULL &&
-                                   i == memberStartIndex) {
+                                   i == memberStartIndex &&
+                                   !currentSegmentGuarded) {
                             TZrUInt32 directLocalSlot = primary_member_chain_direct_local_slot(cs, propertyNode);
                             if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
                                 pendingReceiverSemanticPlace =
@@ -2846,7 +2885,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 ZrParser_Compiler_Error(cs,
                                                         "super meta members must be invoked as calls",
                                                         member->location);
-                                return;
+                                goto cleanup;
                             }
                             if (pendingReceiverRequiresBinding &&
                                 !stage_pending_receiver_binding(cs,
@@ -2854,10 +2893,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                currentSlot + 1u,
                                                                rootOwnershipQualifier,
                                                                &pendingReceiverSlot)) {
-                                return;
+                                goto cleanup;
                             }
                             if (!emit_member_function_constant_to_slot(cs, currentSlot, typeMember, member->location)) {
-                                return;
+                                goto cleanup;
                             }
                         } else {
                             TZrUInt32 memberId = compiler_get_or_add_member_entry_for_type_member(cs,
@@ -2878,7 +2917,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 ZrParser_Compiler_Error(cs,
                                                         "Failed to register member access symbol",
                                                         member->location);
-                                return;
+                                goto cleanup;
                             }
                             if (canEmitMemberSlot && !isStaticMember &&
                                 currentSemanticPlace != ZR_PLACE_ID_INVALID) {
@@ -2937,7 +2976,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                 preferredDirectMemberCallResultSlot + 1u,
                                                 rootOwnershipQualifier,
                                                 &pendingReceiverSlot)) {
-                                        return;
+                                        goto cleanup;
                                     }
                                     pendingDirectMemberCallResultSlot =
                                             preferredDirectMemberCallResultSlot;
@@ -2953,14 +2992,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                           currentSlot + 1u,
                                                                           rootOwnershipQualifier,
                                                                           &pendingReceiverSlot)) {
-                                    return;
+                                    goto cleanup;
                                 }
                                 pendingDirectMemberCallMemberEntryIndex = memberId;
                             } else if (canUseInlineCompiledMemberCall) {
                                 TZrBool receiverBound;
                                 if (!note_inline_struct_result_slot(
                                             cs, currentSlot + 1u, rootTypeName)) {
-                                    return;
+                                    goto cleanup;
                                 }
                                 receiverBound =
                                         typeMember->receiverEffect ==
@@ -2979,7 +3018,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 if (!receiverBound ||
                                     !emit_member_function_constant_to_slot(
                                             cs, currentSlot, typeMember, member->location)) {
-                                    return;
+                                    goto cleanup;
                                 }
                                 pendingInlineCompiledMemberCall = ZR_TRUE;
                             } else if (canEmitMemberSlot) {
@@ -3023,7 +3062,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                           ? preferredDirectMemberCallResultSlot
                                                           : allocate_fresh_stack_slot_after(cs, currentSlot);
                                     if (resultSlot == ZR_PARSER_SLOT_NONE) {
-                                        return;
+                                        goto cleanup;
                                     }
                                 }
 
@@ -3033,12 +3072,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                    currentSlot + 1u,
                                                                    rootOwnershipQualifier,
                                                                    &pendingReceiverSlot)) {
-                                    return;
+                                    goto cleanup;
                                 }
                                 if (!note_inline_struct_member_result_slot(cs,
                                                                            resultSlot,
                                                                            fieldTypeName)) {
-                                    return;
+                                    goto cleanup;
                                 }
                                 if (preservesInlineFieldPlace) {
                                     if (!compiler_register_stack_slot_field_alias(
@@ -3050,14 +3089,14 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                 cs,
                                                 "Failed to preserve inline struct field Place",
                                                 member->location);
-                                        return;
+                                        goto cleanup;
                                     }
                                 } else if (!emit_member_slot_get(cs,
                                                                  resultSlot,
                                                                  currentSlot,
                                                                  memberId,
                                                                  member->location)) {
-                                    return;
+                                    goto cleanup;
                                 }
                                 currentSlot = resultSlot;
                                 currentSlotIsArrayElementAlias = ZR_FALSE;
@@ -3068,7 +3107,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                    currentSlot + 1u,
                                                                    rootOwnershipQualifier,
                                                                    &pendingReceiverSlot)) {
-                                    return;
+                                    goto cleanup;
                                 }
                                 emit_instruction(cs,
                                                  create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
@@ -3082,7 +3121,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             ZrParser_Compiler_Error(cs,
                                                     "super only supports direct member names, not computed member access",
                                                     member->location);
-                            return;
+                            goto cleanup;
                         }
                         if (pendingReceiverRequiresBinding &&
                             !stage_pending_receiver_binding(cs,
@@ -3090,13 +3129,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                            currentSlot + 1u,
                                                            rootOwnershipQualifier,
                                                            &pendingReceiverSlot)) {
-                            return;
+                            goto cleanup;
                         }
                         TZrUInt32 keyTargetSlot =
                                 (pendingReceiverSlot != ZR_PARSER_SLOT_NONE) ? currentSlot + 2 : currentSlot + 1;
                         TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
                         if (keySlot == ZR_PARSER_SLOT_NONE) {
-                            return;
+                            goto cleanup;
                         }
 
                         if (i == memberStartIndex) {
@@ -3142,7 +3181,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                 cs,
                                                 "Failed to bind inline struct array element",
                                                 member->location);
-                                        return;
+                                        goto cleanup;
                                     }
                                     emit_instruction(
                                             cs,
@@ -3171,7 +3210,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             }
                             ZrParser_InferredType_Free(cs->state, &arrayType);
                             if (cs->hasError) {
-                                return;
+                                goto cleanup;
                             }
                         }
 
@@ -3193,7 +3232,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                             "Failed to lower contiguous view index",
                                             member->location);
                                 }
-                                return;
+                                goto cleanup;
                             }
                             if (loweringResult ==
                                     ZR_COMPILER_CONTIGUOUS_VIEW_NOT_APPLICABLE) {
@@ -3269,7 +3308,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 free_resolved_call_signature(
                         cs->state, &resolvedMemberSignature);
                 ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                return;
+                goto cleanup;
             }
 
             if (rootIsTypeReference) {
@@ -3279,7 +3318,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                 free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                 ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                return;
+                goto cleanup;
             }
 
             if (i == memberStartIndex &&
@@ -3336,7 +3375,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(
                             cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
             }
 
@@ -3360,7 +3399,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
                 hasResolvedMemberSignature = resolve_generic_member_call_signature(cs,
                                                                                    activeCallMemberInfo,
@@ -3373,7 +3412,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
                 if (compile_expression_is_testing_throws_call(activeCallMemberInfo, call) &&
                     !compile_expression_validate_testing_throws_action(
@@ -3384,7 +3423,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
             }
             if (hasSpreadArgument) {
@@ -3419,7 +3458,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
             }
             syncStructConstructorReceiverToResult =
@@ -3460,7 +3499,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
             }
 
@@ -3564,7 +3603,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 cs->state, &resolvedMemberSignature);
                         ZrParser_InferredType_Free(
                                 cs->state, &contractReturnType);
-                        return;
+                        goto cleanup;
                     }
                     argCount += (TZrUInt32)argsToCompile->count;
                     spreadPrefixArgumentCount = argCount - 1u;
@@ -3589,7 +3628,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                             free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                             ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                            return;
+                            goto cleanup;
                         }
                     } else if (!compile_arguments_against_imported_member_metadata(cs,
                                                                                    call,
@@ -3606,7 +3645,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                        return;
+                        goto cleanup;
                     }
                     argCount += compiledMemberArgCount;
                 } else if (resolvedFunctionType != ZR_NULL) {
@@ -3628,7 +3667,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                        return;
+                        goto cleanup;
                     }
                     argCount += (TZrUInt32)argsToCompile->count;
                 } else {
@@ -3645,7 +3684,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                                 free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                                 ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                                return;
+                                goto cleanup;
                             }
                         }
                     }
@@ -3669,7 +3708,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
                 emit_constant_to_slot(cs, hiddenArgumentSlot, &expectedTypeIdentity);
                 argCount++;
@@ -3696,7 +3735,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                 free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                 ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                return;
+                goto cleanup;
             }
 
             if (hasSpreadArgument && pendingContiguousViewCall) {
@@ -3709,7 +3748,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 free_resolved_call_signature(
                         cs->state, &resolvedMemberSignature);
                 ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                return;
+                goto cleanup;
             }
 
             if (pendingContiguousViewCall) {
@@ -3756,7 +3795,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                     free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
                 currentSlot = callResultSlot;
             } else {
@@ -3802,7 +3841,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                        return;
+                        goto cleanup;
                     }
                     useKnownVmDirectMemberCallOpcode = ZR_TRUE;
                 } else if (!hasSpreadArgument &&
@@ -3822,7 +3861,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                        return;
+                        goto cleanup;
                     }
                     useKnownNativeDirectMemberCallOpcode = ZR_TRUE;
                 }
@@ -3864,7 +3903,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                         free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                         ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                        return;
+                        goto cleanup;
                     }
                 } else {
                     emit_instruction(cs,
@@ -3919,7 +3958,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             cs->state, &resolvedMemberSignature);
                     ZrParser_InferredType_Free(
                             cs->state, &contractReturnType);
-                    return;
+                    goto cleanup;
                 }
             }
             if (syncStructConstructorReceiverToResult) {
@@ -3961,7 +4000,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
                 free_resolved_call_signature(cs->state, &resolvedMemberSignature);
                 ZrParser_InferredType_Free(cs->state, &contractReturnType);
-                return;
+                goto cleanup;
             }
             collapse_stack_to_slot(cs, currentSlot);
             pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
@@ -3999,6 +4038,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
         }
     }
 
+    if (!compiler_receiver_guard_finish(cs, &currentSlot, &receiverGuards)) {
+        goto cleanup;
+    }
+
     *ioCurrentSlot = currentSlot;
     if (ioRootTypeName != ZR_NULL) {
         *ioRootTypeName = rootTypeName;
@@ -4009,4 +4052,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     if (ioRootOwnershipQualifier != ZR_NULL) {
         *ioRootOwnershipQualifier = rootOwnershipQualifier;
     }
+
+cleanup:
+    compiler_receiver_guard_lowering_free(cs, &receiverGuards);
 }

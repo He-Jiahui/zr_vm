@@ -9134,6 +9134,30 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 EXECUTE_JUMP_IF_NULL_BODY(JUMP1_16, callInfo);
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(REQUIRE_NON_NULL) {
+                opA = FRAME_VALUE_SLOT(E(instruction));
+                if (ZR_UNLIKELY(ZR_VALUE_IS_TYPE_NULL(opA->type))) {
+                    SAVE_PC(state, callInfo);
+                    execution_clear_pending_control(state);
+                    if (!ZrCore_Exception_RaiseNamedRuntimeError(
+                                state,
+                                "NullReferenceError",
+                                "Direct access through a null receiver",
+                                callInfo)) {
+                        if (!ZrCore_Exception_NormalizeStatus(
+                                    state, ZR_THREAD_STATUS_EXCEPTION_ERROR)) {
+                            ZrCore_Exception_Throw(
+                                    state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
+                        }
+                    }
+                    if (execution_unwind_exception_to_handler(state, &callInfo)) {
+                        goto LZrReturning;
+                    }
+                    ZrCore_Exception_Throw(state, state->currentExceptionStatus);
+                    ZR_ABORT();
+                }
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(CREATE_CLOSURE) {
                 // CREATE_CLOSURE 指令格式：
                 // operandExtra (E) = destSlot (destination已通过E(instruction)定义)

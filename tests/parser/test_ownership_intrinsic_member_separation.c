@@ -211,6 +211,37 @@ static TZrBool function_contains_opcode_recursive(
     return ZR_FALSE;
 }
 
+static TZrUInt32 function_count_opcode_recursive(
+        const SZrFunction *function,
+        EZrInstructionCode opcode,
+        TZrUInt32 depth) {
+    TZrUInt32 count = 0u;
+
+    if (function == ZR_NULL || depth > 8u) {
+        return 0u;
+    }
+    for (TZrUInt32 index = 0u; index < function->instructionsLength; index++) {
+        if (function->instructionsList[index].instruction.operationCode == opcode) {
+            count++;
+        }
+    }
+    for (TZrUInt32 index = 0u; index < function->constantValueLength; index++) {
+        const SZrTypeValue *constant = &function->constantValueList[index];
+        SZrFunction *nested;
+
+        if (constant->type != ZR_VALUE_TYPE_FUNCTION ||
+            constant->value.object == ZR_NULL || constant->isNative) {
+            continue;
+        }
+        nested = ZR_CAST_FUNCTION(g_state, constant->value.object);
+        if (nested != function) {
+            count += function_count_opcode_recursive(
+                    nested, opcode, depth + 1u);
+        }
+    }
+    return count;
+}
+
 static void assert_parse_error(const TZrChar *source, const TZrChar *expectedFragment) {
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "ownership_intrinsic_error.zr");
@@ -769,6 +800,106 @@ static void test_intrinsic_spellings_on_objects_use_normal_member_calls(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_expired_weak_optional_call_skips_arguments(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn add(value: int): int { return value + 10; }\n"
+            "}\n"
+            "var sideEffects = 0;\n"
+            "fn bump(): int { sideEffects = sideEffects + 1; return sideEffects; }\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    drop(shared);\n"
+            "    var result = weak?.add(bump());\n"
+            "    var mask = 0;\n"
+            "    if (result == null) { mask = mask + 1; }\n"
+            "    if (sideEffects == 0) { mask = mask + 2; }\n"
+            "    return mask;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "expired_weak_optional_call.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(3, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_live_weak_optional_call_runs_suffix_after_one_wake(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn add(value: int): int { return value + 10; }\n"
+            "}\n"
+            "var sideEffects = 0;\n"
+            "fn bump(): int { sideEffects = sideEffects + 1; return sideEffects; }\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    var result = weak?.add(bump());\n"
+            "    if (result == 11 && sideEffects == 1) { return 1; }\n"
+            "    return 0;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "live_weak_optional_call.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(
+            1u,
+            function_count_opcode_recursive(
+                    function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE), 0u));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_expired_weak_direct_call_throws_named_runtime_error(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn read(): int { return 7; }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    drop(shared);\n"
+            "    var mask = 0;\n"
+            "    try { weak.read(); }\n"
+            "    catch (error: NullReferenceError) { mask = mask + 1; }\n"
+            "    catch (error: RuntimeError) { mask = mask + 8; }\n"
+            "    try { weak.read(); }\n"
+            "    catch (error: RuntimeError) { mask = mask + 2; }\n"
+            "    return mask;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "expired_weak_direct_call.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(3, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_question_dot_is_one_token);
@@ -785,5 +916,8 @@ int main(void) {
     RUN_TEST(test_intrinsic_and_optional_receiver_errors_are_precise);
     RUN_TEST(test_intrinsic_calls_emit_dedicated_opcodes_and_execute);
     RUN_TEST(test_intrinsic_spellings_on_objects_use_normal_member_calls);
+    RUN_TEST(test_expired_weak_optional_call_skips_arguments);
+    RUN_TEST(test_live_weak_optional_call_runs_suffix_after_one_wake);
+    RUN_TEST(test_expired_weak_direct_call_throws_named_runtime_error);
     return UNITY_END();
 }

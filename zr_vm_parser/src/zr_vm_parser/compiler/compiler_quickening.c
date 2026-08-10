@@ -2977,6 +2977,7 @@ static TZrBool compiler_quickening_is_control_only_opcode(EZrInstructionCode opc
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
         case ZR_INSTRUCTION_ENUM(TRY):
         case ZR_INSTRUCTION_ENUM(END_TRY):
         case ZR_INSTRUCTION_ENUM(THROW):
@@ -5802,6 +5803,7 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return instruction->instruction.operandExtra == slot;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
             return instruction->instruction.operandExtra == slot;
         case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
@@ -6319,6 +6321,7 @@ static TZrBool compiler_quickening_instruction_replace_read_slot_if_supported(TZ
             }
             break;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
             if (instruction->instruction.operandExtra == oldSlot) {
                 if (applyChanges) {
                     instruction->instruction.operandExtra = (TZrUInt16)newSlot;

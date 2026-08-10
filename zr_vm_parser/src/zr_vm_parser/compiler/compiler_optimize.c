@@ -42,6 +42,7 @@ static TZrBool optimizer_is_exception_control_opcode(EZrInstructionCode opcode) 
         case ZR_INSTRUCTION_ENUM(TRY):
         case ZR_INSTRUCTION_ENUM(END_TRY):
         case ZR_INSTRUCTION_ENUM(THROW):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
         case ZR_INSTRUCTION_ENUM(CATCH):
         case ZR_INSTRUCTION_ENUM(END_FINALLY):
         case ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN):
@@ -366,6 +367,10 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
             info->hasRelativeJump = ZR_TRUE;
             info->conditionalJump = ZR_TRUE;
+            return;
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            optimizer_info_add_read(info, instruction->instruction.operandExtra);
             return;
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
@@ -963,6 +968,7 @@ static TZrBool optimizer_rewrite_instruction_read_slot(TZrInstruction *instructi
             }
             return changed;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
             if (instruction->instruction.operandExtra == fromSlot) {
                 instruction->instruction.operandExtra = toSlot;
                 changed = ZR_TRUE;
@@ -1439,6 +1445,7 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):

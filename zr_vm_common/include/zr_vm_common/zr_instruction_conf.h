@@ -260,7 +260,8 @@
     Z(PROPERTY_REF_CREATE_MEMBER)                                                                                      \
     Z(PROPERTY_REF_CREATE_INDEX)                                                                                       \
     Z(FUNCTION_CALL_SPREAD)                                                                                            \
-    Z(PROPERTY_REF_CREATE_LOCAL)
+    Z(PROPERTY_REF_CREATE_LOCAL)                                                                                       \
+    Z(REQUIRE_NON_NULL)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)
