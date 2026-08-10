@@ -67,6 +67,11 @@ static TZrBool parser_token_can_start_expression(EZrToken token) {
         case ZR_TK_LESS_THAN:
         case ZR_TK_TYPEID:
         case ZR_TK_TYPEOF:
+        case ZR_TK_SHARE:
+        case ZR_TK_DEGRADE:
+        case ZR_TK_WAKE:
+        case ZR_TK_INTO_GC:
+        case ZR_TK_DROP:
             return ZR_TRUE;
         default:
             return ZR_FALSE;

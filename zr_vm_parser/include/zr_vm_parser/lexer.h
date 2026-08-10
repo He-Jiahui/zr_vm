@@ -122,6 +122,12 @@ enum EZrToken {
     ZR_TK_YIELD,         // yield statement keyword (appended for token id stability)
     ZR_TK_TYPEID,        // typeid(TypeRef) intrinsic (appended for token id stability)
     ZR_TK_TYPEOF,        // typeof(expr) intrinsic (appended for token id stability)
+    ZR_TK_QUESTION_DOT,  // "?." optional postfix operator
+    ZR_TK_SHARE,         // share(owner) ownership intrinsic
+    ZR_TK_DEGRADE,       // degrade(shared) ownership intrinsic
+    ZR_TK_WAKE,          // wake(weak) ownership intrinsic
+    ZR_TK_INTO_GC,       // intoGc(owner) ownership intrinsic
+    ZR_TK_DROP,          // drop(owner) ownership intrinsic
 };
 
 typedef enum EZrToken EZrToken;

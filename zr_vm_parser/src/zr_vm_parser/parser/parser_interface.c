@@ -30,7 +30,7 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     }
 
     // 解析字段名
-    SZrAstNode *nameNode = parse_identifier(ps);
+    SZrAstNode *nameNode = parse_member_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
@@ -86,7 +86,7 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
     ZrParser_Lexer_Next(ps->lexer);
 
     // 解析方法名
-    SZrAstNode *nameNode = parse_identifier(ps);
+    SZrAstNode *nameNode = parse_member_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }
@@ -201,7 +201,7 @@ SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
     }
 
     // 解析属性名
-    SZrAstNode *nameNode = parse_identifier(ps);
+    SZrAstNode *nameNode = parse_member_identifier(ps);
     if (nameNode == ZR_NULL) {
         return ZR_NULL;
     }

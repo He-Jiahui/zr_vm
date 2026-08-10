@@ -319,10 +319,12 @@ SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    while (consume_token(ps, ZR_TK_DOT)) {
+    while (ps->lexer->t.token == ZR_TK_DOT) {
+        SZrFileRange dotLocation = get_current_token_location(ps);
         SZrAstNode *property;
         SZrAstNode *memberNode;
 
+        consume_token(ps, ZR_TK_DOT);
         if (ps->lexer->t.token != ZR_TK_IDENTIFIER) {
             report_error(ps, "Expected identifier after '.' in prototype path");
             return base;
@@ -337,13 +339,17 @@ SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
             return base;
         }
 
-        memberNode = create_ast_node(ps, ZR_AST_MEMBER_EXPRESSION, startLoc);
+        memberNode = create_ast_node(
+                ps,
+                ZR_AST_MEMBER_EXPRESSION,
+                ZrParser_FileRange_Merge(dotLocation, property->location));
         if (memberNode == ZR_NULL) {
             ZrParser_Ast_Free(ps->state, property);
             return base;
         }
         memberNode->data.memberExpression.property = property;
         memberNode->data.memberExpression.computed = ZR_FALSE;
+        memberNode->data.memberExpression.accessMode = ZR_POSTFIX_ACCESS_DIRECT;
         base = append_primary_member(ps, base, memberNode, startLoc);
     }
 
@@ -737,6 +743,7 @@ static TZrBool is_member_name_token(EZrToken token) {
            token == ZR_TK_UNION || token == ZR_TK_FN || token == ZR_TK_REF ||
            token == ZR_TK_LET || token == ZR_TK_YIELD ||
            token == ZR_TK_TYPEID || token == ZR_TK_TYPEOF ||
+           is_ownership_intrinsic_token(token) ||
            (token >= ZR_TK_MODULE && token <= ZR_TK_NAN);
 }
 
@@ -829,8 +836,52 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
     SZrFileRange startLoc = base->location;
 
     while (ZR_TRUE) {
+        if (ps->lexer->t.token == ZR_TK_QUESTION_DOT) {
+            SZrFileRange optionalLocation = get_current_token_location(ps);
+
+            consume_token(ps, ZR_TK_QUESTION_DOT);
+            if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+                report_error(ps, "Optional computed access '?.[' is not supported");
+                return ZR_NULL;
+            }
+            if (ps->lexer->t.token == ZR_TK_LPAREN) {
+                base = parse_postfix_call_segment(
+                        ps,
+                        base,
+                        startLoc,
+                        optionalLocation,
+                        ZR_POSTFIX_ACCESS_OPTIONAL);
+                if (base == ZR_NULL) {
+                    return ZR_NULL;
+                }
+                continue;
+            }
+            if (!is_member_name_token(ps->lexer->t.token)) {
+                report_missing_member_name(ps, optionalLocation);
+                return ZR_NULL;
+            }
+
+            SZrAstNode *property = parse_member_name(ps);
+            SZrAstNode *memberNode;
+
+            if (property == ZR_NULL) {
+                return ZR_NULL;
+            }
+            memberNode = create_ast_node(
+                    ps,
+                    ZR_AST_MEMBER_EXPRESSION,
+                    ZrParser_FileRange_Merge(optionalLocation, property->location));
+            if (memberNode == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, property);
+                return base;
+            }
+            memberNode->data.memberExpression.property = property;
+            memberNode->data.memberExpression.computed = ZR_FALSE;
+            memberNode->data.memberExpression.accessMode = ZR_POSTFIX_ACCESS_OPTIONAL;
+            base = append_primary_member(ps, base, memberNode, startLoc);
+        }
         // 点号成员访问
-        if (ps->lexer->t.token == ZR_TK_DOT) {
+        else if (ps->lexer->t.token == ZR_TK_DOT) {
             SZrFileRange dotLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_DOT);
             // 成员名上下文允许关键字以普通名称形式出现，例如 zr.ffi.out
@@ -859,18 +910,23 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 return ZR_NULL;
             }
 
-            SZrAstNode *memberNode = create_ast_node(ps, ZR_AST_MEMBER_EXPRESSION, startLoc);
+            SZrAstNode *memberNode = create_ast_node(
+                    ps,
+                    ZR_AST_MEMBER_EXPRESSION,
+                    ZrParser_FileRange_Merge(dotLocation, property->location));
             if (memberNode == ZR_NULL) {
                 return base;
             }
             memberNode->data.memberExpression.property = property;
             memberNode->data.memberExpression.computed = ZR_FALSE;
+            memberNode->data.memberExpression.accessMode = ZR_POSTFIX_ACCESS_DIRECT;
 
             base = append_primary_member(ps, base, memberNode, startLoc);
         }
         // 方括号成员访问
         else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
             SZrFileRange bracketLocation = get_current_token_location(ps);
+            SZrFileRange bracketCloseLocation;
             consume_token(ps, ZR_TK_LBRACKET);
             SZrAstNode *property = parse_expression(ps);
             if (property == ZR_NULL) {
@@ -880,14 +936,19 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 report_missing_index_close(ps, bracketLocation);
                 return ZR_NULL;
             }
+            bracketCloseLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_RBRACKET);
 
-            SZrAstNode *memberNode = create_ast_node(ps, ZR_AST_MEMBER_EXPRESSION, startLoc);
+            SZrAstNode *memberNode = create_ast_node(
+                    ps,
+                    ZR_AST_MEMBER_EXPRESSION,
+                    ZrParser_FileRange_Merge(bracketLocation, bracketCloseLocation));
             if (memberNode == ZR_NULL) {
                 return base;
             }
             memberNode->data.memberExpression.property = property;
             memberNode->data.memberExpression.computed = ZR_TRUE;
+            memberNode->data.memberExpression.accessMode = ZR_POSTFIX_ACCESS_DIRECT;
 
             base = append_primary_member(ps, base, memberNode, startLoc);
         }
@@ -978,6 +1039,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             callNode->data.functionCall.genericArguments = genericArguments;
             callNode->data.functionCall.argumentMarkers = argumentMarkers;
             callNode->data.functionCall.hasNamedArgs = ZR_FALSE;
+            callNode->data.functionCall.accessMode = ZR_POSTFIX_ACCESS_DIRECT;
             if (argNames != ZR_NULL && argNames->length > 0) {
                 for (TZrSize i = 0; i < argNames->length; i++) {
                     SZrString **namePtr = (SZrString **) ZrCore_Array_Get(argNames, i);
@@ -992,120 +1054,17 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
         }
         // 函数调用
         else if (ps->lexer->t.token == ZR_TK_LPAREN) {
-            SZrFileRange callOpenLocation = get_current_token_location(ps);
-            SZrFileRange callCloseLocation;
-            SZrArray *argNames = ZR_NULL;
-            SZrArray *argumentMarkers = ZR_NULL;
-            SZrAstNodeArray *args;
+            SZrFileRange callLocation = get_current_token_location(ps);
 
-            consume_token(ps, ZR_TK_LPAREN);
-            args = parse_argument_list(ps, &argNames, &argumentMarkers);
-            if (ps->lexer->t.token != ZR_TK_RPAREN) {
-                report_missing_call_close(ps, callOpenLocation);
-                if (args != ZR_NULL) {
-                    ZrParser_AstNodeArray_Free(ps->state, args);
-                }
-                if (argNames != ZR_NULL) {
-                    ZrCore_Array_Free(ps->state, argNames);
-                    ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                }
-                if (argumentMarkers != ZR_NULL) {
-                    ZrCore_Array_Free(ps->state, argumentMarkers);
-                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                }
+            base = parse_postfix_call_segment(
+                    ps,
+                    base,
+                    startLoc,
+                    callLocation,
+                    ZR_POSTFIX_ACCESS_DIRECT);
+            if (base == ZR_NULL) {
                 return ZR_NULL;
             }
-            callCloseLocation = get_current_token_location(ps);
-            consume_token(ps, ZR_TK_RPAREN);
-
-            if (base->type == ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION) {
-                SZrAstNode *target = base->data.prototypeReferenceExpression.target;
-                SZrAstNode *constructNode;
-                SZrFileRange fullLoc;
-
-                if (!reject_named_construct_arguments(ps, argNames, startLoc)) {
-                    if (args != ZR_NULL) {
-                        ZrParser_AstNodeArray_Free(ps->state, args);
-                    }
-                    if (argumentMarkers != ZR_NULL) {
-                        ZrCore_Array_Free(ps->state, argumentMarkers);
-                        ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
-                                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    }
-                    return base;
-                }
-
-                if (argumentMarkers != ZR_NULL) {
-                    ZrCore_Array_Free(ps->state, argumentMarkers);
-                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                    argumentMarkers = ZR_NULL;
-                }
-
-                base->data.prototypeReferenceExpression.target = ZR_NULL;
-                ZrCore_Memory_RawFreeWithType(ps->state->global, base, sizeof(SZrAstNode), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-
-                fullLoc = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
-                constructNode = create_construct_expression_node(ps,
-                                                                 target,
-                                                                 args,
-                                                                 ZR_OWNERSHIP_QUALIFIER_NONE,
-                                                                 ZR_FALSE,
-                                                                 ZR_FALSE,
-                                                                 ZR_OWNERSHIP_BUILTIN_KIND_NONE,
-                                                                 fullLoc);
-                if (constructNode == ZR_NULL) {
-                    if (args != ZR_NULL) {
-                        ZrParser_AstNodeArray_Free(ps->state, args);
-                    }
-                    ZrParser_Ast_Free(ps->state, target);
-                    return ZR_NULL;
-                }
-
-                base = constructNode;
-                continue;
-            }
-
-            SZrAstNode *callNode = create_ast_node(
-                    ps,
-                    ZR_AST_FUNCTION_CALL,
-                    ZrParser_FileRange_Merge(callOpenLocation, callCloseLocation));
-            if (callNode == ZR_NULL) {
-                if (args != ZR_NULL) {
-                    ZrParser_AstNodeArray_Free(ps->state, args);
-                }
-                if (argNames != ZR_NULL) {
-                    ZrCore_Array_Free(ps->state, argNames);
-                    ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                }
-                if (argumentMarkers != ZR_NULL) {
-                    ZrCore_Array_Free(ps->state, argumentMarkers);
-                    ZrCore_Memory_RawFreeWithType(ps->state->global, argumentMarkers, sizeof(SZrArray),
-                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                }
-                return base;
-            }
-            callNode->data.functionCall.args = args;
-            callNode->data.functionCall.argNames = argNames;
-            callNode->data.functionCall.genericArguments = ZR_NULL;
-            callNode->data.functionCall.argumentMarkers = argumentMarkers;
-            // 检查是否有命名参数
-            callNode->data.functionCall.hasNamedArgs = ZR_FALSE;
-            if (argNames != ZR_NULL && argNames->length > 0) {
-                // 检查是否有非空的参数名
-                for (TZrSize i = 0; i < argNames->length; i++) {
-                    SZrString **namePtr = (SZrString **) ZrCore_Array_Get(argNames, i);
-                    if (namePtr != ZR_NULL && *namePtr != ZR_NULL) {
-                        callNode->data.functionCall.hasNamedArgs = ZR_TRUE;
-                        break;
-                    }
-                }
-            }
-
-            base = append_primary_member(ps, base, callNode, startLoc);
         } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
             TZrBool handled = ZR_FALSE;
             SZrAstNode *bracedMember = try_parse_braced_primary_member(ps, base, startLoc, &handled);
@@ -1147,6 +1106,10 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     }
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "import")) {
         base = parse_reserved_import_expression(ps);
+        return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
+    }
+    if (is_ownership_intrinsic_token(token)) {
+        base = parse_ownership_intrinsic_expression(ps);
         return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
     }
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "own") &&

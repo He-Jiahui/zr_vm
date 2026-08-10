@@ -159,6 +159,9 @@ enum EZrAstNodeType {
 
     // 普通调用参数展开（追加节点，避免已有 AST 编号漂移）
     ZR_AST_SPREAD_ARGUMENT,
+
+    // 所有权内建表达式（追加节点，避免已有 AST 编号漂移）
+    ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION,
 };
 
 typedef enum EZrAstNodeType EZrAstNodeType;
@@ -490,12 +493,26 @@ typedef struct SZrNamedArgument {
     SZrAstNode *value;                  // 参数值表达式
 } SZrNamedArgument;
 
+typedef enum EZrPostfixAccessMode {
+    ZR_POSTFIX_ACCESS_DIRECT = 0,
+    ZR_POSTFIX_ACCESS_OPTIONAL,
+} EZrPostfixAccessMode;
+
+typedef enum EZrOwnershipIntrinsicOperation {
+    ZR_OWNERSHIP_INTRINSIC_SHARE = 0,
+    ZR_OWNERSHIP_INTRINSIC_DEGRADE,
+    ZR_OWNERSHIP_INTRINSIC_WAKE,
+    ZR_OWNERSHIP_INTRINSIC_INTO_GC,
+    ZR_OWNERSHIP_INTRINSIC_DROP,
+} EZrOwnershipIntrinsicOperation;
+
 typedef struct SZrFunctionCall {
     SZrAstNodeArray *args;              // Expression 数组（现有）
     SZrArray *argNames;                 // 参数名数组（SZrString*），可选，与args对应，ZR_NULL表示位置参数
     TZrBool hasNamedArgs;                 // 是否有命名参数
     SZrAstNodeArray *genericArguments;  // Type / const expression 数组（可选）
     SZrArray *argumentMarkers;          // SZrCallArgumentSyntax，与 args 对齐
+    EZrPostfixAccessMode accessMode;
 } SZrFunctionCall;
 
 typedef struct SZrSpreadArgument {
@@ -505,7 +522,15 @@ typedef struct SZrSpreadArgument {
 typedef struct SZrMemberExpression {
     SZrAstNode *property;
     TZrBool computed; // true 表示使用 []，false 表示使用 .
+    EZrPostfixAccessMode accessMode;
 } SZrMemberExpression;
+
+typedef struct SZrOwnershipIntrinsicExpression {
+    EZrOwnershipIntrinsicOperation operation;
+    SZrAstNode *argument;
+    SZrFileRange nameRange;
+    SZrFileRange callRange;
+} SZrOwnershipIntrinsicExpression;
 
 typedef struct SZrPrimaryExpression {
     SZrAstNode *property;
@@ -1076,6 +1101,7 @@ typedef struct SZrAstNode {
         SZrTypeLiteralExpression typeLiteralExpression;
         SZrPrototypeReferenceExpression prototypeReferenceExpression;
         SZrConstructExpression constructExpression;
+        SZrOwnershipIntrinsicExpression ownershipIntrinsicExpression;
         SZrStructInitExpression structInitExpression;
 
         // 字面量

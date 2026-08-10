@@ -209,7 +209,7 @@ SZrAstNode *parse_property_declaration(SZrParserState *ps,
     }
     ZrParser_Lexer_Next(ps->lexer);
 
-    nameNode = parse_identifier(ps);
+    nameNode = parse_member_identifier(ps);
     if (nameNode == ZR_NULL) {
         property_free_declaration_parts(ps, decorators, ZR_NULL, ZR_NULL);
         return ZR_NULL;

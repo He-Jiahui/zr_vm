@@ -210,6 +210,7 @@ static SZrAstNode *parse_switch_tuple_move_payload_pattern(SZrParserState *ps, T
     callNode->data.functionCall.argNames = ZR_NULL;
     callNode->data.functionCall.hasNamedArgs = ZR_FALSE;
     callNode->data.functionCall.genericArguments = ZR_NULL;
+    callNode->data.functionCall.accessMode = ZR_POSTFIX_ACCESS_DIRECT;
     return callNode;
 }
 
@@ -353,6 +354,7 @@ SZrAstNode *try_parse_switch_move_variant_pattern_case(SZrParserState *ps) {
         }
         memberNode->data.memberExpression.property = memberIdentifier;
         memberNode->data.memberExpression.computed = ZR_FALSE;
+        memberNode->data.memberExpression.accessMode = ZR_POSTFIX_ACCESS_DIRECT;
         base = append_primary_member(ps, base, memberNode, startLoc);
     }
 

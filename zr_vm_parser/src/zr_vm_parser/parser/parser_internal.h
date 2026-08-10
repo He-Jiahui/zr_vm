@@ -238,6 +238,12 @@ SZrAstNode *parse_literal(SZrParserState *ps);
 
 SZrAstNode *parse_identifier(SZrParserState *ps);
 
+TZrBool is_ownership_intrinsic_token(EZrToken token);
+
+SZrAstNode *parse_member_identifier(SZrParserState *ps);
+
+SZrAstNode *parse_ownership_intrinsic_expression(SZrParserState *ps);
+
 SZrAstNode *parse_array_literal(SZrParserState *ps);
 
 SZrAstNode *parse_object_literal(SZrParserState *ps);
@@ -289,6 +295,12 @@ SZrAstNode *parse_await_expression(SZrParserState *ps);
 SZrAstNode *parse_reserved_async_function_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base);
+
+SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
+                                       SZrAstNode *base,
+                                       SZrFileRange chainStartLoc,
+                                       SZrFileRange segmentStartLoc,
+                                       EZrPostfixAccessMode accessMode);
 
 SZrAstNode *parse_primary_expression(SZrParserState *ps);
 

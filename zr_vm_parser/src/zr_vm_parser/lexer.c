@@ -67,9 +67,15 @@ static const SZrTokenInfo zr_token_info[] = {
     {"ref", ZR_TK_REF},
     {"typeid", ZR_TK_TYPEID},
     {"typeof", ZR_TK_TYPEOF},
+    {"share", ZR_TK_SHARE},
+    {"degrade", ZR_TK_DEGRADE},
+    {"wake", ZR_TK_WAKE},
+    {"intoGc", ZR_TK_INTO_GC},
+    {"drop", ZR_TK_DROP},
     // 操作符
     {"...", ZR_TK_PARAMS},
     {"?", ZR_TK_QUESTIONMARK},
+    {"?.", ZR_TK_QUESTION_DOT},
     {":", ZR_TK_COLON},
     {";", ZR_TK_SEMICOLON},
     {",", ZR_TK_COMMA},
@@ -143,6 +149,11 @@ static const struct {
                    {"ref", ZR_TK_REF},
                    {"typeid", ZR_TK_TYPEID},
                    {"typeof", ZR_TK_TYPEOF},
+                   {"share", ZR_TK_SHARE},
+                   {"degrade", ZR_TK_DEGRADE},
+                   {"wake", ZR_TK_WAKE},
+                   {"intoGc", ZR_TK_INTO_GC},
+                   {"drop", ZR_TK_DROP},
                    {"test", ZR_TK_TEST},
                    {"intermediate", ZR_TK_INTERMEDIATE},
                    {"var", ZR_TK_VAR},
@@ -685,6 +696,10 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
 
         case '?':
             next_char(ls);
+            if (ls->currentChar == '.') {
+                next_char(ls);
+                return ZR_TK_QUESTION_DOT;
+            }
             return ZR_TK_QUESTIONMARK;
 
         case ':':

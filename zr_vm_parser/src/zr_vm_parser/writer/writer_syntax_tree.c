@@ -37,6 +37,7 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_PRIMARY_EXPRESSION: return "PRIMARY_EXPRESSION";
         case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION: return "PROTOTYPE_REFERENCE_EXPRESSION";
         case ZR_AST_CONSTRUCT_EXPRESSION: return "CONSTRUCT_EXPRESSION";
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION: return "OWNERSHIP_INTRINSIC_EXPRESSION";
         case ZR_AST_STRUCT_INIT_EXPRESSION: return "STRUCT_INIT_EXPRESSION";
         case ZR_AST_IDENTIFIER_LITERAL: return "IDENTIFIER";
         case ZR_AST_BOOLEAN_LITERAL: return "BOOLEAN_LITERAL";
@@ -316,6 +317,10 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
         }
         case ZR_AST_FUNCTION_CALL: {
             SZrFunctionCall *call = &node->data.functionCall;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file,
+                    "access: %s\n",
+                    call->accessMode == ZR_POSTFIX_ACCESS_OPTIONAL ? "optional" : "direct");
             if (call->args != ZR_NULL) {
                 for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
                 fprintf(file, "args (%zu):\n", call->args->count);
@@ -334,6 +339,10 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
         }
         case ZR_AST_MEMBER_EXPRESSION: {
             SZrMemberExpression *member = &node->data.memberExpression;
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file,
+                    "access: %s\n",
+                    member->accessMode == ZR_POSTFIX_ACCESS_OPTIONAL ? "optional" : "direct");
             for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
             fprintf(file, "computed: %s\n", member->computed ? "true" : "false");
             for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
@@ -389,6 +398,35 @@ static void print_ast_node(SZrState *state, FILE *file, SZrAstNode *node, TZrSiz
                     print_ast_node(state, file, construct->args->nodes[i], indent + 2);
                 }
             }
+            break;
+        }
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION: {
+            SZrOwnershipIntrinsicExpression *intrinsic =
+                    &node->data.ownershipIntrinsicExpression;
+            const TZrChar *operation = "share";
+
+            switch (intrinsic->operation) {
+                case ZR_OWNERSHIP_INTRINSIC_DEGRADE:
+                    operation = "degrade";
+                    break;
+                case ZR_OWNERSHIP_INTRINSIC_WAKE:
+                    operation = "wake";
+                    break;
+                case ZR_OWNERSHIP_INTRINSIC_INTO_GC:
+                    operation = "intoGc";
+                    break;
+                case ZR_OWNERSHIP_INTRINSIC_DROP:
+                    operation = "drop";
+                    break;
+                case ZR_OWNERSHIP_INTRINSIC_SHARE:
+                default:
+                    break;
+            }
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "operation: %s\n", operation);
+            for (TZrSize i = 0; i < indent + 1; i++) fprintf(file, "  ");
+            fprintf(file, "argument: ");
+            print_ast_node(state, file, intrinsic->argument, indent + 1);
             break;
         }
         case ZR_AST_EXPRESSION_STATEMENT: {

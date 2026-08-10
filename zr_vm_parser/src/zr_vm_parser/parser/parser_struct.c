@@ -68,7 +68,7 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
     }
 
     // 解析字段名
-    SZrAstNode *nameNode = parse_identifier(ps);
+    SZrAstNode *nameNode = parse_member_identifier(ps);
     if (nameNode == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
@@ -169,7 +169,7 @@ SZrAstNode *parse_struct_method(SZrParserState *ps) {
     ZrParser_Lexer_Next(ps->lexer);
 
     // 解析方法名
-    SZrAstNode *nameNode = parse_identifier(ps);
+    SZrAstNode *nameNode = parse_member_identifier(ps);
     if (nameNode == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;

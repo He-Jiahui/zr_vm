@@ -489,6 +489,14 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION: {
+            SZrOwnershipIntrinsicExpression *intrinsic =
+                    &node->data.ownershipIntrinsicExpression;
+            if (intrinsic->argument != ZR_NULL) {
+                ZrParser_Ast_Free(state, intrinsic->argument);
+            }
+            break;
+        }
         case ZR_AST_MEMBER_EXPRESSION: {
             SZrMemberExpression *member = &node->data.memberExpression;
             if (member->property != ZR_NULL) {
