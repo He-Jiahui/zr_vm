@@ -39,7 +39,7 @@ void compiler_register_scope_cleanup_slot(
     }
 
     if (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
-        (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
+        (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP &&
          sourceSlot == slot)) {
         emit_instruction(cs,
                          create_instruction_0(
@@ -66,7 +66,7 @@ void compiler_register_owner_cleanup_slot(
 
     compiler_register_scope_cleanup_slot(cs,
                                          slot,
-                                         ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+                                         ZR_OWNERSHIP_BUILTIN_KIND_DROP,
                                          slot);
 }
 
@@ -135,9 +135,9 @@ static void emit_scope_cleanup_registration(SZrCompilerState *cs,
     }
 
     switch (registration->ownershipBuiltinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             emit_instruction(cs,
-                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_RELEASE),
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_DROP),
                                                    (TZrUInt16)registration->slot,
                                                    (TZrUInt16)registration->slot,
                                                    0));

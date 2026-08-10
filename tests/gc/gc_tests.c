@@ -1094,7 +1094,7 @@ static void test_ownership_shared_refcount_and_stable_weak_after_release(void) {
         ZrCore_Value_Copy(state, &sharedValueB, &sharedValueA);
         TEST_ASSERT_EQUAL_UINT32(2, ZrCore_Ownership_GetStrongRefCount(object));
 
-        TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &sharedValueA));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(state, &weakValue, &sharedValueA));
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_WEAK, weakValue.ownershipKind);
         TEST_ASSERT_NOT_NULL(weakValue.ownershipControl);
@@ -1113,7 +1113,7 @@ static void test_ownership_shared_refcount_and_stable_weak_after_release(void) {
         TEST_ASSERT_NULL(weakControl->object);
         TEST_ASSERT_EQUAL_UINT32(0, weakControl->strongRefCount);
         TEST_ASSERT_EQUAL_UINT32(1, weakControl->weakRefCount);
-        TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(state, &upgradedValue, &weakValue));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_WakeValue(state, &upgradedValue, &weakValue));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(upgradedValue.type));
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
         TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
@@ -1261,7 +1261,7 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
         TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(state, &sharedValue, &uniqueValue));
-        TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &sharedValue));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(state, &weakValue, &sharedValue));
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
         weakControl = weakValue.ownershipControl;
         TEST_ASSERT_NOT_NULL(weakControl);
@@ -1290,7 +1290,7 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
         TEST_ASSERT_NULL(weakControl->object);
         TEST_ASSERT_EQUAL_UINT32(0, weakControl->strongRefCount);
         TEST_ASSERT_EQUAL_UINT32(1, weakControl->weakRefCount);
-        TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(state, &upgradedValue, &weakValue));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_WakeValue(state, &upgradedValue, &weakValue));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(upgradedValue.type));
         ZrCore_Ownership_ReleaseValue(state, &weakValue);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));

@@ -104,16 +104,16 @@ static void backend_aot_write_c_contracts(FILE *file, TZrUInt32 runtimeContracts
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeShared */\n");
     }
-    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK) {
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DEGRADE) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeWeak */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_DetachValue */\n");
     }
-    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE) {
-        fprintf(file, "/* runtime contract: ZrCore_Ownership_UpgradeValue */\n");
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WAKE) {
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_WakeValue */\n");
     }
-    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE) {
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DROP) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_ReleaseValue */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN) {

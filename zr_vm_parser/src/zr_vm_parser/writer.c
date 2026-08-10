@@ -310,7 +310,7 @@ ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeF
     }
 
     if (function == ZrCore_Ownership_NativeShared) {
-        return ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED;
+        return ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE;
     }
 
     if (function == ZrCore_Ownership_NativeSharePlain) {
@@ -318,7 +318,7 @@ ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeF
     }
 
     if (function == ZrCore_Ownership_NativeWeak) {
-        return ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK;
+        return ZR_IO_NATIVE_HELPER_OWNERSHIP_DEGRADE;
     }
 
     if (function == ZrCore_Reflection_TypeOfNativeEntry) {

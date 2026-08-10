@@ -31,14 +31,14 @@ void backend_aot_write_llvm_contracts(FILE *file, TZrUInt32 runtimeContracts) {
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
         fprintf(file, "declare i1 @ZrCore_Ownership_NativeShared(ptr)\n");
     }
-    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK) {
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DEGRADE) {
         fprintf(file, "declare i1 @ZrCore_Ownership_NativeWeak(ptr)\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH) {
         fprintf(file, "declare i1 @ZrCore_Ownership_DetachValue(ptr, ptr, ptr)\n");
     }
-    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE) {
-        fprintf(file, "declare i1 @ZrCore_Ownership_UpgradeValue(ptr, ptr, ptr)\n");
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WAKE) {
+        fprintf(file, "declare i1 @ZrCore_Ownership_WakeValue(ptr, ptr, ptr)\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_ITER_INIT) {
         fprintf(file, "declare i1 @ZrCore_Object_IterInit(ptr, ptr, ptr)\n");
@@ -174,12 +174,12 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnLoan(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnReturnLoan(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnShare(ptr, ptr, i32, i32)\n");
-    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnWeak(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnDegrade(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnDetach(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnIntoGcBox(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnReturnToGc(ptr, ptr, i32, i32)\n");
-    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnUpgrade(ptr, ptr, i32, i32)\n");
-    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnRelease(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnWake(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnDrop(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_LogicalEqual(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_LogicalNotEqual(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_LogicalEqualBool(ptr, ptr, i32, i32, i32)\n");

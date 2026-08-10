@@ -61,10 +61,10 @@ void backend_aot_write_c_direct_own_share(FILE *file, TZrUInt32 destinationSlot,
             sourceSlot);
 }
 
-void backend_aot_write_c_direct_own_weak(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_own_degrade(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrLibrary_AotRuntime_OwnWeak",
+            "ZrLibrary_AotRuntime_OwnDegrade",
             destinationSlot,
             sourceSlot);
 }
@@ -97,18 +97,18 @@ void backend_aot_write_c_direct_own_return_to_gc(FILE *file,
             sourceSlot);
 }
 
-void backend_aot_write_c_direct_own_upgrade(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_own_wake(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrLibrary_AotRuntime_OwnUpgrade",
+            "ZrLibrary_AotRuntime_OwnWake",
             destinationSlot,
             sourceSlot);
 }
 
-void backend_aot_write_c_direct_own_release(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+void backend_aot_write_c_direct_own_drop(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_helper_call(
             file,
-            "ZrLibrary_AotRuntime_OwnRelease",
+            "ZrLibrary_AotRuntime_OwnDrop",
             destinationSlot,
             sourceSlot);
 }

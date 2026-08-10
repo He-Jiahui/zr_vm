@@ -215,7 +215,7 @@ static EZrInstructionCode compiler_semantic_ir_exec_opcode(
         case ZR_SEMANTIC_IR_MOVE:
             return ZR_INSTRUCTION_ENUM(OWN_UNIQUE);
         case ZR_SEMANTIC_IR_DROP:
-            return ZR_INSTRUCTION_ENUM(OWN_RELEASE);
+            return ZR_INSTRUCTION_ENUM(OWN_DROP);
         case ZR_SEMANTIC_IR_BORROW_SHARED:
             return ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED);
         case ZR_SEMANTIC_IR_BORROW_MUT:
@@ -226,10 +226,10 @@ static EZrInstructionCode compiler_semantic_ir_exec_opcode(
                     return ZR_INSTRUCTION_ENUM(OWN_UNIQUE);
                 case ZR_SEMANTIC_OWNERSHIP_SHARE:
                     return ZR_INSTRUCTION_ENUM(OWN_SHARE);
-                case ZR_SEMANTIC_OWNERSHIP_WEAK:
-                    return ZR_INSTRUCTION_ENUM(OWN_WEAK);
-                case ZR_SEMANTIC_OWNERSHIP_UPGRADE:
-                    return ZR_INSTRUCTION_ENUM(OWN_UPGRADE);
+                case ZR_SEMANTIC_OWNERSHIP_DEGRADE:
+                    return ZR_INSTRUCTION_ENUM(OWN_DEGRADE);
+                case ZR_SEMANTIC_OWNERSHIP_WAKE:
+                    return ZR_INSTRUCTION_ENUM(OWN_WAKE);
                 case ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX:
                     return ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX);
                 case ZR_SEMANTIC_OWNERSHIP_RETURN_TO_GC:
@@ -1596,7 +1596,7 @@ static TZrBool compiler_semantic_ir_emit_ownership(
     spec.targetBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     spec.sourceRange = sourceRange;
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             spec.opcode = ZR_SEMANTIC_IR_DROP;
             slot->valueId = ZR_VALUE_ID_INVALID;
             break;
@@ -1650,23 +1650,23 @@ static TZrBool compiler_semantic_ir_emit_ownership(
                     &cs->preSemanticIr, slot->typeId, sourceRange);
             spec.resultValueId = resultValueId;
             break;
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
             spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
             spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_SHARE;
             resultValueId = ZrParser_SemanticIr_AddValue(
                     &cs->preSemanticIr, slot->typeId, sourceRange);
             spec.resultValueId = resultValueId;
             break;
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
-            spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_WEAK;
+            spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_DEGRADE;
             resultValueId = ZrParser_SemanticIr_AddValue(
                     &cs->preSemanticIr, slot->typeId, sourceRange);
             spec.resultValueId = resultValueId;
             break;
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
-            spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_UPGRADE;
+            spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_WAKE;
             resultValueId = ZrParser_SemanticIr_AddValue(
                     &cs->preSemanticIr, slot->typeId, sourceRange);
             spec.resultValueId = resultValueId;

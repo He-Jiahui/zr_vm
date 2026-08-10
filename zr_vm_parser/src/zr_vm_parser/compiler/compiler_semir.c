@@ -1081,8 +1081,8 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             return ZR_TRUE;
-        case ZR_INSTRUCTION_ENUM(OWN_WEAK):
-            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_WEAK;
+        case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_DEGRADE;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_WEAK;
@@ -1105,14 +1105,14 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;
             return ZR_TRUE;
-        case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
-            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_UPGRADE;
+        case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_WAKE;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_WEAK;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             return ZR_TRUE;
-        case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
-            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_RELEASE;
+        case ZR_INSTRUCTION_ENUM(OWN_DROP):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_DROP;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;

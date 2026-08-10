@@ -55,11 +55,11 @@ ZR_CORE_API TZrBool ZrCore_Ownership_SharePlainValue(struct SZrState *state,
                                                      SZrTypeValue *destination,
                                                      SZrTypeValue *source);
 
-ZR_CORE_API TZrBool ZrCore_Ownership_WeakValue(struct SZrState *state,
+ZR_CORE_API TZrBool ZrCore_Ownership_DegradeValue(struct SZrState *state,
                                                SZrTypeValue *destination,
                                                SZrTypeValue *source);
 
-ZR_CORE_API TZrBool ZrCore_Ownership_UpgradeValue(struct SZrState *state,
+ZR_CORE_API TZrBool ZrCore_Ownership_WakeValue(struct SZrState *state,
                                                   SZrTypeValue *destination,
                                                   SZrTypeValue *source);
 

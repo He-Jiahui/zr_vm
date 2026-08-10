@@ -1891,10 +1891,10 @@ void test_using_owner_generic_emits_release_cleanup(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var seed = own Box();\n"
-                "var owner = seed.share();\n"
-                "var watcher = owner.weak();\n"
+                "var owner = share(seed);\n"
+                "var watcher = degrade(owner);\n"
                 "using (owner) { var inner = 1; }\n"
-                "var after = watcher.upgrade();\n"
+                "var after = wake(watcher);\n"
                 "if (after == null && owner == null) { return 1; }\n"
                 "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -1909,7 +1909,7 @@ void test_using_owner_generic_emits_release_cleanup(void) {
         }
 
         TZrInt64 result = 0;
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
@@ -1952,7 +1952,7 @@ void test_using_owner_generic_emits_release_cleanup(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
-        TEST_ASSERT_EQUAL_UINT32(1u, function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_EQUAL_UINT32(1u, function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute plain plugin guard scoped release source");
@@ -2002,7 +2002,7 @@ void test_using_owner_generic_release_runs_before_return(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var seed = own Box();\n"
-                "var owner = seed.share();\n"
+                "var owner = share(seed);\n"
                 "using (owner) {\n"
                 "    return 1;\n"
                 "}\n"
@@ -2020,7 +2020,7 @@ void test_using_owner_generic_release_runs_before_return(void) {
 
         TZrInt64 result = 0;
         TEST_ASSERT_TRUE(function_opcode_appears_before(func,
-                                                        ZR_INSTRUCTION_ENUM(OWN_RELEASE),
+                                                        ZR_INSTRUCTION_ENUM(OWN_DROP),
                                                         ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
@@ -2066,12 +2066,12 @@ void test_using_owner_generic_release_runs_before_break(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var seed = own Box();\n"
-                "var owner = seed.share();\n"
-                "var watcher = owner.weak();\n"
+                "var owner = share(seed);\n"
+                "var watcher = degrade(owner);\n"
                 "while (true) {\n"
                 "    using (owner) { break; }\n"
                 "}\n"
-                "var after = watcher.upgrade();\n"
+                "var after = wake(watcher);\n"
                 "if (after == null && owner == null) { return 1; }\n"
                 "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -2086,7 +2086,7 @@ void test_using_owner_generic_release_runs_before_break(void) {
         }
 
         TZrInt64 result = 0;
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
@@ -2131,7 +2131,7 @@ void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var seed = own Box();\n"
-                "var owner = seed.share();\n"
+                "var owner = share(seed);\n"
                 "{ var borrowed: ref readonly Box = ref owner; var inner = 1; };\n"
                 "return 1;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
@@ -2146,7 +2146,7 @@ void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2177,7 +2177,7 @@ void test_using_borrow_generic_end_borrow_runs_before_return(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var seed = own Box();\n"
-                "var owner = seed.share();\n"
+                "var owner = share(seed);\n"
                 "{\n"
                 "    var borrowed: ref readonly Box = ref owner;\n"
                 "    return 1;\n"
@@ -2196,7 +2196,7 @@ void test_using_borrow_generic_end_borrow_runs_before_return(void) {
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_opcode_appears_before(func,
-                                                        ZR_INSTRUCTION_ENUM(OWN_RELEASE),
+                                                        ZR_INSTRUCTION_ENUM(OWN_DROP),
                                                         ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
 
         ZrCore_Function_Free(state, func);
@@ -3618,7 +3618,7 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership builtin expression lowering",
-              "Testing that owner.share() compiles from a Unique<T> owner into OWN_SHARE without serialized native helper constants");
+              "Testing that share(owner) compiles from a Unique<T> owner into OWN_SHARE without serialized native helper constants");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3631,7 +3631,7 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
         const char *source =
             "resource class Box {}\n"
             "var owner = own Box();\n"
-            "var alias = owner.share();";
+            "var alias = share(owner);";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_builtin_shared_expr.zr",
                                                      strlen("ownership_builtin_shared_expr.zr"));
@@ -3646,7 +3646,7 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
-        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE));
 
         ZrCore_Function_Free(state, func);
     }
@@ -3677,7 +3677,7 @@ void test_current_ownership_surface_emits_dedicated_opcodes(void) {
         const char *source =
             "resource class Box {}\n"
             "var owner = own Box();\n"
-            "var alias = owner.share();\n"
+            "var alias = share(owner);\n"
             "var borrowed: ref readonly Box = ref alias;\n"
             "var loanSource = own Box();\n"
             "var loaned: ref Box = ref loanSource;";
@@ -3698,7 +3698,7 @@ void test_current_ownership_surface_emits_dedicated_opcodes(void) {
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
-        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE));
 
         ZrCore_Function_Free(state, func);
     }
@@ -3731,8 +3731,8 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
             "resource class Cache {}\n"
             "fn runMemberLifecycle(): int {\n"
             "var sessionSeed = own Session();\n"
-            "var sharedSession = sessionSeed.share();\n"
-            "var watcher = sharedSession.weak();\n"
+            "var sharedSession = share(sessionSeed);\n"
+            "var watcher = degrade(sharedSession);\n"
             "var mask = 0;\n"
             "{\n"
             "    var borrowed: ref readonly Session = ref sharedSession;\n"
@@ -3745,13 +3745,13 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
             "}\n"
             "if (cacheSeed != null) { mask = mask + 4; }\n"
             "var detachedSeed = own Session();\n"
-            "var rawSession = detachedSeed.intoGc();\n"
+            "var rawSession = intoGc(detachedSeed);\n"
             "if (rawSession != null) { mask = mask + 8; }\n"
-            "var upgradedSession = watcher.upgrade();\n"
+            "var upgradedSession = wake(watcher);\n"
             "if (upgradedSession != null) { mask = mask + 16; }\n"
             "var releasedShared = drop(sharedSession);\n"
             "var releasedUpgrade = drop(upgradedSession);\n"
-            "var expiredSession = watcher.upgrade();\n"
+            "var expiredSession = wake(watcher);\n"
             "if (releasedShared == null && releasedUpgrade == null && expiredSession == null) {\n"
             "    mask = mask + 32;\n"
             "}\n"
@@ -3776,14 +3776,14 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
         lifecycleFunc = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE));
         TEST_ASSERT_NOT_NULL(lifecycleFunc);
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DEGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
         TEST_ASSERT_FALSE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WAKE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
         TEST_ASSERT_EQUAL_INT64(63, result);
 
@@ -3816,12 +3816,12 @@ void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
         const char *source =
             "resource class Box {}\n"
             "var owner = own Box();\n"
-            "var shared = owner.share();\n"
+            "var shared = share(owner);\n"
             "var borrowed: ref readonly Box = ref shared;\n"
             "var loanSource = own Box();\n"
             "var loaned = ref loanSource;\n"
             "var detachSource = own Box();\n"
-            "var detached = detachSource.intoGc();";
+            "var detached = intoGc(detachSource);";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_borrow_loan_detach.zr",
                                                      strlen("ownership_borrow_loan_detach.zr"));
@@ -3859,7 +3859,7 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership runtime unique->shared move",
-              "Testing that owner.share() consumes a Unique owner and yields a live Shared value");
+              "Testing that share(owner) consumes a Unique owner and yields a live Shared value");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3872,7 +3872,7 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
         const char *source =
             "resource class Box {}\n"
             "var owner = own Box();\n"
-            "var alias = owner.share();\n"
+            "var alias = share(owner);\n"
             "if (alias != null) {\n"
             "    return 1;\n"
             "}\n"
@@ -3924,7 +3924,7 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
             "resource class Box {}\n"
             "fn runReferenceLifecycle(): int {\n"
             "var owner = own Box();\n"
-            "var shared = owner.share();\n"
+            "var shared = share(owner);\n"
             "var mask = 0;\n"
             "{\n"
             "    var borrowed: ref readonly Box = ref shared;\n"
@@ -3938,7 +3938,7 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
             "}\n"
             "if (loanSource != null) { mask = mask + 8; }\n"
             "var detachSource = own Box();\n"
-            "var detached = detachSource.intoGc();\n"
+            "var detached = intoGc(detachSource);\n"
             "if (detached != null) { mask = mask + 16; }\n"
             "return mask;\n"
             "}\n"
@@ -4034,9 +4034,9 @@ void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
         TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
         TEST_ASSERT_FALSE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DEGRADE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_WAKE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(lifecycleFunc, ZR_INSTRUCTION_ENUM(OWN_DROP)));
 
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
@@ -4065,14 +4065,14 @@ void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void) {
+void test_ownership_weak_runtime_wake_is_empty_after_last_shared_drop(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Weak Runtime Upgrade Is Empty After Last Shared Release";
+    const char *testSummary = "Ownership Weak Runtime Wake Is Empty After Last Shared Drop";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership runtime weak expiration",
-              "Testing that a stable Weak handle remains present while upgrade returns empty after the last Shared owner is released");
+              "Testing that a stable Weak handle remains present while wake returns empty after the last Shared owner is dropped");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4085,10 +4085,10 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
         const char *source =
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var watcher = owner.weak();\n"
+            "var owner = share(seed);\n"
+            "var watcher = degrade(owner);\n"
             "drop(owner);\n"
-            "var after = watcher.upgrade();\n"
+            "var after = wake(watcher);\n"
             "if (after == null) {\n"
             "    return 1;\n"
             "}\n"
@@ -4116,7 +4116,7 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
         }
         if (result != 1) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Weak owner did not remain stable with an empty upgrade result");
+            ZR_TEST_FAIL(timer, testSummary, "Weak owner did not remain stable with an empty wake result");
             ZrCore_Function_Free(state, func);
             destroy_test_state(state);
             return;
@@ -4131,14 +4131,14 @@ void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void)
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void) {
+void test_ownership_wake_and_drop_runtime_follow_lifecycle_contract(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Upgrade And Release Runtime Follow Lifecycle Contract";
+    const char *testSummary = "Ownership Wake And Drop Runtime Follow Lifecycle Contract";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership runtime weak->shared upgrade and explicit release",
-              "Testing that weak.upgrade() yields a live shared alias while an owner exists, and drop(owner) clears the last shared owner so a later upgrade becomes null");
+    ZR_TEST_INFO("Ownership runtime weak-to-shared wake and explicit drop",
+              "Testing that wake(weak) yields a live shared alias while an owner exists, and drop(owner) clears the last shared owner so a later wake becomes null");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4151,44 +4151,44 @@ void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void) 
         const char *source =
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var watcher = owner.weak();\n"
-            "var alias = watcher.upgrade();\n"
+            "var owner = share(seed);\n"
+            "var watcher = degrade(owner);\n"
+            "var alias = wake(watcher);\n"
             "var releasedOwner = drop(owner);\n"
-            "var stillAlive = watcher.upgrade();\n"
+            "var stillAlive = wake(watcher);\n"
             "var releasedAlias = drop(alias);\n"
             "var releasedStillAlive = drop(stillAlive);\n"
-            "var second = watcher.upgrade();\n"
+            "var second = wake(watcher);\n"
             "if (releasedOwner == null && releasedAlias == null && releasedStillAlive == null && owner == null && alias == null && stillAlive == null && second == null) {\n"
             "    return 1;\n"
             "}\n"
             "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_upgrade_release_runtime.zr",
-                                                     strlen("ownership_upgrade_release_runtime.zr"));
+                                                     "ownership_wake_drop_runtime.zr",
+                                                     strlen("ownership_wake_drop_runtime.zr"));
         SZrFunction *func;
         TZrInt64 result = 0;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership upgrade/release runtime source");
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership wake/drop runtime source");
             destroy_test_state(state);
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_WAKE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to execute ownership upgrade/release runtime source");
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute ownership wake/drop runtime source");
             ZrCore_Function_Free(state, func);
             destroy_test_state(state);
             return;
         }
         if (result != 1) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Ownership upgrade/release runtime source returned unexpected result");
+            ZR_TEST_FAIL(timer, testSummary, "Ownership wake/drop runtime source returned unexpected result");
             ZrCore_Function_Free(state, func);
             destroy_test_state(state);
             return;
@@ -4203,14 +4203,14 @@ void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void) 
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(void) {
+void test_ownership_drop_preserves_unrelated_stack_values_after_weak_expiry(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Release Preserves Unrelated Stack Values After Weak Expiry";
+    const char *testSummary = "Ownership Drop Preserves Unrelated Stack Values After Weak Expiry";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership runtime weak temp materialization",
-              "Testing that releasing the last shared owners expires weak references without nulling later locals that reused temporary stack slots");
+              "Testing that dropping the last shared owners expires weak references without nulling later locals that reused temporary stack slots");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4246,9 +4246,9 @@ void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(v
             "}\n"
             "resource class Box {}\n"
             "var ownerSeed = own Box();\n"
-            "var owner = ownerSeed.share();\n"
-            "var weak = owner.weak();\n"
-            "var alias = weak.upgrade();\n"
+            "var owner = share(ownerSeed);\n"
+            "var weak = degrade(owner);\n"
+            "var alias = wake(weak);\n"
             "var loop = new Loop();\n"
             "var directValue = direct(12, 0);\n"
             "var metaValue = loop(10, 0);\n"
@@ -4257,8 +4257,8 @@ void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(v
             "var releasedAlias = drop(alias);\n"
             "return directValue + metaValue + guardedValue;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_release_preserves_stack_values.zr",
-                                                     strlen("ownership_release_preserves_stack_values.zr"));
+                                                     "ownership_drop_preserves_stack_values.zr",
+                                                     strlen("ownership_drop_preserves_stack_values.zr"));
         SZrFunction *func;
         TZrInt64 result = 0;
 
@@ -4270,9 +4270,9 @@ void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(v
             return;
         }
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DEGRADE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_WAKE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute ownership stack preservation source");
@@ -4342,7 +4342,7 @@ void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute plugin guard share promotion source");
@@ -4416,7 +4416,7 @@ void test_plugin_guard_scoped_module_handle_releases_on_scope_exit(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
-        TEST_ASSERT_EQUAL_UINT32(1u, function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_EQUAL_UINT32(1u, function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute plugin guard scoped release source");
@@ -4488,7 +4488,7 @@ void test_plugin_load_available_import_guard_lowers_to_available_payload(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
-        TEST_ASSERT_TRUE(function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)) >= 2u);
+        TEST_ASSERT_TRUE(function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)) >= 2u);
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute PluginLoad.Available import guard source");
@@ -4530,22 +4530,22 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "weak-from-unique",
             "resource class Box {}\n"
             "var owner = own Box();\n"
-            "var watcher = owner.weak();\n",
+            "var watcher = degrade(owner);\n",
             "ownership_invalid_weak_unique_compile.zr",
         },
         {
             "upgrade-from-shared",
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var alias = owner.upgrade();\n",
+            "var owner = share(seed);\n"
+            "var alias = wake(owner);\n",
             "ownership_invalid_upgrade_shared_compile.zr",
         },
         {
             "release-borrowed",
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
+            "var owner = share(seed);\n"
             "var borrowed: ref readonly Box = ref owner;\n"
             "var released = drop(borrowed);\n",
             "ownership_invalid_release_borrowed_compile.zr",
@@ -4558,7 +4558,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "    Open(handle: Shared<Box>);\n"
             "}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
+            "var owner = share(seed);\n"
             "var resource: Resource = Resource.Open(owner);\n"
             "using (var [handle]: Resource.Open = resource) {\n"
             "    var released = drop(handle);\n"
@@ -4571,17 +4571,17 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "into-gc-weak",
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var watcher = owner.weak();\n"
-            "var detached = watcher.intoGc();\n",
+            "var owner = share(seed);\n"
+            "var watcher = degrade(owner);\n"
+            "var detached = intoGc(watcher);\n",
             "ownership_invalid_into_gc_weak_compile.zr",
         },
         {
             "share-shared",
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var alias = owner.share();\n",
+            "var owner = share(seed);\n"
+            "var alias = share(owner);\n",
             "ownership_invalid_share_shared_compile.zr",
         },
         {
@@ -4596,7 +4596,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "borrow-global-escape",
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
+            "var owner = share(seed);\n"
             "pub var escaped: ref readonly Box = ref owner;\n",
             "ownership_invalid_borrow_global_compile.zr",
         },
@@ -4626,7 +4626,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "resource class Box {}\n"
             "fn leak() {\n"
             "    var seed = own Box();\n"
-            "    var owner = seed.share();\n"
+            "    var owner = share(seed);\n"
             "    var borrowed: ref readonly Box = ref owner;\n"
             "    return fn() => { borrowed; return 1; };\n"
             "}\n"
@@ -5707,8 +5707,8 @@ void test_ownership_into_gc_compile_rejects_shared_owner(void) {
         const char *source =
             "resource class Box {}\n"
             "var seed = own Box();\n"
-            "var owner = seed.share();\n"
-            "var detached = owner.intoGc();\n";
+            "var owner = share(seed);\n"
+            "var detached = intoGc(owner);\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_into_gc_shared_compile.zr",
                                                      strlen("ownership_into_gc_shared_compile.zr"));

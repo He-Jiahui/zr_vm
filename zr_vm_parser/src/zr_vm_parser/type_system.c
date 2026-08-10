@@ -166,20 +166,20 @@ TZrBool ZrParser_AstType_TryUnwrapGcBridgeGeneric(const SZrType *type,
 TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind builtinKind,
                                                      EZrOwnershipQualifier qualifier) {
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
@@ -194,17 +194,17 @@ TZrBool ZrParser_OwnershipBuiltinCanApplyToQualifier(EZrOwnershipBuiltinKind bui
 EZrOwnershipQualifier ZrParser_OwnershipBuiltinResultQualifier(EZrOwnershipBuiltinKind builtinKind,
                                                                EZrOwnershipQualifier sourceQualifier) {
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
             return ZR_OWNERSHIP_QUALIFIER_SHARED;
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             return ZR_OWNERSHIP_QUALIFIER_WEAK;
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
             return ZR_OWNERSHIP_QUALIFIER_BORROWED;
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return ZR_OWNERSHIP_QUALIFIER_LOANED;
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return ZR_OWNERSHIP_QUALIFIER_SHARED;
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -218,17 +218,17 @@ EZrOwnershipQualifier ZrParser_OwnershipBuiltinResultQualifier(EZrOwnershipBuilt
 
 const TZrChar *ZrParser_OwnershipMemberCallErrorMessage(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
             return "share() requires a Unique<T> owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             return "weak() requires a Shared<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
             return "borrow() requires a live owned or borrowed value; upgrade Weak<T> first";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return "loan() requires a Unique<T> owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return "upgrade() requires a Weak<T> owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             return "release() requires a Unique<T> or Shared<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return "detach() requires a Unique<T> or Shared<T> owner";

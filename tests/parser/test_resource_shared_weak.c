@@ -26,7 +26,7 @@ static TZrInt64 observe_drop_time_upgrade(SZrState *state) {
     ZrCore_Value_ResetAsNull(&upgraded);
     g_drop_time_upgrade_attempted = ZR_TRUE;
     if (g_drop_time_weak != ZR_NULL &&
-        ZrCore_Ownership_UpgradeValue(state, &upgraded, g_drop_time_weak)) {
+        ZrCore_Ownership_WakeValue(state, &upgraded, g_drop_time_weak)) {
         g_drop_time_upgrade_failed = ZR_VALUE_IS_TYPE_NULL(upgraded.type);
     }
     ZrCore_Ownership_ReleaseValue(state, &upgraded);
@@ -188,10 +188,10 @@ static void test_shared_clone_and_repeated_upgrade_account_strong_refs(void) {
     ZrCore_Value_Copy(g_state, &clone, &shared);
     TEST_ASSERT_EQUAL_UINT32(2U, control->strongRefCount);
 
-    TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(g_state, &weak, &shared));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(g_state, &weak, &shared));
     TEST_ASSERT_EQUAL_UINT32(2U, control->weakRefCount);
-    TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(g_state, &firstUpgrade, &weak));
-    TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(g_state, &secondUpgrade, &weak));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_WakeValue(g_state, &firstUpgrade, &weak));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_WakeValue(g_state, &secondUpgrade, &weak));
     TEST_ASSERT_EQUAL_UINT32(4U, control->strongRefCount);
 
     ZrCore_Ownership_ReleaseValue(g_state, &firstUpgrade);
@@ -220,7 +220,7 @@ static void test_many_weak_handles_survive_final_strong_and_upgrade_to_none(void
 
     for (index = 0U; index < WEAK_COUNT; index++) {
         ZrCore_Value_ResetAsNull(&weakValues[index]);
-        TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(g_state, &weakValues[index], &shared));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(g_state, &weakValues[index], &shared));
     }
     TEST_ASSERT_EQUAL_UINT32(WEAK_COUNT + 1U, control->weakRefCount);
 
@@ -235,7 +235,7 @@ static void test_many_weak_handles_survive_final_strong_and_upgrade_to_none(void
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_WEAK,
                               weakValues[index].ownershipKind);
         TEST_ASSERT_EQUAL_PTR(control, weakValues[index].ownershipControl);
-        TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(
+        TEST_ASSERT_TRUE(ZrCore_Ownership_WakeValue(
                 g_state, &upgraded, &weakValues[index]));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(upgraded.type));
     }
@@ -262,12 +262,12 @@ static void test_shared_and_weak_reject_a_different_isolation_domain(void) {
     ZrCore_Value_ResetAsNull(&foreignShared);
     ZrCore_Value_ResetAsNull(&foreignUpgrade);
     TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(g_state, &shared, &unique));
-    TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(g_state, &weak, &shared));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(g_state, &weak, &shared));
     control = shared.ownershipControl;
 
     ZrCore_Value_Copy(otherState, &foreignShared, &shared);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(foreignShared.type));
-    TEST_ASSERT_TRUE(ZrCore_Ownership_UpgradeValue(
+    TEST_ASSERT_TRUE(ZrCore_Ownership_WakeValue(
             otherState, &foreignUpgrade, &weak));
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(foreignUpgrade.type));
     TEST_ASSERT_EQUAL_UINT32(1U, control->strongRefCount);
@@ -415,7 +415,7 @@ static void test_resource_drop_body_cannot_upgrade_weak_self(void) {
     ZrCore_Value_ResetAsNull(&shared);
     ZrCore_Value_ResetAsNull(&weak);
     TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(g_state, &shared, &unique));
-    TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(g_state, &weak, &shared));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(g_state, &weak, &shared));
 
     g_drop_time_weak = &weak;
     g_drop_time_upgrade_attempted = ZR_FALSE;

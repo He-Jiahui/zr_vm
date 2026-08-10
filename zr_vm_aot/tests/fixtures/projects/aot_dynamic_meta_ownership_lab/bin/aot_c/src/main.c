@@ -22,7 +22,7 @@
 /* runtime contract: ZrCore_Function_PreCall */
 /* runtime contract: ZrCore_Ownership_NativeShared */
 /* runtime contract: ZrCore_Ownership_NativeWeak */
-/* runtime contract: ZrCore_Ownership_UpgradeValue */
+/* runtime contract: ZrCore_Ownership_WakeValue */
 /* runtime contract: ZrCore_Ownership_ReleaseValue */
 
 /*
@@ -31,11 +31,11 @@
  * [2] META_GET exec=28 type=1 effect=2 dst=0 op0=0 op1=9350 deopt=3
  * [3] OWN_UNIQUE exec=45 type=1 effect=3 dst=0 op0=0 op1=35935 deopt=0
  * [4] OWN_SHARE exec=47 type=1 effect=4 dst=0 op0=0 op1=35935 deopt=0
- * [5] OWN_WEAK exec=54 type=1 effect=5 dst=0 op0=0 op1=35935 deopt=0
- * [6] OWN_UPGRADE exec=59 type=1 effect=6 dst=0 op0=0 op1=35935 deopt=0
- * [7] OWN_RELEASE exec=61 type=1 effect=7 dst=0 op0=0 op1=35935 deopt=0
- * [8] OWN_RELEASE exec=62 type=1 effect=8 dst=0 op0=0 op1=35935 deopt=0
- * [9] OWN_UPGRADE exec=66 type=1 effect=9 dst=0 op0=0 op1=35935 deopt=0
+ * [5] OWN_DEGRADE exec=54 type=1 effect=5 dst=0 op0=0 op1=35935 deopt=0
+ * [6] OWN_WAKE exec=59 type=1 effect=6 dst=0 op0=0 op1=35935 deopt=0
+ * [7] OWN_DROP exec=61 type=1 effect=7 dst=0 op0=0 op1=35935 deopt=0
+ * [8] OWN_DROP exec=62 type=1 effect=8 dst=0 op0=0 op1=35935 deopt=0
+ * [9] OWN_WAKE exec=66 type=1 effect=9 dst=0 op0=0 op1=35935 deopt=0
  * [10] DYN_TAIL_CALL exec=2 type=0 effect=0 dst=24369 op0=24369 op1=1 deopt=1
  */
 
@@ -1939,7 +1939,7 @@ zr_aot_fn_0_ins_53:
 zr_aot_fn_0_ins_54:
     /* opcode=89 extra=0 op1a=0 op1b=35935 op2=-1939931136 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 54, ZR_AOT_GENERATED_STEP_FLAG_NONE));
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnWeak(state, &frame, 0, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnDegrade(state, &frame, 0, 0));
 zr_aot_fn_0_ins_55:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 55, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
@@ -1979,7 +1979,7 @@ zr_aot_fn_0_ins_58:
 zr_aot_fn_0_ins_59:
     /* opcode=121 extra=0 op1a=0 op1b=35935 op2=-1939931136 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 59, ZR_AOT_GENERATED_STEP_FLAG_NONE));
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnUpgrade(state, &frame, 0, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnWake(state, &frame, 0, 0));
 zr_aot_fn_0_ins_60:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 60, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));
@@ -1995,11 +1995,11 @@ zr_aot_fn_0_ins_60:
 zr_aot_fn_0_ins_61:
     /* opcode=122 extra=0 op1a=0 op1b=35935 op2=-1939931136 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 61, ZR_AOT_GENERATED_STEP_FLAG_NONE));
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnRelease(state, &frame, 0, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnDrop(state, &frame, 0, 0));
 zr_aot_fn_0_ins_62:
     /* opcode=122 extra=0 op1a=0 op1b=35935 op2=-1939931136 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 62, ZR_AOT_GENERATED_STEP_FLAG_NONE));
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnRelease(state, &frame, 0, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnDrop(state, &frame, 0, 0));
 zr_aot_fn_0_ins_63:
     /* opcode=0 extra=0 op1a=0 op1b=0 op2=0 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 63, ZR_AOT_GENERATED_STEP_FLAG_NONE));
@@ -2027,7 +2027,7 @@ zr_aot_fn_0_ins_65:
 zr_aot_fn_0_ins_66:
     /* opcode=121 extra=0 op1a=0 op1b=35935 op2=-1939931136 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 66, ZR_AOT_GENERATED_STEP_FLAG_NONE));
-    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnUpgrade(state, &frame, 0, 0));
+    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_OwnWake(state, &frame, 0, 0));
 zr_aot_fn_0_ins_67:
     /* opcode=2 extra=0 op1a=0 op1b=0 op2=0 */
     ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginInstruction(state, &frame, 67, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW));

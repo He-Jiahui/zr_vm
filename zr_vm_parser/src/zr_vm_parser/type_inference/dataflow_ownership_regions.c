@@ -92,7 +92,7 @@ static TZrBool ownership_region_current_member_projection(
         return ZR_FALSE;
     }
     if (outBuiltinKind != ZR_NULL) {
-        *outBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+        *outBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE;
     }
     if (outTarget != ZR_NULL) {
         *outTarget = node->data.ownershipIntrinsicExpression.argument;
@@ -152,7 +152,7 @@ TZrBool ZrParser_DataflowOwnership_StatementRegionBinding(
     }
     if (builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_BORROW &&
         builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_LOAN &&
-        builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_WEAK) {
+        builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE) {
         return ZR_FALSE;
     }
 
@@ -208,7 +208,7 @@ static TZrBool ownership_region_expression_releases_read(
     }
     if (expression->type == ZR_AST_CONSTRUCT_EXPRESSION) {
         return expression->data.constructExpression.builtinKind ==
-                       ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
+                       ZR_OWNERSHIP_BUILTIN_KIND_DROP &&
                ownership_region_node_contains_reference(
                        expression->data.constructExpression.target,
                        fact);

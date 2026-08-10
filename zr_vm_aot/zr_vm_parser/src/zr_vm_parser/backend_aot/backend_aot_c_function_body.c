@@ -2050,8 +2050,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_WEAK):
-                backend_aot_write_c_direct_own_weak(file, destinationSlot, operandA1);
+            case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
+                backend_aot_write_c_direct_own_degrade(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -2064,15 +2064,15 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
-                backend_aot_write_c_direct_own_upgrade(file, destinationSlot, operandA1);
+            case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+                backend_aot_write_c_direct_own_wake(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
-                backend_aot_write_c_direct_own_release(file, destinationSlot, operandA1);
+            case ZR_INSTRUCTION_ENUM(OWN_DROP):
+                backend_aot_write_c_direct_own_drop(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,

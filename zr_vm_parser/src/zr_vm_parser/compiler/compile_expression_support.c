@@ -541,9 +541,9 @@ static EZrOwnershipBuiltinKind resolve_construct_expression_builtin_kind(
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
             return ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
+            return ZR_OWNERSHIP_BUILTIN_KIND_SHARE;
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+            return ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE;
         case ZR_OWNERSHIP_QUALIFIER_NONE:
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
         case ZR_OWNERSHIP_QUALIFIER_LOANED:
@@ -566,18 +566,18 @@ EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuilt
             return ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED);
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT);
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
             return ZR_INSTRUCTION_ENUM(OWN_SHARE);
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
-            return ZR_INSTRUCTION_ENUM(OWN_WEAK);
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
+            return ZR_INSTRUCTION_ENUM(OWN_DEGRADE);
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC);
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX);
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
-            return ZR_INSTRUCTION_ENUM(OWN_UPGRADE);
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
-            return ZR_INSTRUCTION_ENUM(OWN_RELEASE);
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
+            return ZR_INSTRUCTION_ENUM(OWN_WAKE);
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
+            return ZR_INSTRUCTION_ENUM(OWN_DROP);
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         default:
             return ZR_INSTRUCTION_ENUM(ENUM_MAX);
@@ -586,15 +586,15 @@ EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuilt
 
 static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
             return "share() requires a Unique owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             return "weak() requires a Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return "A mutable reference requires a Unique owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return "wake() requires a Weak owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             return "drop() requires a Unique, Shared, or Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return "intoGc() requires a Unique or Shared owner";
@@ -611,15 +611,15 @@ static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnersh
 static TZrBool compile_ownership_builtin_operand_matches_qualifier(EZrOwnershipBuiltinKind builtinKind,
                                                                    EZrOwnershipQualifier qualifier) {
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
@@ -706,13 +706,13 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         }
     }
 
-    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE ||
+    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP ||
         builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DETACH) {
         TZrUInt32 sourceSlot;
 
         if (constructExpr->target == ZR_NULL || constructExpr->target->type != ZR_AST_IDENTIFIER_LITERAL) {
             ZrParser_Compiler_Error(cs,
-                                    builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
+                                    builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP
                                             ? "drop() currently requires a local identifier binding"
                                             : "intoGc() currently requires a local identifier binding",
                                     location);
@@ -722,7 +722,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         sourceSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
         if (sourceSlot == ZR_PARSER_SLOT_NONE) {
             ZrParser_Compiler_Error(cs,
-                                    builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE
+                                    builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP
                                             ? "drop() currently only supports local identifier bindings"
                                             : "intoGc() currently only supports local identifier bindings",
                                     location);
@@ -742,7 +742,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
     }
 
     shouldResetConsumedIdentifier =
-            (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED ||
+            (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARE ||
              builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN ||
              builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC) &&
             constructExpr->target != ZR_NULL &&

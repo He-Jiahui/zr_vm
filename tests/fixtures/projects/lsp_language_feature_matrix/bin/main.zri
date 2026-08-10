@@ -38,15 +38,8 @@ TYPE_METADATA:
     import core_semantics
     import oop_meta
     import async_native
-  MODULE_ENTRY_EFFECTS (3):
-    IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
-    IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
-    IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
-  EXPORTED_CALLABLE_SUMMARIES (1):
-    fn runMatrix [child=0 effects=3]
-      IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
-      IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
-      IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (0):
   TOP_LEVEL_CALLABLE_BINDINGS (1):
     fn runMatrix [slot=0 child=0 kind=function readiness=declaration access=0]
   COMPILE_TIME_VARIABLES (0):
@@ -151,10 +144,7 @@ CHILD_FUNCTIONS (1):
         [6] vectorScore: int
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):
-      MODULE_ENTRY_EFFECTS (3):
-        IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
-        IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
-        IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
+      MODULE_ENTRY_EFFECTS (0):
       EXPORTED_CALLABLE_SUMMARIES (0):
       TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):

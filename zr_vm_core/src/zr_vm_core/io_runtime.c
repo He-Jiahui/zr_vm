@@ -251,13 +251,13 @@ FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helper
         case ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE:
             return ZrCore_Ownership_NativeUnique;
 
-        case ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED:
+        case ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE:
             return ZrCore_Ownership_NativeShared;
 
         case ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN:
             return ZrCore_Ownership_NativeSharePlain;
 
-        case ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK:
+        case ZR_IO_NATIVE_HELPER_OWNERSHIP_DEGRADE:
             return ZrCore_Ownership_NativeWeak;
 
         case ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF:

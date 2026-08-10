@@ -146,7 +146,7 @@
     Z(OWN_BORROW)                                                                                                      \
     Z(OWN_LOAN)                                                                                                        \
     Z(OWN_SHARE)                                                                                                       \
-    Z(OWN_WEAK)                                                                                                        \
+    Z(OWN_DEGRADE)                                                                                                     \
     Z(MARK_TO_BE_CLOSED)                                                                                               \
     Z(CLOSE_SCOPE)                                                                                                     \
     Z(TRY)                                                                                                             \
@@ -179,8 +179,8 @@
     Z(SUPER_META_GET_CACHED)                                                                                           \
     Z(SUPER_META_SET_CACHED)                                                                                           \
     Z(OWN_DETACH)                                                                                                      \
-    Z(OWN_UPGRADE)                                                                                                     \
-    Z(OWN_RELEASE)                                                                                                     \
+    Z(OWN_WAKE)                                                                                                        \
+    Z(OWN_DROP)                                                                                                        \
     Z(META_GET)                                                                                                        \
     Z(META_SET)                                                                                                        \
     Z(SUPER_META_GET_STATIC_CACHED)                                                                                    \

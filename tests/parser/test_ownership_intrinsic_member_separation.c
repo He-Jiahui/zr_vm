@@ -13,10 +13,34 @@
 #include "zr_vm_parser/lexer.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_facts.h"
+#include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/writer.h"
 
 static SZrState *g_state;
+
+static void test_ownership_operation_ids_remain_stable(void) {
+    TEST_ASSERT_EQUAL_INT(125, ZR_INSTRUCTION_ENUM(OWN_UNIQUE));
+    TEST_ASSERT_EQUAL_INT(129, ZR_INSTRUCTION_ENUM(OWN_DEGRADE));
+    TEST_ASSERT_EQUAL_INT(162, ZR_INSTRUCTION_ENUM(OWN_WAKE));
+    TEST_ASSERT_EQUAL_INT(163, ZR_INSTRUCTION_ENUM(OWN_DROP));
+    TEST_ASSERT_EQUAL_INT(236, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX));
+
+    TEST_ASSERT_EQUAL_INT(1, ZR_SEMIR_OPCODE_OWN_UNIQUE);
+    TEST_ASSERT_EQUAL_INT(5, ZR_SEMIR_OPCODE_OWN_DEGRADE);
+    TEST_ASSERT_EQUAL_INT(16, ZR_SEMIR_OPCODE_OWN_WAKE);
+    TEST_ASSERT_EQUAL_INT(17, ZR_SEMIR_OPCODE_OWN_DROP);
+
+    TEST_ASSERT_EQUAL_INT(2, ZR_OWNERSHIP_BUILTIN_KIND_SHARE);
+    TEST_ASSERT_EQUAL_INT(3, ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE);
+    TEST_ASSERT_EQUAL_INT(6, ZR_OWNERSHIP_BUILTIN_KIND_WAKE);
+    TEST_ASSERT_EQUAL_INT(7, ZR_OWNERSHIP_BUILTIN_KIND_DROP);
+
+    TEST_ASSERT_EQUAL_INT(2, ZR_SEMANTIC_OWNERSHIP_SHARE);
+    TEST_ASSERT_EQUAL_INT(3, ZR_SEMANTIC_OWNERSHIP_DEGRADE);
+    TEST_ASSERT_EQUAL_INT(4, ZR_SEMANTIC_OWNERSHIP_WAKE);
+    TEST_ASSERT_EQUAL_INT(5, ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX);
+}
 
 typedef struct SZrCapturedParserDiagnostic {
     TZrBool reported;
@@ -750,13 +774,13 @@ static void test_intrinsic_calls_emit_dedicated_opcodes_and_execute(void) {
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
             function, ZR_INSTRUCTION_ENUM(OWN_SHARE), 0u));
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
-            function, ZR_INSTRUCTION_ENUM(OWN_WEAK), 0u));
+            function, ZR_INSTRUCTION_ENUM(OWN_DEGRADE), 0u));
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
-            function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE), 0u));
+            function, ZR_INSTRUCTION_ENUM(OWN_WAKE), 0u));
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
             function, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX), 0u));
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
-            function, ZR_INSTRUCTION_ENUM(OWN_RELEASE), 0u));
+            function, ZR_INSTRUCTION_ENUM(OWN_DROP), 0u));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(7, result);
@@ -786,13 +810,13 @@ static void test_intrinsic_spellings_on_objects_use_normal_member_calls(void) {
     TEST_ASSERT_FALSE(function_contains_opcode_recursive(
             function, ZR_INSTRUCTION_ENUM(OWN_SHARE), 0u));
     TEST_ASSERT_FALSE(function_contains_opcode_recursive(
-            function, ZR_INSTRUCTION_ENUM(OWN_WEAK), 0u));
+            function, ZR_INSTRUCTION_ENUM(OWN_DEGRADE), 0u));
     TEST_ASSERT_FALSE(function_contains_opcode_recursive(
-            function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE), 0u));
+            function, ZR_INSTRUCTION_ENUM(OWN_WAKE), 0u));
     TEST_ASSERT_FALSE(function_contains_opcode_recursive(
             function, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX), 0u));
     TEST_ASSERT_FALSE(function_contains_opcode_recursive(
-            function, ZR_INSTRUCTION_ENUM(OWN_RELEASE), 0u));
+            function, ZR_INSTRUCTION_ENUM(OWN_DROP), 0u));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(31, result);
@@ -859,7 +883,7 @@ static void test_live_weak_optional_call_runs_suffix_after_one_wake(void) {
     TEST_ASSERT_EQUAL_UINT32(
             1u,
             function_count_opcode_recursive(
-                    function, ZR_INSTRUCTION_ENUM(OWN_UPGRADE), 0u));
+                    function, ZR_INSTRUCTION_ENUM(OWN_WAKE), 0u));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(1, result);
@@ -902,6 +926,7 @@ static void test_expired_weak_direct_call_throws_named_runtime_error(void) {
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_ownership_operation_ids_remain_stable);
     RUN_TEST(test_question_dot_is_one_token);
     RUN_TEST(test_question_dot_requires_adjacent_characters);
     RUN_TEST(test_reserved_intrinsics_have_independent_ast);

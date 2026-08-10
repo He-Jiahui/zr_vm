@@ -254,7 +254,7 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnShare(struct SZrState *state,
                                                      TZrUInt32 destinationSlot,
                                                      TZrUInt32 sourceSlot);
 
-ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnWeak(struct SZrState *state,
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnDegrade(struct SZrState *state,
                                                     ZrAotGeneratedFrame *frame,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 sourceSlot);
@@ -274,12 +274,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnReturnToGc(struct SZrState *state
                                                           TZrUInt32 destinationSlot,
                                                           TZrUInt32 sourceSlot);
 
-ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnUpgrade(struct SZrState *state,
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnWake(struct SZrState *state,
                                                        ZrAotGeneratedFrame *frame,
                                                        TZrUInt32 destinationSlot,
                                                        TZrUInt32 sourceSlot);
 
-ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnRelease(struct SZrState *state,
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnDrop(struct SZrState *state,
                                                        ZrAotGeneratedFrame *frame,
                                                        TZrUInt32 destinationSlot,
                                                        TZrUInt32 sourceSlot);

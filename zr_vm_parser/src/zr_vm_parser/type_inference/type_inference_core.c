@@ -4689,15 +4689,15 @@ TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
 
 static const TZrChar *ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
             return "share() requires a Unique owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             return "weak() requires a Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return "A mutable reference requires a Unique owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return "upgrade() requires a Weak owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             return "drop() requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return "intoGc() requires a Unique or Shared owner";
@@ -4714,15 +4714,15 @@ static const TZrChar *ownership_builtin_operand_error_message(EZrOwnershipBuilti
 static TZrBool ownership_builtin_operand_matches_qualifier(EZrOwnershipBuiltinKind builtinKind,
                                                            EZrOwnershipQualifier qualifier) {
     switch (builtinKind) {
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
@@ -4855,9 +4855,9 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
             builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
         } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
-            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
+            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_SHARE;
         } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
-            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE;
         }
     }
 
@@ -4879,7 +4879,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
-        if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE) {
+        if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP) {
             result->baseType = ZR_VALUE_TYPE_NULL;
             result->isNullable = ZR_FALSE;
             result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -4917,7 +4917,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                 result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
                 result->gcBridgeKind = ZR_GC_BRIDGE_BOX;
                 break;
-            case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+            case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
                 result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
                 result->isNullable = ZR_TRUE;

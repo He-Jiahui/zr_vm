@@ -165,7 +165,7 @@ static void test_resource_construction_world_is_type_directed(void) {
 
     TEST_ASSERT_NOT_NULL(valid);
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(valid, ZR_INSTRUCTION_ENUM(OWN_UNIQUE), 0U));
-    TEST_ASSERT_TRUE(function_contains_opcode_recursive(valid, ZR_INSTRUCTION_ENUM(OWN_RELEASE), 0U));
+    TEST_ASSERT_TRUE(function_contains_opcode_recursive(valid, ZR_INSTRUCTION_ENUM(OWN_DROP), 0U));
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(valid, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED), 0U));
     TEST_ASSERT_NULL(invalidNew);
     TEST_ASSERT_NULL(invalidOwn);

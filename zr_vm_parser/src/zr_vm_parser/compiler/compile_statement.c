@@ -1868,7 +1868,7 @@ static EZrOwnershipBuiltinKind using_cleanup_builtin_for_ownership(
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-            return ZR_OWNERSHIP_BUILTIN_KIND_RELEASE;
+            return ZR_OWNERSHIP_BUILTIN_KIND_DROP;
         case ZR_OWNERSHIP_QUALIFIER_LOANED:
             return ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN;
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
@@ -2030,7 +2030,7 @@ static TZrBool register_plugin_guard_scoped_owner_cleanup(SZrCompilerState *cs,
 
     compiler_register_scope_cleanup_slot(cs,
                                          ownerSlot,
-                                         ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+                                         ZR_OWNERSHIP_BUILTIN_KIND_DROP,
                                          ZR_PARSER_SLOT_NONE);
     return !cs->hasError;
 }

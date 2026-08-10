@@ -552,10 +552,10 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(OWN_BORROW):
             case ZR_INSTRUCTION_ENUM(OWN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_SHARE):
-            case ZR_INSTRUCTION_ENUM(OWN_WEAK):
+            case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_DETACH):
-            case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
-            case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+            case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+            case ZR_INSTRUCTION_ENUM(OWN_DROP):
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):

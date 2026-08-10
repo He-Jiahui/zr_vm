@@ -9334,13 +9334,13 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(OWN_WEAK) {
+            ZR_INSTRUCTION_LABEL(OWN_DEGRADE) {
                 TZrStackValuePointer destinationBase =
                         E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
                 destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 execution_clear_registered_owner_mirror(state, destinationBase, destination);
-                if (!ZrCore_Ownership_WeakValue(state, destination, opA)) {
+                if (!ZrCore_Ownership_DegradeValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);
@@ -9455,19 +9455,19 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 }
             }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(OWN_UPGRADE) {
+            ZR_INSTRUCTION_LABEL(OWN_WAKE) {
                 TZrStackValuePointer destinationBase =
                         E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
                 destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 execution_clear_registered_owner_mirror(state, destinationBase, destination);
-                if (!ZrCore_Ownership_UpgradeValue(state, destination, opA)) {
+                if (!ZrCore_Ownership_WakeValue(state, destination, opA)) {
                     ZrCore_Value_ResetAsNull(destination);
                 }
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);
             }
             DONE(1);
-            ZR_INSTRUCTION_LABEL(OWN_RELEASE) {
+            ZR_INSTRUCTION_LABEL(OWN_DROP) {
                 TZrStackValuePointer sourceBase = BASE(A1(instruction));
                 TZrStackValuePointer destinationBase =
                         E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));

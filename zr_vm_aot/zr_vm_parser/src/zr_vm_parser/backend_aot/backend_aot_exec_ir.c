@@ -57,14 +57,14 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "OWN_LOAN";
         case ZR_SEMIR_OPCODE_OWN_SHARE:
             return "OWN_SHARE";
-        case ZR_SEMIR_OPCODE_OWN_WEAK:
-            return "OWN_WEAK";
+        case ZR_SEMIR_OPCODE_OWN_DEGRADE:
+            return "OWN_DEGRADE";
         case ZR_SEMIR_OPCODE_OWN_DETACH:
             return "OWN_DETACH";
-        case ZR_SEMIR_OPCODE_OWN_UPGRADE:
-            return "OWN_UPGRADE";
-        case ZR_SEMIR_OPCODE_OWN_RELEASE:
-            return "OWN_RELEASE";
+        case ZR_SEMIR_OPCODE_OWN_WAKE:
+            return "OWN_WAKE";
+        case ZR_SEMIR_OPCODE_OWN_DROP:
+            return "OWN_DROP";
         case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
             return "OWN_RETURN_LOAN";
         case ZR_SEMIR_OPCODE_OWN_VIEW_SHARED:
@@ -157,14 +157,14 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_LOAN;
         case ZR_SEMIR_OPCODE_OWN_SHARE:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE;
-        case ZR_SEMIR_OPCODE_OWN_WEAK:
-            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK;
+        case ZR_SEMIR_OPCODE_OWN_DEGRADE:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DEGRADE;
         case ZR_SEMIR_OPCODE_OWN_DETACH:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH;
-        case ZR_SEMIR_OPCODE_OWN_UPGRADE:
-            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE;
-        case ZR_SEMIR_OPCODE_OWN_RELEASE:
-            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE;
+        case ZR_SEMIR_OPCODE_OWN_WAKE:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WAKE;
+        case ZR_SEMIR_OPCODE_OWN_DROP:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DROP;
         case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN;
         case ZR_SEMIR_OPCODE_OWN_VIEW_SHARED:
@@ -204,7 +204,7 @@ const TZrChar *backend_aot_exec_ir_runtime_contract_name(TZrUInt32 contractBit) 
             return "ownership.loan";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE:
             return "ownership.share";
-        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WEAK:
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DEGRADE:
             return "ownership.weak";
         case ZR_AOT_RUNTIME_CONTRACT_ITER_INIT:
             return "iter.init";
@@ -212,9 +212,9 @@ const TZrChar *backend_aot_exec_ir_runtime_contract_name(TZrUInt32 contractBit) 
             return "iter.move_next";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH:
             return "ownership.detach";
-        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE:
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WAKE:
             return "ownership.upgrade";
-        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE:
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DROP:
             return "ownership.release";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN:
             return "ownership.return_loan";

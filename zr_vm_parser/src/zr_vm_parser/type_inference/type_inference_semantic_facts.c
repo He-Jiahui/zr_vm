@@ -885,15 +885,15 @@ void type_inference_apply_literal_numeric_range(SZrAstNode *node,
 static EZrSemanticOwnershipFactKind ownership_fact_kind_for_builtin(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
-        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return ZR_SEMANTIC_OWNERSHIP_FACT_BORROW;
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return ZR_SEMANTIC_OWNERSHIP_FACT_MOVE;
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             return ZR_SEMANTIC_OWNERSHIP_FACT_RELEASE;
-        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
-        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
             return ZR_SEMANTIC_OWNERSHIP_FACT_COPY;
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:

@@ -3750,11 +3750,11 @@ TZrBool ZrLibrary_AotRuntime_OwnShare(SZrState *state,
     return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_ShareValue);
 }
 
-TZrBool ZrLibrary_AotRuntime_OwnWeak(SZrState *state,
+TZrBool ZrLibrary_AotRuntime_OwnDegrade(SZrState *state,
                                      ZrAotGeneratedFrame *frame,
                                      TZrUInt32 destinationSlot,
                                      TZrUInt32 sourceSlot) {
-    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_WeakValue);
+    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_DegradeValue);
 }
 
 TZrBool ZrLibrary_AotRuntime_OwnDetach(SZrState *state,
@@ -3788,14 +3788,14 @@ TZrBool ZrLibrary_AotRuntime_OwnReturnToGc(SZrState *state,
             ZrCore_Ownership_DetachValue);
 }
 
-TZrBool ZrLibrary_AotRuntime_OwnUpgrade(SZrState *state,
+TZrBool ZrLibrary_AotRuntime_OwnWake(SZrState *state,
                                         ZrAotGeneratedFrame *frame,
                                         TZrUInt32 destinationSlot,
                                         TZrUInt32 sourceSlot) {
-    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_UpgradeValue);
+    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_WakeValue);
 }
 
-TZrBool ZrLibrary_AotRuntime_OwnRelease(SZrState *state,
+TZrBool ZrLibrary_AotRuntime_OwnDrop(SZrState *state,
                                         ZrAotGeneratedFrame *frame,
                                         TZrUInt32 destinationSlot,
                                         TZrUInt32 sourceSlot) {

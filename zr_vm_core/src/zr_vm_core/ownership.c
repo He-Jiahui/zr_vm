@@ -492,7 +492,7 @@ TZrBool ZrCore_Ownership_SharePlainValue(struct SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrCore_Ownership_WeakValue(struct SZrState *state,
+TZrBool ZrCore_Ownership_DegradeValue(struct SZrState *state,
                                    SZrTypeValue *destination,
                                    SZrTypeValue *source) {
     SZrOwnershipControl *control;
@@ -529,7 +529,7 @@ TZrBool ZrCore_Ownership_WeakValue(struct SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrCore_Ownership_UpgradeValue(struct SZrState *state,
+TZrBool ZrCore_Ownership_WakeValue(struct SZrState *state,
                                       SZrTypeValue *destination,
                                       SZrTypeValue *source) {
     SZrOwnershipControl *control;
@@ -924,7 +924,7 @@ TZrInt64 ZrCore_Ownership_NativeWeak(struct SZrState *state) {
     }
 
     ownership_prepare_destination(state, result);
-    if (!ZrCore_Ownership_WeakValue(state, result, arg)) {
+    if (!ZrCore_Ownership_DegradeValue(state, result, arg)) {
         ownership_reset_value_storage(result);
     }
     state->stackTop.valuePointer = state->callInfoList->functionBase.valuePointer + 1;

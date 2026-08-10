@@ -581,7 +581,7 @@ static TZrBool semantic_ownership_seed_unbound_builtin_regions(
              fact->node->data.constructExpression.builtinKind !=
                      ZR_OWNERSHIP_BUILTIN_KIND_LOAN &&
              fact->node->data.constructExpression.builtinKind !=
-                     ZR_OWNERSHIP_BUILTIN_KIND_WEAK)) {
+                     ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE)) {
             continue;
         }
         ownerReference = ZrParser_DataflowOwnership_ConstructTargetRead(

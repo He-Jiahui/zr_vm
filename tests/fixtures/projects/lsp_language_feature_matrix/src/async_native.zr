@@ -22,9 +22,9 @@ pub fn nativeScore(): int {
     var tcp = network.tcp;
     var list = new container.LinkedList<int>();
     var owner = own Holder();
-    var shared = owner.share();
-    var weak = shared.weak();
-    var upgraded = weak.upgrade();
+    var shared = share(owner);
+    var weak = degrade(shared);
+    var upgraded = wake(weak);
     var releasedShared = drop(shared);
     var releasedUpgrade = drop(upgraded);
     var escaped = makeEscapingCallback(5);
@@ -35,7 +35,7 @@ pub fn nativeScore(): int {
     if (handle == null || tcp == null) {
         return -1000;
     }
-    if (owner == null && releasedShared == null && releasedUpgrade == null) {
+    if (releasedShared == null && releasedUpgrade == null) {
         return list.count + escaped(2);
     }
 

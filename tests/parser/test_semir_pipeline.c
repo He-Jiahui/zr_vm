@@ -397,7 +397,11 @@ static void test_intermediate_writer_emits_semir_sections(void) {
                 "resource class Box {}\n"
                 "var owner = own Box();\n"
                 "var alias = share(owner);\n"
-                "var watcher = degrade(alias);";
+                "var watcher = degrade(alias);\n"
+                "var revived = wake(watcher);\n"
+                "drop(revived);\n"
+                "drop(alias);\n"
+                "drop(watcher);";
         const char *intermediatePath = "semir_sections_test.zri";
         SZrString *sourceName;
         SZrFunction *func;
@@ -421,7 +425,12 @@ static void test_intermediate_writer_emits_semir_sections(void) {
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "EH_TABLE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_UNIQUE"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_SHARE"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_WEAK"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_DEGRADE"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_WAKE"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "OWN_DROP"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "OWN_WEAK"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "OWN_UPGRADE"));
+        TEST_ASSERT_NULL(strstr(intermediateText, "OWN_RELEASE"));
 
         free(intermediateText);
         remove(intermediatePath);
@@ -461,10 +470,10 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DEGRADE)));
         TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE));
-        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
-        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_DEGRADE));
         ZrCore_Function_Free(state, func);
         destroy_test_state(state);
     }

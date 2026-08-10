@@ -258,19 +258,18 @@ CHILD_FUNCTIONS (1):
     HAS_VAR_ARGS: false
     STACK_SIZE: 23
 
-    CONSTANTS (7):
-      [0] string: "Vector2"
-      [1] int: 1
-      [2] null
-      [3] int: 2
-      [4] function
-      [5] int: 3
-      [6] int: 4
+    CONSTANTS (6):
+      [0] int: 1
+      [1] null
+      [2] int: 2
+      [3] function
+      [4] int: 3
+      [5] int: 4
 
     LOCAL_VARIABLES (3):
-      [0] left: offset_activate=9, offset_dead=31
-      [1] right: offset_activate=19, offset_dead=31
-      [2] sum: offset_activate=22, offset_dead=31
+      [0] left: offset_activate=7, offset_dead=27
+      [1] right: offset_activate=15, offset_dead=27
+      [2] sum: offset_activate=18, offset_dead=27
 
     CLOSURE_VARIABLES (0):
 
@@ -293,7 +292,7 @@ CHILD_FUNCTIONS (1):
 
     OWNERSHIP_TABLE (0):
 
-    EFFECT_TABLE (15):
+    EFFECT_TABLE (16):
       [0] NONE inst=0 from=0 to=0
       [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
       [2] NONE inst=2 from=0 to=0
@@ -302,78 +301,76 @@ CHILD_FUNCTIONS (1):
       [5] NONE inst=5 from=0 to=0
       [6] DYNAMIC_RUNTIME inst=6 from=0 to=0
       [7] NONE inst=7 from=0 to=0
-      [8] DYNAMIC_RUNTIME inst=8 from=0 to=0
+      [8] NONE inst=8 from=0 to=0
       [9] DYNAMIC_RUNTIME inst=9 from=0 to=0
-      [10] NONE inst=10 from=0 to=0
+      [10] DYNAMIC_RUNTIME inst=10 from=0 to=0
       [11] NONE inst=11 from=0 to=0
       [12] NONE inst=12 from=0 to=0
       [13] NONE inst=13 from=0 to=0
       [14] NONE inst=14 from=0 to=0
+      [15] NONE inst=15 from=0 to=0
 
     BLOCK_GRAPH (1):
-      [0] block=0 first=0 count=15
+      [0] block=0 first=0 count=16
 
-    SEMIR (15):
-      [0] COPY_VALUE exec=7 type=1 effect=0 dst=1 op0=1 op1=0 deopt=0
-      [1] DYN_CALL exec=8 type=0 effect=1 dst=0 op0=0 op1=3 deopt=1
-      [2] COPY_VALUE exec=9 type=1 effect=2 dst=1 op0=1 op1=0 deopt=0
-      [3] COPY_VALUE exec=17 type=1 effect=3 dst=8 op0=8 op1=0 deopt=0
-      [4] DYN_CALL exec=18 type=0 effect=4 dst=7 op0=7 op1=3 deopt=2
-      [5] COPY_VALUE exec=19 type=1 effect=5 dst=8 op0=8 op1=0 deopt=0
-      [6] DYN_ARITHMETIC exec=20 type=0 effect=6 dst=17 op0=1 op1=8 deopt=3
-      [7] COPY_VALUE exec=22 type=1 effect=7 dst=14 op0=14 op1=0 deopt=0
-      [8] META_GET exec=24 type=0 effect=8 dst=18 op0=18 op1=0 deopt=4
-      [9] META_GET exec=25 type=0 effect=9 dst=18 op0=18 op1=1 deopt=5
-      [10] FIELD_ADDR exec=26 type=1 effect=10 dst=14 op0=14 op1=2 deopt=0
-      [11] LOAD_VALUE exec=26 type=0 effect=11 dst=20 op0=14 op1=2 deopt=0
-      [12] FIELD_ADDR exec=27 type=1 effect=12 dst=14 op0=14 op1=3 deopt=0
-      [13] LOAD_VALUE exec=27 type=0 effect=13 dst=21 op0=14 op1=3 deopt=0
-      [14] ADD exec=28 type=0 effect=14 dst=22 op0=20 op1=21 deopt=0
+    SEMIR (16):
+      [0] COPY_VALUE exec=5 type=1 effect=0 dst=1 op0=1 op1=0 deopt=0
+      [1] DYN_CALL exec=6 type=0 effect=1 dst=0 op0=0 op1=3 deopt=1
+      [2] COPY_VALUE exec=7 type=1 effect=2 dst=1 op0=1 op1=0 deopt=0
+      [3] COPY_VALUE exec=13 type=1 effect=3 dst=8 op0=8 op1=0 deopt=0
+      [4] DYN_CALL exec=14 type=0 effect=4 dst=7 op0=7 op1=3 deopt=2
+      [5] COPY_VALUE exec=15 type=1 effect=5 dst=8 op0=8 op1=0 deopt=0
+      [6] DYN_ARITHMETIC exec=16 type=1 effect=6 dst=17 op0=1 op1=8 deopt=3
+      [7] COPY_VALUE exec=17 type=1 effect=7 dst=14 op0=17 op1=0 deopt=0
+      [8] COPY_VALUE exec=18 type=1 effect=8 dst=14 op0=14 op1=0 deopt=0
+      [9] META_GET exec=20 type=0 effect=9 dst=18 op0=18 op1=0 deopt=4
+      [10] META_GET exec=21 type=0 effect=10 dst=18 op0=18 op1=1 deopt=5
+      [11] FIELD_ADDR exec=22 type=1 effect=11 dst=14 op0=14 op1=2 deopt=0
+      [12] LOAD_VALUE exec=22 type=0 effect=12 dst=20 op0=14 op1=2 deopt=0
+      [13] FIELD_ADDR exec=23 type=1 effect=13 dst=14 op0=14 op1=3 deopt=0
+      [14] LOAD_VALUE exec=23 type=0 effect=14 dst=21 op0=14 op1=3 deopt=0
+      [15] ADD exec=24 type=0 effect=15 dst=22 op0=20 op1=21 deopt=0
 
     DEOPT_MAP (5):
-      [0] deopt=1 exec=8
-      [1] deopt=2 exec=18
-      [2] deopt=3 exec=20
-      [3] deopt=4 exec=24
-      [4] deopt=5 exec=25
+      [0] deopt=1 exec=6
+      [1] deopt=2 exec=14
+      [2] deopt=3 exec=16
+      [3] deopt=4 exec=20
+      [4] deopt=5 exec=21
 
     CALLSITE_CACHE_TABLE (2):
-      [0] kind=MEMBER_GET inst=31 member=2 deopt=0 args=0 hits=0 misses=0
-      [1] kind=MEMBER_GET inst=31 member=3 deopt=0 args=0 hits=0 misses=0
+      [0] kind=MEMBER_GET inst=27 member=2 deopt=0 args=0 hits=0 misses=0
+      [1] kind=MEMBER_GET inst=27 member=3 deopt=0 args=0 hits=0 misses=0
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (31):
-      [0] CREATE_OBJECT (extra=1)
-      [1] OPCODE_37 (extra=1, operand2=1, operand1=1, operand1_1=0)
-      [2] GET_CONSTANT (extra=4, operand=1)
-      [3] GET_CONSTANT (extra=5, operand=3)
-      [4] SET_STACK (extra=2, operand=4)
-      [5] SET_STACK (extra=3, operand=5)
-      [6] GET_CONSTANT (extra=0, operand=4)
+    INSTRUCTIONS (27):
+      [0] GET_CONSTANT (extra=4, operand=0)
+      [1] GET_CONSTANT (extra=5, operand=2)
+      [2] SET_STACK (extra=2, operand=4)
+      [3] SET_STACK (extra=3, operand=5)
+      [4] GET_CONSTANT (extra=0, operand=3)
+      [5] SET_STACK (extra=1, operand=1)
+      [6] KNOWN_VM_CALL (extra=0, operand1=0, operand2=3)
       [7] SET_STACK (extra=1, operand=1)
-      [8] KNOWN_VM_CALL (extra=0, operand1=0, operand2=3)
-      [9] SET_STACK (extra=1, operand=1)
-      [10] CREATE_OBJECT (extra=8)
-      [11] OPCODE_37 (extra=8, operand2=8, operand1=8, operand1_1=0)
-      [12] GET_CONSTANT (extra=11, operand=5)
-      [13] GET_CONSTANT (extra=12, operand=6)
-      [14] SET_STACK (extra=9, operand=11)
-      [15] SET_STACK (extra=10, operand=12)
-      [16] GET_CONSTANT (extra=7, operand=4)
-      [17] SET_STACK (extra=8, operand=8)
-      [18] KNOWN_VM_CALL (extra=7, operand1=7, operand2=3)
-      [19] SET_STACK (extra=8, operand=8)
-      [20] OPCODE_39 (extra=17, operand2=524289, operand1=1, operand1_1=8)
-      [21] SET_STACK (extra=14, operand=17)
-      [22] SET_STACK (extra=14, operand=14)
-      [23] OPCODE_112 (extra=18, operand=0)
-      [24] OPCODE_8 (extra=18, operand1=18, operand2=0)
-      [25] OPCODE_8 (extra=18, operand1=18, operand2=1)
-      [26] GET_MEMBER_SLOT (extra=20, operand1=14, operand2=0)
-      [27] GET_MEMBER_SLOT (extra=21, operand1=14, operand2=1)
-      [28] ADD_SIGNED (extra=19, operand1=20, operand2=21)
-      [29] KNOWN_VM_TAIL_CALL (extra=18, operand1=18, operand2=1)
-      [30] FUNCTION_RETURN (extra=1, operand1=18, operand2=0)
+      [8] GET_CONSTANT (extra=11, operand=4)
+      [9] GET_CONSTANT (extra=12, operand=5)
+      [10] SET_STACK (extra=9, operand=11)
+      [11] SET_STACK (extra=10, operand=12)
+      [12] GET_CONSTANT (extra=7, operand=3)
+      [13] SET_STACK (extra=8, operand=8)
+      [14] KNOWN_VM_CALL (extra=7, operand1=7, operand2=3)
+      [15] SET_STACK (extra=8, operand=8)
+      [16] OPCODE_39 (extra=17, operand2=524289, operand1=1, operand1_1=8)
+      [17] SET_STACK (extra=14, operand=17)
+      [18] SET_STACK (extra=14, operand=14)
+      [19] OPCODE_112 (extra=18, operand=0)
+      [20] OPCODE_8 (extra=18, operand1=18, operand2=0)
+      [21] OPCODE_8 (extra=18, operand1=18, operand2=1)
+      [22] GET_MEMBER_SLOT (extra=20, operand1=14, operand2=0)
+      [23] GET_MEMBER_SLOT (extra=21, operand1=14, operand2=1)
+      [24] ADD_SIGNED (extra=19, operand1=20, operand2=21)
+      [25] KNOWN_VM_TAIL_CALL (extra=18, operand1=18, operand2=1)
+      [26] FUNCTION_RETURN (extra=1, operand1=18, operand2=0)
 
 

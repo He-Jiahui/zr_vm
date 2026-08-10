@@ -100,7 +100,7 @@ static TZrBool receiver_guard_emit_working_value(
 
     if (fact->kind == ZR_RECEIVER_GUARD_WEAK_WAKE) {
         instruction = create_instruction_2(
-                ZR_INSTRUCTION_ENUM(OWN_UPGRADE),
+                ZR_INSTRUCTION_ENUM(OWN_WAKE),
                 (TZrUInt16)destinationSlot,
                 (TZrUInt16)sourceSlot,
                 0u);

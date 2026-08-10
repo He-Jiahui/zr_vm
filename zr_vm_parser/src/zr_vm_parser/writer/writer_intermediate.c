@@ -381,14 +381,14 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
             return "OWN_LOAN";
         case ZR_SEMIR_OPCODE_OWN_SHARE:
             return "OWN_SHARE";
-        case ZR_SEMIR_OPCODE_OWN_WEAK:
-            return "OWN_WEAK";
+        case ZR_SEMIR_OPCODE_OWN_DEGRADE:
+            return "OWN_DEGRADE";
         case ZR_SEMIR_OPCODE_OWN_DETACH:
             return "OWN_DETACH";
-        case ZR_SEMIR_OPCODE_OWN_UPGRADE:
-            return "OWN_UPGRADE";
-        case ZR_SEMIR_OPCODE_OWN_RELEASE:
-            return "OWN_RELEASE";
+        case ZR_SEMIR_OPCODE_OWN_WAKE:
+            return "OWN_WAKE";
+        case ZR_SEMIR_OPCODE_OWN_DROP:
+            return "OWN_DROP";
         case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
             return "OWN_RETURN_LOAN";
         case ZR_SEMIR_OPCODE_OWN_VIEW_SHARED:
@@ -933,10 +933,10 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(OWN_BORROW): fprintf(file, "OWN_BORROW"); break;
             case ZR_INSTRUCTION_ENUM(OWN_LOAN): fprintf(file, "OWN_LOAN"); break;
             case ZR_INSTRUCTION_ENUM(OWN_SHARE): fprintf(file, "OWN_SHARE"); break;
-            case ZR_INSTRUCTION_ENUM(OWN_WEAK): fprintf(file, "OWN_WEAK"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_DEGRADE): fprintf(file, "OWN_DEGRADE"); break;
             case ZR_INSTRUCTION_ENUM(OWN_DETACH): fprintf(file, "OWN_DETACH"); break;
-            case ZR_INSTRUCTION_ENUM(OWN_UPGRADE): fprintf(file, "OWN_UPGRADE"); break;
-            case ZR_INSTRUCTION_ENUM(OWN_RELEASE): fprintf(file, "OWN_RELEASE"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_WAKE): fprintf(file, "OWN_WAKE"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_DROP): fprintf(file, "OWN_DROP"); break;
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN): fprintf(file, "OWN_RETURN_LOAN"); break;
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED): fprintf(file, "OWN_VIEW_SHARED"); break;
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT): fprintf(file, "OWN_VIEW_MUT"); break;
@@ -1249,10 +1249,10 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(OWN_BORROW):
             case ZR_INSTRUCTION_ENUM(OWN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_SHARE):
-            case ZR_INSTRUCTION_ENUM(OWN_WEAK):
+            case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_DETACH):
-            case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
-            case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+            case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+            case ZR_INSTRUCTION_ENUM(OWN_DROP):
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
@@ -2110,17 +2110,17 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(OWN_SHARE):
                 fprintf(file, "OWN_SHARE");
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_WEAK):
-                fprintf(file, "OWN_WEAK");
+            case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
+                fprintf(file, "OWN_DEGRADE");
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_DETACH):
                 fprintf(file, "OWN_DETACH");
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
-                fprintf(file, "OWN_UPGRADE");
+            case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+                fprintf(file, "OWN_WAKE");
                 break;
-            case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
-                fprintf(file, "OWN_RELEASE");
+            case ZR_INSTRUCTION_ENUM(OWN_DROP):
+                fprintf(file, "OWN_DROP");
                 break;
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
                 fprintf(file, "OWN_RETURN_LOAN");
@@ -2269,10 +2269,10 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(OWN_BORROW):
             case ZR_INSTRUCTION_ENUM(OWN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_SHARE):
-            case ZR_INSTRUCTION_ENUM(OWN_WEAK):
+            case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_DETACH):
-            case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
-            case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+            case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+            case ZR_INSTRUCTION_ENUM(OWN_DROP):
             case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
             case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):

@@ -1649,7 +1649,7 @@ static void test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers(v
     TEST_DIVIDER();
 }
 
-static void test_construct_expression_preserves_ownership_qualifier(void) {
+static void test_intrinsic_share_preserves_ownership_qualifier(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Construct Expression Preserves Ownership Qualifier";
 
@@ -1661,7 +1661,7 @@ static void test_construct_expression_preserves_ownership_qualifier(void) {
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "var owner = own Holder();"
-                "owner.share();";
+                "share(owner);";
         SZrString *sourceName = ZrCore_String_Create(state, "construct_ownership_type_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *uniqueExpr = ZR_NULL;
@@ -1843,31 +1843,28 @@ static void test_ownership_builtin_type_inference_rejects_invalid_operands(void)
 
     expect_ownership_builtin_type_inference_failure(
             "var owner = own Holder();"
-            "owner.weak();",
+            "degrade(owner);",
             "ownership_invalid_weak_unique_test.zr",
-            "weak() requires a Shared<T> owner");
+            "degrade() requires a Shared owner");
 
     expect_ownership_builtin_type_inference_failure(
             "var seed = own Holder();"
-            "var owner = seed.share();"
-            "owner.upgrade();",
+            "var owner = share(seed);"
+            "wake(owner);",
             "ownership_invalid_upgrade_shared_test.zr",
-            "upgrade() requires a Weak<T> owner");
+            "wake() requires a Weak owner");
+
+    expect_ownership_builtin_type_inference_failure(
+            "drop(1);",
+            "ownership_invalid_drop_plain_value_test.zr",
+            "drop() requires a Unique, Shared, or Weak owner");
 
     expect_ownership_builtin_type_inference_failure(
             "var seed = own Holder();"
-            "var owner = seed.share();"
-            "var watcher = owner.weak();"
-            "drop(watcher);",
-            "ownership_invalid_drop_weak_test.zr",
-            "drop() requires a Unique or Shared owner");
-
-    expect_ownership_builtin_type_inference_failure(
-            "var seed = own Holder();"
-            "var owner = seed.share();"
-            "owner.share();",
+            "var owner = share(seed);"
+            "share(owner);",
             "ownership_invalid_share_shared_test.zr",
-            "share() requires a Unique<T> owner");
+            "share() requires a Unique owner");
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -2009,7 +2006,7 @@ static void test_unique_value_is_compatible_with_borrowed_parameter(void) {
     TEST_DIVIDER();
 }
 
-static void test_weak_value_requires_upgrade_before_borrowed_parameter(void) {
+static void test_weak_value_requires_wake_before_borrowed_parameter(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Weak Value Requires Upgrade Before Borrowed Parameter";
 
@@ -2021,10 +2018,12 @@ static void test_weak_value_requires_upgrade_before_borrowed_parameter(void) {
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "var seed = own Holder();"
-                "var owner = seed.share();"
-                "var watcher = owner.weak();"
+                "var owner = share(seed);"
+                "var watcher = degrade(owner);"
                 "return Observe(watcher);";
-        SZrString *sourceName = ZrCore_String_Create(state, "weak_requires_upgrade_param_test.zr", 32);
+        const char *sourceNameText = "weak_requires_wake_param_test.zr";
+        SZrString *sourceName = ZrCore_String_Create(
+                state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
         SZrInferredType result;
@@ -2083,9 +2082,9 @@ static void test_weak_value_requires_upgrade_before_borrowed_parameter(void) {
     TEST_DIVIDER();
 }
 
-static void test_weak_receiver_requires_upgrade_before_borrowed_method(void) {
+static void test_weak_receiver_direct_access_infers_guarded_target_type(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Weak Receiver Requires Upgrade Before Borrowed Method";
+    const char *testSummary = "Type Inference - Weak Direct Receiver Uses Guarded Target Type";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2095,10 +2094,12 @@ static void test_weak_receiver_requires_upgrade_before_borrowed_method(void) {
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "var seed = own Holder();"
-                "var owner = seed.share();"
-                "var watcher = owner.weak();"
+                "var owner = share(seed);"
+                "var watcher = degrade(owner);"
                 "watcher.peek();";
-        SZrString *sourceName = ZrCore_String_Create(state, "weak_requires_upgrade_method_test.zr", 33);
+        const char *sourceNameText = "weak_direct_guarded_method_test.zr";
+        SZrString *sourceName = ZrCore_String_Create(
+                state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *expr = ZR_NULL;
         SZrInferredType result;
@@ -2131,10 +2132,9 @@ static void test_weak_receiver_requires_upgrade_before_borrowed_method(void) {
         cs->hasError = ZR_FALSE;
         cs->errorMessage = ZR_NULL;
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
-        TEST_ASSERT_TRUE(cs->hasError);
-        TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Weak-owned receivers"));
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_FALSE(cs->hasError);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
         ZrParser_InferredType_Free(state, &result);
 
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -3014,7 +3014,7 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
         TEST_ASSERT_TRUE(ownedStep->callsClose);
         TEST_ASSERT_TRUE(ownedStep->callsDestructor);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, ownedStep->ownershipQualifier);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_RELEASE, ownedStep->ownershipBuiltinKind);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_DROP, ownedStep->ownershipBuiltinKind);
 
         ZrCore_Function_Free(state, cs->currentFunction);
         cs->currentFunction = ZR_NULL;
@@ -3087,7 +3087,7 @@ static void test_using_statement_cleanup_plan_records_ownership_generic_kind(voi
         step = (const SZrDeterministicCleanupStep *)ZrCore_Array_Get(&cs->semanticContext->cleanupPlan, 0);
         TEST_ASSERT_NOT_NULL(step);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, step->ownershipQualifier);
-        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_RELEASE, step->ownershipBuiltinKind);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_DROP, step->ownershipBuiltinKind);
         TEST_ASSERT_TRUE(step->callsClose);
         TEST_ASSERT_TRUE(step->callsDestructor);
 
@@ -8505,12 +8505,12 @@ int main(void) {
     RUN_TEST(test_convert_ast_type_preserves_ownership_qualifier);
     RUN_TEST(test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers);
     RUN_TEST(test_convert_ast_type_preserves_qualified_root_module_member_name);
-    RUN_TEST(test_construct_expression_preserves_ownership_qualifier);
+    RUN_TEST(test_intrinsic_share_preserves_ownership_qualifier);
     RUN_TEST(test_ownership_builtin_type_inference_rejects_invalid_operands);
     RUN_TEST(test_unique_instance_only_calls_borrowed_methods);
     RUN_TEST(test_unique_value_is_compatible_with_borrowed_parameter);
-    RUN_TEST(test_weak_value_requires_upgrade_before_borrowed_parameter);
-    RUN_TEST(test_weak_receiver_requires_upgrade_before_borrowed_method);
+    RUN_TEST(test_weak_value_requires_wake_before_borrowed_parameter);
+    RUN_TEST(test_weak_receiver_direct_access_infers_guarded_target_type);
     RUN_TEST(test_borrowed_value_cannot_flow_to_plain_parameter);
     RUN_TEST(test_loaned_value_cannot_flow_to_plain_parameter);
     RUN_TEST(test_owned_value_requires_detach_before_plain_parameter);

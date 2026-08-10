@@ -65,9 +65,9 @@ extern void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void);
 extern void test_ownership_unique_share_runtime_moves_source_to_null(void);
 extern void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void);
 extern void test_ownership_generic_real_fixture_executes_session_lifecycle(void);
-extern void test_ownership_weak_runtime_expires_to_null_after_last_shared_release(void);
-extern void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract(void);
-extern void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(void);
+extern void test_ownership_weak_runtime_wake_is_empty_after_last_shared_drop(void);
+extern void test_ownership_wake_and_drop_runtime_follow_lifecycle_contract(void);
+extern void test_ownership_drop_preserves_unrelated_stack_values_after_weak_expiry(void);
 extern void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void);
 extern void test_plugin_guard_scoped_module_handle_releases_on_scope_exit(void);
 extern void test_plugin_load_available_import_guard_lowers_to_available_payload(void);
@@ -235,9 +235,9 @@ int main(void) {
     RUN_TEST(test_ownership_unique_share_runtime_moves_source_to_null);
     RUN_TEST(test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract);
     RUN_TEST(test_ownership_generic_real_fixture_executes_session_lifecycle);
-    RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
-    RUN_TEST(test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract);
-    RUN_TEST(test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry);
+    RUN_TEST(test_ownership_weak_runtime_wake_is_empty_after_last_shared_drop);
+    RUN_TEST(test_ownership_wake_and_drop_runtime_follow_lifecycle_contract);
+    RUN_TEST(test_ownership_drop_preserves_unrelated_stack_values_after_weak_expiry);
     RUN_TEST(test_ownership_into_gc_compile_rejects_shared_owner);
 
     printf("\n");

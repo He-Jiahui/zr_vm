@@ -37,18 +37,18 @@ static const TZrChar *backend_aot_llvm_ownership_helper_name(TZrUInt32 opcode) {
             return "ZrLibrary_AotRuntime_OwnReturnLoan";
         case ZR_INSTRUCTION_ENUM(OWN_SHARE):
             return "ZrLibrary_AotRuntime_OwnShare";
-        case ZR_INSTRUCTION_ENUM(OWN_WEAK):
-            return "ZrLibrary_AotRuntime_OwnWeak";
+        case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
+            return "ZrLibrary_AotRuntime_OwnDegrade";
         case ZR_INSTRUCTION_ENUM(OWN_DETACH):
             return "ZrLibrary_AotRuntime_OwnDetach";
         case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
             return "ZrLibrary_AotRuntime_OwnIntoGcBox";
         case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
             return "ZrLibrary_AotRuntime_OwnReturnToGc";
-        case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
-            return "ZrLibrary_AotRuntime_OwnUpgrade";
-        case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
-            return "ZrLibrary_AotRuntime_OwnRelease";
+        case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+            return "ZrLibrary_AotRuntime_OwnWake";
+        case ZR_INSTRUCTION_ENUM(OWN_DROP):
+            return "ZrLibrary_AotRuntime_OwnDrop";
         default:
             return ZR_NULL;
     }

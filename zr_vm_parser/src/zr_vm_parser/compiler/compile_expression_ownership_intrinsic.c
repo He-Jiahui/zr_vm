@@ -8,15 +8,15 @@ static EZrOwnershipBuiltinKind ownership_intrinsic_builtin_kind(
         EZrOwnershipIntrinsicOperation operation) {
     switch (operation) {
         case ZR_OWNERSHIP_INTRINSIC_SHARE:
-            return ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
+            return ZR_OWNERSHIP_BUILTIN_KIND_SHARE;
         case ZR_OWNERSHIP_INTRINSIC_DEGRADE:
-            return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+            return ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE;
         case ZR_OWNERSHIP_INTRINSIC_WAKE:
-            return ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE;
+            return ZR_OWNERSHIP_BUILTIN_KIND_WAKE;
         case ZR_OWNERSHIP_INTRINSIC_INTO_GC:
             return ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC;
         case ZR_OWNERSHIP_INTRINSIC_DROP:
-            return ZR_OWNERSHIP_BUILTIN_KIND_RELEASE;
+            return ZR_OWNERSHIP_BUILTIN_KIND_DROP;
         default:
             return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     }

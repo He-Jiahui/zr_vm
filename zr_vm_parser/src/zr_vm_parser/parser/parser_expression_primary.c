@@ -512,7 +512,7 @@ static SZrAstNode *parse_resource_drop_expression(SZrParserState *ps) {
             ZR_OWNERSHIP_QUALIFIER_NONE,
             ZR_FALSE,
             ZR_FALSE,
-            ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+            ZR_OWNERSHIP_BUILTIN_KIND_DROP,
             ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
     if (node != ZR_NULL) {
         node->data.constructExpression.isResourceSurface = ZR_TRUE;
