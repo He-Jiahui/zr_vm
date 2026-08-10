@@ -396,8 +396,8 @@ static void test_intermediate_writer_emits_semir_sections(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var owner = own Box();\n"
-                "var alias = owner.share();\n"
-                "var watcher = alias.weak();";
+                "var alias = share(owner);\n"
+                "var watcher = degrade(alias);";
         const char *intermediatePath = "semir_sections_test.zri";
         SZrString *sourceName;
         SZrFunction *func;
@@ -448,8 +448,8 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var owner = own Box();\n"
-                "var alias = owner.share();\n"
-                "var watcher = alias.weak();";
+                "var alias = share(owner);\n"
+                "var watcher = degrade(alias);";
         SZrString *sourceName;
         SZrFunction *func;
 
@@ -1051,8 +1051,8 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
         const char *source =
                 "resource class Box {}\n"
                 "var owner = own Box();\n"
-                "var alias = owner.share();\n"
-                "var watcher = alias.weak();";
+                "var alias = share(owner);\n"
+                "var watcher = degrade(alias);";
         const char *binaryPath = "semir_roundtrip_test.zro";
         SZrString *sourceName;
         SZrFunction *func;

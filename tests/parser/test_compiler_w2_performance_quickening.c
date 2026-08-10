@@ -887,7 +887,7 @@ void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void) {
 
 void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void) {
     static const char *source =
-            "work(limit: int): int {\n"
+            "fn work(limit: int): int {\n"
             "    var sum = 0;\n"
             "    var cursor = limit;\n"
             "    while (cursor > 0) {\n"
@@ -1523,7 +1523,7 @@ void test_w2_get_stack_set_member_slot_value_forwards_source(void) {
 
 void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void) {
     static const char *source =
-            "work(input: int): int {\n"
+            "fn work(input: int): int {\n"
             "    var scaled = 24 * input;\n"
             "    var biased = 7 + scaled;\n"
             "    return biased;\n"
@@ -1570,7 +1570,7 @@ void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void) {
 
 void test_w2_right_constant_mod_fold_uses_cfg_liveness_across_branch(void) {
     static const char *source =
-            "work(value: int): int {\n"
+            "fn work(value: int): int {\n"
             "    var remainder = value % 7;\n"
             "    if (remainder == 0) {\n"
             "        return value + 1;\n"
@@ -1621,12 +1621,12 @@ void test_w2_late_forward_get_stack_after_member_call_specialization(void) {
             "class Worker {\n"
             "    pri var state: int;\n"
             "    pub @constructor(seed: int) { this.state = seed; }\n"
-            "    pub step(delta: int): int {\n"
+            "    pub fn step(delta: int): int {\n"
             "        this.state = (this.state + delta) % 10007;\n"
             "        return this.state;\n"
             "    }\n"
             "}\n"
-            "work(): int {\n"
+            "fn work(): int {\n"
             "    var checksum = 0;\n"
             "    var delta = 5;\n"
             "    var worker = new Worker(1);\n"

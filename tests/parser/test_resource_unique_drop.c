@@ -140,10 +140,13 @@ static void test_resource_surface_builds_canonical_owner_ast(void) {
     TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, dropStatement->type);
     dropExpression = dropStatement->data.expressionStatement.expr;
     TEST_ASSERT_NOT_NULL(dropExpression);
-    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, dropExpression->type);
-    TEST_ASSERT_FALSE(dropExpression->data.constructExpression.isNew);
-    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
-                          dropExpression->data.constructExpression.builtinKind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION, dropExpression->type);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_INTRINSIC_DROP,
+            dropExpression->data.ownershipIntrinsicExpression.operation);
+    TEST_ASSERT_NOT_NULL(
+            dropExpression->data.ownershipIntrinsicExpression.argument);
 
     ZrParser_Ast_Free(g_state, script);
 }
@@ -171,8 +174,8 @@ static void test_resource_construction_world_is_type_directed(void) {
 
 static void test_resource_contextual_tokens_preserve_identifier_calls(void) {
     SZrFunction *function = compile_source(
-            "own(value: int): int { return value; }\n"
-            "pub resource(value: int): int { return value + 1; }\n"
+            "fn own(value: int): int { return value; }\n"
+            "pub fn resource(value: int): int { return value + 1; }\n"
             "return own(2) + resource(3);\n");
     TZrInt64 result = 0;
 
@@ -398,10 +401,10 @@ static void test_gc_bridge_surface_enforces_target_worlds(void) {
             "}\n");
     SZrFunction *gcRejectsResource = compile_source(
             "resource class Socket {}\n"
-            "accept(value: Gc<Socket>) {}\n");
+            "fn accept(value: Gc<Socket>) {}\n");
     SZrFunction *gcBoxRejectsOrdinaryClass = compile_source(
             "class Document {}\n"
-            "accept(value: GcBox<Document>) {}\n");
+            "fn accept(value: GcBox<Document>) {}\n");
 
     TEST_ASSERT_NOT_NULL(gcHandle);
     TEST_ASSERT_NULL(gcRejectsResource);
@@ -416,9 +419,9 @@ static void test_resource_unique_into_gc_surface_consumes_owner(void) {
             "  pub @constructor(value: int) { this.value = value; }\n"
             "  pub const fn read(): int { return this.value; }\n"
             "}\n"
-            "run(): int {\n"
+            "fn run(): int {\n"
             "  var owner: Unique<BoxedCounter> = own BoxedCounter(9);\n"
-            "  var boxed: GcBox<BoxedCounter> = owner.intoGc();\n"
+            "  var boxed: GcBox<BoxedCounter> = intoGc(owner);\n"
             "  return boxed.read();\n"
             "}\n"
             "return run();\n");
@@ -443,24 +446,24 @@ static void test_resource_into_gc_surface_rejects_shared_and_active_borrow(void)
     SZrFunction *shared = compile_source(
             "resource class BoxedCounter {}\n"
             "var owner: Unique<BoxedCounter> = own BoxedCounter();\n"
-            "var shared = owner.share();\n"
-            "var boxed = shared.intoGc();\n");
+            "var shared = share(owner);\n"
+            "var boxed = intoGc(shared);\n");
     SZrFunction *activeBorrow = compile_source(
             "resource class BoxedCounter {\n"
             "  var value: int;\n"
             "  pub fn borrowValue(): ref int { return this.value; }\n"
             "}\n"
-            "run(): int {\n"
+            "fn run(): int {\n"
             "  var owner: Unique<BoxedCounter> = own BoxedCounter();\n"
             "  var view: ref int = owner.borrowValue();\n"
-            "  var boxed = owner.intoGc();\n"
+            "  var boxed = intoGc(owner);\n"
             "  return view;\n"
             "}\n"
             "return run();\n");
     SZrFunction *useAfterMove = compile_source(
             "resource class BoxedCounter {}\n"
             "var owner: Unique<BoxedCounter> = own BoxedCounter();\n"
-            "var boxed = owner.intoGc();\n"
+            "var boxed = intoGc(owner);\n"
             "drop(owner);\n");
 
     TEST_ASSERT_NULL(shared);
@@ -476,7 +479,7 @@ static void test_resource_drop_order_move_and_explicit_drop_execute_once(void) {
             "  pub @constructor(id: int) { this.id = id; }\n"
             "  pub @destructor() { Tracer.dropLog = Tracer.dropLog * 10 + this.id; }\n"
             "}\n"
-            "run(): int {\n"
+            "fn run(): int {\n"
             "  {\n"
             "    var first: Unique<Tracer> = own Tracer(1);\n"
             "    var moved: Unique<Tracer> = first;\n"
@@ -511,7 +514,7 @@ static void test_resource_nested_fields_drop_in_reverse_declaration_order(void) 
             "    this.second = own Leaf(2);\n"
             "  }\n"
             "}\n"
-            "run(): int {\n"
+            "fn run(): int {\n"
             "  { var pair: Unique<Pair> = own Pair(); }\n"
             "  return Leaf.dropLog;\n"
             "}\n"
@@ -542,7 +545,7 @@ static void test_resource_partial_construction_and_throw_cleanup_drop_initialize
             "  }\n"
             "  pub @destructor() { Leaf.dropLog = Leaf.dropLog + 100; }\n"
             "}\n"
-            "run(): int {\n"
+            "fn run(): int {\n"
             "  try { var broken: Unique<Broken> = own Broken(); } catch (error) {}\n"
             "  return Leaf.dropLog;\n"
             "}\n"
@@ -559,7 +562,7 @@ static void test_resource_partial_construction_and_throw_cleanup_drop_initialize
 static void test_resource_move_invalidates_source_statically(void) {
     SZrFunction *invalid = compile_source(
             "resource class Socket {}\n"
-            "run() {\n"
+            "fn run() {\n"
             "  var source: Unique<Socket> = own Socket();\n"
             "  var destination: Unique<Socket> = source;\n"
             "  drop(source);\n"
@@ -585,11 +588,11 @@ static void test_resource_cleanup_runs_on_return_break_and_continue(void) {
             "  pub @constructor(id: int) { this.id = id; }\n"
             "  pub @destructor() { Tracker.dropLog = Tracker.dropLog * 10 + this.id; }\n"
             "}\n"
-            "early(): int {\n"
+            "fn early(): int {\n"
             "  var value: Unique<Tracker> = own Tracker(1);\n"
             "  return 7;\n"
             "}\n"
-            "loop(): int {\n"
+            "fn loop(): int {\n"
             "  var i = 0;\n"
             "  while (i < 2) {\n"
             "    i = i + 1;\n"
@@ -617,11 +620,11 @@ static void test_resource_cleanup_runs_on_throw(void) {
             "  pub @constructor(id: int) { this.id = id; }\n"
             "  pub @destructor() { Tracker.dropLog = Tracker.dropLog * 10 + this.id; }\n"
             "}\n"
-            "explode() {\n"
+            "fn explode() {\n"
             "  var value: Unique<Tracker> = own Tracker(5);\n"
             "  throw \"stop\";\n"
             "}\n"
-            "run(): int {\n"
+            "fn run(): int {\n"
             "  try { explode(); } catch (error) {}\n"
             "  return Tracker.dropLog;\n"
             "}\n"
@@ -642,11 +645,11 @@ static void test_resource_unique_moves_through_value_parameter_and_return(void) 
             "  pub @constructor(id: int) { this.id = id; }\n"
             "  pub @destructor() { Tracker.dropLog = Tracker.dropLog * 10 + this.id; }\n"
             "}\n"
-            "make(id: int): Unique<Tracker> {\n"
+            "fn make(id: int): Unique<Tracker> {\n"
             "  var value: Unique<Tracker> = own Tracker(id);\n"
             "  return value;\n"
             "}\n"
-            "consume(value: Unique<Tracker>) { drop(value); }\n"
+            "fn consume(value: Unique<Tracker>) { drop(value); }\n"
             "var returned: Unique<Tracker> = make(4);\n"
             "consume(returned);\n"
             "return Tracker.dropLog;\n");
