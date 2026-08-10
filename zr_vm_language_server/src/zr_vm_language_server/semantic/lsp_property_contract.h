@@ -13,6 +13,7 @@ TZrBool ZrLanguageServer_LspPropertyContract_RegisterSourceSymbol(
 
 SZrString *ZrLanguageServer_LspPropertyContract_FormatSignature(
         SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
         const SZrSymbol *symbol);
 
 SZrString *ZrLanguageServer_LspPropertyContract_FormatQuery(

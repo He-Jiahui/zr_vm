@@ -1,6 +1,7 @@
 #include "semantic/lsp_property_contract.h"
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_query.h"
 
 #include <stdio.h>
@@ -174,24 +175,34 @@ SZrString *ZrLanguageServer_LspPropertyContract_FormatQuery(
 
 SZrString *ZrLanguageServer_LspPropertyContract_FormatSignature(
         SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
         const SZrSymbol *symbol) {
+    SZrParserSemanticPropertyQuery query;
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-    const TZrChar *typeText;
 
-    if (state == ZR_NULL || symbol == ZR_NULL || !symbol->hasPropertyContract ||
-        symbol->name == ZR_NULL || symbol->typeInfo == ZR_NULL) {
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL || symbol == ZR_NULL ||
+        symbol->type != ZR_SYMBOL_PROPERTY || symbol->name == ZR_NULL ||
+        symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        symbol->semanticTypeId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrParser_SemanticQuery_PropertyBySymbolId(
+                analyzer->semanticContext,
+                symbol->semanticId,
+                &query) ||
+        query.propertySymbolId != symbol->semanticId ||
+        query.propertyTypeId != symbol->semanticTypeId ||
+        !ZrParser_CanonicalType_Format(
+                analyzer->semanticContext,
+                query.propertyTypeId,
+                typeBuffer,
+                sizeof(typeBuffer))) {
         return ZR_NULL;
     }
-    typeText = ZrParser_TypeNameString_Get(
-            state,
-            symbol->typeInfo,
-            typeBuffer,
-            sizeof(typeBuffer));
     return ZrLanguageServer_LspPropertyContract_FormatQuery(
             state,
             symbol->name,
-            typeText,
-            &symbol->propertyContract);
+            typeBuffer,
+            &query);
 }
 
 SZrSymbol *ZrLanguageServer_LspPropertyContract_FindSourceSymbolAt(

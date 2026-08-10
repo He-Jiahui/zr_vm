@@ -811,7 +811,10 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
     }
 
     markdownBuffer[0] = '\0';
-    propertySignature = ZrLanguageServer_LspPropertyContract_FormatSignature(state, symbol);
+    propertySignature = ZrLanguageServer_LspPropertyContract_FormatSignature(
+            state,
+            analyzer,
+            symbol);
     if (propertySignature != ZR_NULL) {
         append_buffer_text(markdownBuffer,
                            sizeof(markdownBuffer),

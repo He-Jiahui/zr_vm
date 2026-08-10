@@ -651,6 +651,13 @@ the visible PropertySymbol, canonical value TypeId, exact accessor/value-paramet
 selection/reference ranges. The LSP layer neither strips `__get_`/`__set_` prefixes nor infers a
 property from a member display label.
 
+Property signature display applies the same authority boundary. The formatter receives the owning
+analyzer, queries `PropertyBySymbolId`, requires the returned PropertySymbol and value TypeId to
+match the symbol snapshot, and formats the value type only through the canonical formatter. A copied
+symbol contract or precise `symbol->typeInfo` is insufficient. If the PropertyDef fact is missing or
+inconsistent, ordinary symbol documentation may remain available but the property signature is
+omitted rather than reconstructed.
+
 Binary imports first merge exact compiled property/accessor rows into an empty imported placeholder
 using `propertyIdentity`, accessor role, TypeId, reference fields, and module provenance. LSP then
 joins the visible row by PropertySymbolId. Missing, conflicting, native-only, or invalid metadata is

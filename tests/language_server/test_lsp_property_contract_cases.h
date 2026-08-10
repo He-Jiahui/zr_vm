@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_LSP_PROPERTY_CONTRACT_CASES_H
 #define ZR_VM_TEST_LSP_PROPERTY_CONTRACT_CASES_H
 
+#include "semantic/lsp_property_contract.h"
+
 static TZrSize property_contract_completion_count(
         SZrArray *completions,
         const TZrChar *label) {
@@ -114,9 +116,13 @@ static void test_lsp_unified_property_uses_one_canonical_contract(
     SZrLspPosition valuePosition;
     SZrLspPosition declarationPosition;
     SZrSemanticAnalyzer *analyzer = ZR_NULL;
+    SZrSymbol *propertySymbol = ZR_NULL;
+    SZrString *canonicalPropertyDocumentation = ZR_NULL;
+    SZrString *missingFactPropertyDocumentation = ZR_NULL;
     SZrParserSemanticPropertyQuery propertyQuery = {0};
     SZrFilePosition propertyFilePosition;
     SZrFileRange propertyRange;
+    TZrSize propertyContractCount = 0U;
     SZrArray semanticTokens = {0};
     TZrBool propertyAvailable = ZR_FALSE;
     TZrBool parameterIdentityAvailable = ZR_FALSE;
@@ -210,6 +216,35 @@ static void test_lsp_unified_property_uses_one_canonical_contract(
                 propertyRange,
                 ZR_NULL,
                 &propertyQuery);
+    propertySymbol = propertyAvailable
+                             ? ZrLanguageServer_LspPropertyContract_FindSourceSymbolAt(
+                                       analyzer,
+                                       propertyRange)
+                             : ZR_NULL;
+    if (propertySymbol != ZR_NULL) {
+        canonicalPropertyDocumentation =
+                ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(
+                        state,
+                        analyzer,
+                        propertySymbol,
+                        content,
+                        strlen(content));
+        propertySymbol = ZrLanguageServer_LspPropertyContract_FindSourceSymbolAt(
+                analyzer,
+                propertyRange);
+        propertyContractCount = analyzer->semanticContext->propertyContracts.length;
+        analyzer->semanticContext->propertyContracts.length = 0U;
+        if (propertySymbol != ZR_NULL) {
+            missingFactPropertyDocumentation =
+                    ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(
+                            state,
+                            analyzer,
+                            propertySymbol,
+                            content,
+                            strlen(content));
+        }
+        analyzer->semanticContext->propertyContracts.length = propertyContractCount;
+    }
     parameterIdentityAvailable =
             propertyAvailable &&
             propertyQuery.setterValueSymbolId != ZR_SEMANTIC_ID_INVALID &&
@@ -260,6 +295,15 @@ static void test_lsp_unified_property_uses_one_canonical_contract(
                 &renameRange,
                 &placeholder);
     if (propertyAvailable &&
+        propertySymbol != ZR_NULL &&
+        canonicalPropertyDocumentation != ZR_NULL &&
+        strstr(
+                test_string_ptr(canonicalPropertyDocumentation),
+                "property value: int") != ZR_NULL &&
+        missingFactPropertyDocumentation != ZR_NULL &&
+        strstr(
+                test_string_ptr(missingFactPropertyDocumentation),
+                "property value: int") == ZR_NULL &&
         parameterIdentityAvailable &&
         semanticTokensAvailable &&
         parameterTokenAvailable &&
