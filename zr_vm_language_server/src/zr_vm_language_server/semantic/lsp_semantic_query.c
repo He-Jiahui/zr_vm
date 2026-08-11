@@ -2951,6 +2951,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     SZrLspMetadataProvider provider;
     SZrFileVersionContentSnapshot snapshot = {0};
     TZrBool hasSnapshot = ZR_FALSE;
+    TZrBool receiverCompletionFailClosed = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -2966,11 +2967,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
 
     ZrLanguageServer_LspSemanticQuery_Init(&semanticQuery);
-    if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, position, &semanticQuery)) {
-        hoveredSymbolName = semanticQuery.symbol != ZR_NULL ? semanticQuery.symbol->name : semanticQuery.memberName;
-        resolvedTypeText = semanticQuery.resolvedTypeInfo.resolvedTypeText;
-    }
-
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
@@ -2988,6 +2984,21 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                                                                          snapshot.content,
                                                                          snapshot.contentLength);
         fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
+    }
+    if (hasSnapshot && analyzer->ast != ZR_NULL &&
+        ZrLanguageServer_Lsp_ShouldFailClosedReceiverCompletion(analyzer,
+                                                                 analyzer->ast,
+                                                                 snapshot.content,
+                                                                 snapshot.contentLength,
+                                                                 filePos.offset)) {
+        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
+        return ZR_TRUE;
+    }
+
+    if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, position, &semanticQuery)) {
+        hoveredSymbolName = semanticQuery.symbol != ZR_NULL ? semanticQuery.symbol->name : semanticQuery.memberName;
+        resolvedTypeText = semanticQuery.resolvedTypeInfo.resolvedTypeText;
     }
     ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (hasSnapshot && analyzer->ast != ZR_NULL) {
@@ -3048,11 +3059,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                                                                                           snapshot.content,
                                                                                           snapshot.contentLength,
                                                                                           filePos.offset,
-                                                                                          &completions);
+                                                                                          &completions,
+                                                                                          &receiverCompletionFailClosed);
         }
     }
 
-    if (!hasStructuredCompletions &&
+    if (!hasStructuredCompletions && !receiverCompletionFailClosed &&
         !ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, fileRange, &completions)) {
         ZrCore_Array_Free(state, &completions);
         if (hasSnapshot) {
@@ -3062,7 +3074,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
         return ZR_FALSE;
     }
 
-    if (completions.length == 0 &&
+    if (completions.length == 0 && !receiverCompletionFailClosed &&
         fileVersion != ZR_NULL &&
         hasSnapshot &&
         fileVersion->ast != ZR_NULL) {
@@ -3093,10 +3105,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                                                                                           uri,
                                                                                           fileVersion->ast,
                                                                                           snapshot.content,
-                                                                                          snapshot.contentLength,
-                                                                                          filePos.offset,
-                                                                                          &completions);
-            if (!hasStructuredCompletions) {
+                                                                                           snapshot.contentLength,
+                                                                                           filePos.offset,
+                                                                                           &completions,
+                                                                                           &receiverCompletionFailClosed);
+            if (!hasStructuredCompletions && !receiverCompletionFailClosed) {
                 (void)ZrLanguageServer_SemanticAnalyzer_GetCompletions(state,
                                                                        fallbackAnalyzer,
                                                                        fileRange,

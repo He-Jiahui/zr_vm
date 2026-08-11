@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-11 15:09 +08:00
+updated_at: 2026-08-11 19:57 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -101,6 +101,7 @@ source_plans:
 | 2026-08-10 18:24 +08:00 | 已完成 | LSP 08 canonical receiver member type独立合同：project source receiver member保留精确declaration identity，但type text只按同一SymbolId的resolved declaration fact与匹配canonical TypeId格式化；删除`declarationSymbol->typeInfo`显示回退，fact unavailable时保留导航而省略type；`b452bb5`关闭相邻postfix range公共query回归；GCC/Clang/MSVC semantic facts 13/13、expression/local query/interface/project与完整stdio均真实exit 0 | [Canonical receiver member type](../01-semantic-core/2026-08-10-canonical-receiver-member-type.md) |
 | 2026-08-10 22:19 +08:00 | 已完成 | LSP 08 canonical project imported-symbol type独立合同：project-source imported member hover/completion只消费精确declaration SymbolId与匹配canonical TypeId；删除`symbol->typeInfo`和通用symbol hover显示回退，identity unavailable统一显示`cannot infer exact type`；`3333d4a + LSP overlay` GCC/Clang/MSVC semantic facts 13/13、expression/local query/interface/project与完整stdio/CLI均真实exit 0、marker归零 | [Canonical project symbol type](../01-semantic-core/2026-08-10-canonical-project-symbol-type.md) |
 | 2026-08-11 15:09 +08:00 | 已完成 | LSP 08 canonical native construct receiver：native member resolver只消费receiver-prefix AST node的exact expression fact和canonical TypeId；unknown、invalid或missing fact与派生member chain均fail closed，不重跑AST inference或按member text重建 | [Canonical native construct receiver expression fact](../01-semantic-core/2026-08-11-canonical-native-construct-receiver-expression-fact.md) |
+| 2026-08-11 19:57 +08:00 | 已完成 | LSP 08 canonical native construct completion：不完整 `init math.Vector3(...).` 在 semantic/import/general/scoped fallback 前只消费 receiver-prefix exact expression fact；unknown、invalid或missing fact 返回空 completion，不重跑AST inference或按 member text重建；GCC/Clang/MSVC semantic facts 13/13、local query 32/32、interface 106/106、project 58/58、stdio/CLI 2/2 均真实exit 0 | [Canonical native construct completion expression fact](../01-semantic-core/2026-08-11-canonical-native-construct-completion-expression-fact.md) |
 
 ## 当前状态
 
@@ -112,4 +113,5 @@ source_plans:
 - LSP 03 two historical text snapshots leaf已完成：每个document的file version只持有current与最新两份历史text block，public acquire仍以ref-count保证已借出快照可跨rollover读取。semantic cache不在该固定文本队列内；其单独的256MiB exact cache-storage LRU、native stdio process peak-memory和L6 final matrix均已完成。
 - LSP 03 semantic cache storage accounting、two historical semantic snapshots和workspace LRU leaves已完成：primary/scoped/history `SZrAnalysisCache` 有真实capacity-storage计量、cache-only递归释放和context-local 256MiB access-order eviction；每URI已保留两份完整历史semantic analyzer state，并在scoped cache借用旧AST时安全滚动淘汰。native stdio process peak-memory report和完整L6矩阵也已完成。
 - LSP 08仅完成九个独立合同：前八项覆盖canonical generic owner type、member token、source declaration/inlay/symbol-documentation type、source property signature、project receiver member type与project imported-symbol type；第九项为native source construct receiver。后者按receiver-prefix AST node读取exact expression fact和canonical TypeId，构造或派生member receiver的fact缺失、unknown或invalid时直接fail closed，不调用AST type inference或按member text重建。其余L8本地fallback删除、provider/project覆盖和完整protocol矩阵仍未完成；`language_server_stdio_inline_value_semantic_smoke`的computed-member payload既有基线失败也未纳入本项完成声明。
+- 更新（2026-08-11 19:57 +08:00）：LSP 08 当前完成十个独立合同。第十项要求不完整 native construct member completion 在 semantic/import/general/scoped fallback 之前只消费 receiver-prefix exact expression fact；事实 unavailable 时成功返回空 completion，不重跑 AST inference 或按 member text 重建。其余 L8 边界仍开放。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

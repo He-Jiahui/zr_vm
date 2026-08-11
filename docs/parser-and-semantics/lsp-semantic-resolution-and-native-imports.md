@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.h
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.h
@@ -54,6 +55,7 @@ related_code:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_native_construct_receiver_fact_cases.h
   - tests/language_server/test_lsp_property_contract_cases.h
   - tests/language_server/test_lsp_property_incremental_cases.h
   - tests/language_server/test_lsp_property_refactor_cases.h
@@ -67,6 +69,7 @@ related_code:
   - tests/parser/test_parser_extern.c
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
@@ -199,6 +202,16 @@ plain identifiers retain the established path. Project receiver resolution is
 unchanged because it consumes a distinct canonical property contract. The
 interface regression covers both exactness and TypeId invalidation plus a
 construct-derived chain without an expression fact.
+
+Completion applies the same boundary before it resolves import metadata or
+creates a scoped fallback analyzer. For a cursor immediately after
+`init math.Vector3(...).`, a valid receiver-prefix exact fact produces the
+descriptor fields. If the fact is missing, unknown, or has an invalid TypeId,
+the request succeeds with an empty completion list. This prevents the
+last-good AST from regenerating `x`, `y`, or `z` after an incomplete edit; the
+consumer does not re-infer the construct expression, scan a member name, or
+recover through generic completion. Ordinary identifier receivers and project
+property receivers retain their separate canonical paths.
 
 ## Binary Metadata Declaration Identity
 

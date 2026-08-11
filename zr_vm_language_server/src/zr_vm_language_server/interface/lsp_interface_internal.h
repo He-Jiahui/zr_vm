@@ -111,7 +111,14 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            const TZrChar *content,
                                                            TZrSize contentLength,
                                                            TZrSize cursorOffset,
-                                                           SZrArray *result);
+                                                           SZrArray *result,
+                                                           TZrBool *outFailClosed);
+TZrBool ZrLanguageServer_Lsp_ShouldFailClosedReceiverCompletion(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ast,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrSize cursorOffset);
 TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
                                                               const TZrChar *content,
                                                               TZrSize contentLength,

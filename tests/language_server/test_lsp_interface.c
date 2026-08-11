@@ -8214,6 +8214,9 @@ int main(void) {
     test_lsp_native_construct_member_chain_fails_closed_without_expression_fact(state);
     TEST_DIVIDER();
 
+    test_lsp_native_construct_completion_fails_closed_without_expression_fact(state);
+    TEST_DIVIDER();
+
     test_lsp_semantic_query_resolves_external_metadata_declaration_targets(state);
     TEST_DIVIDER();
 

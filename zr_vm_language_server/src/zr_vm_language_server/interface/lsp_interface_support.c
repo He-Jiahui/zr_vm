@@ -3507,7 +3507,49 @@ static TZrBool copy_receiver_type_text_from_expression_fact(
 
     return ZrLanguageServer_Lsp_FormatExactExpressionType(
                    analyzer, receiverNode, buffer, bufferSize) &&
-           receiver_type_text_is_specific(buffer);
+                   receiver_type_text_is_specific(buffer);
+}
+
+TZrBool ZrLanguageServer_Lsp_ShouldFailClosedReceiverCompletion(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ast,
+        const TZrChar *content,
+        TZrSize contentLength,
+        TZrSize cursorOffset) {
+    TZrSize memberDotOffset;
+    TZrSize receiverStart;
+    TZrChar receiverTypeName[ZR_LSP_TEXT_BUFFER_LENGTH];
+
+    if (analyzer == ZR_NULL || ast == ZR_NULL || content == ZR_NULL ||
+        cursorOffset > contentLength) {
+        return ZR_FALSE;
+    }
+    if (cursorOffset < contentLength && content[cursorOffset] == '.') {
+        memberDotOffset = cursorOffset;
+    } else if (cursorOffset > 0u && content[cursorOffset - 1u] == '.') {
+        memberDotOffset = cursorOffset - 1u;
+    } else {
+        return ZR_FALSE;
+    }
+
+    receiverStart = memberDotOffset;
+    while (receiverStart > 0u) {
+        TZrChar ch = content[receiverStart - 1u];
+        if (!isalnum((unsigned char)ch) && ch != '_') {
+            break;
+        }
+        receiverStart--;
+    }
+    if (receiverStart != memberDotOffset) {
+        return ZR_FALSE;
+    }
+
+    return !copy_receiver_type_text_from_expression_fact(analyzer,
+                                                          ast,
+                                                          cursorOffset,
+                                                          receiverTypeName,
+                                                          sizeof(receiverTypeName),
+                                                          ZR_NULL);
 }
 
 static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
@@ -4812,7 +4854,8 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            const TZrChar *content,
                                                            TZrSize contentLength,
                                                            TZrSize cursorOffset,
-                                                           SZrArray *result) {
+                                                           SZrArray *result,
+                                                           TZrBool *outFailClosed) {
     TZrSize memberDotOffset;
     TZrSize receiverEnd;
     TZrSize receiverStart;
@@ -4825,6 +4868,9 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     TZrChar receiverTypeName[ZR_LSP_TEXT_BUFFER_LENGTH];
     TZrSize bestOffset = 0;
 
+    if (outFailClosed != ZR_NULL) {
+        *outFailClosed = ZR_FALSE;
+    }
     if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL || content == ZR_NULL ||
         result == ZR_NULL || cursorOffset > contentLength) {
         return ZR_FALSE;
@@ -4851,12 +4897,12 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
 
     receiverLength = receiverEnd - receiverStart;
     if (receiverLength == 0) {
-        if (try_infer_receiver_type_text_from_ast(state,
-                                                  analyzer,
-                                                  ast,
-                                                  cursorOffset,
-                                                  receiverTypeName,
-                                                  sizeof(receiverTypeName))) {
+        if (copy_receiver_type_text_from_expression_fact(analyzer,
+                                                         ast,
+                                                         cursorOffset,
+                                                         receiverTypeName,
+                                                         sizeof(receiverTypeName),
+                                                         ZR_NULL)) {
             receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
             if (receiverPrototype != ZR_NULL) {
                 append_type_prototype_member_completions(state,
@@ -4876,6 +4922,9 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            receiverTypeName,
                                                            ZR_FALSE,
                                                            result);
+        }
+        if (outFailClosed != ZR_NULL) {
+            *outFailClosed = ZR_TRUE;
         }
         return ZR_FALSE;
     }
