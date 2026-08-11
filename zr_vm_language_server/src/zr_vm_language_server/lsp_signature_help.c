@@ -980,19 +980,71 @@ static void signature_update_best_context(SZrLspCallContext *best,
     }
 }
 
+static TZrBool signature_construct_node_is_supported(const SZrAstNode *node) {
+    return node != ZR_NULL &&
+           (node->type == ZR_AST_CONSTRUCT_EXPRESSION ||
+            node->type == ZR_AST_STRUCT_INIT_EXPRESSION);
+}
+
+static SZrAstNodeArray *signature_construct_node_arguments(SZrAstNode *node) {
+    if (!signature_construct_node_is_supported(node)) {
+        return ZR_NULL;
+    }
+    return node->type == ZR_AST_STRUCT_INIT_EXPRESSION
+                   ? node->data.structInitExpression.args
+                   : node->data.constructExpression.args;
+}
+
+static TZrBool signature_construct_node_has_named_arguments(const SZrAstNode *node) {
+    return node != ZR_NULL && node->type == ZR_AST_STRUCT_INIT_EXPRESSION &&
+           node->data.structInitExpression.hasNamedArgs;
+}
+
+static SZrArray *signature_construct_node_argument_names(SZrAstNode *node) {
+    return node != ZR_NULL && node->type == ZR_AST_STRUCT_INIT_EXPRESSION
+                   ? node->data.structInitExpression.argNames
+                   : ZR_NULL;
+}
+
+static SZrArray *signature_construct_node_argument_markers(SZrAstNode *node) {
+    return node != ZR_NULL && node->type == ZR_AST_STRUCT_INIT_EXPRESSION
+                   ? node->data.structInitExpression.argumentMarkers
+                   : ZR_NULL;
+}
+
+static TZrBool signature_copy_exact_construct_type(SZrState *state,
+                                                   SZrSemanticAnalyzer *analyzer,
+                                                   SZrAstNode *constructNode,
+                                                   SZrInferredType *outType) {
+    const SZrSemanticExpressionFact *fact;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !signature_construct_node_is_supported(constructNode) || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    fact = ZrParser_SemanticFacts_FindExpressionByNode(analyzer->semanticContext, constructNode);
+    if (fact == ZR_NULL || fact->exactness != ZR_SEMANTIC_FACT_EXACT ||
+        fact->typeId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(&fact->inferredType)) {
+        return ZR_FALSE;
+    }
+    ZrParser_InferredType_Copy(state, outType, &fact->inferredType);
+    return outType->typeName != ZR_NULL;
+}
+
 static SZrFileRange signature_construct_call_context_range(SZrAstNode *constructNode) {
-    SZrConstructExpression *construct;
+    SZrAstNodeArray *arguments;
     SZrFileRange range;
 
     memset(&range, 0, sizeof(range));
-    if (constructNode == ZR_NULL || constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+    if (!signature_construct_node_is_supported(constructNode)) {
         return range;
     }
 
-    construct = &constructNode->data.constructExpression;
+    arguments = signature_construct_node_arguments(constructNode);
     range = constructNode->location;
-    if (construct->args != ZR_NULL && construct->args->count > 0) {
-        SZrAstNode *lastArg = construct->args->nodes[construct->args->count - 1];
+    if (arguments != ZR_NULL && arguments->count > 0) {
+        SZrAstNode *lastArg = arguments->nodes[arguments->count - 1];
         if (lastArg != ZR_NULL) {
             range.end = lastArg->location.end;
         }
@@ -1002,22 +1054,22 @@ static SZrFileRange signature_construct_call_context_range(SZrAstNode *construct
 }
 
 static TZrBool signature_construct_call_matches_position(SZrAstNode *constructNode, SZrFileRange position) {
-    SZrConstructExpression *construct;
+    SZrAstNodeArray *arguments;
     SZrFileRange constructRange;
 
-    if (constructNode == ZR_NULL || constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+    if (!signature_construct_node_is_supported(constructNode)) {
         return ZR_FALSE;
     }
 
-    construct = &constructNode->data.constructExpression;
+    arguments = signature_construct_node_arguments(constructNode);
     constructRange = signature_construct_call_context_range(constructNode);
     if (signature_range_contains_position(constructRange, position)) {
         return ZR_TRUE;
     }
 
-    if (construct->args != ZR_NULL) {
-        for (TZrSize index = 0; index < construct->args->count; index++) {
-            SZrAstNode *argNode = construct->args->nodes[index];
+    if (arguments != ZR_NULL) {
+        for (TZrSize index = 0; index < arguments->count; index++) {
+            SZrAstNode *argNode = arguments->nodes[index];
             if (argNode != ZR_NULL && signature_range_contains_position(argNode->location, position)) {
                 return ZR_TRUE;
             }
@@ -1031,11 +1083,12 @@ static void signature_update_best_construct_context(SZrLspCallContext *best, SZr
     TZrSize span;
     SZrAstNode *primaryNode = ZR_NULL;
 
-    if (best == ZR_NULL || constructNode == ZR_NULL || constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+    if (best == ZR_NULL || !signature_construct_node_is_supported(constructNode)) {
         return;
     }
 
-    if (constructNode->data.constructExpression.target != ZR_NULL &&
+    if (constructNode->type == ZR_AST_CONSTRUCT_EXPRESSION &&
+        constructNode->data.constructExpression.target != ZR_NULL &&
         constructNode->data.constructExpression.target->type == ZR_AST_PRIMARY_EXPRESSION) {
         primaryNode = constructNode->data.constructExpression.target;
     }
@@ -1047,7 +1100,7 @@ static void signature_update_best_construct_context(SZrLspCallContext *best, SZr
         best->primaryNode = primaryNode;
         best->callNode = constructNode;
         best->metaFunctionNode = ZR_NULL;
-        best->argumentNodes = constructNode->data.constructExpression.args;
+        best->argumentNodes = signature_construct_node_arguments(constructNode);
         best->callMemberIndex = 0;
         best->span = span;
     }
@@ -1316,6 +1369,13 @@ static void signature_find_call_context_in_node(SZrAstNode *node,
             }
             signature_find_call_context_in_node(node->data.constructExpression.target, position, best);
             signature_find_call_context_in_array(node->data.constructExpression.args, position, best);
+            break;
+
+        case ZR_AST_STRUCT_INIT_EXPRESSION:
+            if (signature_construct_call_matches_position(node, position)) {
+                signature_update_best_construct_context(best, node);
+            }
+            signature_find_call_context_in_array(node->data.structInitExpression.args, position, best);
             break;
 
         case ZR_AST_IF_EXPRESSION:
@@ -3416,7 +3476,9 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
                                                 SZrLspCallContext *context,
                                                 SZrFilePosition position,
                                                 SZrLspSignatureHelp **result) {
-    SZrConstructExpression *construct;
+    SZrAstNodeArray *constructArguments;
+    SZrConstructExpression *legacyConstruct = ZR_NULL;
+    TZrBool isCanonicalStructInit;
     SZrInferredType constructedType;
     const SZrTypeMemberInfo *constructorInfo;
     SZrTypeMemberInfo temporaryConstructorInfo;
@@ -3427,29 +3489,37 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
 
     if (state == ZR_NULL || analyzer == ZR_NULL || compilerState == ZR_NULL || context == ZR_NULL ||
         result == ZR_NULL || context->kind != ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL ||
-        context->callNode == ZR_NULL || context->callNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        !signature_construct_node_is_supported(context->callNode)) {
         return ZR_FALSE;
     }
 
-    construct = &context->callNode->data.constructExpression;
+    constructArguments = signature_construct_node_arguments(context->callNode);
+    isCanonicalStructInit = context->callNode->type == ZR_AST_STRUCT_INIT_EXPRESSION;
+    if (!isCanonicalStructInit) {
+        legacyConstruct = &context->callNode->data.constructExpression;
+    }
     ZrParser_InferredType_Init(state, &constructedType, ZR_VALUE_TYPE_OBJECT);
-    if (!infer_construct_expression_type(compilerState, context->callNode, &constructedType) ||
-        constructedType.typeName == ZR_NULL) {
+    if ((isCanonicalStructInit &&
+         !signature_copy_exact_construct_type(state, analyzer, context->callNode, &constructedType)) ||
+        (!isCanonicalStructInit &&
+         (!infer_construct_expression_type(compilerState, context->callNode, &constructedType) ||
+          constructedType.typeName == ZR_NULL))) {
         ZrParser_InferredType_Free(state, &constructedType);
         return ZR_FALSE;
     }
 
     constructorInfo = signature_find_type_meta_member(compilerState, constructedType.typeName, ZR_META_CONSTRUCTOR);
     memset(&temporaryConstructorInfo, 0, sizeof(temporaryConstructorInfo));
-    if ((constructorInfo == ZR_NULL ||
+    if (!isCanonicalStructInit &&
+        (constructorInfo == ZR_NULL ||
          (constructorInfo->declarationNode == ZR_NULL &&
           constructorInfo->parameterNames.length == 0 &&
           constructorInfo->parameterTypes.length == 0)) &&
         lspContext != ZR_NULL &&
         uri != ZR_NULL &&
-        construct->target != ZR_NULL &&
-        construct->target->type == ZR_AST_PRIMARY_EXPRESSION &&
-        construct->target->data.primaryExpression.property != ZR_NULL) {
+        legacyConstruct->target != ZR_NULL &&
+        legacyConstruct->target->type == ZR_AST_PRIMARY_EXPRESSION &&
+        legacyConstruct->target->data.primaryExpression.property != ZR_NULL) {
         SZrInferredType moduleType;
         SZrLspProjectIndex *projectIndex;
         SZrLspProjectFileRecord *record = ZR_NULL;
@@ -3457,7 +3527,7 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
 
         ZrParser_InferredType_Init(state, &moduleType, ZR_VALUE_TYPE_OBJECT);
         if (ZrParser_ExpressionType_Infer(compilerState,
-                                          construct->target->data.primaryExpression.property,
+                                          legacyConstruct->target->data.primaryExpression.property,
                                           &moduleType) &&
             moduleType.typeName != ZR_NULL &&
             type_name_is_module_prototype_inference(compilerState, moduleType.typeName)) {
@@ -3484,7 +3554,15 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
             ZrParser_InferredType_Free(state, &moduleType);
         }
     }
-    if (constructorInfo == ZR_NULL &&
+    if (isCanonicalStructInit &&
+        (constructorInfo == ZR_NULL ||
+         (constructorInfo->declarationNode == ZR_NULL &&
+          constructorInfo->parameterNames.length == 0 &&
+          constructorInfo->parameterTypes.length == 0))) {
+        ZrParser_InferredType_Free(state, &constructedType);
+        return ZR_FALSE;
+    }
+    if (!isCanonicalStructInit && constructorInfo == ZR_NULL &&
         !signature_prepare_ast_specialized_receiver_constructor(state,
                                                                 compilerState,
                                                                 analyzer->ast,
@@ -3496,10 +3574,11 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
     }
 
     memset(&constructorCall, 0, sizeof(constructorCall));
-    constructorCall.args = construct->args;
-    constructorCall.hasNamedArgs = ZR_FALSE;
+    constructorCall.args = constructArguments;
+    constructorCall.argNames = signature_construct_node_argument_names(context->callNode);
+    constructorCall.hasNamedArgs = signature_construct_node_has_named_arguments(context->callNode);
     constructorCall.genericArguments = ZR_NULL;
-    constructorCall.argNames = ZR_NULL;
+    constructorCall.argumentMarkers = signature_construct_node_argument_markers(context->callNode);
 
     memset(&resolvedSignature, 0, sizeof(resolvedSignature));
     ZrParser_InferredType_Init(state, &resolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
@@ -3539,9 +3618,9 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
                                             analyzer,
                                             labelBuffer,
                                             signature_method_parameter_nodes(constructorInfo->declarationNode),
-                                            context->argumentNodes,
+                                            constructArguments,
                                             &resolvedSignature,
-                                            signature_active_parameter_index_for_arguments(context->argumentNodes,
+                                            signature_active_parameter_index_for_arguments(constructArguments,
                                                                                           position),
                                             result)) {
         free_resolved_call_signature(state, &resolvedSignature);

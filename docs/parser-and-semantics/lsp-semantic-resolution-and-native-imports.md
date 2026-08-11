@@ -766,6 +766,7 @@ scoped reanalysis, not a member-name cache heuristic.
 - `@constructor` meta method hover 类别说明
 - semantic tokens 对 `#decorator#` 与 `@meta-method` 的分类
 - native value constructor `init math.Vector3(...).y`
+- native `init math.Vector3(...)` 的 `STRUCT_INIT_EXPRESSION` signature help：同节点 exact expression fact 有效时投影 `x/y/z` 参数，unknown、invalid TypeId或missing fact时直接unavailable
 - watched binary metadata refresh 对 unopened project 的 bootstrap
 - watched binary metadata refresh 后 open 文档 hover 的更新
 - `.zro` 作为 binary metadata 载体的 imported member hover / completion

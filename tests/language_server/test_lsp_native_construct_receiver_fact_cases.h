@@ -337,3 +337,138 @@ static void test_lsp_native_construct_completion_fails_closed_without_expression
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Native Construct Completion Fails Closed Without Expression Fact");
 }
+
+static void test_lsp_native_construct_signature_fails_closed_without_expression_fact(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrLspPosition signaturePosition;
+    SZrLspPosition constructEndPosition;
+    SZrFilePosition constructEndFilePosition;
+    SZrFileRange constructEndRange;
+    SZrAstNode *constructNode;
+    SZrSemanticExpressionFact *constructFact;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    TZrTypeId constructTypeId;
+    const TZrChar *content =
+        "var math = import(\"zr.math\");\n"
+        "fn runImpl() {\n"
+        "    return init math.Vector3(4.0, 5.0, 6.0).y;\n"
+        "}\n";
+
+    TEST_START("LSP Native Construct Signature Fails Closed Without Expression Fact");
+    TEST_INFO("Native construct signature canonical fact",
+              "Signature help for a native value construction must consume its exact construct expression fact and become unavailable when that fact is unavailable.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///native_construct_signature_fact.zr",
+                               strlen("file:///native_construct_signature_fact.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "6.0", 0, 1, &signaturePosition) ||
+        !lsp_find_position_for_substring(content, ").y", 0, 0, &constructEndPosition) ||
+        (analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri)) == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Construct Signature Fails Closed Without Expression Fact",
+                  "Failed to prepare the native construct signature fixture");
+        return;
+    }
+
+    constructEndFilePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, constructEndPosition);
+    constructEndRange = ZrParser_FileRange_Create(constructEndFilePosition,
+                                                   constructEndFilePosition,
+                                                   uri);
+    constructNode = ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(
+            analyzer->ast, constructEndRange);
+    if (constructNode != ZR_NULL && constructNode->type == ZR_AST_PRIMARY_EXPRESSION) {
+        constructNode = constructNode->data.primaryExpression.property;
+    }
+    constructFact = (SZrSemanticExpressionFact *)ZrParser_SemanticFacts_FindExpressionByNode(
+            analyzer->semanticContext, constructNode);
+    if (constructNode == ZR_NULL ||
+        (constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION &&
+         constructNode->type != ZR_AST_STRUCT_INIT_EXPRESSION) ||
+        constructFact == ZR_NULL || constructFact->exactness != ZR_SEMANTIC_FACT_EXACT ||
+        constructFact->typeId == ZR_SEMANTIC_ID_INVALID) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Construct Signature Fails Closed Without Expression Fact",
+                  "The native construct must publish an exact expression fact before signature projection");
+        return;
+    }
+
+    constructTypeId = constructFact->typeId;
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, signaturePosition, &help) ||
+        help == ZR_NULL || !signature_help_contains_text(help, "x: float") ||
+        !signature_help_contains_text(help, "y: float") ||
+        !signature_help_contains_text(help, "z: float")) {
+        const TZrChar *label = signature_help_first_label(help);
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Construct Signature Fails Closed Without Expression Fact",
+                  label != ZR_NULL ? label : "Native constructor signature help was unavailable");
+        return;
+    }
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    help = ZR_NULL;
+
+    constructFact->exactness = ZR_SEMANTIC_FACT_UNKNOWN;
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, signaturePosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Construct Signature Fails Closed Without Expression Fact",
+                  "Native construct signature help recovered the constructor through local AST inference after its exact expression fact became unavailable");
+        return;
+    }
+
+    constructFact->exactness = ZR_SEMANTIC_FACT_EXACT;
+    constructFact->typeId = ZR_SEMANTIC_ID_INVALID;
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, signaturePosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Construct Signature Fails Closed Without Expression Fact",
+                  "Native construct signature help accepted an exact construct fact with an invalid canonical TypeId");
+        return;
+    }
+
+    constructFact->typeId = constructTypeId;
+    for (TZrSize index = 0; index < analyzer->semanticContext->expressionFacts.length; index++) {
+        SZrSemanticExpressionFact *candidate = (SZrSemanticExpressionFact *)ZrCore_Array_Get(
+                &analyzer->semanticContext->expressionFacts, index);
+        if (candidate != ZR_NULL && candidate->node == constructNode) {
+            candidate->node = ZR_NULL;
+        }
+    }
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, signaturePosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Construct Signature Fails Closed Without Expression Fact",
+                  "Native construct signature help recovered the constructor after its exact expression fact was removed");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Native Construct Signature Fails Closed Without Expression Fact");
+}
