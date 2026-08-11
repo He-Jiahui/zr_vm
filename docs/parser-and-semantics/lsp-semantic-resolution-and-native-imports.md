@@ -809,6 +809,14 @@ scoped reanalysis, not a member-name cache heuristic.
 - Windows MSVC 的 LSP 测试可执行体仍然存在独立的 `0xC0000005` 退出问题，这不是本轮 Linux/WSDL 语义修复引入的新回归。
 - `zr_vm_language_server_lsp_interface_test` 在 WSL 通过时仍会打印两条 `Construct target must resolve to a registered prototype` 编译日志；当前没有导致目标测试失败，但说明 constructor prototype 解析路径仍有额外清理空间。
 
+## Canonical Direct-Call Signature Boundary
+
+source `FUNCTION_DECLARATION` 的直接调用由`ZrParser_SemanticQuery_CallAt`和
+`ZrParser_SemanticQuery_FormatCall`提供signature help的唯一合同。LSP先消费该
+canonical result；同一调用缺失call fact时直接返回unavailable，不能改由本地
+overload检索、callee名称或AST文本重建签名。callable value assignment尚未发布
+等价的call fact，因此不在此boundary的授权范围内，必须由parser support先补齐。
+
 ## 统一 PropertyDecl 的 interface variance
 
 LSP semantic analysis 对 interface generic variance 直接消费统一

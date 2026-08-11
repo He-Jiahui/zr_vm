@@ -436,4 +436,96 @@ static void test_lsp_reference_call_diagnostic_is_published_from_query_facts(
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_fact(
+        SZrState *state) {
+    const TZrChar *summary =
+            "LSP Direct Call Signature Fails Closed Without Canonical Call Fact";
+    const TZrChar *uriText = "file:///direct_call_signature_fact.zr";
+    const TZrChar *content =
+            "fn inspect(value: int): int { return value; }\n"
+            "fn use(): int { return inspect(1); }\n";
+    const TZrChar *expectedLabel = "inspect(value: int): int";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrLspPosition callPosition;
+    SZrFilePosition filePosition;
+    SZrFileRange fileRange;
+    SZrParserSemanticCallQuery query;
+    SZrSemanticExpressionFact *callFact;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    const TZrChar *label;
+    TZrChar formattedCall[ZR_LSP_TEXT_BUFFER_LENGTH];
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Canonical direct-call signature consumer",
+            "A resolved source call must not recover signature help from a local overload "
+            "or callee-name fallback after its canonical call fact is unavailable");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !lsp_find_position_for_substring(
+                content, "inspect(1)", 0U, 8U, &callPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare direct-call fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, callPosition);
+    fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    memset(&query, 0, sizeof(query));
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_CallAt(
+                analyzer->semanticContext, fileRange, ZR_NULL, &query) ||
+        query.expression == ZR_NULL ||
+        !ZrParser_SemanticQuery_FormatCall(
+                analyzer->semanticContext,
+                &query,
+                formattedCall,
+                sizeof(formattedCall)) ||
+        strcmp(formattedCall, expectedLabel) != 0 ||
+        !ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, callPosition, &help) ||
+        help == ZR_NULL ||
+        (label = signature_help_first_label(help)) == ZR_NULL ||
+        strcmp(label, expectedLabel) != 0) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Valid direct-call canonical signature was unavailable");
+        return;
+    }
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    help = ZR_NULL;
+
+    callFact = (SZrSemanticExpressionFact *)query.expression;
+    callFact->hasCallInfo = ZR_FALSE;
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, callPosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "Direct-call signature help recovered from a local overload or callee-name fallback");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif

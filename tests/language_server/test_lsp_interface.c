@@ -8238,6 +8238,9 @@ int main(void) {
     test_lsp_reference_callable_hover_and_signature_use_canonical_contract(state);
     TEST_DIVIDER();
 
+    test_lsp_direct_call_signature_fails_closed_without_canonical_call_fact(state);
+    TEST_DIVIDER();
+
     test_lsp_receiver_call_consumers_use_resolved_canonical_target(state);
     TEST_DIVIDER();
 

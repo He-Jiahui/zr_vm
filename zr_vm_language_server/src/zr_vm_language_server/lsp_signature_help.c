@@ -4,6 +4,7 @@
 #include "lsp_signature_help_internal.h"
 #include "semantic/semantic_analyzer_internal.h"
 
+#include "zr_vm_parser/semantic_query.h"
 #include "type_inference_internal.h"
 
 #include <stdarg.h>
@@ -978,6 +979,30 @@ static void signature_update_best_context(SZrLspCallContext *best,
         best->callMemberIndex = callMemberIndex;
         best->span = span;
     }
+}
+
+static TZrBool signature_context_requires_canonical_direct_call(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrLspCallContext *context) {
+    const SZrAstNode *callee;
+    const SZrSemanticReferenceFact *declaration;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        context == ZR_NULL ||
+        context->kind != ZR_LSP_CALL_CONTEXT_FUNCTION_CALL ||
+        context->callMemberIndex != 0U ||
+        context->primaryNode == ZR_NULL ||
+        context->primaryNode->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    callee = context->primaryNode->data.primaryExpression.property;
+    if (callee == ZR_NULL || callee->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+    declaration = ZrParser_SemanticQuery_DefinitionOf(
+            analyzer->semanticContext, callee->location, ZR_NULL);
+    return declaration != ZR_NULL && declaration->node != ZR_NULL &&
+           declaration->node->type == ZR_AST_FUNCTION_DECLARATION;
 }
 
 static TZrBool signature_construct_node_is_supported(const SZrAstNode *node) {
@@ -3999,6 +4024,10 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
                         &callContext.callNode->data.functionCall, filePosition),
                 result)) {
         return *result != ZR_NULL;
+    }
+
+    if (signature_context_requires_canonical_direct_call(analyzer, &callContext)) {
+        return ZR_FALSE;
     }
 
     if (callContext.kind == ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL) {
