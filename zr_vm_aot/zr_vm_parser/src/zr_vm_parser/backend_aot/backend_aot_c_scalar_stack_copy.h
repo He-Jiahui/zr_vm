@@ -15,5 +15,9 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
                                                            TZrUInt32 destinationSlot,
                                                            TZrUInt32 sourceSlot,
                                                            TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 slot,
+        TZrUInt32 execInstructionIndex);
 
 #endif

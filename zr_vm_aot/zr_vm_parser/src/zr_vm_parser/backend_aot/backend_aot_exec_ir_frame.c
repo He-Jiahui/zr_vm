@@ -138,12 +138,14 @@ static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
                     hasCompleteIdentity) {
             return ZR_FALSE;
         }
-        if (identityAvailabilityKnown &&
-            parametersHaveIdentity != hasCompleteIdentity) {
-            return ZR_FALSE;
+        if (!isReceiver) {
+            if (identityAvailabilityKnown &&
+                parametersHaveIdentity != hasCompleteIdentity) {
+                return ZR_FALSE;
+            }
+            identityAvailabilityKnown = ZR_TRUE;
+            parametersHaveIdentity = hasCompleteIdentity;
         }
-        identityAvailabilityKnown = ZR_TRUE;
-        parametersHaveIdentity = hasCompleteIdentity;
 
         for (TZrUInt32 previous = 0u; previous < index; previous++) {
             const SZrFunctionTypedLocalBinding *previousBinding =
@@ -244,10 +246,20 @@ static TZrBool backend_aot_exec_ir_validate_receiver_role(
         }
 
         receiverCount++;
+        {
+            const TZrBool hasSymbolIdentity = (TZrBool)(binding->symbolId != 0u);
+            const TZrBool hasTypeIdentity = (TZrBool)(binding->typeId != 0u);
+            const TZrBool hasPlaceIdentity = (TZrBool)(binding->placeId != 0u);
+            const TZrBool hasAnyIdentity =
+                    (TZrBool)(hasSymbolIdentity || hasTypeIdentity || hasPlaceIdentity);
+            const TZrBool hasCompleteIdentity =
+                    (TZrBool)(hasSymbolIdentity && hasTypeIdentity && hasPlaceIdentity);
+
+            if (hasAnyIdentity && !hasCompleteIdentity) {
+                return ZR_FALSE;
+            }
+        }
         if (receiverCount > 1u ||
-            binding->symbolId == 0u ||
-            binding->typeId == 0u ||
-            binding->placeId == 0u ||
             binding->stackSlot != 0u ||
             function->parameterCount == 0u) {
             return ZR_FALSE;

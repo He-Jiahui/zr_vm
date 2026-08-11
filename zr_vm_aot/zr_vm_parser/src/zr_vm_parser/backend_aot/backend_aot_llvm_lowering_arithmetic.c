@@ -483,6 +483,21 @@ static TZrBool backend_aot_llvm_lower_add_signed_instruction(const SZrAotLlvmLow
                                                                  ZR_AOT_LLVM_INTEGER_FAMILY_SIGNED);
 }
 
+static TZrBool backend_aot_llvm_lower_add_signed_load_stack_instruction(
+        const SZrAotLlvmLoweringContext *context,
+        const SZrAotLlvmInstructionContext *instruction) {
+    SZrAotLlvmInstructionContext decodedInstruction;
+
+    if (instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    decodedInstruction = *instruction;
+    decodedInstruction.operandA1 = instruction->operandU8A;
+    decodedInstruction.operandB1 = instruction->operandU8B;
+    return backend_aot_llvm_lower_add_signed_instruction(context, &decodedInstruction);
+}
+
 static TZrBool backend_aot_llvm_lower_add_unsigned_instruction(const SZrAotLlvmLoweringContext *context,
                                                                const SZrAotLlvmInstructionContext *instruction) {
     return backend_aot_llvm_lower_add_integer_family_instruction(context,
@@ -989,6 +1004,8 @@ TZrBool backend_aot_llvm_lower_arithmetic_value_family(const SZrAotLlvmLoweringC
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
             return backend_aot_llvm_lower_add_signed_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+            return backend_aot_llvm_lower_add_signed_load_stack_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
             return backend_aot_llvm_lower_add_unsigned_instruction(context, instruction);

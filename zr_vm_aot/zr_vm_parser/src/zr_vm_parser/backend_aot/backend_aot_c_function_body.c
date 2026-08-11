@@ -928,6 +928,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                       destinationSlot,
                                                       sourceSlot,
                                                       instructionIndex,
+                                                      (TZrBool)(instruction->instruction.operationCode ==
+                                                                ZR_INSTRUCTION_ENUM(GET_STACK)),
                                                       destinationIsNextCallCallable);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -2087,6 +2089,9 @@ void backend_aot_write_c_function_body(FILE *file,
             case ZR_INSTRUCTION_ENUM(THROW):
                 backend_aot_write_c_throw(file, entry->flatIndex, destinationSlot);
                 break;
+            case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
+                backend_aot_write_c_require_non_null(file, entry->flatIndex, destinationSlot);
+                break;
             case ZR_INSTRUCTION_ENUM(CATCH):
                 backend_aot_write_c_catch(file, destinationSlot);
                 break;
@@ -2351,6 +2356,25 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                                        targetInstructionIndex));
                 }
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+                if ((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1 < 0 ||
+                    (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1) >=
+                            entry->function->instructionsLength) {
+                    backend_aot_write_c_unsupported_instruction(file,
+                                                                entry->flatIndex,
+                                                                instructionIndex,
+                                                                instruction->instruction.operationCode);
+                } else {
+                    TZrUInt32 targetInstructionIndex =
+                            (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1);
+                    backend_aot_write_c_direct_jump_if_null(
+                            file,
+                            entry->flatIndex,
+                            destinationSlot,
+                            targetInstructionIndex,
+                            backend_aot_target_is_back_edge(instructionIndex, targetInstructionIndex));
+                }
+                break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
                 if ((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1 < 0 ||
                     (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1) >=
@@ -2593,9 +2617,9 @@ void backend_aot_write_c_function_body(FILE *file,
                         cacheIndex,
                         ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
                 backend_aot_write_c_direct_stack_copy(
-                        file, functionIr, destinationSlot + 1u, receiverSourceSlot, instructionIndex, ZR_FALSE);
+                        file, functionIr, destinationSlot + 1u, receiverSourceSlot, instructionIndex, ZR_FALSE, ZR_FALSE);
                 backend_aot_write_c_direct_stack_copy(
-                        file, functionIr, destinationSlot + 2u, argumentSourceSlot, instructionIndex, ZR_FALSE);
+                        file, functionIr, destinationSlot + 2u, argumentSourceSlot, instructionIndex, ZR_FALSE, ZR_FALSE);
                 backend_aot_write_c_known_vm_member_call(file,
                                                           functionIr,
                                                           destinationSlot,

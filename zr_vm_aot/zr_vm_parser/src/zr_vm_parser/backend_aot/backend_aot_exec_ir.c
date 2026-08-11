@@ -75,6 +75,8 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "OWN_INTO_GC_BOX";
         case ZR_SEMIR_OPCODE_OWN_RETURN_TO_GC:
             return "OWN_RETURN_TO_GC";
+        case ZR_SEMIR_OPCODE_REQUIRE_NON_NULL:
+            return "REQUIRE_NON_NULL";
         case ZR_SEMIR_OPCODE_TYPEOF:
             return "TYPEOF";
         case ZR_SEMIR_OPCODE_DYN_CALL:
@@ -355,6 +357,7 @@ static TZrUInt32 backend_aot_exec_ir_terminator_kind_for_instruction(TZrUInt16 o
         case ZR_INSTRUCTION_ENUM(JUMP):
             return ZR_AOT_EXEC_IR_TERMINATOR_KIND_BRANCH;
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
@@ -420,6 +423,7 @@ static TZrBool backend_aot_exec_ir_branch_target(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
             targetIndex = (TZrInt32)instructionIndex + 1 + instruction->instruction.operand.operand2[0];
             break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):

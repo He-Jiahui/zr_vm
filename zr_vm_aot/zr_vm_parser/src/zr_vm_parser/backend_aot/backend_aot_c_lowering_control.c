@@ -141,6 +141,24 @@ void backend_aot_write_c_throw(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt3
             (unsigned)functionFlatIndex);
 }
 
+void backend_aot_write_c_require_non_null(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 sourceSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_require_non_null_direct */\n"
+            "        zr_aot_next_instruction = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_RequireNonNull(state, &frame, %u, &zr_aot_next_instruction));\n"
+            "        if (zr_aot_next_instruction != ZR_AOT_RUNTIME_RESUME_FALLTHROUGH) {\n"
+            "            goto zr_aot_fn_%u_dispatch;\n"
+            "        }\n"
+            "    }\n",
+            (unsigned)sourceSlot,
+            (unsigned)functionFlatIndex);
+}
+
 void backend_aot_write_c_catch(FILE *file, TZrUInt32 destinationSlot) {
     if (file == ZR_NULL) {
         return;
@@ -290,6 +308,35 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
             "        if (!zr_aot_condition_bool) {\n",
             (unsigned)conditionSlot,
             (unsigned)conditionSlot);
+    if (isBackEdge) {
+        backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
+    }
+    fprintf(file,
+            "            goto zr_aot_fn_%u_ins_%u;\n"
+            "        }\n"
+            "    }\n",
+            (unsigned)functionIndex,
+            (unsigned)targetInstructionIndex);
+}
+
+void backend_aot_write_c_direct_jump_if_null(FILE *file,
+                                             TZrUInt32 functionIndex,
+                                             TZrUInt32 valueSlot,
+                                             TZrUInt32 targetInstructionIndex,
+                                             TZrBool isBackEdge) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_jump_if_null */\n"
+            "        if (frame.slotBase == ZR_NULL || %u >= frame.generatedFrameSlotCount) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (ZR_VALUE_IS_TYPE_NULL(frame.slotBase[%u].value.type)) {\n",
+            (unsigned)valueSlot,
+            (unsigned)valueSlot);
     if (isBackEdge) {
         backend_aot_write_c_gc_safepoint(file, "            ", "zr_aot_gc_safepoint_back_edge");
     }

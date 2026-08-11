@@ -3132,6 +3132,29 @@ TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_GetStack(SZrState *state,
+                                      ZrAotGeneratedFrame *frame,
+                                      TZrUInt32 destinationSlot,
+                                      TZrUInt32 sourceSlot) {
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *sourceValue;
+
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || sourcePointer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (destinationValue == ZR_NULL || sourceValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_Copy(state, destinationValue, sourceValue);
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_GetGlobal(SZrState *state,
                                        ZrAotGeneratedFrame *frame,
                                        TZrUInt32 destinationSlot) {
@@ -7486,6 +7509,65 @@ TZrBool ZrLibrary_AotRuntime_Throw(SZrState *state,
     }
 
     return aot_runtime_resume_exception_in_current_frame(state, frame, outResumeInstructionIndex);
+}
+
+TZrBool ZrLibrary_AotRuntime_RequireNonNull(SZrState *state,
+                                            ZrAotGeneratedFrame *frame,
+                                            TZrUInt32 sourceSlot,
+                                            TZrUInt32 *outResumeInstructionIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    SZrCallInfo *callInfo;
+    TZrStackValuePointer sourcePointer;
+    const SZrTypeValue *sourceValue;
+
+    if (outResumeInstructionIndex != ZR_NULL) {
+        *outResumeInstructionIndex = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
+    }
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    callInfo = frame != ZR_NULL && frame->callInfo != ZR_NULL ? frame->callInfo : (state != ZR_NULL ? state->callInfoList : ZR_NULL);
+    sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    sourceValue = sourcePointer != ZR_NULL ? ZrCore_Stack_GetValue(sourcePointer) : ZR_NULL;
+    if (state == ZR_NULL || callInfo == ZR_NULL || sourceValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT REQUIRE_NON_NULL has invalid source slot");
+        return ZR_FALSE;
+    }
+    if (!ZR_VALUE_IS_TYPE_NULL(sourceValue->type)) {
+        return ZR_TRUE;
+    }
+
+    execution_clear_pending_control(state);
+    if (!ZrCore_Exception_RaiseNamedRuntimeError(state,
+                                                 "NullReferenceError",
+                                                 "Direct access through a null receiver",
+                                                 callInfo)) {
+        if (!ZrCore_Exception_NormalizeStatus(state, ZR_THREAD_STATUS_EXCEPTION_ERROR)) {
+            aot_runtime_fail(state, runtimeState, "generated AOT REQUIRE_NON_NULL failed to normalize exception");
+            return ZR_FALSE;
+        }
+    }
+
+    return aot_runtime_resume_exception_in_current_frame(state, frame, outResumeInstructionIndex);
+}
+
+TZrBool ZrLibrary_AotRuntime_IsNull(SZrState *state,
+                                    ZrAotGeneratedFrame *frame,
+                                    TZrUInt32 sourceSlot,
+                                    TZrBool *outIsNull) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer sourcePointer;
+    const SZrTypeValue *sourceValue;
+
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    sourceValue = sourcePointer != ZR_NULL ? ZrCore_Stack_GetValue(sourcePointer) : ZR_NULL;
+    if (state == ZR_NULL || sourceValue == ZR_NULL || outIsNull == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT JUMP_IF_NULL has invalid source slot");
+        return ZR_FALSE;
+    }
+
+    *outIsNull = (TZrBool)ZR_VALUE_IS_TYPE_NULL(sourceValue->type);
+    return ZR_TRUE;
 }
 
 TZrBool ZrLibrary_AotRuntime_Catch(SZrState *state, ZrAotGeneratedFrame *frame, TZrUInt32 destinationSlot) {

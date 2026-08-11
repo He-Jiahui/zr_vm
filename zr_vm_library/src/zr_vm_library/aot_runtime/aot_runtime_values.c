@@ -95,6 +95,62 @@ TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_GetStack(SZrState *state,
+                                      ZrAotGeneratedFrame *frame,
+                                      TZrUInt32 destinationSlot,
+                                      TZrUInt32 sourceSlot) {
+    SZrLibraryAotRuntimeState *runtimeState = aot_runtime_value_runtime_state(state);
+    TZrStackValuePointer destinationPointer = aot_runtime_value_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer sourcePointer = aot_runtime_value_frame_slot(frame, sourceSlot);
+    const SZrFunctionFrameSlotLayout *destinationLayout;
+    const SZrFunctionFrameSlotLayout *sourceLayout;
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *sourceValue;
+
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || sourcePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "GET_STACK: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (destinationValue == ZR_NULL || sourceValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "GET_STACK: missing value");
+        return ZR_FALSE;
+    }
+
+    destinationLayout = ZrCore_Function_FindFrameSlotLayout(frame->function, destinationSlot);
+    sourceLayout = ZrCore_Function_FindFrameSlotLayout(frame->function, sourceSlot);
+    if (destinationLayout != ZR_NULL && sourceLayout != ZR_NULL &&
+        destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+        sourceLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+        destinationLayout->typeLayoutId == sourceLayout->typeLayoutId) {
+        const SZrTypeLayout *inlineLayout =
+                ZrCore_MetadataRuntime_ResolveFunctionTypeLayout(frame->function, destinationLayout->typeLayoutId);
+        if (inlineLayout == ZR_NULL ||
+            !ZrCore_Function_CopyFrameSlotInline(
+                    state, inlineLayout, frame->function, frame->slotBase, destinationSlot, frame->function,
+                    frame->slotBase, sourceSlot)) {
+            aot_runtime_fail(state, runtimeState, "GET_STACK: failed inline frame copy");
+            return ZR_FALSE;
+        }
+        return ZR_TRUE;
+    }
+
+    if (destinationLayout != ZR_NULL &&
+        destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        if (!ZrCore_Function_CopyObjectValueToFrameSlotInline(
+                    state, frame->function, frame->slotBase, destinationSlot, sourceValue)) {
+            aot_runtime_fail(state, runtimeState, "GET_STACK: failed inline object copy");
+            return ZR_FALSE;
+        }
+        return ZR_TRUE;
+    }
+
+    ZrCore_Value_Copy(state, destinationValue, sourceValue);
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_ResetStackNull(SZrState *state,
                                             ZrAotGeneratedFrame *frame,
                                             TZrUInt32 destinationSlot) {
@@ -113,7 +169,8 @@ TZrBool ZrLibrary_AotRuntime_ResetStackNull(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_ResetAsNull(destinationValue);
+    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destinationValue);
+    ZrCore_Value_ResetAsNullNoProfile(destinationValue);
     return ZR_TRUE;
 }
 
@@ -139,8 +196,10 @@ TZrBool ZrLibrary_AotRuntime_ResetStackNull2(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_ResetAsNull(firstValue);
-    ZrCore_Value_ResetAsNull(secondValue);
+    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, firstValue);
+    ZrCore_Value_ResetAsNullNoProfile(firstValue);
+    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, secondValue);
+    ZrCore_Value_ResetAsNullNoProfile(secondValue);
     return ZR_TRUE;
 }
 

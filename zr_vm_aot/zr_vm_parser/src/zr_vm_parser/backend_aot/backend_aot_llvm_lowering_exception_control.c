@@ -21,6 +21,17 @@ static TZrBool backend_aot_llvm_lower_resume_control_instruction(const SZrAotLlv
                                                  argsBuffer,
                                                  resumeOkLabel,
                                                  context->failLabel);
+    } else if (instruction->opcode == ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL)) {
+        snprintf(argsBuffer,
+                 sizeof(argsBuffer),
+                 "ptr %%state, ptr %%frame, i32 %u, ptr %%resume_instruction",
+                 (unsigned)instruction->destinationSlot);
+        backend_aot_llvm_write_guarded_call_text(context->file,
+                                                 context->tempCounter,
+                                                 "ZrLibrary_AotRuntime_RequireNonNull",
+                                                 argsBuffer,
+                                                 resumeOkLabel,
+                                                 context->failLabel);
     } else if (instruction->opcode == ZR_INSTRUCTION_ENUM(END_FINALLY)) {
         snprintf(argsBuffer,
                  sizeof(argsBuffer),
@@ -113,6 +124,7 @@ TZrBool backend_aot_llvm_lower_exception_control_family(const SZrAotLlvmLowering
                                                      context->failLabel);
             return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(THROW):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
         case ZR_INSTRUCTION_ENUM(END_FINALLY):
         case ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN):
         case ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK):

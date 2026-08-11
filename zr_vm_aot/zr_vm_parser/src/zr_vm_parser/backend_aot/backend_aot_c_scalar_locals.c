@@ -63,7 +63,8 @@ static EZrAotScalarLocalKind backend_aot_c_scalar_locals_kind_from_type_ref(
         const SZrFunctionTypedTypeRef *typeRef) {
     EZrAotScalarLocalKind kind;
 
-    if (typeRef == ZR_NULL) {
+    if (typeRef == ZR_NULL ||
+        typeRef->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
         return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
     }
 

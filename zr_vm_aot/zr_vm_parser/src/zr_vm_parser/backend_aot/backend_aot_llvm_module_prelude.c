@@ -145,6 +145,7 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_GetClosureValue(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SetClosureValue(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CopyStack(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_GetStack(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ResetStackNull(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ResetStackNull2(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_GetGlobal(ptr, ptr, i32)\n");
@@ -285,6 +286,8 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Try(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_EndTry(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Throw(ptr, ptr, i32, ptr)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_RequireNonNull(ptr, ptr, i32, ptr)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_IsNull(ptr, ptr, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Catch(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_EndFinally(ptr, ptr, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SetPendingReturn(ptr, ptr, i32, i32, ptr)\n");

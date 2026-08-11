@@ -1,6 +1,7 @@
 #include "backend_aot_c_emitter.h"
 
 #include "backend_aot_c_scalar_locals.h"
+#include "backend_aot_c_scalar_stack_copy.h"
 
 #include "zr_vm_core/closure.h"
 static void backend_aot_write_c_direct_ownership_helper_call(FILE *file,
@@ -1083,6 +1084,10 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
     if (file == ZR_NULL || functionIr == ZR_NULL) {
         return;
     }
+    if (!backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+                functionIr, sourceSlot, execInstructionIndex)) {
+        return;
+    }
 
     syncBool = (TZrBool)(backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot) &&
                          backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&
@@ -1139,6 +1144,7 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 sourceSlot,
                                            TZrUInt32 execInstructionIndex,
+                                           TZrBool preserveSource,
                                            TZrBool skipScalarLocalSync) {
     if (file == ZR_NULL) {
         return;
@@ -1147,7 +1153,8 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
     fprintf(file,
             "    do {\n"
             "        /* zr_aot_value_exec_copy_stack */\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, %u, %u));\n",
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_%s(state, &frame, %u, %u));\n",
+            preserveSource ? "GetStack" : "CopyStack",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
     if (!skipScalarLocalSync) {

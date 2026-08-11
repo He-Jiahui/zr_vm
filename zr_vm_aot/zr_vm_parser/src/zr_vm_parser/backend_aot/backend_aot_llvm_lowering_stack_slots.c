@@ -57,6 +57,20 @@ static TZrBool backend_aot_llvm_lower_stack_copy_instruction(const SZrAotLlvmLow
         fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
         return ZR_TRUE;
     }
+    if (instruction->opcode == ZR_INSTRUCTION_ENUM(GET_STACK)) {
+        snprintf(argsBuffer,
+                 sizeof(argsBuffer),
+                 "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+                 (unsigned)instruction->destinationSlot,
+                 (unsigned)instruction->operandA2);
+        backend_aot_llvm_write_guarded_call_text(context->file,
+                                                 context->tempCounter,
+                                                 "ZrLibrary_AotRuntime_GetStack",
+                                                 argsBuffer,
+                                                 instruction->nextLabel,
+                                                 context->failLabel);
+        return ZR_TRUE;
+    }
 
     destinationValueTemp = backend_aot_llvm_emit_stack_value_pointer(context->file,
                                                                      context->tempCounter,

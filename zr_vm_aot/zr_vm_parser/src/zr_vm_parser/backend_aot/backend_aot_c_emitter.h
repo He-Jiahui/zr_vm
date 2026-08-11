@@ -158,6 +158,7 @@ void backend_aot_write_c_direct_stack_copy(FILE *file,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 sourceSlot,
                                            TZrUInt32 execInstructionIndex,
+                                           TZrBool preserveSource,
                                            TZrBool skipScalarLocalSync);
 void backend_aot_write_c_null_constant_stack_copy_local_logical_not_skip(FILE *file,
                                                                          TZrUInt32 destinationSlot,
@@ -371,6 +372,11 @@ void backend_aot_write_c_direct_jump_if(FILE *file,
                                         TZrUInt32 execInstructionIndex,
                                         TZrUInt32 targetInstructionIndex,
                                         TZrBool isBackEdge);
+void backend_aot_write_c_direct_jump_if_null(FILE *file,
+                                             TZrUInt32 functionIndex,
+                                             TZrUInt32 valueSlot,
+                                             TZrUInt32 targetInstructionIndex,
+                                             TZrBool isBackEdge);
 void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
                                                    const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 functionIndex,
@@ -1056,6 +1062,7 @@ void backend_aot_write_c_dispatch_loop(FILE *file, TZrUInt32 functionFlatIndex, 
 void backend_aot_write_c_try(FILE *file, TZrUInt32 handlerIndex);
 void backend_aot_write_c_end_try(FILE *file, TZrUInt32 handlerIndex);
 void backend_aot_write_c_throw(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 sourceSlot);
+void backend_aot_write_c_require_non_null(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 sourceSlot);
 void backend_aot_write_c_catch(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_end_finally(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 handlerIndex);
 void backend_aot_write_c_set_pending_return(FILE *file,

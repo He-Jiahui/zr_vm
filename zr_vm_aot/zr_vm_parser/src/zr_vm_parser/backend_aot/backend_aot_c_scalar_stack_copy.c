@@ -82,7 +82,29 @@ static EZrStaticCType backend_aot_c_scalar_stack_copy_static_type_for_slot(const
     return ZR_STATIC_C_TYPE_DYNAMIC;
 }
 
-static TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+static TZrBool backend_aot_c_scalar_stack_copy_instruction_writes_ownership(
+        EZrInstructionCode opcode) {
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
+        case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+        case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+        case ZR_INSTRUCTION_ENUM(OWN_SHARE):
+        case ZR_INSTRUCTION_ENUM(OWN_DEGRADE):
+        case ZR_INSTRUCTION_ENUM(OWN_DETACH):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED):
+        case ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT):
+        case ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC):
+        case ZR_INSTRUCTION_ENUM(OWN_WAKE):
+        case ZR_INSTRUCTION_ENUM(OWN_DROP):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 slot,
         TZrUInt32 execInstructionIndex) {
@@ -137,6 +159,10 @@ static TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
             }
             return backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
                     functionIr, (TZrUInt32)copiedSourceSlot, scanIndex - 1u);
+        }
+
+        if (backend_aot_c_scalar_stack_copy_instruction_writes_ownership(opcode)) {
+            return ZR_FALSE;
         }
 
         return backend_aot_c_scalar_locals_instruction_writes_primitive(
@@ -786,6 +812,14 @@ TZrBool backend_aot_try_write_c_scalar_stack_copy(FILE *file,
         return ZR_FALSE;
     }
 
+    sourceIsParameter = backend_aot_c_scalar_stack_copy_source_slot_is_parameter(
+            functionIr, sourceSlot);
+    if (!sourceIsParameter &&
+        !backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+                functionIr, sourceSlot, execInstructionIndex)) {
+        return ZR_FALSE;
+    }
+
     sourceStaticCType = backend_aot_c_scalar_stack_copy_static_type_for_slot(functionIr->function, sourceSlot);
     sourceLocalStaticCType = backend_aot_c_scalar_stack_copy_static_type_from_locals(functionIr, sourceSlot);
     staticCType = backend_aot_c_scalar_stack_copy_static_type_for_slot(functionIr->function, destinationSlot);
@@ -811,7 +845,6 @@ TZrBool backend_aot_try_write_c_scalar_stack_copy(FILE *file,
                                                                           &staticCType,
                                                                           &hasSourceLocal);
     }
-    sourceIsParameter = backend_aot_c_scalar_stack_copy_source_slot_is_parameter(functionIr, sourceSlot);
     if (!hasSourceLocal &&
         sourceStaticCType != ZR_STATIC_C_TYPE_DYNAMIC &&
         sourceStaticCType != staticCType &&

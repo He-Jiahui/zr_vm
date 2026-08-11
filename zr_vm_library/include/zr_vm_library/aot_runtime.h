@@ -185,6 +185,11 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CopyStack(struct SZrState *state,
                                                       TZrUInt32 destinationSlot,
                                                       TZrUInt32 sourceSlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetStack(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 sourceSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ResetStackNull(struct SZrState *state,
                                                            ZrAotGeneratedFrame *frame,
                                                            TZrUInt32 destinationSlot);
@@ -1233,6 +1238,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Throw(struct SZrState *state,
                                                   ZrAotGeneratedFrame *frame,
                                                   TZrUInt32 sourceSlot,
                                                   TZrUInt32 *outResumeInstructionIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_RequireNonNull(struct SZrState *state,
+                                                           ZrAotGeneratedFrame *frame,
+                                                           TZrUInt32 sourceSlot,
+                                                           TZrUInt32 *outResumeInstructionIndex);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IsNull(struct SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 sourceSlot,
+                                                   TZrBool *outIsNull);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Catch(struct SZrState *state,
                                                   ZrAotGeneratedFrame *frame,

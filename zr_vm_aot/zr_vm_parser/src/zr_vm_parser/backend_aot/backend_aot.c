@@ -68,6 +68,8 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
         case ZR_INSTRUCTION_ENUM(JUMP):
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
@@ -537,6 +539,7 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(DYN_ITER_INIT):
         case ZR_INSTRUCTION_ENUM(DYN_ITER_MOVE_NEXT):
         case ZR_INSTRUCTION_ENUM(TRY):
+        case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
             return ZR_AOT_EMITTER_STEP_FLAG_MAY_THROW;
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
@@ -552,6 +555,7 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
                            : ZR_AOT_EMITTER_STEP_FLAG_MAY_THROW;
         case ZR_INSTRUCTION_ENUM(JUMP):
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):

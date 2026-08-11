@@ -168,7 +168,7 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
                  "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u, ptr %%direct_call",
                  (unsigned)instruction->destinationSlot,
                  (unsigned)instruction->destinationSlot,
-                 (unsigned)instruction->operandB1);
+                 (unsigned)argumentCount);
         backend_aot_llvm_write_guarded_call_text(context->file,
                                                  context->tempCounter,
                                                  "ZrLibrary_AotRuntime_PrepareDirectCall",
@@ -181,7 +181,7 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
                  "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1",
                  (unsigned)instruction->destinationSlot,
                  (unsigned)instruction->destinationSlot,
-                 (unsigned)instruction->operandB1);
+                 (unsigned)argumentCount);
         backend_aot_llvm_write_guarded_call_text(context->file,
                                                  context->tempCounter,
                                                  "ZrLibrary_AotRuntime_CallPreparedOrGeneric",
