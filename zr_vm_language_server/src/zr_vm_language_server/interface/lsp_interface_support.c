@@ -2123,6 +2123,14 @@ static TZrBool copy_type_text_from_reference_fact(
            receiver_type_text_is_specific(buffer);
 }
 
+static TZrBool copy_receiver_type_text_from_expression_fact(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ast,
+        TZrSize cursorOffset,
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrBool *outRequiresExactFact);
+
 static TZrBool receiver_name_is_explicit_type_binding(SZrSemanticAnalyzer *analyzer, SZrString *receiverName) {
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
         analyzer->compilerState->typeEnv == ZR_NULL || receiverName == ZR_NULL) {
@@ -3454,6 +3462,54 @@ static TZrBool find_receiver_member_context_recursive(SZrAstNode *node,
     }
 }
 
+static TZrBool copy_receiver_type_text_from_expression_fact(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ast,
+        TZrSize cursorOffset,
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrBool *outRequiresExactFact) {
+    SZrAstNode *primaryNode = ZR_NULL;
+    SZrAstNode *receiverNode = ZR_NULL;
+    TZrSize memberIndex = 0u;
+
+    if (outRequiresExactFact != ZR_NULL) {
+        *outRequiresExactFact = ZR_FALSE;
+    }
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        ast == ZR_NULL || buffer == ZR_NULL || bufferSize == 0u) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    if (!find_receiver_member_context_recursive(ast,
+                                                cursorOffset,
+                                                &primaryNode,
+                                                &memberIndex,
+                                                ZR_NULL) ||
+        primaryNode == ZR_NULL || primaryNode->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    if (memberIndex == 0u) {
+        receiverNode = primaryNode->data.primaryExpression.property;
+    } else if (primaryNode->data.primaryExpression.members != ZR_NULL &&
+               memberIndex <= primaryNode->data.primaryExpression.members->count) {
+        receiverNode = primaryNode->data.primaryExpression.members->nodes[memberIndex - 1u];
+    }
+    if (receiverNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (outRequiresExactFact != ZR_NULL &&
+        (memberIndex > 0u || receiverNode->type != ZR_AST_IDENTIFIER_LITERAL)) {
+        *outRequiresExactFact = ZR_TRUE;
+    }
+
+    return ZrLanguageServer_Lsp_FormatExactExpressionType(
+                   analyzer, receiverNode, buffer, bufferSize) &&
+           receiver_type_text_is_specific(buffer);
+}
+
 static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      SZrAstNode *ast,
@@ -3530,6 +3586,7 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
     TZrChar specializedType[ZR_LSP_TEXT_BUFFER_LENGTH];
     EZrLspImportedModuleSourceKind sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
     SZrLspMetadataProvider provider;
+    TZrBool receiverRequiresExactFact = ZR_FALSE;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL || content == ZR_NULL ||
         cursorOffset >= contentLength || outResolved == ZR_NULL) {
@@ -3563,13 +3620,13 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
     memberName[memberEnd - memberStart] = '\0';
 
     receiverTypeText[0] = '\0';
-    if (!try_infer_receiver_type_text_from_ast(state,
-                                               analyzer,
-                                               ast,
-                                               cursorOffset,
-                                               receiverTypeText,
-                                               sizeof(receiverTypeText)) &&
-        (receiverEnd <= receiverStart ||
+    if (!copy_receiver_type_text_from_expression_fact(analyzer,
+                                                       ast,
+                                                       cursorOffset,
+                                                       receiverTypeText,
+                                                       sizeof(receiverTypeText),
+                                                       &receiverRequiresExactFact) &&
+        (receiverRequiresExactFact || receiverEnd <= receiverStart ||
          receiverEnd - receiverStart >= sizeof(receiverNameText))) {
         return ZR_FALSE;
     }

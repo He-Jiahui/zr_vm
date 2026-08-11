@@ -2,6 +2,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
 TZrBool ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
@@ -27,4 +28,24 @@ TZrBool ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
            declaration->typeId == symbol->semanticTypeId &&
            ZrParser_CanonicalType_Format(
                    analyzer->semanticContext, declaration->typeId, buffer, bufferSize);
+}
+
+TZrBool ZrLanguageServer_Lsp_FormatExactExpressionType(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrAstNode *expression,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    const SZrSemanticExpressionFact *fact;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        expression == ZR_NULL || buffer == ZR_NULL || bufferSize == 0u) {
+        return ZR_FALSE;
+    }
+
+    fact = ZrParser_SemanticFacts_FindExpressionByNode(
+            analyzer->semanticContext, expression);
+    return fact != ZR_NULL && fact->exactness == ZR_SEMANTIC_FACT_EXACT &&
+           fact->typeId != ZR_SEMANTIC_ID_INVALID &&
+           ZrParser_CanonicalType_Format(
+                   analyzer->semanticContext, fact->typeId, buffer, bufferSize);
 }

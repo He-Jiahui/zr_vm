@@ -9,4 +9,10 @@ TZrBool ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
         TZrChar *buffer,
         TZrSize bufferSize);
 
+TZrBool ZrLanguageServer_Lsp_FormatExactExpressionType(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrAstNode *expression,
+        TZrChar *buffer,
+        TZrSize bufferSize);
+
 #endif

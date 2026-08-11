@@ -20,6 +20,7 @@
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
@@ -7898,6 +7899,7 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_property_incremental_cases.h"
 #include "test_lsp_property_refactor_cases.h"
 #include "test_lsp_compile_tool_projection_cases.h"
+#include "test_lsp_native_construct_receiver_fact_cases.h"
 
 // 主测试函数
 int main(void) {
@@ -8204,6 +8206,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_query_builds_native_receiver_member_hover(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_construct_receiver_fails_closed_without_expression_fact(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_construct_member_chain_fails_closed_without_expression_fact(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_resolves_external_metadata_declaration_targets(state);

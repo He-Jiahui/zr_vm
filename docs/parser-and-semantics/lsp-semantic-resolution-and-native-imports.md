@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.h
@@ -64,6 +66,7 @@ related_code:
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
 implementation_files:
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
@@ -122,6 +125,7 @@ tests:
   - tests/language_server/test_semantic_analyzer.c
   - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
+  - tests/language_server/test_lsp_native_construct_receiver_fact_cases.h
   - tests/language_server/test_lsp_property_contract_cases.h
   - tests/language_server/test_lsp_property_incremental_cases.h
   - tests/language_server/test_lsp_property_refactor_cases.h
@@ -178,6 +182,23 @@ Receiver hover is only selected for a resolved reference with `hasResolvedTarget
 The same target identity also closes the first receiver dependency boundary in `semantic_analyzer_scope_cache.c`. Class and struct method references compare the parser-published declaration range, not the member spelling. A changed inferred-return method invalidates a resolved direct caller, an unrelated cached scope is preserved, and unresolved/poisoned facts continue through conservative invalidation.
 
 Named-call compatibility failures preserve the parser compiler diagnostic until `ZrParser_Compiler_PublishCurrentDiagnostic` has copied it into persistent semantic query facts. `semantic_analyzer_query_diagnostics.c` then projects that fact into LSP and removes only the same-range `cannot_infer_exact_type` placeholder, preventing one root call error from becoming two primary diagnostics.
+
+## Native Construct Receiver Exact Expression Facts
+
+Native source construction receiver projection is a separate fail-closed path.
+For `init math.Vector3(...).y`, the LSP first selects the receiver-prefix AST
+node, then reads its exact expression fact by node identity and formats only its
+canonical TypeId. A range query is insufficient because the construction range
+can also contain the outer member's result fact. Missing, unknown, or invalid
+facts produce no native descriptor member target; the consumer does not call
+`ExpressionType_Infer` or reconstruct a type from the member spelling.
+
+A `memberIndex > 0` prefix is derived from an earlier member and is therefore
+also exact-fact-only even when its terminal AST node is an identifier. Direct
+plain identifiers retain the established path. Project receiver resolution is
+unchanged because it consumes a distinct canonical property contract. The
+interface regression covers both exactness and TypeId invalidation plus a
+construct-derived chain without an expression fact.
 
 ## Binary Metadata Declaration Identity
 
