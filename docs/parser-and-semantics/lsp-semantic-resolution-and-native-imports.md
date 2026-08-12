@@ -811,11 +811,12 @@ scoped reanalysis, not a member-name cache heuristic.
 
 ## Canonical Direct-Call Signature Boundary
 
-source `FUNCTION_DECLARATION` 的直接调用由`ZrParser_SemanticQuery_CallAt`和
-`ZrParser_SemanticQuery_FormatCall`提供signature help的唯一合同。LSP先消费该
-canonical result；同一调用缺失call fact时直接返回unavailable，不能改由本地
-overload检索、callee名称或AST文本重建签名。callable value assignment尚未发布
-等价的call fact，因此不在此boundary的授权范围内，必须由parser support先补齐。
+source declaration-backed的直接free或receiver调用由
+`ZrParser_SemanticQuery_CallAt`和`ZrParser_SemanticQuery_FormatCall`提供signature
+help的唯一合同。LSP先消费该canonical result；同一调用缺失call fact时直接返回
+unavailable，不能改由本地overload/member检索、callee名称或AST文本重建签名。
+callable value assignment尚未发布等价的call fact，因此不在此boundary的授权范围内，
+必须由parser support先补齐。
 
 ## 统一 PropertyDecl 的 interface variance
 

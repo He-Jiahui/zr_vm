@@ -4,19 +4,20 @@
 
 | 完成时间 | 状态 | 完成项目 |
 | --- | --- | --- |
-| 2026-08-12 04:40 +08:00 | 已完成 | LSP 08 第十二个独立合同：source `FUNCTION_DECLARATION` 直接调用只按canonical call fact提供signature help；fact不可用时fail closed。 |
+| 2026-08-12 04:40 +08:00 | 已完成 | LSP 08 第十二个独立合同的source `FUNCTION_DECLARATION` free direct-call：只按canonical call fact提供signature help；fact不可用时fail closed。 |
+| 2026-08-12 11:42 +08:00 | 已完成 | 同一合同的source receiver-call覆盖：method call缺少canonical call fact时同样fail closed。 |
 
 ## Contract
 
-- direct source function call首先通过`ZrLanguageServer_LspCanonicalSignatureHelp_Resolve`消费`ZrParser_SemanticQuery_CallAt`和`ZrParser_SemanticQuery_FormatCall`。
-- 当callee的definition fact精确指向`ZR_AST_FUNCTION_DECLARATION`而该调用没有canonical call fact时，`ZrLanguageServer_Lsp_GetSignatureHelp`返回unavailable；不得继续调用局部overload、callee-name或AST-text fallback。
+- direct source free或receiver call首先通过`ZrLanguageServer_LspCanonicalSignatureHelp_Resolve`消费`ZrParser_SemanticQuery_CallAt`和`ZrParser_SemanticQuery_FormatCall`。
+- 当callee的definition fact精确指向source declaration而该调用没有canonical call fact时，`ZrLanguageServer_Lsp_GetSignatureHelp`返回unavailable；不得继续调用局部overload、member、callee-name或AST-text fallback。
 - callable variable assignment不是function declaration。它尚未具备等价`CallAt`事实，仍为独立parser support边界；本记录不将旧行为当作canonical授权。
 
 ## TDD Evidence
 
 RED在source `inspect(1)`上取得有效canonical signature后，把同一expression fact的`hasCallInfo`置为false。旧实现仍从local overload/callee-name路径返回`inspect(value: int): int`，测试失败。
 
-GREEN只在canonical signature resolver失败后检查callee的精确definition fact。声明为`FUNCTION_DECLARATION`的直接调用立即fail closed；事实仍存在时显示canonical label。回归保留`pub var runBossScenario = runBossScenarioImpl`的callable value合同，避免把未发布fact的value调用误分类为source function declaration。
+GREEN只在canonical signature resolver失败后检查callee的精确definition fact。04:40 的生产修复冻结source free direct-call；11:42 的`counter.read()` negative case证明该gate也覆盖source receiver method。事实仍存在时显示canonical label。`pub var runBossScenario = runBossScenarioImpl`的callable value合同保持不变，避免把未发布fact的value调用误分类为source declaration。
 
 ## Validation
 
@@ -29,6 +30,10 @@ GREEN只在canonical signature resolver失败后检查callee的精确definition 
 | MSVC | 13/13 | 32/32 | 9/9 | 12/12 | 108/108 | 58/58 | 2/2 |
 
 每套测试进程与`ctest -R "^(language_server_stdio_smoke|cli_integration)$"`均真实exit 0。此leaf不宣告L8整体完成。
+
+## Receiver Coverage Follow-up
+
+2026-08-12 11:42 +08:00，GCC、Clang和MSVC各自重编并直接执行interface suite，均为109/109和真实exit 0。新增receiver negative case在移除`counter.read()`同一expression的`hasCallInfo`后要求signature help不可用；它不改变04:40的生产代码或完整矩阵证据。
 
 ## Open Scope
 

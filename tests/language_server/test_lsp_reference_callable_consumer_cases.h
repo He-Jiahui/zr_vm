@@ -528,4 +528,100 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_receiver_call_signature_fails_closed_without_canonical_call_fact(
+        SZrState *state) {
+    const TZrChar *summary =
+            "LSP Receiver Call Signature Fails Closed Without Canonical Call Fact";
+    const TZrChar *uriText = "file:///receiver_call_signature_fact.zr";
+    const TZrChar *content =
+            "class Counter {\n"
+            "    pub const fn read(): int { return 1; }\n"
+            "}\n"
+            "fn use(counter: readonly Counter): int { return counter.read(); }\n";
+    const TZrChar *expectedLabel = "const fn read(): int";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrLspPosition callPosition;
+    SZrFilePosition filePosition;
+    SZrFileRange fileRange;
+    SZrParserSemanticCallQuery query;
+    SZrSemanticExpressionFact *callFact;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    const TZrChar *label;
+    TZrChar formattedCall[ZR_LSP_TEXT_BUFFER_LENGTH];
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Canonical receiver-call signature consumer",
+            "A resolved source method must not recover signature help from a local member "
+            "or callee-name fallback after its canonical call fact is unavailable");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !lsp_find_position_for_substring(
+                content, "counter.read()", 0U, 12U, &callPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare receiver-call fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, callPosition);
+    fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    memset(&query, 0, sizeof(query));
+    memset(formattedCall, 0, sizeof(formattedCall));
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_CallAt(
+                analyzer->semanticContext, fileRange, ZR_NULL, &query) ||
+        query.expression == ZR_NULL || query.reference == ZR_NULL ||
+        !query.reference->isResolved || !query.hasResolvedTarget ||
+        !ZrParser_SemanticQuery_FormatCall(
+                analyzer->semanticContext,
+                &query,
+                formattedCall,
+                sizeof(formattedCall)) ||
+        strcmp(formattedCall, expectedLabel) != 0 ||
+        !ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, callPosition, &help) ||
+        help == ZR_NULL ||
+        (label = signature_help_first_label(help)) == ZR_NULL ||
+        strcmp(label, expectedLabel) != 0) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Valid receiver-call canonical signature was unavailable");
+        return;
+    }
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    help = ZR_NULL;
+
+    callFact = (SZrSemanticExpressionFact *)query.expression;
+    callFact->hasCallInfo = ZR_FALSE;
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, callPosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "Receiver-call signature help recovered from a local member or callee-name fallback");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif
