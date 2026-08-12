@@ -818,6 +818,10 @@ unavailable，不能改由本地overload/member检索、callee名称或AST文本
 callable value assignment尚未发布等价的call fact，因此不在此boundary的授权范围内，
 必须由parser support先补齐。
 
+闭合generic receiver也属于同一边界。`Box<int>.shape(...)`缺少同一expression的
+call fact时，不得以receiver的AST、open generic declaration或const-generic
+substitution临时重建`shape`的闭合signature。
+
 ## 统一 PropertyDecl 的 interface variance
 
 LSP semantic analysis 对 interface generic variance 直接消费统一

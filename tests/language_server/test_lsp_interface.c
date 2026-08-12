@@ -8244,6 +8244,9 @@ int main(void) {
     test_lsp_receiver_call_signature_fails_closed_without_canonical_call_fact(state);
     TEST_DIVIDER();
 
+    test_lsp_generic_receiver_signature_fails_closed_without_canonical_call_fact(state);
+    TEST_DIVIDER();
+
     test_lsp_receiver_call_consumers_use_resolved_canonical_target(state);
     TEST_DIVIDER();
 
