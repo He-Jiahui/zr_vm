@@ -141,6 +141,7 @@ TZrBool infer_ownership_intrinsic_expression_type(
         SZrInferredType *result) {
     SZrOwnershipIntrinsicExpression *intrinsic;
     SZrInferredType inputType;
+    EZrParserPlaceExpressionKind placeKind;
     TZrUInt32 placeId;
 
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
@@ -175,15 +176,24 @@ TZrBool infer_ownership_intrinsic_expression_type(
         ZrParser_InferredType_Free(cs->state, &inputType);
         return ZR_FALSE;
     }
-    if (intrinsic_is_consuming(intrinsic->operation) &&
-        ZrParser_PlaceExpression_Classify(intrinsic->argument) ==
-                ZR_PARSER_PLACE_EXPRESSION_INVALID) {
-        ZrParser_Compiler_Error(
-                cs,
-                "Consuming ownership intrinsic requires a place expression",
-                intrinsic->argument->location);
-        ZrParser_InferredType_Free(cs->state, &inputType);
-        return ZR_FALSE;
+    if (intrinsic_is_consuming(intrinsic->operation)) {
+        placeKind = ZrParser_PlaceExpression_Classify(intrinsic->argument);
+        if (placeKind == ZR_PARSER_PLACE_EXPRESSION_INVALID) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Consuming ownership intrinsic requires a place expression",
+                    intrinsic->argument->location);
+            ZrParser_InferredType_Free(cs->state, &inputType);
+            return ZR_FALSE;
+        }
+        if (intrinsic->argument->type != ZR_AST_IDENTIFIER_LITERAL) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Consuming ownership intrinsic currently requires a local owner binding",
+                    intrinsic->argument->location);
+            ZrParser_InferredType_Free(cs->state, &inputType);
+            return ZR_FALSE;
+        }
     }
 
     placeId = intrinsic_argument_place_id(cs, intrinsic->argument);

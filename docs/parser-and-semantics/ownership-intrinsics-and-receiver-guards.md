@@ -81,6 +81,14 @@ functions, overload candidates, or first-class values. Their contracts are:
 | `intoGc(owner)` | `Unique<resource T>` | `GcBox<T>` | consumes the unique place and crosses into the GC world |
 | `drop(owner)` | `Unique<T>`, `Shared<T>`, or `Weak<T>` | `void` | consumes and releases the supplied handle |
 
+The current consuming-lowering boundary is narrower than the abstract PlaceId
+model: `share`, `intoGc`, and `drop` accept a local owner binding only. A field
+or index projection such as `share(holder.owner)` is rejected until the
+compiler has a canonical load-and-clear/writeback operation for projected
+places. Move the projected owner into a local binding first. Non-consuming
+`degrade` and `wake` may read a field or index projection because they preserve
+the source handle.
+
 The same spellings remain legal after `.` or `?.` as ordinary object member
 names. `service.wake()` dispatches a method named `wake`; only `wake(weak)` is an
 ownership transition. No `GET_MEMBER`, property, or call path classifies member
@@ -172,6 +180,8 @@ an absent receiver. `wake(weak)` itself never throws for expiry.
 - Wrong intrinsic arity or owner kind is a compile error.
 - `share`, `intoGc`, and `drop` reject unavailable/moved places and incompatible
   active loans.
+- Consuming intrinsics reject field and index projections rather than lowering
+  a copied temporary while leaving the original owner in place.
 - `intoGc` rejects Shared owners and non-resource targets.
 - Optional access rejects unknown/dynamic and statically non-null receivers.
 - References tied to the hidden wake owner cannot escape the guarded chain.

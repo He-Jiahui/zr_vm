@@ -108,6 +108,8 @@ static void destroy_compiler_state(SZrCompilerState *compiler) {
 static void register_resource_prototype(SZrCompilerState *compiler) {
     SZrTypePrototypeInfo prototype;
     SZrTypeMemberInfo valueField;
+    SZrTypeMemberInfo ownedValueField;
+    SZrTypeMemberInfo weakValueField;
     SZrTypeMemberInfo resetMethod;
 
     memset(&prototype, 0, sizeof(prototype));
@@ -130,6 +132,24 @@ static void register_resource_prototype(SZrCompilerState *compiler) {
     valueField.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
     valueField.fieldSize = sizeof(TZrUInt64);
     ZrCore_Array_Push(g_state, &prototype.members, &valueField);
+
+    memset(&ownedValueField, 0, sizeof(ownedValueField));
+    ownedValueField.memberType = ZR_AST_CLASS_FIELD;
+    ownedValueField.name = ZrCore_String_CreateFromNative(g_state, "ownedValue");
+    ownedValueField.fieldTypeName = ZrCore_String_CreateFromNative(g_state, "Resource");
+    ownedValueField.accessModifier = ZR_ACCESS_PUBLIC;
+    ownedValueField.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+    ownedValueField.fieldSize = sizeof(TZrUInt64);
+    ZrCore_Array_Push(g_state, &prototype.members, &ownedValueField);
+
+    memset(&weakValueField, 0, sizeof(weakValueField));
+    weakValueField.memberType = ZR_AST_CLASS_FIELD;
+    weakValueField.name = ZrCore_String_CreateFromNative(g_state, "weakValue");
+    weakValueField.fieldTypeName = ZrCore_String_CreateFromNative(g_state, "Resource");
+    weakValueField.accessModifier = ZR_ACCESS_PUBLIC;
+    weakValueField.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
+    weakValueField.fieldSize = sizeof(TZrUInt64);
+    ZrCore_Array_Push(g_state, &prototype.members, &weakValueField);
 
     memset(&resetMethod, 0, sizeof(resetMethod));
     resetMethod.memberType = ZR_AST_CLASS_METHOD;
@@ -787,6 +807,63 @@ static void test_intrinsic_and_optional_receiver_errors_are_precise(void) {
             "unsupported_optional_receiver");
 }
 
+static void test_consuming_intrinsics_reject_unlowerable_projections(void) {
+    static const TZrChar *errorMessage =
+            "Consuming ownership intrinsic currently requires a local owner binding";
+    SZrCompilerState *compiler;
+    SZrAstNode *script;
+
+    assert_inference_error(
+            "share(holder.ownedValue);",
+            "holder",
+            ZR_OWNERSHIP_QUALIFIER_NONE,
+            ZR_FALSE,
+            "Resource",
+            errorMessage);
+    assert_inference_error(
+            "intoGc(holder.ownedValue);",
+            "holder",
+            ZR_OWNERSHIP_QUALIFIER_NONE,
+            ZR_FALSE,
+            "Resource",
+            errorMessage);
+    assert_inference_error(
+            "drop(holder.value);",
+            "holder",
+            ZR_OWNERSHIP_QUALIFIER_NONE,
+            ZR_FALSE,
+            "Resource",
+            errorMessage);
+
+    compiler = create_compiler_state();
+    script = parse_source("degrade(holder.value); wake(holder.weakValue);");
+    register_resource_prototype(compiler);
+    register_owner_binding(
+            compiler,
+            "holder",
+            ZR_OWNERSHIP_QUALIFIER_NONE,
+            ZR_FALSE,
+            "Resource",
+            503u,
+            603u);
+    for (TZrSize index = 0u; index < 2u; index++) {
+        SZrInferredType result;
+
+        ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+                compiler, statement_expression(script, index), &result));
+        TEST_ASSERT_EQUAL_INT(
+                index == 0u
+                        ? ZR_OWNERSHIP_QUALIFIER_WEAK
+                        : ZR_OWNERSHIP_QUALIFIER_SHARED,
+                result.ownershipQualifier);
+        ZrParser_InferredType_Free(g_state, &result);
+    }
+
+    ZrParser_Ast_Free(g_state, script);
+    destroy_compiler_state(compiler);
+}
+
 static void test_intrinsic_calls_emit_dedicated_opcodes_and_execute(void) {
     const TZrChar *source =
             "resource class Session {}\n"
@@ -1121,6 +1198,7 @@ int main(void) {
     RUN_TEST(test_receiver_guards_publish_chain_contracts);
     RUN_TEST(test_optional_void_calls_publish_void_noop_contracts);
     RUN_TEST(test_intrinsic_and_optional_receiver_errors_are_precise);
+    RUN_TEST(test_consuming_intrinsics_reject_unlowerable_projections);
     RUN_TEST(test_intrinsic_calls_emit_dedicated_opcodes_and_execute);
     RUN_TEST(test_intrinsic_spellings_on_objects_use_normal_member_calls);
     RUN_TEST(test_removed_ownership_member_calls_publish_structured_fixes);
