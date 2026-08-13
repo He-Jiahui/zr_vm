@@ -43,7 +43,7 @@ async function main() {
     assert(output.includes('Reference: read owner'),
         `:type should print the owner identifier reference fact\n${output}`);
     assert(output.includes('Declared at: 1:5'),
-        `:type should print the owner operand declaration location for %borrow(owner)\n${output}`);
+        `:type should print the owner operand declaration location for the current owner expression\n${output}`);
     assert(!output.includes('\nint\n') && !output.includes('failed to infer expression type'),
         `:type should not execute the ownership expression or fail inference\n${output}`);
 }

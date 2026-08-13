@@ -1,7 +1,0 @@
-{
-	"threadStatus":	0,
-	"stackBase":	"pointer",
-	"stackTop":	"pointer",
-	"stackTail":	"pointer",
-	"callInfoList":	"pointer"
-}

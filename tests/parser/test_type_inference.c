@@ -1857,7 +1857,7 @@ static void test_ownership_builtin_type_inference_rejects_invalid_operands(void)
     expect_ownership_builtin_type_inference_failure(
             "drop(1);",
             "ownership_invalid_drop_plain_value_test.zr",
-            "drop() requires a Unique, Shared, or Weak owner");
+            "drop(owner) requires a Unique, Shared, or Weak owner");
 
     expect_ownership_builtin_type_inference_failure(
             "var seed = own Holder();"

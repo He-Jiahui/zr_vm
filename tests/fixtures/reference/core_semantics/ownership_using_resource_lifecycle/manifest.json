@@ -10,7 +10,7 @@
       "upstream_file": "lua/rust/tests/ui/borrowck/assign-imm-local-twice.rs",
       "upstream_intent": "Ownership transfer should be explicit and visible at the call site.",
       "zr_decision": "adapt",
-      "zr_contract": "`%shared(owner)` consumes or rebinds ownership according to the explicit ownership contract.",
+      "zr_contract": "`share(owner)` consumes a unique owner and returns the initial shared owner.",
       "layer_targets": [
         "semantic/compiler",
         "runtime",
@@ -105,7 +105,7 @@
       "upstream_file": "lua/mono-6.12.0.199/mono/tests/critical-finalizers.cs",
       "upstream_intent": "Wrapping a new resource in shared ownership needs a stable positive contract.",
       "zr_decision": "adapt",
-      "zr_contract": "`%shared new` produces the documented wrapper ownership state without hidden copies.",
+      "zr_contract": "`share(own Resource())` produces the documented shared ownership state without hidden copies.",
       "layer_targets": [
         "semantic/compiler",
         "runtime",
@@ -1190,7 +1190,7 @@
       "expected_outcome": "generic ownership session lifecycle returns the expected runtime mask",
       "assertions": [
         "source fixture uses resource class, own, Shared<T>, Weak<T>, ref readonly, ref, and GcBox<T>",
-        "source fixture uses share(), weak(), explicit ref bindings, intoGc(), upgrade(), and drop()",
+        "source fixture uses share(owner), degrade(shared), wake(weak), explicit ref bindings, intoGc(owner), and drop(owner)",
         "compiler emits the expected ownership opcode family",
         "lexical writable-ref cleanup returns the owner through OWN_RETURN_LOAN",
         "runtime lifecycle returns mask 63"

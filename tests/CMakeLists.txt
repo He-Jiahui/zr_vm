@@ -872,6 +872,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_ownership_intrinsic_member_separation_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_ownership_receiver_guard_performance_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ownership_receiver_guard_performance.c
+    )
+    target_include_directories(zr_vm_ownership_receiver_guard_performance_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_ownership_receiver_guard_performance_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_resource_owner_borrow_receiver_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_resource_owner_borrow_receiver.c
     )
@@ -4275,19 +4285,6 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core(zr_vm_decorator_pipeline_test)
 
     zr_vm_add_unity_test_target(
-            zr_vm_scripts_test
-            ${CMAKE_SOURCE_DIR}/tests/scripts/test_comprehensive.c
-            ${CMAKE_SOURCE_DIR}/tests/scripts/test_utils.c
-    )
-    target_include_directories(zr_vm_scripts_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/tests/scripts
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-    )
-    zr_vm_link_parser_core(zr_vm_scripts_test)
-    zr_link_third_party_for_target(zr_vm_scripts_test "zr_c_json")
-
-    zr_vm_add_unity_test_target(
             zr_vm_container_runtime_test
             ${CMAKE_SOURCE_DIR}/tests/container/test_container_runtime.c
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
@@ -6194,10 +6191,9 @@ if (TARGET zr_vm_parser_test AND
         TARGET zr_vm_module_system_test AND
         TARGET zr_vm_named_arguments_test AND
         TARGET zr_vm_compile_time_test AND
-        TARGET zr_vm_decorator_pipeline_test AND
-        TARGET zr_vm_scripts_test)
+        TARGET zr_vm_decorator_pipeline_test)
     set(language_pipeline_executables
-            "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_semantic_facts_test>;$<TARGET_FILE:zr_vm_semantic_query_test>;$<TARGET_FILE:zr_vm_compiler_semantic_query_diagnostics_test>;$<TARGET_FILE:zr_vm_cfg_reachability_test>;$<TARGET_FILE:zr_vm_cfg_union_exhaustiveness_test>;$<TARGET_FILE:zr_vm_cfg_constant_conditions_test>;$<TARGET_FILE:zr_vm_cfg_switch_constants_test>;$<TARGET_FILE:zr_vm_cfg_finally_abrupt_test>;$<TARGET_FILE:zr_vm_cfg_try_catch_edges_test>;$<TARGET_FILE:zr_vm_cfg_typed_catch_flow_test>;$<TARGET_FILE:zr_vm_cfg_typed_catch_loop_flow_test>;$<TARGET_FILE:zr_vm_dataflow_engine_test>;$<TARGET_FILE:zr_vm_reference_fact_emission_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_aot_c_source_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_guardrail_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_value_semir_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_control_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_return_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_logical_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_global_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_constant_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_ownership_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_super_array_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_iterator_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_scope_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_shift_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_float_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_generic_numeric_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_power_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_call_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_typed_call_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_control_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_receiver_guard_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_call_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_value_type_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_logical_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_global_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_ownership_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_super_array_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_iterator_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_scope_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_float_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_generic_numeric_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_power_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_value_type_runtime_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>;$<TARGET_FILE:zr_vm_scripts_test>"
+            "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_semantic_facts_test>;$<TARGET_FILE:zr_vm_semantic_query_test>;$<TARGET_FILE:zr_vm_compiler_semantic_query_diagnostics_test>;$<TARGET_FILE:zr_vm_cfg_reachability_test>;$<TARGET_FILE:zr_vm_cfg_union_exhaustiveness_test>;$<TARGET_FILE:zr_vm_cfg_constant_conditions_test>;$<TARGET_FILE:zr_vm_cfg_switch_constants_test>;$<TARGET_FILE:zr_vm_cfg_finally_abrupt_test>;$<TARGET_FILE:zr_vm_cfg_try_catch_edges_test>;$<TARGET_FILE:zr_vm_cfg_typed_catch_flow_test>;$<TARGET_FILE:zr_vm_cfg_typed_catch_loop_flow_test>;$<TARGET_FILE:zr_vm_dataflow_engine_test>;$<TARGET_FILE:zr_vm_reference_fact_emission_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_aot_c_source_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_guardrail_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_value_semir_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_control_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_return_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_logical_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_global_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_constant_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_ownership_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_super_array_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_iterator_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_scope_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_shift_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_float_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_generic_numeric_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_power_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_call_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_typed_call_contracts_test>;$<TARGET_FILE:zr_vm_aot_c_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_control_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_receiver_guard_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_call_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_value_type_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_logical_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_global_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_ownership_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_super_array_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_iterator_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_scope_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_float_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_generic_numeric_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_aot_c_power_shared_library_smoke_test>;$<TARGET_FILE:zr_vm_value_type_runtime_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>"
     )
     list(APPEND language_pipeline_executables
             "$<TARGET_FILE:zr_vm_cfg_integer_bitwise_conditions_test>")

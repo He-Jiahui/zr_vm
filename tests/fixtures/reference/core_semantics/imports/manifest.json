@@ -23,7 +23,7 @@
       "upstream_language": "cpython",
       "upstream_path": "lua/cpython/Lib/test/test_import/__init__.py",
       "upstream_focus": "Import tests need to cover cache behavior, loader interactions, and repeated import semantics instead of only first-load success.",
-      "zr_decision": "ZR import manifests track cache-sensitive cases so repeated `%import(...)` behavior can be asserted later.",
+      "zr_decision": "ZR import manifests track cache-sensitive cases so repeated `import(...)` behavior can be asserted later.",
       "expected_outcome": "cache-and-reimport-cases-in-matrix"
     },
     {
@@ -31,7 +31,7 @@
       "upstream_language": "jdk",
       "upstream_path": "lua/jdk/test/langtools/tools/javac/importscope/ImportMembersTest.java",
       "upstream_focus": "Imported member visibility must remain resolvable through layered scope construction, not only through direct module handles.",
-      "zr_decision": "ZR should validate root-module member chains such as `%import(\"zr.system\").vm.state()` as a first-class import path.",
+      "zr_decision": "ZR should validate root-module member chains such as `import(\"zr.system\").vm.state()` as a first-class import path.",
       "expected_outcome": "native-root-member-chain-baseline-added"
     },
     {

@@ -13,7 +13,7 @@ resource class SyntaxReferenceOwned {
 fn syntaxReferenceOwnership(): int {
     {
         var owner: Unique<SyntaxReferenceOwned> = own SyntaxReferenceOwned(7);
-        var boxed: GcBox<SyntaxReferenceOwned> = owner.intoGc();
+        var boxed: GcBox<SyntaxReferenceOwned> = intoGc(owner);
         return boxed.read();
     }
 }

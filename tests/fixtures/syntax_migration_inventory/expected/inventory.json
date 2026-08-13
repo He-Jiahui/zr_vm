@@ -1,9 +1,9 @@
 {
   "classificationCounts": {
     "blocked": 1,
-    "machineApplicable": 24,
+    "machineApplicable": 25,
     "maybeIncorrect": 0,
-    "requiresReview": 17,
+    "requiresReview": 16,
     "targetNotPromoted": 1
   },
   "contracts": [
@@ -104,9 +104,9 @@
       "targetPlan": "11"
     },
     {
-      "classification": "requiresReview",
+      "classification": "machineApplicable",
       "legacyForm": "percentDetach",
-      "reason": "ownership_bridge_binding_required",
+      "reason": "owner_builtin_has_current_syntax",
       "targetPlan": "04"
     },
     {

@@ -3,8 +3,8 @@ resource class Cache {}
 
 fn runSessionLifecycle(): int {
     var sessionSeed = own Session();
-    var sharedSession = sessionSeed.share();
-    var watcher = sharedSession.weak();
+    var sharedSession = share(sessionSeed);
+    var watcher = degrade(sharedSession);
     var mask = 0;
 
     {
@@ -26,19 +26,19 @@ fn runSessionLifecycle(): int {
     }
 
     var detachedSeed = own Session();
-    var rawSession = detachedSeed.intoGc();
+    var rawSession = intoGc(detachedSeed);
     if (rawSession != null) {
         mask = mask + 8;
     }
 
-    var upgradedSession = watcher.upgrade();
+    var upgradedSession = wake(watcher);
     if (upgradedSession != null) {
         mask = mask + 16;
     }
 
     var releasedShared = drop(sharedSession);
     var releasedUpgrade = drop(upgradedSession);
-    var expiredSession = watcher.upgrade();
+    var expiredSession = wake(watcher);
     if (releasedShared == null &&
         releasedUpgrade == null &&
         expiredSession == null) {

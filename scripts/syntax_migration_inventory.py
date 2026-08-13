@@ -447,9 +447,9 @@ _MIGRATION_RULES = {
         "owner_builtin_has_current_syntax",
     ),
     "percentDetach": MigrationRule(
-        MigrationClassification.REQUIRES_REVIEW,
+        MigrationClassification.MACHINE_APPLICABLE,
         "04",
-        "ownership_bridge_binding_required",
+        "owner_builtin_has_current_syntax",
     ),
     "percentUnique": MigrationRule(
         MigrationClassification.REQUIRES_REVIEW,
@@ -1081,7 +1081,7 @@ def repository_candidate_paths(root: Path) -> tuple[str, ...]:
         sorted(
             path.as_posix()
             for path in _tracked_files(root)
-            if _is_repository_candidate(path)
+            if _is_repository_candidate(path) and (root / path).is_file()
         )
     )
 
@@ -1097,8 +1097,6 @@ def _repository_exclusion_reason(relative_path: Path) -> str | None:
         return "historicalPlan"
     if normalized.startswith("tests/fixtures/syntax_migration_inventory/"):
         return "inventorySelfFixture"
-    if normalized.startswith("tests/fixtures/scripts/"):
-        return "historicalLegacyParserFixture"
     if normalized.startswith("tests/fixtures/reference/"):
         return "expectedDiagnosticFixture"
     if any("legacy" in part.lower() or "migration" in part.lower() for part in parts):

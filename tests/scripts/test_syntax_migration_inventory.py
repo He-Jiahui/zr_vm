@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def _repository_root_from_arguments() -> Path:
@@ -27,6 +28,7 @@ FIXTURE_ROOT = REPOSITORY_ROOT / "tests" / "fixtures" / "syntax_migration_invent
 INVENTORY_SCRIPT = SCRIPT_ROOT / "syntax_migration_inventory.py"
 sys.path.insert(0, str(SCRIPT_ROOT))
 
+import syntax_migration_inventory as inventory_module  # noqa: E402
 from syntax_migration_inventory import (  # noqa: E402
     MigrationClassification,
     SourceKind,
@@ -41,6 +43,23 @@ from syntax_migration_inventory import (  # noqa: E402
 
 
 class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
+    def test_repository_candidates_ignore_tracked_paths_missing_from_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            current_path = root / "tests" / "current.zr"
+            current_path.parent.mkdir(parents=True)
+            current_path.write_text("fn current(): void {}\n", encoding="utf-8")
+
+            with mock.patch.object(
+                inventory_module,
+                "_tracked_files",
+                return_value=(Path("tests/current.zr"), Path("tests/deleted.zr")),
+            ):
+                self.assertEqual(
+                    ("tests/current.zr",),
+                    repository_candidate_paths(root),
+                )
+
     def test_fixture_inventory_has_stable_protocol_and_source_kinds(self) -> None:
         report = build_inventory(FIXTURE_ROOT)
         payload = json.loads(report.to_json())
@@ -405,9 +424,9 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                 "tests/fixtures/syntax_migration_frontend/input/review_and_blocked_forms.zr"
             ],
         )
-        self.assertEqual(
+        self.assertNotIn(
             "historicalLegacyParserFixture",
-            exclusion_reasons["tests/fixtures/scripts/closures.zr"],
+            exclusion_reasons.values(),
         )
         self.assertEqual(
             "expectedDiagnosticFixture",
