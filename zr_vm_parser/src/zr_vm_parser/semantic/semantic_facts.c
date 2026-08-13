@@ -511,6 +511,7 @@ TZrBool ZrParser_SemanticFacts_AppendDiagnostic(
 TZrBool ZrParser_SemanticFacts_AppendExpression(SZrSemanticContext *context,
                                                 const SZrSemanticExpressionFact *fact) {
     SZrSemanticExpressionFact copy;
+    TZrSize index;
 
     if (context == ZR_NULL || fact == ZR_NULL || !context->expressionFacts.isValid) {
         return ZR_FALSE;
@@ -525,6 +526,20 @@ TZrBool ZrParser_SemanticFacts_AppendExpression(SZrSemanticContext *context,
     copy.memberName = semantic_facts_clone_string(context, fact->memberName);
     copy.diagnosticMessage = semantic_facts_clone_string(context, fact->diagnosticMessage);
     copy.diagnosticCode = semantic_facts_clone_string(context, fact->diagnosticCode);
+
+    if (fact->node != ZR_NULL) {
+        for (index = 0; index < context->expressionFacts.length; index++) {
+            SZrSemanticExpressionFact *existing =
+                (SZrSemanticExpressionFact *)ZrCore_Array_Get(
+                    &context->expressionFacts, index);
+            if (existing != ZR_NULL && existing->node == fact->node) {
+                ZrParser_InferredType_Free(context->state, &existing->inferredType);
+                *existing = copy;
+                return ZR_TRUE;
+            }
+        }
+    }
+
     ZrCore_Array_Push(context->state, &context->expressionFacts, &copy);
     return ZR_TRUE;
 }

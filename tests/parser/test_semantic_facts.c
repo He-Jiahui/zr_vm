@@ -190,6 +190,58 @@ static void test_semantic_expression_fact_roundtrip_by_node_and_position(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_expression_fact_republish_replaces_same_node(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode fakeNode;
+    SZrSemanticExpressionFact first;
+    SZrSemanticExpressionFact second;
+    const SZrSemanticExpressionFact *foundByNode;
+    const SZrSemanticExpressionFact *foundByPosition;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&fakeNode, 0, sizeof(fakeNode));
+    fakeNode.type = ZR_AST_INTEGER_LITERAL;
+    fakeNode.location = test_range(8, 10);
+
+    memset(&first, 0, sizeof(first));
+    first.node = &fakeNode;
+    first.range = fakeNode.location;
+    first.kind = ZR_SEMANTIC_EXPRESSION_FACT_LITERAL;
+    first.exactness = ZR_SEMANTIC_FACT_EXACT;
+    first.valueKind = ZR_SEMANTIC_VALUE_KIND_INT64;
+    first.hasConstant = ZR_TRUE;
+    first.constantValue.int64Value = 41;
+    ZrParser_InferredType_Init(g_state, &first.inferredType, ZR_VALUE_TYPE_INT64);
+
+    memset(&second, 0, sizeof(second));
+    second.node = &fakeNode;
+    second.range = fakeNode.location;
+    second.kind = ZR_SEMANTIC_EXPRESSION_FACT_LITERAL;
+    second.exactness = ZR_SEMANTIC_FACT_EXACT;
+    second.valueKind = ZR_SEMANTIC_VALUE_KIND_BOOL;
+    second.hasConstant = ZR_TRUE;
+    second.constantValue.boolValue = ZR_TRUE;
+    ZrParser_InferredType_Init(g_state, &second.inferredType, ZR_VALUE_TYPE_BOOL);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendExpression(context, &first));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendExpression(context, &second));
+
+    foundByNode = ZrParser_SemanticFacts_FindExpressionByNode(context, &fakeNode);
+    foundByPosition = ZrParser_SemanticFacts_FindExpressionAtPosition(
+            context, test_range(9, 9));
+    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)context->expressionFacts.length);
+    TEST_ASSERT_NOT_NULL(foundByNode);
+    TEST_ASSERT_NOT_NULL(foundByPosition);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, foundByNode->inferredType.baseType);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_VALUE_KIND_BOOL, foundByNode->valueKind);
+    TEST_ASSERT_TRUE(foundByNode->constantValue.boolValue);
+    TEST_ASSERT_EQUAL_PTR(foundByNode, foundByPosition);
+
+    ZrParser_InferredType_Free(g_state, &first.inferredType);
+    ZrParser_InferredType_Free(g_state, &second.inferredType);
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_reference_position_prefers_segment_start_at_shared_boundary(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode baseNode;
@@ -834,6 +886,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_context_initializes_fact_arrays);
     RUN_TEST(test_semantic_expression_fact_roundtrip_by_node_and_position);
+    RUN_TEST(test_semantic_expression_fact_republish_replaces_same_node);
     RUN_TEST(test_reference_position_prefers_segment_start_at_shared_boundary);
     RUN_TEST(test_semantic_logical_fact_roundtrip_by_node_and_position);
     RUN_TEST(test_semantic_numeric_fact_by_node_prefers_segmented_range);
