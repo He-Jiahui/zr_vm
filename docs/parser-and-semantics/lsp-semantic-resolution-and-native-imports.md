@@ -46,6 +46,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_callable_binding_refinement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
@@ -73,6 +74,7 @@ related_code:
   - tests/parser/test_parser_extern.c
   - tests/parser/test_canonical_consumers.c
   - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
+  - tests/acceptance/2026-08-13-lsp-l8-canonical-closure-value-signature-fact.md
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h
@@ -840,8 +842,13 @@ signature help必须返回unavailable。
 call fact时，不得以receiver的AST、open generic declaration或const-generic
 substitution临时重建`shape`的闭合signature。
 
-该合同目前覆盖source identifier initializer指向的callable value。closure/lambda value仍需
-独立canonical fact验收，不能借用本项作为AST fallback授权。
+该合同也覆盖source lambda callable value。`var add = fn(left: int, right: int): int => left + right;`
+的绑定把精确`ZR_AST_LAMBDA_EXPRESSION`作为declaration identity，发布同一lambda的
+resolved SymbolId、canonical function TypeId和declaration range。`add(20, 22)`的
+`CallAt/FormatCall`、hover、definition和signature help都只消费这些事实；definition返回
+lambda declaration的完整range，而不是请求position。清除同一expression的`hasCallInfo`后，
+signature help直接unavailable，不能从lambda AST、变量名或callee文本重建。binary/native/provider
+callable value仍需独立canonical fact验收，不能借用本项作为fallback授权。
 
 ## 统一 PropertyDecl 的 interface variance
 

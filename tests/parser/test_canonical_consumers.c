@@ -696,6 +696,82 @@ static void test_callable_value_call_publishes_canonical_contract(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_lambda_callable_value_call_publishes_canonical_contract(void) {
+    const TZrChar *source =
+            "pub var add = fn(left: int, right: int): int => left + right;\n"
+            "fn useAdd(): int { return add(20, 22); }\n";
+    const TZrChar *call = strstr(source, "add(20, 22)");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *lambdaNode;
+    const SZrSemanticReferenceFact *declaration;
+    SZrFileRange position;
+    SZrParserSemanticCallQuery query;
+    TZrChar typeLabel[128];
+    TZrChar callLabel[256];
+
+    TEST_ASSERT_NOT_NULL(call);
+    sourceName = ZrCore_String_Create(g_state, "canonical_lambda_value.zr", 25u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_GREATER_THAN_UINT32(
+            0u, (TZrUInt32)ast->data.script.statements->count);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION,
+                          ast->data.script.statements->nodes[0]->type);
+    lambdaNode = ast->data.script.statements->nodes[0]
+                         ->data.variableDeclaration.value;
+    TEST_ASSERT_NOT_NULL(lambdaNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, lambdaNode->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(call - source + strlen("add(")),
+            (TZrSize)(call - source + strlen("add(")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_NOT_NULL(query.reference);
+    TEST_ASSERT_TRUE(query.reference->isResolved);
+    TEST_ASSERT_TRUE(query.hasResolvedTarget);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    declaration = ZrParser_SemanticQuery_DeclarationOf(
+            cs.semanticContext, query.targetSymbolId, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_PTR(lambdaNode, declaration->node);
+    TEST_ASSERT_TRUE(declaration->isResolved);
+    TEST_ASSERT_EQUAL_UINT64((TZrUInt64)lambdaNode->location.start.offset,
+                             (TZrUInt64)query.targetDeclarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64((TZrUInt64)lambdaNode->location.end.offset,
+                             (TZrUInt64)query.targetDeclarationRange.end.offset);
+    TEST_ASSERT_EQUAL_UINT64((TZrUInt64)lambdaNode->location.start.offset,
+                             (TZrUInt64)declaration->range.start.offset);
+    TEST_ASSERT_EQUAL_UINT64((TZrUInt64)lambdaNode->location.end.offset,
+                             (TZrUInt64)declaration->range.end.offset);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.callableTypeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("fn(int, int) -> int", typeLabel);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &query, callLabel, sizeof(callLabel)));
+    TEST_ASSERT_EQUAL_STRING("add(left: int, right: int): int", callLabel);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_resolved_generic_member_call_preserves_declaration_generic_clause(void) {
     const TZrChar *source =
             "class Matrix<T, const N: int> { }\n"
@@ -1312,6 +1388,7 @@ int main(void) {
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);
     RUN_TEST(test_callable_value_call_publishes_canonical_contract);
+    RUN_TEST(test_lambda_callable_value_call_publishes_canonical_contract);
     RUN_TEST(test_resolved_generic_member_call_preserves_declaration_generic_clause);
     RUN_TEST(test_resolved_extern_call_preserves_parameter_names_in_canonical_signature);
     RUN_TEST(test_source_scoped_call_preserves_contract_and_target_identity);

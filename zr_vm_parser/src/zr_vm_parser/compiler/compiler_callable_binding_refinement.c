@@ -1,5 +1,48 @@
 #include "compiler_internal.h"
 
+#include <string.h>
+
+TZrBool compiler_publish_lambda_callable_binding_identity(
+        SZrCompilerState *cs,
+        SZrTypeEnvironment *env,
+        TZrSize bindingIndex,
+        SZrAstNode *lambdaNode) {
+    SZrFunctionTypeInfo **entry;
+    SZrFunctionTypeInfo *functionInfo;
+    SZrSemanticReferenceFact declarationFact;
+
+    if (cs == ZR_NULL || env == ZR_NULL || env->semanticContext == ZR_NULL ||
+        lambdaNode == ZR_NULL || lambdaNode->type != ZR_AST_LAMBDA_EXPRESSION ||
+        bindingIndex >= env->functionReturnTypes.length) {
+        return ZR_FALSE;
+    }
+    entry = (SZrFunctionTypeInfo **)ZrCore_Array_Get(
+            &env->functionReturnTypes, bindingIndex);
+    if (entry == ZR_NULL || *entry == ZR_NULL ||
+        (*entry)->declarationNode != lambdaNode ||
+        (*entry)->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        (*entry)->typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    functionInfo = *entry;
+    functionInfo->declarationRange = lambdaNode->location;
+    functionInfo->hasDeclarationRange = ZR_TRUE;
+
+    memset(&declarationFact, 0, sizeof(declarationFact));
+    declarationFact.node = lambdaNode;
+    declarationFact.range = lambdaNode->location;
+    declarationFact.declarationRange = lambdaNode->location;
+    declarationFact.definitionRange = lambdaNode->location;
+    declarationFact.hasDefinitionRange = ZR_TRUE;
+    declarationFact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
+    declarationFact.symbolId = functionInfo->symbolId;
+    declarationFact.typeId = functionInfo->typeId;
+    declarationFact.name = functionInfo->name;
+    declarationFact.isResolved = ZR_TRUE;
+    return ZrParser_SemanticFacts_AppendReference(
+            env->semanticContext, &declarationFact);
+}
+
 static void compiler_rebind_reference_fact_types(SZrSemanticContext *semanticContext,
                                                   TZrSymbolId symbolId,
                                                   TZrTypeId typeId) {

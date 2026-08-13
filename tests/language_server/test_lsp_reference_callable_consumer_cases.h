@@ -528,6 +528,164 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_lambda_callable_value_consumers_use_canonical_identity(
+        SZrState *state) {
+    const TZrChar *summary =
+            "LSP Lambda Callable Value Consumers Use Canonical Identity";
+    const TZrChar *uriText = "file:///lambda_callable_value_consumer.zr";
+    const TZrChar *content =
+            "pub var add = fn(left: int, right: int): int => left + right;\n"
+            "fn useAdd(): int { return add(20, 22); }\n";
+    const TZrChar *expectedLabel = "add(left: int, right: int): int";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrAstNode *variableNode;
+    SZrAstNode *lambdaNode;
+    SZrLspPosition callPosition;
+    SZrLspPosition definitionPosition;
+    SZrFilePosition filePosition;
+    SZrFileRange fileRange;
+    SZrParserSemanticCallQuery query;
+    const SZrSemanticReferenceFact *declaration;
+    SZrSemanticExpressionFact *callFact;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    SZrLspHover *hover = ZR_NULL;
+    SZrLspRange expectedCallRange;
+    SZrLspRange expectedDeclarationRange;
+    SZrArray definitions;
+    const TZrChar *label;
+    TZrChar canonicalLabel[ZR_LSP_TEXT_BUFFER_LENGTH];
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Canonical lambda callable-value consumer",
+            "Hover, signature help, and definition must consume the lambda SymbolId, "
+            "TypeId, declaration range, and FormatCall fact without AST reconstruction");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !lsp_find_position_for_substring(
+                content, "add(20, 22)", 0U, 4U, &callPosition) ||
+        !lsp_find_position_for_substring(
+                content, "add(20, 22)", 0U, 1U, &definitionPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare lambda callable-value fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    variableNode = analyzer != ZR_NULL && analyzer->ast != ZR_NULL &&
+                           analyzer->ast->data.script.statements != ZR_NULL &&
+                           analyzer->ast->data.script.statements->count > 0U
+                   ? analyzer->ast->data.script.statements->nodes[0]
+                   : ZR_NULL;
+    lambdaNode = variableNode != ZR_NULL &&
+                         variableNode->type == ZR_AST_VARIABLE_DECLARATION
+                 ? variableNode->data.variableDeclaration.value
+                 : ZR_NULL;
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, callPosition);
+    fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    memset(&query, 0, sizeof(query));
+    memset(canonicalLabel, 0, sizeof(canonicalLabel));
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        lambdaNode == ZR_NULL || lambdaNode->type != ZR_AST_LAMBDA_EXPRESSION ||
+        !ZrParser_SemanticQuery_CallAt(
+                analyzer->semanticContext, fileRange, ZR_NULL, &query) ||
+        query.expression == ZR_NULL || query.reference == ZR_NULL ||
+        !query.reference->isResolved || !query.hasResolvedTarget ||
+        query.targetSymbolId == ZR_SEMANTIC_ID_INVALID ||
+        query.callableTypeId == ZR_SEMANTIC_ID_INVALID ||
+        query.targetDeclarationRange.start.offset != lambdaNode->location.start.offset ||
+        query.targetDeclarationRange.end.offset != lambdaNode->location.end.offset ||
+        (declaration = ZrParser_SemanticQuery_DeclarationOf(
+                 analyzer->semanticContext,
+                 query.targetSymbolId,
+                 ZR_NULL)) == ZR_NULL ||
+        declaration->node != lambdaNode ||
+        !ZrParser_SemanticQuery_FormatCall(
+                analyzer->semanticContext,
+                &query,
+                canonicalLabel,
+                sizeof(canonicalLabel)) ||
+        strcmp(canonicalLabel, expectedLabel) != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Canonical lambda call identity was unavailable");
+        return;
+    }
+    expectedCallRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+            context, uri, query.reference->range);
+    expectedDeclarationRange =
+            ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+                    context, uri, query.targetDeclarationRange);
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, callPosition, &help) ||
+        help == ZR_NULL ||
+        (label = signature_help_first_label(help)) == ZR_NULL ||
+        strcmp(label, canonicalLabel) != 0 ||
+        !ZrLanguageServer_Lsp_GetHover(
+                state, context, uri, callPosition, &hover) ||
+        hover == ZR_NULL || !hover_contains_text(hover, canonicalLabel) ||
+        !lsp_range_equals(
+                hover->range,
+                expectedCallRange.start.line,
+                expectedCallRange.start.character,
+                expectedCallRange.end.line,
+                expectedCallRange.end.character)) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Lambda hover/signature diverged from FormatCall");
+        return;
+    }
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    help = ZR_NULL;
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1U);
+    if (!ZrLanguageServer_Lsp_GetDefinition(
+                state, context, uri, definitionPosition, &definitions) ||
+        !location_array_contains_range(
+                &definitions,
+                expectedDeclarationRange.start.line,
+                expectedDeclarationRange.start.character,
+                expectedDeclarationRange.end.line,
+                expectedDeclarationRange.end.character)) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Lambda definition did not use the canonical target range");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    callFact = (SZrSemanticExpressionFact *)query.expression;
+    callFact->hasCallInfo = ZR_FALSE;
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, callPosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "Lambda signature help recovered from local AST after fact removal");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 static void test_lsp_callable_value_signature_fails_closed_without_canonical_call_fact(
         SZrState *state) {
     const TZrChar *summary =

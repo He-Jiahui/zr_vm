@@ -1026,6 +1026,7 @@ static TZrBool signature_context_requires_canonical_source_call(
         return ZR_FALSE;
     }
     return declaration->node->type == ZR_AST_FUNCTION_DECLARATION ||
+           declaration->node->type == ZR_AST_LAMBDA_EXPRESSION ||
            declaration->node->type == ZR_AST_CLASS_METHOD ||
            declaration->node->type == ZR_AST_STRUCT_METHOD ||
            declaration->node->type == ZR_AST_INTERFACE_METHOD_SIGNATURE;

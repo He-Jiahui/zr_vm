@@ -8244,6 +8244,9 @@ int main(void) {
     test_lsp_callable_value_signature_fails_closed_without_canonical_call_fact(state);
     TEST_DIVIDER();
 
+    test_lsp_lambda_callable_value_consumers_use_canonical_identity(state);
+    TEST_DIVIDER();
+
     test_lsp_receiver_call_signature_fails_closed_without_canonical_call_fact(state);
     TEST_DIVIDER();
 

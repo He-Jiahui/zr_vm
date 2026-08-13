@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-13 11:38 +08:00
+updated_at: 2026-08-13 13:46 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -107,6 +107,7 @@ source_plans:
 | 2026-08-12 11:42 +08:00 | 已完成 | LSP 08 direct receiver-call signature coverage：source receiver method在canonical `CallAt/FormatCall`缺失时同样unavailable，禁止局部member或callee-name重建；GCC/Clang/MSVC interface各109/109，新增negative case均真实exit 0 | [Canonical direct-call signature expression fact](../01-semantic-core/2026-08-12-canonical-direct-call-signature-expression-fact.md) |
 | 2026-08-12 11:55 +08:00 | 已完成 | LSP 08 canonical generic receiver signature：闭合`Box<int>.shape(...)`在canonical `CallAt/FormatCall`缺失时直接unavailable，禁止local AST specialization重建闭合const-generic signature；GCC/Clang/MSVC各semantic facts 13/13、local query 32/32、expression hover 9/9、local hover 12/12、interface 110/110、project 58/58与stdio/CLI 2/2均真实exit 0 | [Canonical generic receiver signature fact](../01-semantic-core/2026-08-12-canonical-generic-receiver-signature-fact.md) |
 | 2026-08-13 11:38 +08:00 | 已完成 | LSP 08 canonical callable-value signature：source callable initializer复用compiler callable binding；无注解函数只在该注册入口按原declaration AST identity与SymbolId重绑定canonical function TypeId，LSP symbol bootstrap发布同一`CallAt/FormatCall`事实；fact缺失时signature help fail closed，不按variable name、initializer AST或callee文本重建；固定`5922bcb + 9-path overlay`下GCC/Clang/MSVC各canonical 18/18、facts 13/13、local query 32/32、expression hover 9/9、local hover 12/12、interface 111/111、project 58/58、compiler integration 127/127与stdio/CLI 2/2均真实exit 0 | [Canonical callable-value signature fact](../01-semantic-core/2026-08-13-canonical-callable-value-signature-fact.md) |
+| 2026-08-13 13:46 +08:00 | 已完成 | LSP 08 canonical closure callable-value signature：lambda binding以精确lambda declaration AST identity发布resolved SymbolId、canonical TypeId与declaration range；`CallAt/FormatCall`、hover、definition和signature help消费同一事实，清除`hasCallInfo`后signature help fail closed，禁止lambda AST/callee文本重建；固定`6d9a22e + 8-path code/test overlay`字节一致8/8，GCC/Clang/MSVC各canonical 19/19、facts 13/13、semantic query 29/29、expression hover 9/9、local hover 12/12、interface 112/112、project 58/58、compiler integration 127/127；GCC/Clang stdio/CLI 2/2，MSVC CLI与三次独立stdio采样均真实exit 0 | [Canonical closure callable-value signature fact](../01-semantic-core/2026-08-13-canonical-closure-value-signature-fact.md) |
 
 ## 当前状态
 
@@ -123,5 +124,6 @@ source_plans:
 - 更新（2026-08-12 04:40 +08:00）：LSP 08 当前完成十二个独立合同。第十二项首先要求source `FUNCTION_DECLARATION`直接调用在canonical `CallAt/FormatCall`不可用时直接不可用，禁止局部overload或callee-name重建；尚未发布同类call fact的callable value不属于本项，保留为parser support后续边界。其余 L8 边界仍开放。
 - 更新（2026-08-12 11:42 +08:00）：第十二项的receiver覆盖已补齐。source receiver method在同一call fact不可用时也直接不可用，禁止局部member或callee-name重建；该覆盖不改变L8仍进行中的整体状态。
 - 更新（2026-08-12 11:55 +08:00）：LSP 08 当前完成十三个独立合同。第十三项要求闭合generic receiver call在canonical `CallAt/FormatCall`不可用时直接不可用，禁止local AST specialization重建闭合签名；其余L8边界仍开放。
-- 更新（2026-08-13 11:38 +08:00）：LSP 08 当前完成十四个独立合同。第十四项补齐source callable-value assignment的canonical binding、仅限该注册入口的无注解函数返回TypeId重绑定与LSP bootstrap投影；signature help只消费`CallAt/FormatCall`，fact不可用时直接不可用。closure value、binary/native provider和其余fallback收敛仍开放，L8整体保持进行中。
+- 更新（2026-08-13 11:38 +08:00）：LSP 08 当前完成十四个独立合同。第十四项补齐source callable-value assignment的canonical binding、仅限该注册入口的无注解函数返回TypeId重绑定与LSP bootstrap投影；signature help只消费`CallAt/FormatCall`，fact不可用时直接不可用。
+- 更新（2026-08-13 13:46 +08:00）：LSP 08 当前完成十五个独立合同。第十五项让lambda callable value以精确lambda declaration AST identity发布resolved SymbolId、canonical TypeId与declaration range；hover、definition和signature help只消费该`CallAt/FormatCall`事实，清除`hasCallInfo`后直接unavailable，禁止lambda AST或callee文本重建。MSVC static Debug的两次首次stdio采样分别出现hover `p95=63.57ms`和completion `p95=113.22ms`尾部抖动；不改阈值、不加白名单，空闲状态下三次独立重采样全部真实exit 0，hover p95为7.01/12.98/24.69ms，completion p95为22.46/47.47/14.45ms。binary/native/provider callable value和其余fallback收敛仍开放，L8整体保持进行中。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

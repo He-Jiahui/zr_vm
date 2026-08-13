@@ -530,6 +530,11 @@ TZrBool compiler_refine_function_type_binding_return(
         SZrCompilerState *cs,
         SZrAstNode *declarationNode,
         const SZrInferredType *returnType);
+TZrBool compiler_publish_lambda_callable_binding_identity(
+        SZrCompilerState *cs,
+        SZrTypeEnvironment *env,
+        TZrSize bindingIndex,
+        SZrAstNode *lambdaNode);
 
 void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
                                                          SZrTypeEnvironment *env,

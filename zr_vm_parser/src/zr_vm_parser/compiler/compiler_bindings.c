@@ -657,17 +657,22 @@ static void compiler_collect_callable_parameter_types(SZrCompilerState *cs,
 
 static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
                                                       SZrString *name,
-                                                      SZrLambdaExpression *lambda) {
+                                                      SZrAstNode *lambdaNode) {
+    SZrLambdaExpression *lambda;
     SZrTypeEnvironment *savedEnv;
     SZrTypeEnvironment *lambdaEnv;
     SZrInferredType returnType;
     SZrArray paramTypes;
     SZrArray parameterPassingModes;
+    TZrSize bindingIndex;
     TZrBool hasReturnType = ZR_FALSE;
 
-    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || name == ZR_NULL || lambda == ZR_NULL) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        name == ZR_NULL || lambdaNode == ZR_NULL ||
+        lambdaNode->type != ZR_AST_LAMBDA_EXPRESSION) {
         return;
     }
+    lambda = &lambdaNode->data.lambdaExpression;
 
     lambdaEnv = ZrParser_TypeEnvironment_New(cs->state);
     if (lambdaEnv == ZR_NULL) {
@@ -730,14 +735,18 @@ static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
     ZrCore_Array_Construct(&parameterPassingModes);
     compiler_collect_parameter_passing_modes(cs->state, &parameterPassingModes, lambda->params);
 
-    ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
-                                                savedEnv,
-                                                name,
-                                                &returnType,
-                                                &paramTypes,
-                                                ZR_NULL,
-                                                &parameterPassingModes,
-                                                ZR_NULL);
+    bindingIndex = savedEnv->functionReturnTypes.length;
+    if (ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
+                                                    savedEnv,
+                                                    name,
+                                                    &returnType,
+                                                    &paramTypes,
+                                                    ZR_NULL,
+                                                    &parameterPassingModes,
+                                                    lambdaNode)) {
+        (void)compiler_publish_lambda_callable_binding_identity(
+                cs, savedEnv, bindingIndex, lambdaNode);
+    }
 
     if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
         ZrCore_Array_Free(cs->state, &parameterPassingModes);
@@ -830,7 +839,7 @@ void ZrParser_Compiler_RegisterCallableValueBinding(SZrCompilerState *cs,
     }
 
     if (valueNode->type == ZR_AST_LAMBDA_EXPRESSION) {
-        compiler_register_lambda_callable_binding(cs, name, &valueNode->data.lambdaExpression);
+        compiler_register_lambda_callable_binding(cs, name, valueNode);
         return;
     }
 

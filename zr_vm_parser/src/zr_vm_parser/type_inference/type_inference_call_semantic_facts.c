@@ -69,6 +69,8 @@ static const SZrAstNodeArray *type_inference_call_parameters(
             return declaration->data.interfaceMethodSignature.params;
         case ZR_AST_INTERFACE_META_SIGNATURE:
             return declaration->data.interfaceMetaSignature.params;
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return declaration->data.lambdaExpression.params;
         default:
             return ZR_NULL;
     }
