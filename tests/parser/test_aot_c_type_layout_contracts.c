@@ -4,6 +4,8 @@
 
 #include "unity.h"
 
+#include "aot_source_contract_match.h"
+
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
 static char *read_text_file_owned(const char *path) {
@@ -80,7 +82,7 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     for (size_t index = 0u; index < needleCount; index++) {
-        if (strstr(text, needles[index]) == NULL) {
+        if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
             TEST_FAIL_MESSAGE("missing required source contract text");
         }

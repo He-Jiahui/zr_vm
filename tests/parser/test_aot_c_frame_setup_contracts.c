@@ -4,6 +4,8 @@
 
 #include "unity.h"
 
+#include "aot_source_contract_match.h"
+
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
 void setUp(void) {}
@@ -86,7 +88,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     size_t index;
 
     for (index = 0; index < needleCount; index++) {
-        if (strstr(text, needles[index]) == NULL) {
+        if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
             TEST_FAIL_MESSAGE("missing required source contract text");
         }
@@ -104,12 +106,12 @@ static void assert_text_contains_all_in_any6(const char *first,
     size_t index;
 
     for (index = 0; index < needleCount; index++) {
-        if ((first == NULL || strstr(first, needles[index]) == NULL) &&
-            (second == NULL || strstr(second, needles[index]) == NULL) &&
-            (third == NULL || strstr(third, needles[index]) == NULL) &&
-            (fourth == NULL || strstr(fourth, needles[index]) == NULL) &&
-            (fifth == NULL || strstr(fifth, needles[index]) == NULL) &&
-            (sixth == NULL || strstr(sixth, needles[index]) == NULL)) {
+        if (!zr_test_aot_source_contract_contains(first, needles[index]) &&
+            !zr_test_aot_source_contract_contains(second, needles[index]) &&
+            !zr_test_aot_source_contract_contains(third, needles[index]) &&
+            !zr_test_aot_source_contract_contains(fourth, needles[index]) &&
+            !zr_test_aot_source_contract_contains(fifth, needles[index]) &&
+            !zr_test_aot_source_contract_contains(sixth, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
             TEST_FAIL_MESSAGE("missing required source contract text");
         }

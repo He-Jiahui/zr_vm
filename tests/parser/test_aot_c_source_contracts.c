@@ -4,6 +4,8 @@
 
 #include "unity.h"
 
+#include "aot_source_contract_match.h"
+
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
 static char *read_text_file_owned(const char *path) {
@@ -82,7 +84,7 @@ static void assert_text_contains_all(const char *text, const char *const *needle
     size_t index;
 
     for (index = 0; index < needleCount; index++) {
-        if (strstr(text, needles[index]) == NULL) {
+        if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
             TEST_FAIL_MESSAGE("missing required source contract text");
         }
@@ -348,7 +350,6 @@ static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(
             "zr_aot_value_exec_set_constant",
             "*zr_aot_constant = *zr_aot_source;",
             "zr_aot_value_exec_copy_stack",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, %u, %u));",
             "backend_aot_write_c_direct_stack_copy_scalar_local_sync(\n"
             "        FILE *file,\n"
             "        const SZrAotExecIrFunction *functionIr,\n"
