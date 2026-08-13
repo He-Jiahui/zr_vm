@@ -219,21 +219,21 @@ EZrOwnershipQualifier ZrParser_OwnershipBuiltinResultQualifier(EZrOwnershipBuilt
 const TZrChar *ZrParser_OwnershipMemberCallErrorMessage(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
-            return "share() requires a Unique<T> owner";
+            return "share(owner) requires a Unique<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
-            return "weak() requires a Shared<T> owner";
+            return "degrade(shared) requires a Shared<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
-            return "borrow() requires a live owned or borrowed value; upgrade Weak<T> first";
+            return "borrow() requires a live owned or borrowed value; call wake(weak) first";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return "loan() requires a Unique<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
-            return "upgrade() requires a Weak<T> owner";
+            return "wake(weak) requires a Weak<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
-            return "release() requires a Unique<T> or Shared<T> owner";
+            return "drop(owner) requires a Unique<T> or Shared<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-            return "detach() requires a Unique<T> or Shared<T> owner";
+            return "intoGc(owner) requires a Unique<T> or Shared<T> owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
-            return "intoGc() requires a Unique<T> resource owner";
+            return "intoGc(owner) requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
         case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:

@@ -587,19 +587,19 @@ EZrInstructionCode compiler_ownership_builtin_opcode_from_kind(EZrOwnershipBuilt
 static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
-            return "share() requires a Unique owner";
+            return "share(owner) requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
-            return "weak() requires a Shared owner";
+            return "degrade(shared) requires a Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return "A mutable reference requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
-            return "wake() requires a Weak owner";
+            return "wake(weak) requires a Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
-            return "drop() requires a Unique, Shared, or Weak owner";
+            return "drop(owner) requires a Unique, Shared, or Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-            return "intoGc() requires a Unique or Shared owner";
+            return "intoGc(owner) requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
-            return "intoGc() requires a Unique<T> resource owner";
+            return "intoGc(owner) requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
@@ -714,7 +714,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             ZrParser_Compiler_Error(cs,
                                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP
                                             ? "drop() currently requires a local identifier binding"
-                                            : "intoGc() currently requires a local identifier binding",
+                                            : "intoGc(owner) currently requires a local identifier binding",
                                     location);
             return ZR_FALSE;
         }
@@ -724,7 +724,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             ZrParser_Compiler_Error(cs,
                                     builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP
                                             ? "drop() currently only supports local identifier bindings"
-                                            : "intoGc() currently only supports local identifier bindings",
+                                            : "intoGc(owner) currently only supports local identifier bindings",
                                     location);
             return ZR_FALSE;
         }

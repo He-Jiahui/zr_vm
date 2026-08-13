@@ -264,6 +264,7 @@ typedef enum EZrReceiverGuardMode {
 typedef enum EZrReceiverGuardResultLift {
     ZR_RECEIVER_GUARD_RESULT_UNCHANGED = 0,
     ZR_RECEIVER_GUARD_RESULT_NULLABLE,
+    ZR_RECEIVER_GUARD_RESULT_VOID_NOOP,
 } EZrReceiverGuardResultLift;
 
 typedef struct SZrReceiverGuardFact {
@@ -366,6 +367,10 @@ ZR_PARSER_API const SZrOwnershipIntrinsicFact *
 ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
         const SZrSemanticContext *context,
         const SZrAstNode *node);
+ZR_PARSER_API const SZrOwnershipIntrinsicFact *
+ZrParser_SemanticFacts_FindOwnershipIntrinsicAtPosition(
+        const SZrSemanticContext *context,
+        SZrFileRange position);
 ZR_PARSER_API const SZrReceiverGuardFact *ZrParser_SemanticFacts_FindReceiverGuardByNode(
         const SZrSemanticContext *context,
         const SZrAstNode *node);

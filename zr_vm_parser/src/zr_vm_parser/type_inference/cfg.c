@@ -809,7 +809,11 @@ static void cfg_mark_reachable(SZrParserCfg *cfg, TZrUInt32 blockId) {
     }
 }
 
-TZrBool ZrParser_Cfg_Build(SZrState *state, SZrParserCfg *cfg, SZrAstNode *root) {
+TZrBool ZrParser_Cfg_BuildWithSemanticContext(
+        SZrState *state,
+        SZrParserCfg *cfg,
+        SZrAstNode *root,
+        SZrSemanticContext *semanticContext) {
     TZrUInt32 previousBlockId;
     SZrAstNodeArray *statements;
     SZrParserCfgBlock *previousBlock;
@@ -819,6 +823,7 @@ TZrBool ZrParser_Cfg_Build(SZrState *state, SZrParserCfg *cfg, SZrAstNode *root)
     }
 
     cfg_clear_blocks(state, cfg);
+    cfg->semanticContext = semanticContext;
     cfg->entryBlockId = cfg_add_block(state, cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
     if (cfg->entryBlockId == ZR_PARSER_CFG_INVALID_BLOCK_ID) {
         return ZR_FALSE;
@@ -868,6 +873,14 @@ TZrBool ZrParser_Cfg_Build(SZrState *state, SZrParserCfg *cfg, SZrAstNode *root)
     }
 
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_Cfg_Build(
+        SZrState *state,
+        SZrParserCfg *cfg,
+        SZrAstNode *root) {
+    return ZrParser_Cfg_BuildWithSemanticContext(
+            state, cfg, root, ZR_NULL);
 }
 
 TZrBool ZrParser_Cfg_EmitReachabilityFacts(SZrSemanticContext *context, SZrParserCfg *cfg) {

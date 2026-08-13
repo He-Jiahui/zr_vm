@@ -162,11 +162,19 @@ TZrBool cfg_node_collect_result_throw_bindings(
         TZrParserCfgThrowKindMaskResolver resolveThrowKindMask,
         SZrParserCfgThrowTypeBindingArray *outBindings);
 TZrBool cfg_node_may_enter_catch(SZrAstNode *node);
+TZrBool cfg_node_may_enter_catch_with_context(
+        SZrSemanticContext *semanticContext,
+        SZrAstNode *node);
 TZrBool cfg_try_body_has_single_known_throw_kind(SZrAstNode *body,
                                                  EZrParserCfgThrowKind *outKind);
 TZrBool cfg_try_body_throw_profile(SZrAstNode *body,
                                    TZrUInt32 *outKnownKindMask,
                                    TZrBool *outHasUnknownSource);
+TZrBool cfg_try_body_throw_profile_with_context(
+        SZrSemanticContext *semanticContext,
+        SZrAstNode *body,
+        TZrUInt32 *outKnownKindMask,
+        TZrBool *outHasUnknownSource);
 TZrBool cfg_catch_clause_is_catch_all(SZrAstNode *catchNode);
 EZrParserCfgCatchMatch cfg_catch_clause_matches_known_throw_kind(
         SZrAstNode *catchNode,

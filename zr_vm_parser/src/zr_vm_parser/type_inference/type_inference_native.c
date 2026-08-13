@@ -6,6 +6,7 @@
 #include "zr_vm_parser/receiver_call.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
@@ -3867,6 +3868,107 @@ static void type_inference_record_array_index_bounds_if_proven(SZrCompilerState 
     ZrParser_InferredType_Free(cs->state, &indexType);
 }
 
+static const TZrChar *removed_ownership_member_intrinsic(
+        EZrOwnershipQualifier qualifier,
+        SZrString *memberName) {
+    if (memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (qualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            if (zr_string_equals_cstr(memberName, "share")) return "share";
+            if (zr_string_equals_cstr(memberName, "intoGc")) return "intoGc";
+            if (zr_string_equals_cstr(memberName, "drop")) return "drop";
+            break;
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            if (zr_string_equals_cstr(memberName, "weak") ||
+                zr_string_equals_cstr(memberName, "degrade")) {
+                return "degrade";
+            }
+            if (zr_string_equals_cstr(memberName, "drop")) return "drop";
+            break;
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            if (zr_string_equals_cstr(memberName, "upgrade") ||
+                zr_string_equals_cstr(memberName, "wake")) {
+                return "wake";
+            }
+            if (zr_string_equals_cstr(memberName, "drop")) return "drop";
+            break;
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
+        default:
+            break;
+    }
+    return ZR_NULL;
+}
+
+static TZrBool publish_removed_ownership_member_diagnostic(
+        SZrCompilerState *cs,
+        SZrAstNode *primaryNode,
+        SZrAstNodeArray *members,
+        TZrSize memberIndex,
+        const SZrInferredType *receiverType,
+        SZrString *memberName) {
+    const TZrChar *intrinsicName;
+    const TZrChar *receiverName;
+    SZrPrimaryExpression *primary;
+    SZrFunctionCall *call;
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location;
+    TZrChar replacement[ZR_PARSER_DETAIL_BUFFER_LENGTH];
+    int written;
+
+    if (cs == ZR_NULL || primaryNode == ZR_NULL || members == ZR_NULL ||
+        receiverType == ZR_NULL || memberIndex != 0u ||
+        primaryNode->type != ZR_AST_PRIMARY_EXPRESSION ||
+        memberIndex + 1u >= members->count ||
+        members->nodes[memberIndex + 1u] == ZR_NULL ||
+        members->nodes[memberIndex + 1u]->type != ZR_AST_FUNCTION_CALL) {
+        return ZR_FALSE;
+    }
+    intrinsicName = removed_ownership_member_intrinsic(
+            receiverType->ownershipQualifier, memberName);
+    if (intrinsicName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    primary = &primaryNode->data.primaryExpression;
+    if (primary->property == ZR_NULL ||
+        primary->property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        primary->property->data.identifier.name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    call = &members->nodes[memberIndex + 1u]->data.functionCall;
+    if (call->accessMode != ZR_POSTFIX_ACCESS_DIRECT || call->hasNamedArgs ||
+        (call->args != ZR_NULL && call->args->count != 0u) ||
+        (call->genericArguments != ZR_NULL && call->genericArguments->count != 0u)) {
+        return ZR_FALSE;
+    }
+
+    receiverName = ZrCore_String_GetNativeString(
+            primary->property->data.identifier.name);
+    if (receiverName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    written = snprintf(
+            replacement, sizeof(replacement), "%s(%s)", intrinsicName, receiverName);
+    if (written < 0 || (TZrSize)written >= sizeof(replacement)) {
+        return ZR_FALSE;
+    }
+
+    location = ZrParser_FileRange_Merge(
+            primary->property->location,
+            members->nodes[memberIndex + 1u]->location);
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_BuildRemovedOwnershipMemberSyntax(
+                cs->state, &diagnostic, location, replacement)) {
+        return ZR_FALSE;
+    }
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    return ZR_TRUE;
+}
+
 TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                         SZrAstNode *primaryNode,
                                         const SZrInferredType *baseType,
@@ -4059,6 +4161,17 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     }
                 }
                 if (memberInfo == ZR_NULL) {
+                    if (nextIsFunctionCall &&
+                        publish_removed_ownership_member_diagnostic(
+                                cs,
+                                primaryNode,
+                                members,
+                                i,
+                                baseType,
+                                memberLookupName)) {
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        return ZR_FALSE;
+                    }
                     ZrParser_InferredType_Free(cs->state, &currentType);
                     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
                     return ZR_TRUE;
@@ -4357,6 +4470,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
         }
     }
     ZrParser_InferredType_Copy(cs->state, result, &currentType);
+    infer_receiver_guard_finalize_result_lift(cs, members, &currentType);
     if (resultLifted && result->baseType != ZR_VALUE_TYPE_NULL) {
         result->isNullable = ZR_TRUE;
     }

@@ -113,7 +113,7 @@ static void test_unique_shared_and_in_receivers_use_compile_time_loans(void) {
             "  var unique: Unique<Counter> = own Counter(1);\n"
             "  unique.write(unique.read() + 1);\n"
             "  var observed = inspect(unique);\n"
-            "  var shared: Shared<Counter> = unique.share();\n"
+            "  var shared: Shared<Counter> = share(unique);\n"
             "  var sharedValue = shared.read();\n"
             "  drop(shared);\n"
             "  return observed + sharedValue;\n"
@@ -136,21 +136,24 @@ static void test_unique_shared_and_in_receivers_use_compile_time_loans(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
-static void test_shared_and_weak_cannot_call_writable_or_direct_members(void) {
+static void test_shared_write_is_rejected_and_weak_direct_read_is_guarded(void) {
     SZrFunction *sharedWrite = compile_counter_program(
             "var unique: Unique<Counter> = own Counter(1);\n"
-            "var shared: Shared<Counter> = unique.share();\n"
+            "var shared: Shared<Counter> = share(unique);\n"
             "shared.write(2);\n",
             "resource_shared_write_rejected.zr");
     SZrFunction *weakRead = compile_counter_program(
             "var unique: Unique<Counter> = own Counter(1);\n"
-            "var shared: Shared<Counter> = unique.share();\n"
-            "var weak: Weak<Counter> = shared.weak();\n"
+            "var shared: Shared<Counter> = share(unique);\n"
+            "var weak: Weak<Counter> = degrade(shared);\n"
             "weak.read();\n",
             "resource_weak_direct_read_rejected.zr");
 
     TEST_ASSERT_NULL(sharedWrite);
-    TEST_ASSERT_NULL(weakRead);
+    TEST_ASSERT_NOT_NULL(weakRead);
+    TEST_ASSERT_TRUE(function_tree_contains_opcode(
+            weakRead, ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL), 0U));
+    ZrCore_Function_Free(g_state, weakRead);
 }
 
 static void test_unique_receiver_two_phase_allows_read_and_rejects_write_argument(void) {
@@ -188,7 +191,7 @@ static void test_live_owner_ref_blocks_drop_share_and_move(void) {
             "fn run(): int {\n"
             "  var owner: Unique<Counter> = own Counter(1);\n"
             "  var alias: ref int = owner.borrowValue();\n"
-            "  var shared: Shared<Counter> = owner.share();\n"
+            "  var shared: Shared<Counter> = share(owner);\n"
             "  return alias;\n"
             "}\n"
             "return run();\n",
@@ -213,7 +216,7 @@ static void test_owner_ref_last_use_allows_later_move(void) {
             "fn run(): int {\n"
             "  var owner: Unique<Counter> = own Counter(7);\n"
             "  var alias: ref int = owner.borrowValue();\n"
-            "  var observed = alias;\n"
+            "  var observed = alias + 0;\n"
             "  var moved: Unique<Counter> = owner;\n"
             "  drop(moved);\n"
             "  return observed;\n"
@@ -254,13 +257,50 @@ static void test_owner_ref_cannot_escape_its_owner(void) {
     TEST_ASSERT_NULL(overloaded);
 }
 
+static void test_weak_receiver_ref_results_cannot_escape_temporary_wake(void) {
+    SZrFunction *methodResult = compile_source(
+            "resource class ReadonlyCounter {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub const fn borrowValue(): ref readonly int {\n"
+            "    return ref this.value;\n"
+            "  }\n"
+            "}\n"
+            "fn leak(): ref readonly int {\n"
+            "  var owner: Unique<ReadonlyCounter> = own ReadonlyCounter(1);\n"
+            "  var shared: Shared<ReadonlyCounter> = share(owner);\n"
+            "  var weak: Weak<ReadonlyCounter> = degrade(shared);\n"
+            "  return weak.borrowValue();\n"
+            "}\n",
+            "resource_weak_ref_method_escape_rejected.zr");
+    SZrFunction *propertyResult = compile_source(
+            "resource class Box {\n"
+            "  pub var stored: int;\n"
+            "  pub @constructor(value: int) { this.stored = value; }\n"
+            "  pub property value: ref int {\n"
+            "    get { return ref this.stored; }\n"
+            "  }\n"
+            "}\n"
+            "fn leak(): ref int {\n"
+            "  var owner: Unique<Box> = own Box(1);\n"
+            "  var shared: Shared<Box> = share(owner);\n"
+            "  var weak: Weak<Box> = degrade(shared);\n"
+            "  return ref weak.value;\n"
+            "}\n",
+            "resource_weak_ref_property_escape_rejected.zr");
+
+    TEST_ASSERT_NULL(methodResult);
+    TEST_ASSERT_NULL(propertyResult);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_unique_shared_and_in_receivers_use_compile_time_loans);
-    RUN_TEST(test_shared_and_weak_cannot_call_writable_or_direct_members);
+    RUN_TEST(test_shared_write_is_rejected_and_weak_direct_read_is_guarded);
     RUN_TEST(test_unique_receiver_two_phase_allows_read_and_rejects_write_argument);
     RUN_TEST(test_live_owner_ref_blocks_drop_share_and_move);
     RUN_TEST(test_owner_ref_last_use_allows_later_move);
     RUN_TEST(test_owner_ref_cannot_escape_its_owner);
+    RUN_TEST(test_weak_receiver_ref_results_cannot_escape_temporary_wake);
     return UNITY_END();
 }

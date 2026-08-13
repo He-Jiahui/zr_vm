@@ -68,7 +68,7 @@ extern void test_ownership_generic_real_fixture_executes_session_lifecycle(void)
 extern void test_ownership_weak_runtime_wake_is_empty_after_last_shared_drop(void);
 extern void test_ownership_wake_and_drop_runtime_follow_lifecycle_contract(void);
 extern void test_ownership_drop_preserves_unrelated_stack_values_after_weak_expiry(void);
-extern void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void);
+extern void test_plugin_guard_module_share_member_is_rejected(void);
 extern void test_plugin_guard_scoped_module_handle_releases_on_scope_exit(void);
 extern void test_plugin_load_available_import_guard_lowers_to_available_payload(void);
 extern void test_ownership_builtin_compile_rejects_invalid_operands(void);
@@ -229,7 +229,7 @@ int main(void) {
     RUN_TEST(test_plugin_guard_generic_call_argument_reports_escape_boundary);
     RUN_TEST(test_plugin_guard_nested_function_shadowed_parameter_allows_local_value);
     RUN_TEST(test_plugin_guard_nested_function_destructured_shadow_allows_local_value);
-    RUN_TEST(test_plugin_guard_share_promotes_module_handle_to_shared_owner);
+    RUN_TEST(test_plugin_guard_module_share_member_is_rejected);
     RUN_TEST(test_plugin_guard_scoped_module_handle_releases_on_scope_exit);
     RUN_TEST(test_plugin_load_available_import_guard_lowers_to_available_payload);
     RUN_TEST(test_ownership_unique_share_runtime_moves_source_to_null);

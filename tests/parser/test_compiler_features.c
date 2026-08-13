@@ -4297,14 +4297,14 @@ void test_ownership_drop_preserves_unrelated_stack_values_after_weak_expiry(void
     ZR_TEST_DIVIDER();
 }
 
-void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void) {
+void test_plugin_guard_module_share_member_is_rejected(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Plugin Guard Share Promotes Module Handle To Shared Owner";
+    const char *testSummary = "Plugin Guard Module Share Member Is Rejected";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Using plugin guard share promotion",
-              "Testing that guard-scoped import(...) handles lower .share() to a native shared-owner promotion instead of dynamic module member lookup");
+    ZR_TEST_INFO("Rejecting plugin guard ownership member syntax",
+              "Testing that Module.share() cannot bypass the guard lifetime or the reserved share(owner) intrinsic contract");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4320,50 +4320,24 @@ void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void) {
             "    @Available(m: Module);\n"
             "}\n"
             "using (let [math] = import(\"zr.math\")) {\n"
-            "    var handle = math.share();\n"
-            "    var released = drop(handle);\n"
-            "    return 1;\n"
+            "    return math.share();\n"
             "} else {\n"
             "    return 2;\n"
             "}\n"
             "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "plugin_guard_share_promotes_module_handle.zr",
-                                                     strlen("plugin_guard_share_promotes_module_handle.zr"));
+                                                     "plugin_guard_module_share_rejected.zr",
+                                                     strlen("plugin_guard_module_share_rejected.zr"));
         SZrFunction *func;
-        TZrInt64 result = 0;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        if (func == ZR_NULL) {
+        if (func != ZR_NULL) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile plugin guard share promotion source");
-            destroy_test_state(state);
-            return;
-        }
-
-        TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
-        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
-            timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to execute plugin guard share promotion source");
             ZrCore_Function_Free(state, func);
+            ZR_TEST_FAIL(timer, testSummary, "Module.share() unexpectedly compiled");
             destroy_test_state(state);
             return;
         }
-        if (result != 1) {
-            char failureMessage[128];
-            snprintf(failureMessage,
-                     sizeof(failureMessage),
-                     "Plugin guard share promotion returned unexpected result: %lld",
-                     (long long)result);
-            timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, failureMessage);
-            ZrCore_Function_Free(state, func);
-            destroy_test_state(state);
-            return;
-        }
-
-        ZrCore_Function_Free(state, func);
     }
 
     timer.endTime = clock();
@@ -4466,8 +4440,6 @@ void test_plugin_load_available_import_guard_lowers_to_available_payload(void) {
         const char *source =
             "var seen = 0;\n"
             "using (let [math]: PluginLoad.Available = import(\"zr.math\")) {\n"
-            "    var handle = math.share();\n"
-            "    var released = drop(handle);\n"
             "    seen = 1;\n"
             "} else {\n"
             "    seen = 2;\n"
@@ -4488,7 +4460,7 @@ void test_plugin_load_available_import_guard_lowers_to_available_payload(void) {
         }
 
         TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
-        TEST_ASSERT_TRUE(function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)) >= 2u);
+        TEST_ASSERT_EQUAL_UINT32(1u, function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DROP)));
         if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
             timer.endTime = clock();
             ZR_TEST_FAIL(timer, testSummary, "Failed to execute PluginLoad.Available import guard source");

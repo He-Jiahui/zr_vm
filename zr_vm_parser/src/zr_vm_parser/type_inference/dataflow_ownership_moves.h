@@ -7,7 +7,7 @@ TZrBool ZrParser_DataflowOwnership_StatementMovesRead(
         const SZrSemanticContext *context,
         SZrAstNode *statement,
         const SZrSemanticReferenceFact *fact);
-TZrBool ZrParser_DataflowOwnership_StatementWeakReadRequiresUpgrade(
+TZrBool ZrParser_DataflowOwnership_StatementWeakReadRequiresWake(
         const SZrSemanticContext *context,
         SZrAstNode *statement,
         const SZrSemanticReferenceFact *fact);

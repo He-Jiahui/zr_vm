@@ -224,9 +224,9 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Loan escape",
             "Loaned value escapes its valid region"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
-            "weak_value_requires_upgrade",
-            "Weak value requires upgrade",
-            "Weak value must be upgraded before use"),
+            "weak_value_requires_wake",
+            "Weak value requires wake",
+            "Weak value must be woken before use"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "owner_to_plain_escape",
             "Owner to plain escape",
@@ -235,6 +235,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "resource_shared_strong_cycle",
             "Resource shared strong cycle",
             "Shared resource fields form a strong ownership cycle"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "removed_ownership_member_syntax",
+            "Removed ownership member syntax",
+            "Ownership operations use reserved intrinsic calls"),
 };
 
 TZrSize ZrParser_DiagnosticMessages_Count(void) {

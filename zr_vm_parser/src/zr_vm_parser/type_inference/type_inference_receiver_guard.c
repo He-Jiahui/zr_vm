@@ -123,3 +123,38 @@ TZrBool infer_receiver_guard_for_segment(
     }
     return ZR_TRUE;
 }
+
+void infer_receiver_guard_finalize_result_lift(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *segments,
+        const SZrInferredType *resultType) {
+    EZrReceiverGuardResultLift lift;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || segments == ZR_NULL ||
+        segments->nodes == ZR_NULL || resultType == ZR_NULL ||
+        !cs->semanticContext->receiverGuardFacts.isValid) {
+        return;
+    }
+
+    lift = resultType->baseType == ZR_VALUE_TYPE_NULL
+                   ? ZR_RECEIVER_GUARD_RESULT_VOID_NOOP
+                   : ZR_RECEIVER_GUARD_RESULT_NULLABLE;
+    for (TZrSize segmentIndex = 0u;
+         segmentIndex < segments->count;
+         segmentIndex++) {
+        SZrAstNode *segment = segments->nodes[segmentIndex];
+
+        for (TZrSize factIndex = 0u;
+             factIndex < cs->semanticContext->receiverGuardFacts.length;
+             factIndex++) {
+            SZrReceiverGuardFact *fact =
+                    (SZrReceiverGuardFact *)ZrCore_Array_Get(
+                            &cs->semanticContext->receiverGuardFacts,
+                            factIndex);
+            if (fact != ZR_NULL && fact->node == segment &&
+                fact->mode == ZR_RECEIVER_GUARD_OPTIONAL) {
+                fact->resultLift = lift;
+            }
+        }
+    }
+}

@@ -223,6 +223,7 @@ void ZrParser_Cfg_Free(SZrState *state, SZrParserCfg *cfg) {
     cfg_clear_blocks(state, cfg);
     ZrCore_Array_Free(state, &cfg->blocks);
     cfg->state = ZR_NULL;
+    cfg->semanticContext = ZR_NULL;
     cfg->entryBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
     cfg->exitBlockId = ZR_PARSER_CFG_INVALID_BLOCK_ID;
 }

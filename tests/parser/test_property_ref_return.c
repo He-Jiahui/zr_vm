@@ -865,7 +865,7 @@ static void test_property_ref_owner_loan_blocks_move_drop_and_share(void) {
             "%sfn run(): int {\n"
             "  var owner: Unique<Counter> = own Counter(1);\n"
             "  var alias: ref int = ref owner.value;\n"
-            "  var shared: Shared<Counter> = owner.share();\n"
+            "  var shared: Shared<Counter> = share(owner);\n"
             "  return alias;\n"
             "}\nreturn run();\n",
             declaration);

@@ -1845,14 +1845,14 @@ static void test_ownership_builtin_type_inference_rejects_invalid_operands(void)
             "var owner = own Holder();"
             "degrade(owner);",
             "ownership_invalid_weak_unique_test.zr",
-            "degrade() requires a Shared owner");
+            "degrade(shared) requires a Shared owner");
 
     expect_ownership_builtin_type_inference_failure(
             "var seed = own Holder();"
             "var owner = share(seed);"
             "wake(owner);",
             "ownership_invalid_upgrade_shared_test.zr",
-            "wake() requires a Weak owner");
+            "wake(weak) requires a Weak owner");
 
     expect_ownership_builtin_type_inference_failure(
             "drop(1);",
@@ -1864,7 +1864,7 @@ static void test_ownership_builtin_type_inference_rejects_invalid_operands(void)
             "var owner = share(seed);"
             "share(owner);",
             "ownership_invalid_share_shared_test.zr",
-            "share() requires a Unique owner");
+            "share(owner) requires a Unique owner");
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -2008,7 +2008,7 @@ static void test_unique_value_is_compatible_with_borrowed_parameter(void) {
 
 static void test_weak_value_requires_wake_before_borrowed_parameter(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Weak Value Requires Upgrade Before Borrowed Parameter";
+    const char *testSummary = "Type Inference - Weak Value Requires Wake Before Borrowed Parameter";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2869,7 +2869,7 @@ static void test_parser_supports_ownership_types_and_template_strings(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Ownership-qualified type parsing and template string parsing",
-              "Testing %unique/%shared/%weak/%borrowed type annotations and backtick template strings with interpolation");
+              "Testing Unique/Shared/Weak type annotations and backtick template strings with interpolation");
 
     const char *source =
         "var owned: Unique<Resource>;"

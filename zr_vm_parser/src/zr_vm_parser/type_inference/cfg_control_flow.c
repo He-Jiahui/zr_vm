@@ -530,9 +530,11 @@ TZrBool cfg_build_try_statement(SZrState *state,
     }
 
     catchClauses = statement->data.tryCatchFinallyStatement.catchClauses;
-    protectedBodyMayEnterCatch =
-            cfg_node_may_enter_catch(statement->data.tryCatchFinallyStatement.block);
-    if (!cfg_try_body_throw_profile(
+    protectedBodyMayEnterCatch = cfg_node_may_enter_catch_with_context(
+            cfg->semanticContext,
+            statement->data.tryCatchFinallyStatement.block);
+    if (!cfg_try_body_throw_profile_with_context(
+            cfg->semanticContext,
             statement->data.tryCatchFinallyStatement.block,
             &protectedBodyKnownThrowKindMask,
             &protectedBodyHasUnknownThrowSource)) {

@@ -863,7 +863,7 @@ void test_reference_core_semantics_matrix_document_exists(void) {
         "ZR 核心语义 capability matrix",
         "字面量与转义",
         "表达式与优先级",
-        "%module/%import 与成员链",
+        "`module` / `import(...)` 与成员链",
         "调用面：位置参数、命名参数、默认值、变参、重载/错误 arity",
         "<Type> 转换、prototype/new 误用、`const` 赋值规则",
         "诊断与错误恢复",

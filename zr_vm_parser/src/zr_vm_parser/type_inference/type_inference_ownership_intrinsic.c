@@ -8,15 +8,15 @@ static const TZrChar *intrinsic_operand_error(
         EZrOwnershipIntrinsicOperation operation) {
     switch (operation) {
         case ZR_OWNERSHIP_INTRINSIC_SHARE:
-            return "share() requires a Unique owner";
+            return "share(owner) requires a Unique owner";
         case ZR_OWNERSHIP_INTRINSIC_DEGRADE:
-            return "degrade() requires a Shared owner";
+            return "degrade(shared) requires a Shared owner";
         case ZR_OWNERSHIP_INTRINSIC_WAKE:
-            return "wake() requires a Weak owner";
+            return "wake(weak) requires a Weak owner";
         case ZR_OWNERSHIP_INTRINSIC_INTO_GC:
-            return "intoGc() requires a Unique resource owner";
+            return "intoGc(owner) requires a Unique resource owner";
         case ZR_OWNERSHIP_INTRINSIC_DROP:
-            return "drop() requires a Unique, Shared, or Weak owner";
+            return "drop(owner) requires a Unique, Shared, or Weak owner";
         default:
             return "Invalid ownership intrinsic";
     }
@@ -170,7 +170,7 @@ TZrBool infer_ownership_intrinsic_expression_type(
         !intrinsic_into_gc_has_resource_target(cs, &inputType)) {
         ZrParser_Compiler_Error(
                 cs,
-                "intoGc() requires a Unique<T> resource owner",
+                "intoGc(owner) requires a Unique<T> resource owner",
                 intrinsic->argument->location);
         ZrParser_InferredType_Free(cs->state, &inputType);
         return ZR_FALSE;

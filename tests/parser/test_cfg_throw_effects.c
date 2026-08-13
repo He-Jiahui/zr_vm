@@ -8,6 +8,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 static SZrState *g_state;
 
@@ -152,9 +153,49 @@ static void test_cfg_uses_lambda_iife_throw_profile_for_typed_catch_matching(voi
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_cfg_marks_direct_weak_receiver_guard_as_throwing(void) {
+    const char *source =
+            "resource class Box { pub var value: int; }\n"
+            "fn read(weak: Weak<Box>): int {\n"
+            "  try { weak.value; }\n"
+            "  catch (error: NullReferenceError) { return 1; }\n"
+            "  return 0;\n"
+            "}\n";
+    SZrAstNode *script = parse_source(source);
+    SZrAstNode *functionNode = script->data.script.statements->nodes[1];
+    SZrAstNode *tryNode = functionNode->data.functionDeclaration.body
+                                  ->data.block.body->nodes[0];
+    SZrAstNode *catchStmt = first_catch_statement(tryNode);
+    SZrCompilerState compiler;
+    SZrParserCfg cfg;
+
+    memset(&compiler, 0, sizeof(compiler));
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    compiler.currentAst = script;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    compile_script(&compiler, script);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+
+    ZrParser_Cfg_Init(g_state, &cfg);
+    TEST_ASSERT_TRUE(ZrParser_Cfg_BuildWithSemanticContext(
+            g_state, &cfg, functionNode, compiler.semanticContext));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(
+            compiler.semanticContext, &cfg));
+    TEST_ASSERT_NULL(reachability_fact_at(compiler.semanticContext, catchStmt));
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, script);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife);
     RUN_TEST(test_cfg_uses_lambda_iife_throw_profile_for_typed_catch_matching);
+    RUN_TEST(test_cfg_marks_direct_weak_receiver_guard_as_throwing);
     return UNITY_END();
 }

@@ -72,6 +72,7 @@ typedef struct SZrParserCfgBlock {
 
 typedef struct SZrParserCfg {
     SZrState *state;
+    SZrSemanticContext *semanticContext;
     SZrArray blocks;
     TZrUInt32 entryBlockId;
     TZrUInt32 exitBlockId;
@@ -97,6 +98,11 @@ ZR_PARSER_API TZrUInt32 ZrParser_Cfg_BlockSuccessorIdAt(
         const SZrParserCfgBlock *block,
         TZrSize index);
 ZR_PARSER_API TZrBool ZrParser_Cfg_Build(SZrState *state, SZrParserCfg *cfg, SZrAstNode *root);
+ZR_PARSER_API TZrBool ZrParser_Cfg_BuildWithSemanticContext(
+        SZrState *state,
+        SZrParserCfg *cfg,
+        SZrAstNode *root,
+        SZrSemanticContext *semanticContext);
 ZR_PARSER_API TZrBool ZrParser_Cfg_EmitReachabilityFacts(SZrSemanticContext *context, SZrParserCfg *cfg);
 
 #endif // ZR_VM_PARSER_CFG_H

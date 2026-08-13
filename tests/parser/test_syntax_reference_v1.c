@@ -134,7 +134,7 @@ static const SZrSyntaxReferenceCurrentEvidence kCurrentEvidence[] = {
         {"src/model.zr", "Span<int>"},
         {"src/object_model.zr", "pub const fn read"},
         {"src/ownership.zr", "resource class SyntaxReferenceOwned"},
-        {"src/ownership.zr", "owner.intoGc()"},
+        {"src/ownership.zr", "intoGc(owner)"},
         {"src/object_model.zr", "pub property value"},
         {"src/model.zr", "union SyntaxReferenceChoice<T>"},
         {"surface/lexical_and_literals.zr", "var [first, second]"},

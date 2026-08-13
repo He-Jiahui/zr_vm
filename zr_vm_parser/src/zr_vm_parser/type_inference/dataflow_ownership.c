@@ -300,7 +300,7 @@ static void semantic_ownership_transfer_statement(SZrAstNode *statement,
         const SZrSemanticOwnershipSymbolEntry *entry;
         TZrBool moves;
         TZrBool releases;
-        TZrBool weakRequiresUpgrade;
+        TZrBool weakRequiresWake;
         TZrBool belongsToStatement;
         SZrAstNode *releaseCause = ZR_NULL;
         TZrSize violationOwnerIndex = ZR_SEMANTIC_OWNERSHIP_SYMBOL_INDEX_INVALID;
@@ -321,14 +321,14 @@ static void semantic_ownership_transfer_statement(SZrAstNode *statement,
                 statement,
                 fact);
         releases = ZrParser_DataflowOwnership_StatementReleasesRead(statement, fact);
-        weakRequiresUpgrade = ZrParser_DataflowOwnership_StatementWeakReadRequiresUpgrade(
+        weakRequiresWake = ZrParser_DataflowOwnership_StatementWeakReadRequiresWake(
                 analysis->context,
                 statement,
                 fact);
         belongsToStatement = ZrParser_DataflowOwnership_FactInStatement(statement, fact) ||
                               moves ||
                               releases ||
-                              weakRequiresUpgrade;
+                              weakRequiresWake;
         if (!belongsToStatement) {
             continue;
         }
@@ -380,7 +380,7 @@ static void semantic_ownership_transfer_statement(SZrAstNode *statement,
                     slots,
                     slot->ownerSetId,
                     &violationOwnerIndex);
-            if (releaseCause != ZR_NULL && weakRequiresUpgrade) {
+            if (releaseCause != ZR_NULL && weakRequiresWake) {
                 semantic_ownership_record_violation(analysis,
                                                     index,
                                                     releaseCause,
@@ -632,7 +632,11 @@ static TZrBool semantic_ownership_run_cfg(SZrSemanticOwnershipAnalysis *semantic
 
     ZrParser_Cfg_Init(semanticAnalysis->context->state, &cfg);
     ZrParser_DataflowResult_Init(&result);
-    ok = ZrParser_Cfg_Build(semanticAnalysis->context->state, &cfg, root) &&
+    ok = ZrParser_Cfg_BuildWithSemanticContext(
+                 semanticAnalysis->context->state,
+                 &cfg,
+                 root,
+                 semanticAnalysis->context) &&
          semantic_ownership_bind_cfg_regions(semanticAnalysis, &cfg) &&
          ZrParser_Dataflow_Run(semanticAnalysis->context->state, &cfg, &analysis, &result);
     ZrParser_DataflowResult_Free(semanticAnalysis->context->state, &result);

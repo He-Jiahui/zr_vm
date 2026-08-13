@@ -94,9 +94,9 @@ static TZrBool semantic_query_append_weak_after_release_diagnostic(
         const SZrSemanticOwnershipFact *fact) {
     SZrStructuredDiagnostic diagnostic;
 
-    if (!ZrParser_DiagnosticBuilder_BuildWeakUpgrade(context->state,
-                                                      &diagnostic,
-                                                      fact->range)) {
+    if (!ZrParser_DiagnosticBuilder_BuildWeakWake(context->state,
+                                                   &diagnostic,
+                                                   fact->range)) {
         return ZR_FALSE;
     }
     if (!ZrParser_StructuredDiagnostic_AddRelatedInformation(

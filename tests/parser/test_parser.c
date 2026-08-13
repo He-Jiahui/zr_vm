@@ -1072,14 +1072,14 @@ static void test_resource_ownership_surface_parsing(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Resource ownership syntax parsing",
-              "Testing README resource ownership forms: resource class, Unique/Shared/Weak, own, share, weak, upgrade, and drop");
+              "Testing README resource ownership forms: resource class, Unique/Shared/Weak, own, share, degrade, wake, and drop");
     {
         const char *source =
             "resource class Holder { var resource: Unique<Resource>; }\n"
             "let uniqueHolder: Unique<Holder> = own Holder();\n"
-            "let sharedHolder: Shared<Holder> = uniqueHolder.share();\n"
-            "let weakHolder: Weak<Holder> = sharedHolder.weak();\n"
-            "let active = weakHolder.upgrade();\n"
+            "let sharedHolder: Shared<Holder> = share(uniqueHolder);\n"
+            "let weakHolder: Weak<Holder> = degrade(sharedHolder);\n"
+            "let active = wake(weakHolder);\n"
             "drop(sharedHolder);";
         SZrString *sourceName = ZrCore_String_Create(state, "resource_ownership_syntax.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -1638,14 +1638,14 @@ static void test_resource_ownership_lifecycle_surface_parsing(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Resource ownership lifecycle parsing",
-              "Testing the README own, share, weak, upgrade, and drop forms without legacy generic constructors");
+              "Testing the README own, share, degrade, wake, and drop forms without legacy generic constructors");
     {
         const char *source =
             "resource class Box {}\n"
             "let owner: Unique<Box> = own Box();\n"
-            "let shared: Shared<Box> = owner.share();\n"
-            "let weak: Weak<Box> = shared.weak();\n"
-            "let active = weak.upgrade();\n"
+            "let shared: Shared<Box> = share(owner);\n"
+            "let weak: Weak<Box> = degrade(shared);\n"
+            "let active = wake(weak);\n"
             "drop(shared);";
         SZrString *sourceName = ZrCore_String_Create(state, "resource_ownership_lifecycle.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);

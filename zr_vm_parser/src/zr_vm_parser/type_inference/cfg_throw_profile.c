@@ -15,6 +15,37 @@ static TZrBool cfg_node_throw_kind_mask(SZrAstNode *node,
                                         const SZrParserCfgThrowTypeBinding *bindings,
                                         TZrUInt32 *outKnownKindMask);
 
+static TZrBool cfg_node_has_direct_receiver_guard(
+        const SZrSemanticContext *semanticContext,
+        const SZrAstNode *node) {
+    if (semanticContext == ZR_NULL || node == ZR_NULL ||
+        !semanticContext->receiverGuardFacts.isValid) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0u;
+         index < semanticContext->receiverGuardFacts.length;
+         index++) {
+        const SZrReceiverGuardFact *fact =
+                (const SZrReceiverGuardFact *)ZrCore_Array_Get(
+                        (SZrArray *)&semanticContext->receiverGuardFacts,
+                        index);
+        if (fact == ZR_NULL || fact->mode != ZR_RECEIVER_GUARD_DIRECT ||
+            fact->node == ZR_NULL) {
+            continue;
+        }
+        if (node->location.source != ZR_NULL && fact->range.source != ZR_NULL &&
+            !ZrCore_String_Equal(node->location.source, fact->range.source)) {
+            continue;
+        }
+        if (fact->range.start.offset >= node->location.start.offset &&
+            fact->range.end.offset <= node->location.end.offset) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool cfg_node_literal_throw_kind(SZrAstNode *node,
                                            EZrParserCfgThrowKind *outKind) {
     TZrBool boolValue = ZR_FALSE;
@@ -299,6 +330,14 @@ TZrBool cfg_node_may_enter_catch(SZrAstNode *node) {
         default:
             return ZR_FALSE;
     }
+}
+
+TZrBool cfg_node_may_enter_catch_with_context(
+        SZrSemanticContext *semanticContext,
+        SZrAstNode *node) {
+    return (TZrBool)(cfg_node_may_enter_catch(node) ||
+                     cfg_node_has_direct_receiver_guard(
+                             semanticContext, node));
 }
 
 static void cfg_throw_profile_add_known_mask(SZrParserCfgThrowTypeProfile *profile,
@@ -764,5 +803,20 @@ TZrBool cfg_try_body_throw_profile(SZrAstNode *body,
 
     *outKnownKindMask = profile.knownKindMask;
     *outHasUnknownSource = profile.hasUnknownSource;
+    return ZR_TRUE;
+}
+
+TZrBool cfg_try_body_throw_profile_with_context(
+        SZrSemanticContext *semanticContext,
+        SZrAstNode *body,
+        TZrUInt32 *outKnownKindMask,
+        TZrBool *outHasUnknownSource) {
+    if (!cfg_try_body_throw_profile(
+                body, outKnownKindMask, outHasUnknownSource)) {
+        return ZR_FALSE;
+    }
+    if (cfg_node_has_direct_receiver_guard(semanticContext, body)) {
+        *outHasUnknownSource = ZR_TRUE;
+    }
     return ZR_TRUE;
 }

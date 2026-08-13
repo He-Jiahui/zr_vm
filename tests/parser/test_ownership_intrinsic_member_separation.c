@@ -108,6 +108,7 @@ static void destroy_compiler_state(SZrCompilerState *compiler) {
 static void register_resource_prototype(SZrCompilerState *compiler) {
     SZrTypePrototypeInfo prototype;
     SZrTypeMemberInfo valueField;
+    SZrTypeMemberInfo resetMethod;
 
     memset(&prototype, 0, sizeof(prototype));
     prototype.name = ZrCore_String_CreateFromNative(g_state, "Resource");
@@ -129,6 +130,14 @@ static void register_resource_prototype(SZrCompilerState *compiler) {
     valueField.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
     valueField.fieldSize = sizeof(TZrUInt64);
     ZrCore_Array_Push(g_state, &prototype.members, &valueField);
+
+    memset(&resetMethod, 0, sizeof(resetMethod));
+    resetMethod.memberType = ZR_AST_CLASS_METHOD;
+    resetMethod.name = ZrCore_String_CreateFromNative(g_state, "reset");
+    resetMethod.returnTypeName = ZrCore_String_CreateFromNative(g_state, "void");
+    resetMethod.accessModifier = ZR_ACCESS_PUBLIC;
+    resetMethod.receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    ZrCore_Array_Push(g_state, &prototype.members, &resetMethod);
 
     TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
             g_state, compiler->typeEnv, prototype.name));
@@ -666,6 +675,42 @@ static void test_receiver_guards_publish_chain_contracts(void) {
     destroy_compiler_state(compiler);
 }
 
+static void test_optional_void_calls_publish_void_noop_contracts(void) {
+    SZrCompilerState *compiler = create_compiler_state();
+    SZrAstNode *script = parse_source(
+            "weak?.reset(); nullable?.reset();");
+
+    register_resource_prototype(compiler);
+    register_owner_binding(
+            compiler, "weak", ZR_OWNERSHIP_QUALIFIER_WEAK,
+            ZR_FALSE, "Resource", 211u, 411u);
+    register_owner_binding(
+            compiler, "nullable", ZR_OWNERSHIP_QUALIFIER_NONE,
+            ZR_TRUE, "Resource", 212u, 412u);
+
+    for (TZrSize index = 0u; index < 2u; index++) {
+        SZrAstNode *expression = statement_expression(script, index);
+        SZrAstNode *optionalMember = postfix_segment(expression, 0u);
+        SZrInferredType result;
+        const SZrReceiverGuardFact *guard;
+
+        ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+                compiler, expression, &result));
+        guard = ZrParser_SemanticFacts_FindReceiverGuardByNode(
+                compiler->semanticContext, optionalMember);
+        TEST_ASSERT_NOT_NULL(guard);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_RECEIVER_GUARD_RESULT_VOID_NOOP, guard->resultLift);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, result.baseType);
+        TEST_ASSERT_FALSE(result.isNullable);
+        ZrParser_InferredType_Free(g_state, &result);
+    }
+
+    ZrParser_Ast_Free(g_state, script);
+    destroy_compiler_state(compiler);
+}
+
 static void assert_inference_error(
         const TZrChar *source,
         const TZrChar *bindingName,
@@ -718,7 +763,7 @@ static void test_intrinsic_and_optional_receiver_errors_are_precise(void) {
             ZR_OWNERSHIP_QUALIFIER_SHARED,
             ZR_FALSE,
             "Resource",
-            "share() requires a Unique owner");
+            "share(owner) requires a Unique owner");
     assert_inference_error(
             "drop(wake(weak));",
             "owner",
@@ -824,6 +869,71 @@ static void test_intrinsic_spellings_on_objects_use_normal_member_calls(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_removed_ownership_member_calls_publish_structured_fixes(void) {
+    static const struct {
+        const TZrChar *source;
+        const TZrChar *bindingName;
+        EZrOwnershipQualifier qualifier;
+        const TZrChar *replacement;
+    } cases[] = {
+            {"owner.share();", "owner", ZR_OWNERSHIP_QUALIFIER_UNIQUE, "share(owner)"},
+            {"shared.weak();", "shared", ZR_OWNERSHIP_QUALIFIER_SHARED, "degrade(shared)"},
+            {"shared.degrade();", "shared", ZR_OWNERSHIP_QUALIFIER_SHARED, "degrade(shared)"},
+            {"weak.upgrade();", "weak", ZR_OWNERSHIP_QUALIFIER_WEAK, "wake(weak)"},
+            {"weak.wake();", "weak", ZR_OWNERSHIP_QUALIFIER_WEAK, "wake(weak)"},
+            {"owner.intoGc();", "owner", ZR_OWNERSHIP_QUALIFIER_UNIQUE, "intoGc(owner)"},
+            {"owner.drop();", "owner", ZR_OWNERSHIP_QUALIFIER_UNIQUE, "drop(owner)"},
+    };
+
+    for (TZrSize index = 0u; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        SZrAstNode *script = parse_source(cases[index].source);
+        SZrAstNode *expression = statement_expression(script, 0u);
+        SZrCompilerState *compiler = create_compiler_state();
+        SZrInferredType result;
+        const SZrStructuredDiagnosticFix *fix;
+
+        register_resource_prototype(compiler);
+        register_owner_binding(
+                compiler,
+                cases[index].bindingName,
+                cases[index].qualifier,
+                ZR_FALSE,
+                "Resource",
+                (TZrUInt32)(index + 1u),
+                (TZrUInt32)(index + 100u));
+
+        ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE_MESSAGE(
+                ZrParser_ExpressionType_Infer(compiler, expression, &result),
+                cases[index].source);
+        TEST_ASSERT_TRUE(compiler->hasError);
+        TEST_ASSERT_TRUE(compiler->hasStructuredError);
+        TEST_ASSERT_NOT_NULL(compiler->structuredError.code);
+        TEST_ASSERT_EQUAL_STRING(
+                "removed_ownership_member_syntax",
+                ZrCore_String_GetNativeString(compiler->structuredError.code));
+        TEST_ASSERT_TRUE(compiler->structuredError.fixes.isValid);
+        TEST_ASSERT_EQUAL_UINT32(
+                1u, (TZrUInt32)compiler->structuredError.fixes.length);
+        fix = (const SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+                &compiler->structuredError.fixes, 0u);
+        TEST_ASSERT_NOT_NULL(fix);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE, fix->applicability);
+        TEST_ASSERT_EQUAL_STRING(
+                cases[index].replacement,
+                ZrCore_String_GetNativeString(fix->editText));
+        TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)fix->editRange.start.offset);
+        TEST_ASSERT_EQUAL_UINT32(
+                (TZrUInt32)(strlen(cases[index].source) - 1u),
+                (TZrUInt32)fix->editRange.end.offset);
+
+        ZrParser_InferredType_Free(g_state, &result);
+        ZrParser_Ast_Free(g_state, script);
+        destroy_compiler_state(compiler);
+    }
+}
+
 static void test_expired_weak_optional_call_skips_arguments(void) {
     const TZrChar *source =
             "resource class Service {\n"
@@ -924,6 +1034,77 @@ static void test_expired_weak_direct_call_throws_named_runtime_error(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_weak_receiver_guard_releases_wake_on_suffix_throw(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn explode(): int { throw \"boom\"; }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    try { weak.explode(); } catch (error) {}\n"
+            "    drop(shared);\n"
+            "    var afterDirect = wake(weak);\n"
+            "    var directReleased = afterDirect == null;\n"
+            "    drop(afterDirect);\n"
+            "    var seed2 = own Service();\n"
+            "    var shared2 = share(seed2);\n"
+            "    var weak2 = degrade(shared2);\n"
+            "    try { weak2?.explode(); } catch (error) {}\n"
+            "    drop(shared2);\n"
+            "    var afterOptional = wake(weak2);\n"
+            "    var optionalReleased = afterOptional == null;\n"
+            "    drop(afterOptional);\n"
+            "    if (directReleased && optionalReleased) { return 1; }\n"
+            "    return 0;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "weak_receiver_guard_suffix_throw.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_live_nullable_shared_receiver_projects_owned_fields(void) {
+    const TZrChar *source =
+            "resource class Child {\n"
+            "    pub var value: int;\n"
+            "    pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "resource class Root {\n"
+            "    pub var child: Unique<Child>;\n"
+            "    pub @constructor() { this.child = own Child(7); }\n"
+            "}\n"
+            "var seed = own Root();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var guarded = wake(weak);\n"
+            "var first = guarded?.child.value;\n"
+            "var second = guarded?.child.value;\n"
+            "if (first == 7 && second == 7) { return 1; }\n"
+            "return 0;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "nullable_shared_owned_field_projection.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ownership_operation_ids_remain_stable);
@@ -938,11 +1119,15 @@ int main(void) {
     RUN_TEST(test_syntax_writer_preserves_intrinsic_and_access_modes);
     RUN_TEST(test_intrinsic_type_contracts_publish_canonical_facts);
     RUN_TEST(test_receiver_guards_publish_chain_contracts);
+    RUN_TEST(test_optional_void_calls_publish_void_noop_contracts);
     RUN_TEST(test_intrinsic_and_optional_receiver_errors_are_precise);
     RUN_TEST(test_intrinsic_calls_emit_dedicated_opcodes_and_execute);
     RUN_TEST(test_intrinsic_spellings_on_objects_use_normal_member_calls);
+    RUN_TEST(test_removed_ownership_member_calls_publish_structured_fixes);
     RUN_TEST(test_expired_weak_optional_call_skips_arguments);
     RUN_TEST(test_live_weak_optional_call_runs_suffix_after_one_wake);
     RUN_TEST(test_expired_weak_direct_call_throws_named_runtime_error);
+    RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);
+    RUN_TEST(test_live_nullable_shared_receiver_projects_owned_fields);
     return UNITY_END();
 }

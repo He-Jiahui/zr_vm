@@ -55,21 +55,21 @@ static const SZrLegacyMigrationDirectiveRule k_legacy_migration_directive_rules[
         {"owned", "percentOwned", "resourceModifier", "04",
          ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
          "The ownership shell maps to the promoted resource modifier."},
-        {"release", "percentRelease", "dropCall", "04",
-         ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-         "Release migration requires the canonical resource ownership proof."},
-        {"upgrade", "percentUpgrade", "weakUpgrade", "04",
-         ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-         "Weak upgrade migration requires the canonical receiver type."},
-        {"weak", "percentWeak", "weakProjection", "04",
-         ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-         "Weak conversion migration requires the canonical ownership source."},
-        {"shared", "percentShared", "sharedProjection", "04",
-         ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-         "Shared conversion migration requires the canonical ownership source."},
-        {"detach", "percentDetach", "ownershipDetach", "04",
-         ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
-         "Detach requires ownership-source proof before it can be rewritten."},
+        {"release", "percentRelease", "dropIntrinsic", "04",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The removed release operation maps directly to drop(owner)."},
+        {"upgrade", "percentUpgrade", "wakeIntrinsic", "04",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The removed weak upgrade operation maps directly to wake(weak)."},
+        {"weak", "percentWeak", "degradeIntrinsic", "04",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The removed weak projection maps directly to degrade(shared)."},
+        {"shared", "percentShared", "shareIntrinsic", "04",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The removed shared projection maps directly to share(owner)."},
+        {"detach", "percentDetach", "intoGcIntrinsic", "04",
+         ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+         "The removed detach bridge maps directly to intoGc(owner)."},
         {"unique", "percentUnique", "uniqueConstruction", "04",
          ZR_LEGACY_MIGRATION_REQUIRES_REVIEW,
          "Unique construction requires resource-type proof before it can be rewritten."},
@@ -1085,13 +1085,16 @@ static TZrBool legacy_migration_append_directive(
                         state, source, argumentStart, argumentEnd, "drop(", ")");
             } else if (strcmp(rule->directive, "upgrade") == 0) {
                 temporaryEdit = legacy_migration_format_unary_call(
-                        state, source, argumentStart, argumentEnd, "", ".upgrade()");
+                        state, source, argumentStart, argumentEnd, "wake(", ")");
             } else if (strcmp(rule->directive, "weak") == 0) {
                 temporaryEdit = legacy_migration_format_unary_call(
-                        state, source, argumentStart, argumentEnd, "", ".weak()");
+                        state, source, argumentStart, argumentEnd, "degrade(", ")");
+            } else if (strcmp(rule->directive, "shared") == 0) {
+                temporaryEdit = legacy_migration_format_unary_call(
+                        state, source, argumentStart, argumentEnd, "share(", ")");
             } else {
                 temporaryEdit = legacy_migration_format_unary_call(
-                        state, source, argumentStart, argumentEnd, "", ".share()");
+                        state, source, argumentStart, argumentEnd, "intoGc(", ")");
             }
             if (temporaryEdit == ZR_NULL) {
                 return ZR_FALSE;

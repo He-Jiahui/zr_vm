@@ -612,7 +612,8 @@ static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
 
     ZrParser_Cfg_Init(context->state, &cfg);
     ZrParser_DataflowResult_Init(&result);
-    ok = ZrParser_Cfg_Build(context->state, &cfg, root) &&
+    ok = ZrParser_Cfg_BuildWithSemanticContext(
+                 context->state, &cfg, root, context) &&
          ZrParser_Dataflow_Run(context->state, &cfg, &analysis, &result);
     if (ok) {
         semantic_da_apply_read_states(&semanticAnalysis);

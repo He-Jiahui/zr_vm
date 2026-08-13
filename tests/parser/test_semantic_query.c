@@ -943,7 +943,7 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(57, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(58, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");

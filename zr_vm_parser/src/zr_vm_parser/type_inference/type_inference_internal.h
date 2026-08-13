@@ -169,6 +169,10 @@ TZrBool infer_receiver_guard_for_segment(
         SZrAstNode *segment,
         SZrInferredType *receiverType,
         TZrBool *outResultLifted);
+void infer_receiver_guard_finalize_result_lift(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *segments,
+        const SZrInferredType *resultType);
 TZrBool infer_struct_init_expression_type(SZrCompilerState *cs,
                                           SZrAstNode *node,
                                           SZrInferredType *result);

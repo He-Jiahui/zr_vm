@@ -41,12 +41,12 @@ TZrBool plugin_guard_report_escape(SZrPluginGuardEscapeScan *scan,
     if (reason != ZR_NULL) {
         snprintf(message,
                  sizeof(message),
-                 "plugin_type_escape: plugin guard value cannot escape without share() through %s",
+                 "plugin_type_escape: plugin guard value cannot escape through %s",
                  reason);
     } else {
         snprintf(message,
                  sizeof(message),
-                 "plugin_type_escape: plugin guard value cannot escape without share()");
+                 "plugin_type_escape: plugin guard value cannot escape its guard scope");
     }
     ZrParser_Compiler_Error(scan->cs, message, location);
     return ZR_FALSE;

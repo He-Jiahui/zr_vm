@@ -1247,18 +1247,18 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(SZrState *stat
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,
-                                                    SZrStructuredDiagnostic *out,
-                                                    SZrFileRange location) {
+TZrBool ZrParser_DiagnosticBuilder_BuildWeakWake(SZrState *state,
+                                                 SZrStructuredDiagnostic *out,
+                                                 SZrFileRange location) {
     return ZrParser_DiagnosticBuilder_Build(
             state,
             out,
             ZR_STRUCTURED_DIAGNOSTIC_ERROR,
             location,
-            "weak_value_requires_upgrade",
-            "Weak value must be upgraded before it can be borrowed",
+            "weak_value_requires_wake",
+            "Weak value must be woken before it can be borrowed",
             "A Weak<T> value does not keep its owner alive, so it cannot satisfy a ref readonly T use directly.",
-            "Call .upgrade() and handle the nullable upgraded owner before borrowing it.");
+            "Call wake(weak) and handle the nullable shared owner before borrowing it.");
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(SZrState *state,
@@ -1340,6 +1340,36 @@ TZrBool ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
                 out,
                 "Migrate legacy property syntax",
                 declarationLocation,
+                replacementText,
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildRemovedOwnershipMemberSyntax(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *replacementText) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "removed_ownership_member_syntax",
+                "Ownership operations use reserved intrinsic calls",
+                "The receiver has a canonical ownership type, but the requested target member does not exist.",
+                "Replace the removed ownership member call with its reserved intrinsic form.")) {
+        return ZR_FALSE;
+    }
+    if (replacementText != ZR_NULL &&
+        !ZrParser_StructuredDiagnostic_AddFix(
+                state,
+                out,
+                "Migrate ownership operation",
+                location,
                 replacementText,
                 ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
         ZrParser_StructuredDiagnostic_Free(state, out);

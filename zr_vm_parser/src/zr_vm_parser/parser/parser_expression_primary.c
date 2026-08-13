@@ -217,7 +217,7 @@ static TZrBool reject_legacy_ownership_generic_call(SZrParserState *ps,
             fullLoc,
             ps->lexer->t.token,
             "ownership generic constructor",
-            "Use `own Type(...)` to create a resource, then `.share()` or an explicit `ref` binding.");
+            "Use `own Type(...)` to create a resource, then `share(owner)` or an explicit `ref` binding.");
     if (args != ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, args);
     }

@@ -17,6 +17,30 @@ typedef struct SZrCutoverDiagnosticCapture {
 
 static SZrState *g_state;
 
+static TZrBool function_tree_contains_opcode(const SZrFunction *function,
+                                             EZrInstructionCode opcode) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < function->instructionsLength; index++) {
+        if (function->instructionsList[index].instruction.operationCode == opcode) {
+            return ZR_TRUE;
+        }
+    }
+    for (index = 0U; index < function->constantValueLength; index++) {
+        const SZrTypeValue *constant = &function->constantValueList[index];
+        if (constant->type == ZR_VALUE_TYPE_FUNCTION &&
+            constant->value.object != ZR_NULL && !constant->isNative &&
+            function_tree_contains_opcode(
+                    ZR_CAST_FUNCTION(g_state, constant->value.object), opcode)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
@@ -233,23 +257,16 @@ static void test_current_surface_and_modulo_remain_parseable(void) {
     ZrParser_State_Free(&parserState);
 }
 
-static void test_removed_ownership_compatibility_members_do_not_lower(void) {
+static void test_ownership_like_member_names_use_only_object_dispatch(void) {
     static const TZrChar *const sources[] = {
-            "resource class LegacyResource { }\n"
-            "let owner = own LegacyResource();\n"
-            "let value = owner.borrow();\n",
-            "resource class LegacyResource { }\n"
-            "let owner = own LegacyResource();\n"
-            "let value = owner.loan();\n",
-            "resource class LegacyResource { }\n"
-            "let owner = own LegacyResource();\n"
-            "let value = owner.release();\n",
-            "resource class LegacyResource { }\n"
-            "let owner = own LegacyResource();\n"
-            "let value = owner.detach();\n",
-            "resource class LegacyResource { }\n"
-            "let owner = own LegacyResource();\n"
-            "using (ref owner) { }\n",
+            "class MemberCarrier { pub fn borrow(): int { return 1; } }\n"
+            "return new MemberCarrier().borrow();\n",
+            "class MemberCarrier { pub fn loan(): int { return 1; } }\n"
+            "return new MemberCarrier().loan();\n",
+            "class MemberCarrier { pub fn release(): int { return 1; } }\n"
+            "return new MemberCarrier().release();\n",
+            "class MemberCarrier { pub fn detach(): int { return 1; } }\n"
+            "return new MemberCarrier().detach();\n",
     };
     TZrSize index;
 
@@ -263,11 +280,36 @@ static void test_removed_ownership_compatibility_members_do_not_lower(void) {
         TEST_ASSERT_NOT_NULL(sourceName);
         function = ZrParser_Source_Compile(
                 g_state, sources[index], strlen(sources[index]), sourceName);
-        if (function != ZR_NULL) {
-            ZrCore_Function_Free(g_state, function);
-        }
-        TEST_ASSERT_NULL_MESSAGE(function, sources[index]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(function, sources[index]);
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(
+                function, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(
+                function, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(
+                function, ZR_INSTRUCTION_ENUM(OWN_DROP)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(
+                function, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
+        ZrCore_Function_Free(g_state, function);
     }
+}
+
+static void test_removed_using_reference_ownership_form_does_not_lower(void) {
+    const TZrChar *source =
+            "resource class LegacyResource { }\n"
+            "let owner = own LegacyResource();\n"
+            "using (ref owner) { }\n";
+    SZrString *sourceName = ZrCore_String_Create(
+            g_state,
+            "ownership_using_reference_cutover.zr",
+            strlen("ownership_using_reference_cutover.zr"));
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(g_state, source, strlen(source), sourceName);
+    if (function != ZR_NULL) {
+        ZrCore_Function_Free(g_state, function);
+    }
+    TEST_ASSERT_NULL(function);
 }
 
 static void test_canonical_reference_bindings_compile_without_legacy_ownership_types(void) {
@@ -276,7 +318,7 @@ static void test_canonical_reference_bindings_compile_without_legacy_ownership_t
             "fn lifecycle(): int {\n"
             "    var uniqueOwner = own CurrentResource();\n"
             "    { var writable: ref CurrentResource = ref uniqueOwner; }\n"
-            "    var sharedOwner = uniqueOwner.share();\n"
+            "    var sharedOwner = share(uniqueOwner);\n"
             "    { var readonlyView: ref readonly CurrentResource = ref sharedOwner; }\n"
             "    return 1;\n"
             "}\n"
@@ -299,7 +341,8 @@ int main(void) {
     RUN_TEST(test_non_percent_legacy_forms_are_diagnostics_only);
     RUN_TEST(test_unknown_percent_identifier_is_not_a_migration_rule);
     RUN_TEST(test_current_surface_and_modulo_remain_parseable);
-    RUN_TEST(test_removed_ownership_compatibility_members_do_not_lower);
+    RUN_TEST(test_ownership_like_member_names_use_only_object_dispatch);
+    RUN_TEST(test_removed_using_reference_ownership_form_does_not_lower);
     RUN_TEST(test_canonical_reference_bindings_compile_without_legacy_ownership_types);
     return UNITY_END();
 }

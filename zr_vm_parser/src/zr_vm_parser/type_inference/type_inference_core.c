@@ -4690,19 +4690,19 @@ TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
 static const TZrChar *ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
     switch (builtinKind) {
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
-            return "share() requires a Unique owner";
+            return "share(owner) requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
-            return "weak() requires a Shared owner";
+            return "degrade(shared) requires a Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return "A mutable reference requires a Unique owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
-            return "upgrade() requires a Weak owner";
+            return "wake(weak) requires a Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
-            return "drop() requires a Unique or Shared owner";
+            return "drop(owner) requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-            return "intoGc() requires a Unique or Shared owner";
+            return "intoGc(owner) requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
-            return "intoGc() requires a Unique<T> resource owner";
+            return "intoGc(owner) requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
         case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:

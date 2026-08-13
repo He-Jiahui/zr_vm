@@ -121,8 +121,8 @@ static void test_legacy_migration_plan_classifies_token_aware_candidates(void) {
     TEST_ASSERT_EQUAL_STRING("resource", migration_string_text(ownedItem->fix.editText));
 
     TEST_ASSERT_NOT_NULL(upgradeItem);
-    TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, upgradeItem->applicability);
-    TEST_ASSERT_FALSE(upgradeItem->hasFix);
+    TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, upgradeItem->applicability);
+    TEST_ASSERT_TRUE(upgradeItem->hasFix);
 
     TEST_ASSERT_NOT_NULL(asyncItem);
     TEST_ASSERT_EQUAL_INT(ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, asyncItem->applicability);
@@ -252,11 +252,11 @@ static void test_legacy_migration_plan_covers_inventory_classification_contract(
         {"percentCompileTime", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "11", ZR_TRUE},
         {"percentFunc", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "06A", ZR_TRUE},
         {"percentOwned", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},
-        {"percentRelease", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
-        {"percentUpgrade", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
-        {"percentWeak", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
-        {"percentShared", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
-        {"percentDetach", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
+        {"percentRelease", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},
+        {"percentUpgrade", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},
+        {"percentWeak", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},
+        {"percentShared", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},
+        {"percentDetach", ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE, "04", ZR_TRUE},
         {"percentUnique", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "04", ZR_FALSE},
         {"percentIn", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "02", ZR_FALSE},
         {"percentRef", ZR_LEGACY_MIGRATION_REQUIRES_REVIEW, "02", ZR_FALSE},
@@ -357,7 +357,7 @@ static void test_legacy_migration_apply_machine_edits_is_idempotent(void) {
     const TZrChar *expected =
             "module app.current;\n"
             "resource class Handle {}\n"
-            "let upgraded = %upgrade(weakHandle);\n";
+            "let upgraded = wake(weakHandle);\n";
     SZrString *sourceName = ZrCore_String_Create(
             g_state,
             "legacy_migration_apply.zr",
@@ -390,8 +390,7 @@ static void test_legacy_migration_apply_machine_edits_is_idempotent(void) {
             migratedLength,
             sourceName,
             &second));
-    TEST_ASSERT_EQUAL_UINT32(1U, second.items.length);
-    TEST_ASSERT_FALSE(((const SZrLegacyMigrationItem *)ZrCore_Array_Get(&second.items, 0U))->hasFix);
+    TEST_ASSERT_EQUAL_UINT32(0U, second.items.length);
 
     ZrCore_Memory_RawFree(g_state->global, migrated, migratedLength + 1U);
     ZrParser_LegacyMigration_PlanFree(g_state, &second);
@@ -626,6 +625,71 @@ static void test_legacy_migration_apply_rejects_stale_or_overlapping_plan(void) 
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+static void test_legacy_ownership_calls_migrate_to_reserved_intrinsics(void) {
+    static const TZrChar source[] =
+            "let released = %release(owner);\n"
+            "let live = %upgrade(weak);\n"
+            "let observer = %weak(shared);\n"
+            "let shared = %shared(unique);\n"
+            "let boxed = %detach(resource);\n";
+    static const TZrChar expected[] =
+            "let released = drop(owner);\n"
+            "let live = wake(weak);\n"
+            "let observer = degrade(shared);\n"
+            "let shared = share(unique);\n"
+            "let boxed = intoGc(resource);\n";
+    static const TZrChar *const kinds[] = {
+            "percentRelease",
+            "percentUpgrade",
+            "percentWeak",
+            "percentShared",
+            "percentDetach",
+    };
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "legacy_ownership_intrinsic_migration.zr");
+    SZrLegacyMigrationPlan first = {0};
+    SZrLegacyMigrationPlan second = {0};
+    TZrChar *migrated = ZR_NULL;
+    TZrSize migratedLength = 0U;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, source, strlen(source), sourceName, &first));
+    TEST_ASSERT_EQUAL_UINT32(5U, first.items.length);
+    for (TZrSize index = 0U; index < sizeof(kinds) / sizeof(kinds[0]); index++) {
+        const SZrLegacyMigrationItem *item = migration_find_item(&first, kinds[index]);
+
+        TEST_ASSERT_NOT_NULL_MESSAGE(item, kinds[index]);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(
+                ZR_LEGACY_MIGRATION_MACHINE_APPLICABLE,
+                item->applicability,
+                kinds[index]);
+        TEST_ASSERT_TRUE_MESSAGE(item->hasFix, kinds[index]);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(
+                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE,
+                item->fix.applicability,
+                kinds[index]);
+    }
+
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_ApplyMachineEdits(
+            g_state,
+            &first,
+            source,
+            strlen(source),
+            &migrated,
+            &migratedLength));
+    TEST_ASSERT_EQUAL_UINT64(strlen(expected), migratedLength);
+    TEST_ASSERT_EQUAL_STRING(expected, migrated);
+
+    TEST_ASSERT_TRUE(ZrParser_LegacyMigration_PlanSource(
+            g_state, migrated, migratedLength, sourceName, &second));
+    TEST_ASSERT_EQUAL_UINT32(0U, second.items.length);
+
+    ZrParser_LegacyMigration_PlanFree(g_state, &second);
+    ZrCore_Memory_RawFree(g_state->global, migrated, migratedLength + 1U);
+    ZrParser_LegacyMigration_PlanFree(g_state, &first);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_legacy_migration_plan_classifies_token_aware_candidates);
@@ -640,5 +704,6 @@ int main(void) {
     RUN_TEST(test_dynamic_dollar_construct_provides_review_only_capability_edit);
     RUN_TEST(test_incomplete_dynamic_dollar_construct_is_blocked);
     RUN_TEST(test_legacy_migration_apply_rejects_stale_or_overlapping_plan);
+    RUN_TEST(test_legacy_ownership_calls_migrate_to_reserved_intrinsics);
     return UNITY_END();
 }

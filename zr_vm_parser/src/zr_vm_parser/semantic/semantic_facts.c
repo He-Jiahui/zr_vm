@@ -1084,6 +1084,44 @@ const SZrOwnershipIntrinsicFact *ZrParser_SemanticFacts_FindOwnershipIntrinsicBy
     return ZR_NULL;
 }
 
+const SZrOwnershipIntrinsicFact *ZrParser_SemanticFacts_FindOwnershipIntrinsicAtPosition(
+        const SZrSemanticContext *context,
+        SZrFileRange position) {
+    const SZrOwnershipIntrinsicFact *best = ZR_NULL;
+    TZrSize bestWidth = 0u;
+
+    if (context == ZR_NULL || !context->ownershipIntrinsicFacts.isValid) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0u;
+         index < context->ownershipIntrinsicFacts.length;
+         index++) {
+        const SZrOwnershipIntrinsicFact *fact =
+                (const SZrOwnershipIntrinsicFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->ownershipIntrinsicFacts, index);
+        const SZrFileRange *candidateRange;
+        TZrSize width;
+
+        if (fact == ZR_NULL ||
+            !semantic_facts_range_contains_position(&fact->range, &position)) {
+            continue;
+        }
+
+        candidateRange = semantic_facts_range_contains_position(
+                                 &fact->nameRange, &position)
+                             ? &fact->nameRange
+                             : &fact->range;
+        width = semantic_facts_range_width(candidateRange);
+        if (best == ZR_NULL || width < bestWidth) {
+            best = fact;
+            bestWidth = width;
+        }
+    }
+
+    return best;
+}
+
 const SZrReceiverGuardFact *ZrParser_SemanticFacts_FindReceiverGuardByNode(
         const SZrSemanticContext *context,
         const SZrAstNode *node) {

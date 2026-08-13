@@ -117,7 +117,7 @@ static const SZrRemovedPercentSyntaxRule k_removed_percent_syntax_rules[] = {
         {"release", "Use the canonical `drop(value)` ownership operation."},
         {"upgrade", "Use the typed weak-reference upgrade operation."},
         {"weak", "Use the typed owner projection API."},
-        {"shared", "Use `Unique<T>.share()` or an explicit `Shared<T>` contract."},
+        {"shared", "Use `share(owner)` or an explicit `Shared<T>` contract."},
         {"detach", "Use the typed ownership bridge API after proving the source owner kind."},
         {"unique", "Construct a resource with `own Type(...)` or declare `Unique<T>` explicitly."},
         {"in", "Write the parameter as `name: in T`."},

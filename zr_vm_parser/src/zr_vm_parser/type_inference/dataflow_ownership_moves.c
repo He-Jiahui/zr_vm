@@ -255,7 +255,7 @@ static TZrBool ownership_move_argument_is_consumed_by_contract(
            argumentIndex == 0U;
 }
 
-static TZrBool ownership_move_argument_requires_weak_upgrade(
+static TZrBool ownership_move_argument_requires_weak_wake(
         const SZrSemanticContext *context,
         SZrAstNode *callOwner,
         const SZrFunctionCall *call,
@@ -322,7 +322,7 @@ static TZrBool ownership_move_primary_contains_call(const SZrSemanticContext *co
     return ZR_FALSE;
 }
 
-static TZrBool ownership_weak_expression_requires_upgrade(
+static TZrBool ownership_weak_expression_requires_wake(
         const SZrSemanticContext *context,
         SZrAstNode *expression,
         const SZrSemanticReferenceFact *fact);
@@ -345,7 +345,7 @@ static TZrBool ownership_weak_primary_has_receiver_guard(
     return guard != ZR_NULL && guard->kind == ZR_RECEIVER_GUARD_WEAK_WAKE;
 }
 
-static TZrBool ownership_weak_primary_requires_upgrade(
+static TZrBool ownership_weak_primary_requires_wake(
         const SZrSemanticContext *context,
         SZrAstNode *primaryNode,
         const SZrSemanticReferenceFact *fact) {
@@ -378,13 +378,13 @@ static TZrBool ownership_weak_primary_requires_upgrade(
              argumentIndex++) {
             SZrAstNode *argument = call->args->nodes[argumentIndex];
             if (ownership_move_expression_is_direct_reference(argument, fact) &&
-                ownership_move_argument_requires_weak_upgrade(context,
+                ownership_move_argument_requires_weak_wake(context,
                                                               primaryNode,
                                                               call,
                                                               argumentIndex)) {
                 return ZR_TRUE;
             }
-            if (ownership_weak_expression_requires_upgrade(context, argument, fact)) {
+            if (ownership_weak_expression_requires_wake(context, argument, fact)) {
                 return ZR_TRUE;
             }
         }
@@ -392,7 +392,7 @@ static TZrBool ownership_weak_primary_requires_upgrade(
     return ZR_FALSE;
 }
 
-static TZrBool ownership_weak_expression_requires_upgrade(
+static TZrBool ownership_weak_expression_requires_wake(
         const SZrSemanticContext *context,
         SZrAstNode *expression,
         const SZrSemanticReferenceFact *fact) {
@@ -401,34 +401,34 @@ static TZrBool ownership_weak_expression_requires_upgrade(
     }
     switch (expression->type) {
         case ZR_AST_PRIMARY_EXPRESSION:
-            return ownership_weak_primary_requires_upgrade(context, expression, fact);
+            return ownership_weak_primary_requires_wake(context, expression, fact);
         case ZR_AST_ASSIGNMENT_EXPRESSION:
-            return ownership_weak_expression_requires_upgrade(
+            return ownership_weak_expression_requires_wake(
                            context, expression->data.assignmentExpression.left, fact) ||
-                   ownership_weak_expression_requires_upgrade(
+                   ownership_weak_expression_requires_wake(
                            context, expression->data.assignmentExpression.right, fact);
         case ZR_AST_BINARY_EXPRESSION:
-            return ownership_weak_expression_requires_upgrade(
+            return ownership_weak_expression_requires_wake(
                            context, expression->data.binaryExpression.left, fact) ||
-                   ownership_weak_expression_requires_upgrade(
+                   ownership_weak_expression_requires_wake(
                            context, expression->data.binaryExpression.right, fact);
         case ZR_AST_LOGICAL_EXPRESSION:
-            return ownership_weak_expression_requires_upgrade(
+            return ownership_weak_expression_requires_wake(
                            context, expression->data.logicalExpression.left, fact) ||
-                   ownership_weak_expression_requires_upgrade(
+                   ownership_weak_expression_requires_wake(
                            context, expression->data.logicalExpression.right, fact);
         case ZR_AST_CONDITIONAL_EXPRESSION:
-            return ownership_weak_expression_requires_upgrade(
+            return ownership_weak_expression_requires_wake(
                            context, expression->data.conditionalExpression.test, fact) ||
-                   ownership_weak_expression_requires_upgrade(
+                   ownership_weak_expression_requires_wake(
                            context, expression->data.conditionalExpression.consequent, fact) ||
-                   ownership_weak_expression_requires_upgrade(
+                   ownership_weak_expression_requires_wake(
                            context, expression->data.conditionalExpression.alternate, fact);
         case ZR_AST_UNARY_EXPRESSION:
-            return ownership_weak_expression_requires_upgrade(
+            return ownership_weak_expression_requires_wake(
                     context, expression->data.unaryExpression.argument, fact);
         case ZR_AST_TYPE_CAST_EXPRESSION:
-            return ownership_weak_expression_requires_upgrade(
+            return ownership_weak_expression_requires_wake(
                     context, expression->data.typeCastExpression.expression, fact);
         case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:
             if (expression->data.ownershipIntrinsicExpression.operation ==
@@ -438,7 +438,7 @@ static TZrBool ownership_weak_expression_requires_upgrade(
                         fact)) {
                 return ZR_FALSE;
             }
-            return ownership_weak_expression_requires_upgrade(
+            return ownership_weak_expression_requires_wake(
                     context,
                     expression->data.ownershipIntrinsicExpression.argument,
                     fact);
@@ -582,11 +582,11 @@ TZrBool ZrParser_DataflowOwnership_StatementMovesRead(
     return ownership_move_expression_contains_call(context, expression, fact);
 }
 
-TZrBool ZrParser_DataflowOwnership_StatementWeakReadRequiresUpgrade(
+TZrBool ZrParser_DataflowOwnership_StatementWeakReadRequiresWake(
         const SZrSemanticContext *context,
         SZrAstNode *statement,
         const SZrSemanticReferenceFact *fact) {
-    return ownership_weak_expression_requires_upgrade(
+    return ownership_weak_expression_requires_wake(
             context,
             ownership_move_statement_expression(statement),
             fact);
