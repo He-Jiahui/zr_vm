@@ -398,6 +398,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
     global->nativeRegistryState = ZR_NULL;
+    global->nativeRegistryStateCleanup = ZR_NULL;
     global->providerModuleNameResolver = ZR_NULL;
     global->providerModuleNameResolverUserData = ZR_NULL;
     global->moduleLoadDiagnostic[0] = '\0';
@@ -441,6 +442,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
     global->nativeRegistryState = ZR_NULL;
+    global->nativeRegistryStateCleanup = ZR_NULL;
     global->providerModuleNameResolver = ZR_NULL;
     global->providerModuleNameResolverUserData = ZR_NULL;
     global->moduleLoadDiagnostic[0] = '\0';
@@ -707,6 +709,13 @@ void ZrCore_GlobalState_Free(SZrGlobalState *global) {
         global->parserModuleInitStateCleanup(global, global->parserModuleInitState);
         global->parserModuleInitState = ZR_NULL;
         global->parserModuleInitStateCleanup = ZR_NULL;
+    }
+
+    if (global->nativeRegistryStateCleanup != ZR_NULL &&
+        global->nativeRegistryState != ZR_NULL) {
+        global->nativeRegistryStateCleanup(global, global->nativeRegistryState);
+        global->nativeRegistryState = ZR_NULL;
+        global->nativeRegistryStateCleanup = ZR_NULL;
     }
 
     if (global->importCompileInfoStack.isValid &&

@@ -70,6 +70,14 @@ static void native_registry_observe_owner_strong_ref(SZrState *state,
     }
 }
 
+static void native_registry_cleanup_global_state(
+        SZrGlobalState *global,
+        TZrPtr state) {
+    if (global != ZR_NULL && global->nativeRegistryState == state) {
+        ZrLibrary_NativeRegistry_Free(global);
+    }
+}
+
 TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry;
     SZrState *state;
@@ -124,6 +132,7 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
             global->ownershipStrongRefObserverUserData;
 
     global->nativeRegistryState = registry;
+    global->nativeRegistryStateCleanup = native_registry_cleanup_global_state;
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);
     ZrCore_GlobalState_SetProviderModuleNameResolver(
             global, native_registry_resolve_provider_module_name, registry);
@@ -235,6 +244,9 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
                 registry->hostProviderModuleNameResolverUserData);
     }
     global->nativeRegistryState = ZR_NULL;
+    if (global->nativeRegistryStateCleanup == native_registry_cleanup_global_state) {
+        global->nativeRegistryStateCleanup = ZR_NULL;
+    }
     global->allocator(global->userAllocationArguments,
                       registry,
                       sizeof(ZrLibrary_NativeRegistryState),

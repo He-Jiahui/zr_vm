@@ -883,7 +883,7 @@ TZrInt64 ZrCore_Ownership_NativeUnique(struct SZrState *state) {
     return 1;
 }
 
-TZrInt64 ZrCore_Ownership_NativeShared(struct SZrState *state) {
+TZrInt64 ZrCore_Ownership_NativeShare(struct SZrState *state) {
     SZrTypeValue *result;
     SZrTypeValue *arg;
 
@@ -915,7 +915,7 @@ TZrInt64 ZrCore_Ownership_NativeSharePlain(struct SZrState *state) {
     return 1;
 }
 
-TZrInt64 ZrCore_Ownership_NativeWeak(struct SZrState *state) {
+TZrInt64 ZrCore_Ownership_NativeDegrade(struct SZrState *state) {
     SZrTypeValue *result;
     SZrTypeValue *arg;
 

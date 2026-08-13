@@ -1939,7 +1939,7 @@ static void test_module_restores_owned_field_prototype_metadata(void) {
     timer.startTime = clock();
 
     TEST_INFO("Owned field runtime metadata",
-              "Testing that prototypeData loading restores struct field offsets and managed-field metadata for direct %unique/%shared fields");
+              "Testing that prototypeData loading restores struct field offsets and managed-field metadata for Unique/Shared fields");
 
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);

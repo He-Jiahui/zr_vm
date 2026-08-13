@@ -296,7 +296,7 @@ static ZR_FORCE_INLINE void execution_assign_stack_value_to_stack_fast_no_profil
 
     /*
      * SET_STACK materializes expression results into their destination slots.
-     * Ownership-wrapped temporaries such as value.share() must transfer their
+     * Ownership-wrapped temporaries such as share(value) must transfer their
      * wrapper into the destination slot instead of leaving an extra temp
      * owner alive until frame teardown.
      */

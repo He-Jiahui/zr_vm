@@ -342,6 +342,7 @@ static void test_registry_composes_and_restores_host_native_loader(void) {
             state->global, host_owner_observer_probe, &probe);
     TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_Attach(state->global));
     TEST_ASSERT_NOT_NULL(state->global->nativeRegistryState);
+    TEST_ASSERT_NOT_NULL(state->global->nativeRegistryStateCleanup);
     reflectionName = ZrCore_String_CreateFromNative(state, "zr.reflection");
     unknownModuleName = ZrCore_String_CreateFromNative(
             state, "host.custom.module");
@@ -367,6 +368,7 @@ static void test_registry_composes_and_restores_host_native_loader(void) {
 
     ZrLibrary_NativeRegistry_Free(state->global);
     TEST_ASSERT_NULL(state->global->nativeRegistryState);
+    TEST_ASSERT_NULL(state->global->nativeRegistryStateCleanup);
     TEST_ASSERT_EQUAL_PTR(host_native_loader_probe,
                           state->global->nativeModuleLoader);
     TEST_ASSERT_EQUAL_PTR(&probe, state->global->nativeModuleLoaderUserData);

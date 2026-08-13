@@ -1237,7 +1237,7 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
     timer.startTime = clock();
 
     TEST_INFO("Ownership weak tracking across GC handoff",
-              "Testing that weak references created from %shared survive the detach bridge back to GC world and only expire once the GC-side object is released");
+              "Testing that weak references created from share/degrade survive the intoGc bridge and expire only after the GC-side object is released");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);

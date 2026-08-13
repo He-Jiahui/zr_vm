@@ -110,6 +110,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     FZrNativeModuleLoader nativeModuleLoader;
     TZrPtr nativeModuleLoaderUserData;
     TZrPtr nativeRegistryState;
+    FZrGlobalOpaqueStateCleanup nativeRegistryStateCleanup;
     FZrProviderModuleNameResolver providerModuleNameResolver;
     TZrPtr providerModuleNameResolverUserData;
     TZrChar moduleLoadDiagnostic[ZR_RUNTIME_ERROR_BUFFER_LENGTH];

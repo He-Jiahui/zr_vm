@@ -960,7 +960,7 @@ static void test_local_borrowed_value_cannot_cross_await_boundary(void) {
             "class Box {}\n"
             "async invalid(): int {\n"
             "    var owner = own Box();\n"
-            "    var shared = owner.share();\n"
+            "    var shared = share(owner);\n"
             "    var borrowed: ref readonly Box = ref shared;\n"
             "    async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"

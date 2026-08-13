@@ -89,8 +89,8 @@ ZR_CORE_API void ZrCore_Ownership_NotifyObjectReleased(struct SZrState *state,
                                                        struct SZrRawObject *object);
 
 ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeUnique(struct SZrState *state);
-ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeShared(struct SZrState *state);
+ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeShare(struct SZrState *state);
 ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeSharePlain(struct SZrState *state);
-ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeWeak(struct SZrState *state);
+ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeDegrade(struct SZrState *state);
 
 #endif // ZR_VM_CORE_OWNERSHIP_H
