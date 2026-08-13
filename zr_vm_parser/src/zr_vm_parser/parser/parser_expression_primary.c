@@ -481,45 +481,6 @@ static SZrAstNode *parse_resource_own_expression(SZrParserState *ps) {
     return node;
 }
 
-static SZrAstNode *parse_resource_drop_expression(SZrParserState *ps) {
-    SZrFileRange startLoc;
-    SZrAstNode *target;
-    SZrAstNodeArray *args;
-    SZrAstNode *node;
-
-    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER ||
-        !current_identifier_equals(ps, "drop")) {
-        return ZR_NULL;
-    }
-
-    startLoc = get_current_token_location(ps);
-    ZrParser_Lexer_Next(ps->lexer);
-    if (!consume_token(ps, ZR_TK_LPAREN)) {
-        report_error(ps, "Expected '(' after 'drop'");
-        return ZR_NULL;
-    }
-    target = parse_expression(ps);
-    if (target == ZR_NULL) {
-        return ZR_NULL;
-    }
-    expect_token(ps, ZR_TK_RPAREN);
-    consume_token(ps, ZR_TK_RPAREN);
-    args = create_empty_argument_list(ps);
-    node = create_construct_expression_node(
-            ps,
-            target,
-            args,
-            ZR_OWNERSHIP_QUALIFIER_NONE,
-            ZR_FALSE,
-            ZR_FALSE,
-            ZR_OWNERSHIP_BUILTIN_KIND_DROP,
-            ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
-    if (node != ZR_NULL) {
-        node->data.constructExpression.isResourceSurface = ZR_TRUE;
-    }
-    return node;
-}
-
 SZrAstNode *parse_reference_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *target;
@@ -1117,11 +1078,6 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
         base = parse_resource_own_expression(ps);
         return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
     }
-    if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "drop")) {
-        base = parse_resource_drop_expression(ps);
-        return base != ZR_NULL ? parse_member_access(ps, base) : ZR_NULL;
-    }
-
     if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
         base = try_parse_generic_type_member_root(ps);
         if (base != ZR_NULL) {
