@@ -526,10 +526,10 @@ void emit_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, const SZrTypeVa
 void emit_string_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, SZrString *value) ;
 
 void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDeclaration *funcDecl) ;
-
-void compiler_register_callable_value_binding(SZrCompilerState *cs,
-                                                     SZrString *name,
-                                                     SZrAstNode *valueNode) ;
+TZrBool compiler_refine_function_type_binding_return(
+        SZrCompilerState *cs,
+        SZrAstNode *declarationNode,
+        const SZrInferredType *returnType);
 
 void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,
                                                          SZrTypeEnvironment *env,
@@ -921,6 +921,13 @@ TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
                                                      SZrAstNode *bodyNode,
                                                      SZrFunctionTypedTypeRef *outType,
                                                      TZrBool *outHasType);
+TZrBool compiler_build_callable_return_type_metadata_with_inferred(
+        SZrCompilerState *cs,
+        SZrType *declaredReturnType,
+        SZrAstNode *bodyNode,
+        SZrFunctionTypedTypeRef *outType,
+        TZrBool *outHasType,
+        SZrInferredType *outInferredType);
 
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 TZrBool ZrParser_Compiler_PublishSemanticQueryDiagnostics(SZrCompilerState *cs);

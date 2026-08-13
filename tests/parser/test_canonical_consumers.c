@@ -640,6 +640,62 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_callable_value_call_publishes_canonical_contract(void) {
+    const TZrChar *source =
+            "fn runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {\n"
+            "    return seed + prepareAmount + battleAmount;\n"
+            "}\n"
+            "pub var runBossScenario = runBossScenarioImpl;\n"
+            "fn useScenario(): int { return runBossScenario(30, 7, 5); }\n";
+    const TZrChar *call = strstr(source, "runBossScenario(30, 7, 5)");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange position;
+    SZrParserSemanticCallQuery query;
+    TZrChar typeLabel[128];
+    TZrChar callLabel[256];
+
+    TEST_ASSERT_NOT_NULL(call);
+    sourceName = ZrCore_String_Create(g_state, "canonical_callable_value.zr", 27u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(call - source + strlen("runBossScenario(")),
+            (TZrSize)(call - source + strlen("runBossScenario(")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_NOT_NULL(query.reference);
+    TEST_ASSERT_TRUE(query.reference->isResolved);
+    TEST_ASSERT_TRUE(query.hasResolvedTarget);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.callableTypeId);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("fn(int, int, int) -> int", typeLabel);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &query, callLabel, sizeof(callLabel)));
+    TEST_ASSERT_EQUAL_STRING(
+            "runBossScenario(seed: int, prepareAmount: int, battleAmount: int): int",
+            callLabel);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_resolved_generic_member_call_preserves_declaration_generic_clause(void) {
     const TZrChar *source =
             "class Matrix<T, const N: int> { }\n"
@@ -697,7 +753,7 @@ static void test_resolved_generic_member_call_preserves_declaration_generic_clau
 static void test_resolved_extern_call_preserves_parameter_names_in_canonical_signature(void) {
     const TZrChar *source =
             "native extern(\"fixture\") {\n"
-            "    NativeAdd(lhs: i32, rhs: i32): i32;\n"
+            "    fn NativeAdd(lhs: i32, rhs: i32): i32;\n"
             "}\n"
             "fn use(): i32 { return NativeAdd(1, 2); }\n";
     const TZrChar *call = strstr(source, "NativeAdd(1, 2)");
@@ -1255,6 +1311,7 @@ int main(void) {
     RUN_TEST(test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens);
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);
+    RUN_TEST(test_callable_value_call_publishes_canonical_contract);
     RUN_TEST(test_resolved_generic_member_call_preserves_declaration_generic_clause);
     RUN_TEST(test_resolved_extern_call_preserves_parameter_names_in_canonical_signature);
     RUN_TEST(test_source_scoped_call_preserves_contract_and_target_identity);

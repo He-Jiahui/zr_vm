@@ -2,7 +2,7 @@
 plan_id: lsp-semantic-inference
 record_id: status-and-output
 status: in_progress
-updated_at: 2026-08-11 19:57 +08:00
+updated_at: 2026-08-13 11:38 +08:00
 source_plans:
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -106,6 +106,7 @@ source_plans:
 | 2026-08-12 04:40 +08:00 | 已完成 | LSP 08 canonical direct free-call signature：source `FUNCTION_DECLARATION`直接调用的signature help在canonical `CallAt/FormatCall`缺失时直接unavailable，禁止局部overload或callee-name重建；callable value因尚无同类call fact保留独立parser support边界；GCC/Clang/MSVC 各 semantic facts 13/13、local query 32/32、expression hover 9/9、local hover 12/12、interface 108/108、project 58/58及stdio/CLI 2/2均真实exit 0 | [Canonical direct-call signature expression fact](../01-semantic-core/2026-08-12-canonical-direct-call-signature-expression-fact.md) |
 | 2026-08-12 11:42 +08:00 | 已完成 | LSP 08 direct receiver-call signature coverage：source receiver method在canonical `CallAt/FormatCall`缺失时同样unavailable，禁止局部member或callee-name重建；GCC/Clang/MSVC interface各109/109，新增negative case均真实exit 0 | [Canonical direct-call signature expression fact](../01-semantic-core/2026-08-12-canonical-direct-call-signature-expression-fact.md) |
 | 2026-08-12 11:55 +08:00 | 已完成 | LSP 08 canonical generic receiver signature：闭合`Box<int>.shape(...)`在canonical `CallAt/FormatCall`缺失时直接unavailable，禁止local AST specialization重建闭合const-generic signature；GCC/Clang/MSVC各semantic facts 13/13、local query 32/32、expression hover 9/9、local hover 12/12、interface 110/110、project 58/58与stdio/CLI 2/2均真实exit 0 | [Canonical generic receiver signature fact](../01-semantic-core/2026-08-12-canonical-generic-receiver-signature-fact.md) |
+| 2026-08-13 11:38 +08:00 | 已完成 | LSP 08 canonical callable-value signature：source callable initializer复用compiler callable binding；无注解函数只在该注册入口按原declaration AST identity与SymbolId重绑定canonical function TypeId，LSP symbol bootstrap发布同一`CallAt/FormatCall`事实；fact缺失时signature help fail closed，不按variable name、initializer AST或callee文本重建；固定`5922bcb + 9-path overlay`下GCC/Clang/MSVC各canonical 18/18、facts 13/13、local query 32/32、expression hover 9/9、local hover 12/12、interface 111/111、project 58/58、compiler integration 127/127与stdio/CLI 2/2均真实exit 0 | [Canonical callable-value signature fact](../01-semantic-core/2026-08-13-canonical-callable-value-signature-fact.md) |
 
 ## 当前状态
 
@@ -122,4 +123,5 @@ source_plans:
 - 更新（2026-08-12 04:40 +08:00）：LSP 08 当前完成十二个独立合同。第十二项首先要求source `FUNCTION_DECLARATION`直接调用在canonical `CallAt/FormatCall`不可用时直接不可用，禁止局部overload或callee-name重建；尚未发布同类call fact的callable value不属于本项，保留为parser support后续边界。其余 L8 边界仍开放。
 - 更新（2026-08-12 11:42 +08:00）：第十二项的receiver覆盖已补齐。source receiver method在同一call fact不可用时也直接不可用，禁止局部member或callee-name重建；该覆盖不改变L8仍进行中的整体状态。
 - 更新（2026-08-12 11:55 +08:00）：LSP 08 当前完成十三个独立合同。第十三项要求闭合generic receiver call在canonical `CallAt/FormatCall`不可用时直接不可用，禁止local AST specialization重建闭合签名；其余L8边界仍开放。
+- 更新（2026-08-13 11:38 +08:00）：LSP 08 当前完成十四个独立合同。第十四项补齐source callable-value assignment的canonical binding、仅限该注册入口的无注解函数返回TypeId重绑定与LSP bootstrap投影；signature help只消费`CallAt/FormatCall`，fact不可用时直接不可用。closure value、binary/native provider和其余fallback收敛仍开放，L8整体保持进行中。
 - 每个后续子里程碑继续提交代码、文档和测试，并在本表写入完成时间、状态、完成项目和详细记录链接。

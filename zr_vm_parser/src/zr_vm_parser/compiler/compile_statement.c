@@ -3106,7 +3106,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         }
 
         if (decl->value != ZR_NULL) {
-            compiler_register_callable_value_binding(cs, varName, decl->value);
+            ZrParser_Compiler_RegisterCallableValueBinding(cs, varName, decl->value);
             compile_statement_register_type_value_alias(cs, varName, decl->value);
             compile_statement_trace("var decl runtime alias registration done");
         }

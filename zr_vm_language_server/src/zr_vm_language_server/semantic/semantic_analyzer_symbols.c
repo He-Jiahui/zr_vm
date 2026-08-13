@@ -2081,6 +2081,11 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                           : ZR_NULL,
                                                       name,
                                                       typeInfo);
+                if (varDecl->value != ZR_NULL && analyzer->compilerState != ZR_NULL) {
+                    ZrParser_Compiler_RegisterCallableValueBinding(analyzer->compilerState,
+                                                                    name,
+                                                                    varDecl->value);
+                }
             }
             if (varDecl->value != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, varDecl->value);

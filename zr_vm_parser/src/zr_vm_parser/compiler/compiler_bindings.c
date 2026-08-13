@@ -330,26 +330,48 @@ static void compiler_callable_type_ref_from_inferred(SZrFunctionTypedTypeRef *de
     }
 }
 
-static TZrBool compiler_callable_type_ref_from_ast_type(SZrCompilerState *cs,
-                                                        SZrType *typeNode,
-                                                        SZrFunctionTypedTypeRef *outType) {
-    SZrInferredType inferredType;
-    TZrBool success;
+static void compiler_register_function_like_pattern_bindings(
+        SZrCompilerState *cs,
+        SZrAstNode *pattern) {
+    SZrAstNodeArray *entries = ZR_NULL;
 
-    if (cs == ZR_NULL || outType == ZR_NULL) {
-        return ZR_FALSE;
+    if (cs == ZR_NULL || cs->typeEnv == ZR_NULL || pattern == ZR_NULL) {
+        return;
     }
+    if (pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrInferredType unknownType;
 
-    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    success = typeNode == ZR_NULL ? ZR_TRUE : ZrParser_AstTypeToInferredType_Convert(cs, typeNode, &inferredType);
-    if (!success) {
-        ZrParser_InferredType_Free(cs->state, &inferredType);
-        return ZR_FALSE;
+        if (pattern->data.identifier.name == ZR_NULL) {
+            return;
+        }
+        ZrParser_InferredType_Init(cs->state, &unknownType, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_TypeEnvironment_RegisterVariable(
+                cs->state,
+                cs->typeEnv,
+                pattern->data.identifier.name,
+                &unknownType);
+        ZrParser_InferredType_Free(cs->state, &unknownType);
+        return;
     }
-
-    compiler_callable_type_ref_from_inferred(outType, &inferredType);
-    ZrParser_InferredType_Free(cs->state, &inferredType);
-    return ZR_TRUE;
+    if (pattern->type == ZR_AST_KEY_VALUE_PAIR) {
+        if (!pattern->data.keyValuePair.keyIsComputed) {
+            compiler_register_function_like_pattern_bindings(
+                    cs, pattern->data.keyValuePair.key);
+        }
+        return;
+    }
+    if (pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
+        entries = pattern->data.destructuringObject.keys;
+    } else if (pattern->type == ZR_AST_DESTRUCTURING_ARRAY) {
+        entries = pattern->data.destructuringArray.keys;
+    }
+    if (entries == ZR_NULL || entries->nodes == ZR_NULL) {
+        return;
+    }
+    for (TZrSize index = 0u; index < entries->count; index++) {
+        compiler_register_function_like_pattern_bindings(
+                cs, entries->nodes[index]);
+    }
 }
 
 static void compiler_register_function_like_local_variable_type(SZrCompilerState *cs, SZrAstNode *node) {
@@ -357,14 +379,19 @@ static void compiler_register_function_like_local_variable_type(SZrCompilerState
     SZrInferredType bindingType;
     TZrBool hasBindingType = ZR_FALSE;
 
-    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || node == ZR_NULL ||
-        node->type != ZR_AST_VARIABLE_DECLARATION) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
         return;
     }
 
     declaration = &node->data.variableDeclaration;
-    if (declaration->pattern == ZR_NULL || declaration->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+    if (declaration->pattern == ZR_NULL) {
+        return;
+    }
+    if (declaration->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
         declaration->pattern->data.identifier.name == ZR_NULL) {
+        compiler_register_function_like_pattern_bindings(
+                cs, declaration->pattern);
         return;
     }
 
@@ -522,11 +549,13 @@ static void compiler_collect_function_like_return_type(SZrCompilerState *cs,
     }
 }
 
-TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
-                                                     SZrType *declaredReturnType,
-                                                     SZrAstNode *bodyNode,
-                                                     SZrFunctionTypedTypeRef *outType,
-                                                     TZrBool *outHasType) {
+TZrBool compiler_build_callable_return_type_metadata_with_inferred(
+        SZrCompilerState *cs,
+        SZrType *declaredReturnType,
+        SZrAstNode *bodyNode,
+        SZrFunctionTypedTypeRef *outType,
+        TZrBool *outHasType,
+        SZrInferredType *outInferredType) {
     SZrInferredType inferredType;
     TZrBool hasReturnType = ZR_FALSE;
 
@@ -541,9 +570,18 @@ TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
     }
 
     if (declaredReturnType != ZR_NULL) {
-        if (!compiler_callable_type_ref_from_ast_type(cs, declaredReturnType, outType)) {
+        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_AstTypeToInferredType_Convert(cs,
+                                                    declaredReturnType,
+                                                    &inferredType)) {
+            ZrParser_InferredType_Free(cs->state, &inferredType);
             return ZR_FALSE;
         }
+        compiler_callable_type_ref_from_inferred(outType, &inferredType);
+        if (outInferredType != ZR_NULL) {
+            ZrParser_InferredType_Copy(cs->state, outInferredType, &inferredType);
+        }
+        ZrParser_InferredType_Free(cs->state, &inferredType);
         *outHasType = ZR_TRUE;
         return ZR_TRUE;
     }
@@ -564,9 +602,25 @@ TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
     }
 
     compiler_callable_type_ref_from_inferred(outType, &inferredType);
+    if (outInferredType != ZR_NULL) {
+        ZrParser_InferredType_Copy(cs->state, outInferredType, &inferredType);
+    }
     *outHasType = hasReturnType;
     ZrParser_InferredType_Free(cs->state, &inferredType);
     return ZR_TRUE;
+}
+
+TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
+                                                     SZrType *declaredReturnType,
+                                                     SZrAstNode *bodyNode,
+                                                     SZrFunctionTypedTypeRef *outType,
+                                                     TZrBool *outHasType) {
+    return compiler_build_callable_return_type_metadata_with_inferred(cs,
+                                                                      declaredReturnType,
+                                                                      bodyNode,
+                                                                      outType,
+                                                                      outHasType,
+                                                                      ZR_NULL);
 }
 
 static void compiler_collect_callable_parameter_types(SZrCompilerState *cs,
@@ -724,6 +778,35 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
             continue;
         }
 
+        if ((*candidatePtr)->declarationNode != ZR_NULL &&
+            (*candidatePtr)->declarationNode->type == ZR_AST_FUNCTION_DECLARATION &&
+            (*candidatePtr)->declarationNode->data.functionDeclaration.returnType == ZR_NULL) {
+            SZrFunctionDeclaration *declaration =
+                    &(*candidatePtr)->declarationNode->data.functionDeclaration;
+            SZrFunctionTypedTypeRef returnMetadata;
+            SZrInferredType inferredReturnType;
+            TZrBool hasReturnType = ZR_FALSE;
+
+            if (!compiler_build_callable_return_type_metadata_with_inferred(
+                        cs,
+                        ZR_NULL,
+                        declaration->body,
+                        &returnMetadata,
+                        &hasReturnType,
+                        &inferredReturnType)) {
+                continue;
+            }
+            if (!hasReturnType ||
+                !compiler_refine_function_type_binding_return(
+                        cs,
+                        (*candidatePtr)->declarationNode,
+                        &inferredReturnType)) {
+                ZrParser_InferredType_Free(cs->state, &inferredReturnType);
+                continue;
+            }
+            ZrParser_InferredType_Free(cs->state, &inferredReturnType);
+        }
+
         ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
                                                     cs->typeEnv,
                                                     name,
@@ -739,9 +822,9 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
     }
 }
 
-void compiler_register_callable_value_binding(SZrCompilerState *cs,
-                                              SZrString *name,
-                                              SZrAstNode *valueNode) {
+void ZrParser_Compiler_RegisterCallableValueBinding(SZrCompilerState *cs,
+                                                     SZrString *name,
+                                                     SZrAstNode *valueNode) {
     if (cs == ZR_NULL || name == ZR_NULL || valueNode == ZR_NULL || cs->typeEnv == ZR_NULL) {
         return;
     }

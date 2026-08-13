@@ -42,7 +42,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_callable_binding_refinement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -67,6 +71,8 @@ related_code:
   - tests/language_server/test_lsp_project_native_receiver_callable_cases.h
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
+  - tests/parser/test_canonical_consumers.c
+  - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_canonical_symbol_display.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h
@@ -104,8 +110,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_callable_binding_refinement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -116,6 +126,7 @@ plan_sources:
   - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖
   - user: 2026-04-06 继续清理 runtime 残留，并把 imported Pair 显式绑定规则补成 LSP 断言
   - user: 2026-07-20 严格执行 LSP semantic inference 计划并逐子里程碑记录产出
+  - user: 2026-08-13 approved inline callable-value semantic fact contract
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
@@ -143,6 +154,8 @@ tests:
   - tests/language_server/descriptor_plugin_fixture_float.c
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
+  - tests/parser/test_canonical_consumers.c
+  - tests/acceptance/2026-08-13-lsp-l8-canonical-callable-value-signature-fact.md
 doc_type: module-detail
 ---
 
@@ -815,12 +828,20 @@ source declaration-backed的直接free或receiver调用由
 `ZrParser_SemanticQuery_CallAt`和`ZrParser_SemanticQuery_FormatCall`提供signature
 help的唯一合同。LSP先消费该canonical result；同一调用缺失call fact时直接返回
 unavailable，不能改由本地overload/member检索、callee名称或AST文本重建签名。
-callable value assignment尚未发布等价的call fact，因此不在此boundary的授权范围内，
-必须由parser support先补齐。
+source callable-value assignment也使用同一boundary。compiler把initializer的精确callable
+binding注册到type environment；若source function没有显式返回类型，该注册入口会从body
+return metadata推断类型并沿原declaration AST identity找到function binding，以原SymbolId重绑定新的canonical function
+TypeId，并更新该SymbolId已有的reference facts。LSP symbol bootstrap调用同一公开binding入口，
+因此`pub var runBossScenario = runBossScenarioImpl`的后续调用直接发布`CallAt/FormatCall`，不从
+variable name、initializer AST或callee文本重建签名。移除同一expression的`hasCallInfo`后，
+signature help必须返回unavailable。
 
 闭合generic receiver也属于同一边界。`Box<int>.shape(...)`缺少同一expression的
 call fact时，不得以receiver的AST、open generic declaration或const-generic
 substitution临时重建`shape`的闭合signature。
+
+该合同目前覆盖source identifier initializer指向的callable value。closure/lambda value仍需
+独立canonical fact验收，不能借用本项作为AST fallback授权。
 
 ## 统一 PropertyDecl 的 interface variance
 

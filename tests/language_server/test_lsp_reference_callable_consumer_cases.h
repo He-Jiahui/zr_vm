@@ -528,6 +528,123 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_callable_value_signature_fails_closed_without_canonical_call_fact(
+        SZrState *state) {
+    const TZrChar *summary =
+            "LSP Callable Value Signature Fails Closed Without Canonical Call Fact";
+    const TZrChar *uriText = "file:///callable_value_signature_fact.zr";
+    const TZrChar *content =
+            "fn runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int): int {\n"
+            "    return seed + prepareAmount + battleAmount;\n"
+            "}\n"
+            "pub var runBossScenario = runBossScenarioImpl;\n"
+            "fn useScenario(): int { return runBossScenario(30, 7, 5); }\n";
+    const TZrChar *expectedLabel =
+            "runBossScenario(seed: int, prepareAmount: int, battleAmount: int): int";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrSemanticAnalyzer *analyzer;
+    SZrLspPosition callPosition;
+    SZrFilePosition filePosition;
+    SZrFileRange fileRange;
+    SZrParserSemanticCallQuery query;
+    SZrSemanticExpressionFact *callFact;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    const TZrChar *label = ZR_NULL;
+    TZrChar formattedCall[ZR_LSP_TEXT_BUFFER_LENGTH];
+    TZrChar reason[ZR_LSP_TEXT_BUFFER_LENGTH];
+    TZrBool hasCanonicalQuery;
+    TZrBool hasCanonicalLabel;
+    TZrBool hasSignatureHelp;
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Canonical callable-value signature consumer",
+            "A source callable value must not recover signature help from local variable, "
+            "overload, or callee-name fallback after its canonical call fact is unavailable");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !lsp_find_position_for_substring(
+                content, "runBossScenario(30, 7, 5)", 0U, 16U, &callPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare callable-value fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, callPosition);
+    fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    memset(&query, 0, sizeof(query));
+    memset(formattedCall, 0, sizeof(formattedCall));
+    hasCanonicalQuery = analyzer != ZR_NULL && analyzer->semanticContext != ZR_NULL &&
+                        ZrParser_SemanticQuery_CallAt(
+                                analyzer->semanticContext, fileRange, ZR_NULL, &query);
+    hasCanonicalLabel = hasCanonicalQuery &&
+                        ZrParser_SemanticQuery_FormatCall(
+                                analyzer->semanticContext,
+                                &query,
+                                formattedCall,
+                                sizeof(formattedCall));
+    hasSignatureHelp = hasCanonicalLabel &&
+                       ZrLanguageServer_Lsp_GetSignatureHelp(
+                               state, context, uri, callPosition, &help);
+    label = help != ZR_NULL ? signature_help_first_label(help) : ZR_NULL;
+    if (!hasCanonicalQuery ||
+        query.expression == ZR_NULL || query.reference == ZR_NULL ||
+        !query.reference->isResolved ||
+        !hasCanonicalLabel ||
+        strcmp(formattedCall, expectedLabel) != 0 ||
+        !hasSignatureHelp ||
+        help == ZR_NULL ||
+        label == ZR_NULL ||
+        strcmp(label, expectedLabel) != 0) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Canonical callable-value signature mismatch (query=%d, resolved=%d, format=%d, call=%s, help=%d, label=%s)",
+                 (int)hasCanonicalQuery,
+                 (int)(query.reference != ZR_NULL && query.reference->isResolved),
+                 (int)hasCanonicalLabel,
+                 formattedCall[0] != '\0' ? formattedCall : "<unavailable>",
+                 (int)hasSignatureHelp,
+                 label != ZR_NULL ? label : "<null>");
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    help = ZR_NULL;
+
+    callFact = (SZrSemanticExpressionFact *)query.expression;
+    callFact->hasCallInfo = ZR_FALSE;
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, callPosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "Callable-value signature help recovered from a local variable or callee-name fallback");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 static void test_lsp_receiver_call_signature_fails_closed_without_canonical_call_fact(
         SZrState *state) {
     const TZrChar *summary =

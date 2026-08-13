@@ -531,6 +531,12 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrStat
                                                                          SZrAstNode *ast,
                                                                          SZrString *currentModuleKey);
 
+// Registers a callable initializer under its binding name for canonical call resolution.
+ZR_PARSER_API void ZrParser_Compiler_RegisterCallableValueBinding(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrAstNode *valueNode);
+
 // 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
