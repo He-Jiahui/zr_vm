@@ -21,7 +21,7 @@
     managed key 的 domain identity；普通跨 domain GC edge 在写入前拒绝且不落盘。
   - 已建立独立 canonical `Gc<T>` / `GcBox<T>` bridge kind、target-world 校验与显示文本；
     resource field 可声明 `Gc<ordinary class>`，`Gc<resource>` 与 `GcBox<ordinary class>`拒绝。
-  - 已实现 consuming `Unique<Resource>.intoGc(): GcBox<Resource>`；SemIR 保留 source Place，
+  - 已实现 consuming `intoGc(Unique<Resource>): GcBox<Resource>`；SemIR 保留 source Place，
     Shared、active loan 与 use-after-move拒绝，VM/AOT投影同一 structured ownership operation。
   - 已让 GcBox 不可达时执行 exactly-once resource Drop；Drop 中分配和 safepoint、显式 root
     保活、重复 full collection均无 double-drop。AOT OwnDetach helper精确先尝试 IntoGcBox，再
@@ -48,7 +48,7 @@
   same-domain owner handoff属于M5。
 - `Gc<T>` 已有 canonical source type/field contract和公开 C `SZrGcRootHandle` carrier；本阶段
   不宣称通用 source constructor或完整AOT stack-map schema。`GcBox<T>` source bridge已通过
-  `Unique<Resource>.intoGc()`落地。
+  `intoGc(uniqueResource)`落地。
 - 仓库仍保留pre-Syntax04非resource ownership与其他runtime内部使用的legacy ignore API；
   M4晋级声明限定为新的resource/GcBox bridge不依赖该registry，不声称已删除所有legacy API。
 - M4不包含多mutator、cross-domain transport、TransferEnvelope、concurrent major或M7

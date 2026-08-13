@@ -399,14 +399,15 @@ let file: Unique<FileHandle> = own FileHandle();
 |---|---|
 | `Unique<T>` | 唯一 owner，按值传递会 move，离开作用域自动 drop |
 | `Shared<T>` | 同一隔离域内的共享 owner，复制会保留资源 |
-| `Weak<T>` | 不延长资源存活；必须 `upgrade()` 后才能访问目标 |
+| `Weak<T>` | 不延长资源存活；通过 `wake(weak)` 留存 owner，或用 `.` / `?.` 访问目标 |
 
 ```zr
 let file: Unique<FileHandle> = own FileHandle();
-let shared: Shared<FileHandle> = file.share();
-let weak: Weak<FileHandle> = shared.weak();
+let shared: Shared<FileHandle> = share(file);
+let weak: Weak<FileHandle> = degrade(shared);
 
-if let Some(active) = weak.upgrade() {
+let active = wake(weak);
+if (active != null) {
     active.write(bytes);
 }
 
@@ -672,7 +673,7 @@ ZR 不采用自动分号插入：局部/字段/模块绑定、表达式、赋值
 - 使用 `fn name(...): R` 定义函数，使用 `fn(A) -> R` 表达 callable 类型。
 - 使用 `init T(...)`、`new C(...)` 与 `own R(...)` 分别构造值类型、GC class 和 resource class。
 - 使用 `ref`、`out`、`in`、`scoped`、`readonly` 表达引用与参数 contract。
-- 使用 `Unique<T>`、`Shared<T>`、`Weak<T>` 与 `drop(...)` 管理确定性资源。
+- 使用 `Unique<T>`、`Shared<T>`、`Weak<T>` 与 `share/degrade/wake/intoGc/drop` 管理确定性资源；`.` / `?.` 只访问对象目标。
 - 为 async 函数、迭代函数和异步迭代函数显式写出 `Task<T>`、`Iterator<T>` 或 `AsyncIterator<T>` 返回 TypeRef。
 
 深入阅读：

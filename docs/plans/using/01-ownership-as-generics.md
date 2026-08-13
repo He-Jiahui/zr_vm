@@ -18,10 +18,10 @@ ref readonly R  scoped readonly borrow
 
 - `own R(...)`产生`Unique<R>`，不能对普通class使用。
 - move在Place availability中静态跟踪；move后使用是编译错误。
-- `.share()`消耗Unique并产生Shared；第一次share才允许创建control block。
-- `.weak()`产生Weak；`.upgrade()`返回显式optional/result并保留runtime check。
-- `drop(value)`提前结束owner lifetime；scope exit生成Drop glue。
-- `Unique<T>.intoGc()`显式生成`GcBox<T>`并放弃确定性释放承诺。
+- `share(owner)`消耗Unique并产生Shared；第一次share才允许创建control block。
+- `degrade(shared)`产生Weak；`wake(weak)`返回nullable Shared并保留runtime check。
+- `drop(owner)`提前结束owner lifetime；scope exit生成Drop glue。
+- `intoGc(owner)`显式消费`Unique<T>`、生成`GcBox<T>`并放弃确定性释放承诺。
 - resource保存GC对象必须使用`Gc<T>` root handle。
 
 ## 限制

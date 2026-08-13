@@ -26,7 +26,7 @@
 2. 覆盖与这些规则组合时不可缺少的稳定基础语法：`module/import`、`let/var/const`、class/interface/enum/union/generic、数组/tuple、普通调用、成员访问、`if/if let/switch/while/for/await for`、异常、native extern和meta method。
 3. 旧 `%xxx`、`$Type(...)` 和 `$proto(...)` 只进入 legacy input 或 compile-fail fixture，不进入 current-pass 源码。
 4. `intermediate`裸指令块和动态object/prototype拼接构造不属于核心语言参考工程；旧`{{ ... }}` generator已由13确定迁移为显式返回`Iterator<T>`的普通`fn`加`yield`，三者都不能借本fixture自动晋级为current语法。
-5. `using` 只保留 Close/Dispose 作用域这一语义，但 04 尚未冻结其完整 statement grammar；在 grammar 冻结前只列入 coverage manifest 的 `surfacePending`，不在 current-pass 文件中猜测拼写。owner 生命周期由 `Unique<T>` 自动 Drop 和 `drop(value)` 覆盖。
+5. `using` 只保留 Close/Dispose 作用域这一语义，但 04 尚未冻结其完整 statement grammar；在 grammar 冻结前只列入 coverage manifest 的 `surfacePending`，不在 current-pass 文件中猜测拼写。owner 生命周期由 `Unique<T>` 自动 Drop 和 `drop(owner)` 覆盖。
 6. 自定义 Drop body 第一版沿用当前 `@destructor` 声明作为过渡表层，语义一律绑定为 04 的不可抛错、不可挂起 `DropContract`。若后续改名，只允许替换声明表层，不得改变 cleanup CFG 和 artifact contract。
 
 因此，本计划既提供完整设计样例，也显式暴露尚未冻结的旧语言表面，避免“示例里没写”被误认为已经删除或已经批准。
@@ -633,19 +633,20 @@ pub fn readTexture(texture: in Texture): int {
 }
 
 pub fn shareTexture(texture: Unique<Texture>): Shared<Texture> {
-    return texture.share();
+    return share(texture);
 }
 
 pub fn weakChecksum(texture: Shared<Texture>): int {
-    let weak: Weak<Texture> = texture.weak();
-    if let Some(live) = weak.upgrade() {
+    let weak: Weak<Texture> = degrade(texture);
+    let live: Shared<Texture>? = wake(weak);
+    if live != null {
         return readTexture(live);
     }
     return 0;
 }
 
 pub fn boxTexture(texture: Unique<Texture>): GcBox<Texture> {
-    return texture.intoGc();
+    return intoGc(texture);
 }
 ```
 
@@ -1042,10 +1043,11 @@ pub fn main(): int {
     let readonlySampleCount: int = algorithms.readonlySettings(settings);
 
     let unique: Unique<owners.Texture> = own owners.Texture(7, extent);
-    let shared: Shared<owners.Texture> = unique.share();
-    let weak: Weak<owners.Texture> = shared.weak();
+    let shared: Shared<owners.Texture> = share(unique);
+    let weak: Weak<owners.Texture> = degrade(shared);
     var ownerChecksum: int = 0;
-    if let Some(live) = weak.upgrade() {
+    let live: Shared<owners.Texture>? = wake(weak);
+    if live != null {
         ownerChecksum = owners.readTexture(live);
     }
     drop(shared);
@@ -1480,7 +1482,7 @@ async fn asyncChecksum(): task.Task<void> {
 | invalid test signature                       | metadata用于member/generic/non-void function   | test role只接受module-scope ordinary fn      |
 | invalid test case                            | arity/type/constant不匹配                     | case在编译期绑定                             |
 | out incomplete                               | normal return 前未写 out                     | 指向缺失赋值路径                           |
-| moved owner                                  | `unique.share()` 后再读 unique             | use-after-move                             |
+| moved owner                                  | `share(unique)` 后再读 unique              | use-after-move                             |
 | Shared writable                              | 经 Shared 调 writable`fn`                  | 只能形成 readonly borrow                   |
 | wrong static construct                       | `new Pixel(...)` / `own Pixel(...)`      | 分别建议`init Pixel(...)`                |
 | wrong value construct                        | `init RenderSettings(...)`                 | class 使用`new`                          |
@@ -1605,8 +1607,8 @@ FunctionDefinition(attributes = [Test, Case?, Skip?], returnType = void | Task<v
 3. reflection 构造 struct 必须显式产生 box；这是 dynamic boundary 的已知成本，不得反向污染静态 `init`。
 4. direct variadic reflection call允许使用 argument vector，避免强制先建 `object[]`；数组 spread在安全时借用现有连续参数存储，否则只 materialize 一次。
 5. Span bounds check只有在 CFG range facts证明后才能删除；VM/AOT未证明时保持相同异常语义。
-6. Unique hot path不创建 ref-count control block；第一次 `.share()` 才允许创建。
-7. Shared retain/release、Weak upgrade和GcBox finalization在四 backend 上保持可观察语义一致。
+6. Unique hot path不创建 ref-count control block；第一次 `share(unique)` 才允许创建。
+7. Shared retain/release、`degrade(shared)` / `wake(weak)` 和 GcBox finalization 在四 backend 上保持可观察语义一致。
 8. reflection cache压力测试覆盖重复命中、不同 argument type vector、null marker、module generation失效和 constructor throw后的再次调用。
 9. minifier删除全部trivia/newline后重新parse，AST/semantic hash必须与formatted source一致；分号token本身不进入runtime artifact。
 10. repeated import返回同一environment内的module object并只执行一次module initialization；module cycle行为与artifact dependency graph一致。

@@ -308,9 +308,13 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - child function 的 `.zri`/AOT metadata 会递归输出，constant function/closure 会重绑到 quickened child function tree
   - quickened ExecBC 与稳定语义层继续解耦
 - `ownership-builtins-semir-aot.md`
-  - `ref` / `ref readonly`、`Weak<T>.upgrade()` 与 `drop(...)` 的 parser、ExecBC、SemIR、AOT 契约
+  - `ref` / `ref readonly` 与五个 ownership intrinsic 的 ExecBC、SemIR、AOT 契约
   - ownership expression 与 statement `using` 的边界
   - 旧 ownership helper 不进入现行 artifact surface
+- `ownership-intrinsics-and-receiver-guards.md`
+  - `share/degrade/wake/intoGc/drop` 的 reserved intrinsic、Place/Loan/effect facts
+  - `.` / `?.` 的 nullable/Weak target guard、单次 wake、suffix skip 与 `NullReferenceError`
+  - interpreter、AOT、LSP、structured migration fix 和性能边界
 - `csharp-value-type-semir-aot.md`
   - C#-style `struct` value-place SemIR contract
   - inline struct field address/load/store and by-value copy metadata
@@ -328,23 +332,23 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 - `owned-field-lifecycle.md`
   - direct `Unique<T>` / `Shared<T>` field 的字段生命周期语义
   - field-scoped `using` 的生命周期边界
-  - owner 值跨入 plain GC world 必须显式 `intoGc()` 或 bridge
+  - owner 值跨入 plain GC world 必须显式 `intoGc(owner)` 或 bridge
 - `resource-unique-drop.md`
   - `resource class`、`own T(...)`、`drop(owner)` 的 type-directed 生命周期合同
   - direct `Unique<T>` 无 control block 的 move、partial construction 与逆序 Drop
-  - VM/AOT cleanup 顺序、M4 explicit domain roots 与 `Unique<Resource>.intoGc()` bridge
+  - VM/AOT cleanup 顺序、M4 explicit domain roots 与 `intoGc(owner)` bridge
 - `resource-shared-weak.md`
   - process-local non-atomic `Shared<T>` / stable `Weak<T>` control lifetime
   - last-strong Drop、implicit weak、drop-time upgrade failure 与 cleanup mirror 同步
   - structured `resource_shared_strong_cycle` lint，以及 final Option surface 的明确边界
-  - `Weak<T>` 使用目标前必须显式 `.upgrade()`/check，不能直接流入 `ref readonly T`
+  - `Weak<T>` 通过 `wake(weak)` 显式留存，或用 `.` / `?.` 执行 direct/optional target access
   - cleanup plan 与 prototype metadata 的传播路径
 - `resource-owner-borrow-receiver.md`
   - `Unique<T>` mutable/shared 与 `Shared<T>` readonly receiver capability
   - `in T` owner reborrow、two-phase receiver loan 与 last-use NLL
   - active ref 对 drop/share/move 的 canonical Place/LoanId 冲突门禁
   - receiver-tied ref return provenance 与 direct source TypeDef 保守边界
-  - M4 `INTO_GC_BOX` 对同一 Place/LoanId exclusive-consumption facts 的复用
+  - `intoGc(owner)` / `INTO_GC_BOX` 对同一 Place/LoanId exclusive-consumption facts 的复用
 - `semantic-fact-layer.md`
   - `SZrSemanticContext` 统一持有表达式、引用、数值、可达性、逻辑和所有权事实
   - 事实层提供 append-by-copy、reset/free 和按节点/位置查询契约

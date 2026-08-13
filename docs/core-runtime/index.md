@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/global.h
+  - zr_vm_core/src/zr_vm_core/global.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
   - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/include/zr_vm_core/task_frame_runtime.h
@@ -36,6 +38,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/io.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
@@ -131,7 +134,7 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
   recursive-entry rejection, and opt-in typed free-list frame reuse.
 - `gc-domain-single-mutator-bridge.md`: single-mutator `GcDomain` identity, generation-checked
   root handles, explicit ownership roots, cross-domain write rejection, permanent-parent major
-  scanning, and the `Unique<Resource>.intoGc()` / GcBox runtime bridge.
+  scanning, and the `intoGc(owner)` / GcBox runtime bridge.
 - `gc-domain-multimutator-and-owner-handoff.md`: domain-local STW epoch/handshake, registered
   VM/AOT roots, native safepoint modes, interpreter poll/reload, and the same-domain
   `Unique<Resource>` TransferEnvelope state machine.
@@ -146,6 +149,13 @@ Global teardown preserves code lifetime across GC destruction: project-owned AOT
 are unpinned before collector teardown, while their dynamic-library handles are closed only
 by the single-owner post-GC cleanup registered on `SZrGlobalState`. A conflicting cleanup
 owner is rejected so an unsafe early unload cannot be introduced by state aliasing.
+
+An attached native-module registry also registers its own opaque-state cleanup callback on
+`SZrGlobalState`. Explicit `ZrLibrary_NativeRegistry_Free` restores the host loader, resolver,
+and ownership observer and clears that callback. Embedders that release the global state
+directly receive the same registry cleanup before the main thread state and allocator are
+destroyed, preventing registry arrays, copied names, and plugin handles from leaking while
+avoiding a second release after an explicit free.
 
 Functions with a typed frame layout treat every logical stack slot as GC-visible frame state.
 Their VM pre-call reset therefore clears the full logical `stackSize`, including temporary

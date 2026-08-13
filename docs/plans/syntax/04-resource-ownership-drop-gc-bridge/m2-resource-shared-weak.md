@@ -10,14 +10,14 @@
 - 已完成项目：
   - 已建立 process-local non-atomic Shared/Weak stable control schema，包含 object、strong、weak、
     isolation domain、alive/drop-in-progress 与 GC-ignore ownership；移除 linked weak-slot lifetime。
-  - 已实现 share/clone/drop/weak/upgrade、implicit weak、last-strong-before-Drop 失效、many-Weak
-    存续和 final Weak control free；drop body 内 upgrade 必须失败。
+  - 已实现 share/clone/drop/degrade/wake、implicit weak、last-strong-before-Drop 失效、many-Weak
+    存续和 final Weak control free；drop body 内 wake 必须失败。
   - 已让 source resource Shared/Weak 覆盖正常退出、显式 drop、throw unwind、value parameter、
     nested owner fields，并同步 frame-layout physical slot 与 dense cleanup mirror。
   - 已把 ownership builtins 标为 no-throw operation，同时递归保留 receiver/argument throw profile。
   - 已发布 structured `resource_shared_strong_cycle` warning fact，覆盖 self/reciprocal Shared edge，
     Weak back-edge negative 不报。
-  - 已明确当前 `upgrade()` 仍使用 nullable Shared ABI niche；built-in `Option<Shared<T>>` carrier
+  - 已明确当前 `wake(weak)` 使用 nullable Shared ABI niche；built-in `Option<Shared<T>>` carrier
     与 VM/AOT construction contract 未完成，不作为本里程碑晋级声明。
 
 ## 最终验证结果
@@ -38,4 +38,4 @@
 - M2 不包含 M3 owner borrow/receiver compile-time facts。
 - M2 不包含 M4 `GcDomain`、`Gc<T>`/`GcBox<T>` bridge 或 no-hidden-ignore-registry gate。
 - M2 不包含 `AtomicShared<T>`；普通 Shared control 始终使用 non-atomic counter 并拒绝不同
-  isolation domain 的 copy/upgrade。
+  isolation domain 的 copy/wake。

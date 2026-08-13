@@ -54,9 +54,12 @@ let owner = own FileHandle();
 ```
 
 `Unique<T>`, `Shared<T>`, and `Weak<T>` are the canonical owner types. Scoped
-access uses `ref T` or `ref readonly T`. Ownership operations are ordinary
-typed members or statements, including `share()`, `weak()`, `upgrade()`,
-`intoGc()`, and `drop(value)`.
+access uses `ref T` or `ref readonly T`. Ownership control uses only the
+reserved intrinsic calls `share(owner)`, `degrade(shared)`, `wake(weak)`,
+`intoGc(owner)`, and `drop(owner)`. The `.` and `?.` operators exclusively
+access the receiver target. Direct access to an absent nullable/Weak target
+throws `NullReferenceError`; optional access returns null or performs a void
+no-op and skips the guarded suffix.
 
 Runtime type construction never reuses static construction syntax. It goes
 through `zr.reflection`:
@@ -139,6 +142,8 @@ The following are not accepted by the production parser:
 - `$Type(...)`, `$(runtimeType)(...)`, bare ownership constructors, and old
   generator `out` statements;
 - user-authored `intermediate ...` instruction declarations.
+- ownership-member operations such as `owner.share()`, `shared.weak()`,
+  `weak.upgrade()`, and `owner.intoGc()`; use the reserved intrinsic calls.
 
 The lexer/parser may recognize a removed spelling only to emit the fatal
 `legacy_syntax_removed` diagnostic. That path returns no production AST and

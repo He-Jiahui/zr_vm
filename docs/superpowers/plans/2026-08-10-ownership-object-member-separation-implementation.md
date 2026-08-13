@@ -300,9 +300,10 @@ inside the success path.
 - [ ] **Step 5: Remove member-name ownership inference and dataflow**
 
 Delete `ZrParser_OwnershipMemberNameToBuiltinKind` and all callers. Dataflow,
-region, and throw-profile consumers switch on the intrinsic AST/fact. Retain
-module-prototype `.share()` only as a canonically resolved real module member,
-not as the generic ownership classifier.
+region, and throw-profile consumers switch on the intrinsic AST/fact. Reject
+the former module-prototype `.share()` escape as well: a guarded module payload
+is not an owner operand, and its lifetime is held only by the compiler-hidden
+scoped owner.
 
 Run focused inference, fact, owner move/loan, and resource suites under GCC.
 
@@ -598,8 +599,8 @@ type strings, diagnostic text, or LSP-side AST fallbacks.
 
 Apply exact mechanical replacements in production sources, tests, fixtures, and
 examples. Update expected opcode names in goldens. Retain `.share()` only in
-tests or production where canonical member resolution proves it is a real member
-(including the module-prototype member contract). The migration set is fixed by
+tests where canonical member resolution proves it is an ordinary user-defined
+member; the module guard payload is deliberately not such an exception. The migration set is fixed by
 the pre-change search and includes parser SemIR/type/union/task tests and the AOT
 ownership source fixtures; repeat the search after rewriting to catch additions
 made by concurrent clean integrations.

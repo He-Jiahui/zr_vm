@@ -179,7 +179,7 @@
 
 - [x] **Step 1: Split the four previously conflated responsibilities.**
 
-  Owner lifetime uses `Unique<T>`/`Shared<T>`/`Weak<T>`, automatic Drop, and `drop(value)`; Close/Dispose alone uses `using`; patterns use `if let`/`switch`; plugins use `loadPlugin` plus result/union handling.
+  Owner lifetime uses `Unique<T>`/`Shared<T>`/`Weak<T>`, automatic Drop, and `drop(owner)`; Close/Dispose alone uses `using`; patterns use `if let`/`switch`; plugins use `loadPlugin` plus result/union handling.
 
 - [x] **Step 2: Keep Close/Dispose grammar explicitly pending.**
 

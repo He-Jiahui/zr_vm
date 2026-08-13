@@ -314,9 +314,11 @@ for (var item in values) {
   - parser 必须把 `ref` / `ref readonly` 参数与 `ref place` 实参解析为显式 ownership/reference contract，而不是退回普通 helper-call 形态
   - statement `using` 必须继续走 `MARK_TO_BE_CLOSED` / `CLOSE_SCOPE`，不能重新混回 ownership builtin surface
   - ExecBC、SemIR、`.zri`、AOT C 与 AOT LLVM 必须保留当前 ownership/reference effect，不生成旧 ownership builtin opcode
-  - AOT artifact 必须声明 `Weak<T>.upgrade()`、`Shared<T>.weak()` 与 `drop(...)` 对应的 runtime contract 或等价 contract
-  - `Weak<T>` 只能从 `Shared<T>` 经 `.weak()` 创建；`.upgrade()` 只能接收 `Weak<T>`
-  - `.upgrade()` 在仍有 shared owner 时必须返回非空 shared；最后一个 shared owner 消失后再次升级必须返回 `null`
+  - AOT artifact 必须声明 `wake(weak)`、`degrade(shared)` 与 `drop(owner)` 对应的 runtime contract 或等价 contract
+  - `Weak<T>` 只能从 `Shared<T>` 经 `degrade(shared)` 创建；`wake(weak)` 只能接收 `Weak<T>`
+  - `wake(weak)` 在仍有 shared owner 时必须返回非空 shared；最后一个 shared owner 消失后再次 wake 必须返回 `null`
+  - Weak/nullable 的 direct `.` 必须在 absent 时抛出可捕获 `NullReferenceError`；`?.` 必须跳过完整 suffix 与参数求值
+  - `share/degrade/wake/intoGc/drop` 同名对象成员必须继续走普通 member dispatch，不能触发 ownership opcode
   - `drop(...)` 必须按当前 place-aware ownership effect 验证 local、member、index 与 closure-place 的生命周期边界
   - `ref` / `ref readonly` binding 不可跨 `await`
 - runtime contracts: `tests/instructions/test_instructions.c`

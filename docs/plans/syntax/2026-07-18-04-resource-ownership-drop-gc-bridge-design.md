@@ -64,10 +64,11 @@ resource class Texture {
 }
 
 let texture: Unique<Texture> = own Texture(...);
-let shared: Shared<Texture> = texture.share();
-let weak: Weak<Texture> = shared.weak();
+let shared: Shared<Texture> = share(texture);
+let weak: Weak<Texture> = degrade(shared);
 
-if let Some(value) = weak.upgrade() {
+let value: Shared<Texture>? = wake(weak);
+if value != null {
     render(value);
 }
 
@@ -78,8 +79,9 @@ drop(shared);
 
 - 类型：`resource class`、`Unique<T>`、`Shared<T>`、`Weak<T>`。
 - 构造：`own T(...)`。
-- 转换：`.share()`、`.weak()`、`.upgrade()`、`.intoGc()`。
-- 提前释放：`drop(value)`。
+- ownership intrinsic：`share(owner)`、`degrade(shared)`、`wake(weak)`、`intoGc(owner)`。
+- 提前释放：`drop(owner)`。
+- target access：`.` 与 `?.`，不承担 ownership 控制；对失效 weak/nullable 直接用 `.` 抛 `NullReferenceError`，`?.` 返回 `null` 并跳过完整后缀。
 
 删除 `%borrow/%loan/%borrowed/%loaned/%release/%detach` 运行时入口语法。
 
@@ -131,7 +133,7 @@ resource class 不能直接包含：
 - move 后源 Place 为 moved，除重新初始化外不可读取、借用、drop。
 - scope exit 自动 drop。
 - `drop(unique)` 提前消耗 owner。
-- `unique.share()` 消耗 Unique 并返回 Shared。
+- `share(unique)` 消耗 Unique 并返回 Shared。
 - 只有 Unique 可以提供 `ref T` mutable borrow。
 - active borrow 期间 Unique 不能 move、share、drop 或 intoGc。
 
@@ -157,8 +159,9 @@ resource header 至少能解析 TypeDef/Drop/Layout；是否将 header 与对象
 - Weak 只能从 Shared 创建。
 - Weak 不增加 strong count。
 - Weak 可复制，维护 weak count 或等价控制块存活契约。
-- `upgrade()` 在对象仍存活时增加 strong count并返回 `Some(Shared<T>)`，否则返回 `None`。
-- Weak 不允许直接调用 target 成员；必须先 upgrade。这避免每次成员调用隐式做 nullable/liveness 检查。
+- `wake(weak)` 在对象仍存活时增加 strong count并返回 nullable `Shared<T>`，否则返回 `null`。
+- Weak 可通过 `.` / `?.` 访问 target。每条 guarded chain 只 wake 一次；失效时 direct `.` 抛
+  `NullReferenceError`，optional `?.` 返回 `null` 并跳过完整后缀与参数求值。
 
 ### 6.3 Control block
 
@@ -176,12 +179,13 @@ SharedControl<T>
 规则：
 
 1. strong > 0 时 control 持有一个 implicit weak。
-2. final strong drop：先使 upgrade 不再成功，再执行 object drop，最后释放 object storage。
+2. final strong drop：先使 wake 不再成功，再执行 object drop，最后释放 object storage。
 3. object 被释放后 control.object 为空，但 weak handle 仍可安全查询失败。
 4. weak count 归零后释放 control block。
-5. Drop 期间不能通过 Weak 重新 upgrade 当前已经开始销毁的对象。
+5. Drop 期间不能通过 Weak 重新 wake 当前已经开始销毁的对象。
 
-当前 `SZrOwnershipControl` 使用 linked weak slots 和 `isDetachedFromGc`。目标实现应改为稳定 Weak handle/control lifetime，不再追踪并主动把所有 Weak 变量 slot 写 null；Weak 的失效由 `upgrade()` 查询 control state 表达。
+当前实现使用稳定 Weak handle/control lifetime，不追踪或主动把所有 Weak 变量 slot 写 null；
+Weak 的失效由 `wake(weak)` 或 receiver guard 查询 control state 表达。
 
 ### 6.4 AtomicShared
 
@@ -291,17 +295,17 @@ resource class Request {
 
 ```zr
 let resource: Unique<FileHandle> = own FileHandle(...);
-let boxed: GcBox<FileHandle> = resource.intoGc();
+let boxed: GcBox<FileHandle> = intoGc(resource);
 ```
 
 规范语义：
 
-- `.intoGc()` 第一版只允许 Unique。
+- `intoGc(owner)` 第一版只允许 Unique。
 - 调用消耗 Unique，active borrow 时非法。
 - 返回 GC 管理的 `GcBox<T>`；box 最终不可达时执行 T 的 Drop。
 - 这是显式放弃确定性释放，通常只用于兼容 GC API、缓存或宿主边界。
 - 不承诺零拷贝、地址不变或原 resource storage 直接进入 moving GC。
-- Shared 不提供 `.intoGc()`；多个 strong owner 无法无运行时争用地收敛为唯一 box。
+- Shared 不能传给 `intoGc(owner)`；多个 strong owner 无法无运行时争用地收敛为唯一 box。
 
 ### 10.3 GC 对象持有 resource
 

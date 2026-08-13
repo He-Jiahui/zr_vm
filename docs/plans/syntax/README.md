@@ -1,6 +1,6 @@
 # ZR 语法重设计子计划索引
 
-> 状态：总设计已完成分阶段晋级；截至 2026-08-05，06B 与 07B 已完成最终收口，01-14 的当前 gate ledger 全部有独立验收证据。
+> 状态：总设计已完成分阶段晋级；06B 与 07B 已完成最终收口。ownership/object member separation 的一次性破坏性切换已实现，2026-08-13 的全矩阵复验正在进行；01-14 的当前 gate ledger 均保留独立验收证据。
 >
 > 总设计：[ZR 语法、引用与内存模型重设计](./2026-07-18-zr-syntax-and-memory-model-redesign.md)
 
@@ -153,6 +153,8 @@ flowchart TD
 31. 测试是带`#zr.testing.test#`metadata的普通`fn(...): void`或显式返回`zr.task.Task<void>`的`async fn`；`zr.testing`是N3 Test native host模块，compiler不增加`test`关键字或宏生成main，production graph不链接testing executable。
 32. GC collection/pause scope是host配置的`GcDomain`，不与进程、OS thread或游戏实例强绑定。一个domain可含多个state/mutator，STW只等待该domain；same-domain跨mutatormove/share分别受Send/Sync约束，跨domain禁止普通GC edge并只走Canonical `DomainTransferKind` transport。host可选择全局、每实例或分组domain，语言不替部署决定成本策略。
 33. 跨mutator owner handoff统一使用runtime-internal TransferEnvelope：source参数绑定后永久Moved，producer release发布、consumer acquire claim，envelope在commit前是唯一owner，失败恰好Drop一次。第一版`schedule(Job): Task`采用DropOnFailure，不隐式恢复源变量、不在claim后自动retry，也不把owner exactly-once误述为消息必达或Job副作用exactly-once。
+34. ownership控制只使用 reserved intrinsic `share(owner)`、`degrade(shared)`、`wake(weak)`、`intoGc(owner)`、`drop(owner)`；`.`与`?.`只用于对象或weak/nullable target access。同名`object.wake()`等始终是普通成员调用，不得按owner qualifier改写。
+35. 失效weak/nullable receiver直接使用`.`时抛可捕获`NullReferenceError`；`?.member`、`?.method(args)`和`?.(args)`返回`null`并跳过完整后缀和参数求值。
 
 ## 5. 建议重点复核的细化决定
 
@@ -163,7 +165,7 @@ flowchart TD
 - `Shared<T>` 第一版非原子且不能跨线程，`AtomicShared<T>` 后续独立提供。
 - `GcDomain`采用混合模型：host选择共享或隔离heap，每个domain内部以local-STW为正确性基线并可演进concurrent major；不存在隐式process-wide full GC。
 - same-domain Unique handoff保持O(1) handle move，不退化为AtomicShared/refcount；cross-domain ResourceMove必须通过prepare/commit/abort token。调度失败只fault Task并Drop capture，recoverable submission若以后加入必须是独立public API。
-- `Unique<T>.intoGc()` 生成 `GcBox<T>` 并明确放弃确定性释放；Shared 不支持该转换。
+- `intoGc(unique)` 生成 `GcBox<T>` 并明确放弃确定性释放；Shared 不支持该转换。
 - resource class 持有 GC 对象必须通过 `Gc<T>` root handle。
 - concrete property 必须显式代理预先声明的 field；ref-return property 必须显式 getter，且不允许 set/init/auto backing。
 - 正式 compiler 不执行旧语义，旧 parser 只保留在 migration frontend。

@@ -168,7 +168,7 @@ representation above. A live resource owner registers its object in the domain's
 ownership-root table; final release removes the root. The former ignored-object registry is no
 longer a correctness dependency.
 
-`Unique<Resource>.intoGc()` consumes the owner, emits the canonical `INTO_GC_BOX` ownership
+`intoGc(owner)` consumes a `Unique<Resource>`, emits the canonical `INTO_GC_BOX` ownership
 operation with its source Place, and returns `GcBox<Resource>`. Shared input and a Unique source
 with an active loan are rejected. Collection of the resulting box runs resource Drop exactly
 once, including when Drop allocates or reaches a safepoint. VM and AOT use the same
@@ -178,5 +178,5 @@ detach fallback.
 `Gc<T>` and `GcBox<T>` are distinct canonical bridge kinds rather than owner qualifiers. The
 first targets an ordinary GC class and is represented at the C runtime boundary by a
 generation-checked `SZrGcRootHandle`; the second targets a resource and has the explicit
-`intoGc()` source bridge. M4 does not claim multi-mutator collection or cross-domain transport;
+`intoGc(owner)` source bridge. M4 does not claim multi-mutator collection or cross-domain transport;
 those remain later milestones.

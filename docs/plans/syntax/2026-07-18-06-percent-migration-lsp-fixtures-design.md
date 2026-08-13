@@ -75,11 +75,11 @@
 | `(value: T): R -> { ... }` | `fn(value: T): R { ... }` |
 | `(value: T): R => expression` | `fn(value: T): R => expression` |
 | `%owned class T` | `resource class T` |
-| `%release(value)` | `drop(value)` |
-| `%upgrade(weak)` | `weak.upgrade()` |
-| `%weak(shared)` | `shared.weak()` |
-| `%shared(unique)` | `unique.share()` |
-| `%detach(unique)` | `unique.intoGc()` |
+| `%release(value)` | `drop(owner)` |
+| `%upgrade(weak)` | `wake(weak)` |
+| `%weak(shared)` | `degrade(shared)` |
+| `%shared(unique)` | `share(unique)` |
+| `%detach(unique)` | `intoGc(unique)` |
 
 上表在 06A 中是迁移 schema 与责任归属，不代表所有 edit 已可发布：`%type` 的目标由 08 提供，`%extern` 由 10F 提供，`%compileTime` 由 11 提供，`%async/%await` 由 12 提供，旧 generator 由 13 提供，`%test` 由 14 提供。对应计划未晋级时，frontend 只能产出 `targetNotPromoted(planId)` 分类和可测试的 edit plan，不得把 code action 标为 machine-applicable，也不得据此切换正式 parser。
 
@@ -93,7 +93,7 @@
 
 import迁移还必须检查binding facts：module-scope `var alias = %import("path");` 只有在alias从未重新赋值时才能改为`let alias = import("path");`；local/conditional import不得自动hoist，统一requiresReview。旧standalone `%import core.math` 可以用最后一个path segment生成alias候选，但alias已占用、非法identifier或member访问依赖旧隐式注入时必须requiresReview，不能静默改变名字解析。
 
-旧 `%detach(shared)` 即使运行时 strong count 恰好为 1 也不自动改写：新设计不允许 Shared `.intoGc()`，该情况标为 blocked/requiresReview，调用者需要重构为在 share 前转换，或显式选择其他 bridge。
+旧 `%detach(shared)` 即使运行时 strong count 恰好为 1 也不自动改写：新设计不允许 Shared 传给 `intoGc(owner)`，该情况标为 blocked/requiresReview，调用者需要重构为在 share 前转换，或显式选择其他 bridge。
 
 旧 `%unique(expr)` 只有在 `expr` 是新鲜 resource 构造且不存在其他 alias 时才能改写为 `own T(...)`；从普通 GC value 强化为 Unique 不再支持。无法证明唯一性的用法标为 blocked。
 
@@ -153,7 +153,7 @@ swap(ref a, ref b);
 | `%shared T` | `Shared<T>` |
 | `%weak T` | `Weak<T>` |
 | `%unique new T(...)` | `own T(...)` |
-| `%shared new T(...)` | `own T(...).share()` |
+| `%shared new T(...)` | `share(own T(...))` |
 | `Borrow<T>` / `%borrowed T` | `ref readonly T` 或 `in T`，按使用位置 |
 | `Loan<T>` / `%loaned T` | `ref T` 或 `scoped ref T`，按逃逸 |
 
@@ -633,6 +633,6 @@ cutover gate 使用结构化 allowlist，而不是简单要求零 `%`：
 - 显式semicolon和missing-terminator recovery：`lua/jdk/src/jdk.compiler/share/classes/com/sun/tools/javac/parser/JavacParser.java`、`lua/rust/compiler/rustc_parse/src/parser/diagnostics.rs`、`lua/rust/tests/ui/parser/missing-semicolon.rs`。QuickJS的ASI对照位于`lua/QuickJS-master/quickjs.c::js_parse_expect_semi`和`lua/QuickJS-master/tests/test_language.js::test_parse_semicolon`；ZR明确不采用。
 - module object/namespace：`lua/cpython/Python/import.c::PyImport_ImportModuleLevelObject`、`lua/cpython/Lib/test/test_import`、`lua/QuickJS-master/quickjs.c`的`JS_CLASS_MODULE_NS`，以及仓库既有`.codex/plans/%import Reserved Syntax Migration Plan.md`专用ImportExpression基础。
 - ZR current semantic/LSP facts：`zr_vm_parser/include/zr_vm_parser/semantic_facts.h`、`zr_vm_language_server/src/zr_vm_language_server/interface/lsp_completion_semantic_facts.c`、`semantic/lsp_semantic_tokens.c`。
-- ZR artifact/golden：`zr_vm_parser/include/zr_vm_parser/writer.h`、`tests/golden/ast`、`tests/fixtures/projects/lsp_language_feature_matrix`。
+- ZR artifact/golden：`zr_vm_parser/include/zr_vm_parser/writer.h`、构建目录下的`tests_generated/`、`tests/fixtures/projects/lsp_language_feature_matrix`。
 
 ZR 的刻意差异是：不引入多年 edition 双轨；保留一个结构化 migration frontend 和诊断周期，但正式 compiler 在 cutover 后只有一套 Canonical Type/SemIR 语义。

@@ -121,7 +121,7 @@ conflicts, and the no-later-use boundary.
 
 M3 completes compile-time owner reborrow and direct receiver enforcement. It does
 not add a runtime borrow table. Syntax 04 M4 consumes its canonical Place/LoanId
-facts for `Unique<Resource>.intoGc()`: the operation is an exclusive owner
+facts for `intoGc(owner)`: the operation is an exclusive owner
 consumption, is rejected while an overlapping loan is live, and leaves the source
 Place moved.
 

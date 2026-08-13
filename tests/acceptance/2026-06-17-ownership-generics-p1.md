@@ -556,6 +556,11 @@
 
 ## Update: plugin guard share promotion
 
+> Superseded on 2026-08-13 by the ownership/object member separation cutover.
+> The entries below are historical RED/GREEN evidence, not the current language
+> contract. Current source rejects `Module.share()` and keeps plugin lifetime in
+> a compiler-hidden scoped owner.
+
 - Timestamp: 2026-06-18 03:25:06 +08:00.
 - Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
 - Scope:
@@ -603,6 +608,10 @@
   - Full compiler integration baseline failures still need separate convergence.
 
 ## Update: plugin guard scoped release/share lifecycle
+
+> Superseded on 2026-08-13 by the ownership/object member separation cutover.
+> This section is retained as historical execution evidence; source-level
+> `.share()` promotion no longer exists.
 
 - Timestamp: 2026-06-18 08:44:43 +08:00.
 - Build directory: `build/codex-p1-thread-wsl-gcc-debug`.

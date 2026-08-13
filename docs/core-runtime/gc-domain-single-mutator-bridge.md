@@ -80,7 +80,7 @@ clone, immutable handles, resource move envelopes, and domain shutdown races are
 
 ## Owner-to-GC bridge
 
-`Unique<Resource>.intoGc()` is an explicit consuming bridge. The compiler publishes
+`intoGc(owner)` is an explicit consuming bridge for `Unique<Resource>`. The compiler publishes
 `ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX` with the source Place, rejects Shared and active-borrow input,
 and lowers the operation through the existing `OWN_DETACH` execution slot. VM execution calls
 `ZrCore_Ownership_IntoGcBoxValue`; the AOT helper attempts the same operation before its legacy
@@ -100,7 +100,7 @@ not yet claim a general source-language constructor that turns arbitrary `T` int
 The focused domain suite covers identity, cross-domain writes, handle clone/update/release,
 stale generations, explicit ownership roots, minor/major/compact rewrites, and permanent-parent
 child scanning. Resource tests cover deferred and exactly-once GcBox Drop, Drop-time allocation,
-canonical bridge types, source `intoGc()`, active-loan rejection, VM execution, and AOT helper
+canonical bridge types, source `intoGc(owner)`, active-loan rejection, VM execution, and AOT helper
 order.
 
 M4 does not provide multi-mutator collection, domain-local STW, transfer envelopes, cross-domain

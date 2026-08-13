@@ -39,28 +39,28 @@ Syntax 04 M2 extends a direct `Unique<Resource>` owner with process-local shared
 
 ```zr
 var unique: Unique<Session> = own Session();
-var shared: Shared<Session> = unique.share();
+var shared: Shared<Session> = share(unique);
 var clone: Shared<Session> = shared;
-var observer: Weak<Session> = shared.weak();
-var live = observer.upgrade();
+var observer: Weak<Session> = degrade(shared);
+var live = wake(observer);
 
 drop(shared);
 drop(clone);
 drop(live);
-var expired = observer.upgrade();
+var expired = wake(observer);
 ```
 
 `Shared<T>` assignment and parameter passing clone the strong handle. `Weak<T>` can only be
-created from `Shared<T>`, is independently copyable, and cannot directly access `T`. Both owner
-types are non-nullable declarations. Explicit `drop` and lexical cleanup release exactly one
-handle. The first implementation is isolation-domain local and uses non-atomic counters;
-cross-domain copy or upgrade is rejected. `AtomicShared<T>` is not part of M2.
+created from `Shared<T>`, is independently copyable, and does not keep `T` alive. `wake(weak)`
+returns a nullable Shared owner. Direct `weak.member` wakes once for the target chain and throws
+`NullReferenceError` on expiry; `weak?.member` returns null and skips the suffix. Both owner types
+are non-nullable declarations. Explicit `drop` and lexical cleanup release exactly one handle.
+The first implementation is isolation-domain local and uses non-atomic counters; cross-domain
+copy or wake is rejected. `AtomicShared<T>` is not part of M2.
 
-The current callable surface still represents `upgrade()` as a nullable `Shared<T>` niche in the
-existing type/value ABI: live controls produce a Shared handle and dead controls produce null.
-The plan's final `Option<Shared<T>>` spelling requires a canonical built-in Option/prelude carrier
-and matching VM/AOT construction contract. M2 does not invent a source-only wrapper or claim that
-this compatibility representation is already the final Option surface.
+`wake(weak)` uses the nullable `Shared<T>` niche in the existing type/value ABI: live controls
+produce a Shared handle and dead controls produce null. There is no member-style upgrade surface
+or source-only Option wrapper.
 
 ## Stable control lifetime
 
@@ -75,7 +75,7 @@ A Shared resource owns one stable `SZrOwnershipControl`:
 
 Releasing the final strong handle first sets `objectIsAlive=false`, sets `dropInProgress=true`, and
 clears `control.object`. Only then does the runtime run resource Drop and reverse field cleanup.
-Consequently a Weak upgrade attempted from the Drop body observes an expired target. After Drop,
+Consequently a Weak wake attempted from the Drop body observes an expired target. After Drop,
 the implicit weak is removed; explicit Weak handles retain the control with a null object until the
 last Weak release frees it. Weak values therefore remain real handles after target death instead of
 being proactively rewritten to null stack slots.
@@ -110,12 +110,12 @@ query consumers.
 ## M2-M4 boundary
 
 M2 covers non-atomic process-local Shared/Weak control lifetime, last-strong Drop, many surviving
-Weak handles, repeated upgrades, drop-time upgrade failure, nested owner fields, exception cleanup,
+Weak handles, repeated wakes, drop-time wake failure, nested owner fields, exception cleanup,
 value parameters, and the first strong-cycle lint. M3 supplies compile-time owner
 borrow/receiver rules.
 
 M4 binds the control's live resource object to the current `GcDomain` and keeps it alive through
 the same explicit ownership-root table used by direct Unique. Last-strong release clears the
 control and unregisters that root before Drop cleanup. Shared cannot enter the consuming
-`Unique<Resource>.intoGc()` bridge, and Weak remains an observation handle rather than a GC root
+`intoGc(owner)` bridge, and Weak remains an observation handle rather than a GC root
 handle. Multi-mutator atomic ownership and cross-domain transfer remain outside this milestone.

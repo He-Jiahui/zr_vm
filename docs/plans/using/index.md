@@ -12,7 +12,7 @@
 | 构造resource owner | `own T(...)` -> `Unique<T>` |
 | 值构造 | `init T(...)` |
 | lexical deterministic close | `using`，仅Close/Dispose protocol |
-| owner提前释放 | `drop(value)` |
+| owner提前释放 | `drop(owner)` |
 | union解构 | `if let` / `switch` |
 | 动态插件/模块 | `loadPlugin` / `loadModule` result union |
 

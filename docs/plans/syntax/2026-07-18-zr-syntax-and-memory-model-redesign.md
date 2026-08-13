@@ -457,10 +457,11 @@ Loan<T>
 resource class Texture { ... }
 
 let texture: Unique<Texture> = own Texture(...);
-let shared: Shared<Texture> = texture.share();
-let weak: Weak<Texture> = shared.weak();
+let shared: Shared<Texture> = share(texture);
+let weak: Weak<Texture> = degrade(shared);
 
-if let Some(value) = weak.upgrade() {
+let value: Shared<Texture>? = wake(weak);
+if value != null {
     use(value);
 }
 
@@ -472,11 +473,12 @@ drop(shared);
 - `own T(...)` 只构造 ownership-capable 类型，并返回 `Unique<T>`。
 - `Unique<T>` 不可复制；按值赋值、传参和返回执行 move。
 - move 后源 Place 进入 moved 状态，除重新赋值外不可使用。
-- `Unique<T>.share()` 消耗 unique，返回 `Shared<T>`。
+- `share(unique)` 消耗 unique，返回 `Shared<T>`。
 - `Shared<T>` 复制增加 strong count，drop 减少 strong count。
-- `Shared<T>.weak()` 创建 `Weak<T>`，不增加 strong count。
-- `Weak<T>.upgrade()` 返回 `Option<Shared<T>>`，不使用隐式 nullable。
-- `drop(value)` 是标准 intrinsic，用于可选的提前确定性释放；正常作用域退出自动 drop。
+- `degrade(shared)` 创建 `Weak<T>`，不增加 strong count。
+- `wake(weak)` 返回 nullable `Shared<T>`；weak target 也可直接用 `.` / `?.` 访问。
+- 失效 weak/nullable 直接用 `.` 抛可捕获 `NullReferenceError`；`?.member`、`?.method(args)` 与 `?.(args)` 返回 `null` 并跳过完整后缀及参数求值。
+- `drop(owner)` 是标准 intrinsic，用于可选的提前确定性释放；正常作用域退出自动 drop。
 - final owner drop 执行一次且仅一次资源清理，不通过运行时“源变量置 null”模拟语义正确性。
 
 ### 10.3 Shared 的线程语义
@@ -505,14 +507,14 @@ drop(shared);
 - `resource class` 通过 `own` 创建，由 `Unique/Shared` 管理。
 - 纯 ownership graph 不参与普通 GC liveness tracing。
 - 跨世界引用必须经过规范化 bridge/handle，禁止在共享基础路径里通过具体类名或隐藏 registry 特判。
-- `.intoGc()` 第一版只消耗 `Unique<T>` 并生成 `GcBox<T>`；它表示主动放弃确定性释放，不承诺零拷贝或地址不变。
+- `intoGc(owner)` 第一版只消耗 `Unique<T>` 并生成 `GcBox<T>`；它表示主动放弃确定性释放，不承诺零拷贝或地址不变。
 
 采用严格边界：resource class 直接字段不能静默保存普通 GC handle；需要保存时使用显式 `Gc<T>` bridge。这样运行时能够准确登记根，并使“是否需要 GC 扫描”在类型上可见。
 
 ### 10.6 Drop、close 与 using
 
 - owner 在作用域结束自动 drop，不需要 `using owner`。
-- `drop(value)` 只表示提前消耗并结束 owner 生命周期。
+- `drop(owner)` 只表示提前消耗并结束 owner 生命周期。
 - `using` 只保留一个职责：管理实现 Close/Dispose 协议但不由 owner 自动管理的资源作用域。
 - close 与最终对象销毁是不同协议，不能由同一个 `%release` 模糊处理。
 - 异常退出、早返回和正常退出必须生成同一套 cleanup plan。
@@ -660,7 +662,7 @@ particlePool.recycle(handle);
 | `%borrow` | `ref readonly` / 自动 shared borrow | 删除内建表达式 |
 | `%borrowed` | `ref readonly T` | 删除装饰类型 |
 | `%compileTime` | `comptime` | 上下文关键字 |
-| `%detach` | `.intoGc()` | 显式跨世界转换 |
+| `%detach` | `intoGc(owner)` | 显式跨世界转换 |
 | `%extern` | `native extern("library") { ... }` | 静态 native 声明；绑定期生成 FfiSignature |
 | `%func` | `fn` | 函数声明和函数类型关键字 |
 | `%import` | `let alias = import("module.path");` | 返回 ModuleNamespace object的静态导入绑定 |
@@ -671,14 +673,14 @@ particlePool.recycle(handle);
 | `%out` | `out T` | 参数类型简写 |
 | `%owned` | `resource class` | 类型生命周期类别 |
 | `%ref` | `ref T` | 真正引用类型 |
-| `%release` | `drop(value)` | 提前确定性释放 intrinsic |
-| `%shared` | `Shared<T>` / `.share()` | owner 类型和转换方法 |
+| `%release` | `drop(owner)` | 提前确定性释放 intrinsic |
+| `%shared` | `Shared<T>` / `share(owner)` | owner 类型和转换 intrinsic |
 | `%test` | `test` | 上下文关键字 |
 | `%type` | `typeof(expr)` / `typeid(T)` | 拆分值类型查询和类型标识 |
 | `%unique` | `Unique<T>` / `own T(...)` | owner 类型和构造表达式 |
-| `%upgrade` | `.upgrade()` | Weak 的普通方法 |
+| `%upgrade` | `wake(weak)` | Weak ownership intrinsic |
 | `%using` | `using` | 只用于 Close/Dispose 作用域 |
-| `%weak` | `Weak<T>` / `.weak()` | owner 类型和转换方法 |
+| `%weak` | `Weak<T>` / `degrade(shared)` | owner 类型和转换 intrinsic |
 | `$Type(args)` | `init Type(args)` | 仅在 target 可静态绑定为 value-constructible TypeRef 时自动迁移 |
 | `$proto(args)` | `reflection.requireConstructible(type).createInstance(...constructionArgs)` | 动态构造移出核心语法，需绑定为 `zr.reflection.Type` 并人工确认 capability、参数数组和装箱 |
 
@@ -951,8 +953,8 @@ LSP 必须复用相同 semantic facts 提供 hover、类型展示、move 后不�
    结论：非原子且不可跨线程；跨线程使用显式 `AtomicShared<T>`。
 4. resource class 是否允许直接保存 GC 引用。
    结论：必须通过显式 `Gc<T>` bridge，保持 ownership graph 可跳过 tracing。
-5. `.intoGc()` 是零拷贝转换还是生成 GC box。
-   结论：第一版只允许 `Unique<T>.intoGc()` 生成 `GcBox<T>`，不承诺地址不变或零拷贝。
+5. `intoGc(owner)` 是零拷贝转换还是生成 GC box。
+   结论：第一版只允许 `intoGc(unique)` 生成 `GcBox<T>`，不承诺地址不变或零拷贝。
 6. 普通 struct 的布局稳定级别。
    结论：字段按声明顺序布局，同 target/schema 内可查询且一致；跨版本/native 稳定布局必须显式声明。
 7. `readonly T` 是否进入第一版。

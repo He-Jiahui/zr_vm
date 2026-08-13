@@ -6,10 +6,10 @@
 |---|---|
 | `%owned` type | `resource class` |
 | `%unique` construct/type | `own T(...)` / `Unique<T>` |
-| `%shared/%weak` | `Shared<T>/Weak<T>`与`.share()/.weak()` |
+| `%shared/%weak` | `Shared<T>/Weak<T>`与`share(owner)`/`degrade(shared)` |
 | `%borrow/%loan` | `ref readonly/ref`与普通borrow expression |
-| `%release` | `drop(value)` |
-| `%detach` | `.intoGc()`，必须人工确认bridge |
+| `%release` | `drop(owner)` |
+| `%detach` | `intoGc(owner)`，必须人工确认bridge |
 | `%using` owner scope | owner binding + scope Drop；不保留using构造 |
 | `%using` Close scope | 迁移到最终UsingStatementSyntax，grammar冻结前requiresReview |
 | `%using` union guard | `if let`/`switch` |

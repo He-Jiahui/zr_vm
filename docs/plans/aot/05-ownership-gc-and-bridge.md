@@ -14,7 +14,7 @@
 
 - frontend facts决定copy/move/drop合法性；AOT按TypeLayout的copyKind/dropKind发射操作。
 - cleanup CFG保证正常退出与异常退出都执行exactly-once Drop/Close。
-- `Unique<T>.intoGc()`是显式bridge op，生成GcBox语义；不能优化成改变ownership tag。
+- `intoGc(owner)`是`Unique<T>`的显式bridge op，生成GcBox语义；不能优化成改变ownership tag。
 - resource持有GC对象只经`Gc<T>` root handle；AOT必须让GC看到该root。
 - Shared第一版非原子；跨线程只接受AtomicShared/明确Send-Sync contract。
 - PoolHandle是ordinary weak identity；PoolRef是scoped direct ref + guard。retire/reuse逻辑在`zr.pooling` runtime，backend只执行通用Drop和ref-like规则。
@@ -41,7 +41,7 @@
 ## Syntax 04 M4 已落地基线
 
 - `Gc<T>` / `GcBox<T>` 使用独立 canonical bridge kind，不复用 ownership qualifier。
-- `Unique<Resource>.intoGc()` 在 SemIR 中保留 source Place，并以
+- `intoGc(owner)` 在 SemIR 中保留 `Unique<Resource>` source Place，并以
   `ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX` 表示消费；active loan 和 Shared 输入在 frontend
   被拒绝。
 - ExecBC 继续使用稳定 `OWN_DETACH` 槽，但 VM helper 优先执行
