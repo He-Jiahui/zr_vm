@@ -4436,6 +4436,10 @@ static void test_checked_in_aot_c_fixtures_use_new_code_shape(void) {
             TEST_ASSERT_NOT_NULL(cText);
             TEST_ASSERT_TRUE(strlen(cText) > 0);
             assert_generated_aot_c_text_uses_new_code_shape(cText);
+            TEST_ASSERT_NULL(strstr(cText, "ownership.weak"));
+            TEST_ASSERT_NULL(strstr(cText, "ownership.upgrade"));
+            TEST_ASSERT_NULL(strstr(cText, "ownership.detach"));
+            TEST_ASSERT_NULL(strstr(cText, "ownership.release"));
             free(cText);
         }
     }
@@ -4471,6 +4475,11 @@ static void test_checked_in_aot_llvm_fixtures_use_true_backend_shape(void) {
             assert_generated_aot_llvm_text_uses_true_backend_shape(llvmText);
             TEST_ASSERT_NOT_NULL(strstr(llvmText, "@zr_aot_function_thunks = private constant"));
             TEST_ASSERT_NOT_NULL(strstr(llvmText, "define i64 @zr_aot_entry(ptr %state)"));
+            TEST_ASSERT_NULL(strstr(llvmText, "ownership.weak"));
+            TEST_ASSERT_NULL(strstr(llvmText, "ownership.upgrade"));
+            TEST_ASSERT_NULL(strstr(llvmText, "ownership.detach"));
+            TEST_ASSERT_NULL(strstr(llvmText, "ownership.release"));
+            TEST_ASSERT_NULL(strstr(llvmText, "ZrCore_Ownership_UpgradeValue"));
             free(llvmText);
         }
     }

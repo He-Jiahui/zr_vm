@@ -207,17 +207,17 @@ const TZrChar *backend_aot_exec_ir_runtime_contract_name(TZrUInt32 contractBit) 
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE:
             return "ownership.share";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DEGRADE:
-            return "ownership.weak";
+            return "ownership.degrade";
         case ZR_AOT_RUNTIME_CONTRACT_ITER_INIT:
             return "iter.init";
         case ZR_AOT_RUNTIME_CONTRACT_ITER_MOVE_NEXT:
             return "iter.move_next";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH:
-            return "ownership.detach";
+            return "ownership.into_gc";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_WAKE:
-            return "ownership.upgrade";
+            return "ownership.wake";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DROP:
-            return "ownership.release";
+            return "ownership.drop";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN:
             return "ownership.return_loan";
         case ZR_AOT_RUNTIME_CONTRACT_NONE:

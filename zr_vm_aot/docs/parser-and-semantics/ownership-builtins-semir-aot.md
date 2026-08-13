@@ -61,52 +61,43 @@ doc_type: module-detail
 
 ## 目标
 
-ownership surface 现在按 Rust-first 方式收敛成 canonical type/member/reference surface 和 dedicated opcode。百分号 ownership 形式只存在于迁移诊断与负向测试。
+ownership surface 现在收敛成 canonical owner type、reserved intrinsic、reference view 和 dedicated opcode。百分号 ownership 形式以及旧 ownership member-call 形式只存在于迁移诊断与负向测试；`.` / `?.` 始终表示目标访问。
 
 当前 ownership/reference surface 是：
 
 - `own T(...)`
-- `owner.share()`
-- `shared.weak()`
-- `weak.upgrade()`
+- `share(owner)`
+- `degrade(shared)`
+- `wake(weak)`
 - `var view: ref readonly T = ref owner`
 - `var view: ref T = ref owner`
-- `owner.intoGc()`
+- `intoGc(owner)`
 - `drop(owner)`
 
 普通 `using` statement 只承担受支持的 statement/block lifetime contract，不构造 owner。
 
 ## Parser / AST
 
-`SZrConstructExpression` 现在通过 `builtinKind` 区分 ownership builtin：
-
-- `UNIQUE`
-- `SHARED`
-- `WEAK`
-- `BORROW`
-- `LOAN`
-- `UPGRADE`
-- `RELEASE`
-- `DETACH`
-
-ownership builtin `USING` 已从 expression surface 移除。
+五个 reserved intrinsic 解析为 `SZrOwnershipIntrinsicExpression`，其 operation 分别是 `SHARE`、`DEGRADE`、`WAKE`、`INTO_GC` 和 `DROP`。它们不经过 `SZrMemberAccessExpression`，因此与对象上同名的真实字段或方法没有分派歧义。ownership builtin `USING` 已从 expression surface 移除。
 
 当前 parser 规则：
 
 - 已知百分号 ownership 拼写统一报告 `legacy_syntax_removed`，不生成 ownership AST
+- 旧 `owner.share()` / `shared.weak()` / `weak.upgrade()` / `owner.intoGc()` 不再触发 ownership lowering
 - `own T(...)` 是 resource unique 构造入口
 - `ref` / `ref readonly` 建立 lexical reference view
-- `share` / `weak` / `upgrade` / `intoGc` / `drop` 走类型化 member/builtin contract
+- `share` / `degrade` / `wake` / `intoGc` / `drop` 只走类型化 reserved-intrinsic contract
+- `.` / `?.` 只走普通 target member/call contract；弱引用或 nullable receiver 的 guard 由 receiver facts 表达
 
 ## 类型与借用约束
 
 当前前端做了显式 operand 校验：
 
-- `share()` 只接受 `Unique<T>`
-- `weak()` 只接受 `Shared<T>`
-- `upgrade()` 只接受 `Weak<T>`
+- `share(owner)` 只接受 `Unique<T>`
+- `degrade(shared)` 只接受 `Shared<T>`
+- `wake(weak)` 只接受 `Weak<T>`，并返回 nullable `Shared<T>`
 - `drop(...)` 只接受可释放 owner
-- `intoGc()` 只接受可进入 plain GC world 的独占 owner bridge
+- `intoGc(owner)` 只接受可进入 plain GC world 的独占 owner bridge
 
 borrow / loan 规则当前已覆盖到 task/await 路径：
 
@@ -117,7 +108,7 @@ borrow / loan 规则当前已覆盖到 task/await 路径：
 v1 仍保持保守限制：
 
 - `drop` 的可消费 Place 仍受 owner/definite-assignment 约束
-- `intoGc()` 不接受多 owner shared value
+- `intoGc(owner)` 不接受多 owner shared value
 - reference view 的 escape analysis 以“不可返回/不可捕获/不可全局存储”为硬边界
 
 ## ExecBC 与 `SemIR`
@@ -125,15 +116,15 @@ v1 仍保持保守限制：
 ownership expression 现在直接落成 dedicated opcode：
 
 - `OWN_UNIQUE`
-- `OWN_BORROW`
-- `OWN_LOAN`
 - `OWN_SHARE`
-- `OWN_WEAK`
-- `OWN_UPGRADE`
-- `OWN_RELEASE`
-- `OWN_DETACH`
+- `OWN_DEGRADE`
+- `OWN_WAKE`
+- `OWN_INTO_GC_BOX`
+- `OWN_DROP`
+- `OWN_VIEW_SHARED`
+- `OWN_VIEW_MUT`
 
-对应的 `SemIR` opcode 同步保留这些 ownership transition，而不是退回 native helper constant。
+对应的 `SemIR` opcode 同步保留这些 ownership transition，而不是退回 native helper constant。legacy `OWN_BORROW`、`OWN_LOAN`、`OWN_RELEASE` 和 `OWN_DETACH` 的 numeric identity 只供旧 artifact reader 兼容，新源码不再发出。
 
 statement-level `using` 与 ownership builtin 已明确拆开：
 
@@ -151,16 +142,16 @@ runtime ownership helper 目前和 surface 对齐：
 
 - `ZrCore_Ownership_ShareValue`
   - 只接受 `Unique<T>`
-- `ZrCore_Ownership_WeakValue`
+- `ZrCore_Ownership_DegradeValue`
   - 只接受 `Shared<T>`
-- `ZrCore_Ownership_LoanValue`
-  - 只接受 `Unique<T>`
-- `ZrCore_Ownership_UpgradeValue`
+- `ZrCore_Ownership_WakeValue`
   - 只接受 `Weak<T>`
   - weak 失效时返回 `null`
-- `ZrCore_Ownership_ReturnToGcValue`
-  - 对应 canonical `intoGc()` bridge
+- `ZrCore_Ownership_IntoGcBoxValue`
+  - 对应 canonical `intoGc(owner)` bridge
   - 只接受可独占转移的 owner
+- `ZrCore_Ownership_ReleaseValue`
+  - 对应 `drop(owner)` 和 scope cleanup
 
 legacy ownership native helper `%using` 已从 writer/runtime helper 映射中移除，helper id `5` 仅保留为二进制编号洞位，不再映射到运行时函数。
 
@@ -188,7 +179,7 @@ M1 仍暂时使用 existing GC ignore registry 保持 direct resource storage；
 新source语法、Semantic IR、ExecBC与AOT现在使用一一对应的操作：
 
 - readonly/mutable reborrow分别发出`OWN_VIEW_SHARED`/`OWN_VIEW_MUT`；
-- `Unique<Resource>.intoGc()`发出`OWN_INTO_GC_BOX`；
+- `intoGc(uniqueResource)`发出`OWN_INTO_GC_BOX`；
 - 显式`detach`/return-to-GC发出`OWN_RETURN_TO_GC`。
 
 legacy `OWN_BORROW`、`OWN_LOAN`与`OWN_DETACH`的numeric opcode仍由VM/AOT reader保留，供旧

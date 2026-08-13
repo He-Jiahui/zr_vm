@@ -29,10 +29,10 @@ void backend_aot_write_llvm_contracts(FILE *file, TZrUInt32 runtimeContracts) {
         fprintf(file, "declare i1 @ZrCore_Ownership_ReturnLoanValue(ptr, ptr, ptr)\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
-        fprintf(file, "declare i1 @ZrCore_Ownership_NativeShared(ptr)\n");
+        fprintf(file, "declare i1 @ZrCore_Ownership_NativeShare(ptr)\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DEGRADE) {
-        fprintf(file, "declare i1 @ZrCore_Ownership_NativeWeak(ptr)\n");
+        fprintf(file, "declare i1 @ZrCore_Ownership_NativeDegrade(ptr)\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH) {
         fprintf(file, "declare i1 @ZrCore_Ownership_DetachValue(ptr, ptr, ptr)\n");

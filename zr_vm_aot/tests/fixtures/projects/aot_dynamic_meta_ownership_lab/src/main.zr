@@ -1,7 +1,7 @@
 let system = import("zr.system");
 let container = import("zr.container");
 
-resource class Meter {
+class Meter {
     pri var raw: int = 0;
 
     pub @constructor(start: int) {
@@ -19,6 +19,8 @@ resource class Meter {
     }
 }
 
+resource class Lease {}
+
 fn apply(callback, value: int): int {
     return callback(value);
 }
@@ -29,18 +31,18 @@ meter.value = 6;
 var second = meter.value;
 var third = apply(meter, 3);
 
-var owner = own Meter(10);
-var shared = owner.share();
-var weak = shared.weak();
-var alias = weak.upgrade();
+var owner = own Lease();
+var shared = share(owner);
+var weak = degrade(shared);
+var alias = wake(weak);
 var releasedShared = drop(shared);
 var releasedAlias = drop(alias);
-var after = weak.upgrade();
+var after = wake(weak);
 
 var pair = new container.Pair<int, int>(first, second);
 var total = pair.first + pair.second + third;
 
-if (owner == null && releasedShared == null && releasedAlias == null && after == null) {
+if (releasedShared == null && releasedAlias == null && after == null) {
     system.console.printLine("AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS");
     system.console.printLine(total);
     return total;

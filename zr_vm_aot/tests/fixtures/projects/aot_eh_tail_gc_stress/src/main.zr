@@ -35,9 +35,9 @@ fn guarded(flag: int): int {
 resource class Box {}
 
 var ownerSeed = own Box();
-var owner = ownerSeed.share();
-var weak = owner.weak();
-var alias = weak.upgrade();
+var owner = share(ownerSeed);
+var weak = degrade(owner);
+var alias = wake(weak);
 
 var loop = new Loop();
 var directValue = direct(12, 0);
@@ -46,7 +46,7 @@ var guardedValue = guarded(1);
 
 var releasedOwner = drop(owner);
 var releasedAlias = drop(alias);
-var after = weak.upgrade();
+var after = wake(weak);
 
 var spin = 0;
 while (spin < 1000) {

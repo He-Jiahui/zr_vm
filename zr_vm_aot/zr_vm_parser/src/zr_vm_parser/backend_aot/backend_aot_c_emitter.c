@@ -102,10 +102,10 @@ static void backend_aot_write_c_contracts(FILE *file, TZrUInt32 runtimeContracts
         fprintf(file, "/* runtime contract: ZrCore_Ownership_LoanValue */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
-        fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeShared */\n");
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeShare */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DEGRADE) {
-        fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeWeak */\n");
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_NativeDegrade */\n");
     }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_DETACH) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_DetachValue */\n");
@@ -422,10 +422,12 @@ static void backend_aot_write_embedded_blob_c(FILE *file, const TZrByte *blob, T
             }
             fprintf(file, "0x%02x", blob[index]);
             if (index + 1 < blobLength) {
-                fprintf(file, ", ");
+                fprintf(file, ",");
             }
             if ((index % 12) == 11 || index + 1 == blobLength) {
                 fprintf(file, "\n");
+            } else {
+                fprintf(file, " ");
             }
         }
     } else {
