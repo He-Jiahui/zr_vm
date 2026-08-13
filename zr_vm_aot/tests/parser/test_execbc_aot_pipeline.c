@@ -4,6 +4,7 @@
 #include <time.h>
 
 #include "unity.h"
+#include "path_support.h"
 #include "runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
@@ -7636,7 +7637,7 @@ static void test_typed_member_access_allocates_member_callsite_cache_entries(voi
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-        const char *binaryPath = "member_slot_quickening_test.zro";
+        TZrChar binaryPath[ZR_TESTS_PATH_MAX];
         SZrFunction *function;
         TZrSize binaryLength = 0;
         TZrByte *binaryBytes;
@@ -7648,6 +7649,12 @@ static void test_typed_member_access_allocates_member_callsite_cache_entries(voi
 
         TEST_ASSERT_NOT_NULL(state);
 
+        TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("execbc_aot_pipeline",
+                                                           "binary",
+                                                           "member_slot_quickening_test",
+                                                           ".zro",
+                                                           binaryPath,
+                                                           sizeof(binaryPath)));
         function = compile_member_slot_quickening_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
@@ -7695,6 +7702,7 @@ static void test_typed_member_access_allocates_member_callsite_cache_entries(voi
         ZrCore_Function_Free(state, runtimeFunction);
         ZrCore_Io_Free(state->global, io);
         free(binaryBytes);
+        remove(binaryPath);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -7714,7 +7722,7 @@ static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-        const char *binaryPath = "typed_member_known_call_test.zro";
+        TZrChar binaryPath[ZR_TESTS_PATH_MAX];
         SZrFunction *function;
         TZrSize binaryLength = 0;
         TZrByte *binaryBytes;
@@ -7726,6 +7734,12 @@ static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
 
         TEST_ASSERT_NOT_NULL(state);
 
+        TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("execbc_aot_pipeline",
+                                                           "binary",
+                                                           "typed_member_known_call_test",
+                                                           ".zro",
+                                                           binaryPath,
+                                                           sizeof(binaryPath)));
         function = compile_typed_member_known_call_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)) ||
@@ -7773,6 +7787,7 @@ static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
         ZrCore_Function_Free(state, runtimeFunction);
         ZrCore_Io_Free(state->global, io);
         free(binaryBytes);
+        remove(binaryPath);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -7870,7 +7885,7 @@ static void test_nested_typed_member_chain_emits_member_slot_opcodes(void) {
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-        const char *binaryPath = "nested_member_slot_quickening_test.zro";
+        TZrChar binaryPath[ZR_TESTS_PATH_MAX];
         SZrFunction *function;
         TZrSize binaryLength = 0;
         TZrByte *binaryBytes;
@@ -7882,6 +7897,12 @@ static void test_nested_typed_member_chain_emits_member_slot_opcodes(void) {
 
         TEST_ASSERT_NOT_NULL(state);
 
+        TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("execbc_aot_pipeline",
+                                                           "binary",
+                                                           "nested_member_slot_quickening_test",
+                                                           ".zro",
+                                                           binaryPath,
+                                                           sizeof(binaryPath)));
         function = compile_nested_member_slot_quickening_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
