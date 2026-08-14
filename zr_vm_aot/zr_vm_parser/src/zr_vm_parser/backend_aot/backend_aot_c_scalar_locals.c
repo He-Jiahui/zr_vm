@@ -5172,7 +5172,9 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_u64_local_consumer(EZr
         case ZR_INSTRUCTION_OP_LOGICAL_GREATER_UNSIGNED:
         case ZR_INSTRUCTION_OP_LOGICAL_GREATER_EQUAL_UNSIGNED:
         case ZR_INSTRUCTION_OP_TO_BOOL:
+        case ZR_INSTRUCTION_OP_TO_INT:
         case ZR_INSTRUCTION_OP_TO_INT_UNSIGNED:
+        case ZR_INSTRUCTION_OP_TO_FLOAT:
         case ZR_INSTRUCTION_OP_TO_FLOAT_UNSIGNED:
         case ZR_INSTRUCTION_OP_TO_UINT:
         case ZR_INSTRUCTION_OP_GET_STACK:
@@ -5249,6 +5251,14 @@ static TZrBool backend_aot_c_scalar_locals_u64_consumer_reads_slot(
         case ZR_INSTRUCTION_OP_TO_INT_UNSIGNED:
         case ZR_INSTRUCTION_OP_TO_FLOAT_UNSIGNED:
             return (TZrBool)(leftSlot == slot);
+        case ZR_INSTRUCTION_OP_TO_INT:
+            return (TZrBool)(leftSlot == slot &&
+                             backend_aot_c_scalar_locals_has_i64_slot(
+                                     functionIr, instruction->instruction.operandExtra));
+        case ZR_INSTRUCTION_OP_TO_FLOAT:
+            return (TZrBool)(leftSlot == slot &&
+                             backend_aot_c_scalar_locals_has_f64_slot(
+                                     functionIr, instruction->instruction.operandExtra));
         case ZR_INSTRUCTION_OP_TO_UINT:
             return (TZrBool)(leftSlot == slot &&
                              backend_aot_c_scalar_locals_has_u64_slot(

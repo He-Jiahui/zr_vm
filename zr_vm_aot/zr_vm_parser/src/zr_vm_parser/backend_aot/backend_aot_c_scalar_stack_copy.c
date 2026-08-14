@@ -769,6 +769,7 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
     EZrStaticCType staticCType;
     EZrStaticCType sourceStaticCType;
     EZrStaticCType sourceLocalStaticCType;
+    TZrBool hasSourceLocal = ZR_FALSE;
 
     if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
         return ZR_FALSE;
@@ -786,14 +787,20 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
     if (staticCType == ZR_STATIC_C_TYPE_DYNAMIC) {
         staticCType = sourceLocalStaticCType;
     }
-
+    (void)backend_aot_c_scalar_stack_copy_prefer_available_source_type(
+            functionIr,
+            destinationSlot,
+            sourceSlot,
+            execInstructionIndex,
+            ZR_FALSE,
+            &staticCType,
+            &hasSourceLocal);
     switch (staticCType) {
         case ZR_STATIC_C_TYPE_BOOL:
         case ZR_STATIC_C_TYPE_I64:
         case ZR_STATIC_C_TYPE_U64:
         case ZR_STATIC_C_TYPE_F64:
-            if (backend_aot_c_scalar_stack_copy_source_local_is_available(
-                        functionIr, sourceSlot, execInstructionIndex, staticCType) &&
+            if (hasSourceLocal &&
                 backend_aot_c_scalar_stack_copy_destination_local_is_available(
                         functionIr, destinationSlot, staticCType) &&
                 backend_aot_c_scalar_stack_copy_destination_can_remain_local_only(
@@ -874,7 +881,7 @@ TZrBool backend_aot_try_write_c_scalar_stack_copy(FILE *file,
                                                                               sourceSlot,
                                                                               execInstructionIndex,
                                                                               staticCType);
-    if (forceValueSlotWrite) {
+    if (!hasSourceLocal || forceValueSlotWrite) {
         (void)backend_aot_c_scalar_stack_copy_prefer_available_source_type(functionIr,
                                                                           destinationSlot,
                                                                           sourceSlot,
