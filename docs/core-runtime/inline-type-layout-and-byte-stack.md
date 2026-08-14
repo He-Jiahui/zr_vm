@@ -377,6 +377,20 @@ Signed `i64` binary arithmetic, signed `i64` comparisons, unsigned `u64` binary 
 
 This is still an incremental M2 scalar backend step. Signed `i64` binary arithmetic, signed `i64` comparisons, unsigned `u64` binary arithmetic, `f64` binary arithmetic, and signed `i64` binary bitwise currently use declared `sN` / `bN` / `uN` / `fN` locals for primary expressions; signed `i64` shifts and bit-not can now also write reused temporary `sN` destinations when SemIR provides `i64` destination evidence. Fused signed branches and the first numeric conversion source paths use declared `sN/uN/fN` operands when available. The generated code still mirrors through existing frame slot storage. Focused typed scalar local copies and focused typed branch helpers no longer use the old stack/value fallback paths, and scalar C local declarations now exist, but conversion destination-local coverage, broader branch variants, broader C-local mirroring, GC root registration, non-numeric/generic conversions, and typed/dynamic bridge/deopt execution remain separate slices.
 
+Scalar stack-copy elision is additionally constrained by downstream use. A
+destination may remain local-only only when a later proven scalar consumer can
+read the matching local kind; otherwise the generated C materializes the frame
+slot so a generic value consumer cannot observe stale or null storage. The
+value-kind proof is overwrite-aware within a block: once a slot is reset or
+written with a different scalar kind, it cannot fall back to a historical
+block-entry kind. This is required for reused temporary slots, including a u64
+call result that occupies a slot previously known as bool.
+
+Ownership operations and call results are hard provenance barriers before a
+stack-copy specialization is selected. If either most recently wrote the source
+slot, the C backend emits the ordinary ownership-preserving runtime stack copy;
+it does not read or synchronize a historical scalar local for that slot.
+
 ## Dynamic Arithmetic Deopt Boundary
 
 Generic dynamic arithmetic bytecode now has an explicit SemIR boundary instead of disappearing from the typed model. The compiler maps generic `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `LOGICAL_EQUAL`, and `LOGICAL_NOT_EQUAL` to `DYN_ARITHMETIC` rows marked as `DYNAMIC_RUNTIME` effects. Each row records the original destination and operand slots and receives a `deoptId` entry that points back to the exec instruction index.

@@ -214,6 +214,9 @@ static void run_aot_c_typed_direct_call_u64_smoke_with_options(
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    ZrCore_Function_Free(state, function);
+    function = ZR_NULL;
+
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
@@ -239,7 +242,6 @@ static void run_aot_c_typed_direct_call_u64_smoke_with_options(
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);
     free(embeddedBlob);
-    ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 #endif
 }

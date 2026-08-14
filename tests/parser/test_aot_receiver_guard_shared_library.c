@@ -230,7 +230,8 @@ static void execute_receiver_guard_backend(EZrAotBackendKind backendKind,
                  "-I\"%s/zr_vm_core/include\" "
                  "-I\"%s/zr_vm_library/include\" "
                  "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-                 "-lzr_vm_library -lzr_vm_core -o \"%s\"",
+                 "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+                 "-lzr_xx_hash -lzr_utf8proc -lm -o \"%s\"",
                  ZR_VM_TESTS_C_COMPILER,
                  ZR_VM_TESTS_REPO_ROOT,
                  ZR_VM_TESTS_REPO_ROOT,
@@ -248,7 +249,8 @@ static void execute_receiver_guard_backend(EZrAotBackendKind backendKind,
                  sizeof(command),
                  "\"%s\" -mllvm -opaque-pointers -fPIC -shared \"%s\" "
                  "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-                 "-lzr_vm_library -lzr_vm_core -o \"%s\"",
+                 "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+                 "-lzr_xx_hash -lzr_utf8proc -lm -o \"%s\"",
                  ZR_VM_TESTS_LLVM_COMPILER,
                  generatedPath,
                  ZR_VM_TESTS_BUILD_LIB_DIR,

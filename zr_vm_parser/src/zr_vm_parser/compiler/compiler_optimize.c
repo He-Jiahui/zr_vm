@@ -555,9 +555,13 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             info->allowSlotReuse = ZR_FALSE;
             return;
         case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
+            /* Clearing a slot releases any ownership wrapper already stored there. */
+            optimizer_info_add_read(info, instruction->instruction.operandExtra);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             return;
         case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
+            optimizer_info_add_read(info, instruction->instruction.operandExtra);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             optimizer_info_add_write(info, instruction->instruction.operand.operand1[0]);
             info->operand1Index1IsSlot = ZR_FALSE;

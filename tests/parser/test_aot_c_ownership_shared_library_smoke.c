@@ -52,6 +52,28 @@ static TZrInstruction create_ownership_instruction(EZrInstructionCode opcode,
     return instruction;
 }
 
+static TZrInstruction create_get_constant_instruction(TZrUInt16 destinationSlot,
+                                                       TZrInt32 constantIndex) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(GET_CONSTANT);
+    instruction.instruction.operandExtra = destinationSlot;
+    instruction.instruction.operand.operand2[0] = constantIndex;
+    return instruction;
+}
+
+static TZrInstruction create_get_stack_instruction(TZrUInt16 destinationSlot,
+                                                    TZrInt32 sourceSlot) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(GET_STACK);
+    instruction.instruction.operandExtra = destinationSlot;
+    instruction.instruction.operand.operand2[0] = sourceSlot;
+    return instruction;
+}
+
 static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16 sourceSlot) {
     TZrInstruction instruction;
 
@@ -87,6 +109,40 @@ static SZrFunction *create_ownership_function(SZrState *state) {
     function->instructionsLength = 10u;
 
     function->stackSize = 9u;
+    function->parameterCount = 1u;
+    function->hasVariableArguments = ZR_FALSE;
+    function->closureValueLength = 0u;
+    return function;
+}
+
+static SZrFunction *create_scalar_then_ownership_copy_function(SZrState *state) {
+    SZrFunction *function;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * 4u,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
+    function->instructionsList[0] = create_get_constant_instruction(1u, 0);
+    function->instructionsList[1] = create_ownership_instruction(
+            ZR_INSTRUCTION_ENUM(OWN_DEGRADE), 1u, 0u);
+    function->instructionsList[2] = create_get_stack_instruction(2u, 1);
+    function->instructionsList[3] = create_return_instruction(1u, 2u);
+    function->instructionsLength = 4u;
+
+    function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->constantValueList);
+    function->constantValueLength = 1u;
+    ZrCore_Value_InitAsBool(state, &function->constantValueList[0], ZR_TRUE);
+
+    function->stackSize = 3u;
     function->parameterCount = 1u;
     function->hasVariableArguments = ZR_FALSE;
     function->closureValueLength = 0u;
@@ -188,7 +244,8 @@ static void test_aot_c_generated_shared_library_compiles_direct_ownership_loweri
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+             "-lzr_xx_hash -lzr_utf8proc -lm "
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -205,8 +262,55 @@ static void test_aot_c_generated_shared_library_compiles_direct_ownership_loweri
 #endif
 }
 
+static void test_aot_c_ownership_write_kills_stale_scalar_copy_provenance(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT C ownership provenance smoke currently validates the Unix toolchain path");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    char *generatedCText;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = create_scalar_then_ownership_copy_function(state);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = "aot_c_ownership_provenance";
+    options.sourceHash = "ownership-provenance";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "ownership-provenance";
+    options.requireExecutableLowering = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_ownership_shared_library",
+                                                       "src",
+                                                       "aot_c_ownership_provenance",
+                                                       ".c",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_OwnDegrade(state, &frame, 1, 0)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_GetStack(state, &frame, 2, 1)"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "zr_aot_scalar_stack_copy_bool dstSlot=2 srcSlot=1"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "zr_aot_direct_stack_copy_sync_bool_local_boundary"));
+    free(generatedCText);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_compiles_direct_ownership_lowering);
+    RUN_TEST(test_aot_c_ownership_write_kills_stale_scalar_copy_provenance);
     return UNITY_END();
 }

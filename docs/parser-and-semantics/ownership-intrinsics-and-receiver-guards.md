@@ -168,6 +168,14 @@ slot; direct guards emit `REQUIRE_NON_NULL`. Weak guards emit exactly one
 ordinary member/property/call instructions for the live path. The guard merge
 does not repeat lookup, argument evaluation, or wake operations.
 
+`degrade(shared)` and `wake(weak)` read an identifier from its original local
+slot instead of first value-copying the ownership wrapper into a compiler
+temporary. Compound and projected operands may still require a temporary, but
+that slot is reset immediately after the non-consuming ownership operation.
+This prevents compiler-generated Shared copies from extending a weak target's
+lifetime; reset instructions are optimizer read/write operations because the
+clear releases the wrapper previously stored in the slot.
+
 The runtime registers `NullReferenceError` as a subtype of `RuntimeError`.
 Interpreter, AOT C, and LLVM route direct absent-receiver failures through the
 same named exception identity. The semantic CFG therefore treats every direct

@@ -1182,6 +1182,45 @@ static void test_live_nullable_shared_receiver_projects_owned_fields(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_weak_member_optional_callable_chain_skips_arguments(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn add(value: int): int { return value + 10; }\n"
+            "}\n"
+            "var sideEffects = 0;\n"
+            "fn bump(): int { sideEffects = sideEffects + 1; return 1; }\n"
+            "fn run(): int {\n"
+            "    var liveSeed = own Service();\n"
+            "    var liveShared = share(liveSeed);\n"
+            "    var liveWeak = degrade(liveShared);\n"
+            "    var liveResult = liveWeak?.add?.(bump());\n"
+            "    var expiredSeed = own Service();\n"
+            "    var expiredShared = share(expiredSeed);\n"
+            "    var expiredWeak = degrade(expiredShared);\n"
+            "    drop(expiredShared);\n"
+            "    var optionalResult = expiredWeak?.add?.(bump());\n"
+            "    if (liveResult != 11) { return 41; }\n"
+            "    if (optionalResult == null) {\n"
+            "        if (sideEffects == 1) { return 1; }\n"
+            "        return 43;\n"
+            "    }\n"
+            "    return 42;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "nullable_callable_optional_call.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ownership_operation_ids_remain_stable);
@@ -1207,5 +1246,6 @@ int main(void) {
     RUN_TEST(test_expired_weak_direct_call_throws_named_runtime_error);
     RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);
     RUN_TEST(test_live_nullable_shared_receiver_projects_owned_fields);
+    RUN_TEST(test_weak_member_optional_callable_chain_skips_arguments);
     return UNITY_END();
 }

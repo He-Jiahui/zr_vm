@@ -346,6 +346,15 @@ static TZrBool backend_aot_c_scalar_stack_copy_source_local_is_available(
     }
 }
 
+TZrBool backend_aot_c_scalar_stack_copy_source_can_use_local(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 execInstructionIndex,
+        EZrStaticCType staticCType) {
+    return backend_aot_c_scalar_stack_copy_source_local_is_available(
+            functionIr, sourceSlot, execInstructionIndex, staticCType);
+}
+
 static TZrBool backend_aot_c_scalar_stack_copy_destination_local_is_available(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 destinationSlot,
@@ -359,6 +368,29 @@ static TZrBool backend_aot_c_scalar_stack_copy_destination_local_is_available(
             return backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
         case ZR_STATIC_C_TYPE_F64:
             return backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool backend_aot_c_scalar_stack_copy_destination_can_remain_local_only(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 execInstructionIndex,
+        EZrStaticCType staticCType) {
+    switch (staticCType) {
+        case ZR_STATIC_C_TYPE_BOOL:
+            return backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex);
+        case ZR_STATIC_C_TYPE_I64:
+            return backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex);
+        case ZR_STATIC_C_TYPE_U64:
+            return backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex);
+        case ZR_STATIC_C_TYPE_F64:
+            return backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
+                    functionIr, destinationSlot, execInstructionIndex);
         default:
             return ZR_FALSE;
     }
@@ -763,7 +795,9 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
             if (backend_aot_c_scalar_stack_copy_source_local_is_available(
                         functionIr, sourceSlot, execInstructionIndex, staticCType) &&
                 backend_aot_c_scalar_stack_copy_destination_local_is_available(
-                        functionIr, destinationSlot, staticCType)) {
+                        functionIr, destinationSlot, staticCType) &&
+                backend_aot_c_scalar_stack_copy_destination_can_remain_local_only(
+                        functionIr, destinationSlot, execInstructionIndex, staticCType)) {
                 return ZR_TRUE;
             }
             break;
@@ -778,7 +812,9 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
                                                                   execInstructionIndex,
                                                                   sourceStaticCType) &&
         backend_aot_c_scalar_stack_copy_destination_local_is_available(
-                functionIr, destinationSlot, sourceStaticCType)) {
+                functionIr, destinationSlot, sourceStaticCType) &&
+        backend_aot_c_scalar_stack_copy_destination_can_remain_local_only(
+                functionIr, destinationSlot, execInstructionIndex, sourceStaticCType)) {
         return ZR_TRUE;
     }
 
@@ -789,7 +825,9 @@ TZrBool backend_aot_c_scalar_stack_copy_can_use_local_only(const SZrAotExecIrFun
                                                                   execInstructionIndex,
                                                                   sourceLocalStaticCType) &&
         backend_aot_c_scalar_stack_copy_destination_local_is_available(
-                functionIr, destinationSlot, sourceLocalStaticCType)) {
+                functionIr, destinationSlot, sourceLocalStaticCType) &&
+        backend_aot_c_scalar_stack_copy_destination_can_remain_local_only(
+                functionIr, destinationSlot, execInstructionIndex, sourceLocalStaticCType)) {
         return ZR_TRUE;
     }
 
@@ -868,6 +906,19 @@ TZrBool backend_aot_try_write_c_scalar_stack_copy(FILE *file,
                 functionIr, destinationSlot, sourceLocalStaticCType)) {
         staticCType = sourceLocalStaticCType;
         hasSourceLocal = ZR_TRUE;
+    }
+    forceValueSlotWrite = (TZrBool)(
+            forceValueSlotWrite ||
+            !backend_aot_c_scalar_stack_copy_destination_can_remain_local_only(
+                    functionIr, destinationSlot, execInstructionIndex, staticCType));
+    if (forceValueSlotWrite) {
+        (void)backend_aot_c_scalar_stack_copy_prefer_available_source_type(functionIr,
+                                                                          destinationSlot,
+                                                                          sourceSlot,
+                                                                          execInstructionIndex,
+                                                                          forceValueSlotWrite,
+                                                                          &staticCType,
+                                                                          &hasSourceLocal);
     }
     if (!hasSourceLocal && !sourceIsParameter) {
         return ZR_FALSE;

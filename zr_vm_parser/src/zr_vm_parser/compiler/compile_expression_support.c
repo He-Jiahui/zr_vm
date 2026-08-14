@@ -676,6 +676,7 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
     EZrOwnershipBuiltinKind builtinKind;
     TZrUInt32 resultSlot;
     TZrUInt32 argumentSlot;
+    TZrBool shouldResetTemporaryArgument = ZR_FALSE;
     TZrBool shouldUseDirectIdentifier = ZR_FALSE;
     TZrBool shouldResetConsumedIdentifier = ZR_FALSE;
 
@@ -753,6 +754,8 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             constructExpr->target != ZR_NULL &&
             constructExpr->target->type == ZR_AST_IDENTIFIER_LITERAL &&
             (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW ||
+             builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE ||
+             builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_WAKE ||
              shouldResetConsumedIdentifier);
 
     if (shouldUseDirectIdentifier) {
@@ -768,6 +771,9 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         if (compile_expression_into_slot(cs, constructExpr->target, argumentSlot) == ZR_PARSER_SLOT_NONE) {
             return ZR_FALSE;
         }
+        shouldResetTemporaryArgument =
+                builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE ||
+                builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_WAKE;
     }
 
     if (!compiler_semantic_ir_lower_ownership(
@@ -777,6 +783,13 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
                 "Failed to lower ownership through pre-execution Semantic IR",
                 location);
         return ZR_FALSE;
+    }
+    if (shouldResetTemporaryArgument) {
+        emit_instruction(
+                cs,
+                create_instruction_0(
+                        ZR_INSTRUCTION_ENUM(RESET_STACK_NULL),
+                        (TZrUInt16)argumentSlot));
     }
     collapse_stack_to_slot(cs, resultSlot);
     if (shouldResetConsumedIdentifier) {
