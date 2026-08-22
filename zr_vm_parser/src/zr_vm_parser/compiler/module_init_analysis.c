@@ -1410,6 +1410,22 @@ TZrBool ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromPath(SZrState
         ZrCore_Array_Free(state, &topLevelCallableBindings);
     }
 
+    if (exports.isValid) {
+        ZrCore_Array_Free(state, &exports);
+    }
+    if (staticImports.isValid) {
+        ZrCore_Array_Free(state, &staticImports);
+    }
+    if (entryEffects.isValid) {
+        ZrCore_Array_Free(state, &entryEffects);
+    }
+    if (callableSummaries.isValid) {
+        ZrCore_Array_Free(state, &callableSummaries);
+    }
+    if (topLevelCallableBindings.isValid) {
+        ZrCore_Array_Free(state, &topLevelCallableBindings);
+    }
+
     *outSource = &synthetic->source;
     ZrCore_Memory_RawFreeWithType(state->global,
                                   metadataText,

@@ -133,7 +133,7 @@ static TZrBool parser_class_declaration_starts_here(SZrParserState *ps) {
             restore_parser_cursor(ps, &cursor);
             return ZR_FALSE;
         }
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        free_ast_node_array_with_elements(ps->state, decorators);
     }
 
     if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || ps->lexer->t.token == ZR_TK_PRO) {
@@ -1720,7 +1720,7 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
         accessModifier = parse_access_modifier(ps);
     }
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER || !current_identifier_equals(ps, "comptime")) {
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        free_ast_node_array_with_elements(ps->state, decorators);
         restore_parser_cursor(ps, &cursor);
         return ZR_NULL;
     }
@@ -1730,7 +1730,7 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
     }
     node = parse_compile_time_declaration(ps);
     if (node == ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        free_ast_node_array_with_elements(ps->state, decorators);
         return ZR_NULL;
     }
     if (node->type == ZR_AST_COMPILE_TIME_DECLARATION &&
@@ -1748,7 +1748,7 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
         return node;
     }
 
-    ZrParser_AstNodeArray_Free(ps->state, decorators);
+    free_ast_node_array_with_elements(ps->state, decorators);
     return node;
 }
 
@@ -2000,7 +2000,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 decorators = parse_leading_decorators(ps);
                 if (decorators == ZR_NULL || decorators->count == 0) {
                     if (decorators != ZR_NULL) {
-                        ZrParser_AstNodeArray_Free(ps->state, decorators);
+                        free_ast_node_array_with_elements(ps->state, decorators);
                     }
                     restore_parser_cursor(ps, &cursor);
                     return ZR_NULL;
@@ -2010,7 +2010,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 if (nextToken == ZR_TK_PUB || nextToken == ZR_TK_PRI || nextToken == ZR_TK_PRO) {
                     declarationToken = peek_token(ps);
                 }
-                ZrParser_AstNodeArray_Free(ps->state, decorators);
+                free_ast_node_array_with_elements(ps->state, decorators);
                 restore_parser_cursor(ps, &cursor);
 
                 if (nextToken == ZR_TK_CLASS || nextToken == ZR_TK_ABSTRACT || nextToken == ZR_TK_FINAL) {

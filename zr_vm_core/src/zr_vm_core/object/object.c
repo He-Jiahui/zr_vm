@@ -1467,6 +1467,76 @@ void ZrCore_Object_Init(struct SZrState *state, SZrObject *object) {
                  object != ZR_NULL ? (unsigned long long)object->nodeMap.elementCount : 0ull);
 }
 
+void ZrCore_Object_Deconstruct(SZrState *state, SZrObject *object) {
+    SZrGlobalState *global;
+
+    if (state == ZR_NULL || object == ZR_NULL || (global = state->global) == ZR_NULL) {
+        return;
+    }
+
+    if (object->nodeMap.isValid) {
+        ZrCore_HashSet_Deconstruct(state, &object->nodeMap);
+    }
+
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        SZrObjectModule *module = (SZrObjectModule *)object;
+
+        if (module->proNodeMap.isValid) {
+            ZrCore_HashSet_Deconstruct(state, &module->proNodeMap);
+        }
+        if (module->exportDescriptors != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          module->exportDescriptors,
+                                          sizeof(SZrModuleExportDescriptor) *
+                                                  module->exportDescriptorLength,
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            module->exportDescriptors = ZR_NULL;
+            module->exportDescriptorLength = 0u;
+        }
+    }
+
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        SZrObjectPrototype *prototype = (SZrObjectPrototype *)object;
+
+        if (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+            SZrStructPrototype *structPrototype = (SZrStructPrototype *)prototype;
+            if (structPrototype->keyOffsetMap.isValid) {
+                ZrCore_HashSet_Deconstruct(state, &structPrototype->keyOffsetMap);
+            }
+        }
+        if (prototype->memberDescriptors != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          prototype->memberDescriptors,
+                                          prototype->memberDescriptorCapacity * sizeof(SZrMemberDescriptor),
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            prototype->memberDescriptors = ZR_NULL;
+            prototype->memberDescriptorCount = 0u;
+            prototype->memberDescriptorCapacity = 0u;
+        }
+        if (prototype->managedFields != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          prototype->managedFields,
+                                          prototype->managedFieldCapacity * sizeof(SZrManagedFieldInfo),
+                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
+            prototype->managedFields = ZR_NULL;
+            prototype->managedFieldCount = 0u;
+            prototype->managedFieldCapacity = 0u;
+        }
+        for (TZrSize metaIndex = 0u; metaIndex < ZR_META_ENUM_MAX; metaIndex++) {
+            SZrMeta *meta = prototype->metaTable.metas[metaIndex];
+
+            if (meta != ZR_NULL) {
+                global->allocator(global->userAllocationArguments,
+                                  meta,
+                                  sizeof(*meta),
+                                  0u,
+                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+                prototype->metaTable.metas[metaIndex] = ZR_NULL;
+            }
+        }
+    }
+}
+
 SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const SZrObject *source) {
     SZrObject *clone = ZR_NULL;
     TZrBool failed = ZR_FALSE;

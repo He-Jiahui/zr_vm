@@ -26,6 +26,7 @@
 #include "stdio_json_rpc.h"
 #include "stdio_lifecycle.h"
 #include "stdio_request_registry.h"
+#include "stdio_server.h"
 
 typedef struct SZrCachedUri {
     char *text;
@@ -85,7 +86,16 @@ typedef struct SZrStdioRequestInputState {
 #endif
     SZrStdioInboundMessage *head;
     SZrStdioInboundMessage *tail;
+    FILE *input;
     TZrBool inputClosed;
+    TZrBool stopRequested;
+    TZrBool isInitialized;
+    TZrBool readerStarted;
+#ifdef _WIN32
+    HANDLE readerThread;
+#else
+    pthread_t readerThread;
+#endif
 } SZrStdioRequestInputState;
 
 typedef struct SZrStdioServer {
@@ -100,6 +110,7 @@ typedef struct SZrStdioServer {
     SZrStdioRequestProgress requestProgress;
     EZrStdioPositionEncoding positionEncoding;
     EZrStdioTraceLevel traceLevel;
+    EZrStdioServerFaultPoint faultPoint;
     SZrStdioLifecycle lifecycle;
 } SZrStdioServer;
 
@@ -117,6 +128,9 @@ void send_error_response(const cJSON *id, int code, const char *messageText);
 void send_notification(const char *method, cJSON *params);
 TZrBool ZrLanguageServer_StdioRequestInput_Init(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Start(SZrStdioServer *server);
+void ZrLanguageServer_StdioRequestInput_Stop(SZrStdioServer *server);
+void ZrLanguageServer_StdioRequestInput_Join(SZrStdioServer *server);
+void ZrLanguageServer_StdioRequestInput_Free(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
                                                  cJSON **outMessage,
                                                  TZrBool *outIsParseError,

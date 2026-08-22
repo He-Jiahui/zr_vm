@@ -380,7 +380,7 @@ TZrBool parser_struct_declaration_starts_here(SZrParserState *ps) {
     }
     result = ps->lexer->t.token == ZR_TK_STRUCT;
     if (decorators != ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        free_ast_node_array_with_elements(ps->state, decorators);
     }
     restore_parser_cursor(ps, &cursor);
     return result;

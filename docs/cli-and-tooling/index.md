@@ -108,6 +108,7 @@ doc_type: category-index
 - `lsp-stdio-validation.md`
   - stdio server child process 的 OS peak working-set budget 与跨平台采集
   - request/cancel/change/close 的 reader-thread 线性化和精确 snapshot 验证
+  - server-owned reader stop/join、ordered teardown 与启动故障注入
 - `zr-vm-rust-binding.md`
   - `zr_vm_rust_binding` 稳定 C ABI、Rust sys/safe crate 与 opaque handle 设计
   - project scaffold/open/compile/run 与 `callModuleExport` 的 host lifecycle

@@ -179,24 +179,8 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
         for (index = 0; index < registry->pluginHandles.length; index++) {
             ZrLibPluginHandleRecord *handleRecord =
                 (ZrLibPluginHandleRecord *)ZrCore_Array_Get(&registry->pluginHandles, index);
-            if (handleRecord != ZR_NULL && handleRecord->handle != ZR_NULL) {
-                native_registry_close_library(handleRecord->handle);
-            }
-            if (handleRecord != ZR_NULL && handleRecord->moduleName != ZR_NULL) {
-                global->allocator(global->userAllocationArguments,
-                                  handleRecord->moduleName,
-                                  strlen(handleRecord->moduleName) + 1,
-                                  0,
-                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-                handleRecord->moduleName = ZR_NULL;
-            }
-            if (handleRecord != ZR_NULL && handleRecord->sourcePath != ZR_NULL) {
-                global->allocator(global->userAllocationArguments,
-                                  handleRecord->sourcePath,
-                                  strlen(handleRecord->sourcePath) + 1,
-                                  0,
-                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
-                handleRecord->sourcePath = ZR_NULL;
+            if (handleRecord != ZR_NULL) {
+                native_registry_release_plugin_handle_record(global, handleRecord);
             }
         }
     }

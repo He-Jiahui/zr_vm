@@ -254,6 +254,7 @@ cJSON *handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *
                 while (pair != ZR_NULL) {
                     if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
                         cJSON_Delete(result);
+                        cJSON_Delete(items);
                         return NULL;
                     }
                     if (pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {

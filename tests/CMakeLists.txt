@@ -227,6 +227,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_native_closure_value.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_string_layout_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_string_layout.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_runtime_crash_recovery_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_runtime_crash_recovery.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
@@ -312,6 +316,11 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_native_closure_value_test)
+    target_include_directories(zr_vm_string_layout_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_string_layout_test)
     target_include_directories(zr_vm_runtime_crash_recovery_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -4521,6 +4530,27 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
     add_test(
             NAME language_server_lsp_capability_registry
             COMMAND $<TARGET_FILE:zr_vm_language_server_lsp_capability_registry_test>
+    )
+    zr_vm_add_support_target(
+            zr_vm_language_server_stdio_server_lifecycle_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_stdio_server_lifecycle.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_server.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_transport.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_frame_reader.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_request_registry.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_json_rpc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_lifecycle.c
+    )
+    target_include_directories(zr_vm_language_server_stdio_server_lifecycle_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
+    )
+    zr_vm_link_language_server(zr_vm_language_server_stdio_server_lifecycle_test)
+    zr_link_third_party_for_target(zr_vm_language_server_stdio_server_lifecycle_test "zr_c_json")
+    add_test(
+            NAME language_server_stdio_server_lifecycle
+            COMMAND $<TARGET_FILE:zr_vm_language_server_stdio_server_lifecycle_test>
     )
     zr_vm_add_support_target(
             zr_vm_language_server_symbol_table_test

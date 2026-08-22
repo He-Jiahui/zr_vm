@@ -447,6 +447,20 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     garbage_collector_refresh_cumulative_snapshot(gc);
 }
 
+static void garbage_collector_release_shutdown_objects(SZrState *state, SZrGarbageCollector *collector) {
+    SZrRawObject *stateObject = ZR_CAST_RAW_OBJECT_AS_SUPER(state);
+
+    while (collector->gcObjectList != ZR_NULL) {
+        SZrRawObject *object = collector->gcObjectList;
+
+        collector->gcObjectList = object->next;
+        object->next = ZR_NULL;
+        if (object != stateObject) {
+            garbage_collector_free_object(state, object);
+        }
+    }
+}
+
 void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *collector) {
     TZrSize ignoredBytes;
     TZrSize regionBytes;
@@ -484,6 +498,10 @@ void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *c
                 }
             }
         }
+
+        /* Global shutdown has no surviving VM roots. Release objects that the
+         * final full collection kept alive through global registry fields. */
+        garbage_collector_release_shutdown_objects(state, collector);
     }
 
     collector->gcObjectList = ZR_NULL;

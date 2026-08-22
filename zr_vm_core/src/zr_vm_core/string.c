@@ -277,8 +277,7 @@ static SZrString *string_create_native_concat_segments(SZrState *state,
                                                                          totalLength + 1,
                                                                          ZR_MEMORY_NATIVE_TYPE_STRING));
         SZrString *result;
-        TZrNativeString *pointer;
-        TZrSize totalSize = sizeof(SZrString) + sizeof(TZrNativeString);
+        TZrSize totalSize = sizeof(SZrString);
 
         if (buffer == ZR_NULL) {
             return ZR_NULL;
@@ -297,8 +296,7 @@ static SZrString *string_create_native_concat_segments(SZrState *state,
             return ZR_NULL;
         }
 
-        pointer = (TZrNativeString *)&(result->stringDataExtend);
-        *pointer = buffer;
+        result->longString = buffer;
         result->shortStringLength = ZR_VM_LONG_STRING_FLAG;
         result->longStringLength = totalLength;
         ZrCore_RawObject_InitHash(ZR_CAST_RAW_OBJECT_AS_SUPER(result), ZrCore_Hash_Create(global, buffer, totalLength));
@@ -711,17 +709,16 @@ static SZrString *string_object_create(SZrState *state, TZrNativeString string, 
         constantString->nextShortString = ZR_NULL;
         stringBuffer = (TZrNativeString) constantString->stringDataExtend;
     } else {
-        totalSize += sizeof(TZrNativeString);
         constantString = (SZrString *) ZrCore_RawObject_New(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
-        TZrNativeString *pointer = (TZrNativeString *) &(constantString->stringDataExtend);
-        *pointer = (TZrNativeString) ZrCore_Memory_RawMallocWithType(global, length + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
+        constantString->longString =
+                (TZrNativeString)ZrCore_Memory_RawMallocWithType(global, length + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
 
-        ZrCore_Memory_RawCopy(*pointer, string, length);
+        ZrCore_Memory_RawCopy(constantString->longString, string, length);
 
-        (*pointer)[length] = '\0';
+        constantString->longString[length] = '\0';
         constantString->shortStringLength = ZR_VM_LONG_STRING_FLAG;
         constantString->longStringLength = length;
-        stringBuffer = *pointer;
+        stringBuffer = constantString->longString;
     }
 
     ZrCore_RawObject_InitHash(ZR_CAST_RAW_OBJECT_AS_SUPER(constantString),

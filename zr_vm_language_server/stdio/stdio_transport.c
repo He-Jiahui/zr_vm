@@ -80,17 +80,18 @@ static void stdio_request_enqueue(SZrStdioServer *server,
     stdio_request_input_unlock(input);
 }
 
-static void stdio_request_handle_input_message(SZrStdioServer *server, cJSON *message) {
+static TZrBool stdio_request_handle_input_message(SZrStdioServer *server, cJSON *message) {
     SZrJsonRpcEnvelope envelope;
     const cJSON *errorId = ZR_NULL;
     EZrStdioRequestReservation requestReservation = ZR_STDIO_REQUEST_RESERVATION_NONE;
+    TZrBool shouldStopReader = ZR_FALSE;
 
     if (message == NULL) {
         stdio_request_enqueue(server,
                               NULL,
                               ZR_TRUE,
                               ZR_STDIO_REQUEST_RESERVATION_NONE);
-        return;
+        return ZR_FALSE;
     }
 
     if (ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId) ==
@@ -100,25 +101,44 @@ static void stdio_request_handle_input_message(SZrStdioServer *server, cJSON *me
                                                                  ZR_LSP_JSON_RPC_FIELD_ID);
             ZrLanguageServer_StdioRequestRegistry_Cancel(server->requestRegistry, id);
             cJSON_Delete(message);
-            return;
+            return ZR_FALSE;
         }
         if (envelope.isRequest) {
             requestReservation = ZrLanguageServer_StdioRequestRegistry_Reserve(server->requestRegistry,
                                                                                   envelope.id);
+        } else if (envelope.isNotification && strcmp(envelope.method, ZR_LSP_METHOD_EXIT) == 0) {
+            shouldStopReader = ZR_TRUE;
         }
     }
     stdio_request_enqueue(server, message, ZR_FALSE, requestReservation);
+    return shouldStopReader;
+}
+
+static TZrBool stdio_request_input_is_stop_requested(SZrStdioRequestInputState *input) {
+    TZrBool stopRequested;
+
+    stdio_request_input_lock(input);
+    stopRequested = input->stopRequested;
+    stdio_request_input_unlock(input);
+    return stopRequested;
 }
 
 static void stdio_request_read_loop(SZrStdioServer *server) {
     SZrStdioFrameReaderLimits frameLimits;
+    FILE *inputFile;
 
     ZrLanguageServer_StdioFrameReader_DefaultLimits(&frameLimits);
+    inputFile = server->requestInput.input != NULL ? server->requestInput.input : stdin;
     for (;;) {
         char *payload = NULL;
         TZrSize payloadLength = 0;
-        EZrStdioFrameReadStatus frameStatus = ZrLanguageServer_StdioFrameReader_Read(
-                stdin,
+        EZrStdioFrameReadStatus frameStatus;
+
+        if (stdio_request_input_is_stop_requested(&server->requestInput)) {
+            break;
+        }
+        frameStatus = ZrLanguageServer_StdioFrameReader_Read(
+                inputFile,
                 &frameLimits,
                 &payload,
                 &payloadLength);
@@ -134,7 +154,9 @@ static void stdio_request_read_loop(SZrStdioServer *server) {
 
         cJSON *message = cJSON_ParseWithLength(payload, payloadLength);
         free(payload);
-        stdio_request_handle_input_message(server, message);
+        if (stdio_request_handle_input_message(server, message)) {
+            break;
+        }
     }
 
     stdio_request_input_lock(&server->requestInput);
@@ -175,33 +197,91 @@ TZrBool ZrLanguageServer_StdioRequestInput_Init(SZrStdioServer *server) {
         return ZR_FALSE;
     }
 #endif
+    input->isInitialized = ZR_TRUE;
     return ZR_TRUE;
 }
 
 TZrBool ZrLanguageServer_StdioRequestInput_Start(SZrStdioServer *server) {
-#ifdef _WIN32
-    HANDLE threadHandle;
-#else
-    pthread_t thread;
-#endif
+    SZrStdioRequestInputState *input;
 
-    if (server == NULL) {
+    if (server == NULL || !server->requestInput.isInitialized || server->requestInput.readerStarted) {
         return ZR_FALSE;
     }
+    input = &server->requestInput;
 
 #ifdef _WIN32
-    threadHandle = CreateThread(NULL, 0, stdio_request_reader_thread, server, 0, NULL);
-    if (threadHandle == NULL) {
+    input->readerThread = CreateThread(NULL, 0, stdio_request_reader_thread, server, 0, NULL);
+    if (input->readerThread == NULL) {
         return ZR_FALSE;
     }
-    CloseHandle(threadHandle);
 #else
-    if (pthread_create(&thread, NULL, stdio_request_reader_thread, server) != 0) {
+    if (pthread_create(&input->readerThread, NULL, stdio_request_reader_thread, server) != 0) {
         return ZR_FALSE;
     }
-    pthread_detach(thread);
 #endif
+    input->readerStarted = ZR_TRUE;
     return ZR_TRUE;
+}
+
+void ZrLanguageServer_StdioRequestInput_Stop(SZrStdioServer *server) {
+    SZrStdioRequestInputState *input;
+
+    if (server == ZR_NULL || !server->requestInput.isInitialized) {
+        return;
+    }
+    input = &server->requestInput;
+    stdio_request_input_lock(input);
+    input->stopRequested = ZR_TRUE;
+    input->inputClosed = ZR_TRUE;
+    stdio_request_input_broadcast(input);
+    stdio_request_input_unlock(input);
+}
+
+void ZrLanguageServer_StdioRequestInput_Join(SZrStdioServer *server) {
+    SZrStdioRequestInputState *input;
+
+    if (server == ZR_NULL || !server->requestInput.readerStarted) {
+        return;
+    }
+    input = &server->requestInput;
+#ifdef _WIN32
+    if (WaitForSingleObject(input->readerThread, INFINITE) == WAIT_OBJECT_0) {
+        CloseHandle(input->readerThread);
+        input->readerThread = NULL;
+        input->readerStarted = ZR_FALSE;
+    }
+#else
+    if (pthread_join(input->readerThread, NULL) == 0) {
+        input->readerStarted = ZR_FALSE;
+    }
+#endif
+}
+
+void ZrLanguageServer_StdioRequestInput_Free(SZrStdioServer *server) {
+    SZrStdioRequestInputState *input;
+    SZrStdioInboundMessage *inbound;
+
+    if (server == ZR_NULL || !server->requestInput.isInitialized) {
+        return;
+    }
+    input = &server->requestInput;
+    inbound = input->head;
+    while (inbound != ZR_NULL) {
+        SZrStdioInboundMessage *next = inbound->next;
+
+        cJSON_Delete(inbound->message);
+        free(inbound);
+        inbound = next;
+    }
+    input->head = ZR_NULL;
+    input->tail = ZR_NULL;
+#ifdef _WIN32
+    DeleteCriticalSection(&input->lock);
+#else
+    pthread_cond_destroy(&input->messageAvailable);
+    pthread_mutex_destroy(&input->lock);
+#endif
+    memset(input, 0, sizeof(*input));
 }
 
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
@@ -220,7 +300,8 @@ TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
     if (outRequestReservation != NULL) {
         *outRequestReservation = ZR_STDIO_REQUEST_RESERVATION_NONE;
     }
-    if (server == NULL || outMessage == NULL || outIsParseError == NULL || outRequestReservation == NULL) {
+    if (server == NULL || !server->requestInput.isInitialized || outMessage == NULL ||
+        outIsParseError == NULL || outRequestReservation == NULL) {
         return ZR_FALSE;
     }
 

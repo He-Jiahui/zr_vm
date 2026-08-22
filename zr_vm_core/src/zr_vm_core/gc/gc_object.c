@@ -989,6 +989,23 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
         ZrCore_Ownership_NotifyObjectReleased(state, object);
     }
 
+    if (object->type == ZR_RAW_OBJECT_TYPE_STRING && objectSize >= sizeof(SZrString)) {
+        SZrString *stringValue = (SZrString *)object;
+
+        if (stringValue->shortStringLength == ZR_VM_LONG_STRING_FLAG && stringValue->longString != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          stringValue->longString,
+                                          stringValue->longStringLength + 1u,
+                                          ZR_MEMORY_NATIVE_TYPE_STRING);
+            stringValue->longString = ZR_NULL;
+        }
+    }
+
+    if (object->type == ZR_RAW_OBJECT_TYPE_FUNCTION && objectSize >= sizeof(SZrFunction)) {
+        /* Functions are raw GC objects; release their separately allocated metadata first. */
+        ZrCore_Function_Free(state, (SZrFunction *)object);
+    }
+
     if ((object->type == ZR_RAW_OBJECT_TYPE_NATIVE_DATA ||
          object->type == ZR_RAW_OBJECT_TYPE_OBJECT ||
          object->type == ZR_RAW_OBJECT_TYPE_ARRAY) &&
@@ -1014,6 +1031,7 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
             coreObject->superArrayRawIntCapacity = 0;
             coreObject->superArrayRawIntDirty = ZR_FALSE;
         }
+        ZrCore_Object_Deconstruct(state, coreObject);
     }
 
     ZrCore_Memory_RawFreeWithType(global, object, objectSize, ZR_MEMORY_NATIVE_TYPE_OBJECT);

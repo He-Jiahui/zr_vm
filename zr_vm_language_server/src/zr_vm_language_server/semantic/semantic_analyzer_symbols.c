@@ -165,6 +165,15 @@ static SZrInferredType *allocate_object_type_info(SZrState *state) {
     return typeInfo;
 }
 
+static void semantic_free_type_info(SZrState *state, SZrInferredType *typeInfo) {
+    if (state == ZR_NULL || typeInfo == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Free(state, typeInfo);
+    ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));
+}
+
 static SZrInferredType *create_type_info_from_type_node_with_callable_context(SZrState *state,
                                                                              SZrSemanticAnalyzer *analyzer,
                                                                              const SZrType *typeNode,
@@ -1050,6 +1059,7 @@ static void collect_function_parameters(SZrState *state,
                                                                                  : ZR_NULL,
                                               name,
                                               typeInfo);
+        semantic_free_type_info(state, typeInfo);
     }
 }
 
@@ -1386,6 +1396,7 @@ static void register_enum_member_symbol(SZrState *state,
                                                                   ZR_SEMANTIC_TYPE_KIND_VALUE);
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
     }
+    semantic_free_type_info(state, typeInfo);
 }
 
 static void register_union_variant_symbol(SZrState *state,
@@ -1424,6 +1435,7 @@ static void register_union_variant_symbol(SZrState *state,
                                                                   ZR_SEMANTIC_TYPE_KIND_VALUE);
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
     }
+    semantic_free_type_info(state, typeInfo);
 }
 
 static SZrFileRange compute_extern_callable_name_range(SZrAstNode *node, SZrString *name) {
@@ -1530,6 +1542,7 @@ static void register_implicit_runtime_symbol(SZrState *state,
                                           analyzer->compilerState != ZR_NULL ? analyzer->compilerState->typeEnv : ZR_NULL,
                                           name,
                                           typeInfo);
+    semantic_free_type_info(state, typeInfo);
 }
 
 static void collect_single_parameter_symbol(SZrState *state,
@@ -1609,6 +1622,7 @@ static void collect_single_parameter_symbol(SZrState *state,
             binding->typeId = canonicalTypeId;
         }
     }
+    semantic_free_type_info(state, typeInfo);
 }
 
 static SZrFileRange semantic_scope_range_for_node(SZrAstNode *scopeNode, SZrAstNode *body) {
@@ -1738,10 +1752,7 @@ static void collect_foreach_scope(SZrState *state,
         ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, foreachLoop->block);
     }
 
-    if (typeInfo != ZR_NULL) {
-        ZrParser_InferredType_Free(state, typeInfo);
-        ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));
-    }
+    semantic_free_type_info(state, typeInfo);
 
     ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
     pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
@@ -2086,6 +2097,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                                     name,
                                                                     varDecl->value);
                 }
+                semantic_free_type_info(state, typeInfo);
             }
             if (varDecl->value != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, varDecl->value);
@@ -2140,6 +2152,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                             ZR_NULL,
                                             ZR_NULL);
                 semantic_pop_compiler_context(analyzer, &contextSnapshot);
+                semantic_free_type_info(state, returnType);
             }
             return;
         }
@@ -2271,6 +2284,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                         ZR_NULL,
                                         ZR_NULL);
             semantic_pop_compiler_context(analyzer, &contextSnapshot);
+            semantic_free_type_info(state, returnType);
             return;
         }
 
@@ -2316,6 +2330,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                         ZR_FALSE,
                                         ZR_NULL,
                                         ZR_NULL);
+            semantic_free_type_info(state, delegateTypeInfo);
             return;
         }
 
@@ -2477,11 +2492,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                       returnType,
                                                       ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
                             ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, memberSymbol);
-                        } else if (returnType != ZR_NULL) {
-                            ZrParser_InferredType_Free(state, returnType);
-                            ZrCore_Memory_RawFree(state->global, returnType, sizeof(SZrInferredType));
                         }
                         semantic_pop_compiler_context(analyzer, &functionContextSnapshot);
+                        semantic_free_type_info(state, returnType);
                     } else if (classMember->type == ZR_AST_CLASS_PROPERTY) {
                         SZrClassProperty *property = &classMember->data.classProperty;
                         SZrString *memberName = ZrLanguageServer_SemanticAnalyzer_GetClassPropertySymbolName(classMember);
@@ -2693,11 +2706,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                             ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state,
                                                                                                analyzer,
                                                                                                memberSymbol);
-                        } else if (returnType != ZR_NULL) {
-                            ZrParser_InferredType_Free(state, returnType);
-                            ZrCore_Memory_RawFree(state->global, returnType, sizeof(SZrInferredType));
                         }
                         semantic_pop_compiler_context(analyzer, &functionContextSnapshot);
+                        semantic_free_type_info(state, returnType);
                     }
                 }
 

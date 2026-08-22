@@ -648,9 +648,7 @@ void ZrLanguageServer_SymbolTable_Free(SZrState *state, SZrSymbolTable *table) {
                     /* HashSet pairs are owned by the pair pool released by Deconstruct. */
                     pair = next;
                 }
-                nodeMap->buckets[i] = ZR_NULL;
             }
-            nodeMap->elementCount = 0;
             // 释放 buckets 数组
             ZrCore_HashSet_Deconstruct(state, nodeMap);
         }
@@ -680,9 +678,7 @@ void ZrLanguageServer_SymbolTable_Free(SZrState *state, SZrSymbolTable *table) {
                 /* HashSet pairs are owned by the pair pool released by Deconstruct. */
                 pair = next;
             }
-            table->nameToSymbolsHashSet.buckets[i] = ZR_NULL;
         }
-        table->nameToSymbolsHashSet.elementCount = 0;
         // 释放 buckets 数组
         ZrCore_HashSet_Deconstruct(state, &table->nameToSymbolsHashSet);
     }

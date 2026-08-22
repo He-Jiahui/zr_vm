@@ -335,6 +335,10 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         cs->childFunctions.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->childFunctions);
     }
+    if (cs->childFunctionNameMap.isValid && cs->childFunctionNameMap.head != ZR_NULL &&
+        cs->childFunctionNameMap.capacity > 0 && cs->childFunctionNameMap.elementSize > 0) {
+        ZrCore_Array_Free(state, &cs->childFunctionNameMap);
+    }
     compiler_test_free_entries(cs);
     
     // 释放外部变量引用数组（字符串本身由 GC 管理）

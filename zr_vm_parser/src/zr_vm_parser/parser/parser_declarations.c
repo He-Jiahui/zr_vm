@@ -88,6 +88,7 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
         typeInfo = parse_type(ps);
         if (typeInfo == ZR_NULL) {
             report_error(ps, "Failed to parse type annotation");
+            ZrParser_Ast_Free(ps->state, pattern);
             return ZR_NULL;
         }
     }
@@ -97,6 +98,8 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
     if (consume_token(ps, ZR_TK_EQUALS)) {
         if (ps->lexer->t.token == ZR_TK_SEMICOLON || ps->lexer->t.token == ZR_TK_EOS) {
             report_missing_expression_after_assignment(ps);
+            ZrParser_Ast_Free(ps->state, pattern);
+            free_owned_type(ps->state, typeInfo);
             return ZR_NULL;
         }
 
@@ -104,6 +107,8 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
         if (value == ZR_NULL) {
             // 如果解析表达式失败，尝试错误恢复
             if (ps->hasError) {
+                ZrParser_Ast_Free(ps->state, pattern);
+                free_owned_type(ps->state, typeInfo);
                 return ZR_NULL;
             }
             // 如果没有错误但返回 NULL，可能是遇到了不支持的语法
@@ -111,6 +116,8 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
             TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
             snprintf(errorMsg, sizeof(errorMsg), "无法解析表达式（遇到 '%s'）", tokenStr);
             report_error_with_token(ps, errorMsg, ps->lexer->t.token);
+            ZrParser_Ast_Free(ps->state, pattern);
+            free_owned_type(ps->state, typeInfo);
             return ZR_NULL;
         }
     }
@@ -124,6 +131,9 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_VARIABLE_DECLARATION, startLoc);
     if (node == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, pattern);
+        ZrParser_Ast_Free(ps->state, value);
+        free_owned_type(ps->state, typeInfo);
         return ZR_NULL;
     }
 

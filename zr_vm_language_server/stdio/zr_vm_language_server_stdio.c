@@ -1,22 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
-static TZrPtr stdio_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
-    ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-
-    if (newSize == 0) {
-        free(pointer);
-        return ZR_NULL;
-    }
-
-    if (pointer == ZR_NULL) {
-        return malloc(newSize);
-    }
-
-    return realloc(pointer, newSize);
-}
-
 int starts_with_case_insensitive(const char *text, const char *prefix) {
     size_t index;
 
@@ -135,65 +118,23 @@ SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText) {
     return server->uriCache.items[server->uriCache.count - 1].value;
 }
 
-void free_uri_cache(SZrUriCache *cache) {
-    size_t index;
-
-    if (cache == NULL) {
-        return;
-    }
-
-    for (index = 0; index < cache->count; index++) {
-        free(cache->items[index].text);
-        cache->items[index].text = NULL;
-        cache->items[index].value = ZR_NULL;
-    }
-
-    free(cache->items);
-    cache->items = NULL;
-    cache->count = 0;
-    cache->capacity = 0;
-}
-
 int main(void) {
-    SZrStdioServer server;
-    SZrCallbackGlobal callbacks = {0};
+    SZrStdioServerOptions options = {0};
+    SZrStdioServer *server;
     int exitCode = 1;
-
-    memset(&server, 0, sizeof(server));
-    ZrLanguageServer_StdioLifecycle_Init(&server.lifecycle);
 
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
-    server.global = ZrCore_GlobalState_New(stdio_allocator, ZR_NULL, 0, &callbacks);
-    if (server.global == ZR_NULL) {
+    options.input = stdin;
+    server = ZrLanguageServer_StdioServer_New(&options);
+    if (server == ZR_NULL) {
         return 1;
     }
-
-    server.state = server.global->mainThreadState;
-    if (server.state == ZR_NULL) {
-        ZrCore_GlobalState_Free(server.global);
-        return 1;
-    }
-
-    ZrCore_GlobalState_InitRegistry(server.state, server.global);
-    server.context = ZrLanguageServer_LspContext_New(server.state);
-    if (server.context == ZR_NULL) {
-        ZrCore_GlobalState_Free(server.global);
-        return 1;
-    }
-
-    server.requestRegistry = ZrLanguageServer_StdioRequestRegistry_New();
-    if (server.requestRegistry == ZR_NULL) {
-        ZrCore_GlobalState_Free(server.global);
-        return 1;
-    }
-
-    if (!ZrLanguageServer_StdioRequestInput_Init(&server) ||
-        !ZrLanguageServer_StdioRequestInput_Start(&server)) {
-        ZrLanguageServer_StdioRequestRegistry_Free(server.requestRegistry);
+    if (!ZrLanguageServer_StdioServer_Start(server)) {
+        ZrLanguageServer_StdioServer_Free(server);
         return 1;
     }
 
@@ -207,7 +148,7 @@ int main(void) {
         int shouldExit = 0;
         int notificationExitCode = 0;
 
-        if (!ZrLanguageServer_StdioRequestInput_Take(&server,
+        if (!ZrLanguageServer_StdioRequestInput_Take(server,
                                                       &message,
                                                       &isParseError,
                                                       &requestReservation)) {
@@ -237,7 +178,7 @@ int main(void) {
             continue;
         }
 
-        ZrLanguageServer_StdioTrace_Log(&server,
+        ZrLanguageServer_StdioTrace_Log(server,
                                         "inbound",
                                         envelope.isRequest ? "request" : "notification",
                                         envelope.method,
@@ -248,7 +189,7 @@ int main(void) {
                 send_error_response(envelope.id,
                                     ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE,
                                     "Invalid Request");
-                ZrLanguageServer_StdioTrace_Log(&server,
+                ZrLanguageServer_StdioTrace_Log(server,
                                                 "outbound",
                                                 "response",
                                                 envelope.method,
@@ -260,7 +201,7 @@ int main(void) {
                 send_error_response(envelope.id,
                                     ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE,
                                     "Internal error");
-                ZrLanguageServer_StdioTrace_Log(&server,
+                ZrLanguageServer_StdioTrace_Log(server,
                                                 "outbound",
                                                 "response",
                                                 envelope.method,
@@ -268,16 +209,16 @@ int main(void) {
                 cJSON_Delete(message);
                 continue;
             }
-            ZrLanguageServer_StdioRequestInput_Activate(&server, envelope.id);
-            handle_request_message(&server, envelope.id, envelope.method, envelope.params);
-            ZrLanguageServer_StdioTrace_Log(&server,
+            ZrLanguageServer_StdioRequestInput_Activate(server, envelope.id);
+            ZrLanguageServer_StdioTrace_Log(server,
                                             "outbound",
                                             "response",
                                             envelope.method,
                                             ZR_FALSE);
-            ZrLanguageServer_StdioRequestInput_Complete(&server, envelope.id);
+            handle_request_message(server, envelope.id, envelope.method, envelope.params);
+            ZrLanguageServer_StdioRequestInput_Complete(server, envelope.id);
         } else {
-            handle_notification_message(&server,
+            handle_notification_message(server,
                                         envelope.method,
                                         envelope.params,
                                         &shouldExit,
@@ -292,16 +233,11 @@ int main(void) {
         cJSON_Delete(message);
     }
 
-    if (ZrLanguageServer_StdioLifecycle_IsShutdown(&server.lifecycle) && exitCode != 0) {
+    if (ZrLanguageServer_StdioLifecycle_IsShutdown(&server->lifecycle) && exitCode != 0) {
         exitCode = 0;
     }
 
-    /*
-     * The stdio server currently serves as a process boundary: once it receives EOF/exit,
-     * the entire address space is about to be reclaimed by the OS. Manual teardown has been
-     * observed to trigger access violations on shutdown, so keep exit reliable by flushing the
-     * transports and letting process termination reclaim runtime state.
-     */
+    ZrLanguageServer_StdioServer_Free(server);
     fflush(stdout);
     fflush(stderr);
     return exitCode;

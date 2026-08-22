@@ -1253,6 +1253,7 @@ SZrAstNode *parse_decorator_expression(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_DECORATOR_EXPRESSION, decoratorLoc);
     if (node == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, expr);
         return ZR_NULL;
     }
 

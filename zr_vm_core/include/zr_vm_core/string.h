@@ -28,9 +28,11 @@ struct ZR_STRUCT_ALIGN SZrString {
     };
 
     TZrUInt8 shortStringLength;
-    // short string is raw data
-    // long string is a pointer
-    TZrUInt8 stringDataExtend[1];
+    // Short strings use raw bytes; long strings use an aligned native pointer.
+    union {
+        TZrUInt8 stringDataExtend[1];
+        TZrNativeString longString;
+    };
 };
 
 typedef struct SZrString SZrString;
@@ -176,7 +178,7 @@ ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeStringShort(const SZrStri
 
 ZR_FORCE_INLINE TZrNativeString *ZrCore_String_GetNativeStringLong(const SZrString *string) {
     ZR_ASSERT(string->shortStringLength == ZR_VM_LONG_STRING_FLAG);
-    return (TZrNativeString *) string->stringDataExtend;
+    return (TZrNativeString *)&string->longString;
 }
 
 ZR_FORCE_INLINE TZrNativeString ZrCore_String_GetNativeString(const SZrString *string) {

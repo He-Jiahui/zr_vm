@@ -61,6 +61,20 @@ void ZrCore_HashSet_Deconstruct(struct SZrState *state, SZrHashSet *set) {
     TZrSize oldBucketCount = oldCapacity * elementSize;
     SZrHashKeyValuePair **oldBuckets = set->buckets;
 
+    if (set->pairPoolHead == ZR_NULL && oldBuckets != ZR_NULL) {
+        for (TZrSize bucketIndex = 0; bucketIndex < oldCapacity; bucketIndex++) {
+            SZrHashKeyValuePair *pair = oldBuckets[bucketIndex];
+
+            while (pair != ZR_NULL) {
+                SZrHashKeyValuePair *next = pair->next;
+                ZrCore_Memory_RawFreeWithType(global,
+                                              pair,
+                                              sizeof(SZrHashKeyValuePair),
+                                              ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                pair = next;
+            }
+        }
+    }
     zr_hash_pair_pool_release(global, set);
     if (oldBuckets != ZR_NULL) {
         ZrCore_Memory_Allocate(global, oldBuckets, oldBucketCount, 0, ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);

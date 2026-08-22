@@ -367,6 +367,160 @@ static void test_expression_fragment_preserves_runtime_root_origin(void) {
     ZrParser_State_Free(&parserState);
 }
 
+static void test_import_expression_releases_normalized_module_path(void) {
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrAstNode *expression = parse_fragment("import(\"native.math\")", &capture, &parserState);
+
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IMPORT_EXPRESSION, expression->type);
+    TEST_ASSERT_NOT_NULL(expression->data.importExpression.modulePath);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRING_LITERAL,
+                          expression->data.importExpression.modulePath->type);
+    TEST_ASSERT_FALSE(parserState.hasError);
+
+    ZrParser_Ast_Free(g_state, expression);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_type_cast_releases_member_call_subtree(void) {
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrAstNode *expression = parse_fragment("<int> receiver.read(1)", &capture, &parserState);
+
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_CAST_EXPRESSION, expression->type);
+    TEST_ASSERT_NOT_NULL(expression->data.typeCastExpression.targetType);
+    TEST_ASSERT_NOT_NULL(expression->data.typeCastExpression.expression);
+    TEST_ASSERT_FALSE(parserState.hasError);
+
+    ZrParser_Ast_Free(g_state, expression);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_expression_fragment_releases_logical_operands(void) {
+    SExpressionFragmentDiagnosticCapture capture;
+    SZrParserState parserState;
+    SZrAstNode *expression = parse_fragment("true || false", &capture, &parserState);
+
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_FALSE(parserState.hasError);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LOGICAL_EXPRESSION, expression->type);
+    TEST_ASSERT_NOT_NULL(expression->data.logicalExpression.left);
+    TEST_ASSERT_NOT_NULL(expression->data.logicalExpression.right);
+
+    ZrParser_Ast_Free(g_state, expression);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_script_releases_module_declaration_subtree(void) {
+    static const TZrChar source[] =
+            "module lifecycle.cleanup;\n"
+            "var value: int = 1;\n";
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *script;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "module_cleanup.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ZrParser_State_Init(&parserState,
+                        g_state,
+                        source,
+                        strlen(source),
+                        sourceName);
+    parserState.suppressErrorOutput = ZR_TRUE;
+    script = ZrParser_ParseWithState(&parserState);
+
+    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_FALSE(parserState.hasError);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
+    TEST_ASSERT_NOT_NULL(script->data.script.moduleName);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_MODULE_DECLARATION,
+                          script->data.script.moduleName->type);
+    TEST_ASSERT_NOT_NULL(script->data.script.moduleName->data.moduleDeclaration.name);
+
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_script_releases_decorator_lookahead_subtree(void) {
+    static const TZrChar source[] =
+            "#zr.testing.test# fn decorated(): void { }\n";
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *script;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "decorator_cleanup.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ZrParser_State_Init(&parserState,
+                        g_state,
+                        source,
+                        strlen(source),
+                        sourceName);
+    parserState.suppressErrorOutput = ZR_TRUE;
+    script = ZrParser_ParseWithState(&parserState);
+
+    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_FALSE(parserState.hasError);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION,
+                          script->data.script.statements->nodes[0]->type);
+
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_script_releases_destructuring_and_partial_declarations(void) {
+    static const TZrChar validSource[] =
+            "module lifecycle.cleanup;\n"
+            "var { key } = source;\n";
+    static const TZrChar invalidSource[] = "var missing: int = ;\n";
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *script;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "destructuring_cleanup.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ZrParser_State_Init(&parserState,
+                        g_state,
+                        validSource,
+                        strlen(validSource),
+                        sourceName);
+    parserState.suppressErrorOutput = ZR_TRUE;
+    script = ZrParser_ParseWithState(&parserState);
+    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_FALSE(parserState.hasError);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DESTRUCTURING_OBJECT,
+                          script->data.script.statements->nodes[0]
+                                  ->data.variableDeclaration.pattern->type);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_State_Free(&parserState);
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "partial_declaration_cleanup.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ZrParser_State_Init(&parserState,
+                        g_state,
+                        invalidSource,
+                        strlen(invalidSource),
+                        sourceName);
+    parserState.suppressErrorOutput = ZR_TRUE;
+    script = ZrParser_ParseWithState(&parserState);
+    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_TRUE(parserState.hasError);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_State_Free(&parserState);
+}
+
+static void test_compiler_state_releases_child_function_name_map(void) {
+    SZrCompilerState compilerState;
+
+    memset(&compilerState, 0, sizeof(compilerState));
+    ZrParser_CompilerState_Init(&compilerState, g_state);
+    TEST_ASSERT_TRUE(compilerState.childFunctionNameMap.isValid);
+
+    ZrParser_CompilerState_Free(&compilerState);
+    TEST_ASSERT_FALSE(compilerState.childFunctionNameMap.isValid);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_expression_fragment_parses_the_full_formal_expression);
@@ -375,5 +529,12 @@ int main(void) {
     RUN_TEST(test_expression_fragment_preserves_external_canonical_binding_identity);
     RUN_TEST(test_expression_fragment_marks_ordinary_binding_place_unavailable);
     RUN_TEST(test_expression_fragment_preserves_runtime_root_origin);
+    RUN_TEST(test_import_expression_releases_normalized_module_path);
+    RUN_TEST(test_type_cast_releases_member_call_subtree);
+    RUN_TEST(test_expression_fragment_releases_logical_operands);
+    RUN_TEST(test_script_releases_module_declaration_subtree);
+    RUN_TEST(test_script_releases_decorator_lookahead_subtree);
+    RUN_TEST(test_script_releases_destructuring_and_partial_declarations);
+    RUN_TEST(test_compiler_state_releases_child_function_name_map);
     return UNITY_END();
 }

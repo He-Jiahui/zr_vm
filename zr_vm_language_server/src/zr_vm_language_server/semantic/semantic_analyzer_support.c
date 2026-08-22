@@ -716,6 +716,10 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
     needsDeterministicCleanup = ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                                 ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
     if (isStatic || !needsDeterministicCleanup) {
+        if (typeInfo != ZR_NULL) {
+            ZrParser_InferredType_Free(state, typeInfo);
+            ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));
+        }
         return;
     }
 
@@ -724,6 +728,10 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
                               cleanupKind,
                               ownerRegionId,
                               declarationOrder);
+    if (typeInfo != ZR_NULL) {
+        ZrParser_InferredType_Free(state, typeInfo);
+        ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));
+    }
 }
 
 // 辅助函数：遍历 AST 收集符号定义

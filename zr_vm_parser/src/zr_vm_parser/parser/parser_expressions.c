@@ -346,6 +346,7 @@ SZrAstNode *parse_multiplicative_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_unary_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -380,6 +381,7 @@ SZrAstNode *parse_additive_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_multiplicative_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -414,6 +416,7 @@ SZrAstNode *parse_shift_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_additive_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -449,6 +452,7 @@ SZrAstNode *parse_relational_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_shift_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -483,6 +487,7 @@ SZrAstNode *parse_equality_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_relational_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -517,6 +522,7 @@ SZrAstNode *parse_binary_and_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_equality_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -551,6 +557,7 @@ SZrAstNode *parse_binary_xor_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_binary_and_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -585,6 +592,7 @@ SZrAstNode *parse_binary_or_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_binary_xor_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -617,6 +625,7 @@ SZrAstNode *parse_logical_and_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, "&&", operatorLoc, parse_binary_or_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -649,6 +658,7 @@ SZrAstNode *parse_logical_or_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, "||", operatorLoc, parse_logical_and_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 
@@ -755,6 +765,7 @@ SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_assignment_expression);
         if (right == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
             return ZR_NULL;
         }
 

@@ -1001,7 +1001,6 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
                 /* HashSet pairs are owned by the pair pool released by Deconstruct. */
                 pair = next;
             }
-            context->uriToAnalyzerMap.buckets[i] = ZR_NULL;
         }
         // 释放 buckets 数组
         ZrCore_HashSet_Deconstruct(state, &context->uriToAnalyzerMap);
@@ -1683,6 +1682,7 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
                 
                 ZrCore_Array_Push(state, result, &lspItem);
             }
+            ZrLanguageServer_CompletionItem_Free(state, item);
         }
     }
     

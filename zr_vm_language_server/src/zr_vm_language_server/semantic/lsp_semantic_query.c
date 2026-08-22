@@ -922,6 +922,20 @@ static TZrBool semantic_query_append_locations_as_highlights(SZrState *state,
     return ZR_TRUE;
 }
 
+static void semantic_query_free_locations(SZrState *state, SZrArray *locations) {
+    if (state == ZR_NULL || locations == ZR_NULL || !locations->isValid) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < locations->length; index++) {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+        if (locationPtr != ZR_NULL && *locationPtr != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, *locationPtr, sizeof(SZrLspLocation));
+        }
+    }
+    ZrCore_Array_Free(state, locations);
+}
+
 static TZrBool semantic_query_append_imported_member_locations_for_uri(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrLspProjectIndex *projectIndex,
@@ -1017,12 +1031,12 @@ static TZrBool semantic_query_append_imported_member_highlights(SZrState *state,
                    appended;
     }
     if (!appended) {
-        ZrCore_Array_Free(state, &locations);
+        semantic_query_free_locations(state, &locations);
         return ZR_FALSE;
     }
 
     appended = semantic_query_append_locations_as_highlights(state, &locations, query->uri, 2, result);
-    ZrCore_Array_Free(state, &locations);
+    semantic_query_free_locations(state, &locations);
     return appended;
 }
 

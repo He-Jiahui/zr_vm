@@ -468,9 +468,7 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
                 /* HashSet pairs are owned by the pair pool released by Deconstruct. */
                 pair = next;
             }
-            parser->uriToFileMap.buckets[i] = ZR_NULL;
         }
-        // 释放 buckets 数组
         ZrCore_HashSet_Deconstruct(state, &parser->uriToFileMap);
     }
 

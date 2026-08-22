@@ -254,6 +254,7 @@ ZR_FORCE_INLINE SZrMeta *ZrCore_Object_GetMetaRecursively(struct SZrGlobalState 
 }
 
 ZR_CORE_API void ZrCore_Object_Init(struct SZrState *state, SZrObject *object);
+ZR_CORE_API void ZrCore_Object_Deconstruct(struct SZrState *state, SZrObject *object);
 
 ZR_CORE_API SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const SZrObject *source);
 

@@ -172,7 +172,6 @@ void ZrLanguageServer_ReferenceTracker_Free(SZrState *state, SZrReferenceTracker
                 /* HashSet pairs are owned by the pair pool released by Deconstruct. */
                 pair = next;
             }
-            tracker->symbolToReferencesMap.buckets[i] = ZR_NULL;
         }
         // 释放 buckets 数组
         ZrCore_HashSet_Deconstruct(state, &tracker->symbolToReferencesMap);

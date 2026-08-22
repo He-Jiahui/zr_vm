@@ -81,11 +81,20 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
     switch (node->type) {
         case ZR_AST_SCRIPT: {
             SZrScript *script = &node->data.script;
+            if (script->moduleName != ZR_NULL) {
+                ZrParser_Ast_Free(state, script->moduleName);
+            }
             if (script->statements != ZR_NULL) {
                 for (TZrSize i = 0; i < script->statements->count; i++) {
                     ZrParser_Ast_Free(state, script->statements->nodes[i]);
                 }
                 ZrParser_AstNodeArray_Free(state, script->statements);
+            }
+            break;
+        }
+        case ZR_AST_MODULE_DECLARATION: {
+            if (node->data.moduleDeclaration.name != ZR_NULL) {
+                ZrParser_Ast_Free(state, node->data.moduleDeclaration.name);
             }
             break;
         }
@@ -290,6 +299,24 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_LOGICAL_EXPRESSION: {
+            SZrLogicalExpression *expr = &node->data.logicalExpression;
+            if (expr->left != ZR_NULL) {
+                ZrParser_Ast_Free(state, expr->left);
+            }
+            if (expr->right != ZR_NULL) {
+                ZrParser_Ast_Free(state, expr->right);
+            }
+            break;
+        }
+        case ZR_AST_TYPE_CAST_EXPRESSION: {
+            SZrTypeCastExpression *expr = &node->data.typeCastExpression;
+            free_owned_type(state, expr->targetType);
+            if (expr->expression != ZR_NULL) {
+                ZrParser_Ast_Free(state, expr->expression);
+            }
+            break;
+        }
         case ZR_AST_AWAIT_EXPRESSION: {
             SZrAwaitExpression *expr = &node->data.awaitExpression;
             if (expr->operand != ZR_NULL) {
@@ -452,6 +479,13 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_IMPORT_EXPRESSION: {
+            SZrImportExpression *importExpression = &node->data.importExpression;
+            if (importExpression->modulePath != ZR_NULL) {
+                ZrParser_Ast_Free(state, importExpression->modulePath);
+            }
+            break;
+        }
         case ZR_AST_TYPE_QUERY_EXPRESSION: {
             SZrTypeQueryExpression *typeQuery = &node->data.typeQueryExpression;
             if (typeQuery->operand != ZR_NULL) {
@@ -551,6 +585,18 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             if (ret->expr != ZR_NULL) {
                 ZrParser_Ast_Free(state, ret->expr);
             }
+            break;
+        }
+        case ZR_AST_DESTRUCTURING_OBJECT: {
+            free_ast_node_array_with_elements(
+                    state,
+                    node->data.destructuringObject.keys);
+            break;
+        }
+        case ZR_AST_DESTRUCTURING_ARRAY: {
+            free_ast_node_array_with_elements(
+                    state,
+                    node->data.destructuringArray.keys);
             break;
         }
         case ZR_AST_YIELD_STATEMENT: {
