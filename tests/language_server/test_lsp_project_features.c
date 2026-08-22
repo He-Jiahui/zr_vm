@@ -14,6 +14,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_library/file.h"
@@ -3313,6 +3314,183 @@ static void test_lsp_binary_import_metadata_surfaces_hover_and_completion(SZrSta
     free(mainContent);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Binary Import Metadata Surfaces Hover And Completion");
+}
+
+static void test_lsp_binary_callable_value_requires_canonical_identity(SZrState *state) {
+    static const TZrChar *mainContent =
+            "var binaryStage = import(\"graph_binary_stage\");\n"
+            "var callable = binaryStage.binarySeed;\n"
+            "var total = callable();\n"
+            "return total;\n";
+    static const TZrChar *expectedLabel = "binarySeed(): int";
+    const TZrChar *summary = "LSP Binary Callable Value Requires Canonical Identity";
+    SZrTestTimer timer;
+    SZrGeneratedBinaryMetadataFixture fixture;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
+    SZrLspPosition callPosition;
+    SZrLspPosition signaturePosition;
+    SZrFilePosition filePosition;
+    SZrFileRange fileRange;
+    SZrParserSemanticCallQuery callQuery;
+    SZrSemanticExpressionFact *callFact = ZR_NULL;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    SZrLspHover *hover = ZR_NULL;
+    SZrLspRange expectedHoverRange;
+    TZrChar formattedCall[256];
+    TZrChar reason[256];
+    TZrBool queryRebuilt;
+    TZrBool hoverRebuilt;
+    TZrBool signatureRebuilt;
+    TZrBool success = ZR_FALSE;
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Binary callable value canonical identity",
+            "A callable value captured from binary metadata must retain a parser canonical call fact and signature while explicitly reporting external declaration identity as unavailable, without metadata or name reconstruction");
+
+    if (!prepare_generated_binary_metadata_fixture(
+                state, "project_features_binary_callable_value", &fixture) ||
+        !write_text_file(fixture.mainPath, mainContent, strlen(mainContent))) {
+        TEST_FAIL(timer, summary, "Failed to prepare binary callable-value fixture");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    if (context == ZR_NULL || mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, mainUri, mainContent, strlen(mainContent), 1U) ||
+        !lsp_find_position_for_substring(mainContent, "callable()", 0U, 1, &callPosition) ||
+        !lsp_find_position_for_substring(
+                mainContent, "callable()", 0U, 9, &signaturePosition)) {
+        TEST_FAIL(timer, summary, "Failed to load binary callable-value fixture");
+        goto cleanup;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, mainUri, callPosition);
+    fileRange = ZrParser_FileRange_Create(filePosition, filePosition, mainUri);
+    memset(&callQuery, 0, sizeof(callQuery));
+    memset(formattedCall, 0, sizeof(formattedCall));
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_CallAt(
+                analyzer->semanticContext, fileRange, ZR_NULL, &callQuery) ||
+        callQuery.expression == ZR_NULL || callQuery.reference == ZR_NULL ||
+        callQuery.reference->isResolved || callQuery.hasResolvedTarget ||
+        callQuery.targetSymbolId != ZR_SEMANTIC_ID_INVALID ||
+        callQuery.targetDeclarationRange.source != ZR_NULL ||
+        !ZrParser_SemanticQuery_FormatCall(
+                analyzer->semanticContext,
+                &callQuery,
+                formattedCall,
+                sizeof(formattedCall)) ||
+        strcmp(formattedCall, expectedLabel) != 0) {
+        snprintf(
+                formattedCall,
+                sizeof(formattedCall),
+                "Binary callable value canonical fact unavailable (expression=%p reference=%p resolved=%d target=%d symbol=%u declarationSource=%p)",
+                (const void *)callQuery.expression,
+                (const void *)callQuery.reference,
+                callQuery.reference != ZR_NULL
+                        ? (int)callQuery.reference->isResolved
+                        : 0,
+                (int)callQuery.hasResolvedTarget,
+                (unsigned int)callQuery.targetSymbolId,
+                (const void *)callQuery.targetDeclarationRange.source);
+        TEST_FAIL(timer, summary, formattedCall);
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, mainUri, signaturePosition, &help) ||
+        help == ZR_NULL ||
+        signature_help_first_label(help) == ZR_NULL ||
+        strcmp(signature_help_first_label(help), expectedLabel) != 0) {
+        snprintf(
+                reason,
+                sizeof(reason),
+                "Binary callable-value signature help did not consume canonical fact (queryType=%u, label=%s, signatures=%zu)",
+                (unsigned int)callQuery.callableTypeId,
+                help != ZR_NULL && signature_help_first_label(help) != ZR_NULL
+                        ? signature_help_first_label(help)
+                        : "<null>",
+                help != ZR_NULL ? help->signatures.length : 0U);
+        TEST_FAIL(timer, summary, reason);
+        goto cleanup;
+    }
+
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    help = ZR_NULL;
+    expectedHoverRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+            context, mainUri, callQuery.reference->range);
+    if (!ZrLanguageServer_Lsp_GetHover(
+                state, context, mainUri, callPosition, &hover) ||
+        hover == ZR_NULL || !hover_contains_text(hover, expectedLabel) ||
+        hover->range.start.line != expectedHoverRange.start.line ||
+        hover->range.start.character != expectedHoverRange.start.character ||
+        hover->range.end.line != expectedHoverRange.end.line ||
+        hover->range.end.character != expectedHoverRange.end.character) {
+        TEST_FAIL(
+                timer,
+                summary,
+                "Binary callable-value hover did not consume the canonical call fact range and signature");
+        goto cleanup;
+    }
+    ZrCore_Array_Free(state, &hover->contents);
+    ZrCore_Memory_RawFree(state->global, hover, sizeof(*hover));
+    hover = ZR_NULL;
+    callFact = (SZrSemanticExpressionFact *)callQuery.expression;
+    callFact->hasCallInfo = ZR_FALSE;
+    memset(&callQuery, 0, sizeof(callQuery));
+    queryRebuilt = ZrParser_SemanticQuery_CallAt(
+            analyzer->semanticContext, fileRange, ZR_NULL, &callQuery);
+    hoverRebuilt = ZrLanguageServer_Lsp_GetHover(
+            state, context, mainUri, callPosition, &hover);
+    signatureRebuilt = ZrLanguageServer_Lsp_GetSignatureHelp(
+            state, context, mainUri, signaturePosition, &help);
+    if (queryRebuilt || hover != ZR_NULL || signatureRebuilt || help != ZR_NULL) {
+        void *rebuiltHelp = (void *)help;
+        void *rebuiltHover = (void *)hover;
+        if (hover != ZR_NULL) {
+            ZrCore_Array_Free(state, &hover->contents);
+            ZrCore_Memory_RawFree(state->global, hover, sizeof(*hover));
+            hover = ZR_NULL;
+        }
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+            help = ZR_NULL;
+        }
+        snprintf(reason,
+                 sizeof(reason),
+                 "Binary callable-value query, hover, or signature rebuilt after canonical call fact removal (query=%d hoverResult=%d hover=%p signature=%d help=%p)",
+                 (int)queryRebuilt,
+                 (int)hoverRebuilt,
+                 rebuiltHover,
+                 (int)signatureRebuilt,
+                 rebuiltHelp);
+        TEST_FAIL(timer, summary, reason);
+        goto cleanup;
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
+    if (hover != ZR_NULL) {
+        ZrCore_Array_Free(state, &hover->contents);
+        ZrCore_Memory_RawFree(state->global, hover, sizeof(*hover));
+    }
+    if (help != ZR_NULL) {
+        ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    }
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (success) {
+        TEST_PASS(timer, summary);
+    }
 }
 
 static void test_lsp_binary_import_references_surface_metadata_and_usages(SZrState *state) {
@@ -7805,6 +7983,9 @@ int main(void) {
     test_lsp_binary_import_metadata_surfaces_hover_and_completion(state);
     TEST_DIVIDER();
 
+    test_lsp_binary_callable_value_requires_canonical_identity(state);
+    TEST_DIVIDER();
+
     test_lsp_descriptor_plugin_member_completion_definition_and_references(state);
     TEST_DIVIDER();
 
@@ -7812,6 +7993,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_descriptor_plugin_callable_query_hover_and_signature_share_contract(state);
+    TEST_DIVIDER();
+
+    test_lsp_descriptor_plugin_callable_value_requires_canonical_identity(state);
     TEST_DIVIDER();
 
     test_lsp_native_receiver_callable_query_hover_and_signature_share_closed_contract(state);

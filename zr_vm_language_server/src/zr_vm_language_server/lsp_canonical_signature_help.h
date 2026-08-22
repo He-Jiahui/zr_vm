@@ -16,7 +16,20 @@ TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_TryGetResolvedCallReferenceRa
         SZrFileRange position,
         SZrFileRange *result);
 
+/* Detects a local direct call whose canonical callable payload is unavailable. */
+TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_HasUnavailableLocalCall(
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange position);
+
 TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_ResolveReceiverHover(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *uri,
+        SZrFileRange position,
+        SZrLspHover **result);
+
+TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_ResolveExternalCallableHover(
         SZrState *state,
         SZrLspContext *context,
         SZrSemanticAnalyzer *analyzer,

@@ -1016,7 +1016,7 @@ static void semantic_add_type_mismatch_diagnostic(SZrState *state,
 typedef enum EZrSemanticOwnershipDiagnosticKind {
     ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE = 0,
     ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_MISMATCH,
-    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_UPGRADE,
+    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_WAKE,
     ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_OWNER_TO_PLAIN,
     ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_BORROW_ESCAPE,
     ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_LOAN_ESCAPE
@@ -1078,7 +1078,7 @@ static EZrSemanticOwnershipDiagnosticKind semantic_classify_ownership_mismatch(
     if ((expectedType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
          expectedType->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) &&
         actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
-        return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_UPGRADE;
+        return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_WAKE;
     }
     if (expectedType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
         semantic_ownership_is_owned_qualifier(actualType->ownershipQualifier)) {
@@ -1299,8 +1299,8 @@ static TZrBool semantic_emit_ownership_diagnostic(
 
     ZrParser_StructuredDiagnostic_Init(&structured);
     switch (match->kind) {
-        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_UPGRADE:
-            built = ZrParser_DiagnosticBuilder_BuildWeakUpgrade(state, &structured, match->location);
+        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_WAKE:
+            built = ZrParser_DiagnosticBuilder_BuildWeakWake(state, &structured, match->location);
             break;
         case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_OWNER_TO_PLAIN:
             built = ZrParser_DiagnosticBuilder_BuildOwnerToPlainEscape(state, &structured, match->location);

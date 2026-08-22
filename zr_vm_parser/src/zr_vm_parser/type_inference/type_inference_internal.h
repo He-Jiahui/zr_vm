@@ -261,6 +261,11 @@ void type_inference_record_unbound_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
         const SZrTypeMemberInfo *memberInfo);
+void type_inference_record_external_callable_member_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrInferredType *returnType);
 void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
                                                            SZrAstNode *node,
                                                            const SZrTypeBinding *binding);

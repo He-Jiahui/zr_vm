@@ -278,6 +278,9 @@ static SZrString *type_inference_call_signature_display(
     if (functionInfo == ZR_NULL) {
         return ZR_NULL;
     }
+    if (functionInfo->signatureDisplay != ZR_NULL) {
+        return functionInfo->signatureDisplay;
+    }
     return type_inference_callable_signature_display(
             cs,
             functionInfo->name,
@@ -354,13 +357,13 @@ void type_inference_record_primary_call_reference_fact(
     fact.range = target != ZR_NULL ? target->location : callNode->location;
     fact.declarationRange = funcTypeInfo->hasDeclarationRange
                                     ? funcTypeInfo->declarationRange
-                                    : fact.range;
+                                    : (SZrFileRange){0};
     fact.kind = ZR_SEMANTIC_REFERENCE_CALL;
     fact.symbolId = funcTypeInfo->symbolId;
     fact.typeId = callTypeId;
     fact.name = funcTypeInfo->name;
     fact.signatureDisplay = type_inference_call_signature_display(cs, funcTypeInfo, callTypeId);
-    fact.isResolved = ZR_TRUE;
+    fact.isResolved = !funcTypeInfo->isExternalCallable;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
@@ -537,6 +540,72 @@ void type_inference_record_unbound_member_reference_fact(
     fact.typeId = typeId;
     fact.name = memberInfo->name;
     fact.isResolved = ZR_TRUE;
+    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+}
+
+void type_inference_record_external_callable_member_reference_fact(
+        SZrCompilerState *cs,
+        SZrAstNode *memberNode,
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrInferredType *returnType) {
+    SZrSemanticReferenceFact fact;
+    SZrAstNode *target;
+    TZrTypeId typeId;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberInfo == ZR_NULL || returnType == ZR_NULL || memberInfo->name == ZR_NULL ||
+        memberInfo->declarationNode != ZR_NULL || !memberInfo->isStatic ||
+        memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
+        memberInfo->parameterTypes.length != memberInfo->parameterCount ||
+        (memberInfo->parameterPassingModes.length != 0U &&
+         memberInfo->parameterPassingModes.length != memberInfo->parameterCount) ||
+        memberInfo->genericParameters.length != 0U ||
+        (memberInfo->parameterNames.isValid &&
+         memberInfo->parameterNames.length != memberInfo->parameterCount)) {
+        return;
+    }
+
+    typeId = ZrParser_CanonicalType_FromFunctionSignature(
+            cs->semanticContext,
+            &memberInfo->parameterTypes,
+            &memberInfo->parameterPassingModes,
+            returnType,
+            ZR_CANONICAL_RECEIVER_NONE,
+            ZR_CANONICAL_CALLABLE_EFFECT_NONE);
+    if (typeId == ZR_SEMANTIC_ID_INVALID) {
+        return;
+    }
+
+    target = memberNode->data.memberExpression.property;
+    memset(&fact, 0, sizeof(fact));
+    fact.node = target != ZR_NULL ? target : memberNode;
+    fact.range = fact.node->location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS;
+    fact.symbolId = ZR_SEMANTIC_ID_INVALID;
+    fact.typeId = typeId;
+    fact.name = memberInfo->name;
+    fact.signatureDisplay = type_inference_callable_signature_display(
+            cs,
+            memberInfo->name,
+            ZR_NULL,
+            &memberInfo->parameterNames,
+            &memberInfo->genericParameters,
+            typeId);
+    if (fact.signatureDisplay == ZR_NULL ||
+        !ZrParser_TypeEnvironment_RegisterExternalCallable(
+                cs->state,
+                cs->typeEnv,
+                memberInfo->name,
+                returnType,
+                &memberInfo->parameterTypes,
+                &memberInfo->genericParameters,
+                &memberInfo->parameterPassingModes,
+                typeId,
+                fact.signatureDisplay)) {
+        return;
+    }
+    fact.isResolved = ZR_FALSE;
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 

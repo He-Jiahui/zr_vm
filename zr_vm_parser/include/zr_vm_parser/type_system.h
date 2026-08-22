@@ -114,12 +114,15 @@ typedef struct SZrFunctionTypeInfo {
     TZrBool hasDeclarationRange;     // declarationRange 是否有效
     TZrTypeId typeId;                // 共享语义类型 ID（可选）
     TZrSymbolId symbolId;            // 共享语义符号 ID（可选）
+    SZrString *signatureDisplay;     // metadata-backed canonical call label（可选）
+    TZrBool isExternalCallable;      // no source declaration/SymbolId is available
 } SZrFunctionTypeInfo;
 
 // 类型环境结构体
 typedef struct SZrTypeEnvironment {
     SZrArray variableTypes;          // 变量类型绑定数组（SZrTypeBinding）
     SZrArray functionReturnTypes;    // 函数类型信息数组（SZrFunctionTypeInfo*）
+    SZrArray externalCallableValues; // externally supplied callable contracts (SZrFunctionTypeInfo*)
     SZrArray typeNames;              // 类型名称数组（SZrString*），用于存储已定义的struct/class类型名称
     struct SZrTypeEnvironment *parent; // 父类型环境（用于作用域）
     struct SZrSemanticContext *semanticContext; // 共享语义记录上下文（可选）
@@ -313,6 +316,24 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalFunction(
         TZrSymbolId symbolId,
         TZrTypeId typeId,
         SZrFileRange declarationRange);
+/* Retains a canonical external callable contract without fabricating source identity. */
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterExternalCallable(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        const SZrArray *parameterTypes,
+        const SZrArray *genericParameters,
+        const SZrArray *parameterPassingModes,
+        TZrTypeId typeId,
+        SZrString *signatureDisplay);
+/* Binds an exact external callable contract to a local name for normal call resolution. */
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterExternalCallableAlias(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        TZrTypeId typeId,
+        SZrString *signatureDisplay);
 
 // 查找函数类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result);

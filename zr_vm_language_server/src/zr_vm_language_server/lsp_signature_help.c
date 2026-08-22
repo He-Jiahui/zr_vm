@@ -131,6 +131,22 @@ static TZrBool signature_range_contains_position(SZrFileRange range, SZrFileRang
              position.end.column <= range.end.column));
 }
 
+static TZrBool signature_ranges_equal(SZrFileRange left, SZrFileRange right) {
+    if (!ZrLanguageServer_Lsp_StringsEqual(left.source, right.source) &&
+        left.source != ZR_NULL && right.source != ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (left.start.offset > 0U || left.end.offset > 0U ||
+        right.start.offset > 0U || right.end.offset > 0U) {
+        return left.start.offset == right.start.offset &&
+               left.end.offset == right.end.offset;
+    }
+    return left.start.line == right.start.line &&
+           left.start.column == right.start.column &&
+           left.end.line == right.end.line &&
+           left.end.column == right.end.column;
+}
+
 static SZrFileRange signature_call_context_range(SZrAstNode *callNode) {
     SZrFunctionCall *call;
     SZrFileRange range;
@@ -1011,10 +1027,25 @@ static TZrBool signature_context_requires_canonical_source_call(
         const SZrLspCallContext *context) {
     const SZrAstNode *callee;
     const SZrSemanticReferenceFact *declaration;
+    const SZrSemanticExpressionFact *expression;
+    const SZrSemanticReferenceFact *callReference;
 
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
         context == ZR_NULL) {
         return ZR_FALSE;
+    }
+    expression = ZrParser_SemanticFacts_FindExpressionByNode(
+            analyzer->semanticContext, context->primaryNode);
+    if (expression != ZR_NULL) {
+        callReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+                analyzer->semanticContext,
+                expression->callTargetRange,
+                ZR_SEMANTIC_REFERENCE_CALL);
+        if (callReference != ZR_NULL &&
+            signature_ranges_equal(
+                    callReference->range, expression->callTargetRange)) {
+            return ZR_TRUE;
+        }
     }
     callee = signature_context_call_callee(context);
     if (callee == ZR_NULL || callee->type != ZR_AST_IDENTIFIER_LITERAL) {
@@ -1030,6 +1061,35 @@ static TZrBool signature_context_requires_canonical_source_call(
            declaration->node->type == ZR_AST_CLASS_METHOD ||
            declaration->node->type == ZR_AST_STRUCT_METHOD ||
            declaration->node->type == ZR_AST_INTERFACE_METHOD_SIGNATURE;
+}
+
+static TZrBool signature_context_has_local_canonical_call(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrLspCallContext *context) {
+    const SZrAstNode *callee;
+    SZrFileRange calleeRange;
+    SZrParserSemanticCallQuery query;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        context == ZR_NULL || context->kind != ZR_LSP_CALL_CONTEXT_FUNCTION_CALL ||
+        context->callNode == ZR_NULL ||
+        !analyzer->semanticContext->expressionFacts.isValid) {
+        return ZR_FALSE;
+    }
+    memset(&calleeRange, 0, sizeof(calleeRange));
+    if (!signature_external_callable_callee_range(context, &calleeRange)) {
+        callee = signature_context_call_callee(context);
+        if (callee == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        calleeRange = callee->location;
+    }
+    memset(&query, 0, sizeof(query));
+    return ZrParser_SemanticQuery_CallAt(
+                   analyzer->semanticContext, calleeRange, ZR_NULL, &query) &&
+           query.expression != ZR_NULL && !query.expression->isMemberCall &&
+           query.reference != ZR_NULL &&
+           signature_ranges_equal(query.reference->range, calleeRange);
 }
 
 static TZrBool signature_construct_node_is_supported(const SZrAstNode *node) {
@@ -4015,9 +4075,22 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     if (callContext.kind == ZR_LSP_CALL_CONTEXT_FUNCTION_CALL &&
         callContext.callNode != ZR_NULL &&
         callContext.callNode->type == ZR_AST_FUNCTION_CALL) {
+        if (signature_context_has_local_canonical_call(analyzer, &callContext)) {
+            return ZrLanguageServer_LspCanonicalSignatureHelp_Resolve(
+                           state,
+                           analyzer,
+                           fileRange,
+                           callContext.argumentNodes,
+                           signature_active_parameter_index(
+                                   &callContext.callNode->data.functionCall,
+                                   filePosition),
+                           result) &&
+                   *result != ZR_NULL;
+        }
         SZrFileRange calleeRange;
         EZrLspExternalCallableSignatureStatus externalStatus =
-                signature_external_callable_callee_range(
+                callContext.callMemberIndex > 0U &&
+                        signature_external_callable_callee_range(
                         &callContext, &calleeRange)
                         ? ZrLanguageServer_LspExternalCallableSignatureHelp_Resolve(
                                   state,

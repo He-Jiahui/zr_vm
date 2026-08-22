@@ -219,6 +219,9 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 
 ## 当前主题
 
+- `external-callable-value-canonical-facts.md`
+  - canonical TypeId/signature facts for binary and provider callable values
+  - unresolved source identity and exact fact-owned LSP fail-closed behavior
 - `ast-and-syntax-contracts.md`
   - contextual unified property grammar across class, struct, resource class, and interface
   - one `PROPERTY_DECLARATION` with ordered accessor children and exact recovery ranges

@@ -4338,6 +4338,12 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     i++;
                     nextIsPrototypeReference = ZR_FALSE;
                 } else {
+                    SZrInferredType externalCallableReturnType;
+                    TZrBool hasExternalCallableReturnType = ZR_FALSE;
+
+                    ZrParser_InferredType_Init(
+                            cs->state, &externalCallableReturnType, ZR_VALUE_TYPE_OBJECT);
+
                     if (memberExpr->property->type == ZR_AST_TYPE &&
                         find_compiler_type_prototype_inference(cs, currentType.typeName) != ZR_NULL &&
                         type_name_is_module_prototype_inference(cs, currentType.typeName) &&
@@ -4352,6 +4358,26 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     } else {
                         inferred_type_from_member_access(cs, memberInfo, &nextType);
                     }
+                    if (!currentIsPrototypeReference &&
+                        memberInfo->declarationNode == ZR_NULL && memberInfo->isStatic &&
+                        (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
+                         memberInfo->memberType == ZR_AST_CLASS_METHOD) &&
+                        memberInfo->hasStructuredReturnType) {
+                        ZrParser_InferredType_Copy(
+                                cs->state,
+                                &externalCallableReturnType,
+                                &memberInfo->structuredReturnType);
+                        hasExternalCallableReturnType = ZR_TRUE;
+                    } else if (!currentIsPrototypeReference &&
+                               memberInfo->declarationNode == ZR_NULL && memberInfo->isStatic &&
+                               (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
+                                memberInfo->memberType == ZR_AST_CLASS_METHOD) &&
+                               memberInfo->returnTypeName != ZR_NULL) {
+                        hasExternalCallableReturnType = inferred_type_from_type_name(
+                                cs,
+                                memberInfo->returnTypeName,
+                                &externalCallableReturnType);
+                    }
                     type_inference_record_resolved_property_reference_fact(
                             cs,
                             memberNode,
@@ -4364,7 +4390,14 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                  ZR_AST_INTERFACE_METHOD_SIGNATURE)) {
                         type_inference_record_unbound_member_reference_fact(
                                 cs, memberNode, memberInfo);
+                    } else if (hasExternalCallableReturnType) {
+                        type_inference_record_external_callable_member_reference_fact(
+                                cs,
+                                memberNode,
+                                memberInfo,
+                                &externalCallableReturnType);
                     }
+                    ZrParser_InferredType_Free(cs->state, &externalCallableReturnType);
                 }
 
                 ZrParser_InferredType_Free(cs->state, &currentType);

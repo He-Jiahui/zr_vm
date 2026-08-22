@@ -9,6 +9,7 @@
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_parser/compile_tool.h"
 #include "zr_vm_parser/project_imports.h"
+#include "zr_vm_parser/semantic_facts.h"
 
 TZrBool compiler_is_compile_tool_import_declaration(const SZrState *state,
                                                      const SZrAstNode *node) {
@@ -831,6 +832,50 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
     }
 }
 
+static void compiler_register_external_member_callable_binding(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrAstNode *valueNode) {
+    SZrPrimaryExpression *primary;
+    SZrAstNode *memberNode;
+    SZrAstNode *property;
+    const SZrSemanticReferenceFact *reference;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        cs->semanticContext == ZR_NULL || name == ZR_NULL || valueNode == ZR_NULL ||
+        valueNode->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return;
+    }
+    primary = &valueNode->data.primaryExpression;
+    if (primary->members == ZR_NULL || primary->members->count == 0U) {
+        return;
+    }
+    memberNode = primary->members->nodes[primary->members->count - 1U];
+    if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+        return;
+    }
+    property = memberNode->data.memberExpression.property;
+    reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext,
+            property != ZR_NULL ? property : memberNode,
+            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+    if (reference == ZR_NULL || reference->isResolved ||
+        reference->symbolId != ZR_SEMANTIC_ID_INVALID ||
+        reference->typeId == ZR_SEMANTIC_ID_INVALID ||
+        reference->signatureDisplay == ZR_NULL ||
+        reference->declarationRange.source != ZR_NULL ||
+        reference->declarationRange.start.offset != 0U ||
+        reference->declarationRange.end.offset != 0U) {
+        return;
+    }
+    (void)ZrParser_TypeEnvironment_RegisterExternalCallableAlias(
+            cs->state,
+            cs->typeEnv,
+            name,
+            reference->typeId,
+            reference->signatureDisplay);
+}
+
 void ZrParser_Compiler_RegisterCallableValueBinding(SZrCompilerState *cs,
                                                      SZrString *name,
                                                      SZrAstNode *valueNode) {
@@ -845,7 +890,10 @@ void ZrParser_Compiler_RegisterCallableValueBinding(SZrCompilerState *cs,
 
     if (valueNode->type == ZR_AST_IDENTIFIER_LITERAL && valueNode->data.identifier.name != ZR_NULL) {
         compiler_register_identifier_callable_binding(cs, name, valueNode->data.identifier.name);
+        return;
     }
+
+    compiler_register_external_member_callable_binding(cs, name, valueNode);
 }
 
 void compiler_register_named_value_binding_to_env(SZrCompilerState *cs,

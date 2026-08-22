@@ -3807,6 +3807,7 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
     TZrBool hasPropertyQuery = ZR_FALSE;
     TZrBool hasImportedTypeHit = ZR_FALSE;
     TZrBool hasImportedModule = ZR_FALSE;
+    TZrBool receiverRequiresExactFact = ZR_FALSE;
 
     if (outResolved != ZR_NULL) {
         memset(outResolved, 0, sizeof(*outResolved));
@@ -3838,12 +3839,48 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
     }
 
     receiverTypeText[0] = '\0';
-    if (!try_infer_receiver_type_text_from_ast(state,
-                                               analyzer,
-                                               ast,
-                                               cursorOffset,
-                                               receiverTypeText,
-                                               sizeof(receiverTypeText)) &&
+    if (!copy_receiver_type_text_from_expression_fact(analyzer,
+                                                       ast,
+                                                       cursorOffset,
+                                                       receiverTypeText,
+                                                       sizeof(receiverTypeText),
+                                                       &receiverRequiresExactFact) &&
+        receiverRequiresExactFact) {
+        SZrFilePosition propertyStart =
+                lsp_interface_support_file_position_from_offset(
+                        content,
+                        contentLength,
+                        memberStart);
+        SZrFilePosition propertyEnd =
+                lsp_interface_support_file_position_from_offset(
+                        content,
+                        contentLength,
+                        memberEnd);
+        SZrFileRange propertyRange =
+                ZrParser_FileRange_Create(propertyStart, propertyEnd, uri);
+
+        if (analyzer->semanticContext == ZR_NULL ||
+            !ZrParser_SemanticQuery_PropertyAt(
+                    analyzer->semanticContext,
+                    propertyRange,
+                    ZR_NULL,
+                    &propertyQuery) ||
+            propertyQuery.propertySymbolId == ZR_SEMANTIC_ID_INVALID ||
+            propertyQuery.propertyTypeId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        hasPropertyQuery = ZR_TRUE;
+    }
+    if (!receiver_type_text_is_specific(receiverTypeText)) {
+        receiverTypeText[0] = '\0';
+    }
+    if (receiverTypeText[0] == '\0' &&
+        !try_infer_receiver_type_text_from_ast(state,
+                                                analyzer,
+                                                ast,
+                                                cursorOffset,
+                                                receiverTypeText,
+                                                sizeof(receiverTypeText)) &&
         (receiverEnd <= receiverStart ||
          receiverEnd - receiverStart >= sizeof(receiverNameText))) {
         return ZR_FALSE;

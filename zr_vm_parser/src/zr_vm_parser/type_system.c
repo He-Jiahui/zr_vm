@@ -963,6 +963,28 @@ static void free_function_type_info_payload(SZrState *state, SZrFunctionTypeInfo
     }
 }
 
+static void free_function_type_info_array(SZrState *state, SZrArray *functions) {
+    if (state == ZR_NULL || functions == ZR_NULL || !functions->isValid ||
+        functions->head == ZR_NULL || functions->capacity == 0 ||
+        functions->elementSize != sizeof(SZrFunctionTypeInfo *)) {
+        return;
+    }
+
+    for (TZrSize index = 0U; index < functions->length; index++) {
+        SZrFunctionTypeInfo **functionInfo =
+                (SZrFunctionTypeInfo **)ZrCore_Array_Get(functions, index);
+        if (functionInfo != ZR_NULL && *functionInfo != ZR_NULL) {
+            free_function_type_info_payload(state, *functionInfo);
+            ZrCore_Memory_RawFreeWithType(
+                    state->global,
+                    *functionInfo,
+                    sizeof(SZrFunctionTypeInfo),
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+    }
+    ZrCore_Array_Free(state, functions);
+}
+
 // 检查类型是否为数字类型（保留用于未来扩展）
 // static TZrBool is_number_type(EZrValueType type) {
 //     return ZR_VALUE_IS_TYPE_NUMBER(type);
@@ -1233,6 +1255,10 @@ SZrTypeEnvironment *ZrParser_TypeEnvironment_New(SZrState *state) {
                       &env->functionReturnTypes,
                       sizeof(SZrFunctionTypeInfo *),
                       ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &env->externalCallableValues,
+                      sizeof(SZrFunctionTypeInfo *),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(state, &env->typeNames, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     env->parent = ZR_NULL;
     env->semanticContext = ZR_NULL;
@@ -1259,19 +1285,8 @@ void ZrParser_TypeEnvironment_Free(SZrState *state, SZrTypeEnvironment *env) {
         ZrCore_Array_Free(state, &env->variableTypes);
     }
     
-    // 释放函数类型数组
-    if (env->functionReturnTypes.isValid && env->functionReturnTypes.head != ZR_NULL && 
-        env->functionReturnTypes.capacity > 0 && env->functionReturnTypes.elementSize > 0) {
-        // 释放每个函数类型信息
-        for (TZrSize i = 0; i < env->functionReturnTypes.length; i++) {
-            SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrCore_Array_Get(&env->functionReturnTypes, i);
-            if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL) {
-                free_function_type_info_payload(state, *funcInfo);
-                ZrCore_Memory_RawFreeWithType(state->global, *funcInfo, sizeof(SZrFunctionTypeInfo), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-            }
-        }
-        ZrCore_Array_Free(state, &env->functionReturnTypes);
-    }
+    free_function_type_info_array(state, &env->functionReturnTypes);
+    free_function_type_info_array(state, &env->externalCallableValues);
     
     // 释放类型名称数组（字符串本身由GC管理，只需要释放数组）
     if (env->typeNames.isValid && env->typeNames.head != ZR_NULL && 
@@ -1738,6 +1753,8 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
     funcInfo->hasDeclarationRange = hasDeclarationRange;
     funcInfo->typeId = ZR_SEMANTIC_ID_INVALID;
     funcInfo->symbolId = ZR_SEMANTIC_ID_INVALID;
+    funcInfo->signatureDisplay = ZR_NULL;
+    funcInfo->isExternalCallable = ZR_FALSE;
     
     // Deep-copy parameter type array values.
     if (paramTypes != ZR_NULL && paramTypes->isValid && paramTypes->capacity > 0 && paramTypes->length > 0) {
@@ -1992,6 +2009,191 @@ TZrBool ZrParser_TypeEnvironment_RegisterCanonicalFunction(
     }
 
     ZrCore_Array_Push(state, &env->functionReturnTypes, &funcInfo);
+    return ZR_TRUE;
+}
+
+static TZrBool type_environment_copy_external_callable(
+        SZrState *state,
+        SZrFunctionTypeInfo *destination,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        const SZrArray *parameterTypes,
+        const SZrArray *genericParameters,
+        const SZrArray *parameterPassingModes,
+        TZrTypeId typeId,
+        SZrString *signatureDisplay) {
+    if (state == ZR_NULL || destination == ZR_NULL || name == ZR_NULL ||
+        returnType == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID ||
+        signatureDisplay == ZR_NULL ||
+        (parameterTypes != ZR_NULL && parameterTypes->length > 0U &&
+         (!parameterTypes->isValid || parameterTypes->head == ZR_NULL ||
+          parameterTypes->elementSize != sizeof(SZrInferredType))) ||
+        (parameterPassingModes != ZR_NULL && parameterPassingModes->length > 0U &&
+         (!parameterPassingModes->isValid || parameterPassingModes->head == ZR_NULL ||
+          parameterPassingModes->elementSize != sizeof(EZrParameterPassingMode))) ||
+        (parameterPassingModes != ZR_NULL && parameterPassingModes->length != 0U &&
+         (parameterTypes != ZR_NULL ? parameterTypes->length : 0U) !=
+                 parameterPassingModes->length)) {
+        return ZR_FALSE;
+    }
+
+    memset(destination, 0, sizeof(*destination));
+    destination->name = name;
+    destination->typeId = typeId;
+    destination->symbolId = ZR_SEMANTIC_ID_INVALID;
+    destination->signatureDisplay = signatureDisplay;
+    destination->isExternalCallable = ZR_TRUE;
+    ZrParser_InferredType_Copy(state, &destination->returnType, returnType);
+    ZrCore_Array_Construct(&destination->paramTypes);
+    ZrCore_Array_Construct(&destination->genericParameters);
+    ZrCore_Array_Construct(&destination->parameterPassingModes);
+
+    if (parameterTypes != ZR_NULL && parameterTypes->length > 0U) {
+        ZrCore_Array_Init(
+                state,
+                &destination->paramTypes,
+                sizeof(SZrInferredType),
+                parameterTypes->length);
+        for (TZrSize index = 0U; index < parameterTypes->length; index++) {
+            const SZrInferredType *parameter = (const SZrInferredType *)ZrCore_Array_Get(
+                    (SZrArray *)parameterTypes, index);
+            SZrInferredType copiedParameter;
+
+            if (parameter == ZR_NULL) {
+                free_function_type_info_payload(state, destination);
+                return ZR_FALSE;
+            }
+            ZrParser_InferredType_Copy(state, &copiedParameter, parameter);
+            ZrCore_Array_Push(state, &destination->paramTypes, &copiedParameter);
+        }
+    }
+    if (!copy_generic_parameter_info_array(
+                state, &destination->genericParameters, genericParameters) ||
+        !copy_parameter_passing_mode_array(
+                state, &destination->parameterPassingModes, parameterPassingModes)) {
+        free_function_type_info_payload(state, destination);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_TypeEnvironment_RegisterExternalCallable(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        const SZrArray *parameterTypes,
+        const SZrArray *genericParameters,
+        const SZrArray *parameterPassingModes,
+        TZrTypeId typeId,
+        SZrString *signatureDisplay) {
+    SZrFunctionTypeInfo *functionInfo;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || env == ZR_NULL ||
+        env->semanticContext == ZR_NULL ||
+        ZrParser_CanonicalType_Find(env->semanticContext, typeId) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U; index < env->externalCallableValues.length; index++) {
+        const SZrFunctionTypeInfo *const *existing =
+                (const SZrFunctionTypeInfo *const *)ZrCore_Array_Get(
+                        &env->externalCallableValues, index);
+        if (existing != ZR_NULL && *existing != ZR_NULL &&
+            (*existing)->typeId == typeId && (*existing)->name != ZR_NULL &&
+            ZrCore_String_Equal((*existing)->name, name) &&
+            (*existing)->signatureDisplay != ZR_NULL &&
+            ZrCore_String_Equal((*existing)->signatureDisplay, signatureDisplay)) {
+            return ZR_TRUE;
+        }
+    }
+
+    functionInfo = (SZrFunctionTypeInfo *)ZrCore_Memory_RawMallocWithType(
+            state->global, sizeof(*functionInfo), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (functionInfo == ZR_NULL ||
+        !type_environment_copy_external_callable(
+                state,
+                functionInfo,
+                name,
+                returnType,
+                parameterTypes,
+                genericParameters,
+                parameterPassingModes,
+                typeId,
+                signatureDisplay)) {
+        if (functionInfo != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(
+                    state->global,
+                    functionInfo,
+                    sizeof(*functionInfo),
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(state, &env->externalCallableValues, &functionInfo);
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_TypeEnvironment_RegisterExternalCallableAlias(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        TZrTypeId typeId,
+        SZrString *signatureDisplay) {
+    const SZrFunctionTypeInfo *source = ZR_NULL;
+    SZrFunctionTypeInfo *alias;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || env == ZR_NULL ||
+        name == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID ||
+        signatureDisplay == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U; index < env->externalCallableValues.length; index++) {
+        const SZrFunctionTypeInfo *const *candidate =
+                (const SZrFunctionTypeInfo *const *)ZrCore_Array_Get(
+                        &env->externalCallableValues, index);
+        if (candidate != ZR_NULL && *candidate != ZR_NULL &&
+            (*candidate)->typeId == typeId && (*candidate)->signatureDisplay != ZR_NULL &&
+            ZrCore_String_Equal((*candidate)->signatureDisplay, signatureDisplay)) {
+            source = *candidate;
+            break;
+        }
+    }
+    if (source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0U; index < env->functionReturnTypes.length; index++) {
+        const SZrFunctionTypeInfo *const *existing =
+                (const SZrFunctionTypeInfo *const *)ZrCore_Array_Get(
+                        &env->functionReturnTypes, index);
+        if (existing != ZR_NULL && *existing != ZR_NULL &&
+            (*existing)->isExternalCallable && (*existing)->name != ZR_NULL &&
+            ZrCore_String_Equal((*existing)->name, name) &&
+            (*existing)->typeId == typeId && (*existing)->signatureDisplay != ZR_NULL &&
+            ZrCore_String_Equal((*existing)->signatureDisplay, signatureDisplay)) {
+            return ZR_TRUE;
+        }
+    }
+
+    alias = (SZrFunctionTypeInfo *)ZrCore_Memory_RawMallocWithType(
+            state->global, sizeof(*alias), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (alias == ZR_NULL ||
+        !type_environment_copy_external_callable(
+                state,
+                alias,
+                name,
+                &source->returnType,
+                &source->paramTypes,
+                &source->genericParameters,
+                &source->parameterPassingModes,
+                source->typeId,
+                source->signatureDisplay)) {
+        if (alias != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(
+                    state->global, alias, sizeof(*alias), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(state, &env->functionReturnTypes, &alias);
     return ZR_TRUE;
 }
 

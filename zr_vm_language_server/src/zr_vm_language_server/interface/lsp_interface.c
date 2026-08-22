@@ -1771,6 +1771,13 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                 analyzer,
                 uri,
                 fileRange,
+                result) ||
+        ZrLanguageServer_LspCanonicalSignatureHelp_ResolveExternalCallableHover(
+                state,
+                context,
+                analyzer,
+                uri,
+                fileRange,
                 result)) {
         if (hasLocalQuery &&
             localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT) {
@@ -1781,6 +1788,13 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         }
         ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
         return ZR_TRUE;
+    }
+
+    if (ZrLanguageServer_LspCanonicalSignatureHelp_HasUnavailableLocalCall(
+                analyzer,
+                fileRange)) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+        return ZR_FALSE;
     }
 
     {

@@ -181,7 +181,8 @@ TZrBool ZrParser_SemanticQuery_FormatCall(
     const TZrChar *name = ZR_NULL;
     int written;
 
-    if (context == ZR_NULL || query == ZR_NULL || buffer == ZR_NULL || bufferSize == 0u ||
+    if (context == ZR_NULL || query == ZR_NULL || query->expression == ZR_NULL ||
+        !query->expression->hasCallInfo || buffer == ZR_NULL || bufferSize == 0u ||
         query->callableTypeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
