@@ -51,20 +51,22 @@ typedef struct SZrLspResolvedImportedModuleEntry {
     TZrBool hasDeclaration;
 } SZrLspResolvedImportedModuleEntry;
 
-void ZrLanguageServer_LspMetadataProvider_Init(SZrLspMetadataProvider *provider,
-                                               SZrState *state,
-                                               SZrLspContext *context);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspMetadataProvider_Init(
+    SZrLspMetadataProvider *provider,
+    SZrState *state,
+    SZrLspContext *context);
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModule(SZrLspMetadataProvider *provider,
                                                                    SZrSemanticAnalyzer *analyzer,
                                                                    SZrLspProjectIndex *projectIndex,
                                                                    SZrString *moduleName,
                                                                    SZrLspResolvedImportedModule *outResolved);
-TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadataProvider *provider,
-                                                                   SZrSemanticAnalyzer *analyzer,
-                                                                   SZrLspProjectIndex *projectIndex,
-                                                                   SZrString *moduleName,
-                                                                   SZrString *memberName,
-                                                                   SZrLspResolvedMetadataMember *outResolved);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(
+    SZrLspMetadataProvider *provider,
+    SZrSemanticAnalyzer *analyzer,
+    SZrLspProjectIndex *projectIndex,
+    SZrString *moduleName,
+    SZrString *memberName,
+    SZrLspResolvedMetadataMember *outResolved);
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(SZrLspMetadataProvider *provider,
                                                                         SZrSemanticAnalyzer *analyzer,
                                                                         SZrLspProjectIndex *projectIndex,
@@ -74,11 +76,12 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedModuleHover(SZrLspMet
                                                                        const SZrLspResolvedImportedModule *resolvedModule,
                                                                        SZrFileRange range,
                                                                        SZrLspHover **result);
-TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMetadataProvider *provider,
-                                                                       SZrSemanticAnalyzer *analyzer,
-                                                                       const SZrLspResolvedMetadataMember *resolvedMember,
-                                                                       SZrFileRange range,
-                                                                       SZrLspHover **result);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(
+    SZrLspMetadataProvider *provider,
+    SZrSemanticAnalyzer *analyzer,
+    const SZrLspResolvedMetadataMember *resolvedMember,
+    SZrFileRange range,
+    SZrLspHover **result);
 TZrBool ZrLanguageServer_LspMetadataProvider_AppendImportedModuleCompletions(
     SZrLspMetadataProvider *provider,
     SZrSemanticAnalyzer *analyzer,

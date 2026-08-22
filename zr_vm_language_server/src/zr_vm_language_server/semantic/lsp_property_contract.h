@@ -22,7 +22,7 @@ SZrString *ZrLanguageServer_LspPropertyContract_FormatQuery(
         const TZrChar *typeText,
         const SZrParserSemanticPropertyQuery *query);
 
-SZrSymbol *ZrLanguageServer_LspPropertyContract_FindSourceSymbolAt(
+ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_LspPropertyContract_FindSourceSymbolAt(
         SZrSemanticAnalyzer *analyzer,
         SZrFileRange position);
 

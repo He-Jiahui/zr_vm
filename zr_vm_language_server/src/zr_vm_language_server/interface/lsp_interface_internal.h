@@ -43,11 +43,12 @@ TZrBool ZrLanguageServer_Lsp_IsOffsetInCodeSpan(const TZrChar *content,
 TZrBool ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(const TZrChar *content,
                                                       TZrSize contentLength,
                                                       TZrSize offset);
-SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
-                                                                 SZrSemanticAnalyzer *analyzer,
-                                                                 SZrSymbol *symbol,
-                                                                 const TZrChar *content,
-                                                                 TZrSize contentLength);
+ZR_LANGUAGE_SERVER_API SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(
+    SZrState *state,
+    SZrSemanticAnalyzer *analyzer,
+    SZrSymbol *symbol,
+    const TZrChar *content,
+    TZrSize contentLength);
 SZrString *ZrLanguageServer_Lsp_AppendSymbolFfiMetadataMarkdown(SZrState *state,
                                                                 SZrString *base,
                                                                 SZrSymbol *symbol);
@@ -79,16 +80,17 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
                                                             TZrSize contentLength,
                                                             TZrSize cursorOffset,
                                                             SZrLspResolvedMetadataMember *outResolved);
-TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
-                                                             SZrLspContext *context,
-                                                             SZrLspProjectIndex *projectIndex,
-                                                             SZrSemanticAnalyzer *analyzer,
-                                                             SZrString *uri,
-                                                             SZrAstNode *ast,
-                                                             const TZrChar *content,
-                                                             TZrSize contentLength,
-                                                             TZrSize cursorOffset,
-                                                             SZrLspResolvedMetadataMember *outResolved);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrLspProjectIndex *projectIndex,
+    SZrSemanticAnalyzer *analyzer,
+    SZrString *uri,
+    SZrAstNode *ast,
+    const TZrChar *content,
+    TZrSize contentLength,
+    TZrSize cursorOffset,
+    SZrLspResolvedMetadataMember *outResolved);
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag);
 void ZrLanguageServer_Lsp_AppendDiagnosticForDocument(SZrState *state,
                                                       SZrLspContext *context,
@@ -125,8 +127,9 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
                                                               TZrSize cursorOffset,
                                                               SZrArray *result);
 TZrBool ZrLanguageServer_Lsp_IsKnownMetaMethodToken(const TZrChar *text, TZrSize length);
-SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer,
-                                                              SZrFileRange position);
+ZR_LANGUAGE_SERVER_API SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(
+    SZrSemanticAnalyzer *analyzer,
+    SZrFileRange position);
 ZR_LANGUAGE_SERVER_API SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersion(SZrLspContext *context,
                                                                                    SZrString *uri);
 ZR_LANGUAGE_SERVER_API SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *context,
