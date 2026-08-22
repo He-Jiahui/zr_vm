@@ -5,7 +5,7 @@ static void free_call_metadata(SZrParserState *ps,
                                SZrArray *argNames,
                                SZrArray *argumentMarkers) {
     if (args != ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, args);
+        free_ast_node_array_with_elements(ps->state, args);
     }
     if (argNames != ZR_NULL) {
         ZrCore_Array_Free(ps->state, argNames);

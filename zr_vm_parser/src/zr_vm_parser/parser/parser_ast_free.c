@@ -587,6 +587,28 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_BREAK_CONTINUE_STATEMENT: {
+            SZrBreakContinueStatement *control =
+                    &node->data.breakContinueStatement;
+            if (control->expr != ZR_NULL) {
+                ZrParser_Ast_Free(state, control->expr);
+            }
+            break;
+        }
+        case ZR_AST_THROW_STATEMENT: {
+            SZrThrowStatement *throwStatement = &node->data.throwStatement;
+            if (throwStatement->expr != ZR_NULL) {
+                ZrParser_Ast_Free(state, throwStatement->expr);
+            }
+            break;
+        }
+        case ZR_AST_OUT_STATEMENT: {
+            SZrOutStatement *outStatement = &node->data.outStatement;
+            if (outStatement->expr != ZR_NULL) {
+                ZrParser_Ast_Free(state, outStatement->expr);
+            }
+            break;
+        }
         case ZR_AST_DESTRUCTURING_OBJECT: {
             free_ast_node_array_with_elements(
                     state,

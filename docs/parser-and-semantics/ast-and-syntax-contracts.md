@@ -3,6 +3,9 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/lexer.h
   - zr_vm_parser/src/zr_vm_parser/lexer.c
+  - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_loops.c
@@ -23,6 +26,11 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/lexer.h
+  - zr_vm_parser/src/zr_vm_parser/lexer.c
+  - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_property.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_struct.c
@@ -36,10 +44,17 @@ implementation_files:
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
 plan_sources:
+  - docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md
+  - docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m2-explicit-field-init-implementation-plan.md
 tests:
+  - tests/iterator/test_yield_syntax.c
+  - tests/parser/test_lexer_parser_compiler_execution.c
+  - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/parser/test_reference_syntax_contract.c
+  - tests/parser/test_reflection_type_surface.c
   - tests/parser/test_property_unified_ast.c
   - tests/parser/test_property_explicit_field_init.c
   - tests/parser/test_parser.c
@@ -115,6 +130,27 @@ Property recovery is scoped to the declaration body and accessor terminators. A 
 accessor may report an exact property/accessor range while preserving later members when a stable
 boundary exists. Recovery never converts an unrelated identifier named `property`, `get`, `set`,
 `init`, or `value` into a declaration.
+
+## Parser-Owned Transient Lifetime
+
+`ZrParser_Lexer_Init` owns one token buffer and must be paired with
+`ZrParser_Lexer_Free` when a caller embeds `SZrLexState` directly. Parser-state
+callers use `ZrParser_State_Free`, which releases that buffer before releasing
+the heap-allocated lexer. The free operation clears the buffer pointer and
+lengths so parser teardown cannot accidentally reuse the released storage.
+
+Postfix parsing keeps ownership of the current base expression until a member
+or call segment has been attached successfully. A fatal malformed suffix frees
+the base, any parsed property, all argument AST elements, and their metadata;
+it never returns a pointer to a partially freed chain. Successful construction
+transfers those children into the primary-expression chain, whose ordinary AST
+destructor owns them. `break`/`continue`, `throw`, and `out` statement nodes also
+own and release their optional expression children.
+
+Diagnostic tests do not require every syntax error to produce a recovery AST.
+They assert the diagnostic and exact source range, then release a recovery AST
+only when the parser can construct one safely. This keeps fail-closed parser
+paths valid without weakening diagnostic coverage.
 
 ## Removed Source-Intermediate Contract
 

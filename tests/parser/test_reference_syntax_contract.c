@@ -85,6 +85,7 @@ static void test_lexer_distinguishes_fn_ref_and_callable_delimiters(void) {
     TEST_ASSERT_EQUAL_INT(ZR_TK_THIN_ARROW, lexer.t.token);
     ZrParser_Lexer_Next(&lexer);
     TEST_ASSERT_EQUAL_INT(ZR_TK_FAT_ARROW, lexer.t.token);
+    ZrParser_Lexer_Free(&lexer);
 }
 
 static void test_named_and_nested_function_type_syntax_preserves_delimiters(void) {
@@ -375,8 +376,8 @@ static void test_invalid_callable_delimiters_and_modifier_orders_report_exact_to
             "fn broken(value: scoped Data): void {}",
     };
     const char *messages[] = {
-            "Function declarations use ':'",
-            "Expected '->' after function type parameter list",
+            "Legacy syntax 'function definition arrow' was removed",
+            "Legacy syntax 'function type fat arrow' was removed",
             "Anonymous function expressions use '=>'",
             "'readonly' must follow 'ref'",
             "Expected 'ref' after 'scoped'",
@@ -387,6 +388,9 @@ static void test_invalid_callable_delimiters_and_modifier_orders_report_exact_to
         SZrParserState parserState;
         SParserErrorCapture capture;
         SZrAstNode *ast;
+        TZrBool hasDiagnostic;
+        TZrBool messageMatches;
+        TZrBool hasPreciseRange;
 
         memset(&capture, 0, sizeof(capture));
         ZrParser_State_Init(&parserState, g_state, sources[index], strlen(sources[index]), sourceName);
@@ -394,14 +398,16 @@ static void test_invalid_callable_delimiters_and_modifier_orders_report_exact_to
         parserState.errorCallback = capture_parser_error;
         parserState.errorUserData = &capture;
         ast = ZrParser_ParseWithState(&parserState);
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_GREATER_THAN_UINT32(0u, capture.count);
-        TEST_ASSERT_NOT_NULL(strstr(capture.firstMessage, messages[index]));
-        TEST_ASSERT_GREATER_THAN_UINT32(0u, (TZrUInt32)capture.firstRange.end.offset);
+        hasDiagnostic = capture.count > 0u;
+        messageMatches = strstr(capture.firstMessage, messages[index]) != ZR_NULL;
+        hasPreciseRange = capture.firstRange.end.offset > 0u;
         if (ast != ZR_NULL) {
             ZrParser_Ast_Free(g_state, ast);
         }
         ZrParser_State_Free(&parserState);
+        TEST_ASSERT_TRUE(hasDiagnostic);
+        TEST_ASSERT_TRUE(messageMatches);
+        TEST_ASSERT_TRUE(hasPreciseRange);
     }
 }
 

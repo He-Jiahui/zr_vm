@@ -329,6 +329,7 @@ static void test_question_dot_is_one_token(void) {
     TEST_ASSERT_EQUAL_INT(ZR_TK_QUESTION_DOT, lexer.t.token);
     ZrParser_Lexer_Next(&lexer);
     TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, lexer.t.token);
+    ZrParser_Lexer_Free(&lexer);
 }
 
 static void test_question_dot_requires_adjacent_characters(void) {
@@ -343,6 +344,7 @@ static void test_question_dot_requires_adjacent_characters(void) {
     TEST_ASSERT_EQUAL_INT(ZR_TK_DOT, lexer.t.token);
     ZrParser_Lexer_Next(&lexer);
     TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, lexer.t.token);
+    ZrParser_Lexer_Free(&lexer);
 }
 
 static void test_reserved_intrinsics_have_independent_ast(void) {

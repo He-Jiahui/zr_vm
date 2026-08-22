@@ -40,12 +40,9 @@ void ZrParser_State_Free(SZrParserState *ps) {
     }
 
     if (ps->lexer != ZR_NULL) {
-        // 释放词法分析器的缓冲区
-        if (ps->lexer->buffer != ZR_NULL) {
-            ZrCore_Memory_RawFreeWithType(ps->state->global, ps->lexer->buffer, ps->lexer->bufferSize,
-                                          ZR_MEMORY_NATIVE_TYPE_STRING);
-        }
+        ZrParser_Lexer_Free(ps->lexer);
         ZrCore_Memory_RawFreeWithType(ps->state->global, ps->lexer, sizeof(SZrLexState), ZR_MEMORY_NATIVE_TYPE_STRING);
+        ps->lexer = ZR_NULL;
     }
 }
 

@@ -172,6 +172,7 @@ static void test_lexer_char_literal_token(void) {
     
     // 验证 token 类型
     TZrBool isCharToken = (token == ZR_TK_CHAR);
+    ZrParser_Lexer_Free(&lexer);
     ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
@@ -211,6 +212,7 @@ static void test_lexer_string_literal_token(void) {
     
     // 验证 token 类型
     TZrBool isStringToken = (token == ZR_TK_STRING);
+    ZrParser_Lexer_Free(&lexer);
     ZrCore_GlobalState_Free(global);
     
     timer.endTime = clock();
@@ -254,6 +256,7 @@ static void test_lexer_integer_literal_preserves_numeric_and_raw_literal(void) {
         literalString = ZrCore_String_GetNativeString(lexer.t.seminfo.stringValue);
         TEST_ASSERT_NOT_NULL(literalString);
         TEST_ASSERT_EQUAL_STRING("12345", literalString);
+        ZrParser_Lexer_Free(&lexer);
     }
 
     ZrCore_GlobalState_Free(global);
@@ -295,6 +298,7 @@ static void test_lexer_char_escape_sequences(void) {
         SZrLexState lexer;
         ZrParser_Lexer_Init(&lexer, state, testCases[i], strlen(testCases[i]), sourceName);
         EZrToken token = lexer.t.token;
+        ZrParser_Lexer_Free(&lexer);
         if (token != ZR_TK_CHAR) {
             allPassed = ZR_FALSE;
             break;

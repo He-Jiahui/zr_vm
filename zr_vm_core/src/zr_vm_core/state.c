@@ -208,6 +208,24 @@ void ZrCore_State_Exit(SZrState *state) {
     // todo
 }
 
+static void state_call_info_chain_free(SZrGlobalState *global, SZrState *state) {
+    SZrCallInfo *callInfo = state->baseCallInfo.next;
+
+    while (callInfo != ZR_NULL) {
+        SZrCallInfo *next = callInfo->next;
+
+        ZrCore_Memory_RawFreeWithType(global,
+                                      callInfo,
+                                      sizeof(SZrCallInfo),
+                                      ZR_MEMORY_NATIVE_TYPE_CALL_INFO);
+        callInfo = next;
+    }
+
+    state->baseCallInfo.next = ZR_NULL;
+    state->callInfoList = &state->baseCallInfo;
+    state->callInfoListLength = 0u;
+}
+
 
 void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
     // 检查参数有效性
@@ -223,6 +241,8 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
     if (state->gcDomain != ZR_NULL) {
         ZrCore_GcDomain_DetachState(state->gcDomain, state);
     }
+
+    state_call_info_chain_free(global, state);
     
     // 检查stackBase是否有效（在访问之前）
     if ((TZrPtr)&state->stackBase >= (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {

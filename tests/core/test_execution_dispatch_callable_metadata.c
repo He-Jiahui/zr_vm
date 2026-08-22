@@ -7,6 +7,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
@@ -428,7 +429,6 @@ static void test_known_vm_call_refreshes_forwarded_stateless_function_without_ma
     SZrCallInfo *callInfo;
     SZrTypeValue callerCallableValue;
     SZrTypeValue *calleeSlotValue;
-    TZrInstruction callerInstructions[1];
     TestDispatchCallableCapture capture;
 
     TEST_ASSERT_NOT_NULL(state);
@@ -441,10 +441,14 @@ static void test_known_vm_call_refreshes_forwarded_stateless_function_without_ma
     TEST_ASSERT_NOT_NULL(callerFunction);
 
     originalCalleeFunction->super.garbageCollectMark.forwardingAddress = &forwardedCalleeFunction->super;
-    callerInstructions[0] =
+    callerFunction->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(callerFunction->instructionsList);
+    callerFunction->instructionsList[0] =
             test_create_instruction_call_1(ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 0u, 0u, 0u);
-    callerFunction->instructionsList = callerInstructions;
-    callerFunction->instructionsLength = ZR_ARRAY_COUNT(callerInstructions);
+    callerFunction->instructionsLength = 1u;
     callerFunction->stackSize = 1u;
     callerFunction->parameterCount = 0u;
     callerFunction->hasVariableArguments = ZR_FALSE;
@@ -489,6 +493,12 @@ static SZrFunction *test_create_simple_caller_function(SZrState *state,
                                                        TZrUInt32 instructionCount,
                                                        TZrUInt32 stackSize);
 
+static void test_execute_prepared_call(SZrState *state, TZrPtr arguments) {
+    SZrCallInfo *callInfo = *(SZrCallInfo **)arguments;
+
+    ZrCore_Execute(state, callInfo);
+}
+
 static void test_known_vm_call_rejects_non_callable_native_value_without_object_refresh(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *callerFunction;
@@ -496,6 +506,7 @@ static void test_known_vm_call_rejects_non_callable_native_value_without_object_
     SZrTypeValue callerCallableValue;
     SZrTypeValue *calleeSlotValue;
     TZrInstruction callerInstructions[1];
+    EZrThreadStatus status;
 
     TEST_ASSERT_NOT_NULL(state);
 
@@ -520,9 +531,9 @@ static void test_known_vm_call_rejects_non_callable_native_value_without_object_
     TEST_ASSERT_NOT_NULL(calleeSlotValue);
     ZrCore_Value_InitAsFloat(state, calleeSlotValue, 0.5);
 
-    ZrCore_Execute(state, callInfo);
+    status = ZrCore_Exception_TryRun(state, test_execute_prepared_call, &callInfo);
 
-    TEST_ASSERT_NOT_EQUAL(ZR_THREAD_STATUS_FINE, state->threadStatus);
+    TEST_ASSERT_NOT_EQUAL(ZR_THREAD_STATUS_FINE, status);
 
     ZrTests_Runtime_State_Destroy(state);
 }

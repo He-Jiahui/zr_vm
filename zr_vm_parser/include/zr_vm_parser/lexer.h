@@ -188,6 +188,9 @@ typedef struct SZrLexState {
 // 初始化词法分析器
 ZR_PARSER_API void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName);
 
+// Release storage owned by a lexer initialized with ZrParser_Lexer_Init.
+ZR_PARSER_API void ZrParser_Lexer_Free(SZrLexState *ls);
+
 // 获取下一个 token
 ZR_PARSER_API void ZrParser_Lexer_Next(SZrLexState *ls);
 

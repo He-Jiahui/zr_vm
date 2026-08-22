@@ -1423,7 +1423,14 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
                                       sizeof(SZrFunctionCallSiteCacheEntry) * function->callSiteCacheLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
-    // prototypeInstances 不需要手动释放，它们由GC管理（作为对象引用）。
+    if (function->prototypeInstances != ZR_NULL && function->prototypeInstancesLength > 0) {
+        ZrCore_Memory_RawFree(global,
+                              function->prototypeInstances,
+                              sizeof(SZrObjectPrototype *) * function->prototypeInstancesLength);
+        function->prototypeInstances = ZR_NULL;
+        function->prototypeInstancesLength = 0u;
+    }
+    // The prototype objects are GC-managed; only their raw pointer storage is owned here.
     // Reset the function to a GC-safe tombstone because the raw object itself
     // stays on the GC list until the collector later reclaims it.
     function_reset_to_tombstone(function);

@@ -170,9 +170,38 @@ but the report contains no native-registry or `native_binding.c` allocation
 stack after the new global teardown hook.
 
 An independent GCC Debug cache built the ownership/member-separation target with
-`-fsanitize=address,undefined -fno-omit-frame-pointer`. With leak detection
-disabled and both sanitizers configured to halt on the first error, the target
-passed 24/24 with no AddressSanitizer or UndefinedBehaviorSanitizer report.
+`-fsanitize=address,undefined -fno-omit-frame-pointer`. The final lifecycle
+replay enabled leak detection and configured both sanitizers to halt on the
+first error. The target passed 24/24 with no AddressSanitizer,
+UndefinedBehaviorSanitizer, or LeakSanitizer report.
+
+Valgrind independently executed the same 24/24 target with full leak checking
+and definite, indirect, or possible leaks treated as errors. It observed 48,162
+allocations and 48,162 frees, `0 bytes in 0 blocks` at exit, and `0 errors from
+0 contexts`. The fixes pair standalone lexer initialization with an explicit
+free, release malformed postfix/statement AST children, release reusable
+call-info nodes at state teardown, release compiled-function prototype pointer
+storage while leaving the prototypes GC-owned, and avoid overwriting an already
+initialized prototype-inheritance scratch array.
+
+The directly affected behavior suites pass under GCC 11.4, Clang 14, and MSVC
+19.44 Debug with real exit code 0:
+
+```text
+ownership intrinsic/member separation       24/24
+lexer/parser/compiler execution              11/11
+reflection type surface                      21/21
+yield syntax                                   4/4
+reference syntax contract                      8/8
+execution callable metadata                  18/18
+```
+
+The reference diagnostic test now accepts a fail-closed parser result while
+still requiring the current one-time-cutover diagnostic and precise source
+range. The execution fixture allocates instruction storage through the runtime
+allocator and captures the expected invalid-call exception through
+`ZrCore_Exception_TryRun`, matching production ownership and exception
+contracts instead of depending on stack storage or process abort behavior.
 
 ## Pending final acceptance
 

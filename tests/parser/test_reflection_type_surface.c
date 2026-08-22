@@ -242,6 +242,7 @@ static void test_reflection_query_keywords_have_dedicated_tokens(void) {
     TEST_ASSERT_EQUAL_INT(ZR_TK_TYPEID, lexer.t.token);
     ZrParser_Lexer_Next(&lexer);
     TEST_ASSERT_EQUAL_INT(ZR_TK_TYPEOF, lexer.t.token);
+    ZrParser_Lexer_Free(&lexer);
 }
 
 static void test_typeid_parses_operand_in_type_ref_context(void) {

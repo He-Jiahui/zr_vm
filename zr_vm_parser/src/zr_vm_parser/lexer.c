@@ -932,6 +932,22 @@ void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source
     ZrParser_Lexer_Next(ls);
 }
 
+void ZrParser_Lexer_Free(SZrLexState *ls) {
+    if (ls == ZR_NULL) {
+        return;
+    }
+
+    if (ls->buffer != ZR_NULL && ls->state != ZR_NULL && ls->state->global != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(ls->state->global,
+                                      ls->buffer,
+                                      ls->bufferSize,
+                                      ZR_MEMORY_NATIVE_TYPE_STRING);
+    }
+    ls->buffer = ZR_NULL;
+    ls->bufferSize = 0u;
+    ls->bufferLength = 0u;
+}
+
 // 获取下一个 token
 void ZrParser_Lexer_Next(SZrLexState *ls) {
     // 如果 lookahead 已经被缓存，使用它而不是重新读取

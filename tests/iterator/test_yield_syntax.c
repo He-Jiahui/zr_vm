@@ -52,6 +52,7 @@ static void test_yield_is_a_reserved_statement_keyword(void) {
     ZrParser_Lexer_Init(
             &lexer, g_state, source, strlen(source), sourceName);
     TEST_ASSERT_EQUAL_INT(ZR_TK_YIELD, lexer.t.token);
+    ZrParser_Lexer_Free(&lexer);
 }
 
 static void test_yield_parses_as_a_dedicated_statement(void) {

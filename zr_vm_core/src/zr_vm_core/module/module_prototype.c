@@ -1148,10 +1148,7 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                 protoInfoData.layoutByteAlign = 0;
                 protoInfoData.hasDecoratorMetadata = ZR_FALSE;
                 ZrCore_Value_ResetAsNull(&protoInfoData.decoratorMetadataValue);
-                ZrCore_Array_Init(state,
-                                  &protoInfoData.inheritTypeNames,
-                                  sizeof(SZrString *),
-                                  ZR_RUNTIME_PROTOTYPE_INHERIT_INITIAL_CAPACITY);
+                ZrCore_Array_Construct(&protoInfoData.inheritTypeNames);
                 protoInfoData.members = ZR_NULL;
                 protoInfoData.membersCount = 0;
 

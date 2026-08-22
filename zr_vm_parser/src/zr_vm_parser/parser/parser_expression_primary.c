@@ -225,7 +225,6 @@ static TZrBool reject_legacy_ownership_generic_call(SZrParserState *ps,
     if (genericArguments != ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, genericArguments);
     }
-    ZrParser_Ast_Free(ps->state, base);
     return ZR_TRUE;
 }
 
@@ -803,22 +802,26 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             consume_token(ps, ZR_TK_QUESTION_DOT);
             if (ps->lexer->t.token == ZR_TK_LBRACKET) {
                 report_error(ps, "Optional computed access '?.[' is not supported");
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
             if (ps->lexer->t.token == ZR_TK_LPAREN) {
-                base = parse_postfix_call_segment(
+                SZrAstNode *updatedBase = parse_postfix_call_segment(
                         ps,
                         base,
                         startLoc,
                         optionalLocation,
                         ZR_POSTFIX_ACCESS_OPTIONAL);
-                if (base == ZR_NULL) {
+                if (updatedBase == ZR_NULL) {
+                    ZrParser_Ast_Free(ps->state, base);
                     return ZR_NULL;
                 }
+                base = updatedBase;
                 continue;
             }
             if (!is_member_name_token(ps->lexer->t.token)) {
                 report_missing_member_name(ps, optionalLocation);
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
 
@@ -826,6 +829,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             SZrAstNode *memberNode;
 
             if (property == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
             memberNode = create_ast_node(
@@ -848,6 +852,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             // 成员名上下文允许关键字以普通名称形式出现，例如 zr.ffi.out
             if (!is_member_name_token(ps->lexer->t.token)) {
                 report_missing_member_name(ps, dotLocation);
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
             TZrNativeString baseName =
@@ -868,6 +873,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             SZrAstNode *property = parse_member_name(ps);
             if (property == ZR_NULL) {
                 // parse_member_name 已经报告了错误
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
 
@@ -876,6 +882,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                     ZR_AST_MEMBER_EXPRESSION,
                     ZrParser_FileRange_Merge(dotLocation, property->location));
             if (memberNode == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, property);
                 return base;
             }
             memberNode->data.memberExpression.property = property;
@@ -895,6 +902,8 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             }
             if (ps->lexer->t.token != ZR_TK_RBRACKET) {
                 report_missing_index_close(ps, bracketLocation);
+                ZrParser_Ast_Free(ps->state, property);
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
             bracketCloseLocation = get_current_token_location(ps);
@@ -905,6 +914,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                     ZR_AST_MEMBER_EXPRESSION,
                     ZrParser_FileRange_Merge(bracketLocation, bracketCloseLocation));
             if (memberNode == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, property);
                 return base;
             }
             memberNode->data.memberExpression.property = property;
@@ -949,6 +959,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 }
                 free_ast_node_array_with_elements(ps->state, genericArguments);
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
             callCloseLocation = get_current_token_location(ps);
@@ -967,6 +978,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                                                   ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 }
                 if (callNode == ZR_NULL) {
+                    ZrParser_Ast_Free(ps->state, base);
                     return ZR_NULL;
                 }
                 base = callNode;
@@ -1016,16 +1028,19 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
         // 函数调用
         else if (ps->lexer->t.token == ZR_TK_LPAREN) {
             SZrFileRange callLocation = get_current_token_location(ps);
+            SZrAstNode *updatedBase;
 
-            base = parse_postfix_call_segment(
+            updatedBase = parse_postfix_call_segment(
                     ps,
                     base,
                     startLoc,
                     callLocation,
                     ZR_POSTFIX_ACCESS_DIRECT);
-            if (base == ZR_NULL) {
+            if (updatedBase == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
+            base = updatedBase;
         } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
             TZrBool handled = ZR_FALSE;
             SZrAstNode *bracedMember = try_parse_braced_primary_member(ps, base, startLoc, &handled);
@@ -1034,6 +1049,7 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 break;
             }
             if (bracedMember == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, base);
                 return ZR_NULL;
             }
             base = bracedMember;

@@ -20,6 +20,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
   - zr_vm_core/include/zr_vm_core/state.h
+  - zr_vm_core/src/zr_vm_core/state.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/closure.c
   - zr_vm_core/src/zr_vm_core/execution/execution_control.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
@@ -64,6 +66,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
   - zr_vm_core/include/zr_vm_core/state.h
+  - zr_vm_core/src/zr_vm_core/state.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
   - zr_vm_core/src/zr_vm_core/closure.c
   - zr_vm_core/src/zr_vm_core/execution/execution_control.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
@@ -92,6 +96,9 @@ plan_sources:
   - user: 2026-05-18 real GC/native entry wiring without claiming full ABI completion
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
+  - tests/core/test_execution_dispatch_callable_metadata.c
+  - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/acceptance/2026-08-10-ownership-object-member-separation.md
   - tests/core/test_type_layout_inline_copy.c
   - tests/task/test_task_frame_runtime.c
   - tests/core/test_tail_reuse_callinfo_reset.c
@@ -117,6 +124,9 @@ doc_type: category-index
 
 Core runtime documents cover VM stack storage, call-frame data movement, ownership-aware inline values, and low-level execution helpers.
 
+- `state-lifecycle.md`: state teardown for reusable call-info chains, compiled-function
+  prototype pointer storage, module prototype scratch arrays, and allocator ownership
+  boundaries validated by sanitizers and Valgrind.
 - `task-frame-runtime.md`: structured Task/frame state, synchronous no-allocation completion,
   suspension-only promotion, layout-declared GC/drop maps, result roots, non-Copy transfer,
   and typed frame pooling without a dynamic-object coroutine fallback.
