@@ -470,6 +470,48 @@ async function testReferencesPartialResults(serverPath) {
     });
 }
 
+async function testCallHierarchyPartialResults(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const uri = 'file:///partial-progress-call-hierarchy.zr';
+        await initialize(client, 'partial-call-hierarchy-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: [
+                    'fn partialCallee(value: int): int {',
+                    '    return value;',
+                    '}',
+                    'fn partialCaller(): int {',
+                    '    return partialCallee(1);',
+                    '}',
+                ].join('\n'),
+            },
+        });
+
+        const prepared = await client.request('textDocument/prepareCallHierarchy', {
+            textDocument: { uri },
+            position: { line: 0, character: 3 },
+        }, 'prepare-call-hierarchy-partial', RESPONSE_TIMEOUT_MS);
+        assert(prepared && Array.isArray(prepared.result) && prepared.result.length > 0,
+               `prepare call hierarchy must yield the callee item, actual=${JSON.stringify(prepared)}`);
+
+        const responsePromise = client.request('callHierarchy/incomingCalls', {
+            item: prepared.result[0],
+            partialResultToken: 'call-hierarchy-partial',
+        }, 'call-hierarchy-partial', RESPONSE_TIMEOUT_MS);
+        const partial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const response = await responsePromise;
+
+        assert(partial && partial.token === 'call-hierarchy-partial' && Array.isArray(partial.value) &&
+               partial.value.some((call) => call && call.from && call.from.name === 'partialCaller'),
+               `call hierarchy partial result must preserve incoming calls, actual=${JSON.stringify(partial)}`);
+        assert(response && response.id === 'call-hierarchy-partial' && response.result === null,
+               `call hierarchy partial result must consume the ordinary response, actual=${JSON.stringify(response)}`);
+    });
+}
+
 async function testOversizeFrameClosesWithFailure(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 16777217\r\n\r\n', 'ascii'));
@@ -535,6 +577,7 @@ async function main() {
         ['request work-done progress', testRequestWorkDoneProgress],
         ['workspace symbol partial results', testWorkspaceSymbolPartialResults],
         ['references partial results', testReferencesPartialResults],
+        ['call hierarchy partial results', testCallHierarchyPartialResults],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];
