@@ -100,6 +100,7 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_workspace_commands.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_request_dispatch.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_requests.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_lifecycle.c
     )
 
     target_include_directories(zr_vm_language_server_stdio PRIVATE

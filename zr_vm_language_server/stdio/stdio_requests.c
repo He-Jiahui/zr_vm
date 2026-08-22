@@ -22,6 +22,21 @@ static TZrBool send_active_request_lifecycle_error(SZrStdioServer *server, const
     return ZR_FALSE;
 }
 
+static TZrBool send_lifecycle_request_error(SZrStdioServer *server, const cJSON *id) {
+    if (server == ZR_NULL || id == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (ZrLanguageServer_StdioLifecycle_IsNew(&server->lifecycle)) {
+        send_error_response(id,
+                            ZR_LSP_JSON_RPC_SERVER_NOT_INITIALIZED_CODE,
+                            "Server not initialized");
+    } else {
+        send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
+    }
+    return ZR_TRUE;
+}
+
 void handle_request_message(SZrStdioServer *server,
                             const cJSON *id,
                             const char *method,
@@ -32,11 +47,11 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
-    if (send_active_request_lifecycle_error(server, id)) {
-        return;
-    }
-
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZE) == 0) {
+        if (!ZrLanguageServer_StdioLifecycle_BeginInitialize(&server->lifecycle)) {
+            send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
+            return;
+        }
         result = handle_initialize_request(server, params);
         if (send_active_request_lifecycle_error(server, id)) {
             cJSON_Delete(result);
@@ -47,11 +62,23 @@ void handle_request_message(SZrStdioServer *server,
     }
 
     if (strcmp(method, ZR_LSP_METHOD_SHUTDOWN) == 0) {
-        server->shutdownRequested = ZR_TRUE;
+        if (!ZrLanguageServer_StdioLifecycle_BeginShutdown(&server->lifecycle)) {
+            send_lifecycle_request_error(server, id);
+            return;
+        }
         if (send_active_request_lifecycle_error(server, id)) {
             return;
         }
         send_result_response(id, NULL);
+        return;
+    }
+
+    if (!ZrLanguageServer_StdioLifecycle_CanProcessRequest(&server->lifecycle)) {
+        send_lifecycle_request_error(server, id);
+        return;
+    }
+
+    if (send_active_request_lifecycle_error(server, id)) {
         return;
     }
 
@@ -94,8 +121,26 @@ void handle_notification_message(SZrStdioServer *server,
         return;
     }
 
-    if (strcmp(method, ZR_LSP_METHOD_INITIALIZED) == 0 ||
-        strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_CONFIGURATION) == 0 ||
+    if (strcmp(method, ZR_LSP_METHOD_EXIT) == 0) {
+        if (outShouldExit != NULL) {
+            *outShouldExit = 1;
+        }
+        if (outExitCode != NULL) {
+            *outExitCode = ZrLanguageServer_StdioLifecycle_Exit(&server->lifecycle);
+        }
+        return;
+    }
+
+    if (strcmp(method, ZR_LSP_METHOD_INITIALIZED) == 0) {
+        ZrLanguageServer_StdioLifecycle_MarkInitialized(&server->lifecycle);
+        return;
+    }
+
+    if (!ZrLanguageServer_StdioLifecycle_CanProcessRequest(&server->lifecycle)) {
+        return;
+    }
+
+    if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_CONFIGURATION) == 0 ||
         strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS) == 0 ||
         strcmp(method, ZR_LSP_METHOD_CANCEL_REQUEST) == 0) {
         return;
@@ -122,12 +167,5 @@ void handle_notification_message(SZrStdioServer *server,
         handle_did_rename_files(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_DELETE_FILES) == 0) {
         handle_did_delete_files(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_EXIT) == 0) {
-        if (outShouldExit != NULL) {
-            *outShouldExit = 1;
-        }
-        if (outExitCode != NULL) {
-            *outExitCode = server->shutdownRequested ? 0 : 1;
-        }
     }
 }

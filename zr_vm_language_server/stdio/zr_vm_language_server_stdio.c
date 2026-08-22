@@ -160,6 +160,7 @@ int main(void) {
     int exitCode = 1;
 
     memset(&server, 0, sizeof(server));
+    ZrLanguageServer_StdioLifecycle_Init(&server.lifecycle);
 
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
@@ -189,7 +190,6 @@ int main(void) {
         return 1;
     }
 
-    server.shutdownRequested = ZR_FALSE;
     for (;;) {
         cJSON *message = NULL;
         TZrBool isParseError = ZR_FALSE;
@@ -243,7 +243,7 @@ int main(void) {
         cJSON_Delete(message);
     }
 
-    if (server.shutdownRequested && exitCode != 0) {
+    if (ZrLanguageServer_StdioLifecycle_IsShutdown(&server.lifecycle) && exitCode != 0) {
         exitCode = 0;
     }
 

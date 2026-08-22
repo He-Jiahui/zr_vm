@@ -22,6 +22,7 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "stdio_lifecycle.h"
 
 typedef struct SZrCachedUri {
     char *text;
@@ -90,7 +91,7 @@ typedef struct SZrStdioServer {
     char *activeRequestIdKey;
     TZrUInt64 activeRequestInputGeneration;
     EZrStdioPositionEncoding positionEncoding;
-    TZrBool shutdownRequested;
+    SZrStdioLifecycle lifecycle;
 } SZrStdioServer;
 
 char *duplicate_string_range(const char *text, size_t length);
