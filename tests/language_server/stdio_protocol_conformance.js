@@ -572,6 +572,34 @@ async function testTypeHierarchyPartialResults(serverPath) {
     });
 }
 
+async function testWorkspaceDiagnosticPartialResults(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const uri = 'file:///partial-progress-workspace-diagnostic.zr';
+        await initialize(client, 'partial-workspace-diagnostic-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: 'fn partialWorkspaceDiagnostic(value: int): int { return value; }',
+            },
+        });
+
+        const responsePromise = client.request('workspace/diagnostic', {
+            partialResultToken: 'workspace-diagnostic-partial',
+        }, 'workspace-diagnostic-partial', RESPONSE_TIMEOUT_MS);
+        const partial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const response = await responsePromise;
+
+        assert(partial && partial.token === 'workspace-diagnostic-partial' &&
+               partial.value && Array.isArray(partial.value.items) &&
+               partial.value.items.some((report) => report && report.uri === uri),
+               `workspace diagnostic partial result must preserve report items, actual=${JSON.stringify(partial)}`);
+        assert(response && response.id === 'workspace-diagnostic-partial' && response.result === null,
+               `workspace diagnostic partial result must consume the ordinary response, actual=${JSON.stringify(response)}`);
+    });
+}
+
 async function testOversizeFrameClosesWithFailure(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 16777217\r\n\r\n', 'ascii'));
@@ -639,6 +667,7 @@ async function main() {
         ['references partial results', testReferencesPartialResults],
         ['call hierarchy partial results', testCallHierarchyPartialResults],
         ['type hierarchy partial results', testTypeHierarchyPartialResults],
+        ['workspace diagnostic partial results', testWorkspaceDiagnosticPartialResults],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];

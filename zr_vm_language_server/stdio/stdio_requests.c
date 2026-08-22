@@ -179,7 +179,8 @@ static void stdio_request_progress_end(SZrStdioServer *server) {
 }
 
 static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
-                                                          cJSON *result) {
+                                                          cJSON *result,
+                                                          const char *itemsField) {
     int resultCount;
     int resultIndex;
 
@@ -194,6 +195,7 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
     for (resultIndex = 0; resultIndex < resultCount; resultIndex += ZR_LSP_PARTIAL_RESULT_BATCH_SIZE) {
         cJSON *params;
         cJSON *batch;
+        cJSON *value;
         int batchEnd = resultIndex + ZR_LSP_PARTIAL_RESULT_BATCH_SIZE;
 
         if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
@@ -223,7 +225,17 @@ static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
         cJSON_AddItemReferenceToObject(params,
                                        ZR_LSP_FIELD_TOKEN,
                                        (cJSON *)server->requestProgress.partialResultToken);
-        cJSON_AddItemToObject(params, ZR_LSP_FIELD_VALUE, batch);
+        value = batch;
+        if (itemsField != ZR_NULL) {
+            value = cJSON_CreateObject();
+            if (value == ZR_NULL) {
+                cJSON_Delete(params);
+                cJSON_Delete(batch);
+                return ZR_FALSE;
+            }
+            cJSON_AddItemToObject(value, itemsField, batch);
+        }
+        cJSON_AddItemToObject(params, ZR_LSP_FIELD_VALUE, value);
         send_notification(ZR_LSP_METHOD_PROGRESS, params);
     }
     return ZR_TRUE;
@@ -233,13 +245,23 @@ static TZrBool stdio_request_progress_publish_partial_result(SZrStdioServer *ser
                                                               const char *method,
                                                               cJSON **inOutResult) {
     cJSON *completedResult;
+    cJSON *items;
+    const char *itemsField = ZR_NULL;
 
     if (server == ZR_NULL || inOutResult == ZR_NULL ||
-        server->requestProgress.partialResultToken == ZR_NULL ||
-        !stdio_request_method_supports_array_partial_results(method)) {
+        server->requestProgress.partialResultToken == ZR_NULL) {
         return ZR_TRUE;
     }
-    if (!stdio_request_progress_send_array_partial(server, *inOutResult)) {
+    items = *inOutResult;
+    if (!stdio_request_method_supports_array_partial_results(method)) {
+        if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC) != 0 ||
+            !cJSON_IsObject(*inOutResult)) {
+            return ZR_TRUE;
+        }
+        items = cJSON_GetObjectItemCaseSensitive(*inOutResult, ZR_LSP_FIELD_ITEMS);
+        itemsField = ZR_LSP_FIELD_ITEMS;
+    }
+    if (!stdio_request_progress_send_array_partial(server, items, itemsField)) {
         return ZR_FALSE;
     }
 
