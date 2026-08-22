@@ -3034,7 +3034,7 @@ static TZrBool validate_receiver_call_capability(
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier) {
     switch (receiverQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "Weak-owned receivers must be upgraded before calling methods that require a strong owner";
+            return "Weak-owned receivers must be woken before calling methods that require a strong owner";
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
             return "Shared-owned receivers can only call shared or readonly-reference methods";
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:

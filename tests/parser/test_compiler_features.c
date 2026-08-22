@@ -3716,7 +3716,7 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership surface lowering",
-              "Testing that own/share/weak/ref/intoGc/upgrade/drop lower through ownership opcodes");
+              "Testing that own/share/degrade/wake/ref/intoGc/drop lower through ownership opcodes");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3747,12 +3747,12 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
             "var detachedSeed = own Session();\n"
             "var rawSession = intoGc(detachedSeed);\n"
             "if (rawSession != null) { mask = mask + 8; }\n"
-            "var upgradedSession = wake(watcher);\n"
-            "if (upgradedSession != null) { mask = mask + 16; }\n"
+            "var wokenSession = wake(watcher);\n"
+            "if (wokenSession != null) { mask = mask + 16; }\n"
             "var releasedShared = drop(sharedSession);\n"
-            "var releasedUpgrade = drop(upgradedSession);\n"
+            "var releasedWake = drop(wokenSession);\n"
             "var expiredSession = wake(watcher);\n"
-            "if (releasedShared == null && releasedUpgrade == null && expiredSession == null) {\n"
+            "if (releasedShared == null && releasedWake == null && expiredSession == null) {\n"
             "    mask = mask + 32;\n"
             "}\n"
             "return mask;\n"
@@ -3985,7 +3985,7 @@ void test_ownership_generic_real_fixture_executes_session_lifecycle(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Ownership generic fixture lifecycle",
-              "Testing that a repository .zr fixture exercises resource ownership, Shared<T>, Weak<T>, lexical references, intoGc, drop, and upgrade together");
+              "Testing that a repository .zr fixture exercises resource ownership, Shared<T>, Weak<T>, lexical references, intoGc, drop, and wake together");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4297,14 +4297,14 @@ void test_ownership_drop_preserves_unrelated_stack_values_after_weak_expiry(void
     ZR_TEST_DIVIDER();
 }
 
-void test_plugin_guard_module_share_member_is_rejected(void) {
+void test_plugin_guard_module_share_uses_member_dispatch(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Plugin Guard Module Share Member Is Rejected";
+    const char *testSummary = "Plugin Guard Module Share Uses Member Dispatch";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Rejecting plugin guard ownership member syntax",
-              "Testing that Module.share() cannot bypass the guard lifetime or the reserved share(owner) intrinsic contract");
+    ZR_TEST_INFO("Separating plugin member syntax from ownership intrinsics",
+              "Testing that Module.share() compiles as ordinary member access and never lowers to OWN_SHARE");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -4326,18 +4326,22 @@ void test_plugin_guard_module_share_member_is_rejected(void) {
             "}\n"
             "return 0;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "plugin_guard_module_share_rejected.zr",
-                                                     strlen("plugin_guard_module_share_rejected.zr"));
+                                                     "plugin_guard_module_share_member.zr",
+                                                     strlen("plugin_guard_module_share_member.zr"));
         SZrFunction *func;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        if (func != ZR_NULL) {
+        if (func == ZR_NULL) {
             timer.endTime = clock();
-            ZrCore_Function_Free(state, func);
-            ZR_TEST_FAIL(timer, testSummary, "Module.share() unexpectedly compiled");
+            ZR_TEST_FAIL(timer, testSummary, "Module.share() did not compile as ordinary member access");
             destroy_test_state(state);
             return;
         }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_MEMBER)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+        ZrCore_Function_Free(state, func);
     }
 
     timer.endTime = clock();
@@ -4506,12 +4510,12 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "ownership_invalid_weak_unique_compile.zr",
         },
         {
-            "upgrade-from-shared",
+            "wake-from-shared",
             "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = share(seed);\n"
             "var alias = wake(owner);\n",
-            "ownership_invalid_upgrade_shared_compile.zr",
+            "ownership_invalid_wake_shared_compile.zr",
         },
         {
             "release-borrowed",

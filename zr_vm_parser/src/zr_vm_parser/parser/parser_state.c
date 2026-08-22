@@ -115,7 +115,7 @@ static const SZrRemovedPercentSyntaxRule k_removed_percent_syntax_rules[] = {
         {"func", "Write callable types as `fn(...) -> R`."},
         {"owned", "Write `resource class Name`."},
         {"release", "Use the canonical `drop(value)` ownership operation."},
-        {"upgrade", "Use the typed weak-reference upgrade operation."},
+        {"upgrade", "Use wake(weak), the typed weak-reference ownership intrinsic."},
         {"weak", "Use the typed owner projection API."},
         {"shared", "Use `share(owner)` or an explicit `Shared<T>` contract."},
         {"detach", "Use the typed ownership bridge API after proving the source owner kind."},
