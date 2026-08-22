@@ -291,9 +291,9 @@ CHILD_FUNCTIONS (2):
       [4] owner: offset_activate=44, offset_dead=152
       [5] shared: offset_activate=50, offset_dead=152
       [6] weak: offset_activate=58, offset_dead=152
-      [7] upgraded: offset_activate=66, offset_dead=152
+      [7] wakeView: offset_activate=66, offset_dead=152
       [8] releasedShared: offset_activate=70, offset_dead=152
-      [9] releasedUpgrade: offset_activate=73, offset_dead=152
+      [9] releasedWakeRef: offset_activate=73, offset_dead=152
       [10] escaped: offset_activate=77, offset_dead=152
 
     CLOSURE_VARIABLES (5):
@@ -312,9 +312,9 @@ CHILD_FUNCTIONS (2):
         [5] owner: Holder
         [6] shared: Holder
         [7] weak: Holder
-        [8] upgraded: Holder
+        [8] wakeView: Holder
         [9] releasedShared: null
-        [10] releasedUpgrade: null
+        [10] releasedWakeRef: null
         [11] escaped: object
       EXPORTED_SYMBOLS (0):
       STATIC_IMPORTS (0):

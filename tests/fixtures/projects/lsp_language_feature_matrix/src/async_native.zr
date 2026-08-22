@@ -24,9 +24,9 @@ pub fn nativeScore(): int {
     var owner = own Holder();
     var shared = share(owner);
     var weak = degrade(shared);
-    var upgraded = wake(weak);
+    var wakeView = wake(weak);
     var releasedShared = drop(shared);
-    var releasedUpgrade = drop(upgraded);
+    var releasedWakeRef = drop(wakeView);
     var escaped = makeEscapingCallback(5);
 
     list.addLast(<int> vector.x);
@@ -35,7 +35,7 @@ pub fn nativeScore(): int {
     if (handle == null || tcp == null) {
         return -1000;
     }
-    if (releasedShared == null && releasedUpgrade == null) {
+    if (releasedShared == null && releasedWakeRef == null) {
         return list.count + escaped(2);
     }
 

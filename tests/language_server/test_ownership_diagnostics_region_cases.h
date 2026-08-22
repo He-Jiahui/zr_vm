@@ -399,7 +399,7 @@ static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrS
 
     TEST_START(summary);
     TEST_INFO("Weak alias after possible owner release",
-              "A direct borrowed use must retain release evidence while upgrade and null checks stay legal");
+              "A direct borrowed use must retain release evidence while wake and null checks stay legal");
 
     analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
     sourceName = ZrCore_String_Create(state,

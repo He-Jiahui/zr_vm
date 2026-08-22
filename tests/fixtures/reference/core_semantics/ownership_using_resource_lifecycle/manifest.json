@@ -1178,7 +1178,7 @@
       "feature_group": "generic_ownership_surface",
       "upstream_language": "rust",
       "upstream_file": "tests/fixtures/reference/core_semantics/ownership_using_resource_lifecycle/generic_session_lifecycle_pass.zr",
-      "upstream_intent": "Real resource lifecycles combine unique ownership, shared aliases, lexical references, weak observers, GC bridging, upgrade, and deterministic drop in one flow.",
+      "upstream_intent": "Real resource lifecycles combine unique ownership, shared aliases, lexical references, weak observers, GC bridging, weak wake, and deterministic drop in one flow.",
       "zr_decision": "adapt",
       "zr_contract": "Resource construction, owner conversions, explicit ref bindings, intoGc, and drop compose without legacy owner constructors, percent operations, or compatibility member lowering.",
       "layer_targets": [

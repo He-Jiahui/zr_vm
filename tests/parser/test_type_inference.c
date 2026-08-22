@@ -1851,7 +1851,7 @@ static void test_ownership_builtin_type_inference_rejects_invalid_operands(void)
             "var seed = own Holder();"
             "var owner = share(seed);"
             "wake(owner);",
-            "ownership_invalid_upgrade_shared_test.zr",
+            "ownership_invalid_wake_shared_test.zr",
             "wake(weak) requires a Weak owner");
 
     expect_ownership_builtin_type_inference_failure(

@@ -31,16 +31,16 @@ fn runSessionLifecycle(): int {
         mask = mask + 8;
     }
 
-    var upgradedSession = wake(watcher);
-    if (upgradedSession != null) {
+    var wokenSession = wake(watcher);
+    if (wokenSession != null) {
         mask = mask + 16;
     }
 
     var releasedShared = drop(sharedSession);
-    var releasedUpgrade = drop(upgradedSession);
+    var releasedWoken = drop(wokenSession);
     var expiredSession = wake(watcher);
     if (releasedShared == null &&
-        releasedUpgrade == null &&
+        releasedWoken == null &&
         expiredSession == null) {
         mask = mask + 32;
     }
