@@ -408,3 +408,4 @@ typedef enum EZrLspInlayHintKind {
 #define ZR_LSP_PROGRESS_KIND_BEGIN "begin"
 #define ZR_LSP_PROGRESS_KIND_END "end"
 #define ZR_LSP_METHOD_PROGRESS "$/progress"
+#define ZR_LSP_PARTIAL_RESULT_BATCH_SIZE 64

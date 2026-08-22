@@ -85,6 +85,10 @@ static TZrBool stdio_request_method_supports_progress(const char *method) {
             strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUBTYPES) == 0);
 }
 
+static TZrBool stdio_request_method_supports_array_partial_results(const char *method) {
+    return method != ZR_NULL && strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0;
+}
+
 static void stdio_request_progress_clear(SZrStdioServer *server) {
     if (server == ZR_NULL) {
         return;
@@ -166,6 +170,80 @@ static void stdio_request_progress_end(SZrStdioServer *server) {
         (void)stdio_request_progress_send(server, ZR_LSP_PROGRESS_KIND_END, ZR_NULL);
     }
     stdio_request_progress_clear(server);
+}
+
+static TZrBool stdio_request_progress_send_array_partial(SZrStdioServer *server,
+                                                          cJSON *result) {
+    int resultCount;
+    int resultIndex;
+
+    if (server == ZR_NULL || server->requestProgress.partialResultToken == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!cJSON_IsArray(result)) {
+        return ZR_FALSE;
+    }
+
+    resultCount = cJSON_GetArraySize(result);
+    for (resultIndex = 0; resultIndex < resultCount; resultIndex += ZR_LSP_PARTIAL_RESULT_BATCH_SIZE) {
+        cJSON *params;
+        cJSON *batch;
+        int batchEnd = resultIndex + ZR_LSP_PARTIAL_RESULT_BATCH_SIZE;
+
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
+            return ZR_FALSE;
+        }
+
+        params = cJSON_CreateObject();
+        batch = cJSON_CreateArray();
+        if (params == ZR_NULL || batch == ZR_NULL) {
+            cJSON_Delete(params);
+            cJSON_Delete(batch);
+            return ZR_FALSE;
+        }
+        if (batchEnd > resultCount) {
+            batchEnd = resultCount;
+        }
+        for (int itemIndex = resultIndex; itemIndex < batchEnd; itemIndex++) {
+            cJSON *copy = cJSON_Duplicate(cJSON_GetArrayItem(result, itemIndex), 1);
+            if (copy == ZR_NULL) {
+                cJSON_Delete(params);
+                cJSON_Delete(batch);
+                return ZR_FALSE;
+            }
+            cJSON_AddItemToArray(batch, copy);
+        }
+
+        cJSON_AddItemReferenceToObject(params,
+                                       ZR_LSP_FIELD_TOKEN,
+                                       (cJSON *)server->requestProgress.partialResultToken);
+        cJSON_AddItemToObject(params, ZR_LSP_FIELD_VALUE, batch);
+        send_notification(ZR_LSP_METHOD_PROGRESS, params);
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool stdio_request_progress_publish_partial_result(SZrStdioServer *server,
+                                                              const char *method,
+                                                              cJSON **inOutResult) {
+    cJSON *completedResult;
+
+    if (server == ZR_NULL || inOutResult == ZR_NULL ||
+        server->requestProgress.partialResultToken == ZR_NULL ||
+        !stdio_request_method_supports_array_partial_results(method)) {
+        return ZR_TRUE;
+    }
+    if (!stdio_request_progress_send_array_partial(server, *inOutResult)) {
+        return ZR_FALSE;
+    }
+
+    completedResult = cJSON_CreateNull();
+    if (completedResult == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    cJSON_Delete(*inOutResult);
+    *inOutResult = completedResult;
+    return ZR_TRUE;
 }
 
 static TZrBool send_lifecycle_request_error(SZrStdioServer *server, const cJSON *id) {
@@ -250,6 +328,12 @@ void handle_request_message(SZrStdioServer *server,
         }
         send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
         return;
+    }
+    if (handlerStatus == ZR_LSP_HANDLER_OK &&
+        !stdio_request_progress_publish_partial_result(server, method, &result)) {
+        handlerStatus = ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)
+                                ? ZR_LSP_HANDLER_CANCELLED
+                                : ZR_LSP_HANDLER_INTERNAL_ERROR;
     }
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
 

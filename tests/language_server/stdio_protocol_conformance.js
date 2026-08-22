@@ -357,7 +357,6 @@ async function testRequestWorkDoneProgress(serverPath) {
         const stringResponse = client.request('workspace/symbol', {
             query: '',
             workDoneToken: 'workspace-symbol-work',
-            partialResultToken: 17,
         }, 'work-done-string', RESPONSE_TIMEOUT_MS);
         const stringBegin = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
         const stringEnd = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
@@ -396,6 +395,41 @@ async function testRequestWorkDoneProgress(serverPath) {
                             -32602,
                             'invalid partial result token');
         await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+    });
+}
+
+async function testWorkspaceSymbolPartialResults(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'partial-symbol-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: 'file:///partial-progress-symbol.zr',
+                languageId: 'zr',
+                version: 1,
+                text: Array.from(
+                    { length: 65 },
+                    (_, index) => `class PartialProgressSymbol${index} { }`).join('\n'),
+            },
+        });
+
+        const responsePromise = client.request('workspace/symbol', {
+            query: 'PartialProgressSymbol',
+            partialResultToken: 17,
+        }, 'workspace-symbol-partial', RESPONSE_TIMEOUT_MS);
+        const firstPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const secondPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const response = await responsePromise;
+
+        assert(firstPartial && firstPartial.token === 17 &&
+               Array.isArray(firstPartial.value) && firstPartial.value.length === 64 &&
+               firstPartial.value.some((item) => item && item.name === 'PartialProgressSymbol0'),
+               `workspace symbol first partial batch must preserve 64 results, actual=${JSON.stringify(firstPartial)}`);
+        assert(secondPartial && secondPartial.token === 17 &&
+               Array.isArray(secondPartial.value) && secondPartial.value.length === 1 &&
+               secondPartial.value[0] && secondPartial.value[0].name === 'PartialProgressSymbol64',
+               `workspace symbol second partial batch must preserve the remaining result, actual=${JSON.stringify(secondPartial)}`);
+        assert(response && response.id === 'workspace-symbol-partial' && response.result === null,
+               `workspace symbol partial result must consume the ordinary response, actual=${JSON.stringify(response)}`);
     });
 }
 
@@ -462,6 +496,7 @@ async function main() {
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
         ['set trace writes only stderr', testSetTraceWritesOnlyStderr],
         ['request work-done progress', testRequestWorkDoneProgress],
+        ['workspace symbol partial results', testWorkspaceSymbolPartialResults],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];
