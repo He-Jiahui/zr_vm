@@ -433,6 +433,43 @@ async function testWorkspaceSymbolPartialResults(serverPath) {
     });
 }
 
+async function testReferencesPartialResults(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const uri = 'file:///partial-progress-references.zr';
+        await initialize(client, 'partial-references-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: [
+                    'fn partialReference(value: int): int {',
+                    '    return value;',
+                    '}',
+                    'fn usePartialReference(): int {',
+                    '    return partialReference(partialReference(1));',
+                    '}',
+                ].join('\n'),
+            },
+        });
+
+        const responsePromise = client.request('textDocument/references', {
+            textDocument: { uri },
+            position: { line: 0, character: 3 },
+            context: { includeDeclaration: true },
+            partialResultToken: 'references-partial',
+        }, 'references-partial', RESPONSE_TIMEOUT_MS);
+        const partial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const response = await responsePromise;
+
+        assert(partial && partial.token === 'references-partial' && Array.isArray(partial.value) &&
+               partial.value.length >= 3 && partial.value.every((location) => location && location.uri === uri),
+               `references partial result must preserve all reference locations, actual=${JSON.stringify(partial)}`);
+        assert(response && response.id === 'references-partial' && response.result === null,
+               `references partial result must consume the ordinary response, actual=${JSON.stringify(response)}`);
+    });
+}
+
 async function testOversizeFrameClosesWithFailure(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 16777217\r\n\r\n', 'ascii'));
@@ -497,6 +534,7 @@ async function main() {
         ['set trace writes only stderr', testSetTraceWritesOnlyStderr],
         ['request work-done progress', testRequestWorkDoneProgress],
         ['workspace symbol partial results', testWorkspaceSymbolPartialResults],
+        ['references partial results', testReferencesPartialResults],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];
