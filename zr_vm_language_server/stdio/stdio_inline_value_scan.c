@@ -332,9 +332,68 @@ static size_t inline_value_find_last_member_operator(const char *content,
     return end;
 }
 
+static size_t inline_value_find_last_computed_member_operator(const char *content,
+                                                              size_t start,
+                                                              size_t end) {
+    size_t lastOperator = end;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+
+    if (content == NULL || end <= start) {
+        return end;
+    }
+
+    for (size_t offset = start; offset < end; offset++) {
+        char current = content[offset];
+
+        if (current == '\'' || current == '"' || current == '`') {
+            offset = inline_value_skip_string_literal(content, offset, end);
+            if (offset >= end) {
+                break;
+            }
+            offset--;
+            continue;
+        }
+
+        if (current == '(') {
+            parenDepth++;
+        } else if (current == ')' && parenDepth > 0) {
+            parenDepth--;
+        } else if (current == '{') {
+            braceDepth++;
+        } else if (current == '}' && braceDepth > 0) {
+            braceDepth--;
+        } else if (current == '[') {
+            if (parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && offset > start) {
+                size_t previous = offset;
+
+                while (previous > start &&
+                       (content[previous - 1] == ' ' || content[previous - 1] == '\t')) {
+                    previous--;
+                }
+                if (previous > start &&
+                    (ZrStdioInlineValue_IsIdentifierPart(content[previous - 1]) ||
+                     content[previous - 1] == ']' ||
+                     content[previous - 1] == ')' ||
+                     content[previous - 1] == '}')) {
+                    lastOperator = offset;
+                }
+            }
+            bracketDepth++;
+        } else if (current == ']' && bracketDepth > 0) {
+            bracketDepth--;
+        }
+    }
+
+    return lastOperator;
+}
+
 size_t ZrStdioInlineValue_FindSemanticQueryOffset(const char *content,
                                                   size_t start,
                                                   size_t end) {
+    size_t memberQueryOffset;
+    size_t computedMemberQueryOffset;
     size_t queryOffset = inline_value_find_logical_operator(content, start, end);
     if (queryOffset < end) {
         return queryOffset;
@@ -345,9 +404,18 @@ size_t ZrStdioInlineValue_FindSemanticQueryOffset(const char *content,
         return queryOffset;
     }
 
-    queryOffset = inline_value_find_last_member_operator(content, start, end);
-    if (queryOffset < end) {
-        return queryOffset;
+    memberQueryOffset = inline_value_find_last_member_operator(content, start, end);
+    computedMemberQueryOffset = inline_value_find_last_computed_member_operator(content, start, end);
+    if (memberQueryOffset < end || computedMemberQueryOffset < end) {
+        if (memberQueryOffset >= end) {
+            return computedMemberQueryOffset;
+        }
+        if (computedMemberQueryOffset >= end) {
+            return memberQueryOffset;
+        }
+        return memberQueryOffset > computedMemberQueryOffset
+                   ? memberQueryOffset
+                   : computedMemberQueryOffset;
     }
 
     return start;
