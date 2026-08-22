@@ -4511,6 +4511,18 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
 (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
 (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static))
     zr_vm_add_support_target(
+            zr_vm_language_server_lsp_capability_registry_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_capability_registry.c
+    )
+    target_include_directories(zr_vm_language_server_lsp_capability_registry_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+    )
+    zr_vm_link_language_server(zr_vm_language_server_lsp_capability_registry_test)
+    add_test(
+            NAME language_server_lsp_capability_registry
+            COMMAND $<TARGET_FILE:zr_vm_language_server_lsp_capability_registry_test>
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_symbol_table_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_symbol_table.c
     )
