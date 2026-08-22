@@ -16,6 +16,7 @@
 #include "cJSON/cJSON.h"
 
 #include "zr_vm_language_server/lsp_interface.h"
+#include "zr_vm_language_server/lsp_uri.h"
 #include "interface/lsp_workspace_edit_snapshot.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"

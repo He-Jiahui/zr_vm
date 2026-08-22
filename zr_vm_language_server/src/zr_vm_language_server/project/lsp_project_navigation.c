@@ -2,6 +2,7 @@
 #include "project/lsp_project_internal.h"
 #include "semantic/lsp_semantic_import_chain.h"
 #include "lsp_virtual_documents.h"
+#include "zr_vm_language_server/lsp_uri.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_library/file.h"
@@ -15,10 +16,6 @@
 #else
 #include <dirent.h>
 #endif
-
-static TZrBool project_navigation_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
-    return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
-}
 
 static const TZrChar *project_navigation_string_text(SZrString *value) {
     if (value == ZR_NULL) {
@@ -144,44 +141,6 @@ static TZrBool project_navigation_build_descriptor_plugin_path(SZrLspProjectInde
 
     ZrLibrary_File_PathJoin((TZrNativeString)nativeDirectory, pluginFileName, buffer);
     return buffer[0] != '\0';
-}
-
-static SZrString *project_navigation_native_path_to_file_uri(SZrState *state, const TZrChar *path) {
-    TZrChar buffer[ZR_LIBRARY_MAX_PATH_LENGTH * 2];
-    TZrSize pathLength;
-    TZrSize writeIndex = 0;
-
-    if (state == ZR_NULL || path == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    pathLength = strlen(path);
-    if (pathLength + 16 >= sizeof(buffer)) {
-        return ZR_NULL;
-    }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-    memcpy(buffer, "file:///", 8);
-    writeIndex = 8;
-#else
-    memcpy(buffer, "file://", 7);
-    writeIndex = 7;
-#endif
-
-    for (TZrSize index = 0; index < pathLength && writeIndex + 1 < sizeof(buffer); index++) {
-        TZrChar ch = path[index] == '\\' ? '/' : path[index];
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-        if (index == 0 && pathLength >= 2 && isalpha((unsigned char)ch) && path[1] == ':') {
-            ch = (TZrChar)toupper((unsigned char)ch);
-        }
-#endif
-
-        buffer[writeIndex++] = ch;
-    }
-
-    buffer[writeIndex] = '\0';
-    return ZrCore_String_Create(state, buffer, writeIndex);
 }
 
 static TZrBool append_lsp_location(SZrState *state,
@@ -566,7 +525,7 @@ static TZrBool project_navigation_try_get_analyzer_for_uri(SZrState *state,
         sourceLength = snapshot.contentLength;
         sourceVersion = snapshot.version;
         hasSnapshot = ZR_TRUE;
-    } else if (state->global != ZR_NULL && project_navigation_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
+    } else if (state->global != ZR_NULL && ZrLanguageServer_LspUri_FileToNativePath(uri, nativePath, sizeof(nativePath))) {
         sourceBuffer = ZrLibrary_File_ReadAll(state->global, nativePath);
         sourceLength = sourceBuffer != ZR_NULL ? strlen(sourceBuffer) : 0;
         loadedFromDisk = sourceBuffer != ZR_NULL;
@@ -725,7 +684,7 @@ static TZrBool project_navigation_append_source_reference_for_path(SZrState *sta
         return ZR_FALSE;
     }
 
-    uri = project_navigation_native_path_to_file_uri(state, path);
+    uri = ZrLanguageServer_LspUri_FromNativePath(state, path);
     if (uri == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1108,7 +1067,7 @@ static TZrBool project_navigation_resolve_descriptor_plugin_module_from_project(
         return ZR_FALSE;
     }
 
-    hasTargetNativePath = project_navigation_uri_to_native_path(targetUri, targetNativePath, sizeof(targetNativePath));
+    hasTargetNativePath = ZrLanguageServer_LspUri_FileToNativePath(targetUri, targetNativePath, sizeof(targetNativePath));
     for (TZrSize fileIndex = 0; fileIndex < projectIndex->files.length; fileIndex++) {
         SZrLspProjectFileRecord **recordPtr =
             (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, fileIndex);
@@ -1646,7 +1605,7 @@ TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
     }
 
     projectIndex = ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri);
-    if (projectIndex == ZR_NULL || !project_navigation_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
+    if (projectIndex == ZR_NULL || !ZrLanguageServer_LspUri_FileToNativePath(uri, nativePath, sizeof(nativePath))) {
         return ZR_FALSE;
     }
     if (!projectIndex->hasSemanticProjectLoad && !projectIndex->hasLightweightSourceGraph) {

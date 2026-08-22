@@ -11,6 +11,7 @@
 #include "semantic/lsp_semantic_import_chain.h"
 #include "semantic/lsp_property_contract.h"
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_language_server/lsp_uri.h"
 
 #include "zr_vm_parser/type_inference.h"
 #include "type_inference_internal.h"
@@ -73,43 +74,6 @@ static TZrBool receiver_symbol_is_type_declaration(const SZrSymbol *symbol) {
            symbol->type == ZR_SYMBOL_STRUCT ||
            symbol->type == ZR_SYMBOL_INTERFACE ||
            symbol->type == ZR_SYMBOL_ENUM;
-}
-
-static void lsp_interface_support_normalize_path_for_compare(const TZrChar *path,
-                                                             TZrChar *buffer,
-                                                             TZrSize bufferSize) {
-    TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    const TZrChar *source = path;
-    TZrSize writeIndex = 0;
-
-    if (buffer == ZR_NULL || bufferSize == 0) {
-        return;
-    }
-
-    buffer[0] = '\0';
-    if (path == ZR_NULL) {
-        return;
-    }
-
-    if (ZrLibrary_File_NormalizePath((TZrNativeString)path, normalizedPath, sizeof(normalizedPath))) {
-        source = normalizedPath;
-    }
-
-    for (TZrSize index = 0; source[index] != '\0' && writeIndex + 1 < bufferSize; index++) {
-        TZrChar current = source[index];
-        if (current == '\\') {
-            current = '/';
-        }
-#ifdef ZR_VM_PLATFORM_IS_WIN
-        current = (TZrChar)tolower((unsigned char)current);
-#endif
-        buffer[writeIndex++] = current;
-    }
-
-    while (writeIndex > 1 && buffer[writeIndex - 1] == '/') {
-        writeIndex--;
-    }
-    buffer[writeIndex] = '\0';
 }
 
 static TZrBool lsp_interface_support_file_range_contains_range(SZrFileRange outer, SZrFileRange inner) {
@@ -249,27 +213,7 @@ TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right) {
 }
 
 TZrBool ZrLanguageServer_Lsp_UrisResolveToSameNativePath(SZrString *left, SZrString *right) {
-    TZrChar leftPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar rightPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar normalizedLeft[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar normalizedRight[ZR_LIBRARY_MAX_PATH_LENGTH];
-
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (ZrLanguageServer_Lsp_StringsEqual(left, right)) {
-        return ZR_TRUE;
-    }
-
-    if (!ZrLanguageServer_Lsp_FileUriToNativePath(left, leftPath, sizeof(leftPath)) ||
-        !ZrLanguageServer_Lsp_FileUriToNativePath(right, rightPath, sizeof(rightPath))) {
-        return ZR_FALSE;
-    }
-
-    lsp_interface_support_normalize_path_for_compare(leftPath, normalizedLeft, sizeof(normalizedLeft));
-    lsp_interface_support_normalize_path_for_compare(rightPath, normalizedRight, sizeof(normalizedRight));
-    return normalizedLeft[0] != '\0' && strcmp(normalizedLeft, normalizedRight) == 0;
+    return ZrLanguageServer_LspUri_Equivalent(left, right);
 }
 
 SZrHashKeyValuePair *ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(SZrState *state,

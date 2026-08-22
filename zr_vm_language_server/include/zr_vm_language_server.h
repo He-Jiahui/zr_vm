@@ -6,6 +6,7 @@
 #define ZR_VM_LANGUAGE_SERVER_H
 
 #include "zr_vm_language_server/conf.h"
+#include "zr_vm_language_server/lsp_uri.h"
 #include "zr_vm_language_server/symbol_table.h"
 #include "zr_vm_language_server/reference_tracker.h"
 #include "zr_vm_language_server/semantic_analyzer.h"

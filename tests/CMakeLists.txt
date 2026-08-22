@@ -4941,6 +4941,10 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_position_fuzz.c
     )
     zr_vm_add_support_target(
+            zr_vm_language_server_lsp_uri_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_uri.c
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_lsp_decorator_utf16_ranges_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_decorator_utf16_ranges.c
     )
@@ -5060,6 +5064,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_class_member_parser_diagnostics_test
             zr_vm_language_server_lsp_position_mapping_test
             zr_vm_language_server_lsp_position_fuzz_test
+            zr_vm_language_server_lsp_uri_test
             zr_vm_language_server_lsp_decorator_utf16_ranges_test
             zr_vm_language_server_lsp_code_lens_utf16_ranges_test
             zr_vm_language_server_lsp_super_utf16_ranges_test
@@ -6482,6 +6487,7 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_language_server_statement_parser_diagnostics_test AND
         TARGET zr_vm_language_server_lsp_position_mapping_test AND
         TARGET zr_vm_language_server_lsp_position_fuzz_test AND
+        TARGET zr_vm_language_server_lsp_uri_test AND
         TARGET zr_vm_language_server_lsp_decorator_utf16_ranges_test AND
         TARGET zr_vm_language_server_lsp_code_lens_utf16_ranges_test AND
         TARGET zr_vm_language_server_lsp_super_utf16_ranges_test AND
@@ -6496,6 +6502,8 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
     )
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_wrapper_range_query_test>")
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_language_server_lsp_uri_test>")
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_minus_unary_rhs_range_query_test>")
     string(APPEND language_server_executables

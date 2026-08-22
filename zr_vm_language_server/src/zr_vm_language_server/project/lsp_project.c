@@ -1,6 +1,7 @@
 #include "interface/lsp_interface_internal.h"
 #include "project/lsp_project_internal.h"
 #include "semantic/semantic_analyzer_internal.h"
+#include "zr_vm_language_server/lsp_uri.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
@@ -379,69 +380,7 @@ static TZrBool native_path_has_dynamic_library_extension(const TZrChar *path) {
            (length >= 6 && strcmp(path + length - 6, ".dylib") == 0);
 }
 
-static TZrBool lsp_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
-    return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
-}
-
 static void normalize_path_for_compare(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize);
-
-static TZrBool lsp_uris_resolve_to_same_native_path(SZrString *left, SZrString *right) {
-    TZrChar leftPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar rightPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar normalizedLeft[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar normalizedRight[ZR_LIBRARY_MAX_PATH_LENGTH];
-
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!lsp_uri_to_native_path(left, leftPath, sizeof(leftPath)) ||
-        !lsp_uri_to_native_path(right, rightPath, sizeof(rightPath))) {
-        return ZR_FALSE;
-    }
-
-    normalize_path_for_compare(leftPath, normalizedLeft, sizeof(normalizedLeft));
-    normalize_path_for_compare(rightPath, normalizedRight, sizeof(normalizedRight));
-    return strcmp(normalizedLeft, normalizedRight) == 0;
-}
-
-static SZrString *native_path_to_file_uri(SZrState *state, const TZrChar *path) {
-    TZrChar buffer[ZR_LIBRARY_MAX_PATH_LENGTH * 2];
-    TZrSize pathLength;
-    TZrSize writeIndex = 0;
-
-    if (state == ZR_NULL || path == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    pathLength = strlen(path);
-    if (pathLength + 16 >= sizeof(buffer)) {
-        return ZR_NULL;
-    }
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-    memcpy(buffer, "file:///", 8);
-    writeIndex = 8;
-#else
-    memcpy(buffer, "file://", 7);
-    writeIndex = 7;
-#endif
-
-    for (TZrSize index = 0; index < pathLength && writeIndex + 1 < sizeof(buffer); index++) {
-        TZrChar ch = path[index] == '\\' ? '/' : path[index];
-
-#ifdef ZR_VM_PLATFORM_IS_WIN
-        if (index == 0 && pathLength >= 2 && isalpha((unsigned char)ch) && path[1] == ':') {
-            ch = (TZrChar)toupper((unsigned char)ch);
-        }
-#endif
-
-        buffer[writeIndex++] = ch;
-    }
-
-    buffer[writeIndex] = '\0';
-    return ZrCore_String_Create(state, buffer, writeIndex);
-}
 
 static void normalize_path_for_compare(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize writeIndex = 0;
@@ -930,7 +869,7 @@ SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByUri(SZrLspProje
             (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, index);
         if (recordPtr != ZR_NULL && *recordPtr != ZR_NULL &&
             (ZrLanguageServer_Lsp_StringsEqual((*recordPtr)->uri, uri) ||
-             lsp_uris_resolve_to_same_native_path((*recordPtr)->uri, uri))) {
+             ZrLanguageServer_LspUri_Equivalent((*recordPtr)->uri, uri))) {
             return *recordPtr;
         }
     }
@@ -960,7 +899,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspCo
             (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, index);
         if (projectPtr != ZR_NULL && *projectPtr != ZR_NULL &&
             (ZrLanguageServer_Lsp_StringsEqual((*projectPtr)->projectFileUri, uri) ||
-             lsp_uris_resolve_to_same_native_path((*projectPtr)->projectFileUri, uri))) {
+             ZrLanguageServer_LspUri_Equivalent((*projectPtr)->projectFileUri, uri))) {
             if (outIndex != ZR_NULL) {
                 *outIndex = index;
             }
@@ -989,7 +928,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext 
         }
     }
 
-    if (!lsp_uri_to_native_path(uri, pathBuffer, sizeof(pathBuffer))) {
+    if (!ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer))) {
         return ZR_NULL;
     }
 
@@ -1060,7 +999,7 @@ TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
     }
 
     if (ZrLanguageServer_LspProject_FindProjectByProjectUri(context, uri, &projectIndexOffset) == ZR_NULL) {
-        if (!lsp_uri_to_native_path(uri, targetPath, sizeof(targetPath))) {
+        if (!ZrLanguageServer_LspUri_FileToNativePath(uri, targetPath, sizeof(targetPath))) {
             return ZR_FALSE;
         }
 
@@ -1119,7 +1058,7 @@ TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!lsp_uri_to_native_path(uri, targetPath, sizeof(targetPath))) {
+    if (!ZrLanguageServer_LspUri_FileToNativePath(uri, targetPath, sizeof(targetPath))) {
         targetPath[0] = '\0';
     } else {
         normalize_path_for_compare(targetPath, normalizedTargetPath, sizeof(normalizedTargetPath));
@@ -1177,7 +1116,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectFo
     TZrBool refreshed;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
-        !lsp_uri_to_native_path(uri, affectedPath, sizeof(affectedPath))) {
+        !ZrLanguageServer_LspUri_FileToNativePath(uri, affectedPath, sizeof(affectedPath))) {
         return ZR_FALSE;
     }
 
@@ -1224,7 +1163,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectFo
         }
 
         projectFilePath = discoveredProjectPath;
-        projectFileUri = native_path_to_file_uri(state, discoveredProjectPath);
+        projectFileUri = ZrLanguageServer_LspUri_FromNativePath(state, discoveredProjectPath);
         if (projectFileUri == ZR_NULL) {
             return ZR_FALSE;
         }
@@ -1280,7 +1219,7 @@ static SZrLspProjectIndex *project_index_new_from_document(SZrState *state,
     SZrLspProjectIndex *projectIndex;
 
     if (state == ZR_NULL || projectUri == ZR_NULL || content == ZR_NULL ||
-        !lsp_uri_to_native_path(projectUri, projectPath, sizeof(projectPath))) {
+        !ZrLanguageServer_LspUri_FileToNativePath(projectUri, projectPath, sizeof(projectPath))) {
         return ZR_NULL;
     }
 
@@ -1340,7 +1279,7 @@ static SZrLspProjectIndex *project_index_new_from_path(SZrState *state, const TZ
     }
 
     contentLength = strlen(jsonBuffer);
-    projectUri = native_path_to_file_uri(state, projectPath);
+    projectUri = ZrLanguageServer_LspUri_FromNativePath(state, projectPath);
     projectIndex = projectUri != ZR_NULL
                    ? project_index_new_from_document(state, projectUri, jsonBuffer, contentLength)
                    : ZR_NULL;
@@ -1482,7 +1421,7 @@ static TZrBool discover_project_path_for_uri(SZrString *uri,
         *outAmbiguous = ZR_FALSE;
     }
 
-    if (!lsp_uri_to_native_path(uri, currentPath, sizeof(currentPath)) ||
+    if (!ZrLanguageServer_LspUri_FileToNativePath(uri, currentPath, sizeof(currentPath)) ||
         !ZrLibrary_File_GetDirectory(currentPath, currentDirectory)) {
         return ZR_FALSE;
     }
@@ -1526,7 +1465,7 @@ static TZrBool discover_project_path_with_context(SZrState *state,
     }
 
     if (context != ZR_NULL && context->clientSelectedZrpNativePath != ZR_NULL &&
-        lsp_uri_to_native_path(uri, fileNative, sizeof(fileNative)) &&
+        ZrLanguageServer_LspUri_FileToNativePath(uri, fileNative, sizeof(fileNative)) &&
         ZrLibrary_File_GetDirectory(context->clientSelectedZrpNativePath, zrpDir) &&
         native_path_is_within_directory(fileNative, zrpDir)) {
         TZrSize zrpLength = strlen(context->clientSelectedZrpNativePath);
@@ -1656,7 +1595,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
         return ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
     }
     if (uri != ZR_NULL &&
-        lsp_uri_to_native_path(uri, pathBuffer, sizeof(pathBuffer)) &&
+        ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer)) &&
         !project_canonicalize_ast_for_path(state,
                                            projectIndex,
                                            ast,
@@ -1715,7 +1654,7 @@ static TZrBool project_collect_loaded_source_uris(SZrState *state,
                 if (fileVersion != ZR_NULL &&
                     fileVersion->uri != ZR_NULL &&
                     string_ends_with(fileVersion->uri, ".zr") &&
-                    lsp_uri_to_native_path(fileVersion->uri, pathBuffer, sizeof(pathBuffer)) &&
+                    ZrLanguageServer_LspUri_FileToNativePath(fileVersion->uri, pathBuffer, sizeof(pathBuffer)) &&
                     native_path_is_within_directory(pathBuffer, get_string_text(projectIndex->sourceRootPath))) {
                     SZrString *uri = fileVersion->uri;
                     ZrCore_Array_Push(state, uris, &uri);
@@ -1811,7 +1750,7 @@ static TZrBool project_register_loaded_document(SZrState *state,
     TZrBool registered;
 
     if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || uri == ZR_NULL ||
-        !lsp_uri_to_native_path(uri, pathBuffer, sizeof(pathBuffer))) {
+        !ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer))) {
         return ZR_FALSE;
     }
 
@@ -1876,7 +1815,7 @@ static TZrBool project_ensure_module_loaded(SZrState *state,
         return ZR_FALSE;
     }
 
-    moduleUri = native_path_to_file_uri(state, resolvedPath);
+    moduleUri = ZrLanguageServer_LspUri_FromNativePath(state, resolvedPath);
     if (moduleUri == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1948,7 +1887,7 @@ static TZrBool project_scan_source_module_graph(SZrState *state,
         return ZR_FALSE;
     }
 
-    moduleUri = native_path_to_file_uri(state, resolvedPath);
+    moduleUri = ZrLanguageServer_LspUri_FromNativePath(state, resolvedPath);
     if (moduleUri == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -2104,7 +2043,7 @@ SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *st
         return ZR_NULL;
     }
 
-    projectUri = native_path_to_file_uri(state, projectPath);
+    projectUri = ZrLanguageServer_LspUri_FromNativePath(state, projectPath);
     if (projectUri != ZR_NULL) {
         projectIndex = ZrLanguageServer_LspProject_FindProjectByProjectUri(context,
                                                                            projectUri,
@@ -2151,7 +2090,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateForUri(SZrState *stat
         return ZR_NULL;
     }
 
-    projectUri = native_path_to_file_uri(state, projectPath);
+    projectUri = ZrLanguageServer_LspUri_FromNativePath(state, projectPath);
     if (projectUri != ZR_NULL) {
         projectIndex = ZrLanguageServer_LspProject_FindProjectByProjectUri(context,
                                                                            projectUri,
@@ -2192,7 +2131,7 @@ SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri(SZrSta
         return projectIndex;
     }
 
-    if (!lsp_uri_to_native_path(projectUri, projectPath, sizeof(projectPath))) {
+    if (!ZrLanguageServer_LspUri_FileToNativePath(projectUri, projectPath, sizeof(projectPath))) {
         return ZR_NULL;
     }
 
@@ -2226,7 +2165,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateByProjectUri(SZrState
         return projectIndex;
     }
 
-    if (!lsp_uri_to_native_path(projectUri, projectPath, sizeof(projectPath))) {
+    if (!ZrLanguageServer_LspUri_FileToNativePath(projectUri, projectPath, sizeof(projectPath))) {
         return ZR_NULL;
     }
 
@@ -2287,7 +2226,7 @@ TZrBool ZrLanguageServer_LspProject_CollectImportModuleNamesForUri(SZrState *sta
     projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (fileVersion == ZR_NULL &&
-        lsp_uri_to_native_path(uri, pathBuffer, sizeof(pathBuffer)) &&
+        ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer)) &&
         ZrLibrary_File_Exist(pathBuffer) == ZR_LIBRARY_FILE_IS_FILE) {
         diskSource = ZrLibrary_File_ReadAll(state->global, pathBuffer);
         if (diskSource != ZR_NULL && context->parser != ZR_NULL) {
@@ -2309,7 +2248,7 @@ TZrBool ZrLanguageServer_LspProject_CollectImportModuleNamesForUri(SZrState *sta
     }
     if (ast != ZR_NULL &&
         projectIndex != ZR_NULL &&
-        lsp_uri_to_native_path(uri, pathBuffer, sizeof(pathBuffer)) &&
+        ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer)) &&
         !project_canonicalize_ast_for_path(state,
                                            projectIndex,
                                            ast,
