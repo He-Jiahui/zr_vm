@@ -285,11 +285,54 @@ static void semantic_typecheck_pop_runtime_type_binding_scope(SZrState *state,
     }
 }
 
+static void semantic_typecheck_register_inferred_binding(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrString *name,
+        const SZrInferredType *bindingType,
+        SZrAstNode *declarationNode) {
+    SZrSymbol *symbol;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->compilerState == ZR_NULL ||
+        analyzer->compilerState->typeEnv == ZR_NULL ||
+        name == ZR_NULL || bindingType == ZR_NULL) {
+        return;
+    }
+
+    symbol = declarationNode != ZR_NULL
+                 ? ZrLanguageServer_SymbolTable_LookupAtPosition(
+                       analyzer->symbolTable,
+                       name,
+                       declarationNode->location)
+                 : ZR_NULL;
+    if (symbol != ZR_NULL &&
+        symbol->semanticId != ZR_SEMANTIC_ID_INVALID &&
+        symbol->semanticTypeId != ZR_SEMANTIC_ID_INVALID &&
+        ZrParser_TypeEnvironment_RegisterCanonicalVariable(
+            state,
+            analyzer->compilerState->typeEnv,
+            name,
+            bindingType,
+            symbol->semanticId,
+            symbol->semanticTypeId,
+            symbol->selectionRange)) {
+        return;
+    }
+
+    ZrParser_TypeEnvironment_RegisterVariable(
+        state,
+        analyzer->compilerState->typeEnv,
+        name,
+        bindingType);
+}
+
 static void semantic_typecheck_register_variable_binding(SZrState *state,
                                                          SZrSemanticAnalyzer *analyzer,
                                                          SZrString *name,
                                                          const SZrType *typeNode,
-                                                         SZrAstNode *valueNode) {
+                                                         SZrAstNode *valueNode,
+                                                         SZrAstNode *declarationNode) {
     SZrInferredType bindingType;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
@@ -331,7 +374,12 @@ static void semantic_typecheck_register_variable_binding(SZrState *state,
         }
     }
 
-    ZrParser_TypeEnvironment_RegisterVariable(state, analyzer->compilerState->typeEnv, name, &bindingType);
+    semantic_typecheck_register_inferred_binding(
+        state,
+        analyzer,
+        name,
+        &bindingType,
+        declarationNode);
     ZrParser_InferredType_Free(state, &bindingType);
 }
 
@@ -355,7 +403,8 @@ static void semantic_typecheck_register_parameter_bindings(SZrState *state,
                                                      analyzer,
                                                      param->name != ZR_NULL ? param->name->name : ZR_NULL,
                                                      param->typeInfo,
-                                                     ZR_NULL);
+                                                     ZR_NULL,
+                                                     paramNode);
     }
 }
 
@@ -397,7 +446,12 @@ static void semantic_typecheck_register_foreach_binding(SZrState *state,
         return;
     }
 
-    ZrParser_TypeEnvironment_RegisterVariable(state, analyzer->compilerState->typeEnv, name, &bindingType);
+    semantic_typecheck_register_inferred_binding(
+        state,
+        analyzer,
+        name,
+        &bindingType,
+        foreachLoop->pattern);
     ZrParser_InferredType_Free(state, &bindingType);
 }
 
@@ -2646,7 +2700,8 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     analyzer,
                     ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, varDecl->pattern),
                     varDecl->typeInfo,
-                    varDecl->value);
+                    varDecl->value,
+                    node);
             break;
         }
 

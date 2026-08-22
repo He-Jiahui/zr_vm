@@ -90,6 +90,7 @@ static EZrSemanticOwnershipFactKind intrinsic_ownership_fact_kind(
         case ZR_OWNERSHIP_INTRINSIC_SHARE:
             return ZR_SEMANTIC_OWNERSHIP_FACT_MOVE;
         case ZR_OWNERSHIP_INTRINSIC_DEGRADE:
+            return ZR_SEMANTIC_OWNERSHIP_FACT_COPY;
         case ZR_OWNERSHIP_INTRINSIC_WAKE:
             return ZR_SEMANTIC_OWNERSHIP_FACT_BORROW;
         case ZR_OWNERSHIP_INTRINSIC_INTO_GC:

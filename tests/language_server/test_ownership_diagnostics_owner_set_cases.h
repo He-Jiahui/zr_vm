@@ -130,9 +130,9 @@ static void test_semantic_analyzer_joins_weak_alias_owner_set(SZrState *state) {
         "}\n"
         "fn observe(resource: ref readonly Resource): int { return 0; }\n"
         "fn use(first: Shared<Resource>, second: Shared<Resource>, choose: bool): int {\n"
-        "    var watcher = first.weak();\n"
+        "    var watcher = degrade(first);\n"
         "    if (choose) {\n"
-        "        watcher = second.weak();\n"
+        "        watcher = degrade(second);\n"
         "    }\n"
         "    drop(second);\n"
         "    observe(ref watcher);\n"
@@ -145,7 +145,7 @@ static void test_semantic_analyzer_joins_weak_alias_owner_set(SZrState *state) {
             "A direct borrowed use must retain a conditional weak owner release",
             "ownership_weak_owner_set_test.zr",
             testCode,
-            "weak_value_requires_upgrade",
+            "weak_value_requires_wake",
             10,
             9,
             ZR_TRUE);

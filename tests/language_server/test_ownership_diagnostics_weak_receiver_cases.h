@@ -1,15 +1,37 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_WEAK_RECEIVER_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_WEAK_RECEIVER_CASES_H
 
-static void test_semantic_analyzer_links_weak_receiver_to_owner_release(
+static TZrSize count_direct_weak_receiver_guards(
+        const SZrSemanticContext *context) {
+    TZrSize count = 0;
+
+    if (context == ZR_NULL || !context->receiverGuardFacts.isValid) {
+        return 0;
+    }
+    for (TZrSize index = 0; index < context->receiverGuardFacts.length; index++) {
+        const SZrReceiverGuardFact *guard =
+                (const SZrReceiverGuardFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->receiverGuardFacts,
+                        index);
+
+        if (guard != ZR_NULL &&
+            guard->kind == ZR_RECEIVER_GUARD_WEAK_WAKE &&
+            guard->mode == ZR_RECEIVER_GUARD_DIRECT) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void test_semantic_analyzer_guards_direct_weak_receiver_after_owner_release(
         SZrState *state) {
-    const TZrChar *summary = "Semantic Analyzer Links Weak Receiver To Owner Release";
+    const TZrChar *summary = "Semantic Analyzer Guards Direct Weak Receiver After Owner Release";
     const TZrChar *testCode =
         "resource class Resource {\n"
         "    fn ping(): int { return 0; }\n"
         "}\n"
         "fn use(owner: Shared<Resource>): int {\n"
-        "    var watcher = owner.weak();\n"
+        "    var watcher = degrade(owner);\n"
         "    watcher.ping();\n"
         "    drop(owner);\n"
         "    watcher.ping();\n"
@@ -21,11 +43,11 @@ static void test_semantic_analyzer_links_weak_receiver_to_owner_release(
     SZrAstNode *ast;
     SZrDiagnostic *beforeRelease;
     SZrDiagnostic *afterRelease;
-    const SZrDiagnosticRelatedInformation *related = ZR_NULL;
+    TZrSize directGuardCount;
 
     TEST_START(summary);
-    TEST_INFO("Weak method receiver ownership flow",
-              "Only the receiver call after owner release receives upgrade evidence");
+    TEST_INFO("Direct weak method receiver flow",
+              "Direct member access uses receiver guards and does not require an explicit wake intrinsic");
 
     analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
     sourceName = ZrCore_String_Create(
@@ -45,27 +67,17 @@ static void test_semantic_analyzer_links_weak_receiver_to_owner_release(
 
     beforeRelease = find_diagnostic_by_code_and_line(
             analyzer,
-            "weak_value_requires_upgrade",
+            "weak_value_requires_wake",
             6);
     afterRelease = find_diagnostic_by_code_and_line(
             analyzer,
-            "weak_value_requires_upgrade",
+            "weak_value_requires_wake",
             8);
-    if (afterRelease != ZR_NULL &&
-        afterRelease->relatedInformation.isValid &&
-        afterRelease->relatedInformation.length == 1) {
-        related = (const SZrDiagnosticRelatedInformation *)ZrCore_Array_Get(
-                &afterRelease->relatedInformation,
-                0);
-    }
-    if (beforeRelease != ZR_NULL ||
-        afterRelease == ZR_NULL ||
-        related == ZR_NULL ||
-        related->location.start.line != 7 ||
-        !test_string_equals(related->message, "Owner was released here")) {
+    directGuardCount = count_direct_weak_receiver_guards(analyzer->semanticContext);
+    if (beforeRelease != ZR_NULL || afterRelease != ZR_NULL || directGuardCount != 2) {
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-        TEST_FAIL(timer, summary, "Weak receiver did not retain release-sensitive evidence");
+        TEST_FAIL(timer, summary, "Direct weak receiver access did not retain its receiver guards");
         return;
     }
 
@@ -74,17 +86,17 @@ static void test_semantic_analyzer_links_weak_receiver_to_owner_release(
     TEST_PASS(timer, summary);
 }
 
-static void test_semantic_analyzer_links_rebound_weak_receiver_owner_set(
+static void test_semantic_analyzer_guards_rebound_direct_weak_receiver(
         SZrState *state) {
-    const TZrChar *summary = "Semantic Analyzer Links Rebound Weak Receiver Owner Set";
+    const TZrChar *summary = "Semantic Analyzer Guards Rebound Direct Weak Receiver";
     const TZrChar *testCode =
         "resource class Resource {\n"
         "    fn ping(): int { return 0; }\n"
         "}\n"
         "fn use(first: Shared<Resource>, second: Shared<Resource>, choose: bool): int {\n"
-        "    var watcher = first.weak();\n"
+        "    var watcher = degrade(first);\n"
         "    if (choose) {\n"
-        "        watcher = second.weak();\n"
+        "        watcher = degrade(second);\n"
         "    }\n"
         "    drop(second);\n"
         "    watcher.ping();\n"
@@ -95,11 +107,11 @@ static void test_semantic_analyzer_links_rebound_weak_receiver_owner_set(
     SZrString *sourceName;
     SZrAstNode *ast;
     SZrDiagnostic *diagnostic;
-    const SZrDiagnosticRelatedInformation *related = ZR_NULL;
+    TZrSize directGuardCount;
 
     TEST_START(summary);
-    TEST_INFO("Branch-joined weak method receiver",
-              "The replacement owner must survive CFG join for receiver diagnostics");
+    TEST_INFO("Branch-joined direct weak method receiver",
+              "A rebound weak receiver keeps direct guard semantics without an explicit wake diagnostic");
 
     analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
     sourceName = ZrCore_String_Create(
@@ -119,22 +131,13 @@ static void test_semantic_analyzer_links_rebound_weak_receiver_owner_set(
 
     diagnostic = find_diagnostic_by_code_and_line(
             analyzer,
-            "weak_value_requires_upgrade",
+            "weak_value_requires_wake",
             10);
-    if (diagnostic != ZR_NULL &&
-        diagnostic->relatedInformation.isValid &&
-        diagnostic->relatedInformation.length == 1) {
-        related = (const SZrDiagnosticRelatedInformation *)ZrCore_Array_Get(
-                &diagnostic->relatedInformation,
-                0);
-    }
-    if (diagnostic == ZR_NULL ||
-        related == ZR_NULL ||
-        related->location.start.line != 9 ||
-        !test_string_equals(related->message, "Owner was released here")) {
+    directGuardCount = count_direct_weak_receiver_guards(analyzer->semanticContext);
+    if (diagnostic != ZR_NULL || directGuardCount != 1) {
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-        TEST_FAIL(timer, summary, "Weak receiver lost the replacement owner release");
+        TEST_FAIL(timer, summary, "Rebound direct weak receiver did not retain its guard contract");
         return;
     }
 

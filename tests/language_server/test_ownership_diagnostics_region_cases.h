@@ -380,11 +380,11 @@ static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrS
         "}\n"
         "fn observe(resource: ref readonly Resource): int { return 0; }\n"
         "fn use(owner: Shared<Resource>, flag: bool): int {\n"
-        "    var watcher = owner.weak();\n"
+        "    var watcher = degrade(owner);\n"
         "    if (flag) { drop(owner); }\n"
         "    observe(ref watcher);\n"
-        "    var upgraded = watcher.upgrade();\n"
-        "    upgraded == null;\n"
+        "    var woken = wake(watcher);\n"
+        "    woken == null;\n"
         "    return 0;\n"
         "}\n";
     SZrTestTimer timer;
@@ -423,11 +423,11 @@ static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrS
                 (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, index);
         if (candidate != ZR_NULL &&
             *candidate != ZR_NULL &&
-            test_string_equals((*candidate)->code, "weak_value_requires_upgrade")) {
+            test_string_equals((*candidate)->code, "weak_value_requires_wake")) {
             diagnosticCount++;
         }
     }
-    diagnostic = find_diagnostic_by_code_and_line(analyzer, "weak_value_requires_upgrade", 7);
+    diagnostic = find_diagnostic_by_code_and_line(analyzer, "weak_value_requires_wake", 7);
     violationFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
             file_range_for_nth_substring(testCode, "watcher", 1));
@@ -641,13 +641,13 @@ static void test_semantic_analyzer_rebinds_weak_alias_owner(SZrState *state) {
         "}\n"
         "fn observe(resource: ref readonly Resource): int { return 0; }\n"
         "fn use(first: Shared<Resource>, second: Shared<Resource>): int {\n"
-        "    var watcher = first.weak();\n"
-        "    watcher = second.weak();\n"
+        "    var watcher = degrade(first);\n"
+        "    watcher = degrade(second);\n"
         "    drop(first);\n"
         "    observe(ref watcher);\n"
         "    drop(second);\n"
         "    observe(ref watcher);\n"
-        "    var upgraded = watcher.upgrade();\n"
+        "    var woken = wake(watcher);\n"
         "    return 0;\n"
         "}\n";
     SZrTestTimer timer;
@@ -683,17 +683,17 @@ static void test_semantic_analyzer_rebinds_weak_alias_owner(SZrState *state) {
         SZrDiagnostic **candidate =
                 (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, index);
         if (candidate != ZR_NULL && *candidate != ZR_NULL &&
-            test_string_equals((*candidate)->code, "weak_value_requires_upgrade")) {
+            test_string_equals((*candidate)->code, "weak_value_requires_wake")) {
             weakDiagnosticCount++;
         }
     }
     oldOwnerDiagnostic = find_diagnostic_by_code_and_line(
             analyzer,
-            "weak_value_requires_upgrade",
+            "weak_value_requires_wake",
             8);
     newOwnerDiagnostic = find_diagnostic_by_code_and_line(
             analyzer,
-            "weak_value_requires_upgrade",
+            "weak_value_requires_wake",
             10);
     initialFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,

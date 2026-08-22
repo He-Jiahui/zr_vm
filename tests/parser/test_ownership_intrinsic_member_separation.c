@@ -557,6 +557,13 @@ static void test_intrinsic_type_contracts_publish_canonical_facts(void) {
             ZR_OWNERSHIP_QUALIFIER_NONE,
             ZR_OWNERSHIP_QUALIFIER_NONE,
     };
+    static const EZrSemanticOwnershipFactKind expectedOwnershipKinds[] = {
+            ZR_SEMANTIC_OWNERSHIP_FACT_MOVE,
+            ZR_SEMANTIC_OWNERSHIP_FACT_COPY,
+            ZR_SEMANTIC_OWNERSHIP_FACT_BORROW,
+            ZR_SEMANTIC_OWNERSHIP_FACT_RELEASE,
+            ZR_SEMANTIC_OWNERSHIP_FACT_RELEASE,
+    };
     static const TZrBool expectedConsuming[] = {
             ZR_TRUE, ZR_FALSE, ZR_FALSE, ZR_TRUE, ZR_TRUE,
     };
@@ -595,13 +602,17 @@ static void test_intrinsic_type_contracts_publish_canonical_facts(void) {
         SZrAstNode *expression = statement_expression(script, index);
         SZrInferredType result;
         const SZrOwnershipIntrinsicFact *fact;
+        const SZrSemanticOwnershipFact *ownershipFact;
 
         ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(compiler, expression, &result));
         fact = ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
                 compiler->semanticContext, expression);
+        ownershipFact = ZrParser_SemanticFacts_FindOwnershipByNode(
+                compiler->semanticContext, expression);
 
         TEST_ASSERT_NOT_NULL(fact);
+        TEST_ASSERT_NOT_NULL(ownershipFact);
         TEST_ASSERT_EQUAL_INT(expectedOperations[index], fact->operation);
         TEST_ASSERT_EQUAL_INT(
                 expectedInputs[index], fact->inputType.ownershipQualifier);
@@ -610,6 +621,7 @@ static void test_intrinsic_type_contracts_publish_canonical_facts(void) {
         TEST_ASSERT_EQUAL_INT(expectedConsuming[index], fact->consuming);
         TEST_ASSERT_EQUAL_UINT32(expectedPlaces[index], fact->placeId);
         TEST_ASSERT_EQUAL_UINT32(0u, fact->loanId);
+        TEST_ASSERT_EQUAL_INT(expectedOwnershipKinds[index], ownershipFact->kind);
         TEST_ASSERT_EQUAL_INT(expectedResults[index], result.ownershipQualifier);
         if (expectedOperations[index] == ZR_OWNERSHIP_INTRINSIC_WAKE) {
             TEST_ASSERT_TRUE(result.isNullable);

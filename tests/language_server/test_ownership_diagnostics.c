@@ -829,9 +829,9 @@ int main(void) {
     TEST_DIVIDER();
     test_semantic_analyzer_tracks_unique_move_in_using_body(state);
     TEST_DIVIDER();
-    test_semantic_analyzer_links_weak_receiver_to_owner_release(state);
+    test_semantic_analyzer_guards_direct_weak_receiver_after_owner_release(state);
     TEST_DIVIDER();
-    test_semantic_analyzer_links_rebound_weak_receiver_owner_set(state);
+    test_semantic_analyzer_guards_rebound_direct_weak_receiver(state);
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);
