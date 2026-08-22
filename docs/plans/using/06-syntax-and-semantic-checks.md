@@ -16,7 +16,7 @@
 - ref/ref struct不能逃逸到heap、capture、async suspension或更长region。
 - readonly receiver不能调用writable member/property setter/ref writable getter。
 - using binding必须满足Close capability；cleanup不能延长borrow超过source lifetime。
-- Weak upgrade保持runtime checked；成功分支得到新的strong owner。
+- `wake(weak)`保持runtime checked；成功分支得到新的strong owner。
 
 ## Diagnostics
 
@@ -24,7 +24,7 @@
 
 ## Runtime checks保留
 
-Weak upgrade、native/loader failure、dynamic cast、bounds和external lifetime无法静态证明，必须显式保留。静态borrow通过不等于外部native pointer永远有效。
+`wake(weak)`、native/loader failure、dynamic cast、bounds和external lifetime无法静态证明，必须显式保留。静态borrow通过不等于外部native pointer永远有效。
 
 ## 语义查询与诊断验收表
 

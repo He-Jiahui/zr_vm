@@ -47,7 +47,7 @@ async fn fetch(pending: zr.task.Task<int>): zr.task.Task<int> {
 
 The Task carrier is established by the official native `zr.task` descriptor's
 `ZR_PROTOCOL_ID_TASK_HANDLE` role. A source alias such as
-`var task = %import("zr.task")` resolves to the same owner and can use
+`let task = import("zr.task");` resolves to the same owner and can use
 `task.Task<T>`. A same-named source type or another module's `Task` does not
 gain the role from spelling alone.
 

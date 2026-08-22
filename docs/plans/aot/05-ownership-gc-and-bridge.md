@@ -6,7 +6,7 @@
 |---|---|
 | GC class/ref | root/stack map、safepoint、write barrier、pin contract |
 | Unique resource | move-only availability、exactly-once Drop glue |
-| Shared/Weak | retain/release/upgrade runtime ABI；线程能力按类型区分 |
+| Shared/Weak | retain/release/wake runtime ABI；线程能力按类型区分 |
 | GcBox/Gc handle | 显式ownership-to-GC bridge，不隐式改变生命周期 |
 | ref/ref struct | 已验证region内地址访问，不跨heap/suspend/escape |
 
@@ -22,7 +22,7 @@
 
 ## 优化边界
 
-允许消除配对retain/release、证明无逃逸的短生命周期分配、冗余barrier和bounds check，但证明必须来自共享facts并在debug verifier中可关闭。Weak upgrade、external native pointer和动态cast不能凭惯例删除检查。
+允许消除配对retain/release、证明无逃逸的短生命周期分配、冗余barrier和bounds check，但证明必须来自共享facts并在debug verifier中可关闭。`wake(weak)`、external native pointer和动态cast不能凭惯例删除检查。
 
 ## Syntax 上游追踪
 

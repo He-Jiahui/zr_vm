@@ -8,7 +8,7 @@ execution sequence point、allocation、GC、call、native boundary、task/threa
 
 - CPU：sample/instrumented call、inclusive/exclusive time、inline chain。
 - memory：allocation count/bytes、live/peak、GC root/scan bytes、barrier/card、pause。
-- ownership：Unique construct/move/drop、Shared retain/release、Weak upgrade。
+- ownership：Unique construct/move/drop、Shared retain/release、Weak wake。
 - pooling：deliver/validate/reject/retire/deferred reuse、active guard、slab locality。
 - codegen：boxing、value construction、thunk、spill、bounds-check elimination。
 - module/native：load/resolve/cache、FFI call/marshal/callback与failure。

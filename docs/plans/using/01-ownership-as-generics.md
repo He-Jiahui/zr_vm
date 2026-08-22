@@ -6,7 +6,7 @@
 resource class R
 Unique<R>       move-only strong owner
 Shared<R>       non-atomic shared owner, first-version thread-local
-Weak<R>         non-owning identity, upgrade is checked
+Weak<R>         non-owning identity, wake is checked
 AtomicShared<R> future/independent thread-safe owner
 ref R           scoped mutable borrow
 ref readonly R  scoped readonly borrow
@@ -38,7 +38,7 @@ ref readonly R  scoped readonly borrow
 |---|---|---|
 | O1 canonical owner types | Unique/Shared/Weak TypeNode、constraint与TypeId roundtrip | nested generic、nullable/union、非法T类别 |
 | O2 Place availability | move/drop状态、branch join、projection overlap | use-after-move、maybeMoved、active loan |
-| O3 runtime protocol | construct/share/weak/upgrade/drop glue | allocation failure、weak失效、retain/release配对 |
+| O3 runtime protocol | construct/share/degrade/wake/drop glue | allocation failure、weak失效、retain/release配对 |
 | O4 thread/GC bridge | Shared/AtomicShared能力与Gc/GcBox root | illegal cross-thread、direct GC field、bridge failure |
 | O5 consumer parity | VM/AOT/artifact/reflection/LSP共同contract | source/binary hash与diagnostic一致 |
 

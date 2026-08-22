@@ -792,7 +792,7 @@ temporary/block < function < caller < heap/static
 
 - 无法静态证明安全的数组/Span 边界检查。
 - null、dynamic cast 和外部输入校验。
-- Weak upgrade 是否成功。
+- `wake(weak)` 是否成功。
 - Shared strong count 变化。
 - native/unsafe 契约保护。
 
@@ -862,7 +862,7 @@ LSP 必须复用相同 semantic facts 提供 hover、类型展示、move 后不�
 
 ### 18.3 VM、AOT 与 artifact
 
-- VM 与 AOT 对 ref load/store、move/drop、Weak upgrade 和 property accessor 行为一致。
+- VM 与 AOT 对 ref load/store、move/drop、`wake(weak)` 和 property accessor 行为一致。
 - `.zrs/.zri/.zro` 保存规范类型、引用能力、owner kind、receiver effect 和布局信息。
 - `.zrs` 保留 definition/type/body delimiter；`.zri/.zro` 的 canonical callable contract 不把 `:`/`->`/`=>` 计入类型身份。
 - module loader 不从表层拼写恢复语义。
@@ -876,7 +876,7 @@ LSP 必须复用相同 semantic facts 提供 hover、类型展示、move 后不�
 - partial initialization、异常退出和构造失败清理。
 - constructor 与 `@call` 同时存在、同名 value/type shadowing、imported alias、runtime Type object 和反射边界。
 - closure、async、generator、module/global/native 逃逸。
-- Shared 最后一个 strong drop、Weak upgrade 成功/失败和重复 upgrade；引入 AtomicShared 后另测并发 upgrade。
+- Shared 最后一个 strong drop、`wake(weak)` 成功/失败和重复 wake；引入 AtomicShared 后另测并发 wake。
 - pool lease 正常退出、异常退出、Span 仍活动时 move/drop；PoolHandle stale/wrong-pool/generation-wrap和PoolRef active期间recycle/deferred reuse。
 - GC 在 owner bridge 活动期间运行。
 

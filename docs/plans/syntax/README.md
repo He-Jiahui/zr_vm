@@ -125,7 +125,7 @@ flowchart TD
 3. VM、AOT、LSP、反射和 artifact writer 消费同一规范 TypeId、SymbolId、Place/Region facts 或其稳定投影。
 4. shared foundation 不允许通过 `Span`、`Unique` 等具体类型名字符串触发特例。
 5. borrow、move、readonly、ref struct 逃逸和 `out` 确定赋值必须静态完成。
-6. 数组越界、Weak upgrade、动态 cast 和 native 输入等无法静态证明的状态仍保留运行时检查。
+6. 数组越界、`wake(weak)`、动态 cast 和 native 输入等无法静态证明的状态仍保留运行时检查。
 7. 每个里程碑先验证下层单元，再验证父层，最后验证项目和 CLI；上层 smoke 不能替代下层测试。
 8. `.zro` 中只保存跨模块所需的稳定类型、布局和公开契约；局部 flow facts 默认只进入 `.zri` 和调试 sidecar。
 9. 总设计中已经批准的 `const fn` 只读 receiver、普通 `fn` 可写 receiver 是所有子设计的共同前提。

@@ -574,7 +574,7 @@ native ABI：
 
 - 1/N strong、0/N weak、repeated upgrade。
 - final strong 与 Weak 观察。
-- drop body 内 Weak upgrade 必须失败。
+- drop body 内 `wake(weak)` 必须失败。
 - process-local strong cycle 诊断/lint。
 - Shared 跨线程拒绝；AtomicShared 后独立测试。
 
@@ -618,7 +618,7 @@ native ABI：
 
 - Unique 构造/move/drop 与普通 malloc/free/RAII 对比。
 - Shared clone/drop 非原子热循环。
-- Weak upgrade 热路径。
+- `wake(weak)` 热路径。
 - 大量 Gc handle 对 root scan 的成本。
 - GcFree pool slab/owner图不进入普通 tracing 的收益，以及GcMapped/GcBarriered scan bytes和barrier成本。
 - 单全局domain、每实例domain和分组domain在相同游戏负载下的p50/p95/p99 pause、throughput与内存冗余。

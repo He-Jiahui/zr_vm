@@ -154,7 +154,7 @@ doc_type: testing-guide
 当前分档固定为：
 
 - `smoke`
-  - 每次必跑；每个覆盖带至少 1 个小夹具；当前优先覆盖 `.zri/.zro` artifact contract、module/binary roundtrip、meta cache、dynamic PIC、tail reuse、weak upgrade、`%using` exact-once drop
+  - 每次必跑；每个覆盖带至少 1 个小夹具；当前优先覆盖 `.zri/.zro` artifact contract、module/binary roundtrip、meta cache、dynamic PIC、tail reuse、`wake(weak)`、`using` exact-once drop
 - `core`
   - PR 必跑；展开全部 8 个覆盖带；主仓只对 interp/binary 做 parity
 - `stress`
