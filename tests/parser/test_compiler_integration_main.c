@@ -60,7 +60,7 @@ extern void test_name_matched_iterator_members_without_builtin_interface_do_not_
 extern void test_interface_missing_member_is_rejected_by_compiler(void);
 extern void test_ownership_builtin_shared_expression_consumes_unique_owner(void);
 extern void test_current_ownership_surface_emits_dedicated_opcodes(void);
-extern void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(void);
+extern void test_ownership_intrinsics_emit_dedicated_opcodes_and_execute(void);
 extern void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void);
 extern void test_ownership_unique_share_runtime_moves_source_to_null(void);
 extern void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void);
@@ -216,7 +216,7 @@ int main(void) {
     RUN_TEST(test_interface_missing_member_is_rejected_by_compiler);
     RUN_TEST(test_ownership_builtin_shared_expression_consumes_unique_owner);
     RUN_TEST(test_current_ownership_surface_emits_dedicated_opcodes);
-    RUN_TEST(test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute);
+    RUN_TEST(test_ownership_intrinsics_emit_dedicated_opcodes_and_execute);
     RUN_TEST(test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes);
     RUN_TEST(test_ownership_builtin_compile_rejects_invalid_operands);
     RUN_TEST(test_plugin_guard_global_assignment_reports_escape_boundary);

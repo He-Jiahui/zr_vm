@@ -3709,9 +3709,9 @@ void test_current_ownership_surface_emits_dedicated_opcodes(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(void) {
+void test_ownership_intrinsics_emit_dedicated_opcodes_and_execute(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Generic Member Methods Emit Dedicated Opcodes And Execute";
+    const char *testSummary = "Ownership Intrinsics Emit Dedicated Opcodes And Execute";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
@@ -3759,8 +3759,8 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
             "}\n"
             "return runMemberLifecycle();\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_generic_member_methods.zr",
-                                                     strlen("ownership_generic_member_methods.zr"));
+                                                     "ownership_intrinsics.zr",
+                                                     strlen("ownership_intrinsics.zr"));
         SZrFunction *func;
         SZrFunction *lifecycleFunc;
         TZrInt64 result = 0;
@@ -3768,7 +3768,7 @@ void test_ownership_generic_member_methods_emit_dedicated_opcodes_and_execute(vo
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership generic member method source");
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership intrinsic source");
             destroy_test_state(state);
             return;
         }
