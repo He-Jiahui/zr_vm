@@ -60,7 +60,7 @@ Existing files receive narrow integration edits:
 - Create: `tests/parser/test_ownership_intrinsic_member_separation.c`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] **Step 1: Add a focused Unity target and parser helpers**
+- [x] **Step 1: Add a focused Unity target and parser helpers**
 
 Create a target linked with `zr_vm_link_parser_core_plus_library` and helpers
 that parse source, compile source, execute an integer result, capture structured
@@ -89,7 +89,7 @@ static void test_optional_member_and_call_segments_record_access_mode(void) {
 }
 ```
 
-- [ ] **Step 2: Run the target and record the expected RED**
+- [x] **Step 2: Run the target and record the expected RED**
 
 Run in the existing GCC cache after regenerating CMake:
 
@@ -102,7 +102,7 @@ Expected: compilation fails because `ZR_OWNERSHIP_INTRINSIC_SHARE`,
 `ZR_POSTFIX_ACCESS_OPTIONAL`, and the dedicated intrinsic AST do not exist.
 Save the exact failure in the acceptance record baseline.
 
-- [ ] **Step 3: Keep the RED unstaged while implementing Task 2**
+- [x] **Step 3: Keep the RED unstaged while implementing Task 2**
 
 Do not commit a target that cannot compile on `main`. Preserve the observed RED,
 then make the smallest Task 2 production change that turns this same target
@@ -122,7 +122,7 @@ green. The first commit includes both the test and its syntax/AST implementation
 - Modify: `zr_vm_parser/src/zr_vm_parser/writer/writer_syntax_tree.c`
 - Test: `tests/parser/test_ownership_intrinsic_member_separation.c`
 
-- [ ] **Step 1: Extend RED coverage for lexical and recovery boundaries**
+- [x] **Step 1: Extend RED coverage for lexical and recovery boundaries**
 
 Add cases proving `?.` is one token, whitespace `? .` is not optional access,
 intrinsics require exactly one positional argument, intrinsic names cannot be
@@ -139,7 +139,7 @@ assert_parse_error("share(a, b);", "Intrinsic 'share' requires exactly one argum
 assert_parses("class Box { pub fn wake(): int { return 1; } } new Box().wake();");
 ```
 
-- [ ] **Step 2: Append stable token and AST enum values**
+- [x] **Step 2: Append stable token and AST enum values**
 
 Append, rather than insert, these values:
 
@@ -181,7 +181,7 @@ typedef struct SZrOwnershipIntrinsicExpression {
 Add `accessMode` to `SZrMemberExpression` and `SZrFunctionCall`. Direct parsing
 always initializes it; optional syntax never relies on zeroed memory by accident.
 
-- [ ] **Step 3: Parse reserved intrinsics and `?.` segments**
+- [x] **Step 3: Parse reserved intrinsics and `?.` segments**
 
 `parser_ownership_intrinsic.c` maps only reserved tokens to operations, consumes
 one parenthesized expression, rejects commas/named arguments/missing arguments,
@@ -202,7 +202,7 @@ if (token == ZR_TK_QUESTION_DOT && peek_token(ps) == ZR_TK_LPAREN) {
 namespace. Do not accept `?.[index]` in this milestone; report a precise
 unsupported optional-computed-access diagnostic.
 
-- [ ] **Step 4: Complete AST ownership and writer coverage**
+- [x] **Step 4: Complete AST ownership and writer coverage**
 
 Free the intrinsic argument, print operation/access mode, and include new tokens
 in expression-start and token-to-string paths. Audit every production switch on
@@ -219,7 +219,7 @@ wsl ./build/codex-wsl-gcc-debug/bin/zr_vm_ownership_intrinsic_member_separation_
 
 Expected: lexer/parser/AST cases pass; semantic/runtime cases remain RED.
 
-- [ ] **Step 5: Commit syntax and AST**
+- [x] **Step 5: Commit syntax and AST**
 
 ```powershell
 git add -- tests/CMakeLists.txt tests/parser/test_ownership_intrinsic_member_separation.c zr_vm_parser/include/zr_vm_parser/lexer.h zr_vm_parser/src/zr_vm_parser/lexer.c zr_vm_parser/include/zr_vm_parser/ast.h zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h zr_vm_parser/src/zr_vm_parser/parser/parser_expressions.c zr_vm_parser/src/zr_vm_parser/parser/parser_ast_free.c zr_vm_parser/src/zr_vm_parser/writer/writer_syntax_tree.c
@@ -246,7 +246,7 @@ git commit -m "feat(parser): add ownership intrinsics and optional postfix synta
 - Test: `tests/parser/test_ownership_intrinsic_member_separation.c`
 - Test: `tests/parser/test_expression_fact_emission.c`
 
-- [ ] **Step 1: Add failing type/fact tests**
+- [x] **Step 1: Add failing type/fact tests**
 
 Cover exact contracts, consuming flags, nullable wake result, PlaceId/LoanId,
 unsupported qualifiers, non-place consuming operands, redundant optional access,
@@ -270,14 +270,14 @@ TEST_ASSERT_EQUAL_INT(ZR_RECEIVER_GUARD_RESULT_NULLABLE, guard->resultLift);
 
 Run the focused tests and confirm failure because fact APIs are absent.
 
-- [ ] **Step 2: Add fact storage and lookup APIs**
+- [x] **Step 2: Add fact storage and lookup APIs**
 
 Add arrays to `SZrSemanticContext` and lifecycle them in `semantic_facts.c`.
 Facts contain copied canonical inferred types, source node/ranges, PlaceId,
 LoanId, operation/guard mode, consuming bit, chain segment bounds, and result
 lift. Reset/free releases every owned type/string exactly once.
 
-- [ ] **Step 3: Infer intrinsic contracts from the dedicated AST**
+- [x] **Step 3: Infer intrinsic contracts from the dedicated AST**
 
 Move non-construction ownership typing out of `infer_construct_expression_type`.
 `own` and `ref` remain construction/reference AST behavior; all five source
@@ -287,7 +287,7 @@ Unique/Shared/Weak and returns the canonical `void` TypeRef; a runtime stack slo
 may use the normal null value representation for `void`. `wake` returns
 nullable Shared.
 
-- [ ] **Step 4: Infer receiver guards over the postfix chain**
+- [x] **Step 4: Infer receiver guards over the postfix chain**
 
 Walk the primary base and ordered segments once. Nullable receivers publish
 `NULL_GUARD`; Weak receivers publish `WEAK_WAKE_GUARD` targeting the same inner
@@ -297,7 +297,7 @@ TypeRef. OPTIONAL on non-null Unique/Shared/GcBox/plain values emits
 non-void chain result to nullable without making later direct segments nullable
 inside the success path.
 
-- [ ] **Step 5: Remove member-name ownership inference and dataflow**
+- [x] **Step 5: Remove member-name ownership inference and dataflow**
 
 Delete `ZrParser_OwnershipMemberNameToBuiltinKind` and all callers. Dataflow,
 region, and throw-profile consumers switch on the intrinsic AST/fact. Remove
@@ -309,7 +309,7 @@ to `OWN_SHARE`.
 
 Run focused inference, fact, owner move/loan, and resource suites under GCC.
 
-- [ ] **Step 6: Commit canonical semantics**
+- [x] **Step 6: Commit canonical semantics**
 
 ```powershell
 git add -- zr_vm_parser/include/zr_vm_parser/semantic_facts.h zr_vm_parser/include/zr_vm_parser/semantic.h zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c zr_vm_parser/src/zr_vm_parser/type_inference.c zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ownership_intrinsic.c zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_receiver_guard.c zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.c zr_vm_parser/src/zr_vm_parser/type_inference/cfg_throw_profile.c zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.c zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.c zr_vm_parser/include/zr_vm_parser/type_system.h zr_vm_parser/src/zr_vm_parser/type_system.c tests/parser/test_ownership_intrinsic_member_separation.c tests/parser/test_expression_fact_emission.c
@@ -329,7 +329,7 @@ git commit -m "feat(semantics): type ownership intrinsics and receiver guards"
 - Test: `tests/parser/test_ownership_intrinsic_member_separation.c`
 - Test: `tests/parser/test_compiler_features.c`
 
-- [ ] **Step 1: Add failing instruction and collision tests**
+- [x] **Step 1: Add failing instruction and collision tests**
 
 Compile each intrinsic and assert exact opcodes. Add a resource class with real
 methods named `share`, `degrade`, `wake`, `intoGc`, and `drop`; assert those calls
@@ -337,7 +337,7 @@ emit normal member/call instructions and no ownership opcode. Add negative old
 forms on owner handles and assert a structured migration diagnostic rather than
 ownership lowering.
 
-- [ ] **Step 2: Lower from `OwnershipIntrinsicFact`**
+- [x] **Step 2: Lower from `OwnershipIntrinsicFact`**
 
 The new compiler module obtains the fact for the intrinsic node, compiles its
 argument exactly once into a source slot, validates the fact's PlaceId for
@@ -354,7 +354,7 @@ switch (fact->operation) {
 }
 ```
 
-- [ ] **Step 3: Delete compiler member special cases**
+- [x] **Step 3: Delete compiler member special cases**
 
 Remove the generic ownership branch from `compile_primary_member_chain` and all
 helpers used only by that branch. Preserve actual module member resolution under
@@ -362,13 +362,13 @@ its canonical module prototype contract. Successful target access continues
 through ordinary `GET_MEMBER`, property/meta, and call lowering. Reference
 escape and semantic IR read the intrinsic node/fact.
 
-- [ ] **Step 4: Run compiler and runtime ownership suites**
+- [x] **Step 4: Run compiler and runtime ownership suites**
 
 Run the new target, expression facts, compiler features, resource unique/drop,
 resource shared/weak, resource borrow receiver, and property ref-return targets.
 Confirm all new and migrated cases pass before committing.
 
-- [ ] **Step 5: Commit intrinsic lowering**
+- [x] **Step 5: Commit intrinsic lowering**
 
 ```powershell
 git add -- zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c tests/parser/test_ownership_intrinsic_member_separation.c tests/parser/test_compiler_features.c
@@ -396,7 +396,7 @@ git commit -m "feat(compiler): lower ownership intrinsics from canonical facts"
 - Test: `tests/parser/test_ownership_intrinsic_member_separation.c`
 - Test: `tests/exceptions/test_exceptions.c`
 
-- [ ] **Step 1: Add failing execution-order and lifetime tests**
+- [x] **Step 1: Add failing execution-order and lifetime tests**
 
 Cover nullable member/method/call, Weak member/method/call, direct absence,
 optional absence, skipped computed indexes/arguments/getters, mixed
@@ -404,7 +404,7 @@ optional absence, skipped computed indexes/arguments/getters, mixed
 void no-op, ref/ref-like escape rejection, exact `NullReferenceError` catching,
 and catch-through-`RuntimeError`. Use real source side effects, not mocks.
 
-- [ ] **Step 2: Register the named exception and add the direct guard instruction**
+- [x] **Step 2: Register the named exception and add the direct guard instruction**
 
 Register `NullReferenceError extends RuntimeError` in the system descriptor and
 hints. Add a core helper that materializes an error from an explicit prototype
@@ -414,7 +414,7 @@ named exception when null. Optional guards use existing `JUMP_IF_NULL`. Map both
 through typed metadata, optimizer, quickening/control-flow metadata, SemIR,
 writer, and artifact round trips.
 
-- [ ] **Step 3: Lower one guard over the dominated suffix**
+- [x] **Step 3: Lower one guard over the dominated suffix**
 
 `compile_expression_receiver_guard.c` consumes `ReceiverGuardFact`. For Weak it
 emits one `OWN_WAKE` to a hidden Shared slot; for nullable it reuses the receiver
@@ -427,13 +427,13 @@ Hidden Shared slots register normal cleanup metadata and receive an explicit
 normal-path `OWN_DROP`; exception/frame unwind remains the exceptional cleanup
 source. Reject borrowed/ref-like final values that outlive the guard.
 
-- [ ] **Step 4: Prove guard control flow in instructions and execution**
+- [x] **Step 4: Prove guard control flow in instructions and execution**
 
 Assert emitted order contains one wake, guard before member/call, arguments only
 after the optional branch, merge initialization, and cleanup. Run repeated
 expire/wake loops and forced GC inside getter/call paths.
 
-- [ ] **Step 5: Commit receiver guards**
+- [x] **Step 5: Commit receiver guards**
 
 ```powershell
 git add -- zr_vm_common/include/zr_vm_common/zr_instruction_conf.h zr_vm_core/include/zr_vm_core/function.h zr_vm_core/include/zr_vm_core/exception.h zr_vm_core/src/zr_vm_core/exception.c zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c zr_vm_lib_system/src/zr_vm_lib_system/exception/exception_registry.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_optimize.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c tests/exceptions/test_exceptions.c tests/parser/test_ownership_intrinsic_member_separation.c
@@ -463,12 +463,12 @@ git commit -m "feat(runtime): guard nullable and weak receiver chains"
 - Test: `tests/parser/test_resource_unique_drop.c`
 - Test: `tests/parser/test_semir_pipeline.c`
 
-- [ ] **Step 1: Add failing operation-name synchronization tests**
+- [x] **Step 1: Add failing operation-name synchronization tests**
 
 Extend manual opcode/SemIR sync tests and textual-writer tests to require
 `OWN_DEGRADE` and `OWN_WAKE`, while explicitly rejecting old emitted names.
 
-- [ ] **Step 2: Rename semantic/runtime operation symbols while preserving IDs**
+- [x] **Step 2: Rename semantic/runtime operation symbols while preserving IDs**
 
 Mechanically converge:
 
@@ -488,12 +488,12 @@ ZR_OWNERSHIP_BUILTIN_KIND_RELEASE -> ZR_OWNERSHIP_BUILTIN_KIND_DROP
 Keep numeric enum positions explicit. Do not provide old symbol aliases or old
 source compatibility branches.
 
-- [ ] **Step 3: Run ownership, artifact, writer, and focused suites**
+- [x] **Step 3: Run ownership, artifact, writer, and focused suites**
 
 Confirm opcode numbers remain stable, textual artifacts use only canonical
 names, and runtime ownership behavior is unchanged before committing.
 
-- [ ] **Step 4: Commit runtime convergence**
+- [x] **Step 4: Commit runtime convergence**
 
 ```powershell
 git add -- zr_vm_common/include/zr_vm_common/zr_instruction_conf.h zr_vm_core/include/zr_vm_core/function.h zr_vm_core/include/zr_vm_core/ownership.h zr_vm_core/src/zr_vm_core/function.c zr_vm_core/src/zr_vm_core/ownership.c zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_optimize.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c tests/parser/test_ownership_intrinsic_member_separation.c tests/parser/test_aot_c_ownership_contracts.c tests/parser/test_aot_c_ownership_shared_library_smoke.c tests/parser/test_compiler_features.c tests/parser/test_resource_shared_weak.c tests/parser/test_resource_unique_drop.c tests/parser/test_semir_pipeline.c
@@ -523,24 +523,24 @@ git commit -m "refactor(runtime): converge ownership operation names"
 - Modify: `zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/bin/aot_llvm/ir/main.ll`
 - Modify: `zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/bin/main.zri`
 
-- [ ] **Step 1: Add failing AOT guard and renamed-op tests**
+- [x] **Step 1: Add failing AOT guard and renamed-op tests**
 
 Build source programs for optional success/failure and direct null failure into
 ExecIR, generated C, and LLVM. Assert one wake, skipped argument side effect,
 cleanup, and `NullReferenceError` prototype.
 
-- [ ] **Step 2: Lower `REQUIRE_NON_NULL` and renamed operations**
+- [x] **Step 2: Lower `REQUIRE_NON_NULL` and renamed operations**
 
 AOT C calls the shared named-error runtime helper. LLVM emits the same null
 branch and helper call. Keep artifact numeric opcode IDs stable and update all
 manual sync tables and textual writers to canonical names.
 
-- [ ] **Step 3: Run AOT pipeline and executable parity tests**
+- [x] **Step 3: Run AOT pipeline and executable parity tests**
 
 Run focused AOT targets under WSL GCC and Clang, execute generated binaries, and
 compare results/exceptions with interpreter execution.
 
-- [ ] **Step 4: Commit AOT parity**
+- [x] **Step 4: Commit AOT parity**
 
 ```powershell
 git add -- zr_vm_aot/zr_vm_library/include/zr_vm_library/aot_runtime.h zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_control.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_ownership.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c zr_vm_aot/tests/parser/test_execbc_aot_manual_opcode_sync.c zr_vm_aot/tests/parser/test_known_call_pipeline.c zr_vm_aot/tests/fixtures/projects/aot_dynamic_meta_ownership_lab/bin/aot_c/src/main.c zr_vm_aot/tests/fixtures/projects/aot_dynamic_meta_ownership_lab/bin/aot_llvm/ir/main.ll zr_vm_aot/tests/fixtures/projects/aot_dynamic_meta_ownership_lab/bin/main.zri zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/bin/aot_c/src/main.c zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/bin/aot_llvm/ir/main.ll zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/bin/main.zri
@@ -569,7 +569,7 @@ git commit -m "feat(aot): lower receiver guards and canonical ownership ops"
 - Test: `tests/language_server/test_lsp_local_semantic_query.c`
 - Test: `tests/language_server/test_lsp_interface.c`
 
-- [ ] **Step 1: Add structured migration-diagnostic RED cases**
+- [x] **Step 1: Add structured migration-diagnostic RED cases**
 
 For canonical owner handles where real member lookup fails, assert edits:
 
@@ -591,13 +591,13 @@ removed member operations, intrinsic spellings are not rename/symbol targets,
 semantic tokens classify reserved intrinsics consistently, and formatting
 preserves `?.` plus intrinsic calls without emitting an old member form.
 
-- [ ] **Step 2: Publish fact-driven migration diagnostics**
+- [x] **Step 2: Publish fact-driven migration diagnostics**
 
 Only after canonical target-member lookup fails, use receiver TypeRef/qualifier,
 call shape, and source ranges to publish the replacement. Do not inspect display
 type strings, diagnostic text, or LSP-side AST fallbacks.
 
-- [ ] **Step 3: Rewrite all repository ownership source forms**
+- [x] **Step 3: Rewrite all repository ownership source forms**
 
 Apply exact mechanical replacements in production sources, tests, fixtures, and
 examples. Update expected opcode names in goldens. Retain `.share()` only in
@@ -607,7 +607,7 @@ the pre-change search and includes parser SemIR/type/union/task tests and the AO
 ownership source fixtures; repeat the search after rewriting to catch additions
 made by concurrent clean integrations.
 
-- [ ] **Step 4: Prove old paths are gone**
+- [x] **Step 4: Prove old paths are gone**
 
 Run repository searches for member-name classifier symbols, old ownership
 opcodes/API names, `.weak()`, `.upgrade()`, owner `.share()`, and owner
@@ -615,7 +615,7 @@ opcodes/API names, `.weak()`, `.upgrade()`, owner `.share()`, and owner
 same-name member collision test, or historical acceptance evidence; production
 compiler/runtime code must contain none.
 
-- [ ] **Step 5: Commit migration and LSP facts**
+- [x] **Step 5: Commit migration and LSP facts**
 
 ```powershell
 git add -- zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c zr_vm_parser/src/zr_vm_parser/parser/parser_diagnostics.c zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_receiver_guard.c zr_vm_language_server/src/zr_vm_language_server/interface/lsp_completion_semantic_facts.c zr_vm_language_server/src/zr_vm_language_server/interface/lsp_signature_semantic_facts.c zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_expression_text.c zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c tests/fixtures/projects/lsp_language_feature_matrix/src/async_native.zr tests/fixtures/projects/syntax_reference_v1/src/ownership.zr tests/fixtures/reference/core_semantics/ownership_using_resource_lifecycle/generic_session_lifecycle_pass.zr tests/fixtures/reference/core_semantics/ownership_using_resource_lifecycle/manifest.json tests/language_server/test_ownership_diagnostics_owner_set_cases.h tests/language_server/test_ownership_diagnostics_region_cases.h tests/language_server/test_ownership_diagnostics_weak_receiver_cases.h tests/language_server/test_lsp_diagnostic_safe_fix_cases.h tests/language_server/test_semantic_analyzer.c tests/language_server/test_lsp_advanced_editor_features.c tests/language_server/test_lsp_inlay_semantic_facts.c tests/language_server/test_lsp_local_semantic_query.c tests/language_server/test_lsp_interface.c tests/parser/test_compiler_features.c tests/parser/test_parser.c tests/parser/test_percent_syntax_cutover.c tests/parser/test_property_ref_return.c tests/parser/test_resource_owner_borrow_receiver.c tests/parser/test_resource_shared_weak.c tests/parser/test_resource_unique_drop.c tests/parser/test_semir_pipeline.c tests/parser/test_syntax_reference_v1.c tests/parser/test_type_inference.c tests/parser/test_union.c tests/task/test_task_runtime.c zr_vm_aot/tests/fixtures/projects/aot_dynamic_meta_ownership_lab/src/main.zr zr_vm_aot/tests/fixtures/projects/aot_eh_tail_gc_stress/src/main.zr zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
@@ -653,7 +653,7 @@ git commit -m "refactor(syntax): remove ownership member compatibility paths"
 - Modify: `zr_vm_aot/docs/parser-and-semantics/ownership-builtins-semir-aot.md`
 - Create: `tests/acceptance/2026-08-10-ownership-object-member-separation.md`
 
-- [ ] **Step 1: Write code-facing module documentation with required frontmatter**
+- [x] **Step 1: Write code-facing module documentation with required frontmatter**
 
 The new module document lists every implementing code file, design/plan source,
 test, fact, control-flow invariant, failure mode, performance boundary, and
@@ -662,13 +662,13 @@ contracts rather than appending contradictory notes. Historical acceptance
 records and the approved design spec retain quoted migration inputs as evidence;
 the post-change search documents those intentional matches explicitly.
 
-- [ ] **Step 2: Update plan status only from evidence**
+- [x] **Step 2: Update plan status only from evidence**
 
 Syntax 04/05 and indexes may say implementation is complete only after the
 focused and full validation commands in Task 10 have passed. Until then use
 `validated_pending_full_acceptance` in the detailed acceptance record.
 
-- [ ] **Step 3: Commit documentation synchronization**
+- [x] **Step 3: Commit documentation synchronization**
 
 ```powershell
 git add -- README.md docs/zr_language_specification.md docs/zr_language_test_requirements.md docs/plans/syntax/README.md docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md docs/plans/syntax/2026-07-18-zr-syntax-and-memory-model-redesign.md docs/plans/syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md docs/plans/syntax/2026-07-19-07-comprehensive-syntax-reference-fixture-design.md docs/plans/aot/05-ownership-gc-and-bridge.md docs/plans/using/01-ownership-as-generics.md docs/plans/using/05-migration-and-phasing.md docs/parser-and-semantics/ast-and-syntax-contracts.md docs/parser-and-semantics/resource-shared-weak.md docs/parser-and-semantics/resource-owner-borrow-receiver.md docs/parser-and-semantics/resource-unique-drop.md docs/parser-and-semantics/pre-semantic-ir-flow.md docs/parser-and-semantics/owned-field-lifecycle.md docs/parser-and-semantics/union-types.md docs/parser-and-semantics/ownership-intrinsics-and-receiver-guards.md docs/parser-and-semantics/index.md docs/core-runtime/exception-scope-resource-cleanup.md docs/core-runtime/gc-domain-single-mutator-bridge.md docs/core-runtime/index.md docs/module-system/typed-module-metadata.md zr_vm_aot/docs/parser-and-semantics/ownership-builtins-semir-aot.md tests/acceptance/2026-08-10-ownership-object-member-separation.md
