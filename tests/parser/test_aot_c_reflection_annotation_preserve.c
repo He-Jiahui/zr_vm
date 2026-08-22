@@ -246,6 +246,26 @@ static SZrFunction *create_reflection_annotation_trim_fixture(SZrState *state) {
     return root;
 }
 
+static SZrFunctionTypedExportSymbol *allocate_typed_exported_symbols(
+        SZrState *state,
+        SZrFunction *root,
+        TZrUInt32 symbolCount) {
+    SZrFunctionTypedExportSymbol *symbols;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(root);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, symbolCount);
+    symbols = (SZrFunctionTypedExportSymbol *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionTypedExportSymbol) * symbolCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(symbols);
+    memset(symbols, 0, sizeof(SZrFunctionTypedExportSymbol) * symbolCount);
+    root->typedExportedSymbols = symbols;
+    root->typedExportedSymbolLength = symbolCount;
+    return symbols;
+}
+
 static void attach_typed_method_token(SZrFunction *root,
                                       SZrFunctionTypedExportSymbol *symbol,
                                       TZrUInt32 callableChildIndex,
@@ -515,7 +535,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_token_
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 7u);
     SZrFunction *function;
-    SZrFunctionTypedExportSymbol exportedSymbol;
+    SZrFunctionTypedExportSymbol *exportedSymbol;
     SZrAotWriterOptions options;
     TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
     TZrSize generatedLength = 0u;
@@ -526,7 +546,8 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_token_
     TEST_ASSERT_NOT_NULL(function);
     function->childFunctionList[1].hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&function->childFunctionList[1].decoratorMetadataValue);
-    attach_typed_exported_method_token(function, &exportedSymbol, 1u, methodToken);
+    exportedSymbol = allocate_typed_exported_symbols(state, function, 1u);
+    attach_typed_exported_method_token(function, exportedSymbol, 1u, methodToken);
     mark_function_dynamic_dependency_method_token(state, function, methodToken);
 
     memset(&options, 0, sizeof(options));
@@ -563,7 +584,7 @@ static void test_aot_c_code_stripping_preserves_non_exported_dynamic_dependency_
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     const TZrMetadataToken methodToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 8u);
     SZrFunction *function;
-    SZrFunctionTypedExportSymbol methodSymbol;
+    SZrFunctionTypedExportSymbol *methodSymbol;
     SZrAotWriterOptions options;
     TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
     TZrSize generatedLength = 0u;
@@ -574,8 +595,9 @@ static void test_aot_c_code_stripping_preserves_non_exported_dynamic_dependency_
     TEST_ASSERT_NOT_NULL(function);
     function->childFunctionList[1].hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&function->childFunctionList[1].decoratorMetadataValue);
+    methodSymbol = allocate_typed_exported_symbols(state, function, 1u);
     attach_typed_method_token(function,
-                              &methodSymbol,
+                              methodSymbol,
                               1u,
                               methodToken,
                               ZR_MODULE_EXPORT_KIND_VALUE);
@@ -614,7 +636,7 @@ static void test_aot_c_code_stripping_preserves_non_exported_dynamic_dependency_
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    SZrFunctionTypedExportSymbol exportedSymbol;
+    SZrFunctionTypedExportSymbol *exportedSymbol;
     SZrAotWriterOptions options;
     TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
     TZrSize generatedLength = 0u;
@@ -625,7 +647,8 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_m
     TEST_ASSERT_NOT_NULL(function);
     function->childFunctionList[1].hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&function->childFunctionList[1].decoratorMetadataValue);
-    attach_typed_exported_method_name(state, function, &exportedSymbol, 1u, "target");
+    exportedSymbol = allocate_typed_exported_symbols(state, function, 1u);
+    attach_typed_exported_method_name(state, function, exportedSymbol, 1u, "target");
     mark_function_dynamic_dependency_method_name(state, function, "target");
 
     memset(&options, 0, sizeof(options));
@@ -661,7 +684,7 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_m
 static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_signature_hash_metadata(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    SZrFunctionTypedExportSymbol exportedSymbols[2];
+    SZrFunctionTypedExportSymbol *exportedSymbols;
     SZrAotWriterOptions options;
     TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
     TZrSize generatedLength = 0u;
@@ -672,10 +695,9 @@ static void test_aot_c_code_stripping_preserves_dynamic_dependency_method_name_s
     TEST_ASSERT_NOT_NULL(function);
     function->childFunctionList[1].hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&function->childFunctionList[1].decoratorMetadataValue);
+    exportedSymbols = allocate_typed_exported_symbols(state, function, 2u);
     init_typed_exported_method_name(state, &exportedSymbols[0], 0u, "target", 0x1111u);
     init_typed_exported_method_name(state, &exportedSymbols[1], 1u, "target", 0x2222u);
-    function->typedExportedSymbols = exportedSymbols;
-    function->typedExportedSymbolLength = 2u;
     mark_function_dynamic_dependency_method_name(state, function, "target");
     mark_function_dynamic_dependency_method_signature_hash(state, function, 0x2222u);
 
