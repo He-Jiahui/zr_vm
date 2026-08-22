@@ -6597,6 +6597,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
                     $<TARGET_FILE:zr_vm_language_server_stdio>
                     ${CMAKE_SOURCE_DIR}
     )
+    add_test(
+            NAME language_server_stdio_protocol_conformance
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_protocol_conformance.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
 endif ()
 
 if (TARGET zr_vm_cli_executable AND ZR_VM_NODE_EXECUTABLE)

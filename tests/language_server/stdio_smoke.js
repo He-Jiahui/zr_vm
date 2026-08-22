@@ -1,8 +1,9 @@
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { pathToFileURL, fileURLToPath } = require('url');
+const { StdioProtocolClient } = require('./stdio_protocol_client');
 
 const DEFAULT_STDIO_PEAK_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024;
 
@@ -274,14 +275,6 @@ function removePathSync(targetPath, options = {}) {
     }
 
     fs.unlinkSync(targetPath);
-}
-
-function createMessage(payload) {
-    const body = Buffer.from(JSON.stringify(payload), 'utf8');
-    return Buffer.concat([
-        Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'),
-        body,
-    ]);
 }
 
 function findPosition(text, substring, occurrence = 0, offset = 0) {
@@ -711,150 +704,9 @@ let moduleIdentityRenameFixtureRootToCleanup = null;
 let descriptorPluginGenericFixtureRootToCleanup = null;
 let workspaceLatencyFixtureRootToCleanup = null;
 
-class LspClient {
+class LspClient extends StdioProtocolClient {
     constructor(serverPath) {
-        this.serverPath = serverPath;
-        this.nextId = 1;
-        this.buffer = Buffer.alloc(0);
-        this.pendingResponses = new Map();
-        this.pendingNotifications = new Map();
-        this.notificationBacklog = new Map();
-        this.closed = false;
-        this.exitCode = null;
-        this.exitSignal = null;
-        this.stderrChunks = [];
-
-        this.child = spawn(serverPath, [], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true,
-        });
-
-        this.child.stdout.on('data', (chunk) => this.onStdout(chunk));
-        this.child.stderr.on('data', (chunk) => {
-            this.stderrChunks.push(chunk.toString('utf8'));
-        });
-        this.child.on('exit', (code, signal) => {
-            this.exitCode = code;
-            this.exitSignal = signal;
-        });
-        this.child.on('close', (code, signal) => {
-            this.closed = true;
-            if (this.exitCode === null) {
-                this.exitCode = code;
-            }
-            if (this.exitSignal === null) {
-                this.exitSignal = signal;
-            }
-
-            for (const { reject, timer, method } of this.pendingResponses.values()) {
-                clearTimeout(timer);
-                reject(new Error(
-                    `Server closed before responding to ${method}. ` +
-                    `exitCode=${this.exitCode} signal=${this.exitSignal} stderr=${this.stderr()}`));
-            }
-            this.pendingResponses.clear();
-
-            for (const [method, waiters] of this.pendingNotifications.entries()) {
-                for (const { reject, timer } of waiters) {
-                    clearTimeout(timer);
-                    reject(new Error(
-                        `Server closed before notification ${method}. ` +
-                        `exitCode=${this.exitCode} signal=${this.exitSignal} stderr=${this.stderr()}`));
-                }
-            }
-            this.pendingNotifications.clear();
-        });
-    }
-
-    stderr() {
-        return this.stderrChunks.join('');
-    }
-
-    onStdout(chunk) {
-        this.buffer = Buffer.concat([this.buffer, chunk]);
-
-        while (true) {
-            const headerEnd = this.buffer.indexOf('\r\n\r\n');
-            if (headerEnd < 0) {
-                return;
-            }
-
-            const header = this.buffer.subarray(0, headerEnd).toString('ascii');
-            const headerLines = header.split('\r\n').filter((line) => line.length > 0);
-            for (const line of headerLines) {
-                if (!/^[A-Za-z-]+:\s*.+$/.test(line)) {
-                    throw new Error(`Invalid LSP header line: ${line}`);
-                }
-            }
-            const lengthMatch = header.match(/Content-Length:\s*(\d+)/i);
-            if (!lengthMatch) {
-                throw new Error(`Missing Content-Length header: ${header}`);
-            }
-
-            const contentLength = Number(lengthMatch[1]);
-            const messageStart = headerEnd + 4;
-            const totalLength = messageStart + contentLength;
-            if (this.buffer.length < totalLength) {
-                return;
-            }
-
-            const payload = this.buffer.subarray(messageStart, totalLength).toString('utf8');
-            this.buffer = this.buffer.subarray(totalLength);
-
-            const message = JSON.parse(payload);
-            this.dispatch(message);
-        }
-    }
-
-    dispatch(message) {
-        if (Object.prototype.hasOwnProperty.call(message, 'id') &&
-            (Object.prototype.hasOwnProperty.call(message, 'result') ||
-             Object.prototype.hasOwnProperty.call(message, 'error'))) {
-            const pending = this.pendingResponses.get(message.id);
-            if (!pending) {
-                return;
-            }
-
-            clearTimeout(pending.timer);
-            this.pendingResponses.delete(message.id);
-
-            if (message.error) {
-                pending.reject(new Error(JSON.stringify(message.error)));
-            } else {
-                pending.resolve(message.result);
-            }
-            return;
-        }
-
-        if (!message.method) {
-            return;
-        }
-
-        const backlog = this.notificationBacklog.get(message.method);
-        if (backlog) {
-            backlog.push(message.params);
-        } else {
-            this.notificationBacklog.set(message.method, [message.params]);
-        }
-
-        const waiters = this.pendingNotifications.get(message.method);
-        if (!waiters || waiters.length === 0) {
-            return;
-        }
-
-        const notificationBacklog = this.notificationBacklog.get(message.method);
-        const nextParams = notificationBacklog ? notificationBacklog.shift() : undefined;
-        if (notificationBacklog && notificationBacklog.length === 0) {
-            this.notificationBacklog.delete(message.method);
-        }
-
-        const waiter = waiters.shift();
-        if (waiters.length === 0) {
-            this.pendingNotifications.delete(message.method);
-        }
-
-        clearTimeout(waiter.timer);
-        waiter.resolve(nextParams);
+        super(serverPath);
     }
 
     requestWithId(method, params, timeoutMs = 10000) {
@@ -866,23 +718,12 @@ class LspClient {
         }
 
         const id = this.nextId++;
-        const message = createMessage({
-            jsonrpc: '2.0',
-            id,
-            method,
-            params,
+        const promise = super.request(method, params, id, timeoutMs).then((response) => {
+            if (response.error) {
+                throw new Error(JSON.stringify(response.error));
+            }
+            return response.result;
         });
-
-        const promise = new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.pendingResponses.delete(id);
-                reject(new Error(`Timed out waiting for response to ${method}. stderr=${this.stderr()}`));
-            }, timeoutMs);
-
-            this.pendingResponses.set(id, { resolve, reject, timer, method });
-            this.child.stdin.write(message);
-        });
-
         return { id, promise };
     }
 
@@ -891,63 +732,15 @@ class LspClient {
     }
 
     notify(method, params) {
-        if (this.closed) {
-            throw new Error('Server already exited');
-        }
-
-        this.child.stdin.write(createMessage({
-            jsonrpc: '2.0',
-            method,
-            params,
-        }));
+        super.notify(method, params);
     }
 
     waitForNotification(method, timeoutMs = 10000) {
-        const backlog = this.notificationBacklog.get(method);
-        if (backlog && backlog.length > 0) {
-            const params = backlog.shift();
-            if (backlog.length === 0) {
-                this.notificationBacklog.delete(method);
-            }
-            return Promise.resolve(params);
-        }
-
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                const waiters = this.pendingNotifications.get(method);
-                if (waiters) {
-                    const index = waiters.findIndex((entry) => entry.timer === timer);
-                    if (index >= 0) {
-                        waiters.splice(index, 1);
-                    }
-                    if (waiters.length === 0) {
-                        this.pendingNotifications.delete(method);
-                    }
-                }
-                reject(new Error(`Timed out waiting for notification ${method}. stderr=${this.stderr()}`));
-            }, timeoutMs);
-
-            const waiters = this.pendingNotifications.get(method) || [];
-            waiters.push({ resolve, reject, timer });
-            this.pendingNotifications.set(method, waiters);
-        });
+        return super.waitForNotification(method, timeoutMs);
     }
 
     waitForExit(timeoutMs = 10000) {
-        if (this.closed) {
-            return Promise.resolve(this.exitCode);
-        }
-
-        return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
-                reject(new Error(`Timed out waiting for server exit. stderr=${this.stderr()}`));
-            }, timeoutMs);
-
-            this.child.once('close', (code) => {
-                clearTimeout(timer);
-                resolve(code);
-            });
-        });
+        return super.waitForExit(timeoutMs);
     }
 }
 
