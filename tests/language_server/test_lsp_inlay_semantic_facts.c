@@ -897,64 +897,79 @@ static void test_signature_help_parameter_docs_use_argument_semantic_facts(SZrSt
     TEST_PASS(timer, summary);
 }
 
-static void test_signature_help_parameter_docs_use_argument_ownership_fact(SZrState *state) {
-    const TZrChar *summary = "LSP Signature Help Parameter Docs Use Argument Ownership Fact";
-    const TZrChar *uriText = "file:///signature_argument_ownership_fact.zr";
+static void test_completion_and_signature_use_ownership_intrinsic_fact(SZrState *state) {
+    const TZrChar *summary = "LSP Completion And Signature Use Ownership Intrinsic Fact";
+    const TZrChar *uriText = "file:///ownership_intrinsic_tooling_facts.zr";
     const TZrChar *content =
-        "resource class Resource {\n"
-        "}\n"
-        "fn observe(resource: ref readonly Resource): void {\n"
-        "}\n"
-        "fn run(resource: Weak<Resource>): void {\n"
-        "    observe(ref resource);\n"
+        "resource class Resource { }\n"
+        "fn observe(value: Shared<Resource>): void { }\n"
+        "fn run(ownerA: Unique<Resource>, ownerB: Unique<Resource>): void {\n"
+        "    var sharedValue = share(ownerA);\n"
+        "    observe(share(ownerB));\n"
+        "    sharedVal\n"
         "}\n";
     SZrTestTimer timer;
     SZrLspContext *context;
     SZrString *uri;
-    SZrLspPosition position;
+    SZrLspPosition completionPosition;
+    SZrLspPosition signaturePosition;
+    SZrArray completions;
+    SZrLspCompletionItem *sharedItem;
     SZrLspSignatureHelp *help = ZR_NULL;
-    const TZrChar *doc;
+    const TZrChar *detail;
+    const TZrChar *documentation;
     TZrChar reason[1024];
 
     TEST_START(summary);
-
     context = ZrLanguageServer_LspContext_New(state);
     uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
-    if (context == ZR_NULL ||
-        uri == ZR_NULL ||
-        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
-        !find_position_for_substring(content,
-                                     "observe(ref resource);",
-                                     0,
-                                     (TZrInt32)strlen("observe(ref "),
-                                     &position)) {
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "sharedVal", 1u, 6, &completionPosition) ||
+        !find_position_for_substring(content, "observe(share(ownerB))", 0u, 14, &signaturePosition)) {
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);
         }
-        TEST_FAIL(timer, summary, "Failed to prepare signature ownership fact fixture");
+        TEST_FAIL(timer, summary, "Failed to prepare ownership intrinsic tooling fixture");
         return;
     }
 
-    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, position, &help)) {
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    if (!ZrLanguageServer_Lsp_GetCompletion(
+                state, context, uri, completionPosition, &completions) ||
+        !ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, signaturePosition, &help)) {
+        ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, summary, "Signature help request failed");
+        TEST_FAIL(timer, summary, "Completion or signature request failed");
         return;
     }
 
-    doc = signature_parameter_documentation(help, 0);
-    if (doc == ZR_NULL ||
-        strstr(doc, "ownership violation") == ZR_NULL ||
-        strstr(doc, "Weak value must be upgraded") == ZR_NULL) {
+    sharedItem = completion_item_find_by_label(&completions, "sharedValue");
+    detail = sharedItem != ZR_NULL && sharedItem->detail != ZR_NULL
+                 ? test_string_ptr(sharedItem->detail)
+                 : ZR_NULL;
+    documentation = signature_parameter_documentation(help, 0u);
+    if (detail == ZR_NULL ||
+        strstr(detail, "ownership intrinsic share") == ZR_NULL ||
+        strstr(detail, "consuming") == ZR_NULL ||
+        documentation == ZR_NULL ||
+        strstr(documentation, "ownership intrinsic share") == ZR_NULL ||
+        strstr(documentation, "consuming") == ZR_NULL) {
         snprintf(reason,
                  sizeof(reason),
-                 "Expected signature parameter docs to include argument ownership fact; doc=%s",
-                 doc != ZR_NULL ? doc : "<null>");
+                 "Expected fact-owned intrinsic detail; completion=%s signature=%s",
+                 detail != ZR_NULL ? detail : "<null>",
+                 documentation != ZR_NULL ? documentation : "<null>");
+        ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspSignatureHelp_Free(state, help);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, reason);
         return;
     }
 
+    ZrCore_Array_Free(state, &completions);
     ZrLanguageServer_LspSignatureHelp_Free(state, help);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, summary);
@@ -992,7 +1007,7 @@ int main(void) {
     test_completion_detail_uses_initializer_logical_fact(state);
     test_completion_detail_uses_initializer_ownership_fact(state);
     test_signature_help_parameter_docs_use_argument_semantic_facts(state);
-    test_signature_help_parameter_docs_use_argument_ownership_fact(state);
+    test_completion_and_signature_use_ownership_intrinsic_fact(state);
 
     ZrCore_GlobalState_Free(global);
 

@@ -953,6 +953,114 @@ static TZrBool test_completion_documentation_fails_closed_without_declaration_fa
     return passed;
 }
 
+static TZrBool test_ownership_intrinsic_hover_uses_canonical_fact(SZrState *state) {
+    const TZrChar *uriText = "file:///ownership_intrinsic_fact_hover.zr";
+    const TZrChar *content =
+        "resource class Resource { }\n"
+        "fn convert(owner: Unique<Resource>): Shared<Resource> {\n"
+        "    return share(owner);\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrLspLocalSemanticQueryResult query;
+    SZrLspHover *hover = ZR_NULL;
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "share(owner)", 0u, &position)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare ownership intrinsic hover fixture\n");
+        return ZR_FALSE;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    passed = ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
+                     state, context, uri, position, &query) &&
+             query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
+             query.ownershipIntrinsicFact != ZR_NULL &&
+             query.ownershipIntrinsicFact->operation == ZR_OWNERSHIP_INTRINSIC_SHARE &&
+             query.ownershipIntrinsicFact->consuming &&
+             ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
+                     state, context, uri, &query, &hover) &&
+             hover_contains_text(hover, "Ownership intrinsic: share") &&
+             hover_contains_text(hover, "consuming");
+    if (!passed) {
+        printf("FAIL: ownership intrinsic hover did not use canonical fact; "
+               "status=%d fact=%p operation=%d consuming=%d hover=%s\n",
+               (int)query.status,
+               (void *)query.ownershipIntrinsicFact,
+               query.ownershipIntrinsicFact != ZR_NULL
+                   ? (int)query.ownershipIntrinsicFact->operation
+                   : -1,
+               query.ownershipIntrinsicFact != ZR_NULL
+                   ? (int)query.ownershipIntrinsicFact->consuming
+                   : -1,
+               hover_first_text(hover) != ZR_NULL ? hover_first_text(hover) : "<null>");
+    }
+
+    hover_free(state, hover);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
+static TZrBool test_owner_member_completion_omits_removed_operations(SZrState *state) {
+    const TZrChar *uriText = "file:///ownership_member_completion_cutover.zr";
+    const TZrChar *content =
+        "resource class Resource { }\n"
+        "fn inspect(owner: Unique<Resource>): void {\n"
+        "    owner.missing;\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrArray completions;
+    TZrBool passed;
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1) ||
+        !find_position_for_substring(content, "owner.missing", 0u, &position)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        printf("FAIL: unable to prepare ownership member completion fixture\n");
+        return ZR_FALSE;
+    }
+
+    position.character += (TZrInt32)strlen("owner.");
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    passed = ZrLanguageServer_Lsp_GetCompletion(
+                     state, context, uri, position, &completions) &&
+             !completion_contains_label(&completions, "share") &&
+             !completion_contains_label(&completions, "degrade") &&
+             !completion_contains_label(&completions, "wake") &&
+             !completion_contains_label(&completions, "intoGc") &&
+             !completion_contains_label(&completions, "drop");
+    if (!passed) {
+        printf("FAIL: owner member completion retained removed ownership operation; "
+               "share=%d degrade=%d wake=%d intoGc=%d drop=%d\n",
+               (int)completion_contains_label(&completions, "share"),
+               (int)completion_contains_label(&completions, "degrade"),
+               (int)completion_contains_label(&completions, "wake"),
+               (int)completion_contains_label(&completions, "intoGc"),
+               (int)completion_contains_label(&completions, "drop"));
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    return passed;
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -966,6 +1074,8 @@ int main(void) {
     TZrBool reflectionQueryHoverPassed;
     TZrBool reflectionQueryCompletionPassed;
     TZrBool canonicalCompletionDocumentationPassed;
+    TZrBool ownershipIntrinsicHoverPassed;
+    TZrBool ownershipMemberCompletionPassed;
 
     memset(&callbacks, 0, sizeof(callbacks));
     global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
@@ -1009,6 +1119,14 @@ int main(void) {
         test_completion_documentation_fails_closed_without_declaration_fact(state);
     printf("%s: Completion Documentation Fails Closed Without Declaration Fact\n",
            canonicalCompletionDocumentationPassed ? "PASS" : "FAIL");
+    ownershipIntrinsicHoverPassed =
+        test_ownership_intrinsic_hover_uses_canonical_fact(state);
+    printf("%s: Ownership Intrinsic Hover Uses Canonical Fact\n",
+           ownershipIntrinsicHoverPassed ? "PASS" : "FAIL");
+    ownershipMemberCompletionPassed =
+        test_owner_member_completion_omits_removed_operations(state);
+    printf("%s: Owner Member Completion Omits Removed Operations\n",
+           ownershipMemberCompletionPassed ? "PASS" : "FAIL");
 
     ZrCore_GlobalState_Free(global);
     return expressionHoverPassed &&
@@ -1019,7 +1137,9 @@ int main(void) {
                    canonicalTypeHoverPassed &&
                    reflectionQueryHoverPassed &&
                    reflectionQueryCompletionPassed &&
-                   canonicalCompletionDocumentationPassed
+                   canonicalCompletionDocumentationPassed &&
+                   ownershipIntrinsicHoverPassed &&
+                   ownershipMemberCompletionPassed
                ? 0
                : 1;
 }

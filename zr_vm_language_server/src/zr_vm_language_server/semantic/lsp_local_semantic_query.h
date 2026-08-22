@@ -20,6 +20,7 @@ typedef struct SZrLspLocalSemanticQueryResult {
     const SZrSemanticReachabilityFact *reachabilityFact;
     const SZrSemanticLogicalFact *logicalFact;
     const SZrSemanticOwnershipFact *ownershipFact;
+    const SZrOwnershipIntrinsicFact *ownershipIntrinsicFact;
 } SZrLspLocalSemanticQueryResult;
 
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspLocalSemanticQuery_Init(

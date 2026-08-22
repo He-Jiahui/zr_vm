@@ -10,4 +10,10 @@ TZrBool ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(
     TZrSize *used,
     const SZrSemanticExpressionFact *fact);
 
+TZrBool ZrLanguageServer_LspLocalSemanticExpressionText_AppendOwnershipIntrinsicHover(
+    TZrChar *buffer,
+    TZrSize bufferSize,
+    TZrSize *used,
+    const SZrOwnershipIntrinsicFact *fact);
+
 #endif

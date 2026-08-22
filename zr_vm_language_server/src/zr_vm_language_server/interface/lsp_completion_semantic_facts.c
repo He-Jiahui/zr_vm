@@ -382,6 +382,53 @@ static TZrBool completion_fact_append_ownership_detail(TZrChar *buffer,
     return completion_fact_append_format(buffer, bufferSize, used, "ownership violation");
 }
 
+static const TZrChar *completion_fact_ownership_intrinsic_operation(
+        EZrOwnershipIntrinsicOperation operation) {
+    switch (operation) {
+        case ZR_OWNERSHIP_INTRINSIC_SHARE:
+            return "share";
+        case ZR_OWNERSHIP_INTRINSIC_DEGRADE:
+            return "degrade";
+        case ZR_OWNERSHIP_INTRINSIC_WAKE:
+            return "wake";
+        case ZR_OWNERSHIP_INTRINSIC_INTO_GC:
+            return "intoGc";
+        case ZR_OWNERSHIP_INTRINSIC_DROP:
+            return "drop";
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool completion_fact_append_ownership_intrinsic_detail(
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrSize *used,
+        const SZrOwnershipIntrinsicFact *fact) {
+    const TZrChar *operation;
+
+    if (fact == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    operation = completion_fact_ownership_intrinsic_operation(fact->operation);
+    if (operation == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+        return ZR_FALSE;
+    }
+
+    return completion_fact_append_format(
+            buffer,
+            bufferSize,
+            used,
+            "ownership intrinsic %s %s",
+            operation,
+            fact->consuming ? "consuming" : "non-consuming");
+}
+
 static void completion_fact_materialize_initializer(SZrState *state,
                                                     SZrSemanticAnalyzer *analyzer,
                                                     SZrAstNode *initializer) {
@@ -449,6 +496,7 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(SZrState *state,
     const SZrSemanticNumericFact *numericFact;
     const SZrSemanticLogicalFact *logicalFact;
     const SZrSemanticOwnershipFact *ownershipFact;
+    const SZrOwnershipIntrinsicFact *ownershipIntrinsicFact;
     TZrChar factDetail[ZR_LSP_TEXT_BUFFER_LENGTH];
     TZrSize used = 0;
 
@@ -472,12 +520,17 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(SZrState *state,
     numericFact = ZrParser_SemanticFacts_FindNumericByNode(analyzer->semanticContext, initializer);
     logicalFact = ZrParser_SemanticFacts_FindLogicalByNode(analyzer->semanticContext, initializer);
     ownershipFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(analyzer->semanticContext, initializer->location);
+    ownershipIntrinsicFact =
+        ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
+                analyzer->semanticContext, initializer);
 
     factDetail[0] = '\0';
     if (!completion_fact_append_expression_detail(factDetail, sizeof(factDetail), &used, expressionFact) ||
         !completion_fact_append_numeric_detail(factDetail, sizeof(factDetail), &used, numericFact) ||
         !completion_fact_append_logical_detail(factDetail, sizeof(factDetail), &used, logicalFact) ||
         !completion_fact_append_ownership_detail(factDetail, sizeof(factDetail), &used, ownershipFact) ||
+        !completion_fact_append_ownership_intrinsic_detail(
+                factDetail, sizeof(factDetail), &used, ownershipIntrinsicFact) ||
         used == 0) {
         return;
     }

@@ -45,6 +45,9 @@ static SZrFileRange local_query_hover_range(const SZrLspLocalSemanticQueryResult
                                          ZR_NULL);
     }
 
+    if (query->ownershipIntrinsicFact != ZR_NULL) {
+        return query->ownershipIntrinsicFact->nameRange;
+    }
     if (query->expressionFact != ZR_NULL) {
         return query->expressionFact->range;
     }
@@ -436,6 +439,9 @@ static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
                                       result->reachabilityFact);
     result->ownershipFact =
         ZrParser_SemanticFacts_FindOwnershipAtPosition(analyzer->semanticContext, result->queryRange);
+    result->ownershipIntrinsicFact =
+        ZrParser_SemanticFacts_FindOwnershipIntrinsicAtPosition(
+                analyzer->semanticContext, result->queryRange);
 }
 
 static void local_query_materialize_expression_fact(SZrState *state,
@@ -522,7 +528,8 @@ static void local_query_set_fact_status_if_any(SZrLspLocalSemanticQueryResult *r
         result->referenceFact != ZR_NULL ||
         result->reachabilityFact != ZR_NULL ||
         result->logicalFact != ZR_NULL ||
-        result->ownershipFact != ZR_NULL) {
+        result->ownershipFact != ZR_NULL ||
+        result->ownershipIntrinsicFact != ZR_NULL) {
         result->status = ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT;
     }
 }
@@ -566,6 +573,7 @@ void ZrLanguageServer_LspLocalSemanticQuery_Clear(SZrLspLocalSemanticQueryResult
     result->reachabilityFact = ZR_NULL;
     result->logicalFact = ZR_NULL;
     result->ownershipFact = ZR_NULL;
+    result->ownershipIntrinsicFact = ZR_NULL;
 }
 
 TZrBool ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(

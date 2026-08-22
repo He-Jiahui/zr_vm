@@ -840,7 +840,8 @@ static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize lengt
     static const TZrChar *const keywordWords[] = {
         "let",       "var",       "fn",       "ref",       "in",       "out",
         "scoped",    "readonly",  "resource", "property", "init",     "own",
-        "move",      "drop",      "native",   "extern",   "async",    "await",
+        "move",      "share",     "degrade",  "wake",     "intoGc",   "drop",
+        "native",    "extern",    "async",    "await",
         "comptime",  "yield",     "import",   "typeid",   "typeof",   "loadModule",
         "loadPlugin", "pub",      "pri",      "pro",      "static",   "new",
         "class",

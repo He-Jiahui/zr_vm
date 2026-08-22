@@ -159,6 +159,24 @@ static const TZrChar *expression_text_exactness(EZrSemanticFactExactness exactne
     }
 }
 
+static const TZrChar *expression_text_ownership_intrinsic_operation(
+        EZrOwnershipIntrinsicOperation operation) {
+    switch (operation) {
+        case ZR_OWNERSHIP_INTRINSIC_SHARE:
+            return "share";
+        case ZR_OWNERSHIP_INTRINSIC_DEGRADE:
+            return "degrade";
+        case ZR_OWNERSHIP_INTRINSIC_WAKE:
+            return "wake";
+        case ZR_OWNERSHIP_INTRINSIC_INTO_GC:
+            return "intoGc";
+        case ZR_OWNERSHIP_INTRINSIC_DROP:
+            return "drop";
+        default:
+            return ZR_NULL;
+    }
+}
+
 static TZrBool expression_text_append_constant(TZrChar *buffer,
                                                TZrSize bufferSize,
                                                TZrSize *used,
@@ -224,4 +242,30 @@ TZrBool ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(
     }
 
     return expression_text_append_constant(buffer, bufferSize, used, fact);
+}
+
+TZrBool ZrLanguageServer_LspLocalSemanticExpressionText_AppendOwnershipIntrinsicHover(
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrSize *used,
+        const SZrOwnershipIntrinsicFact *fact) {
+    const TZrChar *operation;
+
+    if (fact == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    operation = expression_text_ownership_intrinsic_operation(fact->operation);
+    if (operation == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    return expression_text_append_format(
+            buffer,
+            bufferSize,
+            used,
+            "\n\nOwnership intrinsic: %s (%s, place %u)",
+            operation,
+            fact->consuming ? "consuming" : "non-consuming",
+            (unsigned int)fact->placeId);
 }

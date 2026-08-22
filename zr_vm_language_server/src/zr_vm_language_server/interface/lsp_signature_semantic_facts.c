@@ -368,6 +368,53 @@ static TZrBool signature_fact_append_ownership_detail(TZrChar *buffer,
     return signature_fact_append_format(buffer, bufferSize, used, "ownership violation");
 }
 
+static const TZrChar *signature_fact_ownership_intrinsic_operation(
+        EZrOwnershipIntrinsicOperation operation) {
+    switch (operation) {
+        case ZR_OWNERSHIP_INTRINSIC_SHARE:
+            return "share";
+        case ZR_OWNERSHIP_INTRINSIC_DEGRADE:
+            return "degrade";
+        case ZR_OWNERSHIP_INTRINSIC_WAKE:
+            return "wake";
+        case ZR_OWNERSHIP_INTRINSIC_INTO_GC:
+            return "intoGc";
+        case ZR_OWNERSHIP_INTRINSIC_DROP:
+            return "drop";
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool signature_fact_append_ownership_intrinsic_detail(
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrSize *used,
+        const SZrOwnershipIntrinsicFact *fact) {
+    const TZrChar *operation;
+
+    if (fact == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    operation = signature_fact_ownership_intrinsic_operation(fact->operation);
+    if (operation == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (!signature_fact_append_separator(buffer, bufferSize, used)) {
+        return ZR_FALSE;
+    }
+
+    return signature_fact_append_format(
+            buffer,
+            bufferSize,
+            used,
+            "ownership intrinsic %s %s",
+            operation,
+            fact->consuming ? "consuming" : "non-consuming");
+}
+
 static void signature_fact_materialize_argument(SZrState *state,
                                                 SZrSemanticAnalyzer *analyzer,
                                                 SZrAstNode *argumentNode) {
@@ -401,6 +448,7 @@ SZrString *ZrLanguageServer_Lsp_BuildSignatureArgumentSemanticFactDocumentation(
     const SZrSemanticNumericFact *numericFact;
     const SZrSemanticLogicalFact *logicalFact;
     const SZrSemanticOwnershipFact *ownershipFact;
+    const SZrOwnershipIntrinsicFact *ownershipIntrinsicFact;
     TZrChar factBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
     TZrChar docBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
     TZrSize factLength = 0;
@@ -420,12 +468,20 @@ SZrString *ZrLanguageServer_Lsp_BuildSignatureArgumentSemanticFactDocumentation(
     logicalFact = ZrParser_SemanticFacts_FindLogicalByNode(analyzer->semanticContext, argumentNode);
     ownershipFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(analyzer->semanticContext,
                                                                    argumentNode->location);
+    ownershipIntrinsicFact =
+        ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
+                analyzer->semanticContext, argumentNode);
 
     factBuffer[0] = '\0';
     if (!signature_fact_append_expression_detail(factBuffer, sizeof(factBuffer), &factLength, expressionFact) ||
         !signature_fact_append_numeric_detail(factBuffer, sizeof(factBuffer), &factLength, numericFact) ||
         !signature_fact_append_logical_detail(factBuffer, sizeof(factBuffer), &factLength, logicalFact) ||
         !signature_fact_append_ownership_detail(factBuffer, sizeof(factBuffer), &factLength, ownershipFact) ||
+        !signature_fact_append_ownership_intrinsic_detail(
+                factBuffer,
+                sizeof(factBuffer),
+                &factLength,
+                ownershipIntrinsicFact) ||
         factLength == 0) {
         return ZR_NULL;
     }

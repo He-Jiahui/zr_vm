@@ -308,6 +308,11 @@ TZrBool ZrLanguageServer_LspLocalSemanticHoverText_AppendFacts(
                                                                        bufferSize,
                                                                        used,
                                                                        query->expressionFact) &&
+           ZrLanguageServer_LspLocalSemanticExpressionText_AppendOwnershipIntrinsicHover(
+                   buffer,
+                   bufferSize,
+                   used,
+                   query->ownershipIntrinsicFact) &&
            lsp_local_hover_text_append_numeric(buffer, bufferSize, used, query->numericFact) &&
            lsp_local_hover_text_append_logical(buffer, bufferSize, used, query->logicalFact) &&
            lsp_local_hover_text_append_reachability(buffer, bufferSize, used, query->reachabilityFact) &&
