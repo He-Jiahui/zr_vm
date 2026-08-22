@@ -4,6 +4,7 @@
 
 #include "container_test_common.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/stack.h"
@@ -63,7 +64,7 @@ static void test_production_pool_consumes_inline_closed_type_without_value_mirro
     SZrObjectModule *module;
     SZrObject *poolObject;
     SZrFunction *function;
-    SZrFunctionFrameSlotLayout slotLayout = {0};
+    SZrFunctionFrameSlotLayout *slotLayout;
     SZrTypeLayout typeLayout;
     const SZrTypeLayout *layouts[1];
     const SZrTypeLayout *otherLayouts[1];
@@ -94,6 +95,12 @@ static void test_production_pool_consumes_inline_closed_type_without_value_mirro
 
     function = ZrCore_Function_New(state);
     TEST_ASSERT_NOT_NULL(function);
+    slotLayout = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(slotLayout);
+    ZrCore_Memory_RawSet(slotLayout, 0, sizeof(*slotLayout));
     ZrCore_TypeLayout_InitStruct(
             &typeLayout,
             (TZrUInt32)sizeof(payload),
@@ -109,16 +116,16 @@ static void test_production_pool_consumes_inline_closed_type_without_value_mirro
     function->metadataCodeRegistration = &registration;
     function->metadataTypeLayoutCount = ZR_ARRAY_COUNT(layouts);
 
-    slotLayout.stackSlot = 0u;
-    slotLayout.byteSize = typeLayout.byteSize;
-    slotLayout.byteAlign = typeLayout.byteAlign;
-    slotLayout.typeLayoutId = 0u;
-    slotLayout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
-    slotLayout.isParameter = ZR_TRUE;
-    function->frameSlotLayouts = &slotLayout;
+    slotLayout->stackSlot = 0u;
+    slotLayout->byteSize = typeLayout.byteSize;
+    slotLayout->byteAlign = typeLayout.byteAlign;
+    slotLayout->typeLayoutId = 0u;
+    slotLayout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    slotLayout->isParameter = ZR_TRUE;
+    function->frameSlotLayouts = slotLayout;
     function->frameSlotLayoutLength = 1u;
-    function->frameByteSize = slotLayout.byteSize;
-    function->frameByteAlign = slotLayout.byteAlign;
+    function->frameByteSize = slotLayout->byteSize;
+    function->frameByteAlign = slotLayout->byteAlign;
     frameBase = state->stackBase.valuePointer + 8;
     TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
             state, function, frameBase, 0u, &place));

@@ -75,6 +75,26 @@ static SZrState *test_create_state_with_dirty_allocator(TestDirtyAllocatorContex
     return state;
 }
 
+static TZrInstruction *assign_owned_instructions(SZrState *state,
+                                                 SZrFunction *function,
+                                                 TZrUInt32 instructionCount) {
+    TZrInstruction *instructions;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, instructionCount);
+
+    instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * instructionCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(instructions);
+    ZrCore_Memory_RawSet(instructions, 0, sizeof(TZrInstruction) * instructionCount);
+    function->instructionsList = instructions;
+    function->instructionsLength = instructionCount;
+    return instructions;
+}
+
 static void assign_entry_local_metadata(SZrState *state,
                                         SZrFunction *function,
                                         const TZrUInt32 *stackSlots,
@@ -416,7 +436,7 @@ static void test_resolved_vm_precall_clears_logical_temps_when_typed_frame_layou
 static void test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    TZrInstruction instructions[1] = {0};
+    TZrInstruction *instructions;
     TZrStackValuePointer callBase;
     SZrTypeValue *callableValue;
     SZrCallInfo *callInfo;
@@ -427,8 +447,7 @@ static void test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_
     TEST_ASSERT_NOT_NULL(function);
     function->stackSize = 2;
     function->parameterCount = 1;
-    function->instructionsList = instructions;
-    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    instructions = assign_owned_instructions(state, function, 1u);
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
 
@@ -476,7 +495,7 @@ static void test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_
 static void test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    TZrInstruction instructions[1] = {0};
+    TZrInstruction *instructions;
     TZrStackValuePointer callBase;
     SZrTypeValue *callableValue;
     SZrCallInfo *callInfo;
@@ -487,8 +506,7 @@ static void test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializ
     TEST_ASSERT_NOT_NULL(function);
     function->stackSize = 2;
     function->parameterCount = 1;
-    function->instructionsList = instructions;
-    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    instructions = assign_owned_instructions(state, function, 1u);
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
 
@@ -537,7 +555,7 @@ static void test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializ
 static void test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_on_cached_path(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    TZrInstruction instructions[1] = {0};
+    TZrInstruction *instructions;
     TZrStackValuePointer callBase;
     SZrTypeValue *callableValue;
     SZrCallInfo *callInfo;
@@ -548,8 +566,7 @@ static void test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_o
     TEST_ASSERT_NOT_NULL(function);
     function->stackSize = 2;
     function->parameterCount = 1;
-    function->instructionsList = instructions;
-    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    instructions = assign_owned_instructions(state, function, 1u);
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
 
@@ -598,7 +615,6 @@ static void test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_o
 static void test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_slots(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    TZrInstruction instructions[1] = {0};
     TZrStackValuePointer callBase;
     TZrSize expectedStorageSlots;
     SZrCallInfo *callInfo;
@@ -609,8 +625,7 @@ static void test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_
     TEST_ASSERT_NOT_NULL(function);
     function->stackSize = 1;
     function->parameterCount = 0;
-    function->instructionsList = instructions;
-    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    assign_owned_instructions(state, function, 1u);
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
     function->vmEntryClearStackSizePlusOne = 1u;
@@ -647,7 +662,7 @@ static void test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_
 static void test_resolved_vm_precall_reserves_generated_temp_slots_beyond_declared_stack_size(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    TZrInstruction instructions[4] = {0};
+    TZrInstruction *instructions;
     TZrStackValuePointer callBase;
     TZrSize expectedStorageSlots;
     SZrCallInfo *callInfo;
@@ -658,8 +673,7 @@ static void test_resolved_vm_precall_reserves_generated_temp_slots_beyond_declar
     TEST_ASSERT_NOT_NULL(function);
     function->stackSize = 2;
     function->parameterCount = 0;
-    function->instructionsList = instructions;
-    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    instructions = assign_owned_instructions(state, function, 4u);
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
     function->vmEntryClearStackSizePlusOne = 1u;
@@ -775,7 +789,6 @@ static void test_frame_gc_visitor_includes_value_layout_slots(void) {
 static void test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_fast_probe_fallback(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
-    TZrInstruction instructions[1] = {0};
     TZrStackValuePointer callBase;
     TZrSize expectedStorageSlots;
     SZrCallInfo *callInfo;
@@ -786,8 +799,7 @@ static void test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_
     TEST_ASSERT_NOT_NULL(function);
     function->stackSize = 1;
     function->parameterCount = 0;
-    function->instructionsList = instructions;
-    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    assign_owned_instructions(state, function, 1u);
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
     function->vmEntryClearStackSizePlusOne = 1u;

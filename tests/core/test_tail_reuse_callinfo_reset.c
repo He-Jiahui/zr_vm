@@ -17,6 +17,23 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+static TZrInstruction *test_tail_reuse_assign_owned_instructions(SZrState *state,
+                                                                 SZrFunction *function) {
+    TZrInstruction *instructions;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(instructions);
+    ZrCore_Memory_RawSet(instructions, 0, sizeof(TZrInstruction));
+    function->instructionsList = instructions;
+    function->instructionsLength = 1u;
+    return instructions;
+}
+
 static TZrUInt32 test_tail_reuse_write_compiled_prototype_data(TZrByte *buffer,
                                                                TZrUInt32 bufferSize,
                                                                const SZrCompiledPrototypeInfo *prototype,
@@ -108,8 +125,7 @@ static void test_tail_reuse_reinitializes_reused_callinfo_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *currentFunction;
     SZrFunction *nextFunction;
-    TZrInstruction currentInstructions[1] = {0};
-    TZrInstruction nextInstructions[1] = {0};
+    TZrInstruction *nextInstructions;
     TZrStackValuePointer callBase;
     TZrStackValuePointer tailCallableSlot;
     SZrTypeValue *currentCallableValue;
@@ -124,13 +140,11 @@ static void test_tail_reuse_reinitializes_reused_callinfo_state(void) {
     TEST_ASSERT_NOT_NULL(currentFunction);
     TEST_ASSERT_NOT_NULL(nextFunction);
 
-    currentFunction->instructionsList = currentInstructions;
-    currentFunction->instructionsLength = 1;
+    test_tail_reuse_assign_owned_instructions(state, currentFunction);
     currentFunction->stackSize = 4;
     currentFunction->parameterCount = 0;
 
-    nextFunction->instructionsList = nextInstructions;
-    nextFunction->instructionsLength = 1;
+    nextInstructions = test_tail_reuse_assign_owned_instructions(state, nextFunction);
     nextFunction->stackSize = 2;
     nextFunction->parameterCount = 0;
 
@@ -199,8 +213,6 @@ static void test_tail_reuse_drops_inline_frame_values_before_reusing_storage(voi
     SZrFunction *currentFunction;
     SZrFunction *nextFunction;
     SZrString *text;
-    TZrInstruction currentInstructions[1] = {0};
-    TZrInstruction nextInstructions[1] = {0};
     TZrStackValuePointer callBase;
     TZrStackValuePointer frameBase;
     TZrStackValuePointer tailCallableSlot;
@@ -221,14 +233,12 @@ static void test_tail_reuse_drops_inline_frame_values_before_reusing_storage(voi
     TEST_ASSERT_NOT_NULL(nextFunction);
     TEST_ASSERT_NOT_NULL(text);
 
-    currentFunction->instructionsList = currentInstructions;
-    currentFunction->instructionsLength = 1;
+    test_tail_reuse_assign_owned_instructions(state, currentFunction);
     currentFunction->stackSize = 4;
     currentFunction->parameterCount = 0;
     test_tail_reuse_install_managed_inline_frame_metadata(state, currentFunction, 2u, inlineByteOffset);
 
-    nextFunction->instructionsList = nextInstructions;
-    nextFunction->instructionsLength = 1;
+    test_tail_reuse_assign_owned_instructions(state, nextFunction);
     nextFunction->stackSize = 1;
     nextFunction->parameterCount = 0;
 
@@ -281,8 +291,6 @@ static void test_tail_reuse_with_existing_vm_closure_keeps_callable_object_and_c
     SZrFunction *currentFunction;
     SZrFunction *nextFunction;
     SZrClosure *closure;
-    TZrInstruction currentInstructions[1] = {0};
-    TZrInstruction nextInstructions[1] = {0};
     TZrStackValuePointer callBase;
     TZrStackValuePointer tailCallableSlot;
     SZrTypeValue *currentCallableValue;
@@ -299,13 +307,11 @@ static void test_tail_reuse_with_existing_vm_closure_keeps_callable_object_and_c
     TEST_ASSERT_NOT_NULL(nextFunction);
     TEST_ASSERT_NOT_NULL(closure);
 
-    currentFunction->instructionsList = currentInstructions;
-    currentFunction->instructionsLength = 1;
+    test_tail_reuse_assign_owned_instructions(state, currentFunction);
     currentFunction->stackSize = 4;
     currentFunction->parameterCount = 0;
 
-    nextFunction->instructionsList = nextInstructions;
-    nextFunction->instructionsLength = 1;
+    test_tail_reuse_assign_owned_instructions(state, nextFunction);
     nextFunction->stackSize = 2;
     nextFunction->parameterCount = 0;
     nextFunction->closureValueLength = 0;
@@ -355,8 +361,7 @@ static void test_tail_reuse_declines_inline_parameter_callee_until_layout_move_i
     SZrFunction *currentFunction;
     SZrFunction *nextFunction;
     SZrFunctionFrameSlotLayout *nextLayouts;
-    TZrInstruction currentInstructions[1] = {0};
-    TZrInstruction nextInstructions[1] = {0};
+    TZrInstruction *currentInstructions;
     TZrStackValuePointer callBase;
     TZrStackValuePointer tailCallableSlot;
     SZrTypeValue *currentCallableValue;
@@ -377,8 +382,7 @@ static void test_tail_reuse_declines_inline_parameter_callee_until_layout_move_i
     TEST_ASSERT_NOT_NULL(nextLayouts);
     memset(nextLayouts, 0, sizeof(SZrFunctionFrameSlotLayout));
 
-    currentFunction->instructionsList = currentInstructions;
-    currentFunction->instructionsLength = 1;
+    currentInstructions = test_tail_reuse_assign_owned_instructions(state, currentFunction);
     currentFunction->stackSize = 4;
     currentFunction->parameterCount = 0;
 
@@ -390,8 +394,7 @@ static void test_tail_reuse_declines_inline_parameter_callee_until_layout_move_i
     nextLayouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
     nextLayouts[0].isParameter = ZR_TRUE;
 
-    nextFunction->instructionsList = nextInstructions;
-    nextFunction->instructionsLength = 1;
+    test_tail_reuse_assign_owned_instructions(state, nextFunction);
     nextFunction->stackSize = 1;
     nextFunction->parameterCount = 1;
     nextFunction->frameSlotLayouts = nextLayouts;

@@ -16,6 +16,10 @@ plan_sources:
   - docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md
 tests:
   - tests/core/test_execution_dispatch_callable_metadata.c
+  - tests/core/test_precall_frame_slot_reset.c
+  - tests/core/test_tail_reuse_callinfo_reset.c
+  - tests/core/test_vm_closure_precall.c
+  - tests/container/test_pooling_closed_type_runtime.c
   - tests/parser/test_ownership_intrinsic_member_separation.c
   - tests/acceptance/2026-08-10-ownership-object-member-separation.md
 doc_type: module-detail
@@ -53,6 +57,15 @@ addresses into the owned chain.
 but the pointer array is owned by the function. Function teardown therefore
 releases only the array and then resets the function to its GC-safe tombstone.
 It must not recursively free any prototype object.
+
+Compiled instruction arrays follow the opposite boundary: a function owns its
+`instructionsList` storage and releases it during teardown. Direct runtime test
+fixtures must therefore allocate instruction arrays through the runtime
+allocator rather than borrowing stack arrays.
+
+`cachedStatelessClosure` is only a borrowed pointer to a peer GC object. GC
+shutdown does not guarantee that the closure outlives the function, so function
+teardown clears its own cache without dereferencing or mutating the closure.
 
 Module prototype loading grows this array through the runtime allocator. Its
 per-prototype `inheritTypeNames` value starts in the constructed, allocation-free

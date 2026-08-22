@@ -5,6 +5,7 @@
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
@@ -53,7 +54,7 @@ static void test_push_to_stack_uses_forwarded_function_capture_layout(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *originalFunction;
     SZrFunction *forwardedFunction;
-    SZrFunctionClosureVariable forwardedCapture;
+    SZrFunctionClosureVariable *forwardedCapture;
     TZrStackValuePointer captureBase;
     TZrStackValuePointer closureSlot;
     SZrTypeValue *capturedStackValue;
@@ -69,15 +70,20 @@ static void test_push_to_stack_uses_forwarded_function_capture_layout(void) {
     TEST_ASSERT_NOT_NULL(originalFunction);
     TEST_ASSERT_NOT_NULL(forwardedFunction);
 
-    memset(&forwardedCapture, 0, sizeof(forwardedCapture));
-    forwardedCapture.inStack = ZR_TRUE;
-    forwardedCapture.index = 0;
+    forwardedCapture = (SZrFunctionClosureVariable *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionClosureVariable),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(forwardedCapture);
+    memset(forwardedCapture, 0, sizeof(*forwardedCapture));
+    forwardedCapture->inStack = ZR_TRUE;
+    forwardedCapture->index = 0;
 
     originalFunction->closureValueLength = 0;
     originalFunction->closureValueList = ZR_NULL;
 
     forwardedFunction->closureValueLength = 1;
-    forwardedFunction->closureValueList = &forwardedCapture;
+    forwardedFunction->closureValueList = forwardedCapture;
     originalFunction->super.garbageCollectMark.forwardingAddress = &forwardedFunction->super;
 
     captureBase = state->stackTop.valuePointer;

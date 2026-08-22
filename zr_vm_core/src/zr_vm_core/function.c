@@ -1172,10 +1172,9 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         }                                                                                                            \
     } while (0)
 
-    if (function->cachedStatelessClosure != ZR_NULL) {
-        function->cachedStatelessClosure->function = ZR_NULL;
-        function->cachedStatelessClosure = ZR_NULL;
-    }
+    /* The closure is a peer GC object and may already have been reclaimed
+     * during collector shutdown. Only clear this function's borrowed cache. */
+    function->cachedStatelessClosure = ZR_NULL;
     if (!function->childFunctionGraphIsBorrowed &&
         function->childFunctionList != ZR_NULL &&
         function->childFunctionLength > 0) {
