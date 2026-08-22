@@ -237,11 +237,22 @@ int main(void) {
             continue;
         }
 
+        ZrLanguageServer_StdioTrace_Log(&server,
+                                        "inbound",
+                                        envelope.isRequest ? "request" : "notification",
+                                        envelope.method,
+                                        envelope.isNotification);
+
         if (envelope.isRequest) {
             if (requestReservation == ZR_STDIO_REQUEST_RESERVATION_DUPLICATE) {
                 send_error_response(envelope.id,
                                     ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE,
                                     "Invalid Request");
+                ZrLanguageServer_StdioTrace_Log(&server,
+                                                "outbound",
+                                                "response",
+                                                envelope.method,
+                                                ZR_FALSE);
                 cJSON_Delete(message);
                 continue;
             }
@@ -249,11 +260,21 @@ int main(void) {
                 send_error_response(envelope.id,
                                     ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE,
                                     "Internal error");
+                ZrLanguageServer_StdioTrace_Log(&server,
+                                                "outbound",
+                                                "response",
+                                                envelope.method,
+                                                ZR_FALSE);
                 cJSON_Delete(message);
                 continue;
             }
             ZrLanguageServer_StdioRequestInput_Activate(&server, envelope.id);
             handle_request_message(&server, envelope.id, envelope.method, envelope.params);
+            ZrLanguageServer_StdioTrace_Log(&server,
+                                            "outbound",
+                                            "response",
+                                            envelope.method,
+                                            ZR_FALSE);
             ZrLanguageServer_StdioRequestInput_Complete(&server, envelope.id);
         } else {
             handle_notification_message(&server,

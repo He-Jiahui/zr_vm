@@ -321,6 +321,36 @@ async function testCancelUnknownIdHasNoResponse(serverPath) {
     });
 }
 
+async function testSetTraceWritesOnlyStderr(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'trace-initialize');
+        client.notify('$/setTrace', { value: 'messages' });
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+
+        const tracedResponse = await client.request('workspace/symbol', { query: '' }, 'trace-request');
+        assert(tracedResponse && Array.isArray(tracedResponse.result),
+               `traced request must retain its framed result, actual=${JSON.stringify(tracedResponse)}`);
+        assert(client.stderr().includes('LSP trace inbound request workspace/symbol'),
+               `messages trace must write inbound request to stderr, stderr=${client.stderr()}`);
+        assert(client.stderr().includes('LSP trace outbound response workspace/symbol'),
+               `messages trace must write outbound response to stderr, stderr=${client.stderr()}`);
+
+        client.notify('$/setTrace', { value: 'verbose' });
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+        client.notify('workspace/notReal', {});
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+        assert(client.stderr().includes('LSP trace inbound notification workspace/notReal'),
+               `verbose trace must write notification metadata to stderr, stderr=${client.stderr()}`);
+
+        client.notify('$/setTrace', { value: 'off' });
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+        const stderrBeforeOffRequest = client.stderr();
+        await client.request('workspace/symbol', { query: '' }, 'trace-off-request');
+        assert(client.stderr() === stderrBeforeOffRequest,
+               `off trace must not add stderr records, stderr=${client.stderr()}`);
+    });
+}
+
 async function testOversizeFrameClosesWithFailure(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 16777217\r\n\r\n', 'ascii'));
@@ -382,6 +412,7 @@ async function main() {
         ['duplicate request id', testDuplicateRequestId],
         ['distinct typed request ids', testDistinctTypedRequestIds],
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
+        ['set trace writes only stderr', testSetTraceWritesOnlyStderr],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];

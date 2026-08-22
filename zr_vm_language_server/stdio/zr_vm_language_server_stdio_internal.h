@@ -56,6 +56,12 @@ typedef enum EZrStdioPositionEncoding {
     ZR_STDIO_POSITION_ENCODING_UTF8 = 1,
 } EZrStdioPositionEncoding;
 
+typedef enum EZrStdioTraceLevel {
+    ZR_STDIO_TRACE_OFF = 0,
+    ZR_STDIO_TRACE_MESSAGES,
+    ZR_STDIO_TRACE_VERBOSE,
+} EZrStdioTraceLevel;
+
 typedef struct SZrStdioInboundMessage {
     cJSON *message;
     TZrBool isParseError;
@@ -86,6 +92,7 @@ typedef struct SZrStdioServer {
     SZrStdioRequestRegistry *requestRegistry;
     const cJSON *activeRequestId;
     EZrStdioPositionEncoding positionEncoding;
+    EZrStdioTraceLevel traceLevel;
     SZrStdioLifecycle lifecycle;
 } SZrStdioServer;
 
@@ -110,6 +117,12 @@ TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
 void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server, const cJSON *id);
 TZrBool ZrLanguageServer_StdioRequestInput_IsActiveCancelled(SZrStdioServer *server);
 void ZrLanguageServer_StdioRequestInput_Complete(SZrStdioServer *server, const cJSON *id);
+void ZrLanguageServer_StdioTrace_Set(SZrStdioServer *server, const cJSON *params);
+void ZrLanguageServer_StdioTrace_Log(SZrStdioServer *server,
+                                     const char *direction,
+                                     const char *kind,
+                                     const char *method,
+                                     TZrBool isNotification);
 
 cJSON *serialize_position(SZrLspPosition position);
 cJSON *serialize_range(SZrLspRange range);

@@ -10,6 +10,41 @@ TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrState *s
                                                                      SZrLspContext *context,
                                                                      SZrString *uri);
 
+void ZrLanguageServer_StdioTrace_Set(SZrStdioServer *server, const cJSON *params) {
+    const cJSON *value;
+    const char *valueText;
+
+    if (server == ZR_NULL || !cJSON_IsObject((cJSON *)params)) {
+        return;
+    }
+    value = cJSON_GetObjectItemCaseSensitive((cJSON *)params, ZR_LSP_FIELD_VALUE);
+    valueText = cJSON_IsString((cJSON *)value) ? cJSON_GetStringValue((cJSON *)value) : ZR_NULL;
+    if (valueText == ZR_NULL) {
+        return;
+    }
+    if (strcmp(valueText, "off") == 0) {
+        server->traceLevel = ZR_STDIO_TRACE_OFF;
+    } else if (strcmp(valueText, "messages") == 0) {
+        server->traceLevel = ZR_STDIO_TRACE_MESSAGES;
+    } else if (strcmp(valueText, "verbose") == 0) {
+        server->traceLevel = ZR_STDIO_TRACE_VERBOSE;
+    }
+}
+
+void ZrLanguageServer_StdioTrace_Log(SZrStdioServer *server,
+                                     const char *direction,
+                                     const char *kind,
+                                     const char *method,
+                                     TZrBool isNotification) {
+    if (server == ZR_NULL || direction == ZR_NULL || kind == ZR_NULL || method == ZR_NULL ||
+        server->traceLevel == ZR_STDIO_TRACE_OFF ||
+        (isNotification && server->traceLevel != ZR_STDIO_TRACE_VERBOSE)) {
+        return;
+    }
+    fprintf(stderr, "LSP trace %s %s %s\n", direction, kind, method);
+    fflush(stderr);
+}
+
 static TZrBool send_active_request_lifecycle_error(SZrStdioServer *server, const cJSON *id) {
     if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
         send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
@@ -134,6 +169,11 @@ void handle_notification_message(SZrStdioServer *server,
 
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZED) == 0) {
         ZrLanguageServer_StdioLifecycle_MarkInitialized(&server->lifecycle);
+        return;
+    }
+
+    if (strcmp(method, ZR_LSP_METHOD_SET_TRACE) == 0) {
+        ZrLanguageServer_StdioTrace_Set(server, params);
         return;
     }
 

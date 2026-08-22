@@ -268,6 +268,7 @@
 #define ZR_LSP_METHOD_INITIALIZED "initialized"
 #define ZR_LSP_METHOD_EXIT "exit"
 #define ZR_LSP_METHOD_CANCEL_REQUEST "$/cancelRequest"
+#define ZR_LSP_METHOD_SET_TRACE "$/setTrace"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_PUBLISH_DIAGNOSTICS "textDocument/publishDiagnostics"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_COMPLETION "textDocument/completion"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_HOVER "textDocument/hover"
