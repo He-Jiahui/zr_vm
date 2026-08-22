@@ -3829,12 +3829,12 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
     TEST_PASS(timer, "Semantic Analyzer Reports Function Argument Ownership Mismatch");
 }
 
-static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrState *state) {
+static void test_semantic_analyzer_reports_weak_argument_requires_wake(SZrState *state) {
     SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Reports Weak Argument Requires Upgrade");
+    TEST_START("Semantic Analyzer Reports Weak Argument Requires Wake");
 
     TEST_INFO("Ownership compatibility in function calls",
-              "Passing Weak<T> through an explicit ref call must emit a weak_value_requires_upgrade diagnostic and fact");
+              "Passing Weak<T> through an explicit ref call must emit a weak_value_requires_wake diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -3843,18 +3843,20 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
             "}\n"
             "fn observe(resource: ref readonly Resource): int { return 0; }\n"
             "fn run(owner: Shared<Resource>): int {\n"
-            "    var watcher = owner.weak();\n"
+            "    var watcher = degrade(owner);\n"
             "    observe(ref watcher);\n"
             "    return 0;\n"
             "}\n";
-        SZrString *sourceName = ZrCore_String_Create(state, "ownership_weak_upgrade_required_test.zr", 38);
+        TZrChar sourceNameText[] = "ownership_weak_wake_required_test.zr";
+        SZrString *sourceName = ZrCore_String_Create(
+                state, sourceNameText, strlen(sourceNameText));
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
         const SZrSemanticOwnershipFact *fact;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
-                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Semantic Analyzer Reports Weak Argument Requires Wake",
                       "Failed to create semantic analyzer");
             return;
         }
@@ -3862,7 +3864,7 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
         if (ast == ZR_NULL) {
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Semantic Analyzer Reports Weak Argument Requires Wake",
                       "Failed to parse test code");
             return;
         }
@@ -3871,28 +3873,28 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Semantic Analyzer Reports Weak Argument Requires Wake",
                       "Failed to analyze AST");
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "weak_value_requires_upgrade", 6);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "weak_value_requires_wake", 6);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
-                      "Expected weak_value_requires_upgrade diagnostic for an explicit weak ref argument");
+                      "Semantic Analyzer Reports Weak Argument Requires Wake",
+                      "Expected weak_value_requires_wake diagnostic for an explicit weak ref argument");
             return;
         }
-        if (!diagnostic_message_contains(diagnostic, "Weak value must be upgraded") ||
+        if (!diagnostic_message_contains(diagnostic, "Weak value must be woken") ||
             !diagnostic_cause_contains(diagnostic, "Weak<T>") ||
-            !diagnostic_suggestion_contains(diagnostic, "upgrade")) {
+            !diagnostic_suggestion_contains(diagnostic, "wake(")) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
-                      "Expected weak upgrade diagnostic to include message, cause, and suggestion");
+                      "Semantic Analyzer Reports Weak Argument Requires Wake",
+                      "Expected weak wake diagnostic to include message, cause, and suggestion");
             return;
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
@@ -3906,8 +3908,8 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
-                      "Expected weak upgrade ownership fact at the function argument");
+                      "Semantic Analyzer Reports Weak Argument Requires Wake",
+                      "Expected weak wake ownership fact at the function argument");
             return;
         }
 
@@ -3915,7 +3917,7 @@ static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrSta
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
 
-    TEST_PASS(timer, "Semantic Analyzer Reports Weak Argument Requires Upgrade");
+    TEST_PASS(timer, "Semantic Analyzer Reports Weak Argument Requires Wake");
 }
 
 static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZrState *state) {
@@ -4728,7 +4730,7 @@ int main(void) {
     test_semantic_analyzer_reports_function_argument_ownership_mismatch(state);
     TEST_DIVIDER();
 
-    test_semantic_analyzer_reports_weak_argument_requires_upgrade(state);
+    test_semantic_analyzer_reports_weak_argument_requires_wake(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_method_argument_ownership_mismatch(state);
