@@ -351,6 +351,54 @@ async function testSetTraceWritesOnlyStderr(serverPath) {
     });
 }
 
+async function testRequestWorkDoneProgress(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'work-done-initialize');
+        const stringResponse = client.request('workspace/symbol', {
+            query: '',
+            workDoneToken: 'workspace-symbol-work',
+            partialResultToken: 17,
+        }, 'work-done-string', RESPONSE_TIMEOUT_MS);
+        const stringBegin = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const stringEnd = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const stringResult = await stringResponse;
+
+        assert(stringBegin && stringBegin.token === 'workspace-symbol-work' &&
+               stringBegin.value && stringBegin.value.kind === 'begin',
+               `string work-done begin must preserve token, actual=${JSON.stringify(stringBegin)}`);
+        assert(stringEnd && stringEnd.token === 'workspace-symbol-work' &&
+               stringEnd.value && stringEnd.value.kind === 'end',
+               `string work-done end must preserve token, actual=${JSON.stringify(stringEnd)}`);
+        assert(stringResult && stringResult.id === 'work-done-string' && Array.isArray(stringResult.result),
+               `work-done request must retain its ordinary response, actual=${JSON.stringify(stringResult)}`);
+
+        const numberResponse = client.request('workspace/symbol', {
+            query: '',
+            workDoneToken: 9,
+        }, 'work-done-number', RESPONSE_TIMEOUT_MS);
+        const numberBegin = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const numberEnd = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const numberResult = await numberResponse;
+
+        assert(numberBegin && numberBegin.token === 9 && numberBegin.value && numberBegin.value.kind === 'begin',
+               `numeric work-done begin must preserve token, actual=${JSON.stringify(numberBegin)}`);
+        assert(numberEnd && numberEnd.token === 9 && numberEnd.value && numberEnd.value.kind === 'end',
+               `numeric work-done end must preserve token, actual=${JSON.stringify(numberEnd)}`);
+        assert(numberResult && numberResult.id === 'work-done-number' && Array.isArray(numberResult.result),
+               `numeric work-done request must retain its ordinary response, actual=${JSON.stringify(numberResult)}`);
+
+        const invalidPartial = await client.request('workspace/symbol', {
+            query: '',
+            partialResultToken: false,
+        }, 'work-done-invalid-partial', RESPONSE_TIMEOUT_MS);
+        assertErrorEnvelope(invalidPartial,
+                            'work-done-invalid-partial',
+                            -32602,
+                            'invalid partial result token');
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+    });
+}
+
 async function testOversizeFrameClosesWithFailure(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 16777217\r\n\r\n', 'ascii'));
@@ -413,6 +461,7 @@ async function main() {
         ['distinct typed request ids', testDistinctTypedRequestIds],
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
         ['set trace writes only stderr', testSetTraceWritesOnlyStderr],
+        ['request work-done progress', testRequestWorkDoneProgress],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];

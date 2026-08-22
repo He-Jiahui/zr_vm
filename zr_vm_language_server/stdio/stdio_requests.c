@@ -57,6 +57,117 @@ static TZrBool stdio_active_request_cancellation_check(void *userData) {
     return ZrLanguageServer_StdioRequestInput_IsActiveCancelled((SZrStdioServer *)userData);
 }
 
+static TZrBool stdio_request_progress_token_is_valid(const cJSON *token) {
+    double number;
+
+    if (cJSON_IsString((cJSON *)token)) {
+        return ZR_TRUE;
+    }
+    if (!cJSON_IsNumber((cJSON *)token)) {
+        return ZR_FALSE;
+    }
+
+    number = token->valuedouble;
+    return number >= -9007199254740991.0 &&
+           number <= 9007199254740991.0 &&
+           number == (double)(long long)number;
+}
+
+static TZrBool stdio_request_method_supports_progress(const char *method) {
+    return method != ZR_NULL &&
+           (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_WORKSPACE_DIAGNOSTIC) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_INCOMING_CALLS) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_OUTGOING_CALLS) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUPERTYPES) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUBTYPES) == 0);
+}
+
+static void stdio_request_progress_clear(SZrStdioServer *server) {
+    if (server == ZR_NULL) {
+        return;
+    }
+    server->requestProgress.workDoneToken = ZR_NULL;
+    server->requestProgress.partialResultToken = ZR_NULL;
+    server->requestProgress.workDoneBegan = ZR_FALSE;
+}
+
+static TZrBool stdio_request_progress_prepare(SZrStdioServer *server,
+                                               const char *method,
+                                               const cJSON *params) {
+    const cJSON *workDoneToken;
+    const cJSON *partialResultToken;
+
+    stdio_request_progress_clear(server);
+    if (server == ZR_NULL || !stdio_request_method_supports_progress(method)) {
+        return ZR_TRUE;
+    }
+
+    workDoneToken = cJSON_GetObjectItemCaseSensitive((cJSON *)params, ZR_LSP_FIELD_WORK_DONE_TOKEN);
+    partialResultToken =
+        cJSON_GetObjectItemCaseSensitive((cJSON *)params, ZR_LSP_FIELD_PARTIAL_RESULT_TOKEN);
+    if ((workDoneToken != ZR_NULL && !stdio_request_progress_token_is_valid(workDoneToken)) ||
+        (partialResultToken != ZR_NULL && !stdio_request_progress_token_is_valid(partialResultToken))) {
+        return ZR_FALSE;
+    }
+
+    server->requestProgress.workDoneToken = workDoneToken;
+    server->requestProgress.partialResultToken = partialResultToken;
+    return ZR_TRUE;
+}
+
+static TZrBool stdio_request_progress_send(SZrStdioServer *server,
+                                           const char *kind,
+                                           const char *title) {
+    cJSON *params;
+    cJSON *value;
+
+    if (server == ZR_NULL || server->requestProgress.workDoneToken == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    params = cJSON_CreateObject();
+    value = cJSON_CreateObject();
+    if (params == ZR_NULL || value == ZR_NULL) {
+        cJSON_Delete(params);
+        cJSON_Delete(value);
+        return ZR_FALSE;
+    }
+
+    cJSON_AddItemReferenceToObject(params, ZR_LSP_FIELD_TOKEN, (cJSON *)server->requestProgress.workDoneToken);
+    cJSON_AddStringToObject(value, ZR_LSP_FIELD_KIND, kind);
+    if (title != ZR_NULL) {
+        cJSON_AddStringToObject(value, ZR_LSP_FIELD_TITLE, title);
+        cJSON_AddBoolToObject(value, ZR_LSP_FIELD_CANCELLABLE, 1);
+    }
+    cJSON_AddItemToObject(params, ZR_LSP_FIELD_VALUE, value);
+    send_notification(ZR_LSP_METHOD_PROGRESS, params);
+    return ZR_TRUE;
+}
+
+static TZrBool stdio_request_progress_begin(SZrStdioServer *server, const char *method) {
+    if (server == ZR_NULL || server->requestProgress.workDoneToken == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!stdio_request_progress_send(server, ZR_LSP_PROGRESS_KIND_BEGIN, method)) {
+        return ZR_FALSE;
+    }
+    server->requestProgress.workDoneBegan = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static void stdio_request_progress_end(SZrStdioServer *server) {
+    if (server == ZR_NULL) {
+        return;
+    }
+    if (server->requestProgress.workDoneBegan) {
+        (void)stdio_request_progress_send(server, ZR_LSP_PROGRESS_KIND_END, ZR_NULL);
+    }
+    stdio_request_progress_clear(server);
+}
+
 static TZrBool send_lifecycle_request_error(SZrStdioServer *server, const cJSON *id) {
     if (server == ZR_NULL || id == ZR_NULL) {
         return ZR_TRUE;
@@ -118,10 +229,22 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
+    if (!stdio_request_progress_prepare(server, method, params)) {
+        send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid params");
+        return;
+    }
+
+    if (!stdio_request_progress_begin(server, method)) {
+        stdio_request_progress_clear(server);
+        send_error_response(id, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Internal error");
+        return;
+    }
+
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(
             server->context, stdio_active_request_cancellation_check, server);
     if (!dispatch_request_method(server, method, params, &result, &handlerStatus)) {
         ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
+        stdio_request_progress_end(server);
         if (send_active_request_lifecycle_error(server, id)) {
             return;
         }
@@ -131,19 +254,24 @@ void handle_request_message(SZrStdioServer *server,
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
 
     if (send_active_request_lifecycle_error(server, id)) {
+        stdio_request_progress_end(server);
         cJSON_Delete(result);
         return;
     }
 
     if (handlerStatus == ZR_LSP_HANDLER_INVALID_PARAMS) {
+        stdio_request_progress_end(server);
         send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid params");
     } else if (handlerStatus == ZR_LSP_HANDLER_CANCELLED) {
+        stdio_request_progress_end(server);
         cJSON_Delete(result);
         send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
     } else if (handlerStatus != ZR_LSP_HANDLER_OK) {
+        stdio_request_progress_end(server);
         cJSON_Delete(result);
         send_error_response(id, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Internal error");
     } else {
+        stdio_request_progress_end(server);
         apply_position_encoding_to_response(server, method, params, result);
         send_result_response(id, result);
     }

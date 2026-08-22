@@ -62,6 +62,12 @@ typedef enum EZrStdioTraceLevel {
     ZR_STDIO_TRACE_VERBOSE,
 } EZrStdioTraceLevel;
 
+typedef struct SZrStdioRequestProgress {
+    const cJSON *workDoneToken;
+    const cJSON *partialResultToken;
+    TZrBool workDoneBegan;
+} SZrStdioRequestProgress;
+
 typedef struct SZrStdioInboundMessage {
     cJSON *message;
     TZrBool isParseError;
@@ -91,6 +97,7 @@ typedef struct SZrStdioServer {
     SZrStdioRequestInputState requestInput;
     SZrStdioRequestRegistry *requestRegistry;
     const cJSON *activeRequestId;
+    SZrStdioRequestProgress requestProgress;
     EZrStdioPositionEncoding positionEncoding;
     EZrStdioTraceLevel traceLevel;
     SZrStdioLifecycle lifecycle;

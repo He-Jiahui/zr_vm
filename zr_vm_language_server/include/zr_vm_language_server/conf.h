@@ -88,6 +88,10 @@
 #define ZR_LSP_FIELD_LABEL_DETAILS "labelDetails"
 #define ZR_LSP_FIELD_DETAIL "detail"
 #define ZR_LSP_FIELD_VALUE "value"
+#define ZR_LSP_FIELD_WORK_DONE_TOKEN "workDoneToken"
+#define ZR_LSP_FIELD_PARTIAL_RESULT_TOKEN "partialResultToken"
+#define ZR_LSP_FIELD_TOKEN "token"
+#define ZR_LSP_FIELD_CANCELLABLE "cancellable"
 #define ZR_LSP_FIELD_ROLE "role"
 #define ZR_LSP_FIELD_SECTIONS "sections"
 #define ZR_LSP_FIELD_DOCUMENTATION "documentation"
@@ -401,3 +405,6 @@ typedef enum EZrLspInlayHintKind {
 #define ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE (-32801)
 
 #endif //ZR_VM_LANGUAGE_SERVER_CONF_H
+#define ZR_LSP_PROGRESS_KIND_BEGIN "begin"
+#define ZR_LSP_PROGRESS_KIND_END "end"
+#define ZR_LSP_METHOD_PROGRESS "$/progress"
