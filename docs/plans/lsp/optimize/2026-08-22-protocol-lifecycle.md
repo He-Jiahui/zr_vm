@@ -27,6 +27,7 @@ state object and routes stdio requests and notifications through that object.
 | Time | Status | Completed items |
 | --- | --- | --- |
 | 2026-08-22 20:31 +08:00 | completed | Added the `NEW -> INITIALIZING -> RUNNING -> SHUTDOWN -> EXITED` lifecycle state machine. Requests before initialize return `-32002`; a second initialize and requests after shutdown return `-32600`. `initialized` only promotes `INITIALIZING` to `RUNNING`, while legal requests remain available after the initialize response. `exit` returns `1` before shutdown and `0` after shutdown. Removed the standalone `shutdownRequested` state. |
+| 2026-08-23 03:54 +08:00 | completed | Revalidated the lifecycle contract after deterministic reader teardown. The protocol driver now explicitly proves that a pre-initialize `didOpen` is ignored, non-`exit` notifications after shutdown remain silent, and the valid `initialized` transition remains observable before normal workspace requests. |
 
 ## Contract
 

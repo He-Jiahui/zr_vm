@@ -29,6 +29,7 @@ recoverable at the established dispatch boundary.
 | Time | Status | Completed items |
 | --- | --- | --- |
 | 2026-08-22 20:59 +08:00 | completed | Added a bounded frame reader with centralized header/count/payload limits, injectable lower test limits, strict CRLF framing, unique unsigned `Content-Length`, UTF-8 `Content-Type` handling, and pre-allocation overflow checks. Transport now emits classified stderr diagnostics for malformed/truncated/oversize/I/O frames and only treats clean EOF as normal input closure. The conformance driver covers missing, duplicate, negative, suffixed, overflowing, truncated, malformed-newline, non-UTF-8, oversize, and excessive-header frames. |
+| 2026-08-23 03:54 +08:00 | completed | Revalidated frame classification with deterministic server teardown enabled. Oversize and all malformed-frame cases still terminate non-zero with the exact stderr category and do not leak protocol data to stdout. |
 
 ## Contract
 

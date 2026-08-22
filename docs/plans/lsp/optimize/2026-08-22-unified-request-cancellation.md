@@ -34,6 +34,7 @@ generation approximation for `ContentModified`.
 | 完成时间 | 状态 | 完成项目 |
 | --- | --- | --- |
 | 2026-08-22 21:57 +08:00 | completed | 在串行 request dispatcher 中安装并清除精确 request-id cancellation callback；workspace diagnostics、workspace symbols、references、rename 与 call/type hierarchy 的长循环统一检查该 callback，并保留现有 registry 对取消请求的 `-32800` 处理。 |
+| 2026-08-23 03:54 +08:00 | completed | 在真实 stdio reader/main-thread 边界复验已知 id 取消：reader 在大文档 `didOpen` 期间标记 active workspace-symbol request，dispatcher 在调用 handler 前精确返回 `-32800`；后续请求不继承该 callback。 |
 
 ## Contract
 

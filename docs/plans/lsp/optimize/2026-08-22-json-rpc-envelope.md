@@ -31,6 +31,7 @@ range values.
 | Time | Status | Completed items |
 | --- | --- | --- |
 | 2026-08-22 20:48 +08:00 | completed | Added a single JSON-RPC 2.0 envelope parser and explicit request-dispatch status. Top-level arrays/scalars, missing or wrong `jsonrpc`, and boolean/object/array ids return `-32600`; present scalar or null `params` return `-32602`. Malformed notifications log only to stderr and never emit a response. Position and size values now reject fractional, non-finite, negative, and out-of-range values; ranges reject an end before start. Valid empty semantic results remain JSON `null` or empty arrays instead of C `NULL` error sentinels. |
+| 2026-08-23 03:54 +08:00 | completed | Revalidated the shared envelope and parameter boundary through the final 29-case protocol driver on GCC, Clang ASan+UBSan, and MSVC Debug. Error envelopes, stderr-only malformed notifications, numeric bounds, and legal empty results remain unchanged. |
 
 ## Contract
 

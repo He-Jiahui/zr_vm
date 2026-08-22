@@ -32,6 +32,7 @@ global document-generation approximation for `ContentModified`.
 | Time | Status | Completed items |
 | --- | --- | --- |
 | 2026-08-22 21:18 +08:00 | completed | Added a thread-safe request registry keyed by JSON-RPC id kind and exact value. Reader-side reserve rejects a duplicate queued or active id with `-32600` without dispatching it, while numeric `1` and string `"1"` remain distinct. `$/cancelRequest` marks only the matching registered request and unknown ids remain silent no-ops. Removed all stdio global `inputGeneration` checks and the resulting speculative `-32801` responses; workspace diagnostics now retain only exact cancellation until the plan 02 dependency fence is available. |
+| 2026-08-23 03:54 +08:00 | completed | Added an end-to-end known-id cancellation assertion: a reader-observed `$/cancelRequest` for an active workspace-symbol request returns exactly `-32800`. The new document-sync conformance test also verifies v2 replaces v1 without fabricating `-32801` before the plan 02 dependency fence. |
 
 ## Contract
 

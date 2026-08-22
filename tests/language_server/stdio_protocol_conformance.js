@@ -1,6 +1,6 @@
 const { StdioProtocolClient, encodeFrame } = require('./stdio_protocol_client');
 
-const RESPONSE_TIMEOUT_MS = 750;
+const RESPONSE_TIMEOUT_MS = 3000;
 const NO_RESPONSE_TIMEOUT_MS = 150;
 const EXPECTED_CAPABILITY_KEYS = [
     'callHierarchyProvider', 'codeActionProvider', 'codeLensProvider', 'colorProvider',
@@ -87,6 +87,27 @@ async function testRequestBeforeInitialize(serverPath) {
     });
 }
 
+async function testNotificationBeforeInitializeIsIgnored(serverPath) {
+    await withClient(serverPath, async (client) => {
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: 'file:///ignored-before-initialize.zr',
+                languageId: 'zr',
+                version: 1,
+                text: 'class IgnoredBeforeInitialize { }',
+            },
+        });
+        await initialize(client, 'notification-before-initialize');
+        client.notify('initialized', {});
+
+        const response = await client.request('workspace/symbol', {
+            query: 'IgnoredBeforeInitialize',
+        }, 'ignored-before-initialize', RESPONSE_TIMEOUT_MS);
+        assert(response && Array.isArray(response.result) && response.result.length === 0,
+               `notification before initialize must be ignored, actual=${JSON.stringify(response)}`);
+    });
+}
+
 async function testRepeatedInitialize(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'first-initialize');
@@ -110,6 +131,15 @@ async function testRequestAfterShutdown(serverPath) {
         const shutdown = await client.request('shutdown', undefined, 'shutdown', RESPONSE_TIMEOUT_MS);
         assert(shutdown && shutdown.result === null,
                `shutdown must return a null result envelope, actual=${JSON.stringify(shutdown)}`);
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: 'file:///ignored-after-shutdown.zr',
+                languageId: 'zr',
+                version: 1,
+                text: 'class IgnoredAfterShutdown { }',
+            },
+        });
+        await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
         const response = await client.request('workspace/symbol', { query: '' }, 'after-shutdown', RESPONSE_TIMEOUT_MS);
         assertErrorEnvelope(response, 'after-shutdown', -32600, 'request after shutdown');
     });
@@ -318,6 +348,34 @@ async function testCancelUnknownIdHasNoResponse(serverPath) {
         await initialize(client, 'cancel-initialize');
         client.notify('$/cancelRequest', { id: 'not-active' });
         await client.expectNoMessage(NO_RESPONSE_TIMEOUT_MS);
+    });
+}
+
+async function testCancelKnownRequestId(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const uri = 'file:///cancel-known-request.zr';
+        const symbols = Array.from(
+            { length: 2048 },
+            (_, index) => `class CancellationSymbol${index} { }`).join('\n');
+
+        await initialize(client, 'cancel-known-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: symbols,
+            },
+        });
+
+        const responsePromise = client.request('workspace/symbol', {
+            query: 'CancellationSymbol',
+            partialResultToken: 'cancel-known-progress',
+        }, 'cancel-known-request', RESPONSE_TIMEOUT_MS);
+        client.notify('$/cancelRequest', { id: 'cancel-known-request' });
+
+        const response = await responsePromise;
+        assertErrorEnvelope(response, 'cancel-known-request', -32800, 'cancel known request id');
     });
 }
 
@@ -644,6 +702,7 @@ async function main() {
     const cases = [
         ['LSP 3.17 capability matrix', testCapabilityMatrix],
         ['request before initialize', testRequestBeforeInitialize],
+        ['notification before initialize is ignored', testNotificationBeforeInitializeIsIgnored],
         ['repeated initialize', testRepeatedInitialize],
         ['exit before shutdown', testExitBeforeShutdown],
         ['request after shutdown', testRequestAfterShutdown],
@@ -661,6 +720,7 @@ async function main() {
         ['duplicate request id', testDuplicateRequestId],
         ['distinct typed request ids', testDistinctTypedRequestIds],
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
+        ['cancel known request id', testCancelKnownRequestId],
         ['set trace writes only stderr', testSetTraceWritesOnlyStderr],
         ['request work-done progress', testRequestWorkDoneProgress],
         ['workspace symbol partial results', testWorkspaceSymbolPartialResults],

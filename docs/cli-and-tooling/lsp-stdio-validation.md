@@ -80,6 +80,24 @@ allocations and frees, zero live bytes and zero errors, and passes Helgrind
 with zero race reports. MSVC Debug passes the four-test stdio CTest set; MSVC
 AddressSanitizer passes the lifecycle executable.
 
+## Protocol Lifecycle And Transport Completion
+
+The protocol lifecycle and transport tasks were revalidated on 2026-08-23
+after deterministic teardown became the runtime path. The protocol driver has
+29 cases: it covers lifecycle ordering, JSON-RPC envelope and numeric bounds,
+typed duplicate and cancellation ids, stdout-isolated trace output, progress,
+partial results, and classified malformed frames. It explicitly cancels a
+known active workspace-symbol request and requires `-32800`.
+
+`stdio_document_sync_conformance.js` is a separate request/response test. It
+opens document version 1, replaces it through `didChange` version 2, confirms
+the new symbol is indexed, and confirms the old symbol is gone. Before the
+Plan 02 dependency fence exists, this serial transition must complete normally
+and must not emit speculative `-32801 ContentModified`.
+
+GCC Debug shared, Clang Debug static ASan+UBSan, and MSVC Debug static each
+pass `language_server_stdio_(server_lifecycle|smoke|protocol_inventory|protocol_conformance|document_sync_conformance)` with five passing tests.
+
 ## Position-Encoding Handshake
 
 The position-encoding smoke uses a request/response client. It waits for the

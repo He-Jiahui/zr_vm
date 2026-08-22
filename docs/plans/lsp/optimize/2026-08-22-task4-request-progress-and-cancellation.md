@@ -29,6 +29,7 @@ doc_type: milestone-detail
 | 完成时间 | 状态 | 完成项目 |
 | --- | --- | --- |
 | 2026-08-22 22:49 +08:00 | completed | 完成 typed JSON-RPC request-id registry、精确取消、`$/setTrace`、request-scoped work-done/partial-result progress；workspace symbols、references、call/type hierarchy 与 workspace diagnostics 均通过各自的 canonical result schema 输出 partial batches。 |
+| 2026-08-23 03:54 +08:00 | completed | 新增已知 active request id 的端到端取消断言，以及独立 document-sync conformance：取消精确映射为 `-32800`，`didChange` 的完整文本替换仅更新串行服务状态，不在 Plan 02 dependency fence 前发布猜测性的 `-32801`。 |
 
 ## Delivered Contract
 
