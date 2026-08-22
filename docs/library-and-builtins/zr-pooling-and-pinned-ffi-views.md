@@ -97,6 +97,13 @@ library providers. `zr.pooling` owns reusable GC-tracked arrays through
 after `BufferHandle.pin()` creates an owner-rooted pointer handle. Both providers
 consume the same structured contiguous-view contracts and compiler loan facts.
 
+FFI handle objects retain their native cleanup payload in
+`SZrRawObject::finalizerData`. The hidden object field remains the language and
+native-call lookup surface, but finalization must not recreate its string key or
+depend on the string table: GC shutdown may already be releasing peer string
+objects. The finalizer clears the context before freeing the payload so a
+repeated finalizer callback is a no-op rather than a read through freed memory.
+
 ## Pool Lease Model
 
 `BufferPool.rent<T>(length)` chooses an exact-length backing array from its

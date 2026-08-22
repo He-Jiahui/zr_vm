@@ -340,6 +340,7 @@ SZrObject *zr_ffi_new_handle_object_with_finalizer(SZrState *state, const char *
     }
     ZrLib_TempValueRoot_SetObject(&objectRoot, object, ZR_VALUE_TYPE_OBJECT);
 
+    object->super.finalizerData = data;
     object->super.scanMarkGcFunction = zr_ffi_handle_finalize;
     zr_ffi_set_hidden_pointer(state, object, ZR_FFI_HIDDEN_HANDLE_FIELD, data);
     if (ownerValue != ZR_NULL) {

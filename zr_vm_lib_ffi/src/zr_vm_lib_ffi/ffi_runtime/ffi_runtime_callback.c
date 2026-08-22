@@ -536,12 +536,19 @@ void zr_ffi_pointer_release_owner(SZrState *state, SZrObject *object) {
 }
 
 void zr_ffi_handle_finalize(SZrState *state, SZrRawObject *rawObject) {
-    SZrObject *object = ZR_CAST_OBJECT(state, rawObject);
-    ZrFfiHandleData *handleData = zr_ffi_get_handle_data(state, object);
+    SZrObject *object;
+    ZrFfiHandleData *handleData;
+
+    if (rawObject == ZR_NULL) {
+        return;
+    }
+    object = ZR_CAST_OBJECT(state, rawObject);
+    handleData = (ZrFfiHandleData *)rawObject->finalizerData;
 
     if (handleData == ZR_NULL || handleData->finalized) {
         return;
     }
+    rawObject->finalizerData = ZR_NULL;
     handleData->finalized = ZR_TRUE;
 
     switch (handleData->kind) {

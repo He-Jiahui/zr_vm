@@ -39,6 +39,7 @@ struct ZR_STRUCT_ALIGN SZrRawObject {
     struct SZrRawObject *gcList;
     FRawObjectTraceGc traceGcFunction;
     FRawObjectScanMarkGc scanMarkGcFunction;
+    TZrPtr finalizerData;
     struct SZrOwnershipControl *ownershipControl;
     TZrUInt64 gcDomainId;
     TZrUInt32 gcDomainGeneration;
@@ -77,6 +78,7 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->gcList = ZR_NULL;
     super->traceGcFunction = ZR_NULL;
     super->scanMarkGcFunction = ZR_NULL;
+    super->finalizerData = ZR_NULL;
     super->ownershipControl = ZR_NULL;
     super->gcDomainId = 0u;
     super->gcDomainGeneration = 0u;

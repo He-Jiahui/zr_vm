@@ -186,6 +186,8 @@ static void test_external_closed_storage_trace_survives_full_compaction(void) {
     TEST_ASSERT_NOT_NULL(child);
     ZrCore_Object_Init(state, owner);
     ZrCore_Object_Init(state, child);
+    TEST_ASSERT_NULL(owner->super.finalizerData);
+    TEST_ASSERT_NULL(child->super.finalizerData);
     ZrCore_Value_InitAsRawObject(
             state,
             &gExternalTracedValue,

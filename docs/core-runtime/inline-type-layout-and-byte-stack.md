@@ -527,6 +527,13 @@ with an external trace remain address-stable during old-object compaction;
 their children may move and are rewritten. The direct full-compact free path
 now runs object/array finalizers as well as native-data finalizers exactly once.
 
+Native finalizers that own non-GC cleanup state store that context in
+`SZrRawObject.finalizerData`. The context is independent of dynamic object
+fields so shutdown finalization does not allocate an interned field-name string
+or inspect a peer string object whose release order is not guaranteed. A
+finalizer clears the context before releasing it, making repeated callbacks
+idempotent without reading freed native storage.
+
 ## Imported Contiguous-View Layouts
 
 Native `Span<T>` and `ReadOnlySpan<T>` remain owned by the provider module, but
