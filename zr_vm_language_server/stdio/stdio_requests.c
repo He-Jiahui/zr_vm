@@ -90,7 +90,9 @@ static TZrBool stdio_request_method_supports_array_partial_results(const char *m
            (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0 ||
             strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0 ||
             strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_INCOMING_CALLS) == 0 ||
-            strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_OUTGOING_CALLS) == 0);
+            strcmp(method, ZR_LSP_METHOD_CALL_HIERARCHY_OUTGOING_CALLS) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUPERTYPES) == 0 ||
+            strcmp(method, ZR_LSP_METHOD_TYPE_HIERARCHY_SUBTYPES) == 0);
 }
 
 static void stdio_request_progress_clear(SZrStdioServer *server) {

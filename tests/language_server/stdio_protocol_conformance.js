@@ -512,6 +512,66 @@ async function testCallHierarchyPartialResults(serverPath) {
     });
 }
 
+async function testTypeHierarchyPartialResults(serverPath) {
+    await withClient(serverPath, async (client) => {
+        const uri = 'file:///partial-progress-type-hierarchy.zr';
+        await initialize(client, 'partial-type-hierarchy-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri,
+                languageId: 'zr',
+                version: 1,
+                text: [
+                    'class PartialBase {',
+                    '}',
+                    'class PartialDerived : PartialBase {',
+                    '}',
+                ].join('\n'),
+            },
+        });
+
+        const derived = await client.request('textDocument/prepareTypeHierarchy', {
+            textDocument: { uri },
+            position: { line: 2, character: 7 },
+        }, 'prepare-type-hierarchy-derived', RESPONSE_TIMEOUT_MS);
+        assert(derived && Array.isArray(derived.result) && derived.result.length > 0,
+               `prepare type hierarchy must yield PartialDerived, actual=${JSON.stringify(derived)}`);
+
+        const supertypesPromise = client.request('typeHierarchy/supertypes', {
+            item: derived.result[0],
+            partialResultToken: 'type-hierarchy-supertypes-partial',
+        }, 'type-hierarchy-supertypes-partial', RESPONSE_TIMEOUT_MS);
+        const supertypesPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const supertypes = await supertypesPromise;
+        assert(supertypesPartial && supertypesPartial.token === 'type-hierarchy-supertypes-partial' &&
+               Array.isArray(supertypesPartial.value) &&
+               supertypesPartial.value.some((item) => item && item.name === 'PartialBase'),
+               `type hierarchy supertypes partial result must preserve PartialBase, actual=${JSON.stringify(supertypesPartial)}`);
+        assert(supertypes && supertypes.id === 'type-hierarchy-supertypes-partial' && supertypes.result === null,
+               `type hierarchy supertypes partial result must consume the ordinary response, actual=${JSON.stringify(supertypes)}`);
+
+        const base = await client.request('textDocument/prepareTypeHierarchy', {
+            textDocument: { uri },
+            position: { line: 0, character: 7 },
+        }, 'prepare-type-hierarchy-base', RESPONSE_TIMEOUT_MS);
+        assert(base && Array.isArray(base.result) && base.result.length > 0,
+               `prepare type hierarchy must yield PartialBase, actual=${JSON.stringify(base)}`);
+
+        const subtypesPromise = client.request('typeHierarchy/subtypes', {
+            item: base.result[0],
+            partialResultToken: 'type-hierarchy-subtypes-partial',
+        }, 'type-hierarchy-subtypes-partial', RESPONSE_TIMEOUT_MS);
+        const subtypesPartial = await client.waitForNotification('$/progress', RESPONSE_TIMEOUT_MS);
+        const subtypes = await subtypesPromise;
+        assert(subtypesPartial && subtypesPartial.token === 'type-hierarchy-subtypes-partial' &&
+               Array.isArray(subtypesPartial.value) &&
+               subtypesPartial.value.some((item) => item && item.name === 'PartialDerived'),
+               `type hierarchy subtypes partial result must preserve PartialDerived, actual=${JSON.stringify(subtypesPartial)}`);
+        assert(subtypes && subtypes.id === 'type-hierarchy-subtypes-partial' && subtypes.result === null,
+               `type hierarchy subtypes partial result must consume the ordinary response, actual=${JSON.stringify(subtypes)}`);
+    });
+}
+
 async function testOversizeFrameClosesWithFailure(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 16777217\r\n\r\n', 'ascii'));
@@ -578,6 +638,7 @@ async function main() {
         ['workspace symbol partial results', testWorkspaceSymbolPartialResults],
         ['references partial results', testReferencesPartialResults],
         ['call hierarchy partial results', testCallHierarchyPartialResults],
+        ['type hierarchy partial results', testTypeHierarchyPartialResults],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];
