@@ -290,7 +290,37 @@ async function testOversizeFrameClosesWithFailure(serverPath) {
         client.endInput();
         const exitCode = await client.waitForExit(RESPONSE_TIMEOUT_MS);
         assert(exitCode !== 0, `oversize frame must terminate with failure, actual=${exitCode}`);
+        assert(client.stderr().includes('TOO_LARGE'),
+               `oversize frame must report TOO_LARGE, stderr=${client.stderr()}`);
     });
+}
+
+async function testMalformedFramesCloseWithFailure(serverPath) {
+    const cases = [
+        ['missing content length', 'MALFORMED_HEADER', 'Content-Type: application/vscode-jsonrpc\r\n\r\n'],
+        ['duplicate content length', 'MALFORMED_HEADER',
+         'Content-Length: 2\r\nContent-Length: 2\r\n\r\n{}'],
+        ['negative content length', 'MALFORMED_HEADER', 'Content-Length: -1\r\n\r\n'],
+        ['content length suffix', 'MALFORMED_HEADER', 'Content-Length: 2oops\r\n\r\n{}'],
+        ['content length overflow', 'TOO_LARGE', 'Content-Length: 184467440737095516160\r\n\r\n'],
+        ['wrong newline', 'MALFORMED_HEADER', 'Content-Length: 2\n\n{}'],
+        ['non utf8 charset', 'MALFORMED_HEADER',
+         'Content-Length: 2\r\nContent-Type: application/vscode-jsonrpc; charset=utf-16\r\n\r\n{}'],
+        ['truncated payload', 'PAYLOAD_TRUNCATED', 'Content-Length: 4\r\n\r\n{}'],
+        ['too many headers', 'TOO_LARGE',
+         `${Array.from({ length: 33 }, (_, index) => `X-Test-${index}: value\r\n`).join('')}Content-Length: 2\r\n\r\n{}`],
+    ];
+
+    for (const [label, expectedStatus, frame] of cases) {
+        await withClient(serverPath, async (client) => {
+            client.sendRawFrame(Buffer.from(frame, 'ascii'));
+            client.endInput();
+            const exitCode = await client.waitForExit(RESPONSE_TIMEOUT_MS);
+            assert(exitCode !== 0, `${label}: malformed frame must exit non-zero, actual=${exitCode}`);
+            assert(client.stderr().includes(expectedStatus),
+                   `${label}: expected ${expectedStatus}, stderr=${client.stderr()}`);
+        });
+    }
 }
 
 async function main() {
@@ -315,6 +345,7 @@ async function main() {
         ['duplicate request id', testDuplicateRequestId],
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
+        ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],
     ];
     let failures = 0;
 

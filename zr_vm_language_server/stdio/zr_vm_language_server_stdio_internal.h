@@ -22,6 +22,7 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "stdio_frame_reader.h"
 #include "stdio_json_rpc.h"
 #include "stdio_lifecycle.h"
 
@@ -107,7 +108,6 @@ void send_json_message(cJSON *message);
 void send_result_response(const cJSON *id, cJSON *result);
 void send_error_response(const cJSON *id, int code, const char *messageText);
 void send_notification(const char *method, cJSON *params);
-char *read_message_payload(size_t *outLength);
 TZrBool ZrLanguageServer_StdioRequestInput_Init(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Start(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,

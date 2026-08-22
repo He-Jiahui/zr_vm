@@ -216,10 +216,27 @@ static void stdio_request_handle_input_message(SZrStdioServer *server, cJSON *me
 }
 
 static void stdio_request_read_loop(SZrStdioServer *server) {
-    char *payload;
-    size_t payloadLength;
+    SZrStdioFrameReaderLimits frameLimits;
 
-    while ((payload = read_message_payload(&payloadLength)) != NULL) {
+    ZrLanguageServer_StdioFrameReader_DefaultLimits(&frameLimits);
+    for (;;) {
+        char *payload = NULL;
+        TZrSize payloadLength = 0;
+        EZrStdioFrameReadStatus frameStatus = ZrLanguageServer_StdioFrameReader_Read(
+                stdin,
+                &frameLimits,
+                &payload,
+                &payloadLength);
+
+        if (frameStatus != ZR_STDIO_FRAME_READ_OK) {
+            if (frameStatus != ZR_STDIO_FRAME_READ_EOF) {
+                fprintf(stderr,
+                        "LSP stdio frame reader: %s\n",
+                        ZrLanguageServer_StdioFrameReader_StatusName(frameStatus));
+            }
+            break;
+        }
+
         cJSON *message = cJSON_ParseWithLength(payload, payloadLength);
         free(payload);
         stdio_request_handle_input_message(server, message);
@@ -494,56 +511,4 @@ void send_notification(const char *method, cJSON *params) {
     }
 
     send_json_message(message);
-}
-
-char *read_message_payload(size_t *outLength) {
-    char headerLine[ZR_LSP_STDIO_HEADER_BUFFER_LENGTH];
-    size_t contentLength = 0;
-    int sawHeader = 0;
-
-    if (outLength == NULL) {
-        return NULL;
-    }
-    *outLength = 0;
-
-    while (fgets(headerLine, sizeof(headerLine), stdin) != NULL) {
-        size_t lineLength = strlen(headerLine);
-        sawHeader = 1;
-
-        if (lineLength == 0 || strcmp(headerLine, "\n") == 0 || strcmp(headerLine, "\r\n") == 0) {
-            break;
-        }
-
-        if (starts_with_case_insensitive(headerLine, ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX)) {
-            const char *valueText =
-                    skip_spaces(headerLine + strlen(ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX));
-            contentLength = (size_t)strtoul(valueText, NULL, 10);
-        }
-    }
-
-    if (!sawHeader || contentLength == 0) {
-        return NULL;
-    }
-
-    {
-        char *payload = (char *)malloc(contentLength + 1);
-        size_t totalRead = 0;
-
-        if (payload == NULL) {
-            return NULL;
-        }
-
-        while (totalRead < contentLength) {
-            size_t readNow = fread(payload + totalRead, 1, contentLength - totalRead, stdin);
-            if (readNow == 0) {
-                free(payload);
-                return NULL;
-            }
-            totalRead += readNow;
-        }
-
-        payload[contentLength] = '\0';
-        *outLength = contentLength;
-        return payload;
-    }
 }
