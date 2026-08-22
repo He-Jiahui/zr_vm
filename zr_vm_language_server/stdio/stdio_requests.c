@@ -42,6 +42,7 @@ void handle_request_message(SZrStdioServer *server,
                             const char *method,
                             const cJSON *params) {
     cJSON *result = NULL;
+    EZrLspHandlerStatus handlerStatus = ZR_LSP_HANDLER_OK;
 
     if (server == ZR_NULL || id == NULL || method == NULL) {
         return;
@@ -82,7 +83,7 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
-    if (!dispatch_request_method(server, method, params, &result)) {
+    if (!dispatch_request_method(server, method, params, &result, &handlerStatus)) {
         if (send_active_request_lifecycle_error(server, id)) {
             return;
         }
@@ -95,10 +96,17 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
-    if (result == NULL) {
-        char message[160];
-        snprintf(message, sizeof(message), "Invalid params for %s", method);
-        send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, message);
+    if (handlerStatus == ZR_LSP_HANDLER_INVALID_PARAMS) {
+        send_error_response(id, ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid params");
+    } else if (handlerStatus == ZR_LSP_HANDLER_CANCELLED) {
+        cJSON_Delete(result);
+        send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
+    } else if (handlerStatus == ZR_LSP_HANDLER_CONTENT_MODIFIED) {
+        cJSON_Delete(result);
+        send_error_response(id, ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE, "Content modified");
+    } else if (handlerStatus != ZR_LSP_HANDLER_OK) {
+        cJSON_Delete(result);
+        send_error_response(id, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Internal error");
     } else {
         apply_position_encoding_to_response(server, method, params, result);
         send_result_response(id, result);

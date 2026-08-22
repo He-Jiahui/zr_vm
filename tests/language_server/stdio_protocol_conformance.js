@@ -51,6 +51,12 @@ async function initialize(client, id = 'initialize') {
     return response.result;
 }
 
+async function expectInvalidRequest(client, payload, id, label) {
+    client.sendPayload(payload);
+    const response = await client.nextMessage(RESPONSE_TIMEOUT_MS);
+    assertErrorEnvelope(response, id, -32600, label);
+}
+
 async function withClient(serverPath, run) {
     const client = new StdioProtocolClient(serverPath);
     try {
@@ -101,7 +107,7 @@ async function testExitBeforeShutdown(serverPath) {
 async function testRequestAfterShutdown(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'shutdown-initialize');
-        const shutdown = await client.request('shutdown', null, 'shutdown', RESPONSE_TIMEOUT_MS);
+        const shutdown = await client.request('shutdown', undefined, 'shutdown', RESPONSE_TIMEOUT_MS);
         assert(shutdown && shutdown.result === null,
                `shutdown must return a null result envelope, actual=${JSON.stringify(shutdown)}`);
         const response = await client.request('workspace/symbol', { query: '' }, 'after-shutdown', RESPONSE_TIMEOUT_MS);
@@ -134,25 +140,87 @@ async function testWrongJsonRpc(serverPath) {
 
 async function testInvalidBooleanId(serverPath) {
     await withClient(serverPath, async (client) => {
-        const response = await client.requestEnvelope({
+        await expectInvalidRequest(client, {
             jsonrpc: '2.0',
             id: true,
             method: 'initialize',
             params: initializePayload('ignored').params,
-        }, RESPONSE_TIMEOUT_MS);
-        assertErrorEnvelope(response, null, -32600, 'boolean request id');
+        }, null, 'boolean request id');
+    });
+}
+
+async function testInvalidStructuredIds(serverPath) {
+    const invalidIds = [
+        ['object request id', {}],
+        ['array request id', []],
+    ];
+
+    for (const [label, id] of invalidIds) {
+        await withClient(serverPath, async (client) => {
+            await expectInvalidRequest(client, {
+                jsonrpc: '2.0',
+                id,
+                method: 'initialize',
+                params: initializePayload('ignored').params,
+            }, null, label);
+        });
+    }
+}
+
+async function testInvalidTopLevelMessages(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await expectInvalidRequest(client, [], null, 'array top-level message');
+        await expectInvalidRequest(client, 17, null, 'scalar top-level message');
     });
 }
 
 async function testInvalidParams(serverPath) {
+    const invalidParams = [
+        ['scalar params', 'not-an-object'],
+        ['null params', null],
+    ];
+
+    for (const [label, params] of invalidParams) {
+        await withClient(serverPath, async (client) => {
+            const response = await client.requestEnvelope({
+                jsonrpc: '2.0',
+                id: `invalid-params-${label}`,
+                method: 'initialize',
+                params,
+            }, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, `invalid-params-${label}`, -32602, label);
+        });
+    }
+}
+
+async function testInvalidPositionAndRangeNumbers(serverPath) {
     await withClient(serverPath, async (client) => {
-        const response = await client.requestEnvelope({
-            jsonrpc: '2.0',
-            id: 'invalid-params',
-            method: 'initialize',
-            params: 'not-an-object',
-        }, RESPONSE_TIMEOUT_MS);
-        assertErrorEnvelope(response, 'invalid-params', -32602, 'scalar params');
+        const uri = 'file:///invalid-position.zr';
+        const invalidPositions = [
+            ['fractional line', { line: 0.5, character: 0 }],
+            ['negative character', { line: 0, character: -1 }],
+            ['overflow line', { line: 2147483648, character: 0 }],
+        ];
+
+        await initialize(client, 'invalid-position-initialize');
+        for (const [label, position] of invalidPositions) {
+            const id = `invalid-position-${label}`;
+            const response = await client.request('textDocument/hover', {
+                textDocument: { uri },
+                position,
+            }, id, RESPONSE_TIMEOUT_MS);
+            assertErrorEnvelope(response, id, -32602, label);
+        }
+
+        const reverseRange = await client.request('textDocument/rangeFormatting', {
+            textDocument: { uri },
+            range: {
+                start: { line: 1, character: 0 },
+                end: { line: 0, character: 0 },
+            },
+            options: {},
+        }, 'reverse-range', RESPONSE_TIMEOUT_MS);
+        assertErrorEnvelope(reverseRange, 'reverse-range', -32602, 'reverse range');
     });
 }
 
@@ -236,7 +304,10 @@ async function main() {
         ['missing jsonrpc', testMissingJsonRpc],
         ['wrong jsonrpc', testWrongJsonRpc],
         ['boolean request id', testInvalidBooleanId],
+        ['structured request ids', testInvalidStructuredIds],
+        ['invalid top-level messages', testInvalidTopLevelMessages],
         ['invalid params', testInvalidParams],
+        ['invalid position and range numbers', testInvalidPositionAndRangeNumbers],
         ['unknown method', testUnknownMethod],
         ['notification has no response', testNotificationHasNoResponse],
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],

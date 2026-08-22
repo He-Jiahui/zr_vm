@@ -22,6 +22,7 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "stdio_json_rpc.h"
 #include "stdio_lifecycle.h"
 
 typedef struct SZrCachedUri {
@@ -267,7 +268,8 @@ void handle_zr_selected_project_notification(SZrStdioServer *server, const cJSON
 int dispatch_request_method(SZrStdioServer *server,
                             const char *method,
                             const cJSON *params,
-                            cJSON **outResult);
+                            cJSON **outResult,
+                            EZrLspHandlerStatus *outStatus);
 void handle_notification_message(SZrStdioServer *server,
                                  const char *method,
                                  const cJSON *params,

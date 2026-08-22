@@ -141,9 +141,11 @@ cJSON *handle_range_formatting_request(SZrStdioServer *server, const cJSON *para
     SZrString *uri;
     cJSON *result;
 
-    if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
-        !parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
-        return cJSON_CreateArray();
+    if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
+        return NULL;
+    }
+    if (!parse_range_for_uri(server, uri, get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
+        return NULL;
     }
 
     ZrCore_Array_Init(server->state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);

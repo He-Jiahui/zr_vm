@@ -194,10 +194,10 @@ int main(void) {
         cJSON *message = NULL;
         TZrBool isParseError = ZR_FALSE;
         TZrUInt64 inputGeneration = 0;
-        const cJSON *id;
-        const cJSON *methodJson;
-        const cJSON *params;
-        const char *method;
+        SZrJsonRpcEnvelope envelope;
+        EZrJsonRpcEnvelopeStatus envelopeStatus;
+        const cJSON *errorId = ZR_NULL;
+        const cJSON *registeredId;
         int shouldExit = 0;
         int notificationExitCode = 0;
 
@@ -213,26 +213,38 @@ int main(void) {
             continue;
         }
 
-        id = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
-        methodJson = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_METHOD);
-        if (!cJSON_IsString((cJSON *)methodJson)) {
-            send_error_response(id, ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE, "Invalid Request");
-            if (id != NULL) {
-                ZrLanguageServer_StdioRequestInput_Complete(&server, id);
+        registeredId = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
+        envelopeStatus = ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId);
+        if (envelopeStatus != ZR_JSON_RPC_ENVELOPE_OK) {
+            if (envelopeStatus == ZR_JSON_RPC_ENVELOPE_INVALID_PARAMS && envelope.isNotification) {
+                fprintf(stderr, "Ignoring invalid JSON-RPC notification params for %s\n",
+                        envelope.method != ZR_NULL ? envelope.method : "<unknown>");
+            } else {
+                send_error_response(errorId,
+                                    envelopeStatus == ZR_JSON_RPC_ENVELOPE_INVALID_PARAMS
+                                            ? ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE
+                                            : ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE,
+                                    envelopeStatus == ZR_JSON_RPC_ENVELOPE_INVALID_PARAMS
+                                            ? "Invalid params"
+                                            : "Invalid Request");
+            }
+            if (registeredId != ZR_NULL) {
+                ZrLanguageServer_StdioRequestInput_Complete(&server, registeredId);
             }
             cJSON_Delete(message);
             continue;
         }
 
-        method = cJSON_GetStringValue((cJSON *)methodJson);
-        params = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_PARAMS);
-
-        if (id != NULL && method != NULL) {
-            ZrLanguageServer_StdioRequestInput_Activate(&server, id, inputGeneration);
-            handle_request_message(&server, id, method, params);
-            ZrLanguageServer_StdioRequestInput_Complete(&server, id);
+        if (envelope.isRequest) {
+            ZrLanguageServer_StdioRequestInput_Activate(&server, envelope.id, inputGeneration);
+            handle_request_message(&server, envelope.id, envelope.method, envelope.params);
+            ZrLanguageServer_StdioRequestInput_Complete(&server, envelope.id);
         } else {
-            handle_notification_message(&server, method, params, &shouldExit, &notificationExitCode);
+            handle_notification_message(&server,
+                                        envelope.method,
+                                        envelope.params,
+                                        &shouldExit,
+                                        &notificationExitCode);
             if (shouldExit) {
                 exitCode = notificationExitCode;
                 cJSON_Delete(message);

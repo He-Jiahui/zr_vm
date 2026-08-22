@@ -183,7 +183,11 @@ class StdioProtocolClient {
     }
 
     request(method, params, id, timeoutMs = DEFAULT_TIMEOUT_MS) {
-        return this.requestEnvelope({ jsonrpc: '2.0', id, method, params }, timeoutMs);
+        const payload = { jsonrpc: '2.0', id, method };
+        if (params !== undefined) {
+            payload.params = params;
+        }
+        return this.requestEnvelope(payload, timeoutMs);
     }
 
     requestWithId(method, params, timeoutMs = DEFAULT_TIMEOUT_MS) {

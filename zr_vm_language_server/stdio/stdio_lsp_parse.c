@@ -1,5 +1,8 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+#include <math.h>
+#include <stdint.h>
+
 const cJSON *get_object_item(const cJSON *json, const char *key) {
     if (json == NULL || key == NULL) {
         return NULL;
@@ -7,11 +10,57 @@ const cJSON *get_object_item(const cJSON *json, const char *key) {
     return cJSON_GetObjectItemCaseSensitive((cJSON *)json, key);
 }
 
+static TZrBool parse_size_number(const cJSON *json, TZrSize *outValue) {
+    double value;
+    TZrSize parsed;
+
+    if (!cJSON_IsNumber((cJSON *)json) || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    value = json->valuedouble;
+    if (!isfinite(value) || value < 0 || value > (double)ZR_MAX_SIZE) {
+        return ZR_FALSE;
+    }
+
+    parsed = (TZrSize)value;
+    if ((double)parsed != value) {
+        return ZR_FALSE;
+    }
+
+    *outValue = parsed;
+    return ZR_TRUE;
+}
+
+static TZrBool parse_position_value(const cJSON *json, TZrInt32 *outValue) {
+    double value;
+    TZrInt32 parsed;
+
+    if (!cJSON_IsNumber((cJSON *)json) || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    value = json->valuedouble;
+    if (!isfinite(value) || value < 0 || value > (double)INT32_MAX) {
+        return ZR_FALSE;
+    }
+
+    parsed = (TZrInt32)value;
+    if ((double)parsed != value) {
+        return ZR_FALSE;
+    }
+
+    *outValue = parsed;
+    return ZR_TRUE;
+}
+
 TZrSize parse_size_value(const cJSON *json, TZrSize fallback) {
-    if (!cJSON_IsNumber((cJSON *)json) || json->valuedouble < 0) {
+    TZrSize value;
+
+    if (!parse_size_number(json, &value)) {
         return fallback;
     }
-    return (TZrSize)json->valuedouble;
+    return value;
 }
 
 int parse_position(const cJSON *json, SZrLspPosition *outPosition) {
@@ -24,12 +73,10 @@ int parse_position(const cJSON *json, SZrLspPosition *outPosition) {
 
     line = get_object_item(json, ZR_LSP_FIELD_LINE);
     character = get_object_item(json, ZR_LSP_FIELD_CHARACTER);
-    if (!cJSON_IsNumber(line) || !cJSON_IsNumber(character)) {
+    if (!parse_position_value(line, &outPosition->line) ||
+        !parse_position_value(character, &outPosition->character)) {
         return 0;
     }
-
-    outPosition->line = (TZrInt32)line->valuedouble;
-    outPosition->character = (TZrInt32)character->valuedouble;
     return 1;
 }
 
@@ -44,6 +91,12 @@ int parse_range(const cJSON *json, SZrLspRange *outRange) {
     start = get_object_item(json, ZR_LSP_FIELD_START);
     end = get_object_item(json, ZR_LSP_FIELD_END);
     if (!parse_position(start, &outRange->start) || !parse_position(end, &outRange->end)) {
+        return 0;
+    }
+
+    if (outRange->start.line > outRange->end.line ||
+        (outRange->start.line == outRange->end.line &&
+         outRange->start.character > outRange->end.character)) {
         return 0;
     }
 

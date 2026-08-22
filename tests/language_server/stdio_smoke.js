@@ -4205,11 +4205,11 @@ async function main() {
         clearedCloseCount += 1;
     }
 
-    const shutdown = await client.request('shutdown', null);
+    const shutdown = await client.request('shutdown', undefined);
     assert(shutdown === null, 'shutdown must return null');
     peakMemory.assertWithinBudget();
 
-    client.notify('exit', null);
+    client.notify('exit', undefined);
     const exitCode = await client.waitForExit();
     assert(exitCode === 0, `server exited with ${exitCode}. stderr=${client.stderr()}`);
     assert(client.stderr().trim() === '', `language server stderr must stay empty during stdio smoke. stderr=${client.stderr()}`);

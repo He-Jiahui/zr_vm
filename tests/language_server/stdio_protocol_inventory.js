@@ -313,7 +313,7 @@ class JsonRpcClient {
 
     async close() {
         try {
-            await this.request('shutdown', null);
+            await this.request('shutdown', undefined);
             this.notify('exit', undefined);
             this.child.stdin.end();
         } catch (_) {

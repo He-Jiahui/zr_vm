@@ -3,12 +3,14 @@
 int dispatch_request_method(SZrStdioServer *server,
                             const char *method,
                             const cJSON *params,
-                            cJSON **outResult) {
-    if (server == ZR_NULL || method == NULL || outResult == NULL) {
+                            cJSON **outResult,
+                            EZrLspHandlerStatus *outStatus) {
+    if (server == ZR_NULL || method == NULL || outResult == NULL || outStatus == NULL) {
         return 0;
     }
 
     *outResult = NULL;
+    *outStatus = ZR_LSP_HANDLER_OK;
     if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_COMPLETION) == 0) {
         *outResult = handle_completion_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_COMPLETION_ITEM_RESOLVE) == 0) {
@@ -119,6 +121,10 @@ int dispatch_request_method(SZrStdioServer *server,
         *outResult = handle_project_modules_request(server, params);
     } else {
         return 0;
+    }
+
+    if (*outResult == NULL) {
+        *outStatus = ZR_LSP_HANDLER_INVALID_PARAMS;
     }
 
     return 1;

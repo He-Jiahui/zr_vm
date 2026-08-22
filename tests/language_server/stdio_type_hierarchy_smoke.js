@@ -236,9 +236,9 @@ async function main() {
         assert(Array.isArray(subtypes) && subtypes.some((item) => item && item.name === 'Derived'),
             'typeHierarchy/subtypes must return direct Derived');
 
-        const shutdown = await client.request('shutdown', null);
+        const shutdown = await client.request('shutdown', undefined);
         assert(shutdown === null, 'shutdown must return null');
-        client.notify('exit', null);
+        client.notify('exit', undefined);
         const exitCode = await client.waitForExit();
         assert(exitCode === 0, `server exited with ${exitCode}. stderr=${client.stderr()}`);
         assert(client.stderr().trim() === '', `language server stderr must stay empty. stderr=${client.stderr()}`);
