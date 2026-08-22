@@ -476,6 +476,10 @@ static void lsp_normalize_rename_location_ranges(SZrLspContext *context, SZrArra
         SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
         SZrFileRange identifierRange;
 
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+            return;
+        }
+
         if (locationPtr == ZR_NULL || *locationPtr == ZR_NULL || (*locationPtr)->uri == ZR_NULL) {
             continue;
         }
@@ -927,6 +931,8 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
                       sizeof(SZrLspProjectIndex *),
                       ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY);
     context->clientSelectedZrpNativePath = ZR_NULL;
+    context->requestCancellationCheck = ZR_NULL;
+    context->requestCancellationUserData = ZR_NULL;
 
     lsp_register_builtin_native_libraries(state);
     
@@ -946,6 +952,24 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     }
     
     return context;
+}
+
+void ZrLanguageServer_LspContext_SetRequestCancellationCheck(
+        SZrLspContext *context,
+        FZrLspRequestCancellationCheck check,
+        void *userData) {
+    if (context == ZR_NULL) {
+        return;
+    }
+    context->requestCancellationCheck = check;
+    context->requestCancellationUserData = check != ZR_NULL ? userData : ZR_NULL;
+}
+
+TZrBool ZrLanguageServer_LspContext_IsRequestCancellationRequested(
+        const SZrLspContext *context) {
+    return context != ZR_NULL &&
+           context->requestCancellationCheck != ZR_NULL &&
+           context->requestCancellationCheck(context->requestCancellationUserData);
 }
 
 // 释放 LSP 上下文
@@ -2068,6 +2092,9 @@ TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        return ZR_FALSE;
+    }
 
     if (ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(state,
                                                                context,
@@ -2080,11 +2107,13 @@ TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
 
     ZrLanguageServer_LspSemanticQuery_Init(&semanticQuery);
     if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, position, &semanticQuery) &&
+        !ZrLanguageServer_LspContext_IsRequestCancellationRequested(context) &&
         ZrLanguageServer_LspSemanticQuery_AppendReferences(state,
                                                            context,
                                                            &semanticQuery,
                                                            includeDeclaration,
-                                                           result)) {
+                                                           result) &&
+        !ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
         ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
         return ZR_TRUE;
     }
@@ -2105,6 +2134,9 @@ TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || newName == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        return ZR_FALSE;
+    }
     (void)newName;
     
     // 初始化结果数组
@@ -2119,12 +2151,17 @@ TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!lsp_semantic_query_append_rename_locations(state, context, &semanticQuery, result)) {
+    if (!lsp_semantic_query_append_rename_locations(state, context, &semanticQuery, result) ||
+        ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
         ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
         return ZR_FALSE;
     }
 
     lsp_normalize_rename_location_ranges(context, result);
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
+        return ZR_FALSE;
+    }
     ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
     return result->length > 0;
 }
@@ -2156,12 +2193,18 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
     for (scopeIndex = 0; scopeIndex < analyzer->symbolTable->allScopes.length; scopeIndex++) {
         SZrSymbolScope **scopePtr =
             (SZrSymbolScope **)ZrCore_Array_Get(&analyzer->symbolTable->allScopes, scopeIndex);
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+            return ZR_FALSE;
+        }
         if (scopePtr == ZR_NULL || *scopePtr == ZR_NULL) {
             continue;
         }
 
         for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
             SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
+            if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                return ZR_FALSE;
+            }
             if (symbolPtr != ZR_NULL &&
                 *symbolPtr != ZR_NULL &&
                 lsp_should_include_document_symbol(analyzer->symbolTable, *scopePtr, *symbolPtr, uri)) {
@@ -2187,12 +2230,18 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
     if (state == ZR_NULL || context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        return ZR_FALSE;
+    }
 
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
     ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(state, context, query, result);
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        return ZR_FALSE;
+    }
 
     if (!context->uriToAnalyzerMap.isValid || context->uriToAnalyzerMap.buckets == ZR_NULL) {
         return ZR_TRUE;
@@ -2201,6 +2250,9 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
     for (bucketIndex = 0; bucketIndex < context->uriToAnalyzerMap.capacity; bucketIndex++) {
         SZrHashKeyValuePair *pair = context->uriToAnalyzerMap.buckets[bucketIndex];
         while (pair != ZR_NULL) {
+            if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                return ZR_FALSE;
+            }
             if (pair->key.type != ZR_VALUE_TYPE_NULL &&
                 lsp_project_has_indexed_record_for_uri(context,
                                                        (SZrString *)ZrCore_Value_GetRawObject(&pair->key))) {
@@ -2216,6 +2268,9 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
                     for (symbolIndex = 0; symbolIndex < analyzer->symbolTable->globalScope->symbols.length; symbolIndex++) {
                         SZrSymbol **symbolPtr =
                             (SZrSymbol **)ZrCore_Array_Get(&analyzer->symbolTable->globalScope->symbols, symbolIndex);
+                        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                            return ZR_FALSE;
+                        }
                         if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
                             SZrSymbol *symbol = *symbolPtr;
                             if (ZrLanguageServer_Lsp_StringContainsCaseInsensitive(symbol->name, query)) {

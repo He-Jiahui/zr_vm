@@ -53,6 +53,10 @@ static TZrBool send_active_request_lifecycle_error(SZrStdioServer *server, const
     return ZR_FALSE;
 }
 
+static TZrBool stdio_active_request_cancellation_check(void *userData) {
+    return ZrLanguageServer_StdioRequestInput_IsActiveCancelled((SZrStdioServer *)userData);
+}
+
 static TZrBool send_lifecycle_request_error(SZrStdioServer *server, const cJSON *id) {
     if (server == ZR_NULL || id == ZR_NULL) {
         return ZR_TRUE;
@@ -114,13 +118,17 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
+    ZrLanguageServer_LspContext_SetRequestCancellationCheck(
+            server->context, stdio_active_request_cancellation_check, server);
     if (!dispatch_request_method(server, method, params, &result, &handlerStatus)) {
+        ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
         if (send_active_request_lifecycle_error(server, id)) {
             return;
         }
         send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
         return;
     }
+    ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
 
     if (send_active_request_lifecycle_error(server, id)) {
         cJSON_Delete(result);

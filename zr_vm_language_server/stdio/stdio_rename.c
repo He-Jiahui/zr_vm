@@ -130,6 +130,11 @@ TZrBool append_workspace_edit_locations(SZrStdioServer *server,
 
     for (index = 0; index < locations->length; index++) {
         SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+        if (server->context != ZR_NULL &&
+            ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
+            free(newNameText);
+            return ZR_FALSE;
+        }
         if (locationPtr != ZR_NULL && *locationPtr != ZR_NULL) {
             char *uriText = zr_string_to_c_string((*locationPtr)->uri);
             cJSON *documentEdits;

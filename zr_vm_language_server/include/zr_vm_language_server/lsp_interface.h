@@ -187,6 +187,8 @@ typedef struct SZrLspHierarchyCall {
     SZrArray fromRanges;              // SZrLspRange
 } SZrLspHierarchyCall;
 
+typedef TZrBool (*FZrLspRequestCancellationCheck)(void *userData);
+
 // LSP 接口上下文
 typedef struct SZrLspContext {
     SZrState *state;
@@ -197,6 +199,8 @@ typedef struct SZrLspContext {
     struct SZrLspSemanticCacheLru *semanticCacheLru;
     SZrArray projectIndexes;          // 已打开项目索引（SZrLspProjectIndex*，内部使用）
     TZrChar *clientSelectedZrpNativePath; /*!< IDE 选中的 .zrp 绝对路径（原生路径，可为 ZR_NULL） */
+    FZrLspRequestCancellationCheck requestCancellationCheck;
+    void *requestCancellationUserData;
 } SZrLspContext;
 
 typedef struct SZrLspHistoricalSemanticSnapshot {
@@ -220,6 +224,12 @@ ZR_LANGUAGE_SERVER_API SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *
 
 // 释放 LSP 上下文
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_SetRequestCancellationCheck(
+        SZrLspContext *context,
+        FZrLspRequestCancellationCheck check,
+        void *userData);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspContext_IsRequestCancellationRequested(
+        const SZrLspContext *context);
 ZR_LANGUAGE_SERVER_API TZrBool
 ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
         const SZrLspContext *context,

@@ -252,7 +252,7 @@ cJSON *handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *
             for (TZrSize bucketIndex = 0; bucketIndex < fileMap->capacity; bucketIndex++) {
                 SZrHashKeyValuePair *pair = fileMap->buckets[bucketIndex];
                 while (pair != ZR_NULL) {
-                    if (ZrLanguageServer_StdioRequestInput_IsActiveCancelled(server)) {
+                    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(server->context)) {
                         cJSON_Delete(result);
                         return NULL;
                     }

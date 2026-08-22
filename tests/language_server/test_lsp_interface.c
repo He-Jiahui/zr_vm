@@ -179,6 +179,58 @@ static void test_lsp_context_create_and_free(SZrState *state) {
     TEST_PASS(timer, "LSP Context Creation and Free");
 }
 
+static TZrBool test_lsp_request_cancellation_check(void *userData) {
+    return userData != ZR_NULL && *(TZrBool *)userData;
+}
+
+static void test_lsp_request_cancellation_callback(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *query;
+    SZrArray symbols = {0};
+    TZrBool cancelled = ZR_TRUE;
+
+    TEST_START("LSP Request Cancellation Callback");
+    context = ZrLanguageServer_LspContext_New(state);
+    query = ZrCore_String_Create(state, "", 0);
+    if (context == ZR_NULL || query == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Request Cancellation Callback", "Failed to create cancellation test context");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_SetRequestCancellationCheck(
+            context, test_lsp_request_cancellation_check, &cancelled);
+    if (!ZrLanguageServer_LspContext_IsRequestCancellationRequested(context) ||
+        ZrLanguageServer_Lsp_GetWorkspaceSymbols(state, context, query, &symbols)) {
+        if (symbols.isValid) {
+            ZrCore_Array_Free(state, &symbols);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Request Cancellation Callback",
+                  "Cancelled workspace symbol query must stop before producing a result");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_SetRequestCancellationCheck(context, ZR_NULL, ZR_NULL);
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context) ||
+        !ZrLanguageServer_Lsp_GetWorkspaceSymbols(state, context, query, &symbols)) {
+        if (symbols.isValid) {
+            ZrCore_Array_Free(state, &symbols);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Request Cancellation Callback",
+                  "Clearing the callback must restore ordinary workspace symbol queries");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &symbols);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Request Cancellation Callback");
+}
+
 // 测试更新文档
 static void test_lsp_update_document(SZrState *state) {
     SZrTestTimer timer;
@@ -7928,6 +7980,9 @@ int main(void) {
     
     // 运行测试
     test_lsp_context_create_and_free(state);
+    TEST_DIVIDER();
+
+    test_lsp_request_cancellation_callback(state);
     TEST_DIVIDER();
 
     test_lsp_compile_tool_projection_uses_canonical_contract(state);

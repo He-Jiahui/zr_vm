@@ -666,6 +666,9 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
         query->analyzer->referenceTracker == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        return ZR_FALSE;
+    }
 
     if (includeDeclaration &&
         !semantic_query_append_location(state,
@@ -689,6 +692,10 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
     for (TZrSize index = 0; index < references.length; index++) {
         SZrReference **referencePtr = (SZrReference **)ZrCore_Array_Get(&references, index);
         SZrFileRange referenceRange;
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+            ZrCore_Array_Free(state, &references);
+            return ZR_FALSE;
+        }
         if (referencePtr == ZR_NULL || *referencePtr == ZR_NULL ||
             ((*referencePtr)->type == ZR_REFERENCE_DEFINITION && !includeDeclaration)) {
             continue;
@@ -948,10 +955,17 @@ static TZrBool semantic_query_append_project_imported_member_references(SZrState
         memberName == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        return ZR_FALSE;
+    }
 
     for (TZrSize index = 0; index < projectIndex->files.length; index++) {
         SZrLspProjectFileRecord **recordPtr =
             (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, index);
+
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+            return ZR_FALSE;
+        }
 
         if (recordPtr == ZR_NULL || *recordPtr == ZR_NULL || (*recordPtr)->uri == ZR_NULL) {
             continue;
@@ -2137,6 +2151,9 @@ static TZrBool semantic_query_append_project_external_type_member_references(SZr
     TZrBool appended = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
         return ZR_FALSE;
     }
 

@@ -11,6 +11,10 @@ static const TZrChar *lsp_hierarchy_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+static TZrBool lsp_hierarchy_is_cancelled(const SZrLspContext *context) {
+    return ZrLanguageServer_LspContext_IsRequestCancellationRequested(context);
+}
+
 static void lsp_hierarchy_free_symbols(SZrState *state, SZrArray *symbols) {
     if (state == ZR_NULL || symbols == ZR_NULL) {
         return;
@@ -132,6 +136,11 @@ static TZrBool lsp_hierarchy_prepare(SZrState *state,
         TZrBool matchesKind;
         TZrInt32 score;
 
+        if (lsp_hierarchy_is_cancelled(context)) {
+            lsp_hierarchy_free_symbols(state, &symbols);
+            return ZR_FALSE;
+        }
+
         if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL) {
             continue;
         }
@@ -242,6 +251,7 @@ static TZrBool lsp_hierarchy_symbol_name_matches(const SZrLspSymbolInformation *
 }
 
 static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
+                                                         SZrLspContext *context,
                                                          const TZrChar *content,
                                                          TZrSize contentLength,
                                                          const SZrLspSymbolInformation *callerSymbol,
@@ -252,7 +262,7 @@ static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
     TZrSize endOffset;
     TZrSize cursor;
 
-    if (state == ZR_NULL ||
+    if (state == ZR_NULL || context == ZR_NULL ||
         content == ZR_NULL ||
         callerSymbol == ZR_NULL ||
         targetName == ZR_NULL ||
@@ -272,6 +282,10 @@ static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
     cursor = startOffset;
     while (cursor + targetNameLength < endOffset && cursor + targetNameLength < contentLength) {
         TZrSize callCursor;
+
+        if (lsp_hierarchy_is_cancelled(context)) {
+            return ZR_FALSE;
+        }
 
         if (!lsp_editor_offset_is_code(content, contentLength, cursor) ||
             (cursor > startOffset && lsp_hierarchy_identifier_part(content[cursor - 1])) ||
@@ -461,6 +475,7 @@ static TZrBool lsp_hierarchy_type_header_contains_base(const TZrChar *content,
 }
 
 static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
+                                                      SZrLspContext *context,
                                                       const TZrChar *content,
                                                       TZrSize contentLength,
                                                       SZrArray *symbols,
@@ -471,7 +486,8 @@ static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
     TZrSize cursor;
     TZrSize headerEnd;
 
-    if (state == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL ||
+        result == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -490,6 +506,10 @@ static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
         TZrSize nameStart;
         TZrSize nameEnd;
         const SZrLspSymbolInformation *baseSymbol;
+
+        if (lsp_hierarchy_is_cancelled(context)) {
+            return ZR_FALSE;
+        }
 
         if (!lsp_hierarchy_identifier_start(content[cursor])) {
             cursor++;
@@ -517,6 +537,7 @@ static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
 }
 
 static TZrBool lsp_hierarchy_append_direct_subtypes(SZrState *state,
+                                                    SZrLspContext *context,
                                                     const TZrChar *content,
                                                     TZrSize contentLength,
                                                     SZrArray *symbols,
@@ -525,7 +546,8 @@ static TZrBool lsp_hierarchy_append_direct_subtypes(SZrState *state,
     const TZrChar *itemName;
     TZrSize itemNameLength;
 
-    if (state == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL ||
+        result == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -537,6 +559,10 @@ static TZrBool lsp_hierarchy_append_direct_subtypes(SZrState *state,
 
     for (TZrSize index = 0; index < symbols->length; index++) {
         SZrLspSymbolInformation **symbolPtr = (SZrLspSymbolInformation **)ZrCore_Array_Get(symbols, index);
+
+        if (lsp_hierarchy_is_cancelled(context)) {
+            return ZR_FALSE;
+        }
 
         if (symbolPtr == ZR_NULL ||
             *symbolPtr == ZR_NULL ||
@@ -599,6 +625,12 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
     for (TZrSize index = 0; index < symbols.length; index++) {
         SZrLspSymbolInformation **symbolPtr = (SZrLspSymbolInformation **)ZrCore_Array_Get(&symbols, index);
 
+        if (lsp_hierarchy_is_cancelled(context)) {
+            lsp_hierarchy_free_symbols(state, &symbols);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+            return ZR_FALSE;
+        }
+
         if (symbolPtr == ZR_NULL ||
             *symbolPtr == ZR_NULL ||
             !lsp_hierarchy_symbol_is_callable((*symbolPtr)->kind) ||
@@ -607,6 +639,7 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
         }
 
         if (!lsp_hierarchy_scan_symbol_for_named_calls(state,
+                                                       context,
                                                        snapshot.content,
                                                        snapshot.contentLength,
                                                        *symbolPtr,
@@ -672,6 +705,12 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(SZrState *state,
         TZrSize nameEnd;
         TZrSize callCursor;
         const SZrLspSymbolInformation *targetSymbol;
+
+        if (lsp_hierarchy_is_cancelled(context)) {
+            lsp_hierarchy_free_symbols(state, &symbols);
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+            return ZR_FALSE;
+        }
 
         if (!lsp_editor_offset_is_code(content, contentLength, cursor) ||
             !lsp_hierarchy_identifier_start(content[cursor])) {
@@ -759,6 +798,7 @@ TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(SZrState *state,
     }
 
     ok = lsp_hierarchy_append_direct_supertypes(state,
+                                               context,
                                                snapshot.content,
                                                snapshot.contentLength,
                                                &symbols,
@@ -798,6 +838,7 @@ TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(SZrState *state,
     }
 
     ok = lsp_hierarchy_append_direct_subtypes(state,
+                                             context,
                                              snapshot.content,
                                              snapshot.contentLength,
                                              &symbols,

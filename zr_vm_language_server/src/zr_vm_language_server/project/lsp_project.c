@@ -2714,6 +2714,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
     if (state == ZR_NULL || context == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+        return ZR_FALSE;
+    }
 
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
@@ -2722,6 +2725,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
     for (TZrSize projectIndex = 0; projectIndex < context->projectIndexes.length; projectIndex++) {
         SZrLspProjectIndex **projectPtr =
             (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, projectIndex);
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+            return ZR_FALSE;
+        }
         if (projectPtr == ZR_NULL || *projectPtr == ZR_NULL) {
             continue;
         }
@@ -2730,6 +2736,10 @@ TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
             SZrLspProjectFileRecord **recordPtr =
                 (SZrLspProjectFileRecord **)ZrCore_Array_Get(&(*projectPtr)->files, fileIndex);
             SZrSemanticAnalyzer *analyzer;
+
+            if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                return ZR_FALSE;
+            }
 
             if (recordPtr == ZR_NULL || *recordPtr == ZR_NULL) {
                 continue;
@@ -2744,6 +2754,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
             for (TZrSize symbolIndex = 0; symbolIndex < analyzer->symbolTable->globalScope->symbols.length; symbolIndex++) {
                 SZrSymbol **symbolPtr =
                     (SZrSymbol **)ZrCore_Array_Get(&analyzer->symbolTable->globalScope->symbols, symbolIndex);
+                if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                    return ZR_FALSE;
+                }
                 if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL &&
                     ZrLanguageServer_Lsp_StringContainsCaseInsensitive((*symbolPtr)->name, query)) {
                     SZrLspSymbolInformation *info =
