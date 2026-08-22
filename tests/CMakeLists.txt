@@ -6578,6 +6578,13 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
                     ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_type_hierarchy_smoke.js
                     $<TARGET_FILE:zr_vm_language_server_stdio>
     )
+    add_test(
+            NAME language_server_stdio_protocol_inventory
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_protocol_inventory.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+                    ${CMAKE_SOURCE_DIR}
+    )
 endif ()
 
 if (TARGET zr_vm_cli_executable AND ZR_VM_NODE_EXECUTABLE)
