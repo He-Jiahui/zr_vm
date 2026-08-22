@@ -300,10 +300,12 @@ inside the success path.
 - [ ] **Step 5: Remove member-name ownership inference and dataflow**
 
 Delete `ZrParser_OwnershipMemberNameToBuiltinKind` and all callers. Dataflow,
-region, and throw-profile consumers switch on the intrinsic AST/fact. Reject
-the former module-prototype `.share()` escape as well: a guarded module payload
-is not an owner operand, and its lifetime is held only by the compiler-hidden
-scoped owner.
+region, and throw-profile consumers switch on the intrinsic AST/fact. Remove
+the former module-prototype `.share()` ownership escape as well: a guarded
+module payload is not an owner operand, and its lifetime is held only by the
+compiler-hidden scoped owner. If the module type actually declares a `share`
+member, `module.share()` remains an ordinary member call and must never lower
+to `OWN_SHARE`.
 
 Run focused inference, fact, owner move/loan, and resource suites under GCC.
 

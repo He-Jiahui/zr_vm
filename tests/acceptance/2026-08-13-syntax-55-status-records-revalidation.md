@@ -46,9 +46,10 @@ this review does not rewrite their claimed scope.
   `share(owner)`, `degrade(shared)`, `wake(weak)`, `intoGc(owner)`, and
   `drop(owner)`.
 - Real member lookup runs before a removed-ownership-member migration diagnostic
-  is considered. Same-name user object methods keep ordinary member semantics;
-  the former `Module.share()` guard escape is rejected because its payload is a
-  scoped plain view rather than an ownership operand.
+  is considered. Same-name user object and module methods keep ordinary member
+  semantics and never lower to ownership opcodes; only the former implicit
+  module-prototype `.share()` ownership escape is rejected because its payload
+  is a scoped plain view rather than an ownership operand.
 - `.` and `?.` are receiver-target operations. Direct absent weak/nullable
   access raises `NullReferenceError`; optional access skips the complete guarded
   suffix and returns `null` or performs a void no-op.

@@ -30,10 +30,12 @@ intoGc(owner)
 drop(owner)
 ```
 
-`Module.share()` is also rejected. A guarded module payload is a scoped plain
-view, not an owner operand; the compiler alone creates and releases the hidden
-owner that keeps the loaded module alive. Ordinary user-defined methods named
-`share`, `degrade`, `wake`, `intoGc`, or `drop` remain normal member calls.
+The former `Module.share()` ownership escape is rejected: a guarded module
+payload is a scoped plain view, not an owner operand, and the compiler alone
+creates and releases the hidden owner that keeps the loaded module alive. A
+real `share` member declared by a module type still compiles as an ordinary
+member call and never lowers to `OWN_SHARE`. The same rule applies to ordinary
+user-defined methods named `degrade`, `wake`, `intoGc`, or `drop`.
 
 Consuming `share`, `intoGc`, and `drop` currently require a local owner binding.
 The semantic layer rejects field/index projections because the current lowering
