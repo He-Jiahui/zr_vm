@@ -3269,14 +3269,10 @@ async function main() {
         textDocument: { uri: genericUri, version: 2 },
         contentChanges: [{ text: `${genericText}\n// generation two\n` }],
     });
-    let contentModifiedError = null;
-    try {
-        await staleWorkspaceDiagnostics.promise;
-    } catch (error) {
-        contentModifiedError = JSON.parse(error.message);
-    }
-    assert(contentModifiedError && contentModifiedError.code === -32801,
-        'workspace/diagnostic must reject a response made stale by didChange');
+    const staleWorkspaceOutcome = await awaitLspRequestOutcome(staleWorkspaceDiagnostics.promise);
+    assert(!(staleWorkspaceOutcome.error && staleWorkspaceOutcome.error.code === -32801) &&
+        staleWorkspaceOutcome.result && Array.isArray(staleWorkspaceOutcome.result.items),
+    'workspace/diagnostic must not emit ContentModified before the dependency fence exists');
     const generationTwoDiagnostics = await waitForDiagnosticsUriVersion(
         client,
         genericUri,
@@ -3336,12 +3332,9 @@ async function main() {
             contentChanges: [{ text: rapidStaleText + '// changed generation ' + changedVersion + '\n' }],
         });
         const staleChangeOutcome = await awaitLspRequestOutcome(staleAfterChange.promise);
-        assert((staleChangeOutcome.error && staleChangeOutcome.error.code === -32801) ||
-            workspaceDiagnosticsHasUriVersion(
-                staleChangeOutcome.result,
-                rapidStaleUri,
-                openedVersion),
-        'rapid stale churn didChange must reject the request or return its exact open snapshot');
+        assert(!(staleChangeOutcome.error && staleChangeOutcome.error.code === -32801) &&
+            staleChangeOutcome.result && Array.isArray(staleChangeOutcome.result.items),
+        'rapid stale churn didChange must not emit ContentModified before the dependency fence exists');
         await waitForDiagnosticsUriVersion(
             client,
             rapidStaleUri,
@@ -3353,12 +3346,9 @@ async function main() {
             textDocument: { uri: rapidStaleUri },
         });
         const staleCloseOutcome = await awaitLspRequestOutcome(staleAfterClose.promise);
-        assert((staleCloseOutcome.error && staleCloseOutcome.error.code === -32801) ||
-            workspaceDiagnosticsHasUriVersion(
-                staleCloseOutcome.result,
-                rapidStaleUri,
-                changedVersion),
-        'rapid stale churn didClose must reject the request or return its exact changed snapshot');
+        assert(!(staleCloseOutcome.error && staleCloseOutcome.error.code === -32801) &&
+            staleCloseOutcome.result && Array.isArray(staleCloseOutcome.result.items),
+        'rapid stale churn didClose must not emit ContentModified before the dependency fence exists');
         const rapidCloseDiagnostics = await waitForDiagnosticsUri(
             client,
             rapidStaleUri,
@@ -3497,14 +3487,10 @@ async function main() {
         },
     });
 
-    let closeContentModifiedError = null;
-    try {
-        await staleCloseWorkspaceDiagnostics.promise;
-    } catch (error) {
-        closeContentModifiedError = JSON.parse(error.message);
-    }
-    assert(closeContentModifiedError && closeContentModifiedError.code === -32801,
-        'workspace/diagnostic must reject a response made stale by didClose');
+    const staleCloseWorkspaceOutcome = await awaitLspRequestOutcome(staleCloseWorkspaceDiagnostics.promise);
+    assert(!(staleCloseWorkspaceOutcome.error && staleCloseWorkspaceOutcome.error.code === -32801) &&
+        staleCloseWorkspaceOutcome.result && Array.isArray(staleCloseWorkspaceOutcome.result.items),
+    'workspace/diagnostic must not emit ContentModified before the dependency fence exists');
 
     const genericCloseDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(genericCloseDiagnostics.uri === genericUri, 'generic didClose diagnostics uri mismatch');

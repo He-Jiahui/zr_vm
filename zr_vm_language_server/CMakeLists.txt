@@ -65,6 +65,7 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/zr_vm_language_server_stdio.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_transport.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_frame_reader.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_request_registry.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_json.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_json_rpc.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_lsp_memory.c

@@ -15,10 +15,6 @@ static TZrBool send_active_request_lifecycle_error(SZrStdioServer *server, const
         send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
         return ZR_TRUE;
     }
-    if (ZrLanguageServer_StdioRequestInput_IsActiveContentModified(server)) {
-        send_error_response(id, ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE, "Content modified");
-        return ZR_TRUE;
-    }
     return ZR_FALSE;
 }
 
@@ -101,9 +97,6 @@ void handle_request_message(SZrStdioServer *server,
     } else if (handlerStatus == ZR_LSP_HANDLER_CANCELLED) {
         cJSON_Delete(result);
         send_error_response(id, ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, "Request cancelled");
-    } else if (handlerStatus == ZR_LSP_HANDLER_CONTENT_MODIFIED) {
-        cJSON_Delete(result);
-        send_error_response(id, ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE, "Content modified");
     } else if (handlerStatus != ZR_LSP_HANDLER_OK) {
         cJSON_Delete(result);
         send_error_response(id, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Internal error");

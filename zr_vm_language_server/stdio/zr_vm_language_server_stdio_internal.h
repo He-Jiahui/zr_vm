@@ -25,6 +25,7 @@
 #include "stdio_frame_reader.h"
 #include "stdio_json_rpc.h"
 #include "stdio_lifecycle.h"
+#include "stdio_request_registry.h"
 
 typedef struct SZrCachedUri {
     char *text;
@@ -58,15 +59,9 @@ typedef enum EZrStdioPositionEncoding {
 typedef struct SZrStdioInboundMessage {
     cJSON *message;
     TZrBool isParseError;
-    TZrUInt64 inputGeneration;
+    EZrStdioRequestReservation requestReservation;
     struct SZrStdioInboundMessage *next;
 } SZrStdioInboundMessage;
-
-typedef struct SZrStdioRequestCancellation {
-    char *idKey;
-    TZrBool cancelled;
-    struct SZrStdioRequestCancellation *next;
-} SZrStdioRequestCancellation;
 
 typedef struct SZrStdioRequestInputState {
 #ifdef _WIN32
@@ -78,8 +73,6 @@ typedef struct SZrStdioRequestInputState {
 #endif
     SZrStdioInboundMessage *head;
     SZrStdioInboundMessage *tail;
-    SZrStdioRequestCancellation *requests;
-    TZrUInt64 inputGeneration;
     TZrBool inputClosed;
 } SZrStdioRequestInputState;
 
@@ -90,8 +83,8 @@ typedef struct SZrStdioServer {
     SZrUriCache uriCache;
     SZrSemanticTokenCache semanticTokenCache;
     SZrStdioRequestInputState requestInput;
-    char *activeRequestIdKey;
-    TZrUInt64 activeRequestInputGeneration;
+    SZrStdioRequestRegistry *requestRegistry;
+    const cJSON *activeRequestId;
     EZrStdioPositionEncoding positionEncoding;
     SZrStdioLifecycle lifecycle;
 } SZrStdioServer;
@@ -113,12 +106,9 @@ TZrBool ZrLanguageServer_StdioRequestInput_Start(SZrStdioServer *server);
 TZrBool ZrLanguageServer_StdioRequestInput_Take(SZrStdioServer *server,
                                                  cJSON **outMessage,
                                                  TZrBool *outIsParseError,
-                                                 TZrUInt64 *outInputGeneration);
-void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server,
-                                                  const cJSON *id,
-                                                  TZrUInt64 inputGeneration);
+                                                 EZrStdioRequestReservation *outRequestReservation);
+void ZrLanguageServer_StdioRequestInput_Activate(SZrStdioServer *server, const cJSON *id);
 TZrBool ZrLanguageServer_StdioRequestInput_IsActiveCancelled(SZrStdioServer *server);
-TZrBool ZrLanguageServer_StdioRequestInput_IsActiveContentModified(SZrStdioServer *server);
 void ZrLanguageServer_StdioRequestInput_Complete(SZrStdioServer *server, const cJSON *id);
 
 cJSON *serialize_position(SZrLspPosition position);

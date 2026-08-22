@@ -259,6 +259,14 @@ async function testMalformedJson(serverPath) {
 async function testDuplicateRequestId(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'duplicate-initialize');
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: 'file:///duplicate-request-queue.zr',
+                languageId: 'zr',
+                version: 1,
+                text: '// request registry queue\n'.repeat(8192),
+            },
+        });
         const payload = {
             jsonrpc: '2.0',
             id: 'duplicate-request',
@@ -273,6 +281,35 @@ async function testDuplicateRequestId(serverPath) {
         assert(responses.some((response) => response && response.id === 'duplicate-request' &&
                 response.error && response.error.code === -32600),
                `duplicate request ids must produce -32600, actual=${JSON.stringify(responses)}`);
+        assert(responses.filter((response) => response && response.id === 'duplicate-request' &&
+                !response.error).length === 1,
+               `duplicate request ids must dispatch only once, actual=${JSON.stringify(responses)}`);
+    });
+}
+
+async function testDistinctTypedRequestIds(serverPath) {
+    await withClient(serverPath, async (client) => {
+        await initialize(client, 'typed-id-initialize');
+        client.sendPayload({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'workspace/symbol',
+            params: { query: '' },
+        });
+        client.sendPayload({
+            jsonrpc: '2.0',
+            id: '1',
+            method: 'workspace/symbol',
+            params: { query: '' },
+        });
+        const first = await client.nextMessage(RESPONSE_TIMEOUT_MS);
+        const second = await client.nextMessage(RESPONSE_TIMEOUT_MS);
+        const responses = [first, second];
+
+        assert(responses.some((response) => response && response.id === 1 && !response.error),
+               `numeric request id must not conflict with string id, actual=${JSON.stringify(responses)}`);
+        assert(responses.some((response) => response && response.id === '1' && !response.error),
+               `string request id must not conflict with numeric id, actual=${JSON.stringify(responses)}`);
     });
 }
 
@@ -343,6 +380,7 @@ async function main() {
         ['malformed notification has no response', testMalformedNotificationHasNoResponse],
         ['malformed JSON payload', testMalformedJson],
         ['duplicate request id', testDuplicateRequestId],
+        ['distinct typed request ids', testDistinctTypedRequestIds],
         ['cancel unknown id has no response', testCancelUnknownIdHasNoResponse],
         ['oversize frame closes with failure', testOversizeFrameClosesWithFailure],
         ['malformed frames close with classified failure', testMalformedFramesCloseWithFailure],

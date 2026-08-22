@@ -185,26 +185,32 @@ int main(void) {
         return 1;
     }
 
+    server.requestRegistry = ZrLanguageServer_StdioRequestRegistry_New();
+    if (server.requestRegistry == ZR_NULL) {
+        ZrCore_GlobalState_Free(server.global);
+        return 1;
+    }
+
     if (!ZrLanguageServer_StdioRequestInput_Init(&server) ||
         !ZrLanguageServer_StdioRequestInput_Start(&server)) {
+        ZrLanguageServer_StdioRequestRegistry_Free(server.requestRegistry);
         return 1;
     }
 
     for (;;) {
         cJSON *message = NULL;
         TZrBool isParseError = ZR_FALSE;
-        TZrUInt64 inputGeneration = 0;
+        EZrStdioRequestReservation requestReservation = ZR_STDIO_REQUEST_RESERVATION_NONE;
         SZrJsonRpcEnvelope envelope;
         EZrJsonRpcEnvelopeStatus envelopeStatus;
         const cJSON *errorId = ZR_NULL;
-        const cJSON *registeredId;
         int shouldExit = 0;
         int notificationExitCode = 0;
 
         if (!ZrLanguageServer_StdioRequestInput_Take(&server,
                                                       &message,
                                                       &isParseError,
-                                                      &inputGeneration)) {
+                                                      &requestReservation)) {
             break;
         }
 
@@ -213,7 +219,6 @@ int main(void) {
             continue;
         }
 
-        registeredId = get_object_item(message, ZR_LSP_JSON_RPC_FIELD_ID);
         envelopeStatus = ZrLanguageServer_StdioJsonRpc_ParseEnvelope(message, &envelope, &errorId);
         if (envelopeStatus != ZR_JSON_RPC_ENVELOPE_OK) {
             if (envelopeStatus == ZR_JSON_RPC_ENVELOPE_INVALID_PARAMS && envelope.isNotification) {
@@ -228,15 +233,26 @@ int main(void) {
                                             ? "Invalid params"
                                             : "Invalid Request");
             }
-            if (registeredId != ZR_NULL) {
-                ZrLanguageServer_StdioRequestInput_Complete(&server, registeredId);
-            }
             cJSON_Delete(message);
             continue;
         }
 
         if (envelope.isRequest) {
-            ZrLanguageServer_StdioRequestInput_Activate(&server, envelope.id, inputGeneration);
+            if (requestReservation == ZR_STDIO_REQUEST_RESERVATION_DUPLICATE) {
+                send_error_response(envelope.id,
+                                    ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE,
+                                    "Invalid Request");
+                cJSON_Delete(message);
+                continue;
+            }
+            if (requestReservation != ZR_STDIO_REQUEST_RESERVATION_ACCEPTED) {
+                send_error_response(envelope.id,
+                                    ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE,
+                                    "Internal error");
+                cJSON_Delete(message);
+                continue;
+            }
+            ZrLanguageServer_StdioRequestInput_Activate(&server, envelope.id);
             handle_request_message(&server, envelope.id, envelope.method, envelope.params);
             ZrLanguageServer_StdioRequestInput_Complete(&server, envelope.id);
         } else {
