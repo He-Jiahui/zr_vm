@@ -11,7 +11,7 @@
 
 | Requirement | Implementation evidence | Focused evidence |
 | --- | --- | --- |
-| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | parser/semantic/runtime suite 26/26 |
+| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | parser/semantic/runtime suite 27/27 |
 | `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name object method and real-member tests |
 | Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes and catches the named runtime error |
 | `?.member`, `?.method(args)`, and `?.(args)` skip the complete suffix | per-segment access mode and chain-level receiver-guard lowering | optional failure skips argument side effects; optional success runs once |
@@ -87,7 +87,7 @@ GCC 11.4, Clang 14, and MSVC 19.44 Debug focused direct execution each
 passed the portable ownership/parser/runtime matrix:
 
 ```text
-ownership intrinsic/member separation  26/26
+ownership intrinsic/member separation  27/27
 removed percent syntax cutover            7/7
 owner/borrow receiver escape checks       7/7
 semantic facts                          14/14
@@ -97,15 +97,43 @@ resource Shared/Weak                    11/11
 exceptions                               8/8
 ```
 
-The two newest cases close a review-found construct-AST compatibility route.
+The three newest cases close review-found construct-AST compatibility routes.
 Against the old implementation, a normal `new Plain()` node with
 `builtinKind == NONE` but a stale `ownershipQualifier == SHARED` produced a
 Shared inferred type and emitted `OWN_SHARE`; the focused runner reported
 `26 Tests / 2 Failures`. Type inference, expression-fact classification, and
 both compiler wrapper entries now select ownership only from explicit
-`builtinKind`. The same runner then passed 26/26 on GCC 11.4, Clang 14, and
+`builtinKind`. The same runner then passed 27/27 on GCC 11.4, Clang 14, and
 MSVC 19.44. On each toolchain, type inference, expression facts, compiler
 integration, Unique/Drop, and Shared/Weak also completed with real exit code 0.
+
+The 27th case casts the removed historical construct builtin value `8` without
+referring to the legacy name. Before the cleanup it compiled successfully
+through `ZR_OWNERSHIP_BUILTIN_KIND_DETACH` and lowered to
+`OWN_RETURN_TO_GC`; the runner reported `27 Tests / 1 Failure`. The compiler
+opcode mapper, pre-execution Semantic IR builder, inference result selection,
+and ownership-fact classifier no longer contain that branch, so value `8`
+reaches the unsupported-builtin failure path. The downstream instruction,
+SemIR, runtime, and AOT readers remain intact exclusively for legacy artifact
+compatibility under Syntax 04 M7.
+
+Focused commands used the independent static Debug caches
+`/home/hejiahui/.codex-builds/ownership-detach-red-gcc`,
+`/home/hejiahui/.codex-builds/ownership-detach-clang`, and `E:\zrb\odc`:
+
+```text
+cmake --build <cache> --target zr_vm_ownership_intrinsic_member_separation_test zr_vm_type_inference_test zr_vm_expression_fact_emission_test zr_vm_compiler_integration_test zr_vm_semir_pipeline_test -j4
+<cache>/bin/zr_vm_ownership_intrinsic_member_separation_test
+<cache>/bin/zr_vm_type_inference_test
+<cache>/bin/zr_vm_expression_fact_emission_test
+<cache>/bin/zr_vm_compiler_integration_test
+<cache>/bin/zr_vm_semir_pipeline_test
+```
+
+GCC 11.4, Clang 14, and MSVC 19.44 each passed ownership 27/27,
+type inference 122/122, expression facts 28/28, and compiler integration
+127/127. GCC and Clang passed SemIR 13/13; MSVC passed its portable 12/12
+registration. Every direct process returned exit code zero.
 
 The expanded 24th ownership case executes
 `liveWeak?.add?.(bump())` and its expired counterpart. The live path returns 11
@@ -207,7 +235,7 @@ The directly affected behavior suites pass under GCC 11.4, Clang 14, and MSVC
 19.44 Debug with real exit code 0:
 
 ```text
-ownership intrinsic/member separation       24/24
+ownership intrinsic/member separation       27/27
 lexer/parser/compiler execution              11/11
 reflection type surface                      21/21
 yield syntax                                   4/4
@@ -234,6 +262,14 @@ range. The execution fixture allocates instruction storage through the runtime
 allocator and captures the expected invalid-call exception through
 `ZrCore_Exception_TryRun`, matching production ownership and exception
 contracts instead of depending on stack storage or process abort behavior.
+
+`compiler_semantic_ir.c`, `type_inference_core.c`, and the dedicated ownership
+test runner already exceed the repository's modularization warning threshold.
+This cleanup removes branches and adds one case within their existing single
+responsibilities; it introduces no helper, protocol, or cross-module API.
+Splitting those switch tables or the cohesive ownership contract runner solely
+around deleted lines would weaken the responsibility boundary, so no structural
+split is included in this removal slice.
 
 ## Pending final acceptance
 

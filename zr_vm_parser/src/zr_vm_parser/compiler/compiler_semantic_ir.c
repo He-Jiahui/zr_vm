@@ -1600,14 +1600,6 @@ static TZrBool compiler_semantic_ir_emit_ownership(
             spec.opcode = ZR_SEMANTIC_IR_DROP;
             slot->valueId = ZR_VALUE_ID_INVALID;
             break;
-        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-            spec.opcode = ZR_SEMANTIC_IR_OWN_CONSTRUCT;
-            spec.ownershipOperation = ZR_SEMANTIC_OWNERSHIP_RETURN_TO_GC;
-            resultValueId = ZrParser_SemanticIr_AddValue(
-                    &cs->preSemanticIr, slot->typeId, sourceRange);
-            spec.resultValueId = resultValueId;
-            slot->valueId = ZR_VALUE_ID_INVALID;
-            break;
         case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
             spec.opcode = ZR_SEMANTIC_IR_BORROW_SHARED;
             resultValueId = ZrParser_SemanticIr_AddValue(

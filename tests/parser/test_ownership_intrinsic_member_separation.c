@@ -997,6 +997,25 @@ static void test_construct_qualifier_does_not_select_ownership_lowering(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void test_removed_detach_builtin_id_cannot_lower(void) {
+    SZrAstNode *script = parse_source(
+            "resource class Session {}\n"
+            "var owner = own Session();\n"
+            "new owner();\n");
+    SZrAstNode *expression = statement_expression(script, 2u);
+    SZrFunction *function;
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expression->type);
+    expression->data.constructExpression.isNew = ZR_FALSE;
+    expression->data.constructExpression.builtinKind =
+            (EZrOwnershipBuiltinKind)8;
+
+    function = ZrParser_Compiler_Compile(g_state, script);
+    TEST_ASSERT_NULL(function);
+
+    ZrParser_Ast_Free(g_state, script);
+}
+
 static void test_intrinsic_spellings_on_objects_use_normal_member_calls(void) {
     const TZrChar *source =
             "class Service {\n"
@@ -1328,6 +1347,7 @@ int main(void) {
     RUN_TEST(test_intrinsic_calls_emit_dedicated_opcodes_and_execute);
     RUN_TEST(test_construct_qualifier_does_not_publish_ownership_semantics);
     RUN_TEST(test_construct_qualifier_does_not_select_ownership_lowering);
+    RUN_TEST(test_removed_detach_builtin_id_cannot_lower);
     RUN_TEST(test_intrinsic_spellings_on_objects_use_normal_member_calls);
     RUN_TEST(test_removed_ownership_member_calls_publish_structured_fixes);
     RUN_TEST(test_expired_weak_optional_call_skips_arguments);

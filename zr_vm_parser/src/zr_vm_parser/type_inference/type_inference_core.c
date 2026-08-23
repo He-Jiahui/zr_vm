@@ -4699,8 +4699,6 @@ static const TZrChar *ownership_builtin_operand_error_message(EZrOwnershipBuilti
             return "wake(weak) requires a Weak owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             return "drop(owner) requires a Unique or Shared owner";
-        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-            return "intoGc(owner) requires a Unique or Shared owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
             return "intoGc(owner) requires a Unique<T> resource owner";
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
@@ -4723,7 +4721,6 @@ static TZrBool ownership_builtin_operand_matches_qualifier(EZrOwnershipBuiltinKi
         case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
         case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
-        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
             return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                    qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
         case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
@@ -4907,10 +4904,6 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
             case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
                 result->referenceAccess = ZR_REFERENCE_ACCESS_WRITABLE;
-                break;
-            case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
-                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-                result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
                 break;
             case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;

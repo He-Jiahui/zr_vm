@@ -888,7 +888,6 @@ static EZrSemanticOwnershipFactKind ownership_fact_kind_for_builtin(EZrOwnership
             return ZR_SEMANTIC_OWNERSHIP_FACT_BORROW;
         case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
             return ZR_SEMANTIC_OWNERSHIP_FACT_MOVE;
-        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
         case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
             return ZR_SEMANTIC_OWNERSHIP_FACT_RELEASE;
         case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:

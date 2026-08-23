@@ -16,6 +16,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_completion_semantic_facts.c
@@ -37,6 +38,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
@@ -177,6 +179,15 @@ Intrinsic lowering emits the canonical operations `OWN_SHARE`,
 IDs remain stable where required, but old semantic names and source aliases are
 not accepted.
 
+Historical construct builtin id `8` is not a source compatibility route. The
+compiler opcode mapper, pre-execution Semantic IR builder, type inference, and
+semantic-fact classifier all reject that id instead of translating it to
+`OWN_RETURN_TO_GC`. The `OWN_RETURN_TO_GC` instruction and its SemIR/AOT/runtime
+readers remain available only for loading older artifacts, as required by the
+Syntax 04 M7 artifact contract; no current source AST can emit it. The public
+enum/type-helper declaration is removed together with the coordinated type
+system update, while the compiler behavior already fails closed.
+
 Ordinary construction cannot enter this lowering from a qualifier fallback.
 Only an explicit construct `builtinKind` may select the older `own`/`ref`
 construction lowering, while the five ownership-control calls lower from their
@@ -214,6 +225,8 @@ an absent receiver. `wake(weak)` itself never throws for expiry.
 - Optional access rejects unknown/dynamic and statically non-null receivers.
 - References tied to the hidden wake owner cannot escape the guarded chain.
 - Old ownership-member syntax has no lowering fallback.
+- Historical construct builtin id `8` has no compiler, inference, or fact
+  fallback even though old artifacts may still contain `OWN_RETURN_TO_GC`.
 - Live missing-member, wrong-runtime-kind, and user getter/method exceptions are
   not relabeled as `NullReferenceError`.
 
