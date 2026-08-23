@@ -4,7 +4,7 @@
 
 - Design: `docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md`
 - Implementation plan: `docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md`
-- Review date: 2026-08-14 (UTC+08:00)
+- Review date: 2026-08-23 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
 
 ## Accepted source contract
@@ -227,10 +227,12 @@ contracts instead of depending on stack storage or process abort behavior.
 
 ## Pending final acceptance
 
-- The prior Clang full build completed 1460/1460 and its registered matrix passed
-  124/126; only two LSP callable-value suites failed against the then-active LSP
-  overlay. A fresh whole-repository replay is still required after that overlay
-  is exact-committed.
+- Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
+  baseline `0a46151` each passed all 133 registered CTests with zero failures.
+  The three CLI smokes printed `hello world` and exited zero. This closes the
+  earlier stdio/document-sync and MSVC project-pressure failures, but it
+  predates the still-unreleased L8 external callable-value parser overlay and
+  therefore is not yet the final stable-HEAD replay.
 - The migration-inventory protocol currently passes 9/10. Its only failure is
   the intentionally stale repository golden; regeneration is deferred until the
   concurrent tracked LSP overlay is exact-committed so no intermediate state is
@@ -241,6 +243,9 @@ contracts instead of depending on stack storage or process abort behavior.
 - Regenerate inventory after concurrent LSP work stops changing the shared HEAD.
 - Run final source/alias search, `git diff --check`, exact-path review, and status
   promotion.
-- Remove task-owned build caches and logs after their evidence is recorded.
+- Old `ownership-post-stdio-*` WSL caches plus `E:\zrs\of` and `E:\zrb\ofm`
+  were removed after the newer full-matrix evidence superseded them. Retain only
+  the current final-replay caches until L8 integration is verified, then remove
+  those remaining task-owned build/source directories and logs.
 
 No plan or syntax status is promoted to completed until all pending gates pass.

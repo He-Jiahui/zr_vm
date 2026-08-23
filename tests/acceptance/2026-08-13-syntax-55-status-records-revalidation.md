@@ -2,7 +2,7 @@
 
 ## Status
 
-- Review date: 2026-08-14 (UTC+08:00)
+- Review date: 2026-08-23 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
 - Scope: the historical 55 milestone records under `docs/plans/syntax`
 - Relationship to the current tree: `docs/plans/syntax` now contains 91 Markdown
@@ -21,7 +21,7 @@ The selector is the same one used by
 4. Exclude the independent support record
    `05-property-unified-ast/m5-task4-property-import-bootstrap.md`.
 
-The 2026-08-14 result is:
+The 2026-08-23 result is:
 
 ```text
 TOTAL=55
@@ -116,9 +116,11 @@ sanitizer reported an error.
 
 ## Pending completion gates
 
-- The prior Clang full build was 1460/1460 and CTest 124/126; only the two active
-  LSP callable-value suites failed. This is useful historical evidence but does
-  not satisfy the final stable-HEAD whole-repository gate.
+- Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
+  baseline `0a46151` each passed 133/133 registered CTests, and all three CLI
+  smokes printed `hello world` with exit code zero. This is a fully green
+  pre-L8 baseline, not the final stable-HEAD claim, because the external
+  callable-value parser/LSP overlay remains unreleased.
 - Syntax migration inventory is 9/10 until the repository golden is regenerated
   on the final stable tracked baseline; the scanner's other nine protocol and
   classification checks pass.
