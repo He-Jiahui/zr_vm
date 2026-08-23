@@ -1,5 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+#include "project/lsp_workspace.h"
+
 TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri);
@@ -101,8 +103,13 @@ static TZrBool workspace_file_has_open_overlay(SZrStdioServer *server, SZrString
     return fileVersion != ZR_NULL && fileVersion->isOpenDocument;
 }
 
+static TZrBool workspace_file_event_is_allowed(SZrStdioServer *server, SZrString *uri) {
+    return server != ZR_NULL && server->context != ZR_NULL &&
+           ZrLanguageServer_LspWorkspace_CanProcessFileEvent(server->context, uri);
+}
+
 static int handle_single_workspace_file_change(SZrStdioServer *server, SZrString *uri, TZrSize changeType) {
-    if (server == ZR_NULL || uri == ZR_NULL) {
+    if (server == ZR_NULL || uri == ZR_NULL || !workspace_file_event_is_allowed(server, uri)) {
         return 0;
     }
 
@@ -292,7 +299,9 @@ int handle_did_rename_files(SZrStdioServer *server, const cJSON *params) {
         SZrString *newUri = workspace_file_operation_uri(
                 server, get_object_item(file, ZR_LSP_FIELD_NEW_URI));
 
-        if (workspace_file_string_ends_with(oldUri, ".zr") &&
+        if (workspace_file_event_is_allowed(server, oldUri) &&
+            workspace_file_event_is_allowed(server, newUri) &&
+            workspace_file_string_ends_with(oldUri, ".zr") &&
             workspace_file_string_ends_with(newUri, ".zr") &&
             ZrLanguageServer_LspProject_PrepareSourceRename(
                     server->state, server->context, oldUri, newUri)) {
@@ -331,7 +340,9 @@ cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *par
         SZrArray locations = {0};
         SZrArray documentSnapshots = {0};
 
-        if (!ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
+        if (!workspace_file_event_is_allowed(server, oldUri) ||
+            !workspace_file_event_is_allowed(server, newUri) ||
+            !ZrLanguageServer_LspProject_CollectSourceRenameEditPlan(
                     server->state,
                     server->context,
                     oldUri,

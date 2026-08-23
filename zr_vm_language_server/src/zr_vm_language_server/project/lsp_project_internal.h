@@ -61,6 +61,10 @@ TZrBool ZrLanguageServer_LspProject_EnsureScannedSourceGraph(SZrState *state,
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
                                                                                      SZrLspContext *context,
                                                                                      SZrString *uri);
+TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUriPreservingOpenDocuments(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,
                                                                                  SZrLspContext *context,
                                                                                  SZrString *uri);

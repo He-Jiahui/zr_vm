@@ -986,15 +986,15 @@ static void project_remove_file_record_at_index(SZrState *state,
     projectIndex->files.length--;
 }
 
-TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
-                                                              SZrLspContext *context,
-                                                              SZrString *uri) {
+static TZrBool project_find_index_by_project_uri(SZrLspContext *context,
+                                                 SZrString *uri,
+                                                 TZrSize *outProjectIndexOffset) {
     TZrSize projectIndexOffset;
     SZrLspProjectIndex **projectPtr;
     TZrChar targetPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar normalizedTargetPath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
-    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+    if (context == ZR_NULL || uri == ZR_NULL || outProjectIndexOffset == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1024,15 +1024,66 @@ TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
         }
     }
 
+    *outProjectIndexOffset = projectIndexOffset;
+    return ZR_TRUE;
+}
+
+static TZrBool project_uri_is_referenced_by_other_index(SZrLspContext *context,
+                                                         TZrSize excludedProjectIndexOffset,
+                                                         SZrString *uri) {
+    if (context == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize projectIndexOffset = 0; projectIndexOffset < context->projectIndexes.length;
+         projectIndexOffset++) {
+        SZrLspProjectIndex **projectPtr;
+
+        if (projectIndexOffset == excludedProjectIndexOffset) {
+            continue;
+        }
+
+        projectPtr = (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, projectIndexOffset);
+        if (projectPtr == ZR_NULL || *projectPtr == ZR_NULL) {
+            continue;
+        }
+
+        if (ZrLanguageServer_LspProject_FindRecordByUri(*projectPtr, uri) != ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool project_remove_index_at(SZrState *state,
+                                       SZrLspContext *context,
+                                       TZrSize projectIndexOffset,
+                                       TZrBool preserveOpenDocuments) {
+    SZrLspProjectIndex **projectPtr;
+
+    if (state == ZR_NULL || context == ZR_NULL || projectIndexOffset >= context->projectIndexes.length) {
+        return ZR_FALSE;
+    }
+
     projectPtr = (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, projectIndexOffset);
     if (projectPtr != ZR_NULL && *projectPtr != ZR_NULL) {
         for (TZrSize recordIndex = 0; recordIndex < (*projectPtr)->files.length; recordIndex++) {
             SZrLspProjectFileRecord **recordPtr =
                 (SZrLspProjectFileRecord **)ZrCore_Array_Get(&(*projectPtr)->files, recordIndex);
             if (recordPtr != ZR_NULL && *recordPtr != ZR_NULL && (*recordPtr)->uri != ZR_NULL) {
-                ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, (*recordPtr)->uri);
-                if (context->parser != ZR_NULL) {
-                    ZrLanguageServer_IncrementalParser_RemoveFile(state, context->parser, (*recordPtr)->uri);
+                SZrFileVersion *fileVersion =
+                    ZrLanguageServer_Lsp_GetDocumentFileVersion(context, (*recordPtr)->uri);
+                TZrBool retainOpenOverlay = preserveOpenDocuments && fileVersion != ZR_NULL &&
+                                             fileVersion->isOpenDocument;
+
+                if (!retainOpenOverlay &&
+                    !project_uri_is_referenced_by_other_index(
+                            context, projectIndexOffset, (*recordPtr)->uri)) {
+                    ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, (*recordPtr)->uri);
+                    if (context->parser != ZR_NULL) {
+                        ZrLanguageServer_IncrementalParser_RemoveFile(state, context->parser, (*recordPtr)->uri);
+                    }
                 }
             }
         }
@@ -1046,6 +1097,31 @@ TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
     }
     context->projectIndexes.length--;
     return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
+                                                              SZrLspContext *context,
+                                                              SZrString *uri) {
+    TZrSize projectIndexOffset;
+
+    if (state == ZR_NULL || !project_find_index_by_project_uri(context, uri, &projectIndexOffset)) {
+        return ZR_FALSE;
+    }
+
+    return project_remove_index_at(state, context, projectIndexOffset, ZR_FALSE);
+}
+
+TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUriPreservingOpenDocuments(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri) {
+    TZrSize projectIndexOffset;
+
+    if (state == ZR_NULL || !project_find_index_by_project_uri(context, uri, &projectIndexOffset)) {
+        return ZR_FALSE;
+    }
+
+    return project_remove_index_at(state, context, projectIndexOffset, ZR_TRUE);
 }
 
 TZrBool ZrLanguageServer_LspProject_RemoveFileRecordByUri(SZrState *state,

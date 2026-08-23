@@ -430,8 +430,12 @@ void handle_notification_message(SZrStdioServer *server,
     }
 
     if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_CONFIGURATION) == 0 ||
-        strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS) == 0 ||
         strcmp(method, ZR_LSP_METHOD_CANCEL_REQUEST) == 0) {
+        return;
+    }
+
+    if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS) == 0) {
+        handle_did_change_workspace_folders(server, params);
         return;
     }
 

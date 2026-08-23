@@ -274,6 +274,7 @@ int handle_did_open(SZrStdioServer *server, const cJSON *params);
 int handle_did_change(SZrStdioServer *server, const cJSON *params);
 int handle_did_close(SZrStdioServer *server, const cJSON *params);
 int handle_did_save(SZrStdioServer *server, const cJSON *params);
+void handle_did_change_workspace_folders(SZrStdioServer *server, const cJSON *params);
 void add_workspace_file_operation_capabilities(cJSON *workspace);
 int handle_did_change_watched_files(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_will_create_files_request(SZrStdioServer *server, const cJSON *params);

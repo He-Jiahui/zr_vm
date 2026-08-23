@@ -1,5 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+#include "project/lsp_workspace.h"
+
 typedef struct SZrInitializeJsonParts {
     cJSON *result;
     cJSON *capabilities;
@@ -96,6 +98,104 @@ static void apply_initialization_selected_project(SZrStdioServer *server, const 
     ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, cachedUri);
 }
 
+static void add_workspace_folder_uri(SZrStdioServer *server, const cJSON *uriJson) {
+    const char *uriText;
+    SZrString *uri;
+
+    if (server == ZR_NULL || server->context == ZR_NULL || !cJSON_IsString((cJSON *)uriJson)) {
+        return;
+    }
+
+    uriText = cJSON_GetStringValue((cJSON *)uriJson);
+    uri = uriText != ZR_NULL ? server_get_cached_uri(server, uriText) : ZR_NULL;
+    if (uri != ZR_NULL) {
+        ZrLanguageServer_LspWorkspace_AddFolder(server->state, server->context, uri);
+    }
+}
+
+static void add_workspace_folder_path(SZrStdioServer *server, const cJSON *pathJson) {
+    const char *pathText;
+    SZrString *uri;
+
+    if (server == ZR_NULL || server->context == ZR_NULL || !cJSON_IsString((cJSON *)pathJson)) {
+        return;
+    }
+
+    pathText = cJSON_GetStringValue((cJSON *)pathJson);
+    uri = pathText != ZR_NULL ? ZrLanguageServer_LspUri_FromNativePath(server->state, pathText) : ZR_NULL;
+    if (uri != ZR_NULL) {
+        ZrLanguageServer_LspWorkspace_AddFolder(server->state, server->context, uri);
+    }
+}
+
+static void apply_initialization_workspace_folders(SZrStdioServer *server, const cJSON *params) {
+    const cJSON *workspaceFolders;
+    const cJSON *rootUri;
+    const cJSON *rootPath;
+
+    if (server == ZR_NULL || server->context == ZR_NULL || params == ZR_NULL) {
+        return;
+    }
+
+    ZrLanguageServer_LspWorkspace_Reset(server->state, server->context);
+    workspaceFolders = get_object_item(params, ZR_LSP_FIELD_WORKSPACE_FOLDERS);
+    if (cJSON_IsArray((cJSON *)workspaceFolders)) {
+        for (int index = 0; index < cJSON_GetArraySize((cJSON *)workspaceFolders); index++) {
+            const cJSON *folder = cJSON_GetArrayItem((cJSON *)workspaceFolders, index);
+            add_workspace_folder_uri(server, get_object_item(folder, ZR_LSP_FIELD_URI));
+        }
+        return;
+    }
+
+    rootUri = get_object_item(params, ZR_LSP_FIELD_ROOT_URI);
+    if (cJSON_IsString((cJSON *)rootUri)) {
+        add_workspace_folder_uri(server, rootUri);
+        return;
+    }
+
+    rootPath = get_object_item(params, ZR_LSP_FIELD_ROOT_PATH);
+    add_workspace_folder_path(server, rootPath);
+}
+
+void handle_did_change_workspace_folders(SZrStdioServer *server, const cJSON *params) {
+    const cJSON *event;
+    const cJSON *added;
+    const cJSON *removed;
+
+    if (server == ZR_NULL || server->context == ZR_NULL || params == ZR_NULL) {
+        return;
+    }
+
+    event = get_object_item(params, ZR_LSP_FIELD_EVENT);
+    if (event == ZR_NULL) {
+        return;
+    }
+
+    added = get_object_item(event, ZR_LSP_FIELD_ADDED);
+    if (cJSON_IsArray((cJSON *)added)) {
+        for (int index = 0; index < cJSON_GetArraySize((cJSON *)added); index++) {
+            const cJSON *folder = cJSON_GetArrayItem((cJSON *)added, index);
+            add_workspace_folder_uri(server, get_object_item(folder, ZR_LSP_FIELD_URI));
+        }
+    }
+
+    removed = get_object_item(event, ZR_LSP_FIELD_REMOVED);
+    if (cJSON_IsArray((cJSON *)removed)) {
+        for (int index = 0; index < cJSON_GetArraySize((cJSON *)removed); index++) {
+            const cJSON *folder = cJSON_GetArrayItem((cJSON *)removed, index);
+            const cJSON *uriJson = get_object_item(folder, ZR_LSP_FIELD_URI);
+            const char *uriText = cJSON_IsString((cJSON *)uriJson)
+                                      ? cJSON_GetStringValue((cJSON *)uriJson)
+                                      : ZR_NULL;
+            SZrString *uri = uriText != ZR_NULL ? server_get_cached_uri(server, uriText) : ZR_NULL;
+
+            if (uri != ZR_NULL) {
+                ZrLanguageServer_LspWorkspace_RemoveFolder(server->state, server->context, uri);
+            }
+        }
+    }
+}
+
 cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
     SZrInitializeJsonParts parts;
     cJSON *semanticLegend;
@@ -180,7 +280,10 @@ cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
     add_advanced_editor_capabilities(parts.capabilities);
 
     cJSON_AddBoolToObject(parts.workspaceFolders, ZR_LSP_FIELD_SUPPORTED, 1);
-    cJSON_AddBoolToObject(parts.workspaceFolders, ZR_LSP_FIELD_CHANGE_NOTIFICATIONS, 1);
+    cJSON_AddBoolToObject(parts.workspaceFolders,
+                          ZR_LSP_FIELD_CHANGE_NOTIFICATIONS,
+                          server != ZR_NULL && server->context != ZR_NULL &&
+                                  server->context->workspace != ZR_NULL);
     cJSON_AddItemToObject(parts.workspace, ZR_LSP_FIELD_WORKSPACE_FOLDERS, parts.workspaceFolders);
     add_workspace_file_operation_capabilities(parts.workspace);
     cJSON_AddItemToObject(parts.capabilities, ZR_LSP_FIELD_WORKSPACE, parts.workspace);
@@ -191,6 +294,7 @@ cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
     cJSON_AddItemToObject(parts.result, ZR_LSP_FIELD_CAPABILITIES, parts.capabilities);
     cJSON_AddItemToObject(parts.result, ZR_LSP_FIELD_SERVER_INFO, parts.serverInfo);
 
+    apply_initialization_workspace_folders(server, params);
     apply_initialization_selected_project(server, params);
     return parts.result;
 }

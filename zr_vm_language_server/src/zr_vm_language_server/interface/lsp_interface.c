@@ -6,6 +6,7 @@
 #include "lsp_canonical_signature_help.h"
 #include "lsp_virtual_documents.h"
 #include "project/lsp_project_internal.h"
+#include "project/lsp_workspace.h"
 #include "semantic/lsp_local_semantic_query.h"
 #include "semantic/lsp_semantic_query.h"
 #include "semantic/semantic_analyzer_internal.h"
@@ -930,13 +931,15 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
                       &context->projectIndexes,
                       sizeof(SZrLspProjectIndex *),
                       ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY);
+    context->workspace = ZrLanguageServer_LspWorkspace_New(state);
     context->clientSelectedZrpNativePath = ZR_NULL;
     context->requestCancellationCheck = ZR_NULL;
     context->requestCancellationUserData = ZR_NULL;
 
     lsp_register_builtin_native_libraries(state);
     
-    if (context->parser == ZR_NULL) {
+    if (context->parser == ZR_NULL || context->workspace == ZR_NULL) {
+        ZrLanguageServer_LspWorkspace_Free(state, context->workspace);
         ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
         return ZR_NULL;
     }
@@ -1023,6 +1026,7 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
     }
 
     ZrLanguageServer_Lsp_ProjectIndexes_Free(state, context);
+    ZrLanguageServer_LspWorkspace_Free(state, context->workspace);
     ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
 }
 

@@ -189,6 +189,8 @@ typedef struct SZrLspHierarchyCall {
 
 typedef TZrBool (*FZrLspRequestCancellationCheck)(void *userData);
 
+struct SZrLspWorkspace;
+
 // LSP 接口上下文
 typedef struct SZrLspContext {
     SZrState *state;
@@ -197,6 +199,7 @@ typedef struct SZrLspContext {
     SZrHashSet uriToAnalyzerMap;      // URI 到分析器的映射（值为SZrSemanticAnalyzer*）
     struct SZrLspSemanticSnapshotCache *semanticSnapshotCache;
     struct SZrLspSemanticCacheLru *semanticCacheLru;
+    struct SZrLspWorkspace *workspace; /* Canonical workspace folders, internal use only. */
     SZrArray projectIndexes;          // 已打开项目索引（SZrLspProjectIndex*，内部使用）
     TZrChar *clientSelectedZrpNativePath; /*!< IDE 选中的 .zrp 绝对路径（原生路径，可为 ZR_NULL） */
     FZrLspRequestCancellationCheck requestCancellationCheck;
