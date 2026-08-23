@@ -75,6 +75,10 @@ the suffix and argument evaluation.
   cases plus their private helpers, keeps 78 executable registrations, and
   reports its active reflection coverage with `typeof` terminology. A
   repository scan finds no unreferenced static `test_*` functions.
+- The lexer/parser/compiler execution suite re-enables four valid struct/class
+  cast and full-pipeline tests that had been silently commented out pending an
+  old double-free repair; active test registrations are no longer hidden behind
+  `ZR_UNUSED_PARAMETER` placeholders.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an

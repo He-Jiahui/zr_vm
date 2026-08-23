@@ -1008,10 +1008,6 @@ static void test_type_cast_full_pipeline(void) {
 // 主测试函数
 int main(void) {
     UNITY_BEGIN();
-    ZR_UNUSED_PARAMETER(&test_compiler_struct_type_cast);
-    ZR_UNUSED_PARAMETER(&test_compiler_class_type_cast);
-    ZR_UNUSED_PARAMETER(&test_char_literal_full_pipeline);
-    ZR_UNUSED_PARAMETER(&test_type_cast_full_pipeline);
     
     TEST_MODULE_DIVIDER();
     
@@ -1038,12 +1034,10 @@ int main(void) {
     TEST_DIVIDER();
     RUN_TEST(test_compiler_basic_type_cast);
     TEST_DIVIDER();
-    // 结构体/类类型转换编译用例临时跳过，待双重释放问题修复后恢复
-    // 注意：这些测试在双重释放问题修复后需要恢复
-    // RUN_TEST(test_compiler_struct_type_cast);
-    // TEST_DIVIDER();
-    // RUN_TEST(test_compiler_class_type_cast);
-    // TEST_DIVIDER();
+    RUN_TEST(test_compiler_struct_type_cast);
+    TEST_DIVIDER();
+    RUN_TEST(test_compiler_class_type_cast);
+    TEST_DIVIDER();
     
     // Execution 测试
     RUN_TEST(test_execution_basic_type_cast);
@@ -1052,11 +1046,9 @@ int main(void) {
     TEST_DIVIDER();
     
     // 综合测试
-    // 全流程测试临时跳过，待内存双重释放问题修复后恢复
-    // 注意：这些测试在双重释放问题修复后需要恢复
-    // RUN_TEST(test_char_literal_full_pipeline);
-    // TEST_DIVIDER();
-    // RUN_TEST(test_type_cast_full_pipeline);
+    RUN_TEST(test_char_literal_full_pipeline);
+    TEST_DIVIDER();
+    RUN_TEST(test_type_cast_full_pipeline);
     TEST_MODULE_DIVIDER();
     
     return UNITY_END();
