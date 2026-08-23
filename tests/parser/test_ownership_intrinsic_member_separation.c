@@ -8,6 +8,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/lexer.h"
@@ -1203,11 +1204,16 @@ static void test_expired_weak_direct_call_throws_named_runtime_error(void) {
             "    return mask;\n"
             "}\n"
             "return run();\n";
-    SZrString *sourceName = ZrCore_String_CreateFromNative(
-            g_state, "expired_weak_direct_call.zr");
-    SZrFunction *function = ZrParser_Source_Compile(
-            g_state, source, strlen(source), sourceName);
+    SZrString *sourceName;
+    SZrFunction *function;
     TZrInt64 result = 0;
+
+    ZrParser_ToGlobalState_Register(g_state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "expired_weak_direct_call.zr");
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
 
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
@@ -1327,6 +1333,125 @@ static void test_weak_member_optional_callable_chain_skips_arguments(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_live_weak_optional_chain_survives_native_gc_pressure(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub var value: int;\n"
+            "    pub @constructor(value: int) { this.value = value; }\n"
+            "    pub const fn readAfterGc(): int {\n"
+            "        let system = import(\"zr.system\");\n"
+            "        system.gc.collect(\"full\");\n"
+            "        return this.value;\n"
+            "    }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service(7);\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    var observed = weak?.readAfterGc();\n"
+            "    drop(shared);\n"
+            "    if (observed == 7) { return 1; }\n"
+            "    return 0;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    ZrParser_ToGlobalState_Register(g_state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "live_weak_optional_gc_pressure.zr");
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(
+            1u,
+            function_count_opcode_recursive(
+                    function, ZR_INSTRUCTION_ENUM(OWN_WAKE), 0u));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_live_weak_missing_member_is_not_null_reference_error(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub var value: int;\n"
+            "    pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service(7);\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    var outcome = 0;\n"
+            "    if (weak.value != 7) { return 3; }\n"
+            "    try { var ignored = weak.missing; }\n"
+            "    catch (error: NullReferenceError) { outcome = 1; }\n"
+            "    catch (error) { outcome = 2; }\n"
+            "    drop(shared);\n"
+            "    return outcome;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    ZrParser_ToGlobalState_Register(g_state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "live_weak_missing_member_error.zr");
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(
+            2u,
+            function_count_opcode_recursive(
+                    function, ZR_INSTRUCTION_ENUM(OWN_WAKE), 0u));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(2, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_live_weak_supports_repeated_direct_method_calls(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn read(): int { return 7; }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    var first = weak.read();\n"
+            "    var second = weak.read();\n"
+            "    drop(shared);\n"
+            "    return first * 10 + second;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "live_weak_repeated_method_calls.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(
+            2u,
+            function_count_opcode_recursive(
+                    function, ZR_INSTRUCTION_ENUM(OWN_WAKE), 0u));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(77, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ownership_operation_ids_remain_stable);
@@ -1356,5 +1481,8 @@ int main(void) {
     RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);
     RUN_TEST(test_live_nullable_shared_receiver_projects_owned_fields);
     RUN_TEST(test_weak_member_optional_callable_chain_skips_arguments);
+    RUN_TEST(test_live_weak_optional_chain_survives_native_gc_pressure);
+    RUN_TEST(test_live_weak_missing_member_is_not_null_reference_error);
+    RUN_TEST(test_live_weak_supports_repeated_direct_method_calls);
     return UNITY_END();
 }

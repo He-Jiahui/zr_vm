@@ -38,17 +38,21 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 plan_sources:
   - user: 2026-03-29 实现“zr.system 模块细分与子模块化方案”
+  - user: 2026-08-10 区分所有权 intrinsic 与对象/弱引用成员访问
   - .codex/plans/ZR VM 分区式分代 GC 与作用域逃逸管理设计.md
   - .codex/plans/zr struct 值类型与 native wrapper 分层方案.md
   - .codex/plans/zr.system.fs 对象化文件系统与 FileStream handle_id wrapper 验证.md
+  - docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md
 tests:
   - tests/module/test_module_system.c
   - tests/language_server/test_lsp_interface.c
+  - tests/parser/test_ownership_intrinsic_member_separation.c
   - tests/parser/test_type_inference.c
   - tests/system/test_system_fs_module.c
   - tests/ffi/ffi_fixture.c
   - tests/fixtures/projects/native_numeric_pipeline/src/main.zr
   - tests/fixtures/projects/native_math_export_probe/src/main.zr
+  - tests/acceptance/2026-08-10-ownership-object-member-separation.md
 doc_type: module-detail
 ---
 
@@ -60,15 +64,16 @@ doc_type: module-detail
 
 这个文档同时约束两件事：
 
-- 根模块和 6 个叶子模块之间的聚合关系必须继续走通用 `moduleLinks` / native materializer 路径，而不是对 `zr.system` 做专用硬编码。
+- 根模块和 8 个叶子模块之间的聚合关系必须继续走通用 `moduleLinks` / native materializer 路径，而不是对 `zr.system` 做专用硬编码。
 - `zr.system.fs` 必须同时提供对象化路径 API、兼容的旧函数 API，以及 `FileStream` 的 `handle_id` wrapper 语义，且这些语义只能在 FFI/native 边界自动 lowering。
 
 ## Root Module Shape
 
-`import("zr.system")` 返回的根模块导出这 7 个字段：
+`import("zr.system")` 返回的根模块导出这 8 个字段：
 
 - `console: zr.system.console`
 - `fs: zr.system.fs`
+- `assembly: zr.system.assembly`
 - `env: zr.system.env`
 - `process: zr.system.process`
 - `gc: zr.system.gc`
@@ -177,6 +182,7 @@ region 统计只汇总当前仍有 live object 的 active region，而不是 reg
 - `Error`
 - `StackFrame`
 - `RuntimeError`
+- `NullReferenceError`
 - `IOException`
 - `TypeError`
 - `MemoryError`
@@ -439,8 +445,8 @@ acceptFd(stream); // 编译期报错
 
 ## Control Flow Or Data Flow
 
-1. CLI 初始化时注册 `zr.system` 根模块、各个叶子模块，以及独立的 `zr.system.exception` 模块。
-2. `import("zr.system")` 通过 `moduleLinks` 物化根模块，并把 6 个叶子模块对象直接作为 export 暴露出去。
+1. CLI 初始化时注册 `zr.system` 根模块和各个叶子模块；注册完成后立即物化 `zr.system.exception`，保证 `RuntimeError` 与其 `NullReferenceError` 子类在执行用户代码前拥有稳定的全局 prototype identity。
+2. `import("zr.system")` 通过 `moduleLinks` 物化根模块，并把 8 个叶子模块对象直接作为 export 暴露出去。
 3. `import("zr.system.fs")` 直接物化 `zr.system.fs`，其中类型描述符注册 `File`、`Folder`、`SystemFileInfo`、`FileStream` 和两个 stream interface。
 4. `File` / `Folder` 构造时调用底层 `zr_vm_library/src/zr_vm_library/file.c` 查询宿主路径信息，填充 `fullPath`、`parent` 和 `fileInfo`。
 5. `File.open(...)` 通过平台文件句柄接口打开底层资源，再创建 `FileStream` wrapper 对象，并把 handle id 与隐藏 native 指针写入对象字段。

@@ -11,9 +11,10 @@
 
 | Requirement | Implementation evidence | Focused evidence |
 | --- | --- | --- |
-| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | parser/semantic/runtime suite 27/27 |
+| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | parser/semantic/runtime suite 30/30 |
 | `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name object method and real-member tests |
-| Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes and catches the named runtime error |
+| Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes against the materialized named runtime prototype |
+| A live weak target keeps ordinary object-member failures | guard resolves before member dispatch; standard system registration materializes the exception hierarchy | missing member follows the ordinary member-error path, not `NullReferenceError` |
 | `?.member`, `?.method(args)`, and `?.(args)` skip the complete suffix | per-segment access mode and chain-level receiver-guard lowering | optional failure skips argument side effects; optional success runs once |
 | Explicit `wake(weak)` returns nullable Shared | canonical intrinsic fact and `OWN_WAKE` | type/fact/opcode execution tests |
 | VM, AOT C, LLVM, and artifacts use canonical operation names | `OWN_SHARE/DEGRADE/WAKE/INTO_GC_BOX/DROP` | SemIR 13/13; focused AOT C/LLVM ownership and receiver-guard replay passes |
@@ -109,6 +110,33 @@ the suffix and argument evaluation.
   fixture assigns stack storage to this owned field.
 
 ## Fresh focused validation
+
+The 2026-08-23 weak-boundary review expanded the ownership runner to 30 cases.
+The new cases prove that a hidden wake owner survives a full native GC inside
+the guarded suffix, repeated direct method calls can wake the same live target,
+and a live target with a missing member retains the ordinary missing-member
+error. The initial missing-member test was a meaningful RED only after exposing
+an older fixture blind spot: without materializing `zr.system.exception`, both
+`RuntimeError` and `NullReferenceError` catch names fell back to the root
+`Error` prototype. `ZrVmLibSystem_Register` now materializes the exception leaf
+after registering the system descriptors, before user code executes.
+
+Fresh isolated static Debug caches produced:
+
+```text
+                                      GCC 11.4   Clang 14   MSVC 19.44
+ownership intrinsic/member separation    30/30      30/30       30/30
+exceptions                                 8/8        8/8         8/8
+module system                            78/78      78/78       78/78
+AOT receiver guard C/LLVM                 2/2        2/2    2 expected ignores
+```
+
+Every listed process returned exit code zero. The GCC test-only RED was
+`30 Tests / 1 Failure`: the live missing-member case entered the
+`NullReferenceError` catch. After exception-leaf materialization, the same GCC
+runner and the Clang/MSVC replays passed 30/30; GCC/Clang also executed both AOT
+receiver-guard backends, while MSVC retained the suite's explicit Unix-only
+ignore contract.
 
 GCC 11.4, Clang 14, and MSVC 19.44 Debug focused direct execution each
 passed the portable ownership/parser/runtime matrix:

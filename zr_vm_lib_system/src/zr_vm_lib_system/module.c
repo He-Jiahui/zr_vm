@@ -13,6 +13,8 @@
 #include "zr_vm_lib_system/process_registry.h"
 #include "zr_vm_lib_system/vm_registry.h"
 
+#include "zr_vm_core/module.h"
+
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
@@ -59,6 +61,20 @@ const ZrLibModuleDescriptor *ZrVmLibSystem_GetModuleDescriptor(void) {
     return &g_system_root_module_descriptor;
 }
 
+static TZrBool system_materialize_exception_module(SZrGlobalState *global) {
+    SZrString *moduleName;
+
+    if (global == ZR_NULL || global->mainThreadState == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    moduleName = ZrCore_String_CreateFromNative(
+            global->mainThreadState, "zr.system.exception");
+    return moduleName != ZR_NULL &&
+           ZrCore_Module_ImportByPath(global->mainThreadState, moduleName) !=
+                   ZR_NULL;
+}
+
 TZrBool ZrVmLibSystem_Register(SZrGlobalState *global) {
     const ZrLibModuleDescriptor *leafModules[] = {
             ZrSystem_ConsoleRegistry_GetModule(),
@@ -83,7 +99,12 @@ TZrBool ZrVmLibSystem_Register(SZrGlobalState *global) {
         }
     }
 
-    return ZrLibrary_NativeRegistry_RegisterModule(global, &g_system_root_module_descriptor);
+    if (!ZrLibrary_NativeRegistry_RegisterModule(
+                global, &g_system_root_module_descriptor)) {
+        return ZR_FALSE;
+    }
+
+    return system_materialize_exception_module(global);
 }
 
 #if defined(ZR_LIBRARY_TYPE_SHARED)
