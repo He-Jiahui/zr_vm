@@ -146,6 +146,8 @@ typedef struct SZrSemanticContext {
     SZrArray cleanupPlan;       // SZrDeterministicCleanupStep
     SZrArray templateSegments;  // SZrTemplateSegment
     SZrArray queryDiagnostics;  // SZrStructuredDiagnostic
+    TZrBool queryDiagnosticsMaterialized;
+    const SZrAstNode *queryDiagnosticsScopeRoot; // NULL for module scope
     SZrArray expressionFacts;   // SZrSemanticExpressionFact
     SZrArray referenceFacts;    // SZrSemanticReferenceFact
     SZrArray numericFacts;      // SZrSemanticNumericFact

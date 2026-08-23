@@ -1021,6 +1021,8 @@ static void test_compiler_error_publishes_persistent_semantic_diagnostic_fact(vo
     ZrParser_Compiler_ClearStructuredError(&cs);
 
     ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
     memset(&diagnostics, 0, sizeof(diagnostics));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
             cs.semanticContext, &scope, &diagnostics));
@@ -1097,6 +1099,8 @@ static void test_compiler_structured_error_publisher_deep_copies_diagnostic(void
     cs.hasError = ZR_FALSE;
 
     ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
     memset(&diagnostics, 0, sizeof(diagnostics));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
             cs.semanticContext, &scope, &diagnostics));

@@ -116,5 +116,8 @@ TZrBool ZrParser_Compiler_PublishSemanticQueryDiagnostics(SZrCompilerState *cs) 
     }
 
     ZrParser_SemanticQueryScope_Module(&scope);
+    if (!ZrParser_SemanticQuery_MaterializeDiagnostics(cs->semanticContext, &scope)) {
+        return ZR_FALSE;
+    }
     return ZrParser_SemanticQuery_Diagnostics(cs->semanticContext, &scope, &diagnostics);
 }

@@ -224,6 +224,9 @@ void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(
         ZrParser_SemanticFacts_ResolveLinearDefiniteAssignments(analyzer->semanticContext);
     }
     ZrParser_SemanticQueryScope_Module(&scope);
+    if (!ZrParser_SemanticQuery_MaterializeDiagnostics(analyzer->semanticContext, &scope)) {
+        return;
+    }
     if (!ZrParser_SemanticQuery_Diagnostics(analyzer->semanticContext, &scope, &diagnostics)) {
         return;
     }

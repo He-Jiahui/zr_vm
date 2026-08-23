@@ -728,7 +728,9 @@ TZrBool ZrParser_SemanticQuery_TypeAt(const SZrSemanticContext *context,
     }
 
     fact = ZrParser_SemanticFacts_FindExpressionAtPosition(context, position);
-    if (fact == ZR_NULL || !semantic_query_scope_allows_range(scope, &fact->range)) {
+    if (fact == ZR_NULL ||
+        !ZrParser_SemanticQuery_ExactnessAllowsProjection(fact->exactness) ||
+        !semantic_query_scope_allows_range(scope, &fact->range)) {
         return ZR_FALSE;
     }
 
@@ -887,25 +889,21 @@ TZrBool ZrParser_SemanticQuery_FactsAt(const SZrSemanticContext *context,
            outFacts->ownership != ZR_NULL;
 }
 
-TZrBool ZrParser_SemanticQuery_Diagnostics(
-        const SZrSemanticContext *context,
-        const SZrParserSemanticQueryScope *scope,
-        SZrParserSemanticQueryDiagnostics *outDiagnostics) {
-    SZrSemanticContext *mutableContext;
+TZrBool ZrParser_SemanticQuery_MaterializeDiagnostics(
+        SZrSemanticContext *context,
+        const SZrParserSemanticQueryScope *scope) {
     TZrSize i;
 
-    if (outDiagnostics == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    outDiagnostics->items = ZR_NULL;
-    outDiagnostics->count = 0;
     if (context == ZR_NULL || context->state == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (scope != ZR_NULL &&
+        (scope->kind != ZR_PARSER_SEMANTIC_QUERY_SCOPE_MODULE &&
+         (scope->kind != ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE || scope->root == ZR_NULL))) {
+        return ZR_FALSE;
+    }
 
-    mutableContext = (SZrSemanticContext *)context;
-    semantic_query_reset_diagnostics(mutableContext);
+    semantic_query_reset_diagnostics(context);
 
     if (context->diagnosticFacts.isValid) {
         for (i = 0U; i < context->diagnosticFacts.length; i++) {
@@ -916,7 +914,7 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
                 semantic_query_scope_allows_range(
                         scope, &fact->diagnostic.location)) {
                 (void)ZrParser_SemanticQueryPublished_AppendDiagnostic(
-                        mutableContext, fact);
+                        context, fact);
             }
         }
     }
@@ -928,7 +926,7 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
             if (fact != ZR_NULL &&
                 fact->state == ZR_SEMANTIC_REACHABILITY_UNREACHABLE &&
                 semantic_query_scope_allows_range(scope, &fact->range)) {
-                (void)semantic_query_append_unreachable_diagnostic(mutableContext, fact);
+                (void)semantic_query_append_unreachable_diagnostic(context, fact);
             }
         }
     }
@@ -940,7 +938,7 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
             if (fact != ZR_NULL &&
                 semantic_query_scope_allows_range(scope, &fact->range) &&
                 semantic_query_reference_is_uninitialized_read_diagnostic(fact)) {
-                (void)semantic_query_append_definite_assignment_diagnostic(mutableContext, fact);
+                (void)semantic_query_append_definite_assignment_diagnostic(context, fact);
             }
         }
     }
@@ -953,7 +951,7 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
                         i);
             if (fact != ZR_NULL &&
                 semantic_query_scope_allows_range(scope, &fact->range)) {
-                (void)ZrParser_SemanticQueryOwnership_AppendDiagnostic(mutableContext, fact);
+                (void)ZrParser_SemanticQueryOwnership_AppendDiagnostic(context, fact);
             }
         }
     }
@@ -965,7 +963,7 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
             if (fact != ZR_NULL &&
                 semantic_query_scope_allows_range(scope, &fact->range) &&
                 semantic_query_expression_is_array_bounds_diagnostic(fact)) {
-                (void)semantic_query_append_array_bounds_diagnostic(mutableContext, fact);
+                (void)semantic_query_append_array_bounds_diagnostic(context, fact);
             }
         }
     }
@@ -977,15 +975,54 @@ TZrBool ZrParser_SemanticQuery_Diagnostics(
             if (fact != ZR_NULL &&
                 semantic_query_scope_allows_range(scope, &fact->range) &&
                 semantic_query_numeric_is_overflow_diagnostic(fact)) {
-                (void)semantic_query_append_numeric_overflow_diagnostic(mutableContext, fact);
+                (void)semantic_query_append_numeric_overflow_diagnostic(context, fact);
             }
         }
     }
 
-    if (mutableContext->queryDiagnostics.length > 0) {
+    context->queryDiagnosticsMaterialized = ZR_TRUE;
+    context->queryDiagnosticsScopeRoot =
+            scope != ZR_NULL && scope->kind == ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE
+                    ? scope->root
+                    : ZR_NULL;
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_SemanticQuery_Diagnostics(
+        const SZrSemanticContext *context,
+        const SZrParserSemanticQueryScope *scope,
+        SZrParserSemanticQueryDiagnostics *outDiagnostics) {
+    const SZrAstNode *requestedScopeRoot;
+
+    if (outDiagnostics == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    outDiagnostics->items = ZR_NULL;
+    outDiagnostics->count = 0;
+    if (context == ZR_NULL || context->state == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (scope != ZR_NULL &&
+        (scope->kind != ZR_PARSER_SEMANTIC_QUERY_SCOPE_MODULE &&
+         (scope->kind != ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE || scope->root == ZR_NULL))) {
+        return ZR_FALSE;
+    }
+    if (!context->queryDiagnosticsMaterialized) {
+        return ZR_TRUE;
+    }
+
+    requestedScopeRoot =
+            scope != ZR_NULL && scope->kind == ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE
+                    ? scope->root
+                    : ZR_NULL;
+    if (requestedScopeRoot != context->queryDiagnosticsScopeRoot) {
+        return ZR_FALSE;
+    }
+    if (context->queryDiagnostics.length > 0) {
         outDiagnostics->items =
-            (const SZrStructuredDiagnostic *)mutableContext->queryDiagnostics.head;
-        outDiagnostics->count = mutableContext->queryDiagnostics.length;
+            (const SZrStructuredDiagnostic *)context->queryDiagnostics.head;
+        outDiagnostics->count = context->queryDiagnostics.length;
     }
     return ZR_TRUE;
 }

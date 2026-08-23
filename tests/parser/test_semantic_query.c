@@ -307,6 +307,8 @@ static void test_semantic_query_owner_hover_and_diagnostic_share_canonical_facts
             ZR_SEMANTIC_OWNERSHIP_FACT_ERROR, facts.ownership->kind);
 
     memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            context, ZR_NULL));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
             context, ZR_NULL, &diagnostics));
     TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)diagnostics.count);
@@ -710,6 +712,7 @@ static void test_semantic_query_diagnostics_maps_unreachable_reachability_facts_
 
     memset(&diagnostics, 0, sizeof(diagnostics));
     ZrParser_SemanticQueryScope_Node(&scope, &scopeNode);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(context, &scope));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(context, &scope, &diagnostics));
     TEST_ASSERT_NOT_NULL(diagnostics.items);
     TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.count);
@@ -769,6 +772,7 @@ static void test_semantic_query_diagnostics_maps_definite_assignment_read_facts_
 
     memset(&diagnostics, 0, sizeof(diagnostics));
     ZrParser_SemanticQueryScope_Node(&scope, &scopeNode);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(context, &scope));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(context, &scope, &diagnostics));
     TEST_ASSERT_NOT_NULL(diagnostics.items);
     TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)diagnostics.count);
@@ -830,6 +834,7 @@ static void test_semantic_query_diagnostics_maps_numeric_overflow_facts_in_scope
 
     memset(&diagnostics, 0, sizeof(diagnostics));
     ZrParser_SemanticQueryScope_Node(&scope, &scopeNode);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(context, &scope));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(context, &scope, &diagnostics));
     TEST_ASSERT_NOT_NULL(diagnostics.items);
     TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.count);
@@ -865,6 +870,7 @@ static void test_semantic_query_diagnostics_maps_array_bounds_facts_in_scope(voi
 
     memset(&diagnostics, 0, sizeof(diagnostics));
     ZrParser_SemanticQueryScope_Node(&scope, &scopeNode);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(context, &scope));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(context, &scope, &diagnostics));
     TEST_ASSERT_NOT_NULL(diagnostics.items);
     TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.count);
@@ -924,6 +930,7 @@ static void test_semantic_query_diagnostics_consumes_linear_definite_assignment_
 
     memset(&diagnostics, 0, sizeof(diagnostics));
     ZrParser_SemanticQueryScope_Node(&scope, &scopeNode);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(context, &scope));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(context, &scope, &diagnostics));
     TEST_ASSERT_NOT_NULL(diagnostics.items);
     TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)diagnostics.count);

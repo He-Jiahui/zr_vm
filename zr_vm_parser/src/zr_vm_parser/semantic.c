@@ -57,6 +57,8 @@ static void semantic_context_reset_query_diagnostics(SZrSemanticContext *context
     }
 
     context->queryDiagnostics.length = 0;
+    context->queryDiagnosticsMaterialized = ZR_FALSE;
+    context->queryDiagnosticsScopeRoot = ZR_NULL;
 }
 
 SZrSemanticContext *ZrParser_SemanticContext_New(SZrState *state) {

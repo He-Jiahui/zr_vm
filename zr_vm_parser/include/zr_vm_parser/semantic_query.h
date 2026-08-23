@@ -5,6 +5,22 @@
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic.h"
 
+/*
+ * Pointer fields returned by this API are borrowed views into the semantic
+ * snapshot. They remain valid only while the owning semantic context remains
+ * alive and unchanged. Callers that cross a snapshot boundary retain only
+ * stable ids and copied ranges, never an AST or fact pointer.
+ *
+ * TypeAt has no exactness output slot and therefore fails closed for UNKNOWN
+ * and APPROXIMATE expression facts. Queries that expose a fact pointer make
+ * its exactness available to the caller, which must not reconstruct semantics
+ * from text.
+ */
+static inline TZrBool ZrParser_SemanticQuery_ExactnessAllowsProjection(
+        EZrSemanticFactExactness exactness) {
+    return exactness == ZR_SEMANTIC_FACT_EXACT;
+}
+
 typedef enum EZrParserSemanticQueryScopeKind {
     ZR_PARSER_SEMANTIC_QUERY_SCOPE_MODULE = 0,
     ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE
@@ -100,6 +116,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_FactsAt(
         SZrFileRange position,
         const SZrParserSemanticQueryScope *scope,
         SZrParserSemanticQueryFacts *outFacts);
+/*
+ * This is an analysis lifecycle operation, not a read-only query. It rebuilds
+ * the borrowed diagnostic view for exactly one scope. Call it after semantic
+ * facts are resolved; subsequent Diagnostics calls for that same scope do not
+ * mutate the semantic context.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_MaterializeDiagnostics(
+        SZrSemanticContext *context,
+        const SZrParserSemanticQueryScope *scope);
 ZR_PARSER_API TZrBool ZrParser_SemanticQuery_Diagnostics(
         const SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope,
