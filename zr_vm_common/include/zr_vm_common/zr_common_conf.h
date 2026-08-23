@@ -5,6 +5,10 @@
 #ifndef ZR_COMMON_CONF_H
 #define ZR_COMMON_CONF_H
 
+#if defined(_MSC_VER) && defined(noreturn)
+#undef noreturn
+#endif
+
 // MSVC 兼容性处理：确保标准库头文件能够正确找到
 #if defined(_MSC_VER)
     // 在 MSVC 下，先包含基础头文件以确保标准库路径正确
@@ -101,10 +105,10 @@ typedef union TZrNativeObject TZrNativeObject;
 
 #define ZR_CHECK_EXP(STATE, CONDITION, VALUE) ((void) STATE, ZR_ASSERT((CONDITION)), (VALUE))
 
-#if defined(__GNUC__)
-#define ZR_COMPILER_GNU
-#elif defined(__clang__)
+#if defined(__clang__)
 #define ZR_COMPILER_CLANG
+#elif defined(__GNUC__)
+#define ZR_COMPILER_GNU
 #elif defined(_MSC_VER)
 #define ZR_COMPILER_MSVC
 #endif
@@ -125,7 +129,11 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_ALIGN_SIZE (sizeof(max_align_t))
 #define ZR_FORCE_INLINE inline
+#if defined(_MSC_VER)
+#define ZR_NO_RETURN _Noreturn
+#else
 #define ZR_NO_RETURN __attribute__((noreturn))
+#endif
 #define ZR_FAST_CALL __attribute__((fastcall))
 #else
 #define ZR_STRUCT_ALIGN

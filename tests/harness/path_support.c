@@ -7,7 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(_WIN32)
 #include <direct.h>
 #define zr_tests_mkdir(path) _mkdir(path)
 #else

@@ -4935,6 +4935,10 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_call_member_semantic_query.c
     )
     zr_vm_add_support_target(
+            zr_vm_language_server_semantic_query_parity_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_semantic_query_parity.c
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_incremental_parser_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_incremental_parser.c
     )
@@ -5083,6 +5087,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test
             zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test
             zr_vm_language_server_call_member_semantic_query_test
+            zr_vm_language_server_semantic_query_parity_test
             zr_vm_language_server_incremental_parser_test
             zr_vm_language_server_lsp_incremental_equivalence_test
             zr_vm_language_server_parser_diagnostics_test
@@ -5499,6 +5504,21 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
     )
+    target_include_directories(zr_vm_language_server_semantic_query_parity_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+    )
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_language_server_semantic_query_parity_test PRIVATE
+                zr_vm_library_shared
+                zr_vm_lib_container_shared
+        )
+    else ()
+        target_link_libraries(zr_vm_language_server_semantic_query_parity_test PRIVATE
+                zr_vm_library_static
+                zr_vm_lib_container_static
+        )
+    endif ()
 
     target_include_directories(zr_vm_language_server_lsp_interface_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
@@ -6508,6 +6528,7 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test AND
         TARGET zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test AND
         TARGET zr_vm_language_server_call_member_semantic_query_test AND
+        TARGET zr_vm_language_server_semantic_query_parity_test AND
         TARGET zr_vm_language_server_incremental_parser_test AND
         TARGET zr_vm_language_server_parser_diagnostics_test AND
         TARGET zr_vm_language_server_declaration_parser_diagnostics_test AND
@@ -6527,6 +6548,8 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
     set(language_server_executables
             "$<TARGET_FILE:zr_vm_language_server_symbol_table_test>;$<TARGET_FILE:zr_vm_language_server_reference_tracker_test>;$<TARGET_FILE:zr_vm_language_server_semantic_analyzer_test>;$<TARGET_FILE:zr_vm_language_server_ownership_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_union_pattern_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_local_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_logical_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_inlay_semantic_facts_test>;$<TARGET_FILE:zr_vm_language_server_local_semantic_hover_test>;$<TARGET_FILE:zr_vm_language_server_computed_member_hover_test>;$<TARGET_FILE:zr_vm_language_server_expression_fact_hover_test>;$<TARGET_FILE:zr_vm_language_server_reachability_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_branch_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_branch_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_coefficient_cross_semantic_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_deeper_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_three_additional_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_query_test>;$<TARGET_FILE:zr_vm_lsp_selfdep_coeff_cross_four_additional_scale_reader_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_self_dependency_symbolic_product_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_loop_constant_condition_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_for_header_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_nested_loop_assignment_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_call_member_semantic_query_test>;$<TARGET_FILE:zr_vm_language_server_incremental_parser_test>;$<TARGET_FILE:zr_vm_language_server_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_declaration_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_statement_parser_diagnostics_test>;$<TARGET_FILE:zr_vm_language_server_lsp_position_mapping_test>;$<TARGET_FILE:zr_vm_language_server_lsp_position_fuzz_test>;$<TARGET_FILE:zr_vm_language_server_lsp_decorator_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_code_lens_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_super_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_token_metadata_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_source_contracts_test>;$<TARGET_FILE:zr_vm_language_server_lsp_interface_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_features_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_utf16_ranges_test>;$<TARGET_FILE:zr_vm_language_server_lsp_advanced_editor_features_test>"
     )
+    string(APPEND language_server_executables
+            ";$<TARGET_FILE:zr_vm_language_server_semantic_query_parity_test>")
     string(APPEND language_server_executables
             ";$<TARGET_FILE:zr_vm_lsp_bitwise_zero_wrapper_range_query_test>")
     string(APPEND language_server_executables
