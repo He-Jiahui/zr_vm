@@ -10,6 +10,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server/lsp_interface.h"
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
+#include "zr_vm_language_server/lsp_uri.h"
 
 static int g_failures = 0;
 
@@ -40,6 +41,22 @@ static void check(TZrBool condition, const TZrChar *message) {
 
 static SZrString *test_string(SZrState *state, const TZrChar *text) {
     return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
+}
+
+static TZrBool build_fixture_native_path(const TZrChar *relativePath,
+                                         TZrChar *buffer,
+                                         TZrSize bufferSize) {
+    int written;
+
+    if (relativePath == ZR_NULL || buffer == ZR_NULL || bufferSize == 0U) {
+        return ZR_FALSE;
+    }
+    written = snprintf(buffer,
+                       (size_t)bufferSize,
+                       "%s/%s",
+                       ZR_VM_TESTS_SOURCE_DIR,
+                       relativePath);
+    return written >= 0 && (TZrSize)written < bufferSize;
 }
 
 static void update_document(SZrState *state,
@@ -188,6 +205,87 @@ static void test_snapshot_rejects_direct_dependency_and_provider_changes(
     ZrLanguageServer_LspContext_Free(state, context);
 }
 
+static void test_snapshot_rejects_transitive_import_changes(SZrState *state) {
+    static const TZrChar *projectContent =
+              "{\n"
+              "  \"name\": \"lsp_snapshot_transitive\",\n"
+              "  \"source\": \"src\",\n"
+              "  \"binary\": \"bin\",\n"
+              "  \"entry\": \"main\"\n"
+              "}\n";
+    static const TZrChar *transitiveUpdate = "pub var transitive: int = 2;\n";
+    static const TZrChar *directUpdate =
+            "let transitiveModule = import(\"transitive\");\n"
+            "pub var direct: int = 2;\n";
+    TZrChar projectPath[1024];
+    TZrChar mainPath[1024];
+    TZrChar directPath[1024];
+    TZrChar transitivePath[1024];
+    SZrLspContext *context = ZR_NULL;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *directUri = ZR_NULL;
+    SZrString *transitiveUri = ZR_NULL;
+    SZrLspSemanticSnapshot *snapshot = ZR_NULL;
+
+    check(build_fixture_native_path(
+                  "fixtures/projects/lsp_snapshot_transitive/lsp_snapshot_transitive.zrp",
+                  projectPath,
+                  sizeof(projectPath)) &&
+                  build_fixture_native_path(
+                          "fixtures/projects/lsp_snapshot_transitive/src/main.zr",
+                          mainPath,
+                          sizeof(mainPath)) &&
+                  build_fixture_native_path(
+                          "fixtures/projects/lsp_snapshot_transitive/src/direct.zr",
+                          directPath,
+                          sizeof(directPath)) &&
+                  build_fixture_native_path(
+                          "fixtures/projects/lsp_snapshot_transitive/src/transitive.zr",
+                          transitivePath,
+                          sizeof(transitivePath)),
+          "transitive dependency fixture paths must be available");
+    context = ZrLanguageServer_LspContext_New(state);
+    projectUri = ZrLanguageServer_LspUri_FromNativePath(state, projectPath);
+    mainUri = ZrLanguageServer_LspUri_FromNativePath(state, mainPath);
+    directUri = ZrLanguageServer_LspUri_FromNativePath(state, directPath);
+    transitiveUri = ZrLanguageServer_LspUri_FromNativePath(state, transitivePath);
+    check(context != ZR_NULL && projectUri != ZR_NULL && mainUri != ZR_NULL &&
+                  directUri != ZR_NULL && transitiveUri != ZR_NULL,
+          "transitive dependency test must allocate project context and canonical URIs");
+    if (context == ZR_NULL || projectUri == ZR_NULL || mainUri == ZR_NULL ||
+        directUri == ZR_NULL || transitiveUri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        return;
+    }
+
+    update_document(state, context, projectUri, projectContent, 1U);
+    snapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(state, context, mainUri);
+    check(snapshot != ZR_NULL,
+          "snapshot acquisition must load the project-backed transitive import graph");
+    if (snapshot == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        return;
+    }
+
+    update_document(state, context, transitiveUri, transitiveUpdate, 1U);
+    check(!ZrLanguageServer_LspSemanticSnapshot_Validate(state, context, snapshot),
+          "a transitive import update must invalidate the primary snapshot fence");
+    ZrLanguageServer_LspSemanticSnapshot_Release(state, snapshot);
+
+    snapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(state, context, mainUri);
+    check(snapshot != ZR_NULL,
+          "a fresh snapshot must be available after a transitive dependency update");
+    if (snapshot != ZR_NULL) {
+        update_document(state, context, directUri, directUpdate, 1U);
+        check(!ZrLanguageServer_LspSemanticSnapshot_Validate(state, context, snapshot),
+              "a direct import update must invalidate the primary snapshot fence");
+        ZrLanguageServer_LspSemanticSnapshot_Release(state, snapshot);
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);
@@ -202,6 +300,7 @@ int main(void) {
 
     test_snapshot_pins_current_content_and_ignores_unrelated_changes(state);
     test_snapshot_rejects_direct_dependency_and_provider_changes(state);
+    test_snapshot_rejects_transitive_import_changes(state);
 
     ZrCore_GlobalState_Free(global);
     printf("LSP semantic snapshot: %d failure(s)\n", g_failures);

@@ -1,0 +1,3 @@
+let directModule = import("direct");
+
+return directModule.direct;

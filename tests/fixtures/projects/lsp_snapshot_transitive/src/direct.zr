@@ -1,0 +1,3 @@
+let transitiveModule = import("transitive");
+
+pub var direct = 1;

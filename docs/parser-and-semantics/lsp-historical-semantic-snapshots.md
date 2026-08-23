@@ -43,6 +43,22 @@ Only real successful document changes capture a semantic snapshot. The current
 analyzer object remains the URI's stable analyzer identity, so existing metrics
 and callers that cache the primary pointer stay valid.
 
+## Request Dependency Fence
+
+The current request snapshot captures a canonical primary URI and records its
+resolved project imports as canonical dependency URIs. Dependency discovery
+recurses only through a project-index record and its parsed import bindings; it
+does not infer dependencies from module names or source text. The primary URI
+and every discovered dependency form one visited set, so a cyclic import graph
+cannot retain the same document twice or recurse indefinitely.
+
+`Validate` compares each captured document generation with the live file
+version. An update to an unrelated URI leaves a request snapshot valid, while
+an update to a direct or transitive imported document invalidates the primary
+snapshot and makes the request publication fence report `ContentModified`.
+The same identity is consumed by diagnostics, semantic tokens, and workspace
+edits; those consumers do not construct a separate dependency hash.
+
 ## Ownership And Rollover
 
 The snapshot cache owns each historical analyzer, which in turn owns its

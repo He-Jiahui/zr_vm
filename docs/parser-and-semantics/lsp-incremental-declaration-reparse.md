@@ -68,6 +68,14 @@ symbols, semantic tokens, and TypeId/SymbolId relationships. The project
 refresh regression additionally proves that a public function body edit keeps
 the importer analysis when the canonical public contract is unchanged.
 
+The acceptance differential additionally performs 10,000 deterministic random
+equal-length replacements over ASCII, three-byte UTF-8 CJK, and four-byte
+astral-plane code points. Every iteration round-trips UTF-16 positions, checks
+the incremental snapshot against a clean full parse, and compares final LSP
+JSON. The test reports `clock()` tick p50/p95/p99 plus the explicit full-reparse
+fallback ratio; those telemetry values are toolchain-local evidence, not a
+cross-platform wall-clock threshold.
+
 ## Status
 
 This module documents Plan 02 Task 5 only. Block-level reparse, diagnostic

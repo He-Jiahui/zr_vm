@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/callback.h"
@@ -17,6 +18,8 @@
 #include "zr_vm_language_server/symbol_table.h"
 
 #define TEST_JSON_CAPACITY 16384U
+#define RANDOM_EDIT_ITERATIONS 10000U
+#define RANDOM_SOURCE_CAPACITY 256U
 
 static int g_failures = 0;
 
@@ -371,6 +374,217 @@ static SZrSymbol *lookup_global_symbol(SZrState *state,
                                                 analyzer->symbolTable->globalScope);
 }
 
+static TZrUInt32 next_random(TZrUInt32 *seed) {
+    *seed = *seed * 1664525U + 1013904223U;
+    return *seed;
+}
+
+static int compare_ticks(const void *left, const void *right) {
+    TZrUInt64 leftTicks = *(const TZrUInt64 *)left;
+    TZrUInt64 rightTicks = *(const TZrUInt64 *)right;
+
+    return leftTicks < rightTicks ? -1 : (leftTicks > rightTicks ? 1 : 0);
+}
+
+static TZrBool snapshots_match_current_content(SZrState *state,
+                                               SZrLspContext *incrementalContext,
+                                               SZrString *incrementalUri,
+                                               SZrLspContext *cleanContext,
+                                               SZrString *cleanUri,
+                                               const TZrChar *expected,
+                                               TZrSize expectedLength) {
+    SZrLspSemanticSnapshot *incrementalSnapshot =
+            ZrLanguageServer_LspSemanticSnapshot_Acquire(state, incrementalContext, incrementalUri);
+    SZrLspSemanticSnapshot *cleanSnapshot =
+            ZrLanguageServer_LspSemanticSnapshot_Acquire(state, cleanContext, cleanUri);
+    TZrBool matches = incrementalSnapshot != ZR_NULL && cleanSnapshot != ZR_NULL &&
+                       ZrLanguageServer_LspSemanticSnapshot_Validate(
+                               state, incrementalContext, incrementalSnapshot) &&
+                       ZrLanguageServer_LspSemanticSnapshot_Validate(
+                               state, cleanContext, cleanSnapshot) &&
+                       ZrLanguageServer_LspSemanticSnapshot_ContentLength(incrementalSnapshot) ==
+                               expectedLength &&
+                       ZrLanguageServer_LspSemanticSnapshot_ContentLength(cleanSnapshot) ==
+                               expectedLength &&
+                       memcmp(ZrLanguageServer_LspSemanticSnapshot_Content(incrementalSnapshot),
+                              expected,
+                              expectedLength) == 0 &&
+                       memcmp(ZrLanguageServer_LspSemanticSnapshot_Content(cleanSnapshot),
+                              expected,
+                              expectedLength) == 0;
+
+    ZrLanguageServer_LspSemanticSnapshot_Release(state, incrementalSnapshot);
+    ZrLanguageServer_LspSemanticSnapshot_Release(state, cleanSnapshot);
+    return matches;
+}
+
+static TZrBool utf16_roundtrip_at_offset(const TZrChar *content,
+                                         TZrSize contentLength,
+                                         TZrSize offset) {
+    SZrFilePosition source = {0};
+    SZrLspPosition lspPosition;
+    SZrFilePosition roundTrip;
+
+    source.offset = offset;
+    lspPosition = ZrLanguageServer_LspPosition_FromFilePositionWithContent(
+            source, content, contentLength);
+    roundTrip = ZrLanguageServer_LspPosition_ToFilePositionWithContent(
+            lspPosition, content, contentLength);
+    return roundTrip.offset == offset;
+}
+
+static void test_random_utf8_utf16_incremental_differential(SZrState *state) {
+    static const TZrChar *initialContent =
+            "fn alpha(): int {\n"
+            "    // markers: \xE4\xB8\x80 \xF0\x9F\x98\x80\n"
+            "    return 1;\n"
+            "}\n"
+            "fn beta(): int { return 2; }\n";
+    static const TZrChar cjkVariants[][4] = {
+            "\xE4\xB8\x80", "\xE4\xB8\x81", "\xE4\xB8\x82", "\xE4\xB8\x83"};
+    static const TZrChar astralVariants[][5] = {
+            "\xF0\x9F\x98\x80", "\xF0\x9F\x98\x81", "\xF0\x9F\x98\x82", "\xF0\x9F\x98\x83"};
+    TZrChar content[RANDOM_SOURCE_CAPACITY];
+    TZrUInt64 ticks[RANDOM_EDIT_ITERATIONS];
+    SZrLspContext *incrementalContext = ZrLanguageServer_LspContext_New(state);
+    SZrLspContext *cleanContext = ZrLanguageServer_LspContext_New(state);
+    SZrString *incrementalUri = test_string(state, "file:///incremental-random-utf.zr");
+    SZrString *cleanUri = test_string(state, "file:///incremental-random-utf.zr");
+    TZrSize contentLength = strlen(initialContent);
+    TZrSize cjkOffset = strlen("fn alpha(): int {\n    // markers: ");
+    TZrSize astralOffset = cjkOffset + 4U;
+    TZrSize asciiOffset = cjkOffset + strlen("\xE4\xB8\x80 \xF0\x9F\x98\x80\n    return ");
+    TZrUInt32 seed = 0x5EED1234U;
+    TZrSize completed = 0U;
+    TZrSize fallbackCount = 0U;
+    TZrBool sequencePassed = ZR_TRUE;
+
+    check(contentLength + 1U <= sizeof(content) && incrementalContext != ZR_NULL &&
+                  cleanContext != ZR_NULL && incrementalUri != ZR_NULL && cleanUri != ZR_NULL,
+          "random UTF incremental differential setup must allocate fixed-size inputs and contexts");
+    if (contentLength + 1U > sizeof(content) || incrementalContext == ZR_NULL ||
+        cleanContext == ZR_NULL || incrementalUri == ZR_NULL || cleanUri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, incrementalContext);
+        ZrLanguageServer_LspContext_Free(state, cleanContext);
+        return;
+    }
+
+    memcpy(content, initialContent, contentLength + 1U);
+    cleanContext->parser->enableIncrementalParse = ZR_FALSE;
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, incrementalContext, incrementalUri, content, contentLength, 1U) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, cleanContext, cleanUri, content, contentLength, 1U)) {
+        check(ZR_FALSE, "random UTF differential baseline updates must succeed");
+        ZrLanguageServer_LspContext_Free(state, incrementalContext);
+        ZrLanguageServer_LspContext_Free(state, cleanContext);
+        return;
+    }
+
+    for (TZrSize iteration = 0U; iteration < RANDOM_EDIT_ITERATIONS; iteration++) {
+        SZrFileVersion *incrementalVersion;
+        SZrFileVersion *cleanVersion;
+        clock_t started;
+        TZrUInt32 random = next_random(&seed);
+
+        switch (random % 3U) {
+            case 0U: {
+                TZrChar next = (TZrChar)('1' + (random % 9U));
+                content[asciiOffset] = next == content[asciiOffset]
+                        ? (TZrChar)('1' + ((random + 1U) % 9U))
+                        : next;
+                break;
+            }
+            case 1U: {
+                const TZrChar *next = cjkVariants[(random >> 8U) % 4U];
+                if (memcmp(content + cjkOffset, next, 3U) == 0) {
+                    next = cjkVariants[((random >> 8U) + 1U) % 4U];
+                }
+                memcpy(content + cjkOffset, next, 3U);
+                break;
+            }
+            default: {
+                const TZrChar *next = astralVariants[(random >> 16U) % 4U];
+                if (memcmp(content + astralOffset, next, 4U) == 0) {
+                    next = astralVariants[((random >> 16U) + 1U) % 4U];
+                }
+                memcpy(content + astralOffset, next, 4U);
+                break;
+            }
+        }
+
+        started = clock();
+        if (!ZrLanguageServer_Lsp_UpdateDocument(state,
+                                                  incrementalContext,
+                                                  incrementalUri,
+                                                  content,
+                                                  contentLength,
+                                                  iteration + 2U) ||
+            !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                                  cleanContext,
+                                                  cleanUri,
+                                                  content,
+                                                  contentLength,
+                                                  iteration + 2U)) {
+            printf("FAIL: random UTF differential update failed at iteration %llu\n",
+                   (unsigned long long)iteration);
+            g_failures++;
+            sequencePassed = ZR_FALSE;
+            break;
+        }
+        ticks[completed++] = (TZrUInt64)(clock() - started);
+        incrementalVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(
+                incrementalContext->parser, incrementalUri);
+        cleanVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(
+                cleanContext->parser, cleanUri);
+        if (incrementalVersion == ZR_NULL || cleanVersion == ZR_NULL ||
+            !ast_nodes_equal(incrementalVersion->ast, cleanVersion->ast, 0U) ||
+            !snapshots_match_current_content(state,
+                                             incrementalContext,
+                                             incrementalUri,
+                                             cleanContext,
+                                             cleanUri,
+                                             content,
+                                             contentLength) ||
+            !utf16_roundtrip_at_offset(content, contentLength, cjkOffset) ||
+            !utf16_roundtrip_at_offset(content, contentLength, astralOffset)) {
+            printf("FAIL: random UTF incremental differential drift at iteration %llu\n",
+                   (unsigned long long)iteration);
+            g_failures++;
+            sequencePassed = ZR_FALSE;
+            break;
+        }
+        if (incrementalVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE) {
+            fallbackCount++;
+        }
+    }
+
+    check(sequencePassed && completed == RANDOM_EDIT_ITERATIONS,
+          "10000 random UTF-8 and UTF-16 edit sequences must not drift from clean snapshots");
+    if (completed > 0U) {
+        SZrTestJsonBuffer incrementalJson;
+        SZrTestJsonBuffer cleanJson;
+
+        qsort(ticks, completed, sizeof(ticks[0]), compare_ticks);
+        printf("LSP incremental differential telemetry: samples=%llu p50=%llu ticks p95=%llu ticks "
+               "p99=%llu ticks fallback=%llu/%llu\n",
+               (unsigned long long)completed,
+               (unsigned long long)ticks[(completed - 1U) * 50U / 100U],
+               (unsigned long long)ticks[(completed - 1U) * 95U / 100U],
+               (unsigned long long)ticks[(completed - 1U) * 99U / 100U],
+               (unsigned long long)fallbackCount,
+               (unsigned long long)completed);
+        check(capture_lsp_json(state, incrementalContext, incrementalUri, &incrementalJson) &&
+                      capture_lsp_json(state, cleanContext, cleanUri, &cleanJson) &&
+                      incrementalJson.isValid && cleanJson.isValid &&
+                      strcmp(incrementalJson.content, cleanJson.content) == 0,
+              "random UTF differential final public LSP JSON must match clean parsing");
+    }
+
+    ZrLanguageServer_LspContext_Free(state, incrementalContext);
+    ZrLanguageServer_LspContext_Free(state, cleanContext);
+}
+
 static void test_incremental_parse_matches_clean_full_parse(SZrState *state) {
     static const TZrChar *before =
             "fn alpha(): int { return 1; }\n"
@@ -488,6 +702,7 @@ int main(void) {
     ZrCore_GlobalState_InitRegistry(state, global);
 
     test_incremental_parse_matches_clean_full_parse(state);
+    test_random_utf8_utf16_incremental_differential(state);
 
     ZrCore_GlobalState_Free(global);
     printf("LSP incremental equivalence: %d failure(s)\n", g_failures);

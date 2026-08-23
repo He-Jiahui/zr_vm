@@ -405,11 +405,13 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
 - `lsp-historical-semantic-snapshots.md`
   - 每 URI 两份完整 historical semantic analyzer state 的 newest-first query
   - primary analyzer identity 保持、历史 AST 单一所有权与 scoped-cache borrowed-AST rollover 失效
+  - canonical URI 的递归 project-import dependency fence、transitive invalidation 与共享 snapshot identity
   - historical semantic state 与 cache-storage eviction 的所有权边界
 - `lsp-incremental-declaration-reparse.md`
   - `full_reparse`、`token_equivalent` 与 `declaration_reparse` 的显式 mode 合同
   - 唯一 top-level declaration 的严格替换条件，以及 block/边界不确定 edit 的 full fallback
   - declaration identity 变化后的 semantic-cache invalidation 与 canonical public-contract dependency gate
+  - 10,000 次 UTF-8/UTF-16 differential、同构 JSON 与 fallback/percentile telemetry acceptance gate
 - `lsp-workspace-semantic-cache-lru.md`
   - primary/scoped/history analyzer 的 exact cache-storage workspace LRU
   - 默认 256MiB budget、可配置 hard cap、recency、cache-only release 与公共统计

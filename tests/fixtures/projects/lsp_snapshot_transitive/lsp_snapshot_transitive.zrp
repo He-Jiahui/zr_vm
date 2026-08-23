@@ -1,0 +1,6 @@
+{
+  "name": "lsp_snapshot_transitive",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

@@ -234,18 +234,39 @@ static TZrBool snapshot_dependency_matches_current(
            isOpenDocument == dependency->isOpenDocument;
 }
 
+static TZrBool snapshot_tracks_uri(
+        const SZrLspSemanticSnapshot *snapshot,
+        SZrString *uri) {
+    if (snapshot == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (ZrLanguageServer_Lsp_StringsEqual(snapshot->uri, uri)) {
+        return ZR_TRUE;
+    }
+    for (TZrSize index = 0U; index < snapshot->dependencies.length; index++) {
+        const SZrLspSemanticSnapshotDependency *dependency =
+                (const SZrLspSemanticSnapshotDependency *)ZrCore_Array_Get(
+                        (SZrArray *)&snapshot->dependencies,
+                        index);
+        if (dependency != ZR_NULL &&
+            ZrLanguageServer_Lsp_StringsEqual(dependency->uri, uri)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static void snapshot_track_import_dependencies(
         SZrState *state,
         SZrLspContext *context,
         SZrLspSemanticSnapshot *snapshot,
+        SZrLspProjectIndex *projectIndex,
         SZrAstNode *ast) {
-    SZrLspProjectIndex *projectIndex;
     SZrArray bindings;
 
     if (state == ZR_NULL || context == ZR_NULL || snapshot == ZR_NULL || ast == ZR_NULL) {
         return;
     }
-    projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(context, snapshot->uri);
     if (projectIndex == ZR_NULL) {
         return;
     }
@@ -265,9 +286,16 @@ static void snapshot_track_import_dependencies(
         }
         record = ZrLanguageServer_LspProject_FindRecordByModuleName(
                 projectIndex, (*bindingPtr)->moduleName);
-        if (record != ZR_NULL && record->uri != ZR_NULL) {
-            (void)ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
-                    state, context, snapshot, record->uri);
+        if (record != ZR_NULL && record->uri != ZR_NULL &&
+            !snapshot_tracks_uri(snapshot, record->uri) &&
+            ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
+                    state, context, snapshot, record->uri)) {
+            SZrFileVersion *dependencyVersion =
+                    ZrLanguageServer_Lsp_GetDocumentFileVersion(context, record->uri);
+            if (dependencyVersion != ZR_NULL && dependencyVersion->ast != ZR_NULL) {
+                snapshot_track_import_dependencies(
+                        state, context, snapshot, projectIndex, dependencyVersion->ast);
+            }
         }
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
@@ -319,7 +347,12 @@ SZrLspSemanticSnapshot *ZrLanguageServer_LspSemanticSnapshot_Acquire(
             &snapshot->dependencies,
             sizeof(SZrLspSemanticSnapshotDependency),
             ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    snapshot_track_import_dependencies(state, context, snapshot, fileVersion->ast);
+    snapshot_track_import_dependencies(
+            state,
+            context,
+            snapshot,
+            ZrLanguageServer_LspProject_FindProjectForUri(context, uri),
+            fileVersion->ast);
     snapshot_refresh_fingerprint(snapshot);
     return snapshot;
 }
