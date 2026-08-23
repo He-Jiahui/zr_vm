@@ -415,6 +415,7 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
 
     declarations = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (declarations == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, libraryName);
         return ZR_NULL;
     }
 
@@ -439,11 +440,13 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
     } else if (ps->lexer->t.token == ZR_TK_EOS || ps->lexer->t.token == ZR_TK_RBRACE) {
         report_missing_declaration_body_open(ps, "extern block", get_current_token_location(ps));
         ZrParser_AstNodeArray_Free(ps->state, declarations);
+        ZrParser_Ast_Free(ps->state, libraryName);
         return ZR_NULL;
     } else {
         SZrAstNode *declaration = parse_extern_member_declaration_impl(ps);
         if (declaration == ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, declarations);
+            ZrParser_Ast_Free(ps->state, libraryName);
             return ZR_NULL;
         }
         ZrParser_AstNodeArray_Add(ps->state, declarations, declaration);
@@ -451,7 +454,11 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
 
     node = create_ast_node(ps, ZR_AST_EXTERN_BLOCK, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
     if (node == ZR_NULL) {
+        for (TZrSize index = 0; index < declarations->count; index++) {
+            ZrParser_Ast_Free(ps->state, declarations->nodes[index]);
+        }
         ZrParser_AstNodeArray_Free(ps->state, declarations);
+        ZrParser_Ast_Free(ps->state, libraryName);
         return ZR_NULL;
     }
 

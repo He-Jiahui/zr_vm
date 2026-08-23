@@ -148,6 +148,15 @@ destructor owns them. `break`/`continue`, `throw`, and `out` statement nodes als
 own and release their optional expression children.
 
 Diagnostic tests do not require every syntax error to produce a recovery AST.
+
+Declaration nodes retain the same recursive ownership rule. Extern blocks own
+their library literal and declaration array; extern functions and delegates own
+their identifiers, parameters, variadic parameter, return type, and decorators.
+Enum, interface, compile-time, and generator nodes likewise release every owned
+child through `ZrParser_Ast_Free`. A compile-time `selectedBranch` is a borrowed
+alias into its declaration expression and is not freed separately. Extern parse
+failures release the already parsed library literal and any partial declaration
+array before returning no AST.
 They assert the diagnostic and exact source range, then release a recovery AST
 only when the parser can construct one safely. This keeps fail-closed parser
 paths valid without weakening diagnostic coverage.

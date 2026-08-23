@@ -122,6 +122,36 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             free_owned_type(state, var->typeInfo);
             break;
         }
+        case ZR_AST_COMPILE_TIME_DECLARATION: {
+            ZrParser_Ast_Free(state, node->data.compileTimeDeclaration.declaration);
+            break;
+        }
+        case ZR_AST_EXTERN_BLOCK: {
+            SZrExternBlock *externBlock = &node->data.externBlock;
+            ZrParser_Ast_Free(state, externBlock->libraryName);
+            free_ast_node_array_with_elements(state, externBlock->declarations);
+            break;
+        }
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
+            SZrExternFunctionDeclaration *declaration =
+                    &node->data.externFunctionDeclaration;
+            free_identifier_node_from_ptr(state, declaration->name);
+            free_ast_node_array_with_elements(state, declaration->params);
+            free_parameter_node_from_ptr(state, declaration->args);
+            free_owned_type(state, declaration->returnType);
+            free_ast_node_array_with_elements(state, declaration->decorators);
+            break;
+        }
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
+            SZrExternDelegateDeclaration *declaration =
+                    &node->data.externDelegateDeclaration;
+            free_identifier_node_from_ptr(state, declaration->name);
+            free_ast_node_array_with_elements(state, declaration->params);
+            free_parameter_node_from_ptr(state, declaration->args);
+            free_owned_type(state, declaration->returnType);
+            free_ast_node_array_with_elements(state, declaration->decorators);
+            break;
+        }
         case ZR_AST_STRUCT_DECLARATION: {
             SZrStructDeclaration *decl = &node->data.structDeclaration;
             free_identifier_node_from_ptr(state, decl->name);
@@ -137,6 +167,61 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             free_ast_node_array_with_elements(state, decl->inherits);
             free_ast_node_array_with_elements(state, decl->members);
             free_ast_node_array_with_elements(state, decl->decorators);
+            break;
+        }
+        case ZR_AST_ENUM_DECLARATION: {
+            SZrEnumDeclaration *declaration = &node->data.enumDeclaration;
+            free_identifier_node_from_ptr(state, declaration->name);
+            free_owned_type(state, declaration->baseType);
+            free_ast_node_array_with_elements(state, declaration->members);
+            free_ast_node_array_with_elements(state, declaration->decorators);
+            break;
+        }
+        case ZR_AST_ENUM_MEMBER: {
+            SZrEnumMember *member = &node->data.enumMember;
+            free_identifier_node_from_ptr(state, member->name);
+            ZrParser_Ast_Free(state, member->value);
+            free_ast_node_array_with_elements(state, member->decorators);
+            break;
+        }
+        case ZR_AST_INTERFACE_DECLARATION: {
+            SZrInterfaceDeclaration *declaration = &node->data.interfaceDeclaration;
+            free_identifier_node_from_ptr(state, declaration->name);
+            free_generic_declaration(state, declaration->generic);
+            free_ast_node_array_with_elements(state, declaration->inherits);
+            free_ast_node_array_with_elements(state, declaration->members);
+            break;
+        }
+        case ZR_AST_INTERFACE_FIELD_DECLARATION: {
+            SZrInterfaceFieldDeclaration *field =
+                    &node->data.interfaceFieldDeclaration;
+            free_identifier_node_from_ptr(state, field->name);
+            free_owned_type(state, field->typeInfo);
+            break;
+        }
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE: {
+            SZrInterfaceMethodSignature *method =
+                    &node->data.interfaceMethodSignature;
+            free_identifier_node_from_ptr(state, method->name);
+            free_generic_declaration(state, method->generic);
+            free_ast_node_array_with_elements(state, method->params);
+            free_parameter_node_from_ptr(state, method->args);
+            free_owned_type(state, method->returnType);
+            break;
+        }
+        case ZR_AST_INTERFACE_PROPERTY_SIGNATURE: {
+            SZrInterfacePropertySignature *property =
+                    &node->data.interfacePropertySignature;
+            free_identifier_node_from_ptr(state, property->name);
+            free_owned_type(state, property->typeInfo);
+            break;
+        }
+        case ZR_AST_INTERFACE_META_SIGNATURE: {
+            SZrInterfaceMetaSignature *meta = &node->data.interfaceMetaSignature;
+            free_identifier_node_from_ptr(state, meta->meta);
+            free_ast_node_array_with_elements(state, meta->params);
+            free_parameter_node_from_ptr(state, meta->args);
+            free_owned_type(state, meta->returnType);
             break;
         }
         case ZR_AST_UNION_DECLARATION: {
@@ -717,6 +802,10 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
                                               sizeof(SZrArray),
                                               ZR_MEMORY_NATIVE_TYPE_ARRAY);
             }
+            break;
+        }
+        case ZR_AST_GENERATOR_EXPRESSION: {
+            ZrParser_Ast_Free(state, node->data.generatorExpression.block);
             break;
         }
         case ZR_AST_FUNCTION_TYPE: {
