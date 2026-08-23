@@ -448,6 +448,7 @@ function createWorkspaceLatencyFixture() {
 
     return {
         rootPath,
+        rootUri: pathToFileURL(rootPath).toString(),
         projectUri: pathToFileURL(projectPath).toString(),
         targetUri: pathToFileURL(targetPath).toString(),
         targetText,
@@ -1019,6 +1020,13 @@ async function main() {
     const initializeResult = await client.request('initialize', {
         processId: null,
         rootUri: null,
+        workspaceFolders: [
+            { uri: pathToFileURL(watchedFixture.rootPath).toString(), name: 'watched' },
+            { uri: pathToFileURL(watchedBinaryFixture.rootPath).toString(), name: 'binary-metadata' },
+            { uri: pathToFileURL(importDiagnosticsFixture.rootPath).toString(), name: 'import-diagnostics' },
+            { uri: pathToFileURL(fileOperationsFixture.rootPath).toString(), name: 'file-operations' },
+            { uri: pathToFileURL(moduleIdentityRenameFixture.rootPath).toString(), name: 'module-rename' },
+        ],
         capabilities: {},
         clientInfo: {
             name: 'stdio-smoke',
@@ -2315,6 +2323,12 @@ async function main() {
         diagnosticsLatencyClosed.diagnostics.length === 0,
     'warm diagnostics fixture didClose must clear diagnostics');
 
+    client.notify('workspace/didChangeWorkspaceFolders', {
+        event: {
+            added: [{ uri: workspaceLatencyFixture.rootUri, name: 'workspace-latency' }],
+            removed: [],
+        },
+    });
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [
             { uri: workspaceLatencyFixture.projectUri, type: 1 },
@@ -2646,8 +2660,11 @@ async function main() {
         organizeImportAction.data.snapshot.isOpenDocument === true &&
         Number.isInteger(organizeImportAction.data.snapshot.contentGeneration) &&
         Number.isInteger(organizeImportAction.data.snapshot.contentLength) &&
-        /^[0-9a-f]{16}$/.test(organizeImportAction.data.snapshot.contentHash),
-    'textDocument/codeAction must attach exact version-zero snapshot resolve data');
+        /^[0-9a-f]{16}$/.test(organizeImportAction.data.snapshot.contentHash) &&
+        organizeImportAction.data.snapshot.semanticIdentity &&
+        Object.values(organizeImportAction.data.snapshot.semanticIdentity)
+            .every((value) => typeof value === 'string' && /^[0-9a-f]{16}$/.test(value)),
+    'textDocument/codeAction must attach exact version-zero semantic snapshot resolve data');
     const resolvedOrganizeImportAction = await client.request('codeAction/resolve', organizeImportAction);
     assert(resolvedOrganizeImportAction &&
         resolvedOrganizeImportAction.title === organizeImportAction.title &&
@@ -3699,11 +3716,33 @@ async function main() {
     assert(Array.isArray(watchedDeleteDiagnostics.diagnostics) && watchedDeleteDiagnostics.diagnostics.length === 0,
         'workspace/didChangeWatchedFiles project delete must clear diagnostics');
 
+    const watchedSharedSymbols = await client.request('workspace/symbol', {
+        query: 'watched_after_refresh',
+    });
+    assert(Array.isArray(watchedSharedSymbols) && watchedSharedSymbols.some((item) =>
+        item && item.location && diagnosticRelatedUriMatches(watchedFixture.mainUri, item.location.uri) &&
+        item.name === 'watched_after_refresh'),
+    'workspace/didChangeWatchedFiles delete must retain a source still indexed by another project');
+
+    fs.unlinkSync(zrpLinksPath);
+    client.notify('workspace/didChangeWatchedFiles', {
+        changes: [
+            { uri: zrpLinksUri, type: 3 },
+        ],
+    });
+    const linkedPathsDeleteDiagnostics = await waitForDiagnosticsUri(
+        client,
+        zrpLinksUri,
+        'workspace/didChangeWatchedFiles shared project delete diagnostics uri mismatch');
+    assert(Array.isArray(linkedPathsDeleteDiagnostics.diagnostics) &&
+        linkedPathsDeleteDiagnostics.diagnostics.length === 0,
+    'workspace/didChangeWatchedFiles shared project delete must clear diagnostics');
+
     const watchedDeletedSymbols = await client.request('workspace/symbol', {
         query: 'watched_after_refresh',
     });
     assert(Array.isArray(watchedDeletedSymbols) && watchedDeletedSymbols.length === 0,
-        'workspace/didChangeWatchedFiles delete must clear the removed project index');
+        'workspace/didChangeWatchedFiles delete must clear the final project index');
 
     const willCreateFiles = await client.request('workspace/willCreateFiles', {
         files: [
@@ -3992,7 +4031,7 @@ async function main() {
             semanticTokenTypes.indexOf('property'),
             0),
     'semanticTokens/full must not infer an unresolved member token from punctuation');
-    const staleSemanticResultId = `zr-semantic:${semanticTokens.data.length}:stale`;
+    const staleSemanticResultId = `zr-snapshot:0000000000000000:${semanticTokens.data.length}`;
     const semanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
         textDocument: { uri: docsUri },
         previousResultId: staleSemanticResultId,

@@ -4532,6 +4532,18 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             COMMAND $<TARGET_FILE:zr_vm_language_server_lsp_capability_registry_test>
     )
     zr_vm_add_support_target(
+            zr_vm_language_server_lsp_semantic_snapshot_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_semantic_snapshot.c
+    )
+    target_include_directories(zr_vm_language_server_lsp_semantic_snapshot_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+    )
+    zr_vm_link_language_server(zr_vm_language_server_lsp_semantic_snapshot_test)
+    add_test(
+            NAME language_server_lsp_semantic_snapshot
+            COMMAND $<TARGET_FILE:zr_vm_language_server_lsp_semantic_snapshot_test>
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_stdio_server_lifecycle_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_stdio_server_lifecycle.c
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/stdio/stdio_server.c

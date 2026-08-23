@@ -1,31 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
-#define ZR_LSP_SEMANTIC_RESULT_HASH_OFFSET 1469598103934665603ULL
-#define ZR_LSP_SEMANTIC_RESULT_HASH_PRIME 1099511628211ULL
-
-static unsigned long long semantic_tokens_hash(SZrArray *tokens) {
-    unsigned long long hash = ZR_LSP_SEMANTIC_RESULT_HASH_OFFSET;
-
-    for (TZrSize index = 0; tokens != ZR_NULL && index < tokens->length; index++) {
-        TZrUInt32 value = semantic_tokens_value_at(tokens, index);
-
-        for (TZrSize byteIndex = 0; byteIndex < sizeof(TZrUInt32); byteIndex++) {
-            hash ^= (unsigned long long)((value >> (byteIndex * 8U)) & 0xffU);
-            hash *= ZR_LSP_SEMANTIC_RESULT_HASH_PRIME;
-        }
-    }
-
-    return hash;
-}
-
-void format_semantic_tokens_result_id(SZrArray *tokens, char *buffer, size_t bufferLength) {
-    snprintf(buffer,
-             bufferLength,
-             "zr-semantic:%u:%llx",
-             (unsigned int)(tokens != ZR_NULL ? tokens->length : 0),
-             semantic_tokens_hash(tokens));
-}
-
 TZrUInt32 semantic_tokens_value_at(SZrArray *tokens, TZrSize index) {
     TZrUInt32 *valuePtr;
 

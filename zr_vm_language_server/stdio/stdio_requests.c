@@ -289,12 +289,35 @@ static TZrBool send_lifecycle_request_error(SZrStdioServer *server, const cJSON 
     return ZR_TRUE;
 }
 
+static SZrLspSemanticSnapshot *stdio_request_acquire_semantic_snapshot(SZrStdioServer *server,
+                                                                         const cJSON *params) {
+    const char *uriText;
+    SZrString *uri;
+
+    if (server == ZR_NULL || server->state == ZR_NULL || server->context == ZR_NULL ||
+        !get_uri_from_text_document(server, params, &uriText, &uri)) {
+        return ZR_NULL;
+    }
+    ZR_UNUSED_PARAMETER(uriText);
+    return ZrLanguageServer_LspSemanticSnapshot_Acquire(server->state, server->context, uri);
+}
+
+static void stdio_request_release_semantic_snapshot(SZrStdioServer *server,
+                                                     SZrLspSemanticSnapshot *snapshot) {
+    if (server == ZR_NULL) {
+        return;
+    }
+    ZrLanguageServer_LspSemanticSnapshot_SetActive(server->context, ZR_NULL);
+    ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
+}
+
 void handle_request_message(SZrStdioServer *server,
                             const cJSON *id,
                             const char *method,
                             const cJSON *params) {
     cJSON *result = NULL;
     EZrLspHandlerStatus handlerStatus = ZR_LSP_HANDLER_OK;
+    SZrLspSemanticSnapshot *semanticSnapshot = ZR_NULL;
 
     if (server == ZR_NULL || id == NULL || method == NULL) {
         return;
@@ -346,15 +369,41 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
+    semanticSnapshot = stdio_request_acquire_semantic_snapshot(server, params);
+    ZrLanguageServer_LspSemanticSnapshot_SetActive(server->context, semanticSnapshot);
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(
             server->context, stdio_active_request_cancellation_check, server);
     if (!dispatch_request_method(server, method, params, &result, &handlerStatus)) {
         ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
         stdio_request_progress_end(server);
         if (send_active_request_lifecycle_error(server, id)) {
+            stdio_request_release_semantic_snapshot(server, semanticSnapshot);
             return;
         }
+        stdio_request_release_semantic_snapshot(server, semanticSnapshot);
         send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
+        return;
+    }
+    ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
+
+    if (send_active_request_lifecycle_error(server, id)) {
+        stdio_request_progress_end(server);
+        cJSON_Delete(result);
+        stdio_request_release_semantic_snapshot(server, semanticSnapshot);
+        return;
+    }
+    if (handlerStatus == ZR_LSP_HANDLER_OK && semanticSnapshot != ZR_NULL &&
+        !ZrLanguageServer_LspSemanticSnapshot_Validate(server->state, server->context, semanticSnapshot)) {
+        if (send_active_request_lifecycle_error(server, id)) {
+            stdio_request_progress_end(server);
+            cJSON_Delete(result);
+            stdio_request_release_semantic_snapshot(server, semanticSnapshot);
+            return;
+        }
+        stdio_request_progress_end(server);
+        cJSON_Delete(result);
+        stdio_request_release_semantic_snapshot(server, semanticSnapshot);
+        send_error_response(id, ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE, "Content modified");
         return;
     }
     if (handlerStatus == ZR_LSP_HANDLER_OK &&
@@ -363,13 +412,7 @@ void handle_request_message(SZrStdioServer *server,
                                 ? ZR_LSP_HANDLER_CANCELLED
                                 : ZR_LSP_HANDLER_INTERNAL_ERROR;
     }
-    ZrLanguageServer_LspContext_SetRequestCancellationCheck(server->context, ZR_NULL, ZR_NULL);
-
-    if (send_active_request_lifecycle_error(server, id)) {
-        stdio_request_progress_end(server);
-        cJSON_Delete(result);
-        return;
-    }
+    stdio_request_release_semantic_snapshot(server, semanticSnapshot);
 
     if (handlerStatus == ZR_LSP_HANDLER_INVALID_PARAMS) {
         stdio_request_progress_end(server);

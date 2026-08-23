@@ -236,7 +236,6 @@ TZrSize parse_size_value(const cJSON *json, TZrSize fallback);
 cJSON *handle_inlay_hint_resolve_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_workspace_symbol_resolve_request(SZrStdioServer *server, const cJSON *params);
 cJSON *create_semantic_token_legend_json(void);
-void format_semantic_tokens_result_id(SZrArray *tokens, char *buffer, size_t bufferLength);
 TZrUInt32 semantic_tokens_value_at(SZrArray *tokens, TZrSize index);
 SZrSemanticTokenSnapshot *find_semantic_token_snapshot(SZrStdioServer *server, const char *uriText);
 TZrBool upsert_semantic_token_snapshot(SZrStdioServer *server,

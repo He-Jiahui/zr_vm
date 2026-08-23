@@ -8,6 +8,7 @@
 #include "zr_vm_language_server/conf.h"
 #include "zr_vm_language_server/semantic_analyzer.h"
 #include "zr_vm_language_server/incremental_parser.h"
+#include "zr_vm_language_server/lsp_semantic_snapshot.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/array.h"
@@ -204,6 +205,8 @@ typedef struct SZrLspContext {
     TZrChar *clientSelectedZrpNativePath; /*!< IDE 选中的 .zrp 绝对路径（原生路径，可为 ZR_NULL） */
     FZrLspRequestCancellationCheck requestCancellationCheck;
     void *requestCancellationUserData;
+    TZrUInt64 semanticSnapshotProviderGeneration;
+    SZrLspSemanticSnapshot *activeSemanticSnapshot;
 } SZrLspContext;
 
 typedef struct SZrLspHistoricalSemanticSnapshot {

@@ -12,6 +12,8 @@ typedef struct SZrLspWorkspaceEditDocumentSnapshot {
     TZrSize version;
     TZrSize contentGeneration;
     TZrBool isOpenDocument;
+    SZrLspSemanticSnapshotIdentity semanticIdentity;
+    TZrBool hasSemanticIdentity;
 } SZrLspWorkspaceEditDocumentSnapshot;
 #endif
 

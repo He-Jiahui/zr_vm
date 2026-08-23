@@ -48,8 +48,9 @@ cJSON *serialize_semantic_tokens_result(SZrArray *tokens, const char *resultId) 
 TZrSize semantic_tokens_previous_result_length(const cJSON *params) {
     const cJSON *previousResultId = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID);
     const char *text;
-    const char *prefix = "zr-semantic:";
+    const char *prefix = "zr-snapshot:";
     size_t prefixLength = strlen(prefix);
+    const char *lengthText;
 
     if (!cJSON_IsString((cJSON *)previousResultId)) {
         return 0;
@@ -60,7 +61,8 @@ TZrSize semantic_tokens_previous_result_length(const cJSON *params) {
         return 0;
     }
 
-    return (TZrSize)strtoul(text + prefixLength, NULL, 10);
+    lengthText = strrchr(text + prefixLength, ':');
+    return lengthText != NULL ? (TZrSize)strtoull(lengthText + 1, NULL, 10) : 0;
 }
 
 cJSON *serialize_semantic_tokens_delta_result(SZrArray *tokens,

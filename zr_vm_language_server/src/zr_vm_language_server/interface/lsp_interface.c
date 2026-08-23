@@ -55,6 +55,7 @@ static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
                                                   SZrSymbol *symbol,
                                                   SZrString *uri);
 static TZrBool lsp_project_has_indexed_record_for_uri(SZrLspContext *context, SZrString *uri);
+static TZrBool lsp_document_is_open_overlay(SZrLspContext *context, SZrString *uri);
 static TZrBool lsp_is_identifier_char(TZrChar value);
 static TZrBool lsp_position_is_identifier_char(SZrLspContext *context,
                                                SZrString *uri,
@@ -333,6 +334,17 @@ static TZrBool lsp_project_has_indexed_record_for_uri(SZrLspContext *context, SZ
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool lsp_document_is_open_overlay(SZrLspContext *context, SZrString *uri) {
+    SZrFileVersion *fileVersion;
+
+    if (context == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    return fileVersion != ZR_NULL && fileVersion->isOpenDocument;
 }
 
 static TZrBool lsp_is_identifier_char(TZrChar value) {
@@ -932,6 +944,8 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
                       sizeof(SZrLspProjectIndex *),
                       ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY);
     context->workspace = ZrLanguageServer_LspWorkspace_New(state);
+    context->semanticSnapshotProviderGeneration = 1U;
+    context->activeSemanticSnapshot = ZR_NULL;
     context->clientSelectedZrpNativePath = ZR_NULL;
     context->requestCancellationCheck = ZR_NULL;
     context->requestCancellationUserData = ZR_NULL;
@@ -1125,6 +1139,10 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspCo
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
+    }
+    if (context->activeSemanticSnapshot != ZR_NULL) {
+        (void)ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
+                state, context, context->activeSemanticSnapshot, uri);
     }
 
     ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
@@ -2257,9 +2275,11 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
             if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
                 return ZR_FALSE;
             }
-            if (pair->key.type != ZR_VALUE_TYPE_NULL &&
+            if (pair->key.type == ZR_VALUE_TYPE_NULL ||
                 lsp_project_has_indexed_record_for_uri(context,
-                                                       (SZrString *)ZrCore_Value_GetRawObject(&pair->key))) {
+                                                       (SZrString *)ZrCore_Value_GetRawObject(&pair->key)) ||
+                !lsp_document_is_open_overlay(context,
+                                              (SZrString *)ZrCore_Value_GetRawObject(&pair->key))) {
                 pair = pair->next;
                 continue;
             }

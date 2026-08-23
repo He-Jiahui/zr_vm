@@ -45,6 +45,29 @@ static TZrBool parse_code_action_snapshot_hash(
     return ZR_TRUE;
 }
 
+static TZrBool parse_code_action_semantic_identity(
+        const cJSON *json,
+        SZrLspSemanticSnapshotIdentity *outIdentity) {
+    if (!cJSON_IsObject((cJSON *)json) || outIdentity == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    return parse_code_action_snapshot_hash(
+                   get_object_item(json, ZR_LSP_FIELD_DOCUMENT_GENERATION),
+                   &outIdentity->documentGeneration) &&
+           parse_code_action_snapshot_hash(
+                   get_object_item(json, ZR_LSP_FIELD_PROJECT_GENERATION),
+                   &outIdentity->projectGeneration) &&
+           parse_code_action_snapshot_hash(
+                   get_object_item(json, ZR_LSP_FIELD_PROVIDER_GENERATION),
+                   &outIdentity->providerGeneration) &&
+           parse_code_action_snapshot_hash(
+                   get_object_item(json, ZR_LSP_FIELD_SEMANTIC_GENERATION),
+                   &outIdentity->semanticGeneration) &&
+           parse_code_action_snapshot_hash(
+                   get_object_item(json, ZR_LSP_FIELD_DEPENDENCY_FINGERPRINT),
+                   &outIdentity->dependencyFingerprint);
+}
+
 static TZrBool parse_code_action_document_snapshot(
         SZrStdioServer *server,
         const cJSON *params,
@@ -53,6 +76,7 @@ static TZrBool parse_code_action_document_snapshot(
     const cJSON *uriJson;
     const cJSON *snapshotJson;
     const cJSON *isOpenDocumentJson;
+    const cJSON *semanticIdentityJson;
 
     if (server == ZR_NULL || outSnapshot == ZR_NULL) {
         return ZR_FALSE;
@@ -73,20 +97,32 @@ static TZrBool parse_code_action_document_snapshot(
     outSnapshot->isOpenDocument = cJSON_IsTrue((cJSON *)isOpenDocumentJson)
                                       ? ZR_TRUE
                                       : ZR_FALSE;
-    return outSnapshot->uri != ZR_NULL &&
-           parse_code_action_snapshot_hash(
-                   get_object_item(snapshotJson, ZR_LSP_FIELD_CONTENT_HASH),
-                   &outSnapshot->contentHash) &&
-           parse_code_action_snapshot_size(
-                   get_object_item(snapshotJson, ZR_LSP_FIELD_CONTENT_LENGTH),
-                   &outSnapshot->contentLength) &&
-           parse_code_action_snapshot_size(
-                   get_object_item(snapshotJson, ZR_LSP_FIELD_VERSION),
-                   &outSnapshot->version) &&
-           parse_code_action_snapshot_size(
-                   get_object_item(
-                           snapshotJson, ZR_LSP_FIELD_CONTENT_GENERATION),
-                   &outSnapshot->contentGeneration);
+    if (outSnapshot->uri == ZR_NULL ||
+        !parse_code_action_snapshot_hash(
+                get_object_item(snapshotJson, ZR_LSP_FIELD_CONTENT_HASH),
+                &outSnapshot->contentHash) ||
+        !parse_code_action_snapshot_size(
+                get_object_item(snapshotJson, ZR_LSP_FIELD_CONTENT_LENGTH),
+                &outSnapshot->contentLength) ||
+        !parse_code_action_snapshot_size(
+                get_object_item(snapshotJson, ZR_LSP_FIELD_VERSION),
+                &outSnapshot->version) ||
+        !parse_code_action_snapshot_size(
+                get_object_item(snapshotJson, ZR_LSP_FIELD_CONTENT_GENERATION),
+                &outSnapshot->contentGeneration)) {
+        return ZR_FALSE;
+    }
+
+    semanticIdentityJson = get_object_item(snapshotJson, ZR_LSP_FIELD_SEMANTIC_IDENTITY);
+    if (semanticIdentityJson == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!parse_code_action_semantic_identity(
+                semanticIdentityJson, &outSnapshot->semanticIdentity)) {
+        return ZR_FALSE;
+    }
+    outSnapshot->hasSemanticIdentity = ZR_TRUE;
+    return ZR_TRUE;
 }
 
 static cJSON *disable_stale_code_action(const cJSON *params) {

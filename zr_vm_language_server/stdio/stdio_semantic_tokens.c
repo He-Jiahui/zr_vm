@@ -8,24 +8,37 @@ static cJSON *create_semantic_tokens_response(SZrStdioServer *server,
     SZrArray tokens = {0};
     cJSON *result;
     char resultId[64];
+    SZrLspSemanticSnapshot *snapshot;
+    TZrBool ownsSnapshot = ZR_FALSE;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
         return NULL;
     }
 
+    snapshot = ZrLanguageServer_LspSemanticSnapshot_GetActive(server->context);
+    if (snapshot == ZR_NULL) {
+        snapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(server->state, server->context, uri);
+        ownsSnapshot = ZR_TRUE;
+    }
     ZrCore_Array_Init(server->state, &tokens, sizeof(TZrUInt32), ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(server->state, server->context, uri, &tokens)) {
         ZrCore_Array_Free(server->state, &tokens);
+        if (ownsSnapshot) {
+            ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
+        }
         return cJSON_CreateNull();
     }
 
-    format_semantic_tokens_result_id(&tokens, resultId, sizeof(resultId));
+    ZrLanguageServer_LspSemanticSnapshot_FormatResultId(snapshot, tokens.length, resultId, sizeof(resultId));
     result = range != ZR_NULL ? serialize_semantic_tokens_range_result(&tokens, *range)
                               : serialize_semantic_tokens_result(&tokens, resultId);
     if (range == ZR_NULL && result != NULL) {
         upsert_semantic_token_snapshot(server, uriText, resultId, &tokens);
     }
     ZrCore_Array_Free(server->state, &tokens);
+    if (ownsSnapshot) {
+        ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
+    }
     return result != NULL ? result : cJSON_CreateNull();
 }
 
@@ -43,11 +56,18 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
     SZrSemanticTokenSnapshot *previousSnapshot;
     cJSON *result;
     char resultId[64];
+    SZrLspSemanticSnapshot *snapshot;
+    TZrBool ownsSnapshot = ZR_FALSE;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
         return NULL;
     }
 
+    snapshot = ZrLanguageServer_LspSemanticSnapshot_GetActive(server->context);
+    if (snapshot == ZR_NULL) {
+        snapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(server->state, server->context, uri);
+        ownsSnapshot = ZR_TRUE;
+    }
     previousResultIdJson = get_object_item(params, ZR_LSP_FIELD_PREVIOUS_RESULT_ID);
     if (cJSON_IsString((cJSON *)previousResultIdJson)) {
         previousResultIdText = cJSON_GetStringValue((cJSON *)previousResultIdJson);
@@ -56,10 +76,13 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
     ZrCore_Array_Init(server->state, &tokens, sizeof(TZrUInt32), ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     if (!ZrLanguageServer_Lsp_GetSemanticTokens(server->state, server->context, uri, &tokens)) {
         ZrCore_Array_Free(server->state, &tokens);
+        if (ownsSnapshot) {
+            ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
+        }
         return cJSON_CreateNull();
     }
 
-    format_semantic_tokens_result_id(&tokens, resultId, sizeof(resultId));
+    ZrLanguageServer_LspSemanticSnapshot_FormatResultId(snapshot, tokens.length, resultId, sizeof(resultId));
     previousSnapshot = find_semantic_token_snapshot(server, uriText);
     result =
         serialize_semantic_tokens_delta_result(&tokens, previousLength, previousResultIdText, previousSnapshot, resultId);
@@ -67,6 +90,9 @@ cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const c
         upsert_semantic_token_snapshot(server, uriText, resultId, &tokens);
     }
     ZrCore_Array_Free(server->state, &tokens);
+    if (ownsSnapshot) {
+        ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
+    }
     return result != NULL ? result : cJSON_CreateNull();
 }
 

@@ -58,6 +58,57 @@ static cJSON *serialize_versioned_document_change(const char *uriText,
     return documentChange;
 }
 
+static TZrBool serialize_snapshot_u64(
+        cJSON *json,
+        const char *fieldName,
+        TZrUInt64 value) {
+    char text[17];
+
+    if (json == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    snprintf(text, sizeof(text), "%016" PRIx64, (uint64_t)value);
+    return cJSON_AddStringToObject(json, fieldName, text) ? ZR_TRUE : ZR_FALSE;
+}
+
+static TZrBool serialize_snapshot_semantic_identity(
+        cJSON *json,
+        const SZrLspSemanticSnapshotIdentity *identity) {
+    cJSON *semanticIdentity;
+
+    if (json == ZR_NULL || identity == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    semanticIdentity = cJSON_CreateObject();
+    if (semanticIdentity == ZR_NULL ||
+        !serialize_snapshot_u64(
+                semanticIdentity,
+                ZR_LSP_FIELD_DOCUMENT_GENERATION,
+                identity->documentGeneration) ||
+        !serialize_snapshot_u64(
+                semanticIdentity,
+                ZR_LSP_FIELD_PROJECT_GENERATION,
+                identity->projectGeneration) ||
+        !serialize_snapshot_u64(
+                semanticIdentity,
+                ZR_LSP_FIELD_PROVIDER_GENERATION,
+                identity->providerGeneration) ||
+        !serialize_snapshot_u64(
+                semanticIdentity,
+                ZR_LSP_FIELD_SEMANTIC_GENERATION,
+                identity->semanticGeneration) ||
+        !serialize_snapshot_u64(
+                semanticIdentity,
+                ZR_LSP_FIELD_DEPENDENCY_FINGERPRINT,
+                identity->dependencyFingerprint) ||
+        !cJSON_AddItemToObject(
+                json, ZR_LSP_FIELD_SEMANTIC_IDENTITY, semanticIdentity)) {
+        cJSON_Delete(semanticIdentity);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 static cJSON *serialize_workspace_edit_document_snapshot(
         const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot) {
     cJSON *json;
@@ -95,6 +146,12 @@ static cJSON *serialize_workspace_edit_document_snapshot(
     cJSON_AddBoolToObject(json,
                           ZR_LSP_FIELD_IS_OPEN_DOCUMENT,
                           documentSnapshot->isOpenDocument ? 1 : 0);
+    if (documentSnapshot->hasSemanticIdentity &&
+        !serialize_snapshot_semantic_identity(
+                json, &documentSnapshot->semanticIdentity)) {
+        cJSON_Delete(json);
+        return ZR_NULL;
+    }
     return json;
 }
 

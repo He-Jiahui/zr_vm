@@ -5,6 +5,40 @@
 
 #include <string.h>
 
+static void workspace_edit_capture_semantic_identity(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrString *uri,
+        SZrLspWorkspaceEditDocumentSnapshot *outSnapshot) {
+    SZrLspSemanticSnapshot *semanticSnapshot;
+    const SZrLspSemanticSnapshotIdentity *identity;
+
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || outSnapshot == ZR_NULL) {
+        return;
+    }
+    semanticSnapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(state, context, uri);
+    if (semanticSnapshot == ZR_NULL) {
+        return;
+    }
+    identity = ZrLanguageServer_LspSemanticSnapshot_GetIdentity(semanticSnapshot);
+    if (identity != ZR_NULL) {
+        outSnapshot->semanticIdentity = *identity;
+        outSnapshot->hasSemanticIdentity = ZR_TRUE;
+    }
+    ZrLanguageServer_LspSemanticSnapshot_Release(state, semanticSnapshot);
+}
+
+static TZrBool workspace_edit_semantic_identities_equal(
+        const SZrLspSemanticSnapshotIdentity *left,
+        const SZrLspSemanticSnapshotIdentity *right) {
+    return left != ZR_NULL && right != ZR_NULL &&
+           left->documentGeneration == right->documentGeneration &&
+           left->projectGeneration == right->projectGeneration &&
+           left->providerGeneration == right->providerGeneration &&
+           left->semanticGeneration == right->semanticGeneration &&
+           left->dependencyFingerprint == right->dependencyFingerprint;
+}
+
 static TZrBool workspace_edit_capture_disk_snapshot(
         SZrState *state,
         SZrLspContext *context,
@@ -55,6 +89,7 @@ static TZrBool workspace_edit_capture_disk_snapshot(
         outSnapshot->contentHash = contentHash;
         outSnapshot->contentLength = contentLength;
         outSnapshot->isOpenDocument = ZR_FALSE;
+        workspace_edit_capture_semantic_identity(state, context, uri, outSnapshot);
     }
     ZrCore_Memory_RawFreeWithType(
             state->global,
@@ -99,6 +134,7 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
     outSnapshot->version = contentSnapshot.version;
     outSnapshot->contentGeneration = contentSnapshot.contentGeneration;
     outSnapshot->isOpenDocument = ZR_TRUE;
+    workspace_edit_capture_semantic_identity(state, context, uri, outSnapshot);
     ZrLanguageServer_FileVersionContentSnapshot_Free(
             state, &contentSnapshot);
     return ZR_TRUE;
@@ -116,10 +152,14 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
         return ZR_FALSE;
     }
     return current.isOpenDocument == documentSnapshot->isOpenDocument &&
-           current.contentHash == documentSnapshot->contentHash &&
-           current.contentLength == documentSnapshot->contentLength &&
-           current.version == documentSnapshot->version &&
-           current.contentGeneration == documentSnapshot->contentGeneration;
+            current.contentHash == documentSnapshot->contentHash &&
+            current.contentLength == documentSnapshot->contentLength &&
+            current.version == documentSnapshot->version &&
+            current.contentGeneration == documentSnapshot->contentGeneration &&
+            current.hasSemanticIdentity == documentSnapshot->hasSemanticIdentity &&
+            (!current.hasSemanticIdentity ||
+             workspace_edit_semantic_identities_equal(
+                     &current.semanticIdentity, &documentSnapshot->semanticIdentity));
 }
 
 const SZrLspWorkspaceEditDocumentSnapshot *

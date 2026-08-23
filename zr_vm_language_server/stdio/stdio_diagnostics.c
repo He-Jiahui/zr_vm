@@ -71,41 +71,27 @@ void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
 }
 
 static void build_diagnostic_result_id(SZrStdioServer *server,
-                                       SZrString *uri,
-                                       char *buffer,
-                                       size_t bufferSize) {
-    SZrFileVersion *fileVersion;
-    SZrFileVersionContentSnapshot snapshot = {0};
-    const TZrChar *content;
-    unsigned long long hash = 1469598103934665603ULL;
-    TZrSize version = 0;
-    TZrSize length = 0;
+                                        SZrString *uri,
+                                        char *buffer,
+                                        size_t bufferSize) {
+    SZrLspSemanticSnapshot *snapshot;
+    TZrBool ownsSnapshot = ZR_FALSE;
 
     if (buffer == NULL || bufferSize == 0) {
         return;
     }
 
-    buffer[0] = '\0';
-    fileVersion = get_file_version_for_uri(server, uri);
-    if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
-        content = snapshot.content;
-        version = snapshot.version;
-        length = snapshot.contentLength;
-        if (content != ZR_NULL) {
-            for (TZrSize index = 0; index < length; index++) {
-                hash ^= (unsigned char)content[index];
-                hash *= 1099511628211ULL;
-            }
-        }
-        ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
+    snapshot = ZrLanguageServer_LspSemanticSnapshot_GetActive(server->context);
+    if (snapshot == ZR_NULL) {
+        snapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(
+                server->state, server->context, uri);
+        ownsSnapshot = ZR_TRUE;
     }
-
-    snprintf(buffer,
-             bufferSize,
-             "zr:%llu:%llu:%llx",
-             (unsigned long long)version,
-             (unsigned long long)length,
-             hash);
+    ZrLanguageServer_LspSemanticSnapshot_FormatResultId(
+            snapshot, 0U, buffer, (TZrSize)bufferSize);
+    if (ownsSnapshot) {
+        ZrLanguageServer_LspSemanticSnapshot_Release(server->state, snapshot);
+    }
 }
 
 static TZrBool workspace_previous_result_id_matches(const cJSON *previousResultIds,
