@@ -9,6 +9,7 @@
 #endif
 
 #include "harness/path_support.h"
+#include "harness/aot_c_link_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_hash_conf.h"
@@ -496,7 +497,7 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -991,7 +992,7 @@ static void test_aot_c_generated_shared_library_executes_entry_through_runtime_l
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -1141,7 +1142,7 @@ static void test_aot_c_generated_shared_library_executes_call_spread(void) {
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -1303,7 +1304,7 @@ static void test_aot_c_generated_shared_library_executes_primitive_constant_writ
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -1447,7 +1448,7 @@ static void test_aot_c_generated_shared_library_elides_frame_for_bool_constant_r
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -1592,7 +1593,7 @@ static void test_aot_c_generated_shared_library_executes_signed_branch_compariso
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -1758,7 +1759,7 @@ static void test_aot_c_generated_shared_library_executes_numeric_arithmetic_dire
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -1903,7 +1904,7 @@ static void test_aot_c_generated_shared_library_elides_frame_for_signed_const_sc
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -2048,7 +2049,7 @@ static void test_aot_c_generated_shared_library_elides_frame_for_unsigned_const_
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -2191,7 +2192,7 @@ static void test_aot_c_generated_shared_library_elides_frame_for_unsigned_to_sig
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -2337,7 +2338,7 @@ static void test_aot_c_generated_shared_library_elides_frame_for_unsigned_mixed_
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -2504,7 +2505,7 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_conve
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -2594,7 +2595,7 @@ static void test_aot_c_generated_shared_library_compiles_unsupported_instruction
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
@@ -2683,7 +2684,7 @@ static void test_aot_c_generated_shared_library_compiles_pending_control_helper_
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,

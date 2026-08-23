@@ -71,6 +71,14 @@ the suffix and argument evaluation.
   call-target fact and fails closed without one.
 - Obsolete script/golden assets with no active consumer are deleted; generated
   snapshots are kept in build-local `tests_generated/` directories.
+- Runtime-generated AOT C shared-library fixtures use the centralized
+  `ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS` contract instead of 142 copies of a
+  partial `zr_vm_library` / `zr_vm_core` link line. The Unix contract includes
+  the libraries' complete static dependency closure; platform-specific AOT
+  execution remains ignored on Windows under the existing test contract.
+- Reflection-annotation fixtures allocate `typedExportedSymbols` through the
+  runtime allocator because `SZrFunction` owns and releases that array. No
+  fixture assigns stack storage to this owned field.
 
 ## Fresh focused validation
 
@@ -195,6 +203,19 @@ yield syntax                                   4/4
 reference syntax contract                      8/8
 execution callable metadata                  18/18
 ```
+
+The stale AOT-driver replay also passes on all three toolchains:
+
+```text
+previously failing AOT/aggregate CTests        11/11
+language_pipeline                               pass
+reflection annotation preserve                12/12
+```
+
+On GCC, the reflection-annotation target additionally passes full Valgrind
+leak checking with 6,415 allocations, 6,415 frees, zero live bytes, and zero
+errors. Before the fixture ownership repair, the same run reported four invalid
+frees of stack-backed typed-export symbol arrays.
 
 The reference diagnostic test now accepts a fail-closed parser result while
 still requiring the current one-time-cutover diagnostic and precise source

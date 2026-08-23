@@ -6,6 +6,7 @@
 
 #include "compiler_internal.h"
 #include "harness/path_support.h"
+#include "harness/aot_c_link_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
@@ -204,7 +205,7 @@ static void assert_generated_source_compiles(const TZrChar *generatedCPath, cons
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,

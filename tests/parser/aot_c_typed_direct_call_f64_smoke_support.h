@@ -207,7 +207,7 @@ static void run_aot_c_typed_direct_call_f64_smoke_with_options(
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core -lm "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,

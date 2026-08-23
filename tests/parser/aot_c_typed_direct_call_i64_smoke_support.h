@@ -159,7 +159,7 @@ static void aot_c_i64_smoke_run_case(const SZrAotTypedDirectCallI64SmokeCase *te
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,

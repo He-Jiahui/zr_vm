@@ -9,6 +9,7 @@
 #endif
 
 #include "harness/path_support.h"
+#include "harness/aot_c_link_support.h"
 #include "harness/runtime_support.h"
 #include "container_test_common.h"
 #include "zr_vm_common/zr_aot_abi.h"
@@ -270,7 +271,7 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-lzr_xx_hash -lzr_utf8proc -lm "
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
@@ -491,7 +492,7 @@ static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_sk
                  "-I\"%s/zr_vm_library/include\" "
                  "\"%s\" "
                  "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-                 "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+                 ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
                  "-lzr_xx_hash -lzr_utf8proc -lm "
                  "-o \"%s\"",
                  ZR_VM_TESTS_C_COMPILER,
@@ -798,7 +799,7 @@ static void test_aot_c_span_artifact_executes_equivalently_to_vm(void) {
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-lzr_xx_hash -lzr_utf8proc -lm "
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,

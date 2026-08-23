@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "harness/path_support.h"
+#include "harness/aot_c_link_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_hash_conf.h"
 #include "zr_vm_core/function.h"
@@ -265,7 +266,7 @@ static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" "
              "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core "
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
