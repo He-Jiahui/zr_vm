@@ -60,6 +60,17 @@ typedef struct SZrParserSemanticCallQuery {
     SZrFileRange targetDeclarationRange;
 } SZrParserSemanticCallQuery;
 
+typedef struct SZrParserSemanticSymbolQuery {
+    TZrSymbolId symbolId;
+    TZrTypeId typeId;
+    TZrSymbolId ownerSymbolId;
+    EZrSemanticReferenceKind role;
+    SZrFileRange declarationRange;
+    SZrFileRange definitionRange;
+    SZrString *displayName;
+    SZrString *signatureDisplay;
+} SZrParserSemanticSymbolQuery;
+
 typedef struct SZrParserSemanticPublicContractQuery {
     TZrUInt64 hash;
     TZrSize exportCount;
@@ -116,6 +127,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_FactsAt(
         SZrFileRange position,
         const SZrParserSemanticQueryScope *scope,
         SZrParserSemanticQueryFacts *outFacts);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_SymbolAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrParserSemanticSymbolQuery *outSymbol);
 /*
  * This is an analysis lifecycle operation, not a read-only query. It rebuilds
  * the borrowed diagnostic view for exactly one scope. Call it after semantic
