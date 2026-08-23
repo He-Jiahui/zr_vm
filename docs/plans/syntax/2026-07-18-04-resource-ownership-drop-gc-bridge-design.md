@@ -1,6 +1,6 @@
 # 04 resource class、Unique/Shared/Weak、Drop 与 GC bridge
 
-> 状态：已按可配置 GC domain 混合模型补齐并发边界，等待按里程碑实施。
+> 状态：M1-M7 已完成；ownership/object member separation 的破坏性切换已实现，最终 stable-HEAD inventory 与验收状态收口进行中。
 >
 > 硬依赖：[Canonical TypeRef/Place/CFG](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[TypeLayout/ref struct](./2026-07-18-03-struct-ref-struct-span-layout-design.md)
 

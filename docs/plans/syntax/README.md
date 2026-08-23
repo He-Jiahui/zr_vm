@@ -1,6 +1,6 @@
 # ZR 语法重设计子计划索引
 
-> 状态：总设计已完成分阶段晋级；06B 与 07B 已完成最终收口。ownership/object member separation 的一次性破坏性切换已实现，2026-08-13 的全矩阵复验正在进行；01-14 的当前 gate ledger 均保留独立验收证据。
+> 状态：总设计已完成分阶段晋级；06B 与 07B 已完成最终收口。ownership/object member separation 的一次性破坏性切换已实现；2026-08-23 的 `0a46151` 中间基线已通过 GCC/Clang/MSVC 各 133/133 与 CLI smoke，最终状态仍等待并发 L8 集成、inventory 再生成和 stable-HEAD 重放。01-14 的当前 gate ledger 均保留独立验收证据。
 >
 > 总设计：[ZR 语法、引用与内存模型重设计](./2026-07-18-zr-syntax-and-memory-model-redesign.md)
 

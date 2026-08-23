@@ -1,6 +1,6 @@
 # 05 property 统一 AST、显式字段与 ref-return property
 
-> 状态：细化草案，等待人工确认。
+> 状态：M1-M5 与 M5-1 variance/LSP follow-up 已完成；当前仅保留跨计划 stable-HEAD 总验收收口。
 >
 > 硬依赖：[Canonical TypeRef/Place/CFG](./2026-07-18-01-canonical-type-place-cfg-artifact-design.md)、[readonly/borrow checker](./2026-07-18-02-reference-syntax-borrow-checker-design.md)、[receiver effect/TypeLayout](./2026-07-18-03-struct-ref-struct-span-layout-design.md)
 

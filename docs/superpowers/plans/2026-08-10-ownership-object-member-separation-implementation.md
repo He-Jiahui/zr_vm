@@ -685,7 +685,7 @@ git commit -m "docs(syntax): document ownership intrinsics and receiver guards"
 - Create: `tests/parser/test_ownership_receiver_guard_performance.c`
 - Modify: `tests/CMakeLists.txt`
 
-- [ ] **Step 1: Run fresh focused GCC and Clang tests**
+- [x] **Step 1: Run fresh focused GCC and Clang tests**
 
 Configure/build from WSL and directly run the new ownership target, expression
 fact emission, resource unique/drop, resource shared/weak, resource owner/borrow
@@ -710,7 +710,7 @@ wsl ./build/codex-wsl-clang-debug/bin/zr_vm_cli ./tests/fixtures/projects/hello_
 Any existing baseline failure is accepted only after comparing it to a fresh
 pre-change/baseline record and proving the changed targets are not responsible.
 
-- [ ] **Step 2: Run the focused receiver-guard performance comparison**
+- [x] **Step 2: Run the focused receiver-guard performance comparison**
 
 Build a Release-mode microbenchmark that compiles and repeatedly executes equal
 workloads for non-null direct access, Weak direct access, optional Weak success,
@@ -725,13 +725,13 @@ wsl cmake --build build/benchmark-gcc-release --target zr_vm_ownership_receiver_
 wsl ./build/benchmark-gcc-release/bin/zr_vm_ownership_receiver_guard_performance_test
 ```
 
-- [ ] **Step 3: Run memory/lifetime tooling**
+- [x] **Step 3: Run memory/lifetime tooling**
 
 Use ASan+UBSan for the focused ownership target and `valgrind --leak-check=full`
 for repeated Weak optional-chain success/failure. Record tool versions, commands,
 exit codes, and leak/error summaries.
 
-- [ ] **Step 4: Run Windows MSVC compatibility and tests**
+- [x] **Step 4: Run Windows MSVC compatibility and tests**
 
 Use the Visual Studio developer environment and run:
 
