@@ -25,7 +25,7 @@ doc_type: module-detail
 
 ## Purpose
 
-`%using` resources are represented by the VM's to-be-closed stack chain. Normal
+`using(resource)` resources are represented by the VM's to-be-closed stack chain. Normal
 scope exit already closes registrations, but exception transfer must also close
 the resources created inside the abandoned try scope before control reaches a
 catch or finally block. Syntax03 M5 makes that ordering explicit for PoolLease and
@@ -78,7 +78,7 @@ control dead before resource Drop, which makes an upgrade attempted during Drop 
 
 ## Verification
 
-`zr_vm_buffer_pool_ffi_test` throws from inside `%using (lease)`, catches outside,
+`zr_vm_buffer_pool_ffi_test` throws from inside `using(lease)`, catches outside,
 then rents the same size again. The expected generation and return/reuse counters
 prove that cleanup ran exactly once before catch and did not corrupt adjacent VM
 state. Parent using/escape tests protect normal close and structured cleanup

@@ -89,6 +89,9 @@ the suffix and argument evaluation.
   `module name;`, `import(...)`, and `using(resource)` for valid examples.
   Removed percent forms remain only where the text explicitly describes a
   migration or rejection boundary; stale machine-local document links are gone.
+- Current VM exception-cleanup and AOT tail-call documentation likewise names
+  the active resource syntax as `using(resource)` while retaining the internal
+  to-be-closed and close-meta execution terminology.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an

@@ -113,13 +113,13 @@ doc_type: module-detail
 
 - 当前 frame 是 VM frame，而不是 native frame
 - 当前 frame 没有活动中的异常处理器
-- 当前 frame 没有待执行的 `to-be-closed` / `%using` cleanup 注册
+- 当前 frame 没有待执行的 `to-be-closed` / `using` cleanup 注册
 - callee 最终能解析成 VM function / closure，或能先通过 `@call` 物化成 VM callee
 
 不满足时仍回退到旧的 `PreCall -> next callInfo` 路径，因此：
 
 - `return g()` 落在 `try/catch/finally` 保护区内时不会错误跳过当前 frame 的异常语义
-- `%using` / close-meta 仍按原来的单次 cleanup 顺序执行
+- `using(resource)` / close-meta 仍按原来的单次 cleanup 顺序执行
 - native callable 继续走旧路径，不混入这轮 VM-only frame reuse
 
 ## AOT Boundary
@@ -141,7 +141,7 @@ doc_type: module-detail
 
 - AOT artifact 仍只保留稳定 semantic opcode，不暴露 ExecBC 的 frame reuse 细节
 - native callable 仍走统一 `PreCall` 慢路径，不参加 VM frame reuse
-- 有活动异常处理器或 `%using` cleanup 的 frame 仍显式回退，不做激进折叠
+- 有活动异常处理器或 `using` cleanup 的 frame 仍显式回退，不做激进折叠
 
 ## 验证证据
 

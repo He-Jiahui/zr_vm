@@ -136,7 +136,7 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
   source/artifact parity for typed compound property access, and managed class/inline/index/static
   reference Places for `ref` and `ref readonly` getters; reflection joins visible properties and
   accessors by exact property identity/role and keeps legacy-looking ordinary methods separate.
-- `exception-scope-resource-cleanup.md`: exception-handler checkpoints for `%using`
+- `exception-scope-resource-cleanup.md`: exception-handler checkpoints for `using(resource)`
   registrations, LIFO close before catch/finally, scratch-safe error arguments, and
   stack-relocation rules for resource cleanup.
 - `iterator-frame-runtime.md`: synchronous caller-owned iterator frame state,
