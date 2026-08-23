@@ -1672,19 +1672,6 @@ static void assert_aot_c_generated_shared_library_compiles_generic_numeric_resul
         const char *zeroGuardNeedle,
         const char *expressionNeedle,
         const char *runtimeCallNeedle) {
-#if !defined(ZR_PLATFORM_UNIX)
-    (void)opcode;
-    (void)copiedResultIsRightOperand;
-    (void)moduleName;
-    (void)sourceHash;
-    (void)artifactName;
-    (void)sharedLibraryName;
-    (void)operationMarkerNeedle;
-    (void)zeroGuardNeedle;
-    (void)expressionNeedle;
-    (void)runtimeCallNeedle;
-    TEST_IGNORE_MESSAGE("AOT C generic numeric result stack-copy guarded f64 smoke currently validates the Unix toolchain path");
-#else
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     SZrAotWriterOptions options;
@@ -1763,7 +1750,6 @@ static void assert_aot_c_generated_shared_library_compiles_generic_numeric_resul
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
-#endif
 }
 #endif
 
@@ -2213,19 +2199,6 @@ static void assert_aot_c_generated_shared_library_compiles_generic_numeric_resul
         const char *zeroGuardNeedle,
         const char *expressionNeedle,
         const char *runtimeCallNeedle) {
-#if !defined(ZR_PLATFORM_UNIX)
-    (void)opcode;
-    (void)copiedResultIsRightOperand;
-    (void)moduleName;
-    (void)sourceHash;
-    (void)artifactName;
-    (void)sharedLibraryName;
-    (void)operationMarkerNeedle;
-    (void)zeroGuardNeedle;
-    (void)expressionNeedle;
-    (void)runtimeCallNeedle;
-    TEST_IGNORE_MESSAGE("AOT C generic numeric result stack-copy guarded i64 smoke currently validates the Unix toolchain path");
-#else
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
     SZrAotWriterOptions options;
@@ -2304,7 +2277,6 @@ static void assert_aot_c_generated_shared_library_compiles_generic_numeric_resul
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
-#endif
 }
 #endif
 

@@ -79,6 +79,9 @@ the suffix and argument evaluation.
   cast and full-pipeline tests that had been silently commented out pending an
   old double-free repair; active test registrations are no longer hidden behind
   `ZR_UNUSED_PARAMETER` placeholders.
+- All retained `TEST_IGNORE_MESSAGE` sites are protected by explicit platform
+  capability guards. Two contradictory non-Unix branches nested inside
+  Unix-only AOT helpers are removed as unreachable test code.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an
