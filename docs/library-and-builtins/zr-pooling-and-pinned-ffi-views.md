@@ -20,6 +20,7 @@ related_code:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_invoke.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -50,6 +51,7 @@ implementation_files:
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_invoke.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_pointer_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -78,13 +80,15 @@ tests:
   - tests/language_server/test_lsp_stable_slot_contract_cases.h
   - tests/language_server/test_lsp_project_features.c
   - tests/core/test_inline_struct_array_layout.c
+  - tests/ffi/test_native_extern_contract.c
+  - tests/system/test_system_fs_module.c
   - tests/library/test_official_provider_convergence.c
   - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
   - tests/acceptance/2026-08-03-syntax-09-m3-canonical-pool-layout.md
   - tests/acceptance/2026-08-04-syntax-09-m2-guarded-direct-ref.md
   - tests/acceptance/2026-08-04-syntax-09-m5-performance-promotion.md
 doc_type: module-detail
-last_verified: 2026-08-04
+last_verified: 2026-08-23
 ---
 
 # Pooling And Pinned FFI Views
@@ -103,6 +107,14 @@ native-call lookup surface, but finalization must not recreate its string key or
 depend on the string table: GC shutdown may already be releasing peer string
 objects. The finalizer clears the context before freeing the payload so a
 repeated finalizer callback is a no-op rather than a read through freed memory.
+
+Native symbol invocation follows a cleanup-before-throw contract. Validation
+that runs before argument allocation may raise immediately. Once marshalling,
+pinning, callback activation, or return storage begins, failures record the
+original FFI error code and formatted message, unwind callback state, free all
+owned native buffers, release every GC pin, and only then raise the VM error.
+`ffi_runtime_invoke.c` owns this transaction; `runtime.c` retains the public
+handle methods and delegates symbol calls through the internal invoke boundary.
 
 ## Pool Lease Model
 
