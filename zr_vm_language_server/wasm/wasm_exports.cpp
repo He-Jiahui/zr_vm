@@ -22,6 +22,9 @@ extern "C" {
 
 // 包含 LSP 接口头文件（必须在 extern "C" 块内）
 #include "zr_vm_language_server/lsp_interface.h"
+#include "zr_vm_language_server/lsp_diagnostic_store.h"
+#include "interface/lsp_interface_internal.h"
+#include "project/lsp_project_internal.h"
 
 #ifdef __cplusplus
 #undef class
@@ -288,6 +291,13 @@ static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
     }
     
     return json;
+}
+
+static void free_lsp_diagnostic_array(SZrState *state, SZrArray *diagnostics) {
+    if (state == ZR_NULL || diagnostics == ZR_NULL) {
+        return;
+    }
+    ZrLanguageServer_Lsp_FreeDiagnostics(state, diagnostics);
 }
 
 static cJSON* serialize_semantic_tokens(SZrArray *tokens) {
@@ -1312,6 +1322,122 @@ const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uri
 
     ZrCore_Array_Free(g_wasm_state, &symbols);
     return create_error_response("Failed to get document symbols");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int uriLen) {
+    SZrString *uriStr;
+    SZrArray diagnostics;
+    char resultId[192];
+    cJSON *report;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+    ZrCore_Array_Init(g_wasm_state, &diagnostics, sizeof(SZrLspDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(g_wasm_state,
+                                              (SZrLspContext *)context,
+                                              uriStr,
+                                              &diagnostics) ||
+        !ZrLanguageServer_LspDiagnosticStore_BuildResultId(
+                g_wasm_state,
+                (SZrLspContext *)context,
+                uriStr,
+                &diagnostics,
+                resultId,
+                sizeof(resultId))) {
+        free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
+        return create_error_response("Failed to get diagnostic report");
+    }
+    report = cJSON_CreateObject();
+    if (report != ZR_NULL) {
+        cJSON_AddStringToObject(report, "resultId", resultId);
+        cJSON_AddItemToObject(report, "items", serialize_diagnostics(g_wasm_state, &diagnostics));
+    }
+    free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
+    return report != ZR_NULL ? create_success_response(report) : create_error_response("Out of memory");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
+    SZrArray uris = {0};
+    cJSON *result;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    ZrCore_Array_Init(g_wasm_state, &uris, sizeof(SZrString *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    if (!ZrLanguageServer_LspProject_CollectDiagnosticDocumentUris(g_wasm_state,
+                                                                    (SZrLspContext *)context,
+                                                                    &uris)) {
+        ZrCore_Array_Free(g_wasm_state, &uris);
+        return create_error_response("Failed to enumerate workspace diagnostics");
+    }
+
+    result = cJSON_CreateArray();
+    if (result == ZR_NULL) {
+        ZrCore_Array_Free(g_wasm_state, &uris);
+        return create_error_response("Out of memory");
+    }
+
+    for (TZrSize index = 0U; index < uris.length; index++) {
+        SZrString *const *uri = (SZrString *const *)ZrCore_Array_Get(&uris, index);
+        SZrArray diagnostics = {0};
+        SZrFileVersion *fileVersion;
+        char resultId[ZR_LSP_DIAGNOSTIC_RESULT_ID_MAX];
+        const char *uriText;
+        cJSON *report;
+
+        if (uri == ZR_NULL || *uri == ZR_NULL) {
+            continue;
+        }
+        ZrCore_Array_Init(g_wasm_state,
+                          &diagnostics,
+                          sizeof(SZrLspDiagnostic *),
+                          ZR_LSP_ARRAY_INITIAL_CAPACITY);
+        if (!ZrLanguageServer_Lsp_GetDiagnostics(g_wasm_state,
+                                                  (SZrLspContext *)context,
+                                                  *uri,
+                                                  &diagnostics) ||
+            !ZrLanguageServer_LspDiagnosticStore_BuildResultId(g_wasm_state,
+                                                                (SZrLspContext *)context,
+                                                                *uri,
+                                                                &diagnostics,
+                                                                resultId,
+                                                                sizeof(resultId))) {
+            free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
+            continue;
+        }
+
+        report = cJSON_CreateObject();
+        uriText = string_to_cstr(g_wasm_state, *uri);
+        fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion((SZrLspContext *)context, *uri);
+        if (report != ZR_NULL) {
+            cJSON_AddStringToObject(report, "uri", uriText != ZR_NULL ? uriText : "");
+            if (fileVersion != ZR_NULL && fileVersion->isOpenDocument) {
+                cJSON_AddNumberToObject(report, "version", fileVersion->version);
+            } else {
+                cJSON_AddNullToObject(report, "version");
+            }
+            cJSON_AddStringToObject(report, "resultId", resultId);
+            cJSON_AddItemToObject(report, "items", serialize_diagnostics(g_wasm_state, &diagnostics));
+            cJSON_AddItemToArray(result, report);
+        }
+        free_cstr(g_wasm_state, uriText);
+        free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
+    }
+
+    ZrCore_Array_Free(g_wasm_state, &uris);
+    return create_success_response(result);
 }
 
 #ifdef __EMSCRIPTEN__

@@ -42,6 +42,7 @@ const connection = createConnection(
 );
 const bridge = new ZrWasmBridge();
 const documents = new Map<string, ManagedDocument>();
+const publishedDiagnosticResultIds = new Map<string, { resultId: string; version: number | undefined }>();
 const semanticTokenLegend: SemanticTokensLegend = {
     tokenTypes: [
         'namespace',
@@ -172,6 +173,7 @@ connection.onDidChangeTextDocument(async ({ textDocument, contentChanges }) => {
 
 connection.onDidCloseTextDocument(async ({ textDocument }) => {
     documents.delete(textDocument.uri);
+    publishedDiagnosticResultIds.delete(textDocument.uri);
     await bridge.closeDocument(textDocument.uri);
     connection.sendDiagnostics({
         uri: textDocument.uri,
@@ -375,15 +377,30 @@ connection.onRequest('workspace/diagnostic', async ({
         previousByUri.set(previous.uri, previous.value);
     }
 
-    const items: unknown[] = [];
-    for (const [uri, document] of documents.entries()) {
-        const report = await getDocumentDiagnosticReport(uri, previousByUri.get(uri));
-        items.push({
-            uri,
-            version: document.version,
-            ...report,
-        });
-    }
+    const response = await bridge.getWorkspaceDiagnosticReports();
+    const reports = responseData<{
+        uri: string;
+        version: number | null;
+        resultId: string;
+        items: Diagnostic[];
+    }[]>(response, []);
+    const items = reports.map((report) => {
+        if (previousByUri.get(report.uri) === report.resultId) {
+            return {
+                uri: report.uri,
+                version: report.version,
+                kind: 'unchanged',
+                resultId: report.resultId,
+            };
+        }
+        return {
+            uri: report.uri,
+            version: report.version,
+            kind: 'full',
+            resultId: report.resultId,
+            items: report.items.map(normalizeDiagnostic),
+        };
+    });
 
     return { items };
 });
@@ -403,14 +420,22 @@ function responseData<T>(response: WasmPayload<T>, fallback: T): T {
 }
 
 async function publishDiagnostics(uri: string, version: number | undefined): Promise<void> {
-    const response = await bridge.getDiagnostics(uri);
-    const diagnostics = responseData<Diagnostic[]>(response, []);
+    const response = await bridge.getDiagnosticReport(uri);
+    const report = responseData<{ resultId: string; items: Diagnostic[] }>(response, {
+        resultId: '',
+        items: [],
+    });
+    const published = publishedDiagnosticResultIds.get(uri);
+    if (published?.resultId === report.resultId && published.version === version) {
+        return;
+    }
 
     connection.sendDiagnostics({
         uri,
         version,
-        diagnostics: diagnostics.map(normalizeDiagnostic),
+        diagnostics: report.items.map(normalizeDiagnostic),
     });
+    publishedDiagnosticResultIds.set(uri, { resultId: report.resultId, version });
 }
 
 function normalizeDiagnostic(diagnostic: Diagnostic): Diagnostic {
@@ -425,9 +450,13 @@ function normalizeDiagnostic(diagnostic: Diagnostic): Diagnostic {
 }
 
 async function getDocumentDiagnosticReport(uri: string, previousResultId: string | undefined): Promise<unknown> {
-    const response = await bridge.getDiagnostics(uri);
-    const diagnostics = responseData<Diagnostic[]>(response, []).map(normalizeDiagnostic);
-    const resultId = createDiagnosticResultId(uri, documents.get(uri)?.version, diagnostics);
+    const response = await bridge.getDiagnosticReport(uri);
+    const report = responseData<{ resultId: string; items: Diagnostic[] }>(response, {
+        resultId: '',
+        items: [],
+    });
+    const diagnostics = report.items.map(normalizeDiagnostic);
+    const resultId = report.resultId;
 
     if (previousResultId === resultId) {
         return {
@@ -441,20 +470,6 @@ async function getDocumentDiagnosticReport(uri: string, previousResultId: string
         resultId,
         items: diagnostics,
     };
-}
-
-function createDiagnosticResultId(uri: string, version: number | undefined, diagnostics: Diagnostic[]): string {
-    return `${version ?? -1}:${hashText(`${uri}\n${JSON.stringify(diagnostics)}`)}`;
-}
-
-function hashText(text: string): string {
-    let hash = 2166136261;
-    for (let index = 0; index < text.length; index++) {
-        hash ^= text.charCodeAt(index);
-        hash = Math.imul(hash, 16777619);
-    }
-
-    return (hash >>> 0).toString(16);
 }
 
 function buildWorkspaceEdit(locations: Location[], newName: string): WorkspaceEdit {

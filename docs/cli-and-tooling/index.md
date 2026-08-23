@@ -109,6 +109,10 @@ doc_type: category-index
   - stdio server child process 的 OS peak working-set budget 与跨平台采集
   - request/cancel/change/close 的 reader-thread 线性化和精确 snapshot 验证
   - server-owned reader stop/join、ordered teardown 与启动故障注入
+- `lsp-pull-push-diagnostics.md`
+  - native/WASM 共享的 structured diagnostic resultId 与 dependency identity
+  - workspace indexed-source coverage、invalid params 和 push/pull coexistence
+  - browser worker 只消费 WASM bridge，不维护 TypeScript diagnostics hash
 - `lsp-uri-native-path-boundary.md`
   - LSP `file:` URI 和 native path 的唯一双向转换、URI equivalence 与 platform normalization
   - project/navigation direct consumer 与 stdio native-I/O fail-closed boundary
@@ -131,6 +135,7 @@ doc_type: category-index
 9. 需要修改diagnostic fix的parser ownership、applicability或LSP projection时，再看`lsp-diagnostic-safe-fixes.md`。
 10. 需要修改 rename/code action/fix 的 workspace edit 快照、document version 或 disk/open provenance 时，再看 `lsp-workspace-edit-snapshot-provenance.md`。
 11. 需要修改 stdio smoke 的性能、process memory 或 request lifecycle race 时，再看 `lsp-stdio-validation.md`。
-12. 需要修改 document URI、native filesystem path、project path discovery 或 virtual document I/O boundary 时，再看 `lsp-uri-native-path-boundary.md`。
-13. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
-14. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+12. 需要修改 pull/push diagnostics、workspace report coverage、resultId 或 browser diagnostics bridge 时，再看 `lsp-pull-push-diagnostics.md`。
+13. 需要修改 document URI、native filesystem path、project path discovery 或 virtual document I/O boundary 时，再看 `lsp-uri-native-path-boundary.md`。
+14. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
+15. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

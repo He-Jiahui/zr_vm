@@ -62,6 +62,12 @@ const char* wasm_ZrLspCloseDocument(void* context, const char* uri, int uriLen);
 // 返回: JSON 字符串指针（包含诊断数组，需要调用 wasm_free 释放）
 const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen);
 
+// Returns { resultId, items } from the native diagnostic store.
+const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int uriLen);
+
+// Returns indexed workspace reports from the same native diagnostic store.
+const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context);
+
 // 获取补全
 // uri: UTF-8 字符串指针
 // uriLen: URI 长度

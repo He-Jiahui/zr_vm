@@ -112,6 +112,22 @@ export class ZrWasmBridge {
         );
     }
 
+    async getDiagnosticReport(uri: string): Promise<WasmResponse<{ resultId: string; items: unknown[] }>> {
+        return this.invoke<{ resultId: string; items: unknown[] }>(
+            'wasm_ZrLspGetDiagnosticReport',
+            ['number', 'string', 'number'],
+            [await this.context(), uri, byteLength(uri)],
+        );
+    }
+
+    async getWorkspaceDiagnosticReports(): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetWorkspaceDiagnosticReports',
+            ['number'],
+            [await this.context()],
+        );
+    }
+
     async getRichHover(uri: string, line: number, character: number): Promise<WasmResponse<unknown>> {
         return this.invoke<unknown>(
             'wasm_ZrLspGetRichHover',

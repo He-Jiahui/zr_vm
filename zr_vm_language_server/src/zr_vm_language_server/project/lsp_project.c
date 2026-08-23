@@ -891,6 +891,86 @@ SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByModuleName(SZrL
     return ZR_NULL;
 }
 
+static TZrBool project_uri_array_contains(const SZrArray *uris, SZrString *uri) {
+    for (TZrSize index = 0U; uris != ZR_NULL && index < uris->length; index++) {
+        SZrString *const *existing = (SZrString *const *)ZrCore_Array_Get((SZrArray *)uris, index);
+        if (existing != ZR_NULL && *existing != ZR_NULL &&
+            (ZrLanguageServer_Lsp_StringsEqual(*existing, uri) ||
+             ZrLanguageServer_LspUri_Equivalent(*existing, uri))) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrLanguageServer_LspProject_CollectDiagnosticDocumentUris(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   SZrArray *outUris) {
+    if (state == ZR_NULL || context == ZR_NULL || outUris == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!outUris->isValid) {
+        ZrCore_Array_Init(state, outUris, sizeof(SZrString *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    }
+    if (outUris->elementSize != sizeof(SZrString *)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize projectIndexIndex = 0U;
+         projectIndexIndex < context->projectIndexes.length;
+         projectIndexIndex++) {
+        SZrLspProjectIndex *const *projectIndexPtr = (SZrLspProjectIndex *const *)ZrCore_Array_Get(
+                &context->projectIndexes, projectIndexIndex);
+        SZrLspProjectIndex *projectIndex = projectIndexPtr != ZR_NULL ? *projectIndexPtr : ZR_NULL;
+
+        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+            return ZR_FALSE;
+        }
+        if (projectIndex == ZR_NULL) {
+            continue;
+        }
+        if (!ZrLanguageServer_LspProject_EnsureScannedSourceGraph(state, context, projectIndex)) {
+            return ZR_FALSE;
+        }
+        for (TZrSize fileIndex = 0U; fileIndex < projectIndex->files.length; fileIndex++) {
+            SZrLspProjectFileRecord *const *recordPtr = (SZrLspProjectFileRecord *const *)ZrCore_Array_Get(
+                    &projectIndex->files, fileIndex);
+            SZrLspProjectFileRecord *record = recordPtr != ZR_NULL ? *recordPtr : ZR_NULL;
+
+            if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                return ZR_FALSE;
+            }
+            if (record == ZR_NULL || record->uri == ZR_NULL || project_uri_array_contains(outUris, record->uri)) {
+                continue;
+            }
+            ZrCore_Array_Push(state, outUris, &record->uri);
+        }
+    }
+
+    if (context->parser == ZR_NULL || !context->parser->uriToFileMap.isValid ||
+        context->parser->uriToFileMap.buckets == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (TZrSize bucketIndex = 0U; bucketIndex < context->parser->uriToFileMap.capacity; bucketIndex++) {
+        SZrHashKeyValuePair *pair = context->parser->uriToFileMap.buckets[bucketIndex];
+        while (pair != ZR_NULL) {
+            SZrFileVersion *fileVersion = pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER
+                                               ? (SZrFileVersion *)pair->value.value.nativeObject.nativePointer
+                                               : ZR_NULL;
+
+            if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
+                return ZR_FALSE;
+            }
+            if (fileVersion != ZR_NULL && fileVersion->isOpenDocument && fileVersion->uri != ZR_NULL &&
+                !project_uri_array_contains(outUris, fileVersion->uri)) {
+                ZrCore_Array_Push(state, outUris, &fileVersion->uri);
+            }
+            pair = pair->next;
+        }
+    }
+    return ZR_TRUE;
+}
+
 SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspContext *context,
                                                                         SZrString *uri,
                                                                         TZrSize *outIndex) {

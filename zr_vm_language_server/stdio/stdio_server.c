@@ -133,6 +133,7 @@ void ZrLanguageServer_StdioServer_Free(SZrStdioServer *server) {
     free_desynchronized_document_set(&server->desynchronizedDocuments);
     free_uri_cache(&server->uriCache);
     stdio_server_free_semantic_token_cache(&server->semanticTokenCache);
+    free_diagnostic_push_cache(&server->diagnosticPushCache);
     if (server->context != ZR_NULL && server->state != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(server->state, server->context);
     }

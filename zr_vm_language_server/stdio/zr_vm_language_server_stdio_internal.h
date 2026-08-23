@@ -16,6 +16,7 @@
 #include "cJSON/cJSON.h"
 
 #include "zr_vm_language_server/lsp_interface.h"
+#include "zr_vm_language_server/lsp_diagnostic_store.h"
 #include "zr_vm_language_server/lsp_uri.h"
 #include "interface/lsp_workspace_edit_snapshot.h"
 #include "zr_vm_core/callback.h"
@@ -58,6 +59,19 @@ typedef struct SZrSemanticTokenCache {
     size_t count;
     size_t capacity;
 } SZrSemanticTokenCache;
+
+typedef struct SZrDiagnosticPushSnapshot {
+    char *uriText;
+    char resultId[ZR_LSP_DIAGNOSTIC_RESULT_ID_MAX];
+    TZrSize documentVersion;
+    TZrBool hasDocumentVersion;
+} SZrDiagnosticPushSnapshot;
+
+typedef struct SZrDiagnosticPushCache {
+    SZrDiagnosticPushSnapshot *items;
+    size_t count;
+    size_t capacity;
+} SZrDiagnosticPushCache;
 
 typedef enum EZrStdioPositionEncoding {
     ZR_STDIO_POSITION_ENCODING_UTF16 = 0,
@@ -112,6 +126,7 @@ typedef struct SZrStdioServer {
     SZrUriCache uriCache;
     SZrDesynchronizedDocumentSet desynchronizedDocuments;
     SZrSemanticTokenCache semanticTokenCache;
+    SZrDiagnosticPushCache diagnosticPushCache;
     SZrStdioRequestInputState requestInput;
     SZrStdioRequestRegistry *requestRegistry;
     const cJSON *activeRequestId;
@@ -130,6 +145,7 @@ char *zr_string_to_c_string(SZrString *value);
 SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText);
 void free_uri_cache(SZrUriCache *cache);
 void free_desynchronized_document_set(SZrDesynchronizedDocumentSet *set);
+void free_diagnostic_push_cache(SZrDiagnosticPushCache *cache);
 
 void send_json_message(cJSON *message);
 void send_result_response(const cJSON *id, cJSON *result);

@@ -58,6 +58,10 @@ TZrBool ZrLanguageServer_LspProject_EnsureModuleLoadedByName(SZrState *state,
 TZrBool ZrLanguageServer_LspProject_EnsureScannedSourceGraph(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrLspProjectIndex *projectIndex);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_CollectDiagnosticDocumentUris(
+    SZrState *state,
+    SZrLspContext *context,
+    SZrArray *outUris);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
                                                                                      SZrLspContext *context,
                                                                                      SZrString *uri);
