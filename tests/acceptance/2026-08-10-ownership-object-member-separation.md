@@ -85,6 +85,10 @@ the suffix and argument evaluation.
 - The lexer/parser/compiler execution suite removes a vacuous opcode-definition
   case whose success flag was constant and whose body performed no assertion;
   concrete parser/compiler conversion cases remain executable coverage.
+- Current module, LSP rename, and reference-alignment documentation uses
+  `module name;`, `import(...)`, and `using(resource)` for valid examples.
+  Removed percent forms remain only where the text explicitly describes a
+  migration or rejection boundary; stale machine-local document links are gone.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an

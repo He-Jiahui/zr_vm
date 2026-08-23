@@ -157,7 +157,7 @@ extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}')` 现
 
 这轮又补了一层导航语义：
 
-- `%import("graph_binary_stage")` 这类 binary-only import 的 definition 现在会落到 `.zro` module entry
+- `import("graph_binary_stage")` 这类 binary-only import 的 definition 现在会落到 `.zro` module entry
 - `binaryStage.binarySeed` 这类 imported member definition 会落到 `.zro` exported declaration span（旧 schema 才回退 module entry）
 
 也就是说，server 的正式 binary metadata 导航链已经统一收窄到 `.zro`；`.zri` 保留给 debug 与人工检查，不再和 `.zro` 并列作为语义源。

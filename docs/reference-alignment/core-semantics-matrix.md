@@ -98,7 +98,7 @@ doc_type: capability-matrix
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 字面量与转义 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 当前无直接 phase1 合同 | 需要补测试 | 需要补测试 | 需要补测试 | `tests/parser/test_char_and_type_cast.c` 已覆盖未闭合字符串、非法 hex escape、多字符 char、multiline reject 的 seed fixture；manifest 见 `tests/fixtures/reference/core_semantics/literals/manifest.json` |
 | 表达式与优先级 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 目前已有 `tests/fixtures/reference/core_semantics/expressions/manifest.json` 和全栈 `expressions_precedence_chains` inventory，但缺少 phase1 级 runnable fixture 把 precedence/member-chain 直接钉进 reference 入口 |
-| `%module/%import` 与成员链 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | `tests/module/test_module_system.c` 已执行 `imports/native_root_member_chain_pass.zr`，验证 root import、成员链、方法调用与对象字段读取；duplicate import / cyclic import 仍停在 manifest inventory |
+| `module` / `import(...)` 与成员链 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | `tests/module/test_module_system.c` 已执行 `imports/native_root_member_chain_pass.zr`，验证 root import、成员链、方法调用与对象字段读取；duplicate import / cyclic import 仍停在 manifest inventory |
 | 调用面：位置参数、命名参数、默认值、变参、重载/错误 arity | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 需要补测试 | `tests/function/test_named_arguments.c` 已执行 `calls/named_arguments_defaults_pass.zr`，并覆盖 `calls_named_default_varargs/duplicate_named_fail.zr`、`unexpected_named_fail.zr`、`positional_after_named_fail.zr`、`overload_ambiguity_fail.zr`；project/golden 层仍待补 |
 | `<Type> 转换、prototype/new 误用、`const` 赋值规则 | 已符合 ZR 合同 | 需要补测试 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | `tests/parser/test_char_and_type_cast.c` 覆盖 type cast 基本 parse/compile 和 `casts-and-const` manifest；`tests/parser/test_const_keyword.c` 与 `zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c` 已把 `const` 扩到 `if/switch/ternary` definite-assignment，并新增 `const_if_missing_branch_fail.zr`、`const_switch_paths_pass.zr`、`const_switch_missing_default_fail.zr`、`const_ternary_paths_pass.zr`、`const_ternary_missing_branch_fail.zr` |
 | 诊断与错误恢复 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | phase1 入口已经断言 invalid literal 会保留错误节点或直接拒绝编译，但 parser/compiler/runtime taxonomy 仍缺统一错误码或稳定分类文本基线 |
@@ -126,7 +126,7 @@ doc_type: capability-matrix
 
 因此这里仍应标记为 `需要补测试`，不是 `需要补诊断/实现`。
 
-### `%module/%import` 与成员链
+### `module` / `import(...)` 与成员链
 
 当前可以明确保住的基线是：
 

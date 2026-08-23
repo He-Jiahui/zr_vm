@@ -100,7 +100,7 @@ mask 字符串支持 `c/r/l`，也接受整数 mask。`count > 0` 时会额外�
 - `setupvalue`
 - `sethook`
 
-读 API 仍可在 sandboxed 模式中保留，便于宿主允许只读诊断。模块本身也不自动加载到默认沙箱，测试覆盖了“未显式注册时 `%import("debug")` 不存在”的行为。
+读 API 仍可在 sandboxed 模式中保留，便于宿主允许只读诊断。模块本身也不自动加载到默认沙箱，测试覆盖了“未显式注册时 `import("debug")` 不存在”的行为。
 
 ## Test Coverage
 

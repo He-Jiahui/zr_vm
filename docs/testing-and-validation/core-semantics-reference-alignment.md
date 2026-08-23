@@ -75,7 +75,7 @@ doc_type: testing-guide
 
 这样后续每加一个 ZR 语言特性，不需要重新从 6 个参考树里散搜，而是可以直接在 `tests/fixtures/reference/core_semantics/` 下增量扩展。
 
-当前跨阶段主入口已经升级为 [docs/reference-alignment/full-stack-test-matrix.md](D:/Git/Github/zr_vm_mig/zr_vm/docs/reference-alignment/full-stack-test-matrix.md)。第一阶段自己的 6 主题状态表则落在 [docs/reference-alignment/core-semantics-matrix.md](D:/Git/Github/zr_vm_mig/zr_vm/docs/reference-alignment/core-semantics-matrix.md)。这份文档继续负责 phase1 seed fixture 的来历和最小 runnable baseline，而全栈域划分、120 条首轮 inventory 和后续 rollout 顺序统一以主矩阵为准。
+当前跨阶段主入口已经升级为 [full-stack-test-matrix.md](../reference-alignment/full-stack-test-matrix.md)。第一阶段自己的 6 主题状态表则落在 [core-semantics-matrix.md](../reference-alignment/core-semantics-matrix.md)。这份文档继续负责 phase1 seed fixture 的来历和最小 runnable baseline，而全栈域划分、120 条首轮 inventory 和后续 rollout 顺序统一以主矩阵为准。
 
 ## Phase 1 Scope
 
@@ -131,7 +131,7 @@ doc_type: testing-guide
 - `calls/named_arguments_defaults_pass.zr`
   - 目标是命名参数、默认值、重排三者同时成立，并返回稳定值 `128`
 - `imports/native_root_member_chain_pass.zr`
-  - 目标是 `%import("zr.system").vm.state().loadedModuleCount` 这条 root-member-chain 可编译且可执行
+  - 目标是 `import("zr.system").vm.state().loadedModuleCount` 这条 root-member-chain 可编译且可执行
 
 ## Chosen ZR Baselines
 
@@ -184,7 +184,7 @@ doc_type: testing-guide
 - `zr.system`
 - `zr.container`
 
-这意味着 `%import("zr.system").vm.state().loadedModuleCount` 可以在不引入额外初始化噪音的前提下，稳定验证：
+这意味着 `import("zr.system").vm.state().loadedModuleCount` 可以在不引入额外初始化噪音的前提下，稳定验证：
 
 - root native module import
 - submodule member chain

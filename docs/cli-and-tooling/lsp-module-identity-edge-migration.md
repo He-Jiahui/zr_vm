@@ -22,7 +22,7 @@ When the public contract changes, reverse traversal first queues importers of th
 
 For a supported source rename, `workspace/didRenameFiles` clears diagnostics for the old URI and updates the new URI from disk. The regular update path then publishes diagnostics for the new URI and refreshes affected open importers. Other create/delete/rename operations continue through the prior file-operation handlers.
 
-The protocol test renames `legacy.zr` to `modern.zr`, updates `%module "legacy"` to `%module "modern"`, and keeps two open importers. One importer uses the removed identity; the other imports both old and new identities to fix the deduplication boundary. After the notification, hover on the added edge reports `float` and definition resolves to the renamed source URI.
+The protocol test renames `legacy.zr` to `modern.zr`, updates `module legacy;` to `module modern;`, and keeps two open importers. One importer uses the removed identity; the other imports both old and new identities to fix the deduplication boundary. After the notification, hover on the added edge reports `float` and definition resolves to the renamed source URI.
 
 ## Failure Boundaries
 

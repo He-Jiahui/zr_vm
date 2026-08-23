@@ -32,7 +32,7 @@ doc_type: module-detail
 
 ## Scope
 
-This module implements the planning half of a canonical source-file rename. Before a client moves a project `.zr` file, `workspace/willRenameFiles` returns edits for the provider's explicit `%module` declaration and every import target that resolves to the provider's old `ModuleIdentity`.
+This module implements the planning half of a canonical source-file rename. Before a client moves a project `.zr` file, `workspace/willRenameFiles` returns edits for the provider's explicit `module name;` declaration and every import target that resolves to the provider's old `ModuleIdentity`.
 
 The implementation is split between:
 
@@ -45,7 +45,7 @@ The implementation is split between:
 
 `ZrLanguageServer_LspProject_CollectSourceRenameEdits` remains the compatibility entry point for canonical locations. `ZrLanguageServer_LspProject_CollectSourceRenameEditPlan` runs the same collector and delegates fingerprint capture to the generic workspace-edit snapshot module, while `SZrLspSourceRenameDocumentSnapshot` remains a compatibility alias. Both accept only distinct `.zr` URIs where the old URI owns an existing project source record, the new native path remains inside the same source root, and no other record owns the new URI. Replacement text comes only from `ZrLibrary_Project_DeriveCurrentModuleKey`; a filename, raw import spelling, display string, or member name is never semantic identity.
 
-The provider declaration is included only when its parsed string value equals the record's old canonical module name. Import edits come from parsed import bindings and their exact `modulePathLocation` ranges. Project traversal includes unopened `.zr` files under the source root, so the result does not depend on editor-open state. Quoted module declarations replace only the literal contents, while import ranges retain the canonical AST target span.
+The provider declaration is included only when its parsed module name equals the record's old canonical module name. Import edits come from parsed import bindings and their exact `modulePathLocation` ranges. Project traversal includes unopened `.zr` files under the source root, so the result does not depend on editor-open state. Module declarations replace only the parsed name token, while import ranges retain the canonical AST target span.
 
 Collection is read-only. It does not rekey the project record, remove analyzers, update incremental-parser state, read the new file, or publish diagnostics. Those mutations remain in the later `workspace/didRenameFiles` path through `ZrLanguageServer_LspProject_PrepareSourceRename`.
 

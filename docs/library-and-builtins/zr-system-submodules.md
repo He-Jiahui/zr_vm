@@ -65,7 +65,7 @@ doc_type: module-detail
 
 ## Root Module Shape
 
-`%import("zr.system")` 返回的根模块导出这 7 个字段：
+`import("zr.system")` 返回的根模块导出这 7 个字段：
 
 - `console: zr.system.console`
 - `fs: zr.system.fs`
@@ -321,7 +321,7 @@ region 统计只汇总当前仍有 live object 的 active region，而不是 reg
 - `setLength(length: int): null`
 - `close(): null`
 
-额外还有一个 `@close` 元方法，复用同一个 runtime close 入口，供 `%using` 自动释放时调用。
+额外还有一个 `@close` 元方法，复用同一个 runtime close 入口，供 `using(resource)` 自动释放时调用。
 
 `FileStream` 目前在 native metadata 中固定注册为：
 
@@ -373,7 +373,7 @@ region 统计只汇总当前仍有 live object 的 active region，而不是 reg
 
 - 底层保存稳定的宿主文件句柄 id
 - `close()` 幂等
-- `%using` 会走 `@close`
+- `using(resource)` 会走 `@close`
 - finalizer 只做一次兜底关闭，不会重复释放已经关闭过的句柄
 - 多个 zr 变量复制的是同一个 wrapper 引用，不会复制底层 fd
 
@@ -440,13 +440,13 @@ acceptFd(stream); // 编译期报错
 ## Control Flow Or Data Flow
 
 1. CLI 初始化时注册 `zr.system` 根模块、各个叶子模块，以及独立的 `zr.system.exception` 模块。
-2. `%import("zr.system")` 通过 `moduleLinks` 物化根模块，并把 6 个叶子模块对象直接作为 export 暴露出去。
-3. `%import("zr.system.fs")` 直接物化 `zr.system.fs`，其中类型描述符注册 `File`、`Folder`、`SystemFileInfo`、`FileStream` 和两个 stream interface。
+2. `import("zr.system")` 通过 `moduleLinks` 物化根模块，并把 6 个叶子模块对象直接作为 export 暴露出去。
+3. `import("zr.system.fs")` 直接物化 `zr.system.fs`，其中类型描述符注册 `File`、`Folder`、`SystemFileInfo`、`FileStream` 和两个 stream interface。
 4. `File` / `Folder` 构造时调用底层 `zr_vm_library/src/zr_vm_library/file.c` 查询宿主路径信息，填充 `fullPath`、`parent` 和 `fileInfo`。
 5. `File.open(...)` 通过平台文件句柄接口打开底层资源，再创建 `FileStream` wrapper 对象，并把 handle id 与隐藏 native 指针写入对象字段。
 6. 普通 zr 调用里，`FileStream` 只是一个 class 实例引用。
 7. 遇到 extern/native 边界时，FFI lowering 根据 prototype 上的 wrapper metadata 读取 handle id，把它按 `i32` ABI 参数传给宿主函数。
-8. `close()`、`%using` 和 finalizer 最终都收敛到同一条关闭路径，负责置 `closed = true`、把隐藏 handle id 更新为 `-1`，并避免二次释放。
+8. `close()`、`using(resource)` 和 finalizer 最终都收敛到同一条关闭路径，负责置 `closed = true`、把隐藏 handle id 更新为 `-1`，并避免二次释放。
 
 ## Edge Cases And Constraints
 
@@ -474,7 +474,7 @@ acceptFd(stream); // 编译期报错
 - `SystemFileInfo` 扩展字段与 `refresh()` 行为
 - `File` / `Folder` 的 `create`、`copyTo`、`moveTo`、`delete`、`entries`、`files`、`folders`、`glob`
 - `FileStream` 的 mode、`read*`、`write*`、`seek`、`setLength`、`close`
-- `%using` 自动关闭
+- `using(resource)` 自动关闭
 - `IOException` 抛出路径
 - `handle_id` lowering 只在 extern 边界生效，且关闭后的流会被拒绝
 
