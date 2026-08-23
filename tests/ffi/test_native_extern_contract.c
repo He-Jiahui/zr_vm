@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "unity.h"
+#include "harness/aot_c_link_support.h"
 #include "harness/path_support.h"
 #include "runtime_support.h"
 #include "zr_vm_ffi_fixture_path.h"
@@ -1891,7 +1892,8 @@ static void test_native_extern_aot_uses_canonical_signature_vector(void) {
              "-I\"%s/zr_vm_core/include\" "
              "-I\"%s/zr_vm_library/include\" "
              "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core -o \"%s\"",
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
+             "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
@@ -1985,7 +1987,8 @@ static void test_native_extern_aot_uses_canonical_signature_vector(void) {
              sizeof(command),
              "clang -mllvm -opaque-pointers -fPIC -shared "
              "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             "-lzr_vm_library -lzr_vm_core -o \"%s\"",
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
+             "-o \"%s\"",
              llvmPath,
              ZR_VM_TESTS_BUILD_LIB_DIR,
              ZR_VM_TESTS_BUILD_LIB_DIR,
@@ -2193,7 +2196,8 @@ static void test_native_extern_llvm_aot_runtime_accepts_code_registration(void) 
                     sizeof(command),
                     "clang -mllvm -opaque-pointers -fPIC -shared \"%s\" "
                     "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-                    "-lzr_vm_library -lzr_vm_core -o \"%s\"",
+                    ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
+                    "-o \"%s\"",
                     llvmPath,
                     ZR_VM_TESTS_BUILD_LIB_DIR,
                     ZR_VM_TESTS_BUILD_LIB_DIR,
