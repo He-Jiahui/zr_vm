@@ -482,7 +482,11 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
             while (ps->lexer->t.token == ZR_TK_SHARP) {
-                parse_decorator_expression(ps);
+                SZrAstNode *decorator = parse_decorator_expression(ps);
+                if (decorator == ZR_NULL) {
+                    break;
+                }
+                ZrParser_Ast_Free(ps->state, decorator);
             }
 
             while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI ||

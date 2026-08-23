@@ -333,12 +333,18 @@ static SZrAstNode *parse_extern_member_declaration_impl(SZrParserState *ps) {
     } else if (ps->lexer->t.token == ZR_TK_STRUCT) {
         node = parse_struct_declaration(ps);
         if (node != ZR_NULL && node->type == ZR_AST_STRUCT_DECLARATION && decorators != ZR_NULL) {
+            free_ast_node_array_with_elements(
+                    ps->state,
+                    node->data.structDeclaration.decorators);
             node->data.structDeclaration.decorators = decorators;
             decorators = ZR_NULL;
         }
     } else if (ps->lexer->t.token == ZR_TK_ENUM) {
         node = parse_enum_declaration(ps);
         if (node != ZR_NULL && node->type == ZR_AST_ENUM_DECLARATION && decorators != ZR_NULL) {
+            free_ast_node_array_with_elements(
+                    ps->state,
+                    node->data.enumDeclaration.decorators);
             node->data.enumDeclaration.decorators = decorators;
             decorators = ZR_NULL;
         }

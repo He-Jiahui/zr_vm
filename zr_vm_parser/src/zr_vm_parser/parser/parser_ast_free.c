@@ -158,6 +158,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             free_generic_declaration(state, decl->generic);
             free_ast_node_array_with_elements(state, decl->inherits);
             free_ast_node_array_with_elements(state, decl->members);
+            free_ast_node_array_with_elements(state, decl->decorators);
             break;
         }
         case ZR_AST_CLASS_DECLARATION: {
@@ -241,6 +242,7 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
         }
         case ZR_AST_STRUCT_FIELD: {
             SZrStructField *field = &node->data.structField;
+            free_ast_node_array_with_elements(state, field->decorators);
             free_identifier_node_from_ptr(state, field->name);
             free_owned_type(state, field->typeInfo);
             if (field->init != ZR_NULL) {
@@ -653,12 +655,30 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
-        case ZR_AST_FOR_LOOP:
-        case ZR_AST_FOREACH_LOOP: {
-            // 循环语句有cond和block
-            SZrWhileLoop *loop = &node->data.whileLoop;
+        case ZR_AST_FOR_LOOP: {
+            SZrForLoop *loop = &node->data.forLoop;
+            if (loop->init != ZR_NULL) {
+                ZrParser_Ast_Free(state, loop->init);
+            }
             if (loop->cond != ZR_NULL) {
                 ZrParser_Ast_Free(state, loop->cond);
+            }
+            if (loop->step != ZR_NULL) {
+                ZrParser_Ast_Free(state, loop->step);
+            }
+            if (loop->block != ZR_NULL) {
+                ZrParser_Ast_Free(state, loop->block);
+            }
+            break;
+        }
+        case ZR_AST_FOREACH_LOOP: {
+            SZrForeachLoop *loop = &node->data.foreachLoop;
+            if (loop->pattern != ZR_NULL) {
+                ZrParser_Ast_Free(state, loop->pattern);
+            }
+            free_owned_type(state, loop->typeInfo);
+            if (loop->expr != ZR_NULL) {
+                ZrParser_Ast_Free(state, loop->expr);
             }
             if (loop->block != ZR_NULL) {
                 ZrParser_Ast_Free(state, loop->block);

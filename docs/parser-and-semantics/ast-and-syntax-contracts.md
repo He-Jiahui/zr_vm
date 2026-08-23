@@ -152,11 +152,16 @@ Diagnostic tests do not require every syntax error to produce a recovery AST.
 Declaration nodes retain the same recursive ownership rule. Extern blocks own
 their library literal and declaration array; extern functions and delegates own
 their identifiers, parameters, variadic parameter, return type, and decorators.
-Enum, interface, compile-time, and generator nodes likewise release every owned
-child through `ZrParser_Ast_Free`. A compile-time `selectedBranch` is a borrowed
-alias into its declaration expression and is not freed separately. Extern parse
-failures release the already parsed library literal and any partial declaration
-array before returning no AST.
+Struct declarations own their declaration decorators and member array, while each
+struct field owns its own decorator array, identifier, type, and initializer.
+Speculative struct-member classification must release any decorator AST created
+before restoring the lexer cursor. `for` nodes independently own init, condition,
+step, and block children; `foreach` nodes own their pattern, optional type, source
+expression, and block. Enum, interface, compile-time, and generator nodes likewise
+release every owned child through `ZrParser_Ast_Free`. A compile-time
+`selectedBranch` is a borrowed alias into its declaration expression and is not
+freed separately. Extern parse failures release the already parsed library literal
+and any partial declaration array before returning no AST.
 They assert the diagnostic and exact source range, then release a recovery AST
 only when the parser can construct one safely. This keeps fail-closed parser
 paths valid without weakening diagnostic coverage.
