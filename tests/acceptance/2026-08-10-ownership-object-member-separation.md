@@ -68,6 +68,9 @@ the suffix and argument evaluation.
 - Parser test names, summaries, and fixture source names use intrinsic,
   reference-view, and GC-bridge terminology; legacy borrow/loan/detach opcode
   names remain only in negative emission checks or artifact-compatibility tests.
+- The task runtime suite no longer carries a disabled `#if 0` block of retired
+  TaskRunner/coroutine compatibility cases; active percent-task forms remain
+  only as parser-rejection inputs for the one-time cutover.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an
