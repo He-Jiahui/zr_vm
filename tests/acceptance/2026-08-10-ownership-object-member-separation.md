@@ -71,6 +71,10 @@ the suffix and argument evaluation.
 - The task runtime suite no longer carries a disabled `#if 0` block of retired
   TaskRunner/coroutine compatibility cases; active percent-task forms remain
   only as parser-rejection inputs for the one-time cutover.
+- The module suite drops fourteen unregistered runtime-decorator reflection
+  cases plus their private helpers, keeps 78 executable registrations, and
+  reports its active reflection coverage with `typeof` terminology. A
+  repository scan finds no unreferenced static `test_*` functions.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an
