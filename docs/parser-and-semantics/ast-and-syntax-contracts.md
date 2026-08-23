@@ -155,8 +155,10 @@ their identifiers, parameters, variadic parameter, return type, and decorators.
 Struct declarations own their declaration decorators and member array, while each
 struct field owns its own decorator array, identifier, type, and initializer.
 Speculative struct-member classification must release any decorator AST created
-before restoring the lexer cursor. `for` nodes independently own init, condition,
-step, and block children; `foreach` nodes own their pattern, optional type, source
+before restoring the lexer cursor. Speculative generic/type probes follow the same
+rule: a rejected argument list releases every parsed argument plus its type name
+before restoring the cursor. `for` nodes independently own init, condition, step,
+and block children; `foreach` nodes own their pattern, optional type, source
 expression, and block. Enum, interface, compile-time, and generator nodes likewise
 release every owned child through `ZrParser_Ast_Free`. A compile-time
 `selectedBranch` is a borrowed alias into its declaration expression and is not

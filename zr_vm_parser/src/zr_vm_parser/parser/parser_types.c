@@ -566,7 +566,7 @@ SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
 
         param = parse_generic_argument_node(ps);
         if (param == ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
+            free_ast_node_array_with_elements(ps->state, params);
             return ZR_NULL;
         }
         ZrParser_AstNodeArray_Add(ps->state, params, param);
@@ -575,7 +575,7 @@ SZrAstNodeArray *parse_generic_argument_list(SZrParserState *ps) {
     if (!consume_type_closing_angle(ps)) {
         expect_token(ps, ZR_TK_GREATER_THAN);
         if (!consume_token(ps, ZR_TK_GREATER_THAN)) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
+            free_ast_node_array_with_elements(ps->state, params);
             return ZR_NULL;
         }
     }
@@ -592,6 +592,7 @@ SZrAstNode *parse_generic_type(SZrParserState *ps) {
 
     SZrAstNodeArray *params = parse_generic_argument_list(ps);
     if (params == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, nameNode);
         return ZR_NULL;
     }
 
@@ -600,7 +601,8 @@ SZrAstNode *parse_generic_type(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_GENERIC_TYPE, genericLoc);
     if (node == ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, params);
+        ZrParser_Ast_Free(ps->state, nameNode);
+        free_ast_node_array_with_elements(ps->state, params);
         return ZR_NULL;
     }
 
