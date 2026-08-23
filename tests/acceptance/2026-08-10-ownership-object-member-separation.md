@@ -65,6 +65,9 @@ the suffix and argument evaluation.
 ## Test modernization
 
 - Executable fixtures use the five intrinsic calls and canonical opcode names.
+- Parser test names, summaries, and fixture source names use intrinsic,
+  reference-view, and GC-bridge terminology; legacy borrow/loan/detach opcode
+  names remain only in negative emission checks or artifact-compatibility tests.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an

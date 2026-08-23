@@ -3611,13 +3611,13 @@ void test_interface_missing_member_is_rejected_by_compiler(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
+void test_ownership_intrinsic_share_expression_consumes_unique_owner(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Builtin Shared Expression Consumes Unique Owner";
+    const char *testSummary = "Ownership Intrinsic Share Expression Consumes Unique Owner";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership builtin expression lowering",
+    ZR_TEST_INFO("Ownership intrinsic expression lowering",
               "Testing that share(owner) compiles from a Unique<T> owner into OWN_SHARE without serialized native helper constants");
 
     SZrState *state = create_test_state();
@@ -3633,14 +3633,14 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
             "var owner = own Box();\n"
             "var alias = share(owner);";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_builtin_shared_expr.zr",
-                                                     strlen("ownership_builtin_shared_expr.zr"));
+                                                     "ownership_intrinsic_share_expr.zr",
+                                                     strlen("ownership_intrinsic_share_expr.zr"));
         SZrFunction *func;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership builtin source");
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership intrinsic source");
             destroy_test_state(state);
             return;
         }
@@ -3744,9 +3744,9 @@ void test_ownership_intrinsics_emit_dedicated_opcodes_and_execute(void) {
             "    if (loaned != null) { mask = mask + 2; }\n"
             "}\n"
             "if (cacheSeed != null) { mask = mask + 4; }\n"
-            "var detachedSeed = own Session();\n"
-            "var rawSession = intoGc(detachedSeed);\n"
-            "if (rawSession != null) { mask = mask + 8; }\n"
+            "var gcBridgeSeed = own Session();\n"
+            "var gcBox = intoGc(gcBridgeSeed);\n"
+            "if (gcBox != null) { mask = mask + 8; }\n"
             "var wokenSession = wake(watcher);\n"
             "if (wokenSession != null) { mask = mask + 16; }\n"
             "var releasedShared = drop(sharedSession);\n"
@@ -3796,14 +3796,14 @@ void test_ownership_intrinsics_emit_dedicated_opcodes_and_execute(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
+void test_ownership_reference_views_and_gc_bridge_emit_dedicated_opcodes(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Reference Views And GC Bridge Emit Dedicated Opcodes";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership view/return-to-GC lowering",
-              "Testing that ref/ref readonly/intoGc emit canonical view/return opcodes without legacy borrow/loan/detach opcodes");
+    ZR_TEST_INFO("Ownership reference-view and GC-bridge lowering",
+              "Testing that ref/ref readonly/intoGc emit canonical view/bridge opcodes without legacy borrow/loan/detach opcodes");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -3820,17 +3820,17 @@ void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
             "var borrowed: ref readonly Box = ref shared;\n"
             "var loanSource = own Box();\n"
             "var loaned = ref loanSource;\n"
-            "var detachSource = own Box();\n"
-            "var detached = intoGc(detachSource);";
+            "var gcBridgeSource = own Box();\n"
+            "var gcBox = intoGc(gcBridgeSource);";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_borrow_loan_detach.zr",
-                                                     strlen("ownership_borrow_loan_detach.zr"));
+                                                     "ownership_reference_views_gc_bridge.zr",
+                                                     strlen("ownership_reference_views_gc_bridge.zr"));
         SZrFunction *func;
 
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership borrow/loan/detach source");
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership reference-view/GC-bridge source");
             destroy_test_state(state);
             return;
         }
@@ -3903,7 +3903,7 @@ void test_ownership_unique_share_runtime_moves_source_to_null(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void) {
+void test_ownership_reference_views_and_gc_bridge_runtime_follow_surface_contract(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Reference Views And GC Bridge Runtime Follow Surface Contract";
 
@@ -3937,15 +3937,15 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
             "    if (loaned != null) { mask = mask + 4; }\n"
             "}\n"
             "if (loanSource != null) { mask = mask + 8; }\n"
-            "var detachSource = own Box();\n"
-            "var detached = intoGc(detachSource);\n"
-            "if (detached != null) { mask = mask + 16; }\n"
+            "var gcBridgeSource = own Box();\n"
+            "var gcBox = intoGc(gcBridgeSource);\n"
+            "if (gcBox != null) { mask = mask + 16; }\n"
             "return mask;\n"
             "}\n"
             "return runReferenceLifecycle();\n";
         SZrString *sourceName = ZrCore_String_Create(state,
-                                                     "ownership_borrow_loan_detach_runtime.zr",
-                                                     strlen("ownership_borrow_loan_detach_runtime.zr"));
+                                                     "ownership_reference_views_gc_bridge_runtime.zr",
+                                                     strlen("ownership_reference_views_gc_bridge_runtime.zr"));
         SZrFunction *func;
         SZrFunction *lifecycleFunc;
         TZrInt64 result = 0;
@@ -3953,7 +3953,7 @@ void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract(void)
         func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership borrow/loan/detach runtime source");
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile ownership reference-view/GC-bridge runtime source");
             destroy_test_state(state);
             return;
         }
@@ -4494,9 +4494,9 @@ void test_plugin_load_available_import_guard_lowers_to_available_payload(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_ownership_builtin_compile_rejects_invalid_operands(void) {
+void test_ownership_intrinsic_compile_rejects_invalid_operands(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Builtin Compile Rejects Invalid Operands";
+    const char *testSummary = "Ownership Intrinsic Compile Rejects Invalid Operands";
     static const struct {
         const char *label;
         const char *source;
@@ -4549,7 +4549,7 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "var seed = own Box();\n"
             "var owner = share(seed);\n"
             "var watcher = degrade(owner);\n"
-            "var detached = intoGc(watcher);\n",
+            "var gcBox = intoGc(watcher);\n",
             "ownership_invalid_into_gc_weak_compile.zr",
         },
         {
@@ -4929,8 +4929,8 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("Ownership builtin invalid operand compilation",
-              "Testing that invalid Rust-first ownership builtin operands are rejected before opcode emission");
+    ZR_TEST_INFO("Ownership intrinsic invalid operand compilation",
+              "Testing that invalid ownership intrinsic operands are rejected before opcode emission");
 
     for (i = 0; i < ZR_ARRAY_COUNT(cases); i++) {
         SZrState *state = create_test_state();
@@ -5684,7 +5684,7 @@ void test_ownership_into_gc_compile_rejects_shared_owner(void) {
             "resource class Box {}\n"
             "var seed = own Box();\n"
             "var owner = share(seed);\n"
-            "var detached = intoGc(owner);\n";
+            "var gcBox = intoGc(owner);\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_into_gc_shared_compile.zr",
                                                      strlen("ownership_into_gc_shared_compile.zr"));

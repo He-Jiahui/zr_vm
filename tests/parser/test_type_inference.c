@@ -1771,9 +1771,9 @@ static void test_convert_ast_type_preserves_qualified_root_module_member_name(vo
     TEST_DIVIDER();
 }
 
-static void expect_ownership_builtin_type_inference_failure(const char *source,
-                                                            const char *sourceNameText,
-                                                            const char *expectedMessage) {
+static void expect_ownership_intrinsic_type_inference_failure(const char *source,
+                                                              const char *sourceNameText,
+                                                              const char *expectedMessage) {
     SZrState *state = create_test_state();
     SZrCompilerState *cs = create_test_compiler_state(state);
     SZrString *sourceName = ZR_NULL;
@@ -1832,34 +1832,34 @@ static void expect_ownership_builtin_type_inference_failure(const char *source,
     destroy_test_state(state);
 }
 
-static void test_ownership_builtin_type_inference_rejects_invalid_operands(void) {
+static void test_ownership_intrinsic_type_inference_rejects_invalid_operands(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Ownership Builtins Reject Invalid Operands";
+    const char *testSummary = "Type Inference - Ownership Intrinsics Reject Invalid Operands";
 
     TEST_START(testSummary);
     timer.startTime = clock();
-    TEST_INFO("Ownership builtin operand typing",
+    TEST_INFO("Ownership intrinsic operand typing",
               "Testing that invalid current ownership operations are rejected during type inference");
 
-    expect_ownership_builtin_type_inference_failure(
+    expect_ownership_intrinsic_type_inference_failure(
             "var owner = own Holder();"
             "degrade(owner);",
             "ownership_invalid_weak_unique_test.zr",
             "degrade(shared) requires a Shared owner");
 
-    expect_ownership_builtin_type_inference_failure(
+    expect_ownership_intrinsic_type_inference_failure(
             "var seed = own Holder();"
             "var owner = share(seed);"
             "wake(owner);",
             "ownership_invalid_wake_shared_test.zr",
             "wake(weak) requires a Weak owner");
 
-    expect_ownership_builtin_type_inference_failure(
+    expect_ownership_intrinsic_type_inference_failure(
             "drop(1);",
             "ownership_invalid_drop_plain_value_test.zr",
             "drop(owner) requires a Unique, Shared, or Weak owner");
 
-    expect_ownership_builtin_type_inference_failure(
+    expect_ownership_intrinsic_type_inference_failure(
             "var seed = own Holder();"
             "var owner = share(seed);"
             "share(owner);",
@@ -2238,9 +2238,9 @@ static void test_loaned_value_cannot_flow_to_plain_parameter(void) {
     TEST_DIVIDER();
 }
 
-static void test_owned_value_requires_detach_before_plain_parameter(void) {
+static void test_owned_value_rejects_implicit_plain_parameter_flow(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Owned Value Requires Detach Before Plain Parameter";
+    const char *testSummary = "Type Inference - Owned Value Rejects Implicit Plain Parameter Flow";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2457,9 +2457,9 @@ static void test_borrowed_and_loaned_values_cannot_escape_through_assignment(voi
     TEST_DIVIDER();
 }
 
-static void test_owned_value_requires_detach_before_plain_flow(void) {
+static void test_owned_value_rejects_implicit_plain_flow(void) {
     SZrTestTimer timer = {0};
-    const char *testSummary = "Type Inference - Owned Value Requires Detach Before Plain Flow";
+    const char *testSummary = "Type Inference - Owned Value Rejects Implicit Plain Flow";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -8506,18 +8506,18 @@ int main(void) {
     RUN_TEST(test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers);
     RUN_TEST(test_convert_ast_type_preserves_qualified_root_module_member_name);
     RUN_TEST(test_intrinsic_share_preserves_ownership_qualifier);
-    RUN_TEST(test_ownership_builtin_type_inference_rejects_invalid_operands);
+    RUN_TEST(test_ownership_intrinsic_type_inference_rejects_invalid_operands);
     RUN_TEST(test_unique_instance_only_calls_borrowed_methods);
     RUN_TEST(test_unique_value_is_compatible_with_borrowed_parameter);
     RUN_TEST(test_weak_value_requires_wake_before_borrowed_parameter);
     RUN_TEST(test_weak_receiver_direct_access_infers_guarded_target_type);
     RUN_TEST(test_borrowed_value_cannot_flow_to_plain_parameter);
     RUN_TEST(test_loaned_value_cannot_flow_to_plain_parameter);
-    RUN_TEST(test_owned_value_requires_detach_before_plain_parameter);
+    RUN_TEST(test_owned_value_rejects_implicit_plain_parameter_flow);
     RUN_TEST(test_ownership_escape_diagnostics_apply_to_assignment_expressions);
     RUN_TEST(test_ownership_escape_diagnostics_apply_to_field_assignment_expressions);
     RUN_TEST(test_borrowed_and_loaned_values_cannot_escape_through_assignment);
-    RUN_TEST(test_owned_value_requires_detach_before_plain_flow);
+    RUN_TEST(test_owned_value_rejects_implicit_plain_flow);
     RUN_TEST(test_nested_ownership_generic_arguments_cannot_escape_through_assignment);
     RUN_TEST(test_move_only_struct_assignment_rejects_implicit_copy);
     RUN_TEST(test_move_only_struct_argument_rejects_by_value_call);

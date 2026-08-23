@@ -443,14 +443,14 @@ static void test_intermediate_writer_emits_semir_sections(void) {
     TEST_DIVIDER();
 }
 
-static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
+static void test_ownership_intrinsics_lower_to_ownership_opcodes(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Ownership Builtins Lower To Ownership Opcodes";
+    const char *testSummary = "Ownership Intrinsics Lower To Ownership Opcodes";
 
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Ownership opcode lowering",
-              "Testing that ownership builtins no longer depend on serialized native helper constants and instead emit dedicated ownership opcodes");
+              "Testing that ownership intrinsics emit dedicated ownership opcodes without serialized native helper constants");
 
     {
         SZrState *state = create_test_state();
@@ -1261,7 +1261,7 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_intermediate_writer_emits_semir_sections);
-    RUN_TEST(test_ownership_builtins_lower_to_ownership_opcodes);
+    RUN_TEST(test_ownership_intrinsics_lower_to_ownership_opcodes);
     RUN_TEST(test_struct_value_type_places_emit_semir_metadata);
     RUN_TEST(test_struct_value_type_store_semir_uses_stable_member_entry);
     RUN_TEST(test_struct_value_type_repeated_store_semir_uses_stable_member_entry);

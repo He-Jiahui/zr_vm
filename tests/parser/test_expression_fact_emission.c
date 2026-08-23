@@ -869,7 +869,7 @@ static void test_lambda_constant_true_loop_return_records_callable_type_and_body
     destroy_compiler_state(cs);
 }
 
-static void test_ownership_builtin_expression_fact_records_builtin_kind(void) {
+static void test_ownership_intrinsic_expression_fact_records_builtin_kind(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
     SZrAstNode *ast;
@@ -883,8 +883,8 @@ static void test_ownership_builtin_expression_fact_records_builtin_kind(void) {
     const char *source = "ref owner;";
 
     sourceName = ZrCore_String_Create(g_state,
-                                      "ownership_builtin_expression_fact_test.zr",
-                                      strlen("ownership_builtin_expression_fact_test.zr"));
+                                      "ownership_intrinsic_expression_fact_test.zr",
+                                      strlen("ownership_intrinsic_expression_fact_test.zr"));
     ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
     expr = first_expression_statement_expression(ast);
 
@@ -1358,7 +1358,7 @@ int main(void) {
     RUN_TEST(test_binary_float_numeric_fact_records_exact_double_range);
     RUN_TEST(test_lambda_expression_fact_records_callable_type);
     RUN_TEST(test_lambda_constant_true_loop_return_records_callable_type_and_body_facts);
-    RUN_TEST(test_ownership_builtin_expression_fact_records_builtin_kind);
+    RUN_TEST(test_ownership_intrinsic_expression_fact_records_builtin_kind);
     RUN_TEST(test_binary_variable_numeric_fact_propagates_exact_integer_range);
     RUN_TEST(test_binary_variable_numeric_fact_propagates_integer_interval_range);
     RUN_TEST(test_identifier_unsigned_numeric_fact_records_unsigned_primitive_range);
