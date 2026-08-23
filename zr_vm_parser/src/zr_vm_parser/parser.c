@@ -177,6 +177,43 @@ SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps) {
     return ast;
 }
 
+TZrBool ZrParser_State_SeekToTokenStart(
+        SZrParserState *ps,
+        TZrSize sourceOffset) {
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || ps->hasError ||
+        sourceOffset >= ps->lexer->sourceLength) {
+        return ZR_FALSE;
+    }
+
+    while (ps->lexer->t.token != ZR_TK_EOS &&
+           ps->lexer->tokenStartOffset < sourceOffset) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    return ps->lexer->t.token != ZR_TK_EOS &&
+           ps->lexer->tokenStartOffset == sourceOffset;
+}
+
+SZrAstNode *ZrParser_ParseTopLevelStatementWithState(SZrParserState *ps) {
+    SZrAstNode *statement;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL ||
+        ps->hasError || ps->lexer->t.token == ZR_TK_EOS) {
+        return ZR_NULL;
+    }
+
+    statement = parse_top_level_statement(ps);
+    if (statement == ZR_NULL || ps->hasError ||
+        (ps->hasFatalError && !ps->enableLegacyMigrationParsing)) {
+        if (statement != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, statement);
+        }
+        return ZR_NULL;
+    }
+
+    return statement;
+}
+
 // 解析源代码，返回 AST 根节点
 
 SZrAstNode *ZrParser_Parse(SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName) {

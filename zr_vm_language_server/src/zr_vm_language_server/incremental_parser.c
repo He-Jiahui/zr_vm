@@ -5,6 +5,7 @@
 #include "zr_vm_language_server/incremental_parser.h"
 #include "incremental_change.h"
 #include "incremental_token_equivalence.h"
+#include "incremental/incremental_syntax_reparse.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/object.h"
@@ -265,6 +266,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->lastContentHash = ZR_NULL;
     fileVersion->lastContentHashLength = 0;
     fileVersion->hasIncrementalInfo = ZR_FALSE;
+    fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
     ZrCore_Array_Init(state,
                       &fileVersion->parserDiagnostics,
                       sizeof(SZrDiagnostic *),
@@ -407,6 +409,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     fileVersion->lastChangeInfo = *changeInfo;
     fileVersion->lastChangeRange = changeInfo->newRange;
     fileVersion->hasIncrementalInfo = ZR_TRUE; /* 标记有增量信息 */
+    fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
 
     if (!changeInfo->isTokenEquivalent) {
         clear_parser_diagnostics(state, fileVersion);
@@ -671,6 +674,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
                     &fileVersion->lastContentHash,
                     &fileVersion->lastContentHashLength);
         }
+        fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_TOKEN_EQUIVALENT;
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_TRUE;
     }
@@ -704,31 +708,46 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         }
     }
 
-    // 启用增量解析时，尝试增量更新 AST
+    // Reuse the script and untouched top-level declarations only after a
+    // declaration-local parse proves that every retained source range is stable.
     if (parser->enableIncrementalParse && fileVersion->ast != ZR_NULL &&
         fileVersion->hasIncrementalInfo) {
-        // TODO: 实现增量 AST 更新算法（简化版本）
-        // 策略：如果变更范围较小且不影响语法结构，可以尝试增量更新
-        // 否则回退到完全重新解析
+        SZrFileVersionContentSnapshot previousSnapshot = {0};
 
-        SZrFileRange changeRange = fileVersion->lastChangeRange;
-        TZrSize changeSize = 0;
-        if (changeRange.end.offset > changeRange.start.offset) {
-            changeSize = changeRange.end.offset - changeRange.start.offset;
-        }
+        if (ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
+                    state, fileVersion, 0U, &previousSnapshot)) {
+            TZrBool reparsed = ZrLanguageServer_IncrementalSyntaxReparse_TryDeclaration(
+                    state,
+                    uri,
+                    previousSnapshot.content,
+                    previousSnapshot.contentLength,
+                    snapshot.content,
+                    snapshot.contentLength,
+                    fileVersion->ast,
+                    &fileVersion->lastChangeInfo);
 
-        // 如果变更范围太大（超过文件长度的10%），完全重新解析
-        TZrSize threshold = snapshot.contentLength / 10;
-        if (changeSize > threshold || changeSize == 0) {
-            // 变更太大，完全重新解析
-        } else {
-            // 尝试增量更新：检查变更是否在注释或字符串字面量中
-            // 如果是，可能不需要重新解析
-            // TODO: 简化实现：暂时总是完全重新解析
-            // 完整实现需要：
-            // 1. 分析变更范围是否影响语法结构
-            // 2. 如果只影响注释或字符串内容，可以保留AST结构
-            // 3. 如果影响语法，需要重新解析受影响的部分
+            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &previousSnapshot);
+            if (reparsed) {
+                fileVersion->usesFallbackAst = ZR_FALSE;
+                fileVersion->isDirty = ZR_FALSE;
+                fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE;
+                if (parser->enableContentHash) {
+                    if (fileVersion->lastContentHash != ZR_NULL) {
+                        ZrCore_Memory_RawFree(
+                                state->global,
+                                fileVersion->lastContentHash,
+                                fileVersion->lastContentHashLength + 1);
+                    }
+                    compute_content_hash(
+                            state,
+                            snapshot.content,
+                            snapshot.contentLength,
+                            &fileVersion->lastContentHash,
+                            &fileVersion->lastContentHashLength);
+                }
+                ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
+                return ZR_TRUE;
+            }
         }
     }
 
@@ -790,6 +809,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
 
     if (fileVersion->ast != ZR_NULL || fileVersion->parserDiagnostics.length > 0) {
         fileVersion->isDirty = ZR_FALSE;
+        fileVersion->lastParseMode = ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE;
 
         // 计算并存储内容哈希
         if (parser->enableContentHash) {

@@ -1614,7 +1614,8 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     currentAstHash = ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(fileVersion->ast);
     sameAstAsCachedAnalysis = analyzer->enableCache && analyzer->cache != ZR_NULL && analyzer->cache->isValid &&
                               analyzer->cache->astHash == currentAstHash;
-    if (forceSemanticCacheReset || !sameAstAsCachedAnalysis) {
+    if (forceSemanticCacheReset || !sameAstAsCachedAnalysis ||
+        fileVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE) {
         ZrLanguageServer_SemanticAnalyzer_ClearCache(state, analyzer);
     }
     project_preload_descriptor_plugin_imports(state, projectIndex, fileVersion->ast);

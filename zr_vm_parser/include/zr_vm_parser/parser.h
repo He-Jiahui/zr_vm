@@ -48,6 +48,16 @@ ZR_PARSER_API void ZrParser_State_Free(SZrParserState *ps);
 // 使用已初始化的解析器状态解析源代码
 ZR_PARSER_API SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps);
 
+// Move an initialized parser to an exact token boundary in its original source.
+// Returns false for whitespace, comments, end-of-source, and invalid offsets.
+ZR_PARSER_API TZrBool ZrParser_State_SeekToTokenStart(
+        SZrParserState *ps,
+        TZrSize sourceOffset);
+
+// Parse one top-level statement from the current token of an initialized parser.
+// The caller owns the returned AST node and must release it with ZrParser_Ast_Free.
+ZR_PARSER_API SZrAstNode *ZrParser_ParseTopLevelStatementWithState(SZrParserState *ps);
+
 // Parse one complete expression from an initialized parser state.
 // The caller owns the returned AST node and must release it with ZrParser_Ast_Free.
 ZR_PARSER_API SZrAstNode *ZrParser_ParseExpressionWithState(SZrParserState *ps);

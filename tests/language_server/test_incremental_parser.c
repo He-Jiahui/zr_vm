@@ -441,6 +441,174 @@ static void test_incremental_parser_rejects_non_monotonic_versions(SZrState *sta
     TEST_PASS(timer, "Incremental Parser Rejects Non-Monotonic Versions");
 }
 
+static void test_incremental_parser_reparses_one_declaration_and_reuses_siblings(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Reuses Unchanged Declarations";
+    const TZrChar *before =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *after =
+            "fn first(): int { return 9; }\n"
+            "fn second(): int { return 2; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *initialRoot;
+    SZrAstNode *initialFirst;
+    SZrAstNode *initialSecond;
+    TZrSize initialFirstStartOffset;
+    TZrSize initialFirstEndOffset;
+    SZrAstNode *retainedPreviousAst = ZR_NULL;
+    SZrAstNode *updatedRoot;
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Declaration-scoped reparse",
+            "An equal-length body edit must replace only its declaration and retain unaffected sibling identity");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse.zr",
+            strlen("file:///declaration-reparse.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, before, strlen(before), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the initial declaration tree");
+        return;
+    }
+
+    initialRoot = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
+    if (initialRoot == ZR_NULL || initialRoot->type != ZR_AST_SCRIPT ||
+        initialRoot->data.script.statements == ZR_NULL ||
+        initialRoot->data.script.statements->count != 2U) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Initial source did not produce two top-level declarations");
+        return;
+    }
+    initialFirst = initialRoot->data.script.statements->nodes[0];
+    initialSecond = initialRoot->data.script.statements->nodes[1];
+    initialFirstStartOffset = initialFirst != ZR_NULL ? initialFirst->location.start.offset : 0U;
+    initialFirstEndOffset = initialFirst != ZR_NULL ? initialFirst->location.end.offset : 0U;
+
+    if (initialFirst == ZR_NULL || initialSecond == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, after, strlen(after), 2U) ||
+        !ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
+                state, parser, uri, &retainedPreviousAst)) {
+        if (retainedPreviousAst != ZR_NULL) {
+            ZrParser_Ast_Free(state, retainedPreviousAst);
+        }
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Equal-length declaration update did not parse");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    updatedRoot = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
+    if (retainedPreviousAst != ZR_NULL || updatedRoot != initialRoot ||
+        updatedRoot == ZR_NULL || updatedRoot->data.script.statements == ZR_NULL ||
+        updatedRoot->data.script.statements->count != 2U ||
+        updatedRoot->data.script.statements->nodes[0] == initialFirst ||
+        updatedRoot->data.script.statements->nodes[1] != initialSecond ||
+        fileVersion == ZR_NULL ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE ||
+        !fileVersion->lastChangeInfo.hasDeclaration ||
+        fileVersion->lastChangeInfo.declarationRange.start.offset !=
+                initialFirstStartOffset ||
+        fileVersion->lastChangeInfo.declarationRange.end.offset !=
+                initialFirstEndOffset) {
+        if (retainedPreviousAst != ZR_NULL) {
+            ZrParser_Ast_Free(state, retainedPreviousAst);
+        }
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "A safe declaration edit must retain the root and unaffected sibling instead of full reparsing");
+        return;
+    }
+
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
+static void test_incremental_parser_falls_back_for_unstable_declaration_range(
+        SZrState *state) {
+    const TZrChar *summary = "Incremental Parser Falls Back For Unstable Declaration Range";
+    const TZrChar *before =
+            "fn first(): int { return 1; }\n"
+            "fn second(): int { return 2; }\n";
+    const TZrChar *after =
+            "fn first(): int { return 10; }\n"
+            "fn second(): int { return 2; }\n";
+    SZrTestTimer timer;
+    SZrIncrementalParser *parser;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
+    SZrAstNode *initialRoot;
+    SZrAstNode *retainedPreviousAst = ZR_NULL;
+    SZrAstNode *updatedRoot;
+
+    TEST_START(summary);
+    TEST_INFO(
+            "Explicit full fallback",
+            "A declaration edit that shifts source ranges must rebuild the full script instead of retaining stale offsets");
+
+    parser = ZrLanguageServer_IncrementalParser_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///declaration-reparse-fallback.zr",
+            strlen("file:///declaration-reparse-fallback.zr"));
+    if (parser == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, before, strlen(before), 1U) ||
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
+        if (parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_Free(state, parser);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare the fallback baseline");
+        return;
+    }
+
+    initialRoot = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
+    if (initialRoot == ZR_NULL ||
+        !ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, after, strlen(after), 2U) ||
+        !ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
+                state, parser, uri, &retainedPreviousAst)) {
+        if (retainedPreviousAst != ZR_NULL) {
+            ZrParser_Ast_Free(state, retainedPreviousAst);
+        }
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Length-changing update did not parse through the fallback path");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    updatedRoot = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
+    if (retainedPreviousAst != initialRoot || updatedRoot == ZR_NULL ||
+        updatedRoot == initialRoot || fileVersion == ZR_NULL ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE) {
+        if (retainedPreviousAst != ZR_NULL) {
+            ZrParser_Ast_Free(state, retainedPreviousAst);
+        }
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "A range-shifting declaration edit must report and use the full reparse path");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, retainedPreviousAst);
+    ZrLanguageServer_IncrementalParser_Free(state, parser);
+    TEST_PASS(timer, summary);
+}
+
 static void test_lsp_update_promotes_synthetic_version_zero_to_open_document(
         SZrState *state) {
     SZrTestTimer timer;
@@ -694,6 +862,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_incremental_parser_rejects_non_monotonic_versions(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_reparses_one_declaration_and_reuses_siblings(state);
+    TEST_DIVIDER();
+
+    test_incremental_parser_falls_back_for_unstable_declaration_range(state);
     TEST_DIVIDER();
 
     test_lsp_update_promotes_synthetic_version_zero_to_open_document(state);

@@ -406,6 +406,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - 每 URI 两份完整 historical semantic analyzer state 的 newest-first query
   - primary analyzer identity 保持、历史 AST 单一所有权与 scoped-cache borrowed-AST rollover 失效
   - historical semantic state 与 cache-storage eviction 的所有权边界
+- `lsp-incremental-declaration-reparse.md`
+  - `full_reparse`、`token_equivalent` 与 `declaration_reparse` 的显式 mode 合同
+  - 唯一 top-level declaration 的严格替换条件，以及 block/边界不确定 edit 的 full fallback
+  - declaration identity 变化后的 semantic-cache invalidation 与 canonical public-contract dependency gate
 - `lsp-workspace-semantic-cache-lru.md`
   - primary/scoped/history analyzer 的 exact cache-storage workspace LRU
   - 默认 256MiB budget、可配置 hard cap、recency、cache-only release 与公共统计
@@ -474,4 +478,5 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
    前的 LSP 边界。
 29. 再看 `lsp-semantic-cache-storage.md`，了解 semantic cache 的计量、释放和重新初始化边界。
 30. 再看 `lsp-workspace-semantic-cache-lru.md`，了解 workspace 预算如何只淘汰精确计量的 cache storage。
-31. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+31. 再看 `lsp-incremental-declaration-reparse.md`，了解声明级替换、明确 fallback 和 public-contract 驱动的下游失效边界。
+32. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

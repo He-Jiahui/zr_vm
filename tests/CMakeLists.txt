@@ -4929,6 +4929,10 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_incremental_parser.c
     )
     zr_vm_add_support_target(
+            zr_vm_language_server_lsp_incremental_equivalence_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_incremental_equivalence.c
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_parser_diagnostics_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_parser_diagnostics.c
     )
@@ -5070,6 +5074,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_numeric_foreach_cardinality_semantic_query_test
             zr_vm_language_server_call_member_semantic_query_test
             zr_vm_language_server_incremental_parser_test
+            zr_vm_language_server_lsp_incremental_equivalence_test
             zr_vm_language_server_parser_diagnostics_test
             zr_vm_language_server_declaration_parser_diagnostics_test
             zr_vm_language_server_statement_parser_diagnostics_test

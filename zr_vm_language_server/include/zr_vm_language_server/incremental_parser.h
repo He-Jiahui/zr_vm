@@ -38,6 +38,14 @@ enum EZrFileChangeImpact {
 
 typedef enum EZrFileChangeImpact EZrFileChangeImpact;
 
+enum EZrIncrementalParseMode {
+    ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE = 0,
+    ZR_INCREMENTAL_PARSE_MODE_TOKEN_EQUIVALENT,
+    ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE,
+};
+
+typedef enum EZrIncrementalParseMode EZrIncrementalParseMode;
+
 typedef struct SZrFileChangeInfo {
     SZrFileRange oldRange;
     SZrFileRange newRange;
@@ -66,6 +74,7 @@ typedef struct SZrFileVersion {
     TZrChar *lastContentHash;           // 内容哈希（用于快速比较，可选）
     TZrSize lastContentHashLength;    // 哈希长度
     TZrBool hasIncrementalInfo;         // 是否有增量信息
+    EZrIncrementalParseMode lastParseMode; // actual parse path used for the current AST
     SZrArray parserDiagnostics;      // 语法诊断信息（SZrDiagnostic*）
 } SZrFileVersion;
 
