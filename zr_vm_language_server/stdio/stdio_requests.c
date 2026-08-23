@@ -302,6 +302,16 @@ static SZrLspSemanticSnapshot *stdio_request_acquire_semantic_snapshot(SZrStdioS
     return ZrLanguageServer_LspSemanticSnapshot_Acquire(server->state, server->context, uri);
 }
 
+static TZrBool stdio_request_targets_desynchronized_document(
+        SZrStdioServer *server,
+        const cJSON *params) {
+    const char *uriText;
+    SZrString *uri;
+
+    return get_uri_from_text_document(server, params, &uriText, &uri) &&
+           document_is_desynchronized(server, uri);
+}
+
 static void stdio_request_release_semantic_snapshot(SZrStdioServer *server,
                                                      SZrLspSemanticSnapshot *snapshot) {
     if (server == ZR_NULL) {
@@ -355,6 +365,11 @@ void handle_request_message(SZrStdioServer *server,
     }
 
     if (send_active_request_lifecycle_error(server, id)) {
+        return;
+    }
+
+    if (stdio_request_targets_desynchronized_document(server, params)) {
+        send_error_response(id, ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE, "Content modified");
         return;
     }
 

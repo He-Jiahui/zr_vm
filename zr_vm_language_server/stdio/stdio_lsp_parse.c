@@ -10,7 +10,7 @@ const cJSON *get_object_item(const cJSON *json, const char *key) {
     return cJSON_GetObjectItemCaseSensitive((cJSON *)json, key);
 }
 
-static TZrBool parse_size_number(const cJSON *json, TZrSize *outValue) {
+TZrBool parse_size_value_strict(const cJSON *json, TZrSize *outValue) {
     double value;
     TZrSize parsed;
 
@@ -57,7 +57,7 @@ static TZrBool parse_position_value(const cJSON *json, TZrInt32 *outValue) {
 TZrSize parse_size_value(const cJSON *json, TZrSize fallback) {
     TZrSize value;
 
-    if (!parse_size_number(json, &value)) {
+    if (!parse_size_value_strict(json, &value)) {
         return fallback;
     }
     return value;

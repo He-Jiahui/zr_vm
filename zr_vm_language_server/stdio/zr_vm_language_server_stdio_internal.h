@@ -40,6 +40,12 @@ typedef struct SZrUriCache {
     size_t capacity;
 } SZrUriCache;
 
+typedef struct SZrDesynchronizedDocumentSet {
+    SZrString **items;
+    size_t count;
+    size_t capacity;
+} SZrDesynchronizedDocumentSet;
+
 typedef struct SZrSemanticTokenSnapshot {
     char *uriText;
     char resultId[64];
@@ -104,6 +110,7 @@ typedef struct SZrStdioServer {
     SZrState *state;
     SZrLspContext *context;
     SZrUriCache uriCache;
+    SZrDesynchronizedDocumentSet desynchronizedDocuments;
     SZrSemanticTokenCache semanticTokenCache;
     SZrStdioRequestInputState requestInput;
     SZrStdioRequestRegistry *requestRegistry;
@@ -122,6 +129,7 @@ const char *skip_spaces(const char *text);
 char *zr_string_to_c_string(SZrString *value);
 SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText);
 void free_uri_cache(SZrUriCache *cache);
+void free_desynchronized_document_set(SZrDesynchronizedDocumentSet *set);
 
 void send_json_message(cJSON *message);
 void send_result_response(const cJSON *id, cJSON *result);
@@ -211,6 +219,13 @@ int parse_range_for_content(SZrStdioServer *server,
                             size_t contentLength,
                             const cJSON *json,
                             SZrLspRange *outRange);
+TZrBool content_change_range_to_byte_offsets(SZrStdioServer *server,
+                                             const char *content,
+                                             size_t contentLength,
+                                             const cJSON *json,
+                                             TZrSize *outStartOffset,
+                                             TZrSize *outEndOffset,
+                                             TZrSize *outClientLength);
 void negotiate_position_encoding(SZrStdioServer *server, const cJSON *params);
 const char *position_encoding_name(const SZrStdioServer *server);
 void apply_position_encoding_to_response(SZrStdioServer *server,
@@ -233,6 +248,7 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri);
 void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri);
 const cJSON *get_object_item(const cJSON *json, const char *key);
 TZrSize parse_size_value(const cJSON *json, TZrSize fallback);
+TZrBool parse_size_value_strict(const cJSON *json, TZrSize *outValue);
 cJSON *handle_inlay_hint_resolve_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_workspace_symbol_resolve_request(SZrStdioServer *server, const cJSON *params);
 cJSON *create_semantic_token_legend_json(void);
@@ -268,6 +284,9 @@ int update_document_contents(SZrStdioServer *server,
                              const char *content,
                              size_t contentLength,
                              TZrSize version);
+void mark_document_desynchronized(SZrStdioServer *server, SZrString *uri);
+void clear_document_desynchronization(SZrStdioServer *server, SZrString *uri);
+TZrBool document_is_desynchronized(SZrStdioServer *server, SZrString *uri);
 int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri);
 int handle_did_open(SZrStdioServer *server, const cJSON *params);
 int handle_did_change(SZrStdioServer *server, const cJSON *params);

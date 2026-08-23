@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "zr_vm_core/utf8.h"
 
 static TZrBool position_encoding_is_utf8(const SZrStdioServer *server) {
     return server != ZR_NULL && server->positionEncoding == ZR_STDIO_POSITION_ENCODING_UTF8;
@@ -93,6 +94,170 @@ static TZrBool find_line_bounds(const char *content,
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool strict_find_line_bounds(const char *content,
+                                       size_t contentLength,
+                                       TZrInt32 targetLine,
+                                       size_t *outLineStart,
+                                       size_t *outLineEnd) {
+    TZrInt32 line = 0;
+    size_t lineStart = 0;
+    size_t index = 0;
+
+    if (content == ZR_NULL || targetLine < 0 || outLineStart == ZR_NULL || outLineEnd == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    while (index < contentLength) {
+        if (content[index] == '\r' || content[index] == '\n') {
+            if (line == targetLine) {
+                *outLineStart = lineStart;
+                *outLineEnd = index;
+                return ZR_TRUE;
+            }
+            if (content[index] == '\r' && index + 1U < contentLength && content[index + 1U] == '\n') {
+                index++;
+            }
+            line++;
+            lineStart = index + 1U;
+        }
+        index++;
+    }
+    if (line != targetLine) {
+        return ZR_FALSE;
+    }
+    *outLineStart = lineStart;
+    *outLineEnd = contentLength;
+    return ZR_TRUE;
+}
+
+static TZrBool strict_client_position_to_byte_offset(
+        SZrStdioServer *server,
+        const char *content,
+        size_t contentLength,
+        SZrLspPosition position,
+        TZrSize *outOffset) {
+    size_t lineStart;
+    size_t lineEnd;
+    size_t offset;
+    TZrSize clientCharacter = 0U;
+
+    if (position.character < 0 || outOffset == ZR_NULL ||
+        !strict_find_line_bounds(content, contentLength, position.line, &lineStart, &lineEnd) ||
+        !ZrCore_Utf8_IsValid((TZrNativeString)content, (TZrSize)contentLength)) {
+        return ZR_FALSE;
+    }
+    if (position_encoding_is_utf8(server)) {
+        TZrSize target = (TZrSize)position.character;
+
+        if (target > lineEnd - lineStart) {
+            return ZR_FALSE;
+        }
+        for (offset = lineStart; offset < lineEnd;) {
+            TZrUInt32 codePoint;
+            TZrSize consumedBytes;
+
+            if (offset - lineStart == target) {
+                *outOffset = (TZrSize)offset;
+                return ZR_TRUE;
+            }
+            if (!ZrCore_Utf8_DecodeCodePoint((TZrNativeString)(content + offset),
+                                              (TZrSize)(lineEnd - offset),
+                                              &codePoint,
+                                              &consumedBytes)) {
+                return ZR_FALSE;
+            }
+            ZR_UNUSED_PARAMETER(codePoint);
+            offset += (size_t)consumedBytes;
+        }
+        if (offset - lineStart != target) {
+            return ZR_FALSE;
+        }
+        *outOffset = (TZrSize)offset;
+        return ZR_TRUE;
+    }
+
+    for (offset = lineStart; offset < lineEnd;) {
+        TZrUInt32 codePoint;
+        TZrSize consumedBytes;
+        TZrSize utf16Units;
+
+        if (clientCharacter == (TZrSize)position.character) {
+            *outOffset = (TZrSize)offset;
+            return ZR_TRUE;
+        }
+        if (!ZrCore_Utf8_DecodeCodePoint((TZrNativeString)(content + offset),
+                                          (TZrSize)(lineEnd - offset),
+                                          &codePoint,
+                                          &consumedBytes)) {
+            return ZR_FALSE;
+        }
+        utf16Units = codePoint >= 0x10000U ? 2U : 1U;
+        if (clientCharacter + utf16Units > (TZrSize)position.character) {
+            return ZR_FALSE;
+        }
+        clientCharacter += utf16Units;
+        offset += (size_t)consumedBytes;
+    }
+    if (clientCharacter != (TZrSize)position.character) {
+        return ZR_FALSE;
+    }
+    *outOffset = (TZrSize)offset;
+    return ZR_TRUE;
+}
+
+static TZrBool strict_content_client_length(SZrStdioServer *server,
+                                            const char *content,
+                                            TZrSize startOffset,
+                                            TZrSize endOffset,
+                                            TZrSize *outLength) {
+    TZrSize offset;
+    TZrSize length = 0U;
+
+    if (content == ZR_NULL || outLength == ZR_NULL || endOffset < startOffset) {
+        return ZR_FALSE;
+    }
+    if (position_encoding_is_utf8(server)) {
+        *outLength = endOffset - startOffset;
+        return ZR_TRUE;
+    }
+    for (offset = startOffset; offset < endOffset;) {
+        TZrUInt32 codePoint;
+        TZrSize consumedBytes;
+
+        if (!ZrCore_Utf8_DecodeCodePoint((TZrNativeString)(content + offset),
+                                          endOffset - offset,
+                                          &codePoint,
+                                          &consumedBytes)) {
+            return ZR_FALSE;
+        }
+        length += codePoint >= 0x10000U ? 2U : 1U;
+        offset += consumedBytes;
+    }
+    *outLength = length;
+    return ZR_TRUE;
+}
+
+TZrBool content_change_range_to_byte_offsets(SZrStdioServer *server,
+                                             const char *content,
+                                             size_t contentLength,
+                                             const cJSON *json,
+                                             TZrSize *outStartOffset,
+                                             TZrSize *outEndOffset,
+                                             TZrSize *outClientLength) {
+    SZrLspRange range;
+
+    if (!parse_range(json, &range) || outStartOffset == ZR_NULL ||
+        outEndOffset == ZR_NULL || outClientLength == ZR_NULL ||
+        !strict_client_position_to_byte_offset(
+                server, content, contentLength, range.start, outStartOffset) ||
+        !strict_client_position_to_byte_offset(
+                server, content, contentLength, range.end, outEndOffset) ||
+        *outEndOffset < *outStartOffset) {
+        return ZR_FALSE;
+    }
+    return strict_content_client_length(
+            server, content, *outStartOffset, *outEndOffset, outClientLength);
 }
 
 static SZrLspPosition utf8_position_to_utf16_position(const char *content,
@@ -229,12 +394,21 @@ int parse_position_for_uri(SZrStdioServer *server,
                            const cJSON *json,
                            SZrLspPosition *outPosition) {
     SZrFileVersionContentSnapshot snapshot = {0};
+    TZrSize offset;
 
     if (!parse_position(json, outPosition)) {
         return 0;
     }
 
     if (content_snapshot_for_uri(server, uri, &snapshot)) {
+        if (!strict_client_position_to_byte_offset(server,
+                                                   snapshot.content,
+                                                   snapshot.contentLength,
+                                                   *outPosition,
+                                                   &offset)) {
+            ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
+            return 0;
+        }
         *outPosition = client_position_to_internal(server,
                                                    snapshot.content,
                                                    snapshot.contentLength,

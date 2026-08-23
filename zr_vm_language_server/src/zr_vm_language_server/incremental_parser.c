@@ -254,6 +254,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->historicalContentCount = 0;
     fileVersion->ast = ZR_NULL;
     fileVersion->usesFallbackAst = ZR_FALSE;
+    fileVersion->isDesynchronized = ZR_FALSE;
     fileVersion->isDirty = ZR_TRUE;
     fileVersion->lastChangeRange = ZrParser_FileRange_Create(
         ZrParser_FilePosition_Create(0, 0, 0),

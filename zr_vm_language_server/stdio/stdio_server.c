@@ -34,6 +34,14 @@ void free_uri_cache(SZrUriCache *cache) {
     memset(cache, 0, sizeof(*cache));
 }
 
+void free_desynchronized_document_set(SZrDesynchronizedDocumentSet *set) {
+    if (set == ZR_NULL) {
+        return;
+    }
+    free(set->items);
+    memset(set, 0, sizeof(*set));
+}
+
 static void stdio_server_free_semantic_token_cache(SZrSemanticTokenCache *cache) {
     size_t index;
 
@@ -122,6 +130,7 @@ void ZrLanguageServer_StdioServer_Free(SZrStdioServer *server) {
     ZrLanguageServer_StdioRequestInput_Free(server);
     ZrLanguageServer_StdioRequestRegistry_Free(server->requestRegistry);
     server->requestRegistry = ZR_NULL;
+    free_desynchronized_document_set(&server->desynchronizedDocuments);
     free_uri_cache(&server->uriCache);
     stdio_server_free_semantic_token_cache(&server->semanticTokenCache);
     if (server->context != ZR_NULL && server->state != ZR_NULL) {

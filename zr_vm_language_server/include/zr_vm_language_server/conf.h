@@ -71,6 +71,7 @@
 #define ZR_LSP_FIELD_END "end"
 #define ZR_LSP_FIELD_URI "uri"
 #define ZR_LSP_FIELD_RANGE "range"
+#define ZR_LSP_FIELD_RANGE_LENGTH "rangeLength"
 #define ZR_LSP_FIELD_NAME "name"
 #define ZR_LSP_FIELD_KIND "kind"
 #define ZR_LSP_FIELD_LOCATION "location"

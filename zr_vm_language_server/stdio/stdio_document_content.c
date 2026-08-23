@@ -1,4 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
+#include "zr_vm_core/utf8.h"
 
 SZrFileVersion *get_file_version_for_uri(SZrStdioServer *server, SZrString *uri) {
     if (server == ZR_NULL || server->context == ZR_NULL || server->context->parser == ZR_NULL || uri == ZR_NULL) {
@@ -15,6 +16,7 @@ static char *apply_single_change(SZrStdioServer *server,
                                  size_t *outLength) {
     const cJSON *textJson;
     const cJSON *rangeJson;
+    const cJSON *rangeLengthJson;
     const char *replacement;
     size_t replacementLength;
     char *updated;
@@ -34,32 +36,35 @@ static char *apply_single_change(SZrStdioServer *server,
 
     replacement = cJSON_GetStringValue(textJson);
     replacementLength = replacement != NULL ? strlen(replacement) : 0;
+    if (replacement == NULL ||
+        !ZrCore_Utf8_IsValid((TZrNativeString)replacement, (TZrSize)replacementLength)) {
+        return NULL;
+    }
     rangeJson = get_object_item(change, ZR_LSP_FIELD_RANGE);
+    rangeLengthJson = get_object_item(change, ZR_LSP_FIELD_RANGE_LENGTH);
 
     if (rangeJson != NULL && !cJSON_IsNull(rangeJson)) {
-        SZrLspRange lspRange;
-        SZrFileRange fileRange;
-        if (!parse_range_for_content(server, original, originalLength, rangeJson, &lspRange)) {
+        TZrSize clientRangeLength;
+
+        if (!content_change_range_to_byte_offsets(server,
+                                                   original,
+                                                   originalLength,
+                                                   rangeJson,
+                                                   &startOffset,
+                                                   &endOffset,
+                                                   &clientRangeLength)) {
             return NULL;
         }
+        if (rangeLengthJson != ZR_NULL) {
+            TZrSize declaredRangeLength;
 
-        fileRange = ZrLanguageServer_LspRange_ToFileRangeWithContent(
-            lspRange,
-            uri,
-            original,
-            (TZrSize)originalLength
-        );
-        startOffset = (size_t)fileRange.start.offset;
-        endOffset = (size_t)fileRange.end.offset;
-        if (startOffset > originalLength) {
-            startOffset = originalLength;
+            if (!parse_size_value_strict(rangeLengthJson, &declaredRangeLength) ||
+                declaredRangeLength != clientRangeLength) {
+                return NULL;
+            }
         }
-        if (endOffset > originalLength) {
-            endOffset = originalLength;
-        }
-        if (endOffset < startOffset) {
-            endOffset = startOffset;
-        }
+    } else if (rangeJson != ZR_NULL || rangeLengthJson != ZR_NULL) {
+        return NULL;
     }
 
     prefixLength = startOffset;
@@ -124,6 +129,28 @@ char *apply_content_changes(SZrStdioServer *server,
     return current;
 }
 
+static int document_contents_were_committed(SZrStdioServer *server,
+                                            SZrString *uri,
+                                            const char *content,
+                                            size_t contentLength,
+                                            TZrSize version) {
+    SZrFileVersion *fileVersion;
+    SZrFileVersionContentSnapshot snapshot = {0};
+    int isCommitted;
+
+    if (server == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
+        return 0;
+    }
+    fileVersion = get_file_version_for_uri(server, uri);
+    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, &snapshot)) {
+        return 0;
+    }
+    isCommitted = snapshot.version == version && snapshot.contentLength == (TZrSize)contentLength &&
+                  (contentLength == 0 || memcmp(snapshot.content, content, contentLength) == 0);
+    ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
+    return isCommitted;
+}
+
 int update_document_contents(SZrStdioServer *server,
                              SZrString *uri,
                              const char *content,
@@ -131,19 +158,18 @@ int update_document_contents(SZrStdioServer *server,
                              TZrSize version) {
     int updateOk;
 
-    if (server == ZR_NULL || uri == ZR_NULL || content == NULL) {
+    if (server == ZR_NULL || uri == ZR_NULL || content == NULL ||
+        !ZrCore_Utf8_IsValid((TZrNativeString)content, (TZrSize)contentLength)) {
         return 0;
     }
 
-    updateOk = ZrLanguageServer_Lsp_UpdateDocument(
-                   server->state,
-                   server->context,
-                   uri,
-                   content,
-                   (TZrSize)contentLength,
-                   version)
-                   ? 1
-                   : 0;
+    (void)ZrLanguageServer_Lsp_UpdateDocument(server->state,
+                                               server->context,
+                                               uri,
+                                               content,
+                                               (TZrSize)contentLength,
+                                               version);
+    updateOk = document_contents_were_committed(server, uri, content, contentLength, version);
     publish_diagnostics(server, uri);
     return updateOk;
 }
@@ -187,5 +213,12 @@ int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri) {
 
     success = update_document_contents(server, uri, sourceCode, sourceLength, version);
     free(sourceCode);
+    if (success) {
+        fileVersion = get_file_version_for_uri(server, uri);
+        if (fileVersion != ZR_NULL) {
+            fileVersion->isOpenDocument = ZR_FALSE;
+            clear_document_desynchronization(server, uri);
+        }
+    }
     return success;
 }

@@ -1,13 +1,35 @@
 ---
 related_code:
   - tests/language_server/stdio_smoke.js
+  - tests/language_server/stdio_document_sync_conformance.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/test_stdio_server_lifecycle.c
+  - zr_vm_language_server/include/zr_vm_language_server/conf.h
+  - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
+  - zr_vm_language_server/stdio/stdio_document_content.c
+  - zr_vm_language_server/stdio/stdio_documents.c
+  - zr_vm_language_server/stdio/stdio_lsp_parse.c
+  - zr_vm_language_server/stdio/stdio_position_encoding.c
+  - zr_vm_language_server/stdio/stdio_requests.c
   - zr_vm_language_server/stdio/stdio_server.c
   - zr_vm_language_server/stdio/stdio_transport.c
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio.c
+  - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
+implementation_files:
+  - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
+  - zr_vm_language_server/stdio/stdio_document_content.c
+  - zr_vm_language_server/stdio/stdio_documents.c
+  - zr_vm_language_server/stdio/stdio_lsp_parse.c
+  - zr_vm_language_server/stdio/stdio_position_encoding.c
+  - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_language_server/stdio/stdio_server.c
+plan_sources:
+  - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
   - tests/language_server/stdio_smoke.js
+  - tests/language_server/stdio_document_sync_conformance.js
+  - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/test_stdio_server_lifecycle.c
 doc_type: module-guide
 ---
@@ -106,6 +128,42 @@ hover and waits for `shutdown` before `exit`. A one-shot batch can let the
 reader thread observe `didOpen` before initialize activates; the resulting
 `ContentModified` response correctly enforces the input-generation fence but
 does not represent a legal LSP client handshake.
+
+## Strict Document Synchronization
+
+Plan 02 Task 4 makes document notifications transactional. `didOpen` requires a
+string `text` and an integer `version`; duplicate opens are rejected so they
+cannot silently replace an existing overlay. `didChange` requires an already
+open document, a nonempty change list, and a strictly newer integer version.
+Each ranged edit is translated by the negotiated UTF-16 or UTF-8 codec without
+clamping. Invalid line/column boundaries, reverse ranges, a UTF-16 surrogate
+midpoint, invalid UTF-8, or a mismatched `rangeLength` reject the entire
+notification.
+
+The server stages every sequential `contentChanges` operation in a temporary
+buffer and only publishes the new text/version after all operations succeed.
+An invalid notification leaves the previous snapshot intact, marks its URI as
+desynchronized, and makes later semantic requests fail closed with
+`-32801 Content modified`. Recovery is deliberately narrow: a single
+range-less full-content change, or a close/open overlay rebuild, clears the
+state. An invalid change for an unopened URI is recorded too, so a later
+request cannot accidentally consult disk content as a substitute for a valid
+overlay.
+
+`didClose` clears the open overlay but preserves an indexed workspace document
+by reloading its disk/project content; virtual, deleted, and no-longer-indexed
+documents are removed. `didSave` without text refreshes a disk document or
+confirms an existing open overlay. A supplied `text` does not become a same-
+version change. A syntactically invalid but committed full replacement remains
+synchronized: the server determines commit status from the content snapshot,
+not from the semantic-analysis success value used to publish diagnostics.
+
+The conformance driver covers malformed opens, duplicate and stale versions,
+atomic multi-change rollback, CR/LF/CRLF, astral and combining Unicode,
+invalid UTF-8, UTF-8 `rangeLength`, close-to-disk restoration, save refresh,
+and invalid request positions. The GCC Task 4 run also executes the adjacent
+snapshot, interface, lifecycle, protocol, position-encoding, diagnostic, and
+workspace smoke gates.
 
 ## Matrix
 

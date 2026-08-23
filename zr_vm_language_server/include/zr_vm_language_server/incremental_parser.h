@@ -59,6 +59,7 @@ typedef struct SZrFileVersion {
     TZrSize historicalContentCount;   // 按新到旧保存，最多两份
     SZrAstNode *ast;                  // 解析后的 AST
     TZrBool usesFallbackAst;            // 当前 AST 是否是旧版本保留下来的 last-good 快照
+    TZrBool isDesynchronized;           // 最后一次同步通知无效，语义请求必须 fail closed
     TZrBool isDirty;                    // 是否需要重新解析
     SZrFileRange lastChangeRange;     // 最后变更的范围（用于增量解析）
     SZrFileChangeInfo lastChangeInfo; // 最后变更的旧/新范围与声明级影响
