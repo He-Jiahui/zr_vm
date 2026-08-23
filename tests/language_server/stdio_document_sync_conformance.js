@@ -1,5 +1,8 @@
 const { StdioProtocolClient } = require('./stdio_protocol_client');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
 const RESPONSE_TIMEOUT_MS = 3000;
 
@@ -19,14 +22,14 @@ async function withClient(serverPath, run) {
 }
 
 async function withTemporaryDiskDocument(run) {
-    const path = `/tmp/zr-vm-document-sync-${process.pid}.zr`;
+    const filePath = path.join(os.tmpdir(), `zr-vm-document-sync-${process.pid}.zr`);
 
-    fs.writeFileSync(path, 'struct DidSaveRefreshesDiskDocument { pub var value: int; }', 'utf8');
+    fs.writeFileSync(filePath, 'struct DidSaveRefreshesDiskDocument { pub var value: int; }', 'utf8');
     try {
-        return await run(`file://${path}`);
+        return await run(pathToFileURL(filePath).href);
     } finally {
-        if (fs.existsSync(path)) {
-            fs.unlinkSync(path);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
         }
     }
 }
@@ -97,8 +100,9 @@ async function main() {
     const invalidOpenUri = 'file:///stdio-document-sync-invalid-open.zr';
     const missingTextOpenUri = 'file:///stdio-document-sync-missing-text-open.zr';
     const unopenedSaveUri = 'file:///stdio-document-sync-unopened-save.zr';
-    const indexedWorkspaceRootUri = 'file:///mnt/e/Git/zr_vm/tests/fixtures/projects/classes';
-    const indexedFixtureUri = 'file:///mnt/e/Git/zr_vm/tests/fixtures/projects/classes/src/main.zr';
+    const indexedWorkspacePath = path.resolve(__dirname, '..', 'fixtures', 'projects', 'classes');
+    const indexedWorkspaceRootUri = pathToFileURL(indexedWorkspacePath).href;
+    const indexedFixtureUri = pathToFileURL(path.join(indexedWorkspacePath, 'src', 'main.zr')).href;
     const versionTwoText = 'class DocumentSyncVersionTwo { }';
 
     assert(serverPath, 'usage: node stdio_document_sync_conformance.js <stdio-server>');
