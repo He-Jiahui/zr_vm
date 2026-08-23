@@ -82,6 +82,9 @@ the suffix and argument evaluation.
 - All retained `TEST_IGNORE_MESSAGE` sites are protected by explicit platform
   capability guards. Two contradictory non-Unix branches nested inside
   Unix-only AOT helpers are removed as unreachable test code.
+- The lexer/parser/compiler execution suite removes a vacuous opcode-definition
+  case whose success flag was constant and whose body performed no assertion;
+  concrete parser/compiler conversion cases remain executable coverage.
 - Old ownership member syntax remains only as migration input, negative input,
   same-name member collision coverage, or quoted historical evidence.
 - The stale signature-help test that expected an AST/name fallback for an

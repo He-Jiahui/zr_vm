@@ -814,33 +814,6 @@ static void test_execution_basic_type_cast(void) {
     }
 }
 
-// 测试所有类型转换指令是否存在
-static void test_type_cast_instructions_defined(void) {
-    TEST_START("Type Cast Instructions Definition");
-    SZrTestTimer timer;
-    timer.startTime = clock();
-    
-    TEST_INFO("Type cast instructions definition", 
-              "Testing that all type cast instructions are defined in instruction set");
-    
-    TZrBool allDefined = ZR_TRUE;
-    const char* missingInstructions = "";
-    
-    // 检查基本类型转换指令
-    // 注意：这些指令应该已经在指令集中定义
-    // 这里只做编译时检查
-    
-    timer.endTime = clock();
-    
-    if (allDefined) {
-        TEST_PASS_CUSTOM(timer, "Type Cast Instructions Definition");
-    } else {
-        char reason[256];
-        snprintf(reason, sizeof(reason), "Missing instructions: %s", missingInstructions);
-        TEST_FAIL_CUSTOM(timer, "Type Cast Instructions Definition", reason);
-    }
-}
-
 // ==================== 综合测试 ====================
 
 // 测试完整的字符字面量流程（lexer -> parser -> compiler）
@@ -1041,8 +1014,6 @@ int main(void) {
     
     // Execution 测试
     RUN_TEST(test_execution_basic_type_cast);
-    TEST_DIVIDER();
-    RUN_TEST(test_type_cast_instructions_defined);
     TEST_DIVIDER();
     
     // 综合测试
