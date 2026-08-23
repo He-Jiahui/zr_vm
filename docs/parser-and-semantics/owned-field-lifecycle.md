@@ -174,7 +174,7 @@ cleanup plan 里仍保留原来的区分：
 
 类型系统不允许 `Unique<T>` 或 `Shared<T>` 隐式流入 plain `T`。plain 类型属于普通 GC world；owner 对象跨过去必须显式 `intoGc(owner)` 或通过运行时 bridge，之后恢复普通 GC tracing/barrier。这样 ownership world 的零 GC 路径是可证明的：owner 对象不会被普通 GC 提前回收，也不会因为一次普通赋值、字段写入或函数调用参数传递悄悄离开 owner graph。赋值/变量初始化、字段赋值表达式和调用参数路径会优先给出 owner-to-plain 专用诊断：`Owned value cannot flow into a plain GC value implicitly`，而不是把它降级成普通类型不匹配或 overload 失败；普通泛型外壳里的 ownership 实参也会递归检查，`Box<Unique<T>>` / `Box<Shared<T>>` 不能仅因外层 canonical name 相同而流入 plain `Box<T>`。
 
-插件 guard payload 是 guard-scoped plain GC object，不能通过 `Module.share()` 或其他 member call 逃逸；所有权控制只允许 reserved intrinsic 形式，而 `share(owner)` 不接受 plain module payload。guard 命中后 compiler 会在源语言不可见的位置创建隐藏 `Shared` owner，并在 scope cleanup 中发出 `OWN_RELEASE`，可见 binding 始终只是 guard 内的 module view。native registry 通过 core ownership strong-ref observer 追踪这个隐藏 owner，并在 scope cleanup 后让 `ZrLibrary_NativeRegistry_GetModuleRefCount(global, name)` 回到 0。
+插件 guard payload 是 guard-scoped plain GC object，不能通过 ownership promotion 逃逸；所有权控制只允许 reserved intrinsic 形式，而 `share(owner)` 不接受 plain module payload。`Module.share()` 只按普通 module member lookup 解释：真实 export 可以被调用，但该表达式不会产生 owner，也不会降低为 `OWN_SHARE`。guard 命中后 compiler 会在源语言不可见的位置创建隐藏 `Shared` owner，并在 scope cleanup 中发出 `OWN_RELEASE`，可见 binding 始终只是 guard 内的 module view。native registry 通过 core ownership strong-ref observer 追踪这个隐藏 owner，并在 scope cleanup 后让 `ZrLibrary_NativeRegistry_GetModuleRefCount(global, name)` 回到 0。
 
 以下 Borrow/Loan 分析说明是破坏性切换前的内部实现记录。当前源码不能声明
 `Borrow<T>` / `Loan<T>`，也不能调用 `%borrow/%loan`；对应 metadata、逃逸检查和
@@ -308,7 +308,7 @@ rules, cleanup mirrors, and the current nullable-upgrade compatibility boundary.
   - thread `Send` / `Sync` marker 会拒绝泛型实参里嵌套 Borrow/Loan/Shared/Weak 的线程库 wrapper
   - `using` 插件 guard 内的 binding、callable member reference 或块内别名通过 return、throw、out、调用参数、持久化容器、metadata、generator 延迟输出或闭包捕获逃逸时会触发 `plugin_type_escape`；typed/no-annotation `DynamicModule<T>` import guard payload 复用同一检查。内层 region 的 alias taint、nested callable shadow 和 await boundary 均由同一 guard-scoped fact 处理；不存在 source-level promotion escape hatch
   - 显式 function-call generic arguments 中引用 guard-scoped handle 会触发同一 compile-time/task-effect 边界：`return sink<math.Vector>()` 先报 `plugin_type_escape ... through signature type`，`await` 后 `sink<plugin + 0>()` 或 `sink<plugin.Vector>()` 先报 plugin guard await-boundary 诊断
-  - `using` 插件 guard 内的 module handle 不可通过 `Module.share()` 提升或逃逸；该 ownership-like member syntax 被拒绝
+  - `using` 插件 guard 内的 module handle 不存在公开 ownership promotion；`Module.share()` 是普通成员分派且从不发出 `OWN_SHARE`，`share(modulePayload)` 则因 plain operand 被拒绝
   - `using` 插件 guard 命中后会生成隐藏 shared owner，并在正常 scope 退出、return、break、continue cleanup 路径发出 `OWN_RELEASE`
   - LSP incremental parser 对 warning-only parser diagnostics 保留当前 AST / analyzer 状态，`LSP Legacy Ownership Type Warning Preserves Current AST` 覆盖该路径
   - struct/class field cleanup kind 仍可区分
