@@ -70,8 +70,7 @@ static EZrSemanticExpressionFactKind type_inference_expression_fact_kind(SZrAstN
         case ZR_AST_MEMBER_EXPRESSION:
             return ZR_SEMANTIC_EXPRESSION_FACT_MEMBER;
         case ZR_AST_CONSTRUCT_EXPRESSION:
-            return node->data.constructExpression.builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
-                   node->data.constructExpression.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE
+            return node->data.constructExpression.builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE
                            ? ZR_SEMANTIC_EXPRESSION_FACT_OWNERSHIP_BUILTIN
                            : ZR_SEMANTIC_EXPRESSION_FACT_CALL;
         case ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION:

@@ -4851,15 +4851,6 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
 
     construct = &node->data.constructExpression;
     builtinKind = construct->builtinKind;
-    if (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
-        if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
-            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
-        } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
-            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_SHARE;
-        } else if (construct->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
-            builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE;
-        }
-    }
 
     if (!construct->isNew && builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
         if (!ZrParser_ExpressionType_Infer(cs, construct->target, result)) {
@@ -4900,6 +4891,15 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         }
 
         switch (builtinKind) {
+            case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+                break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+                break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
+                break;
             case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
                 result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
                 result->referenceAccess = ZR_REFERENCE_ACCESS_READONLY;
@@ -4922,8 +4922,10 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                 result->referenceAccess = ZR_REFERENCE_ACCESS_NONE;
                 result->isNullable = ZR_TRUE;
                 break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+            case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
             default:
-                result->ownershipQualifier = construct->ownershipQualifier;
+                result->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                 break;
         }
         type_inference_record_ownership_builtin_fact(cs, node, builtinKind, result->ownershipQualifier);
@@ -5043,7 +5045,10 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                 ZrCore_String_Equal(targetType.typeName, typeName)) {
                 ZrParser_InferredType_Copy(cs->state, result, &targetType);
                 ZrParser_InferredType_Free(cs->state, &targetType);
-                result->ownershipQualifier = construct->ownershipQualifier;
+                result->ownershipQualifier =
+                        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE
+                                ? ZR_OWNERSHIP_QUALIFIER_UNIQUE
+                                : ZR_OWNERSHIP_QUALIFIER_NONE;
                 infer_construct_apply_task_job_ownership(cs, result);
                 return ZR_TRUE;
             }
@@ -5057,7 +5062,10 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
         }
     }
 
-    result->ownershipQualifier = construct->ownershipQualifier;
+    result->ownershipQualifier =
+            builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE
+                    ? ZR_OWNERSHIP_QUALIFIER_UNIQUE
+                    : ZR_OWNERSHIP_QUALIFIER_NONE;
     infer_construct_apply_task_job_ownership(cs, result);
     return ZR_TRUE;
 }

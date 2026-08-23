@@ -1292,8 +1292,7 @@ static TZrUInt32 compile_construct_expression_with_target(SZrCompilerState *cs,
     }
 
     if ((constructExpr->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
-         constructExpr->isUsing ||
-         constructExpr->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) &&
+         constructExpr->isUsing) &&
         constructExpr->isNew) {
         TZrBool wrapped =
                 constructExpr->isResourceSurface &&

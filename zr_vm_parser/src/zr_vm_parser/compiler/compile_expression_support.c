@@ -529,27 +529,9 @@ TZrUInt32 compiler_get_or_add_member_entry_for_type_member(SZrCompilerState *cs,
 
 static EZrOwnershipBuiltinKind resolve_construct_expression_builtin_kind(
         const SZrConstructExpression *constructExpr) {
-    if (constructExpr == ZR_NULL) {
-        return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-    }
-
-    if (constructExpr->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
-        return constructExpr->builtinKind;
-    }
-
-    switch (constructExpr->ownershipQualifier) {
-        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
-            return ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
-        case ZR_OWNERSHIP_QUALIFIER_SHARED:
-            return ZR_OWNERSHIP_BUILTIN_KIND_SHARE;
-        case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE;
-        case ZR_OWNERSHIP_QUALIFIER_NONE:
-        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
-        case ZR_OWNERSHIP_QUALIFIER_LOANED:
-        default:
-            return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
-    }
+    return constructExpr != ZR_NULL
+                   ? constructExpr->builtinKind
+                   : ZR_OWNERSHIP_BUILTIN_KIND_NONE;
 }
 
 TZrBool construct_expression_is_ownership_builtin(const SZrConstructExpression *constructExpr) {
@@ -1896,8 +1878,7 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
         node->data.constructExpression.isNew &&
         (node->data.constructExpression.isUsing ||
          node->data.constructExpression.isResourceSurface ||
-         node->data.constructExpression.builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
-         node->data.constructExpression.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE)) {
+         node->data.constructExpression.builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE)) {
         TZrUInt32 slot = compile_ownership_construct_expression_into_slot(cs, node, targetSlot);
         cs->isInTailCallContext = oldTailCallContext;
         return slot;

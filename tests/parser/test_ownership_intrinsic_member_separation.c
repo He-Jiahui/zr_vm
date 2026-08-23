@@ -164,6 +164,27 @@ static void register_resource_prototype(SZrCompilerState *compiler) {
     ZrCore_Array_Push(g_state, &compiler->typePrototypes, &prototype);
 }
 
+static void register_plain_boxed_prototype(SZrCompilerState *compiler,
+                                           const TZrChar *name) {
+    SZrTypePrototypeInfo prototype;
+
+    memset(&prototype, 0, sizeof(prototype));
+    prototype.name = ZrCore_String_CreateFromNative(
+            g_state, (TZrNativeString)name);
+    prototype.type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
+    prototype.accessModifier = ZR_ACCESS_PUBLIC;
+    prototype.allowBoxedConstruction = ZR_TRUE;
+    ZrCore_Array_Init(g_state, &prototype.inherits, sizeof(SZrString *), 1u);
+    ZrCore_Array_Init(g_state, &prototype.implements, sizeof(SZrString *), 1u);
+    ZrCore_Array_Init(g_state, &prototype.genericParameters, sizeof(SZrTypeGenericParameterInfo), 1u);
+    ZrCore_Array_Init(g_state, &prototype.members, sizeof(SZrTypeMemberInfo), 1u);
+    ZrCore_Array_Init(g_state, &prototype.decorators, sizeof(SZrTypeDecoratorInfo), 1u);
+
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+            g_state, compiler->typeEnv, prototype.name));
+    ZrCore_Array_Push(g_state, &compiler->typePrototypes, &prototype);
+}
+
 static void register_owner_binding(SZrCompilerState *compiler,
                                    const TZrChar *name,
                                    EZrOwnershipQualifier qualifier,
@@ -924,6 +945,58 @@ static void test_intrinsic_calls_emit_dedicated_opcodes_and_execute(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_construct_qualifier_does_not_publish_ownership_semantics(void) {
+    SZrCompilerState *compiler = create_compiler_state();
+    SZrAstNode *script = parse_source("new Plain();");
+    SZrAstNode *expression = statement_expression(script, 0u);
+    SZrInferredType result;
+    const SZrSemanticExpressionFact *fact;
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expression->type);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_BUILTIN_KIND_NONE,
+            expression->data.constructExpression.builtinKind);
+    expression->data.constructExpression.ownershipQualifier =
+            ZR_OWNERSHIP_QUALIFIER_SHARED;
+    register_plain_boxed_prototype(compiler, "Plain");
+
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(compiler, expression, &result));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_QUALIFIER_NONE, result.ownershipQualifier);
+    fact = ZrParser_SemanticFacts_FindExpressionByNode(
+            compiler->semanticContext, expression);
+    TEST_ASSERT_NOT_NULL(fact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_CALL, fact->kind);
+
+    ZrParser_InferredType_Free(g_state, &result);
+    ZrParser_Ast_Free(g_state, script);
+    destroy_compiler_state(compiler);
+}
+
+static void test_construct_qualifier_does_not_select_ownership_lowering(void) {
+    SZrAstNode *script = parse_source(
+            "class Plain {}\n"
+            "new Plain();\n");
+    SZrAstNode *expression = statement_expression(script, 1u);
+    SZrFunction *function;
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expression->type);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_BUILTIN_KIND_NONE,
+            expression->data.constructExpression.builtinKind);
+    expression->data.constructExpression.ownershipQualifier =
+            ZR_OWNERSHIP_QUALIFIER_SHARED;
+
+    function = ZrParser_Compiler_Compile(g_state, script);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_FALSE(function_contains_opcode_recursive(
+            function, ZR_INSTRUCTION_ENUM(OWN_SHARE), 0u));
+
+    ZrCore_Function_Free(g_state, function);
+    ZrParser_Ast_Free(g_state, script);
+}
+
 static void test_intrinsic_spellings_on_objects_use_normal_member_calls(void) {
     const TZrChar *source =
             "class Service {\n"
@@ -1253,6 +1326,8 @@ int main(void) {
     RUN_TEST(test_intrinsic_and_optional_receiver_errors_are_precise);
     RUN_TEST(test_consuming_intrinsics_reject_unlowerable_projections);
     RUN_TEST(test_intrinsic_calls_emit_dedicated_opcodes_and_execute);
+    RUN_TEST(test_construct_qualifier_does_not_publish_ownership_semantics);
+    RUN_TEST(test_construct_qualifier_does_not_select_ownership_lowering);
     RUN_TEST(test_intrinsic_spellings_on_objects_use_normal_member_calls);
     RUN_TEST(test_removed_ownership_member_calls_publish_structured_fixes);
     RUN_TEST(test_expired_weak_optional_call_skips_arguments);

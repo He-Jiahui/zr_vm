@@ -6,12 +6,16 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_completion_semantic_facts.c
@@ -23,12 +27,16 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
@@ -140,6 +148,13 @@ The lexer emits one `ZR_TK_QUESTION_DOT` token. The parser records `DIRECT` or
 intrinsic node stores the operation and its argument; it does not contain a
 callee identifier or member-expression surrogate.
 
+Construction ASTs carry an `ownershipQualifier` field for their declared result
+shape, but that field is not an ownership-operation selector. Type inference,
+expression-fact publication, wrapper selection, and compiler lowering use only
+the explicit `builtinKind` produced by current syntax such as `own` and `ref`.
+A construct with `builtinKind == NONE` remains an ordinary call even if stale or
+externally synthesized AST metadata contains a non-`NONE` qualifier.
+
 Type inference publishes two canonical fact families:
 
 - `SZrOwnershipIntrinsicFact` carries the operation, input/result canonical
@@ -161,6 +176,11 @@ Intrinsic lowering emits the canonical operations `OWN_SHARE`,
 `OWN_DEGRADE`, `OWN_WAKE`, `OWN_INTO_GC_BOX`, and `OWN_DROP`. Numeric artifact
 IDs remain stable where required, but old semantic names and source aliases are
 not accepted.
+
+Ordinary construction cannot enter this lowering from a qualifier fallback.
+Only an explicit construct `builtinKind` may select the older `own`/`ref`
+construction lowering, while the five ownership-control calls lower from their
+dedicated intrinsic AST and semantic facts.
 
 A receiver guard evaluates the base once. Optional guards branch to one merge
 slot; direct guards emit `REQUIRE_NON_NULL`. Weak guards emit exactly one

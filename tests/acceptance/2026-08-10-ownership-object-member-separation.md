@@ -11,7 +11,7 @@
 
 | Requirement | Implementation evidence | Focused evidence |
 | --- | --- | --- |
-| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | parser/semantic/runtime suite 24/24 |
+| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | parser/semantic/runtime suite 26/26 |
 | `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name object method and real-member tests |
 | Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes and catches the named runtime error |
 | `?.member`, `?.method(args)`, and `?.(args)` skip the complete suffix | per-segment access mode and chain-level receiver-guard lowering | optional failure skips argument side effects; optional success runs once |
@@ -87,7 +87,7 @@ GCC 11.4, Clang 14, and MSVC 19.44 Debug focused direct execution each
 passed the portable ownership/parser/runtime matrix:
 
 ```text
-ownership intrinsic/member separation  24/24
+ownership intrinsic/member separation  26/26
 removed percent syntax cutover            7/7
 owner/borrow receiver escape checks       7/7
 semantic facts                          14/14
@@ -96,6 +96,16 @@ resource Unique/Drop                    20/20
 resource Shared/Weak                    11/11
 exceptions                               8/8
 ```
+
+The two newest cases close a review-found construct-AST compatibility route.
+Against the old implementation, a normal `new Plain()` node with
+`builtinKind == NONE` but a stale `ownershipQualifier == SHARED` produced a
+Shared inferred type and emitted `OWN_SHARE`; the focused runner reported
+`26 Tests / 2 Failures`. Type inference, expression-fact classification, and
+both compiler wrapper entries now select ownership only from explicit
+`builtinKind`. The same runner then passed 26/26 on GCC 11.4, Clang 14, and
+MSVC 19.44. On each toolchain, type inference, expression facts, compiler
+integration, Unique/Drop, and Shared/Weak also completed with real exit code 0.
 
 The expanded 24th ownership case executes
 `liveWeak?.add?.(bump())` and its expired counterpart. The live path returns 11
