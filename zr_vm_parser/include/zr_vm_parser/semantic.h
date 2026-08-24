@@ -20,6 +20,11 @@ typedef TZrUInt32 TZrOverloadSetId;
 typedef TZrUInt32 TZrLifetimeRegionId;
 #endif
 
+#ifndef ZR_VM_PARSER_SEMANTIC_SCOPE_ID_TYPE_DECLARED
+#define ZR_VM_PARSER_SEMANTIC_SCOPE_ID_TYPE_DECLARED
+typedef TZrUInt32 TZrSemanticScopeId;
+#endif
+
 // Semantic IDs reserve 0 as "invalid / not assigned"; allocation starts at 1.
 #ifndef ZR_SEMANTIC_ID_INVALID
 #define ZR_SEMANTIC_ID_INVALID ((TZrUInt32)0U)
@@ -82,6 +87,47 @@ typedef struct SZrSemanticSymbolRecord {
     SZrFileRange location;
 } SZrSemanticSymbolRecord;
 
+typedef enum EZrSemanticScopeKind {
+    ZR_SEMANTIC_SCOPE_KIND_MODULE = 0,
+    ZR_SEMANTIC_SCOPE_KIND_TYPE,
+    ZR_SEMANTIC_SCOPE_KIND_FUNCTION,
+    ZR_SEMANTIC_SCOPE_KIND_BLOCK,
+    ZR_SEMANTIC_SCOPE_KIND_GENERIC
+} EZrSemanticScopeKind;
+
+typedef struct SZrSemanticScopeFact {
+    TZrSemanticScopeId id;
+    TZrSemanticScopeId parentScopeId;
+    EZrSemanticScopeKind kind;
+    SZrFileRange range;
+    TZrSymbolId ownerSymbolId;
+    TZrBool isStaticContext;
+} SZrSemanticScopeFact;
+
+/*
+ * A producer publishes one candidate for every symbol it has already bound to
+ * a lexical scope. The query only projects this fact; it never searches names
+ * through the global symbol registry to infer visibility.
+ */
+typedef struct SZrSemanticVisibleSymbolFact {
+    TZrSemanticScopeId scopeId;
+    TZrSymbolId symbolId;
+    TZrSymbolId ownerSymbolId;
+    EZrAccessModifier access;
+    TZrUInt32 declarationOrder;
+    SZrFileRange declarationRange;
+    SZrFileRange definitionRange;
+    SZrString *signatureDisplay;
+    TZrBool hasDefinitionRange;
+    TZrBool isHoisted;
+    TZrBool isAccessible;
+    TZrBool isReceiverMember;
+    TZrBool isStatic;
+    TZrBool isImport;
+    TZrBool isAlias;
+    TZrBool isGenericParameter;
+} SZrSemanticVisibleSymbolFact;
+
 typedef struct SZrSemanticOverloadSetRecord {
     TZrOverloadSetId id;
     SZrString *name;
@@ -136,12 +182,15 @@ typedef struct SZrSemanticContext {
     TZrSymbolId nextSymbolId;
     TZrOverloadSetId nextOverloadSetId;
     TZrLifetimeRegionId nextLifetimeRegionId;
+    TZrSemanticScopeId nextScopeId;
     SZrArray canonicalTypes;    // SZrCanonicalTypeNode
     SZrArray canonicalTypeHashBuckets; // internal TZrUInt32 bucket heads
     SZrArray canonicalTypeHashNext; // internal TZrUInt32 collision links
     SZrArray canonicalTypeDefinitions; // internal canonical TypeDef records
     SZrArray types;             // SZrSemanticTypeRecord
     SZrArray symbols;           // SZrSemanticSymbolRecord
+    SZrArray scopeFacts;        // SZrSemanticScopeFact
+    SZrArray visibleSymbolFacts; // SZrSemanticVisibleSymbolFact
     SZrArray overloadSets;      // SZrSemanticOverloadSetRecord
     SZrArray cleanupPlan;       // SZrDeterministicCleanupStep
     SZrArray templateSegments;  // SZrTemplateSegment
@@ -173,6 +222,7 @@ ZR_PARSER_API TZrTypeId ZrParser_Semantic_ReserveTypeId(SZrSemanticContext *cont
 ZR_PARSER_API TZrSymbolId ZrParser_Semantic_ReserveSymbolId(SZrSemanticContext *context);
 ZR_PARSER_API TZrOverloadSetId ZrParser_Semantic_ReserveOverloadSetId(SZrSemanticContext *context);
 ZR_PARSER_API TZrLifetimeRegionId ZrParser_Semantic_ReserveLifetimeRegionId(SZrSemanticContext *context);
+ZR_PARSER_API TZrSemanticScopeId ZrParser_Semantic_ReserveScopeId(SZrSemanticContext *context);
 
 ZR_PARSER_API TZrTypeId ZrParser_Semantic_RegisterInferredType(SZrSemanticContext *context,
                                                        const SZrInferredType *type,
@@ -201,8 +251,20 @@ ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(SZrSemanticCont
                                                          EZrSemanticSymbolKind kind,
                                                          TZrTypeId typeId,
                                                          TZrOverloadSetId overloadSetId,
-                                                         SZrAstNode *astNode,
-                                                         SZrFileRange location);
+                                                          SZrAstNode *astNode,
+                                                          SZrFileRange location);
+ZR_PARSER_API const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolById(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId);
+ZR_PARSER_API TZrSemanticScopeId ZrParser_Semantic_PublishScopeFact(
+        SZrSemanticContext *context,
+        const SZrSemanticScopeFact *fact);
+ZR_PARSER_API const SZrSemanticScopeFact *ZrParser_Semantic_FindScopeFactById(
+        const SZrSemanticContext *context,
+        TZrSemanticScopeId scopeId);
+ZR_PARSER_API TZrBool ZrParser_Semantic_PublishVisibleSymbolFact(
+        SZrSemanticContext *context,
+        const SZrSemanticVisibleSymbolFact *fact);
 ZR_PARSER_API const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolByNameAndKind(
         const SZrSemanticContext *context,
         SZrString *name,

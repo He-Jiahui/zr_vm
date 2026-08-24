@@ -19,6 +19,14 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
                 sizeof(SZrSemanticSymbolRecord),
                 ZR_PARSER_INITIAL_CAPACITY_SMALL);
     ZrCore_Array_Init(context->state,
+                &context->scopeFacts,
+                sizeof(SZrSemanticScopeFact),
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(context->state,
+                &context->visibleSymbolFacts,
+                sizeof(SZrSemanticVisibleSymbolFact),
+                ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(context->state,
                 &context->overloadSets,
                 sizeof(SZrSemanticOverloadSetRecord),
                 ZR_PARSER_INITIAL_CAPACITY_TINY);
@@ -101,6 +109,8 @@ void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     if (context->symbols.isValid && context->symbols.head != ZR_NULL) {
         ZrCore_Array_Free(context->state, &context->symbols);
     }
+    ZrCore_Array_Free(context->state, &context->scopeFacts);
+    ZrCore_Array_Free(context->state, &context->visibleSymbolFacts);
     if (context->overloadSets.isValid && context->overloadSets.head != ZR_NULL) {
         for (i = 0; i < context->overloadSets.length; i++) {
             SZrSemanticOverloadSetRecord *record =
@@ -131,6 +141,7 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     context->nextSymbolId = ZR_SEMANTIC_ID_FIRST;
     context->nextOverloadSetId = ZR_SEMANTIC_ID_FIRST;
     context->nextLifetimeRegionId = ZR_SEMANTIC_ID_FIRST;
+    context->nextScopeId = ZR_SEMANTIC_ID_FIRST;
     ZrParser_CanonicalTypeDefinition_Reset(context);
     ZrParser_CanonicalType_Reset(context);
     for (i = 0; i < context->types.length; i++) {
@@ -149,6 +160,8 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     }
     context->types.length = 0;
     context->symbols.length = 0;
+    context->scopeFacts.length = 0;
+    context->visibleSymbolFacts.length = 0;
     context->overloadSets.length = 0;
     context->cleanupPlan.length = 0;
     context->templateSegments.length = 0;
@@ -183,6 +196,13 @@ TZrLifetimeRegionId ZrParser_Semantic_ReserveLifetimeRegionId(SZrSemanticContext
         return ZR_SEMANTIC_ID_INVALID;
     }
     return context->nextLifetimeRegionId++;
+}
+
+TZrSemanticScopeId ZrParser_Semantic_ReserveScopeId(SZrSemanticContext *context) {
+    if (context == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    return context->nextScopeId++;
 }
 
 static EZrSemanticTypeKind semantic_type_kind_from_inferred_type(const SZrInferredType *type,
@@ -422,6 +442,81 @@ TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(
 
     ZrCore_Array_Push(context->state, &context->symbols, &record);
     return record.id;
+}
+
+const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolById(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    TZrSize index;
+
+    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+        if (symbol != ZR_NULL && symbol->id == symbolId) {
+            return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
+const SZrSemanticScopeFact *ZrParser_Semantic_FindScopeFactById(
+        const SZrSemanticContext *context,
+        TZrSemanticScopeId scopeId) {
+    TZrSize index;
+
+    if (context == ZR_NULL || scopeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->scopeFacts.length; index++) {
+        const SZrSemanticScopeFact *scope =
+                (const SZrSemanticScopeFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->scopeFacts, index);
+        if (scope != ZR_NULL && scope->id == scopeId) {
+            return scope;
+        }
+    }
+    return ZR_NULL;
+}
+
+TZrSemanticScopeId ZrParser_Semantic_PublishScopeFact(
+        SZrSemanticContext *context,
+        const SZrSemanticScopeFact *fact) {
+    SZrSemanticScopeFact copy;
+
+    if (context == ZR_NULL || fact == ZR_NULL || !context->scopeFacts.isValid ||
+        (fact->parentScopeId != ZR_SEMANTIC_ID_INVALID &&
+         ZrParser_Semantic_FindScopeFactById(context, fact->parentScopeId) == ZR_NULL)) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+
+    copy = *fact;
+    copy.id = ZrParser_Semantic_ReserveScopeId(context);
+    if (copy.id == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    ZrCore_Array_Push(context->state, &context->scopeFacts, &copy);
+    return copy.id;
+}
+
+TZrBool ZrParser_Semantic_PublishVisibleSymbolFact(
+        SZrSemanticContext *context,
+        const SZrSemanticVisibleSymbolFact *fact) {
+    SZrSemanticVisibleSymbolFact copy;
+
+    if (context == ZR_NULL || fact == ZR_NULL || !context->visibleSymbolFacts.isValid ||
+        fact->symbolId == ZR_SEMANTIC_ID_INVALID || fact->declarationOrder == 0U ||
+        ZrParser_Semantic_FindScopeFactById(context, fact->scopeId) == ZR_NULL ||
+        ZrParser_Semantic_FindSymbolById(context, fact->symbolId) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    copy = *fact;
+    ZrCore_Array_Push(context->state, &context->visibleSymbolFacts, &copy);
+    return ZR_TRUE;
 }
 
 const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolByNameAndKind(

@@ -164,9 +164,454 @@ static void test_symbol_at_fails_closed_for_unresolved_reference(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static TZrSemanticScopeId symbol_publish_scope(SZrSemanticContext *context,
+                                               TZrSemanticScopeId parentScopeId,
+                                               TZrSize startOffset,
+                                               TZrSize endOffset,
+                                               TZrSymbolId ownerSymbolId,
+                                               TZrBool isStaticContext) {
+    SZrSemanticScopeFact fact;
+
+    memset(&fact, 0, sizeof(fact));
+    fact.parentScopeId = parentScopeId;
+    fact.range = symbol_range(startOffset, endOffset);
+    fact.ownerSymbolId = ownerSymbolId;
+    fact.isStaticContext = isStaticContext;
+    return ZrParser_Semantic_PublishScopeFact(context, &fact);
+}
+
+static void symbol_register(SZrSemanticContext *context,
+                            TZrSymbolId symbolId,
+                            TZrNativeString name,
+                            EZrSemanticSymbolKind kind,
+                            TZrTypeId typeId,
+                            TZrOverloadSetId overloadSetId,
+                            TZrSize declarationStart,
+                            TZrSize declarationEnd) {
+    SZrString *symbolName = ZrCore_String_CreateFromNative(g_state, name);
+
+    TEST_ASSERT_NOT_NULL(symbolName);
+    TEST_ASSERT_EQUAL_UINT32(
+            symbolId,
+            ZrParser_Semantic_RegisterSymbolWithId(context,
+                                                    symbolId,
+                                                    symbolName,
+                                                    kind,
+                                                    typeId,
+                                                    overloadSetId,
+                                                    ZR_NULL,
+                                                    symbol_range(
+                                                            declarationStart,
+                                                            declarationEnd)));
+}
+
+static void symbol_publish_visible(SZrSemanticContext *context,
+                                   TZrSemanticScopeId scopeId,
+                                   TZrSymbolId symbolId,
+                                   TZrSymbolId ownerSymbolId,
+                                   TZrUInt32 declarationOrder,
+                                   TZrSize declarationStart,
+                                   TZrSize declarationEnd,
+                                   TZrBool isHoisted,
+                                   TZrBool isAccessible,
+                                   TZrBool isReceiverMember,
+                                   TZrBool isStatic,
+                                   TZrBool isImport,
+                                   TZrBool isAlias,
+                                   TZrBool isGenericParameter,
+                                   SZrString *signatureDisplay) {
+    SZrSemanticVisibleSymbolFact fact;
+
+    memset(&fact, 0, sizeof(fact));
+    fact.scopeId = scopeId;
+    fact.symbolId = symbolId;
+    fact.ownerSymbolId = ownerSymbolId;
+    fact.access = isAccessible ? ZR_ACCESS_PUBLIC : ZR_ACCESS_PRIVATE;
+    fact.declarationOrder = declarationOrder;
+    fact.declarationRange = symbol_range(declarationStart, declarationEnd);
+    fact.definitionRange = fact.declarationRange;
+    fact.hasDefinitionRange = ZR_TRUE;
+    fact.isHoisted = isHoisted;
+    fact.isAccessible = isAccessible;
+    fact.isReceiverMember = isReceiverMember;
+    fact.isStatic = isStatic;
+    fact.isImport = isImport;
+    fact.isAlias = isAlias;
+    fact.isGenericParameter = isGenericParameter;
+    fact.signatureDisplay = signatureDisplay;
+    TEST_ASSERT_TRUE(ZrParser_Semantic_PublishVisibleSymbolFact(context, &fact));
+}
+
+static const SZrParserSemanticSymbolQuery *symbol_visible_at(
+        const SZrArray *symbols,
+        TZrSize index) {
+    return (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+            (SZrArray *)symbols, index);
+}
+
+static void test_visible_symbols_uses_scope_facts_for_shadowing_and_options(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    TZrSemanticScopeId moduleScope;
+    TZrSemanticScopeId functionScope;
+    TZrSemanticScopeId blockScope;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    SZrString *sumSignature = ZrCore_String_CreateFromNative(g_state, "fn sum(): int");
+
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_NOT_NULL(sumSignature);
+    moduleScope = symbol_publish_scope(context,
+                                       ZR_SEMANTIC_ID_INVALID,
+                                       0U,
+                                       240U,
+                                       ZR_SEMANTIC_ID_INVALID,
+                                       ZR_FALSE);
+    functionScope = symbol_publish_scope(context, moduleScope, 20U, 180U, 900U, ZR_FALSE);
+    blockScope = symbol_publish_scope(context, functionScope, 60U, 140U, 900U, ZR_FALSE);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, moduleScope);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, functionScope);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, blockScope);
+
+    symbol_register(context,
+                    100U,
+                    "value",
+                    ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                    10U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    5U,
+                    10U);
+    symbol_register(context,
+                    200U,
+                    "value",
+                    ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                    11U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    30U,
+                    35U);
+    symbol_register(context,
+                    210U,
+                    "value",
+                    ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                    19U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    70U,
+                    75U);
+    symbol_register(context,
+                    250U,
+                    "T",
+                    ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                    12U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    22U,
+                    23U);
+    symbol_register(context,
+                    300U,
+                    "sum",
+                    ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                    13U,
+                    700U,
+                    36U,
+                    39U);
+    symbol_register(context,
+                    301U,
+                    "sum",
+                    ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                    14U,
+                    700U,
+                    40U,
+                    43U);
+    symbol_register(context,
+                    400U,
+                    "count",
+                    ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                    15U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    44U,
+                    49U);
+    symbol_register(context,
+                    500U,
+                    "Widget",
+                    ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                    16U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    12U,
+                    18U);
+    symbol_register(context,
+                    600U,
+                    "hidden",
+                    ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                    17U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    14U,
+                    19U);
+    symbol_register(context,
+                    700U,
+                    "later",
+                    ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                    18U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    120U,
+                    125U);
+
+    symbol_publish_visible(context,
+                           moduleScope,
+                           100U,
+                           ZR_SEMANTIC_ID_INVALID,
+                           1U,
+                           5U,
+                           10U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           functionScope,
+                           200U,
+                           ZR_SEMANTIC_ID_INVALID,
+                           1U,
+                           30U,
+                           35U,
+                           ZR_FALSE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           functionScope,
+                           250U,
+                           900U,
+                           1U,
+                           22U,
+                           23U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_TRUE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           functionScope,
+                           300U,
+                           900U,
+                           2U,
+                           36U,
+                           39U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           sumSignature);
+    symbol_publish_visible(context,
+                           functionScope,
+                           301U,
+                           900U,
+                           2U,
+                           40U,
+                           43U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           sumSignature);
+    symbol_publish_visible(context,
+                           functionScope,
+                           400U,
+                           900U,
+                           3U,
+                           44U,
+                           49U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           moduleScope,
+                           500U,
+                           ZR_SEMANTIC_ID_INVALID,
+                           2U,
+                           12U,
+                           18U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           moduleScope,
+                           600U,
+                           901U,
+                           3U,
+                           14U,
+                           19U,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           blockScope,
+                           700U,
+                           ZR_SEMANTIC_ID_INVALID,
+                           2U,
+                           120U,
+                           125U,
+                           ZR_FALSE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           blockScope,
+                           210U,
+                           ZR_SEMANTIC_ID_INVALID,
+                           1U,
+                           70U,
+                           75U,
+                           ZR_FALSE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            context, symbol_range(90U, 90U), ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(4U, (TZrUInt32)symbols.length);
+    TEST_ASSERT_EQUAL_UINT32(210U, symbol_visible_at(&symbols, 0U)->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(250U, symbol_visible_at(&symbols, 1U)->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(300U, symbol_visible_at(&symbols, 2U)->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(301U, symbol_visible_at(&symbols, 3U)->symbolId);
+    TEST_ASSERT_EQUAL_STRING(
+            "sum", ZrCore_String_GetNativeString(symbol_visible_at(&symbols, 2U)->displayName));
+    TEST_ASSERT_EQUAL_STRING("fn sum(): int",
+                             ZrCore_String_GetNativeString(
+                                     symbol_visible_at(&symbols, 2U)->signatureDisplay));
+
+    options.includeReceiverMembers = ZR_TRUE;
+    options.includeImports = ZR_TRUE;
+    options.includeInaccessible = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            context, symbol_range(90U, 90U), ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(7U, (TZrUInt32)symbols.length);
+    TEST_ASSERT_EQUAL_UINT32(400U, symbol_visible_at(&symbols, 4U)->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(500U, symbol_visible_at(&symbols, 5U)->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(600U, symbol_visible_at(&symbols, 6U)->symbolId);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_visible_symbols_excludes_instance_members_from_static_scope(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    TZrSemanticScopeId moduleScope;
+    TZrSemanticScopeId staticScope;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+
+    TEST_ASSERT_NOT_NULL(context);
+    moduleScope = symbol_publish_scope(context,
+                                       ZR_SEMANTIC_ID_INVALID,
+                                       0U,
+                                       100U,
+                                       ZR_SEMANTIC_ID_INVALID,
+                                       ZR_FALSE);
+    staticScope = symbol_publish_scope(context, moduleScope, 20U, 80U, 901U, ZR_TRUE);
+    symbol_register(context,
+                    801U,
+                    "factory",
+                    ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                    20U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    25U,
+                    32U);
+    symbol_register(context,
+                    802U,
+                    "instanceOnly",
+                    ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                    21U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    33U,
+                    45U);
+    symbol_publish_visible(context,
+                           staticScope,
+                           801U,
+                           901U,
+                           1U,
+                           25U,
+                           32U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+    symbol_publish_visible(context,
+                           staticScope,
+                           802U,
+                           901U,
+                           2U,
+                           33U,
+                           45U,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_TRUE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_FALSE,
+                           ZR_NULL);
+
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    options.includeReceiverMembers = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            context, symbol_range(50U, 50U), ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbols.length);
+    TEST_ASSERT_EQUAL_UINT32(801U, symbol_visible_at(&symbols, 0U)->symbolId);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    ZrParser_SemanticContext_Free(context);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
     RUN_TEST(test_symbol_at_fails_closed_for_unresolved_reference);
+    RUN_TEST(test_visible_symbols_uses_scope_facts_for_shadowing_and_options);
+    RUN_TEST(test_visible_symbols_excludes_instance_members_from_static_scope);
     return UNITY_END();
 }

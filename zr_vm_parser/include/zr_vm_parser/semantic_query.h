@@ -71,6 +71,12 @@ typedef struct SZrParserSemanticSymbolQuery {
     SZrString *signatureDisplay;
 } SZrParserSemanticSymbolQuery;
 
+typedef struct SZrParserSemanticVisibleSymbolOptions {
+    TZrBool includeReceiverMembers;
+    TZrBool includeImports;
+    TZrBool includeInaccessible;
+} SZrParserSemanticVisibleSymbolOptions;
+
 typedef struct SZrParserSemanticPublicContractQuery {
     TZrUInt64 hash;
     TZrSize exportCount;
@@ -132,6 +138,18 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_SymbolAt(
         SZrFileRange position,
         const SZrParserSemanticQueryScope *scope,
         SZrParserSemanticSymbolQuery *outSymbol);
+/*
+ * outSymbols contains SZrParserSemanticSymbolQuery values, not fact pointers.
+ * displayName and signatureDisplay within each value remain borrowed from the
+ * semantic snapshot. The caller constructs or reuses the array; this query
+ * clears a correctly typed reused array before appending results.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        const SZrParserSemanticVisibleSymbolOptions *options,
+        SZrArray *outSymbols);
 /*
  * This is an analysis lifecycle operation, not a read-only query. It rebuilds
  * the borrowed diagnostic view for exactly one scope. Call it after semantic
