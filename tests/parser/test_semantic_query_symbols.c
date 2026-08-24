@@ -3,12 +3,17 @@
 #include <string.h>
 
 #include "harness/runtime_support.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
+
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 static SZrState *g_state;
 
@@ -42,6 +47,41 @@ static void symbol_init_node(SZrAstNode *node, TZrSize startOffset, TZrSize endO
     memset(node, 0, sizeof(*node));
     node->type = ZR_AST_IDENTIFIER_LITERAL;
     node->location = symbol_range(startOffset, endOffset);
+}
+
+static SZrFileRange symbol_source_position(const TZrChar *source,
+                                           SZrString *sourceName,
+                                           const TZrChar *needle,
+                                           TZrSize occurrence) {
+    const TZrChar *cursor = source;
+    const TZrChar *match;
+    SZrFileRange range;
+
+    memset(&range, 0, sizeof(range));
+    do {
+        cursor = strstr(cursor, needle);
+        TEST_ASSERT_NOT_NULL(cursor);
+        match = cursor;
+        cursor++;
+    } while (occurrence-- != 0U);
+    range.source = sourceName;
+    range.start.offset = (TZrSize)(match - source);
+    range.end = range.start;
+    return range;
+}
+
+static void symbol_release_compiler_function(SZrCompilerState *cs) {
+    if (cs == ZR_NULL) {
+        return;
+    }
+    if (cs->topLevelFunction != ZR_NULL && cs->topLevelFunction != cs->currentFunction) {
+        ZrCore_Function_Free(g_state, cs->topLevelFunction);
+        cs->topLevelFunction = ZR_NULL;
+    }
+    if (cs->currentFunction != ZR_NULL) {
+        ZrCore_Function_Free(g_state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+    }
 }
 
 static void symbol_append_reference(SZrSemanticContext *context,
@@ -247,6 +287,23 @@ static const SZrParserSemanticSymbolQuery *symbol_visible_at(
         TZrSize index) {
     return (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
             (SZrArray *)symbols, index);
+}
+
+static TZrSize symbol_count_visible_name(const SZrArray *symbols, const TZrChar *name) {
+    TZrSize count = 0U;
+
+    if (symbols == ZR_NULL || name == ZR_NULL) {
+        return 0U;
+    }
+    for (TZrSize index = 0U; index < symbols->length; index++) {
+        const SZrParserSemanticSymbolQuery *symbol = symbol_visible_at(symbols, index);
+
+        if (symbol != ZR_NULL && symbol->displayName != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(symbol->displayName), name) == 0) {
+            count++;
+        }
+    }
+    return count;
 }
 
 static void test_visible_symbols_uses_scope_facts_for_shadowing_and_options(void) {
@@ -607,11 +664,102 @@ static void test_visible_symbols_excludes_instance_members_from_static_scope(voi
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_visible_symbols_project_compiled_source_scope_facts(void) {
+    const TZrChar *source =
+            "fn choose(seed: int): int {\n"
+            "    var value: int = seed;\n"
+            "    {\n"
+            "        var value: int = 1;\n"
+            "        return value;\n"
+            "    }\n"
+            "}\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_source.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    position = symbol_source_position(source, sourceName, "value", 2U);
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "value"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "seed"));
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_visible_symbols_does_not_leak_for_initializer(void) {
+    const TZrChar *source =
+            "fn loop_scope(seed: int): int {\n"
+            "    for (var step: int = 0; step < seed; step = step + 1) {\n"
+            "    }\n"
+            "    var after: int = seed;\n"
+            "    return after;\n"
+            "}\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_loop.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    position = symbol_source_position(source, sourceName, "after", 0U);
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "step"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "seed"));
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
     RUN_TEST(test_symbol_at_fails_closed_for_unresolved_reference);
     RUN_TEST(test_visible_symbols_uses_scope_facts_for_shadowing_and_options);
     RUN_TEST(test_visible_symbols_excludes_instance_members_from_static_scope);
+    RUN_TEST(test_visible_symbols_project_compiled_source_scope_facts);
+    RUN_TEST(test_visible_symbols_does_not_leak_for_initializer);
     return UNITY_END();
 }

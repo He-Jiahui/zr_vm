@@ -5,6 +5,7 @@
 #include "compiler_internal.h"
 #include "compiler/compile_time_executor_internal.h"
 #include "compiler/compiler_attribute_binding.h"
+#include "semantic/semantic_scope_facts.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -800,6 +801,12 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
         }
         if (!cs->hasError) {
             (void)ZrParser_Compiler_PublishSemanticQueryDiagnostics(cs);
+        }
+        if (!cs->hasError && cs->semanticContext != ZR_NULL &&
+            !ZrParser_Semantic_BuildSourceScopeFacts(cs->semanticContext, node)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to publish source semantic scope facts", node->location);
+            return;
         }
 
         exit_scope(cs);
