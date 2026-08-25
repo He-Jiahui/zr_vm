@@ -874,6 +874,9 @@ TZrBool compiler_type_member_capture_structured_return_type(
         SZrCompilerState *cs,
         SZrTypeMemberInfo *memberInfo,
         SZrType *returnType);
+TZrBool compiler_type_member_register_function_symbol(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo);
 
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
                                                  TZrByte **outData, TZrSize *outSize) ;

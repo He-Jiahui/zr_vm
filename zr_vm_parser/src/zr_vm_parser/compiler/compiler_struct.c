@@ -310,15 +310,7 @@ static TZrBool compiler_struct_register_canonical_definition(
             member->name == ZR_NULL || member->symbolId != ZR_SEMANTIC_ID_INVALID) {
             continue;
         }
-        member->symbolId = ZrParser_Semantic_RegisterSymbol(
-                cs->semanticContext,
-                member->name,
-                ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
-                typeId,
-                ZR_SEMANTIC_ID_INVALID,
-                member->declarationNode,
-                member->declarationNode->location);
-        if (member->symbolId == ZR_SEMANTIC_ID_INVALID) {
+        if (!compiler_type_member_register_function_symbol(cs, member)) {
             if (genericBindings.isValid) {
                 ZrCore_Array_Free(cs->state, &genericBindings);
             }

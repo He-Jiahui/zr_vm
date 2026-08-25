@@ -1060,6 +1060,72 @@ static void test_visible_symbols_projects_source_method_generic_parameter(void) 
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_visible_symbols_projects_source_class_method_generic_parameter(void) {
+    const TZrChar *source =
+            "class Crate<T> { fn echo<U>(value: U): U { return value; } }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *methodNode;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    const SZrSemanticSymbolRecord *method;
+    const SZrParserSemanticSymbolQuery *parameter;
+    const SZrCanonicalTypeNode *parameterType;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_generic_class_method.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)ast->data.script.statements->count);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]->data.classDeclaration.members);
+    methodNode = ast->data.script.statements->nodes[0]->data.classDeclaration.members->nodes[0];
+    TEST_ASSERT_NOT_NULL(methodNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_METHOD, methodNode->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    method = symbol_find_registered_node(cs.semanticContext, methodNode);
+    TEST_ASSERT_NOT_NULL(method);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, method->id);
+
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    position = symbol_source_position(source, sourceName, "echo", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "U"));
+
+    position = symbol_source_position(source, sourceName, "U", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "U"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "T"));
+    parameter = symbol_find_visible_name(&symbols, "U");
+    TEST_ASSERT_NOT_NULL(parameter);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, parameter->symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, parameter->typeId);
+    TEST_ASSERT_EQUAL_UINT32(method->id, parameter->ownerSymbolId);
+    parameterType = ZrParser_CanonicalType_Find(cs.semanticContext, parameter->typeId);
+    TEST_ASSERT_NOT_NULL(parameterType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_GENERIC_PARAMETER, parameterType->kind);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
@@ -1072,5 +1138,6 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_type_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_function_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_method_generic_parameter);
+    RUN_TEST(test_visible_symbols_projects_source_class_method_generic_parameter);
     return UNITY_END();
 }

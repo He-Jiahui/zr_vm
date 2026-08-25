@@ -1478,6 +1478,17 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             }
 
             if (memberInfo.name != ZR_NULL) {
+                if (member->type == ZR_AST_CLASS_METHOD &&
+                    !compiler_type_member_register_function_symbol(cs, &memberInfo)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to register canonical class method symbol",
+                            member->location);
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
                 ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
             }
         }
