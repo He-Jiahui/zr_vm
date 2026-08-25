@@ -2718,7 +2718,7 @@ static void compile_using_pattern_guard_statement(SZrCompilerState *cs, SZrAstNo
 }
 
 // 编译变量声明
-static TZrBool compile_variable_register_semantic_local(
+TZrBool compile_statement_register_semantic_local(
         SZrCompilerState *cs,
         SZrString *name,
         const SZrInferredType *resolvedType,
@@ -2987,7 +2987,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             }
 
             if (decl->value->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
-                semanticLocalPreRegistered = compile_variable_register_semantic_local(
+                semanticLocalPreRegistered = compile_statement_register_semantic_local(
                         cs,
                         varName,
                         hasResolvedType ? &resolvedType : ZR_NULL,
@@ -3025,7 +3025,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                                     (unsigned int)initializerSlot,
                                     (unsigned int)reservedVarSlot);
             if (!semanticLocalPreRegistered &&
-                !compile_variable_register_semantic_local(
+                !compile_statement_register_semantic_local(
                         cs,
                         varName,
                         hasResolvedType ? &resolvedType : ZR_NULL,
@@ -3068,7 +3068,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             varIndex = allocate_local_var(cs, varName);
             compile_statement_trace("var decl allocate local no initializer varIndex=%u", (unsigned int)varIndex);
 
-            if (!compile_variable_register_semantic_local(
+            if (!compile_statement_register_semantic_local(
                         cs,
                         varName,
                         hasResolvedType ? &resolvedType : ZR_NULL,

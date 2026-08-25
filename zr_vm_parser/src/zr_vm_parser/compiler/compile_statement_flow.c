@@ -1205,22 +1205,33 @@ static TZrBool compile_destructuring_infer_source_type(SZrCompilerState *cs,
     return ZrParser_ExpressionType_Infer(cs, value, outSourceType);
 }
 
-static void compile_destructuring_register_binding_type(SZrCompilerState *cs,
-                                                        SZrString *bindingName,
-                                                        SZrString *fieldTypeName,
-                                                        EZrOwnershipQualifier ownershipQualifier) {
+static TZrBool compile_destructuring_register_binding_type(SZrCompilerState *cs,
+                                                           SZrString *bindingName,
+                                                           SZrString *fieldTypeName,
+                                                           EZrOwnershipQualifier ownershipQualifier,
+                                                           TZrUInt32 stackSlot,
+                                                           SZrAstNode *declarationNode,
+                                                           SZrFileRange declarationRange) {
     SZrInferredType bindingType;
+    TZrBool registered = ZR_FALSE;
 
     if (cs == ZR_NULL || cs->typeEnv == ZR_NULL || bindingName == ZR_NULL || fieldTypeName == ZR_NULL) {
-        return;
+        return ZR_FALSE;
     }
 
     ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
     if (inferred_type_from_type_name(cs, fieldTypeName, &bindingType)) {
         bindingType.ownershipQualifier = ownershipQualifier;
-        ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, bindingName, &bindingType);
+        registered = compile_statement_register_semantic_local(cs,
+                                                                bindingName,
+                                                                &bindingType,
+                                                                stackSlot,
+                                                                declarationNode,
+                                                                declarationRange,
+                                                                ZR_TRUE);
     }
     ZrParser_InferredType_Free(cs->state, &bindingType);
+    return registered;
 }
 
 static TZrBool destructuring_object_entry_names(SZrAstNode *entry,
@@ -1365,6 +1376,7 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
     if (destruct->keys != ZR_NULL) {
         for (TZrSize i = 0; i < destruct->keys->count; i++) {
             SZrAstNode *keyNode = destruct->keys->nodes[i];
+            SZrAstNode *bindingNode;
             SZrString *bindingName = ZR_NULL;
             SZrString *fieldName = ZR_NULL;
             SZrFileRange bindingLocation;
@@ -1373,6 +1385,13 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
             }
             
             if (bindingName == ZR_NULL || fieldName == ZR_NULL) {
+                continue;
+            }
+            bindingNode = keyNode;
+            if (bindingNode != ZR_NULL && bindingNode->type == ZR_AST_KEY_VALUE_PAIR) {
+                bindingNode = bindingNode->data.keyValuePair.key;
+            }
+            if (bindingNode == ZR_NULL) {
                 continue;
             }
             
@@ -1407,10 +1426,19 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
             TZrInstruction setStackInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)varIndex, (TZrInt32)valueSlot);
             emit_instruction(cs, setStackInst);
             if (canEmitMemberSlot) {
-                compile_destructuring_register_binding_type(cs,
-                                                            bindingName,
-                                                            fieldTypeName,
-                                                            fieldOwnershipQualifier);
+                if (!compile_destructuring_register_binding_type(cs,
+                                                                 bindingName,
+                                                                 fieldTypeName,
+                                                                 fieldOwnershipQualifier,
+                                                                 varIndex,
+                                                                 bindingNode,
+                                                                 bindingNode->location)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to register destructured variable in pre-execution Semantic IR",
+                            bindingNode->location);
+                    break;
+                }
             }
             
             ZrParser_Compiler_TrimStackBy(cs, 1);

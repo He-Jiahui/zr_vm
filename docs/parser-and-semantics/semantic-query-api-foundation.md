@@ -167,6 +167,7 @@ The same compiler diagnostic target covers semantic query diagnostics for existi
 - The same target compiles `fn identity<T>(value: T): T`. It verifies that `T` is absent at the function declaration name, becomes visible at the generic declaration, carries the exact function owner `SymbolId` and canonical generic-parameter `TypeId`, and is materialized from the published function scope rather than its overlapping module scope.
 - The same target compiles `struct Box<T> { fn echo<U>(value: U): U { return value; } }`. It verifies that `U` is absent at `echo`, becomes visible at its declaration with the compiler-registered exact method owner `SymbolId`, has a canonical generic-parameter `TypeId`, and sees enclosing `T` through published scope parentage.
 - The same target compiles `class Crate<T> { fn echo<U>(value: U): U { return value; } }`. It verifies that class method `U` is absent at `echo`, becomes visible only at its declaration, retains the exact compiler-registered method owner `SymbolId` and canonical generic-parameter `TypeId`, and can see enclosing `T` through the published type-to-method scope chain. The class compiler and struct canonical-definition pass share the same type-member registration helper, which resolves the canonical owner `TypeId` and registers the exact member declaration node before scope-fact publication; the query layer does not recover the symbol from method text or an AST scan.
+- The same target compiles direct and object-destructured `zr.math` imports plus an `int[][]` type-value alias. It verifies that the imported binding key and type-value declaration retain their compiler-registered SymbolId, TypeId, and exact declaration range through `SymbolAt` and `VisibleSymbols`; imports and aliases appear only when `includeImports` is set, without an AST, member-name, or module-text fallback in the query layer.
 - The same target compiles `interface Readable<T> { fn echo<U>(value: U): U; }`. It verifies that interface signature `U` is absent at `echo`, becomes visible only at its declaration, retains the exact compiler-registered signature owner `SymbolId` and canonical generic-parameter `TypeId`, and can see enclosing `T` through the published type-to-signature scope chain. The interface compiler uses the same canonical type-member registration helper; the scope producer emits no interface candidate unless that exact symbol exists.
 - `tests/parser/test_semantic_query_contract.c` freezes Plan 03 query contract behavior: `TypeAt` fails closed for an approximate expression fact, `FactsAt` returns the same borrowed fact view on repeated reads, and `Diagnostics` cannot materialize context state without the explicit lifecycle operation.
 - `tests/language_server/test_lsp_semantic_query_diagnostics.c` covers LSP publishing of semantic query diagnostics by opening a constant ternary branch fixture and requiring `GetDiagnostics` to include `unreachable_code`; it also covers `numeric_overflow`, array bounds errors/warnings, known non-integer array index errors, min-only array negative-interval warnings, and a branch-join `possibly_uninitialized_read` with one declaration relatedInformation entry through the same LSP diagnostic path.
@@ -177,21 +178,33 @@ The parser test targets are `zr_vm_compiler_semantic_query_diagnostics_test`, `z
 
 ## Limits And Next Steps
 
-Source struct/class/interface fields and methods are complete in the source
-producer subset. Their facts originate only from compiler-registered member
-symbols and carry canonical owner identity, declaration range, access, and
-static flags. Static method state propagates through nested scopes for the
-existing receiver/static filter. Imports/aliases, `.zro`, and native descriptor
-analyzers remain the missing visibility producers; no LSP consumer has migrated
-in this slice.
+Source struct/class/interface fields and methods, direct imports, destructured
+imports, and type-value aliases are complete in the source producer subset.
+Their facts originate only from compiler-registered symbols and carry canonical
+identity, declaration range, access, and static flags. Static method state
+propagates through nested scopes for the existing receiver/static filter.
+Binary metadata and native descriptor analyzers remain the missing visibility
+producers; no LSP consumer has migrated in this slice.
 
 Direct source module bindings of the shape `identifier = import("...")` now
 reuse their compiler-registered variable declaration symbol and range as one
 module-scope candidate. The scope producer classifies the binding from the
 declaration and import-expression AST kinds alone, marks it as both import and
 alias, and lets `includeImports` control exposure. It does not inspect a module
-path, look up a module by text, or manufacture an alias target. Destructured
-imports, type-value aliases, binary metadata, and native descriptor imports
-remain separate producers.
+path, look up a module by text, or manufacture an alias target. Binary metadata
+and native descriptor imports remain separate producers.
 
-The API does not yet expose local re-analysis, compiler frontend binary/external serialization of query diagnostics, or CFG loop reaching-definition fixed points. `VisibleSymbols` now consumes compiler-published source module/function/block facts for functions, parameters, locals, top-level types, source type/free-function generic parameters including const parameters, and struct/class/interface method type-generic parameters. Type members, imports/aliases, receiver members, `.zro`, and native descriptor analyzers still need to publish the remaining candidate facts before completion can serve real workspaces. No LSP consumer has migrated in this slice. `DefinitionsOf` exposes the first multi-definition surface and deterministic same-source source-order ranking, but ranking remains local-symbol oriented rather than overload/member aware. LSP definition navigation and compiler-side semantic contexts now consume both linear and first-slice CFG-backed reaching definitions for local symbols. Definite-assignment diagnostics can consume explicit read states, the straight-line semantic-facts resolver, or the CFG-backed resolver for source reads across branch joins, declaration initializers, and cloned `finally` paths. Current diagnostic related information is limited to declaration locations for definite-assignment read diagnostics; fix-its, descriptor IDs, registry entries, ownership related locations, and type-mismatch related locations remain pending. Array index diagnostics still keep truly unknown and no-inferable-range indexes silent. Loop precision, remaining finally edge cases, local re-analysis, richer source mapping, and non-cache compiler diagnostic channels remain pending.
+Source destructuring and type-value aliases now share the same canonical
+declaration path. For `var {Vec3: Vector3} = import("zr.math")`, the compiler
+registers the local binding node `Vec3`, rather than the imported member token
+`Vector3`, with `RegisterVariableEx`; its semantic declaration fact, SymbolId,
+TypeId, and declaration range therefore all identify the binding exactly. The
+source-scope producer recognizes that only a destructuring declaration whose
+initializer is an import expression is an import/alias candidate. For
+`var MatrixType = int[][]`, it recognizes the type-literal initializer as an
+alias but not an import. Both forms use the existing `includeImports` option,
+which deliberately filters imports and aliases together; no query, LSP, or
+name-based module/member fallback is involved. Binary metadata and native
+descriptor aliases remain separate producers.
+
+The API does not yet expose local re-analysis, compiler frontend binary/external serialization of query diagnostics, or CFG loop reaching-definition fixed points. `VisibleSymbols` now consumes compiler-published source module/function/block facts for functions, parameters, locals, top-level types, source type/free-function generic parameters including const parameters, struct/class/interface method type-generic parameters, source type members, receiver members, direct imports, object-destructured imports, and type-value aliases. Binary `.zro` metadata and native descriptor analyzers still need to publish the remaining candidate facts before completion can serve real workspaces. No LSP consumer has migrated in this slice. `DefinitionsOf` exposes the first multi-definition surface and deterministic same-source source-order ranking, but ranking remains local-symbol oriented rather than overload/member aware. LSP definition navigation and compiler-side semantic contexts now consume both linear and first-slice CFG-backed reaching definitions for local symbols. Definite-assignment diagnostics can consume explicit read states, the straight-line semantic-facts resolver, or the CFG-backed resolver for source reads across branch joins, declaration initializers, and cloned `finally` paths. Current diagnostic related information is limited to declaration locations for definite-assignment read diagnostics; fix-its, descriptor IDs, registry entries, ownership related locations, and type-mismatch related locations remain pending. Array index diagnostics still keep truly unknown and no-inferable-range indexes silent. Loop precision, remaining finally edge cases, local re-analysis, richer source mapping, and non-cache compiler diagnostic channels remain pending.

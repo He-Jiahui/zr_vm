@@ -15,6 +15,13 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
 void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value);
 void compile_statement_register_const_pattern_bindings(SZrCompilerState *cs,
                                                        SZrAstNode *pattern);
+TZrBool compile_statement_register_semantic_local(SZrCompilerState *cs,
+                                                   SZrString *name,
+                                                   const SZrInferredType *resolvedType,
+                                                   TZrUInt32 stackSlot,
+                                                   SZrAstNode *declarationNode,
+                                                   SZrFileRange sourceRange,
+                                                   TZrBool initialized);
 TZrBool try_context_find_innermost_finally(const SZrCompilerState *cs, SZrCompilerTryContext *outContext);
 TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
                                                 SZrString *name,

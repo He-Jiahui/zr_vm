@@ -1340,6 +1340,140 @@ static void test_visible_symbols_projects_direct_import_alias(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_visible_symbols_projects_destructured_import_and_type_value_aliases(void) {
+    const TZrChar *source =
+            "var {Vec3: Vector3} = import(\"zr.math\");\n"
+            "var MatrixType = int[][];\n"
+            "fn probe(): int { return 0; }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *destructuredDeclaration;
+    SZrAstNode *typeValueDeclaration;
+    SZrAstNode *bindingNode;
+    const SZrSemanticSymbolRecord *destructuredSymbol;
+    const SZrSemanticSymbolRecord *typeValueSymbol;
+    const SZrSemanticVisibleSymbolFact *destructuredFact;
+    const SZrSemanticVisibleSymbolFact *typeValueFact;
+    const SZrSemanticReferenceFact *destructuredReference;
+    const SZrSemanticReferenceFact *typeValueReference;
+    const SZrParserSemanticSymbolQuery *visibleImport;
+    const SZrParserSemanticSymbolQuery *visibleTypeAlias;
+    SZrParserSemanticSymbolQuery symbolAt;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "visible_symbols_destructured_import_alias.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(3U, (TZrUInt32)ast->data.script.statements->count);
+    destructuredDeclaration = ast->data.script.statements->nodes[0];
+    typeValueDeclaration = ast->data.script.statements->nodes[1];
+    TEST_ASSERT_NOT_NULL(destructuredDeclaration);
+    TEST_ASSERT_NOT_NULL(typeValueDeclaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, destructuredDeclaration->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, typeValueDeclaration->type);
+    TEST_ASSERT_NOT_NULL(destructuredDeclaration->data.variableDeclaration.pattern);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_DESTRUCTURING_OBJECT,
+                          destructuredDeclaration->data.variableDeclaration.pattern->type);
+    TEST_ASSERT_NOT_NULL(destructuredDeclaration->data.variableDeclaration.pattern->data.destructuringObject.keys);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)destructuredDeclaration->data.variableDeclaration.pattern->data.destructuringObject.keys->count);
+    bindingNode = destructuredDeclaration->data.variableDeclaration.pattern->data.destructuringObject.keys->nodes[0];
+    TEST_ASSERT_NOT_NULL(bindingNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_KEY_VALUE_PAIR, bindingNode->type);
+    bindingNode = bindingNode->data.keyValuePair.key;
+    TEST_ASSERT_NOT_NULL(bindingNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, bindingNode->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    destructuredSymbol = symbol_find_registered_node(cs.semanticContext, bindingNode);
+    typeValueSymbol = symbol_find_registered_node(cs.semanticContext, typeValueDeclaration);
+    TEST_ASSERT_NOT_NULL(destructuredSymbol);
+    TEST_ASSERT_NOT_NULL(typeValueSymbol);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_VARIABLE, destructuredSymbol->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_VARIABLE, typeValueSymbol->kind);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, destructuredSymbol->typeId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, typeValueSymbol->typeId);
+    destructuredFact = symbol_find_visible_fact(cs.semanticContext, destructuredSymbol->id);
+    typeValueFact = symbol_find_visible_fact(cs.semanticContext, typeValueSymbol->id);
+    TEST_ASSERT_NOT_NULL(destructuredFact);
+    TEST_ASSERT_NOT_NULL(typeValueFact);
+    TEST_ASSERT_TRUE(destructuredFact->isImport);
+    TEST_ASSERT_TRUE(destructuredFact->isAlias);
+    TEST_ASSERT_FALSE(typeValueFact->isImport);
+    TEST_ASSERT_TRUE(typeValueFact->isAlias);
+
+    destructuredReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "Vec3", 0U),
+            ZR_SEMANTIC_REFERENCE_DECLARATION);
+    typeValueReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "MatrixType", 0U),
+            ZR_SEMANTIC_REFERENCE_DECLARATION);
+    TEST_ASSERT_NOT_NULL(destructuredReference);
+    TEST_ASSERT_NOT_NULL(typeValueReference);
+    TEST_ASSERT_EQUAL_UINT32(destructuredSymbol->id, destructuredReference->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(typeValueSymbol->id, typeValueReference->symbolId);
+    memset(&symbolAt, 0, sizeof(symbolAt));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "Vec3", 0U),
+            ZR_NULL,
+            &symbolAt));
+    TEST_ASSERT_EQUAL_UINT32(destructuredSymbol->id, symbolAt.symbolId);
+    TEST_ASSERT_EQUAL_UINT32(destructuredSymbol->typeId, symbolAt.typeId);
+    memset(&symbolAt, 0, sizeof(symbolAt));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "MatrixType", 0U),
+            ZR_NULL,
+            &symbolAt));
+    TEST_ASSERT_EQUAL_UINT32(typeValueSymbol->id, symbolAt.symbolId);
+    TEST_ASSERT_EQUAL_UINT32(typeValueSymbol->typeId, symbolAt.typeId);
+
+    position = symbol_source_position(source, sourceName, "return", 0U);
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "Vec3"));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "MatrixType"));
+
+    options.includeImports = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "Vec3"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "MatrixType"));
+    visibleImport = symbol_find_visible_name(&symbols, "Vec3");
+    visibleTypeAlias = symbol_find_visible_name(&symbols, "MatrixType");
+    TEST_ASSERT_NOT_NULL(visibleImport);
+    TEST_ASSERT_NOT_NULL(visibleTypeAlias);
+    TEST_ASSERT_EQUAL_UINT32(destructuredSymbol->id, visibleImport->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(typeValueSymbol->id, visibleTypeAlias->symbolId);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_visible_symbols_projects_source_type_members(void) {
     const TZrChar *source =
             "class Meter {\n"
@@ -1524,6 +1658,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_const_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_interface_method_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_direct_import_alias);
+    RUN_TEST(test_visible_symbols_projects_destructured_import_and_type_value_aliases);
     RUN_TEST(test_visible_symbols_projects_source_type_members);
     RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);
     return UNITY_END();

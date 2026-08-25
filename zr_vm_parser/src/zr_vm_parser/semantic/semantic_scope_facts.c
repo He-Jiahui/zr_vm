@@ -207,12 +207,29 @@ static TZrBool semantic_scope_facts_is_direct_import_alias(
            declaration->value->type == ZR_AST_IMPORT_EXPRESSION;
 }
 
-static TZrBool semantic_scope_facts_publish_declaration(
+static TZrBool semantic_scope_facts_is_type_value_alias(
+        const SZrAstNode *node) {
+    const SZrVariableDeclaration *declaration;
+
+    if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_FALSE;
+    }
+    declaration = &node->data.variableDeclaration;
+    return declaration->pattern != ZR_NULL &&
+           declaration->pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
+           declaration->pattern->data.identifier.name != ZR_NULL &&
+           declaration->value != ZR_NULL &&
+           declaration->value->type == ZR_AST_TYPE_LITERAL_EXPRESSION;
+}
+
+static TZrBool semantic_scope_facts_publish_reference_declaration(
         SZrSemanticScopeFactBuilder *builder,
         TZrSemanticScopeId scopeId,
         const SZrAstNode *node,
         TZrSymbolId ownerSymbolId,
-        TZrBool isHoisted) {
+        TZrBool isHoisted,
+        TZrBool isImport,
+        TZrBool isAlias) {
     const SZrSemanticReferenceFact *reference;
     const SZrSemanticSymbolRecord *symbol;
     SZrSemanticVisibleSymbolFact fact;
@@ -242,9 +259,86 @@ static TZrBool semantic_scope_facts_publish_declaration(
     fact.signatureDisplay = reference->signatureDisplay;
     fact.isHoisted = isHoisted;
     fact.isAccessible = ZR_TRUE;
-    fact.isImport = semantic_scope_facts_is_direct_import_alias(node);
-    fact.isAlias = fact.isImport;
+    fact.isImport = isImport;
+    fact.isAlias = isAlias;
     return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
+}
+
+static TZrBool semantic_scope_facts_publish_declaration(
+        SZrSemanticScopeFactBuilder *builder,
+        TZrSemanticScopeId scopeId,
+        const SZrAstNode *node,
+        TZrSymbolId ownerSymbolId,
+        TZrBool isHoisted) {
+    TZrBool isImport = semantic_scope_facts_is_direct_import_alias(node);
+
+    return semantic_scope_facts_publish_reference_declaration(
+            builder,
+            scopeId,
+            node,
+            ownerSymbolId,
+            isHoisted,
+            isImport,
+            (TZrBool)(isImport || semantic_scope_facts_is_type_value_alias(node)));
+}
+
+static SZrAstNode *semantic_scope_facts_destructuring_binding_node(
+        SZrAstNode *entry) {
+    if (entry == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (entry->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return entry;
+    }
+    if (entry->type == ZR_AST_KEY_VALUE_PAIR &&
+        !entry->data.keyValuePair.keyIsComputed &&
+        entry->data.keyValuePair.key != ZR_NULL &&
+        entry->data.keyValuePair.key->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return entry->data.keyValuePair.key;
+    }
+    return ZR_NULL;
+}
+
+static TZrBool semantic_scope_facts_publish_variable_declaration(
+        SZrSemanticScopeFactBuilder *builder,
+        TZrSemanticScopeId scopeId,
+        SZrAstNode *node,
+        TZrSymbolId ownerSymbolId) {
+    SZrVariableDeclaration *declaration;
+    TZrBool isImport;
+    TZrSize index;
+
+    if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_FALSE;
+    }
+    declaration = &node->data.variableDeclaration;
+    if (declaration->pattern == ZR_NULL ||
+        declaration->pattern->type != ZR_AST_DESTRUCTURING_OBJECT) {
+        return semantic_scope_facts_publish_declaration(
+                builder, scopeId, node, ownerSymbolId, ZR_FALSE);
+    }
+    isImport = (TZrBool)(declaration->value != ZR_NULL &&
+                          declaration->value->type == ZR_AST_IMPORT_EXPRESSION);
+    if (declaration->pattern->data.destructuringObject.keys == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (index = 0U; index < declaration->pattern->data.destructuringObject.keys->count; index++) {
+        SZrAstNode *bindingNode = semantic_scope_facts_destructuring_binding_node(
+                declaration->pattern->data.destructuringObject.keys->nodes[index]);
+
+        if (bindingNode != ZR_NULL &&
+            !semantic_scope_facts_publish_reference_declaration(
+                    builder,
+                    scopeId,
+                    bindingNode,
+                    ownerSymbolId,
+                    ZR_FALSE,
+                    isImport,
+                    isImport)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool semantic_scope_facts_publish_type_declaration(
@@ -657,8 +751,8 @@ static TZrBool semantic_scope_facts_visit_node(
             return semantic_scope_facts_publish_receiver_member(
                     builder, parentScopeId, node, ownerSymbolId);
         case ZR_AST_VARIABLE_DECLARATION:
-            return semantic_scope_facts_publish_declaration(
-                    builder, parentScopeId, node, ownerSymbolId, ZR_FALSE);
+            return semantic_scope_facts_publish_variable_declaration(
+                    builder, parentScopeId, node, ownerSymbolId);
         case ZR_AST_BLOCK:
             return semantic_scope_facts_visit_block(builder, node, parentScopeId, ownerSymbolId);
         case ZR_AST_IF_EXPRESSION:
