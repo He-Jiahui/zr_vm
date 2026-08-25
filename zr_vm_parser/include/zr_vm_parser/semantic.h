@@ -34,6 +34,7 @@ typedef TZrUInt32 TZrSemanticScopeId;
 #endif
 
 #include "zr_vm_parser/semantic_facts.h"
+#include "zr_vm_parser/semantic_relations.h"
 #include "zr_vm_parser/canonical_type.h"
 
 enum EZrSemanticTypeKind {
@@ -207,6 +208,7 @@ typedef struct SZrSemanticContext {
     SZrArray receiverGuardFacts; // SZrReceiverGuardFact
     SZrArray diagnosticFacts;   // SZrSemanticDiagnosticFact
     SZrArray propertyContracts; // SZrSemanticPropertyContract
+    SZrArray relationFacts;     // SZrSemanticRelationFact
 } SZrSemanticContext;
 
 typedef struct SZrHirModule {

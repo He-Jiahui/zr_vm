@@ -397,6 +397,7 @@ void ZrParser_SemanticFacts_Init(SZrSemanticContext *context) {
     semantic_facts_init_array(
             context, &context->receiverGuardFacts, sizeof(SZrReceiverGuardFact));
     semantic_facts_init_array(context, &context->diagnosticFacts, sizeof(SZrSemanticDiagnosticFact));
+    ZrParser_SemanticRelations_Init(context);
 }
 
 void ZrParser_SemanticFacts_Reset(SZrSemanticContext *context) {
@@ -451,6 +452,7 @@ void ZrParser_SemanticFacts_Reset(SZrSemanticContext *context) {
         }
         context->diagnosticFacts.length = 0;
     }
+    ZrParser_SemanticRelations_Reset(context);
 }
 
 void ZrParser_SemanticFacts_Free(SZrSemanticContext *context) {
@@ -468,6 +470,7 @@ void ZrParser_SemanticFacts_Free(SZrSemanticContext *context) {
     ZrCore_Array_Free(context->state, &context->ownershipIntrinsicFacts);
     ZrCore_Array_Free(context->state, &context->receiverGuardFacts);
     ZrCore_Array_Free(context->state, &context->diagnosticFacts);
+    ZrParser_SemanticRelations_Free(context);
 }
 
 TZrBool ZrParser_SemanticFacts_AppendDiagnostic(

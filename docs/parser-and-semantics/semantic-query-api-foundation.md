@@ -4,6 +4,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
@@ -54,6 +55,7 @@ related_code:
   - tests/CMakeLists.txt
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_relations.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/src/zr_vm_parser/semantic.c
@@ -105,6 +107,7 @@ tests:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_contract.c
   - tests/parser/test_semantic_query_symbols.c
+  - tests/parser/test_semantic_query_relations.c
   - tests/parser/test_type_inference.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
@@ -192,6 +195,27 @@ range, and format through the canonical fact as
 `identity<T>(value: string): string`. The free-call form deliberately has no
 receiver-effect `fn ` prefix; receiver calls retain their separately published
 `fn ` or `const fn ` contract.
+
+## Relation Graph Foundation
+
+`SZrSemanticContext.relationFacts` is the snapshot-owned carrier for
+declaration/definition, override, implementation, base-type, constructor,
+property-accessor, alias-target, and import/export-origin edges. Every edge
+uses independently stable source/target SymbolId and TypeId values, exact
+endpoint ranges when available, and an explicit external origin URI when the
+endpoint has no source range.
+
+`ZrParser_SemanticRelations_Append` retains the URI in the semantic snapshot.
+`RelationsOfSymbol`, `ImplementationsOf`, `BaseTypesOf`, and `DerivedTypesOf`
+are read-only projections: they clear reused output arrays, return copied values
+with borrowed URI fields, and order edges by relation kind, stable ids, and
+ranges. A node scope admits only an edge whose source or target range is within
+the root. The query does not scan AST names or manufacture external origins.
+
+The current Task 3.1 slice deliberately provides the carrier and query contract
+before compiler producers. Source inheritance, implementation, property, alias,
+and artifact relation publishers must append exact resolved edges in later
+slices; LSP must not infer an absent relation.
 
 ## Test Coverage
 

@@ -77,6 +77,20 @@ typedef struct SZrParserSemanticVisibleSymbolOptions {
     TZrBool includeInaccessible;
 } SZrParserSemanticVisibleSymbolOptions;
 
+typedef struct SZrParserSemanticRelationQuery {
+    EZrSemanticRelationKind kind;
+    TZrSymbolId sourceSymbolId;
+    TZrSymbolId targetSymbolId;
+    TZrTypeId sourceTypeId;
+    TZrTypeId targetTypeId;
+    SZrFileRange sourceRange;
+    SZrFileRange targetRange;
+    SZrString *externalOriginUri;
+    TZrBool hasSourceRange;
+    TZrBool hasTargetRange;
+    TZrBool isExternal;
+} SZrParserSemanticRelationQuery;
+
 typedef struct SZrParserSemanticPublicContractQuery {
     TZrUInt64 hash;
     TZrSize exportCount;
@@ -150,6 +164,28 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
         const SZrParserSemanticQueryScope *scope,
         const SZrParserSemanticVisibleSymbolOptions *options,
         SZrArray *outSymbols);
+/*
+ * outRelations contains copied relation values whose URI fields are borrowed
+ * from the semantic snapshot. Reused arrays are cleared before projection.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outRelations);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_ImplementationsOf(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outRelations);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_BaseTypesOf(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId,
+        SZrArray *outRelations);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_DerivedTypesOf(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId,
+        SZrArray *outRelations);
 /*
  * This is an analysis lifecycle operation, not a read-only query. It rebuilds
  * the borrowed diagnostic view for exactly one scope. Call it after semantic
