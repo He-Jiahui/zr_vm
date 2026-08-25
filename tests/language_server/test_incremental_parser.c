@@ -20,6 +20,8 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
+static int g_failures = 0;
+
 // 测试日志宏
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
@@ -44,6 +46,7 @@ typedef struct {
     double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
+    g_failures++; \
 } while(0)
 
 #define TEST_DIVIDER() do { \
@@ -908,9 +911,13 @@ int main(void) {
     ZrCore_GlobalState_Free(global);
     
     printf("\n==========\n");
-    printf("All Incremental Parser Tests Completed\n");
+    if (g_failures == 0) {
+        printf("All Incremental Parser Tests Completed\n");
+    } else {
+        printf("%d Incremental Parser Test(s) Failed\n", g_failures);
+    }
     printf("==========\n");
     
-    return 0;
+    return g_failures == 0 ? 0 : 1;
 }
 
