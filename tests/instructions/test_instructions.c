@@ -7972,6 +7972,5 @@ int main(void) {
     // 异常处理指令测试
     RUN_TEST(test_try_throw_catch);
 
-    UNITY_END();
-    return 0;
+    return UNITY_END();
 }
