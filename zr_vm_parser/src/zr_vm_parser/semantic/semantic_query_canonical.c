@@ -186,8 +186,14 @@ TZrBool ZrParser_SemanticQuery_FormatCall(
     const TZrChar *name = ZR_NULL;
     int written;
 
+    if (buffer != ZR_NULL && bufferSize > 0u) {
+        buffer[0] = '\0';
+    }
     if (context == ZR_NULL || query == ZR_NULL || query->expression == ZR_NULL ||
-        !query->expression->hasCallInfo || buffer == ZR_NULL || bufferSize == 0u ||
+        !query->expression->hasCallInfo ||
+        !ZrParser_SemanticQuery_ExactnessAllowsProjection(
+                query->expression->exactness) ||
+        buffer == ZR_NULL || bufferSize == 0u ||
         query->callableTypeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }

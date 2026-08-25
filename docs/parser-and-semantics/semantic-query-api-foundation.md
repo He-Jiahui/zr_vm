@@ -298,6 +298,13 @@ returns only copied candidate values. It therefore requires the selected
 inexact selected call returns an empty candidate result rather than exposing
 uncertainty without an exactness field.
 
+`ZrParser_SemanticQuery_FormatCall` is also a value-only projection: its
+caller receives text rather than the borrowed expression fact. It consequently
+requires an `EXACT` selected expression before producing a signature. It clears
+a usable output buffer before validating its inputs, so a failed inexact query
+cannot leave a previous signature visible. It does not recover a display from a
+name, AST, broader fact, or language-server state.
+
 This first Task 4 slice covers source function callers and resolved overload
 declaration membership only. Lambda scopes, argument-to-parameter mappings,
 compatibility scores, conversions, receiver TypeIds, and binary/native

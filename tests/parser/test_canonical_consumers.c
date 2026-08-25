@@ -543,6 +543,7 @@ static void test_semantic_query_projects_expression_and_call_types_from_canonica
     callExpression.node = &callNode;
     callExpression.range = callNode.location;
     callExpression.kind = ZR_SEMANTIC_EXPRESSION_FACT_CALL;
+    callExpression.exactness = ZR_SEMANTIC_FACT_EXACT;
     callExpression.hasCallInfo = ZR_TRUE;
     callExpression.callTargetName = ZrCore_String_Create(g_state, "identity", 8u);
     callExpression.callTargetRange = consumer_range(10u, 17u);
