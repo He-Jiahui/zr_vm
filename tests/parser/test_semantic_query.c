@@ -630,6 +630,38 @@ static void test_semantic_query_references_of_clears_reused_output_when_missing(
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_query_references_of_clears_reused_output_when_symbol_is_invalid(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode declarationNode;
+    SZrAstNode readNode;
+    SZrArray references;
+
+    TEST_ASSERT_NOT_NULL(context);
+    init_node(&declarationNode, ZR_AST_IDENTIFIER_LITERAL, 0, 3);
+    init_node(&readNode, ZR_AST_IDENTIFIER_LITERAL, 10, 13);
+    append_reference_fact(context,
+                          &declarationNode,
+                          ZR_SEMANTIC_REFERENCE_DECLARATION,
+                          93,
+                          declarationNode.location);
+    append_reference_fact(context,
+                          &readNode,
+                          ZR_SEMANTIC_REFERENCE_READ,
+                          93,
+                          declarationNode.location);
+
+    ZrCore_Array_Construct(&references);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ReferencesOf(context, 93, ZR_NULL, &references));
+    TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)references.length);
+
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_ReferencesOf(
+            context, ZR_SEMANTIC_ID_INVALID, ZR_NULL, &references));
+    TEST_ASSERT_EQUAL_UINT32(0, (TZrUInt32)references.length);
+
+    ZrCore_Array_Free(g_state, &references);
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_query_node_scope_filters_outside_range(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode scopeNode;
@@ -1112,6 +1144,7 @@ int main(void) {
     RUN_TEST(test_semantic_query_definitions_of_returns_multiple_reaching_writes);
     RUN_TEST(test_semantic_query_references_of_collects_symbol_references_in_scope);
     RUN_TEST(test_semantic_query_references_of_clears_reused_output_when_missing);
+    RUN_TEST(test_semantic_query_references_of_clears_reused_output_when_symbol_is_invalid);
     RUN_TEST(test_semantic_query_node_scope_filters_outside_range);
     RUN_TEST(test_semantic_query_diagnostics_returns_empty_when_no_diagnostic_facts);
     RUN_TEST(test_semantic_query_diagnostics_maps_unreachable_reachability_facts_in_scope);

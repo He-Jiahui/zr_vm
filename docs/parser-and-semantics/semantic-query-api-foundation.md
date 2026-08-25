@@ -317,6 +317,10 @@ reference identity, while an approximate expression fallback leaves `typeId`
 invalid and returns false; callers may still inspect the borrowed fact pointers
 without treating an inexact type as a value result.
 
+`ReferencesOf` clears or initializes its reusable borrowed-reference array
+before rejecting an invalid SymbolId. A failed navigation query therefore
+cannot leave a previous symbol's references visible.
+
 This first Task 4 slice covers source function callers and resolved overload
 declaration membership only. Lambda scopes, argument-to-parameter mappings,
 compatibility scores, conversions, receiver TypeIds, and binary/native

@@ -807,9 +807,7 @@ TZrBool ZrParser_SemanticQuery_ReferencesOf(
         SZrArray *outReferences) {
     TZrSize i;
 
-    if (context == ZR_NULL ||
-        symbolId == ZR_SEMANTIC_ID_INVALID ||
-        outReferences == ZR_NULL ||
+    if (context == ZR_NULL || outReferences == ZR_NULL ||
         !context->referenceFacts.isValid) {
         return ZR_FALSE;
     }
@@ -821,6 +819,10 @@ TZrBool ZrParser_SemanticQuery_ReferencesOf(
                           ZR_PARSER_INITIAL_CAPACITY_SMALL);
     } else {
         outReferences->length = 0;
+    }
+
+    if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
     }
 
     for (i = 0; i < context->referenceFacts.length; i++) {
