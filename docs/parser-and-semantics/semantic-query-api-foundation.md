@@ -20,6 +20,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_definite_assignment.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_reaching_definitions.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_array_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
@@ -59,6 +62,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_definite_assignment.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_reaching_definitions.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_array_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
@@ -168,6 +174,7 @@ The same compiler diagnostic target covers semantic query diagnostics for existi
 - The same target compiles `struct Box<T> { fn echo<U>(value: U): U { return value; } }`. It verifies that `U` is absent at `echo`, becomes visible at its declaration with the compiler-registered exact method owner `SymbolId`, has a canonical generic-parameter `TypeId`, and sees enclosing `T` through published scope parentage.
 - The same target compiles `class Crate<T> { fn echo<U>(value: U): U { return value; } }`. It verifies that class method `U` is absent at `echo`, becomes visible only at its declaration, retains the exact compiler-registered method owner `SymbolId` and canonical generic-parameter `TypeId`, and can see enclosing `T` through the published type-to-method scope chain. The class compiler and struct canonical-definition pass share the same type-member registration helper, which resolves the canonical owner `TypeId` and registers the exact member declaration node before scope-fact publication; the query layer does not recover the symbol from method text or an AST scan.
 - The same target compiles direct and object-destructured `zr.math` imports plus an `int[][]` type-value alias. It verifies that the imported binding key and type-value declaration retain their compiler-registered SymbolId, TypeId, and exact declaration range through `SymbolAt` and `VisibleSymbols`; imports and aliases appear only when `includeImports` is set, without an AST, member-name, or module-text fallback in the query layer.
+- The same target compiles `var math = import("zr.math"); return math.abs(-3.0);`. It verifies that a resolved non-generic native module function call publishes a stable snapshot `SymbolId` and closed callable `TypeId` through the same call reference fact consumed by `SymbolAt`. Native descriptors have no source declaration AST, so both the reference and query declaration range remain the explicit zero range rather than reusing the call-site range. A native generic callable still fails closed until a canonical generic declaration identity producer is available.
 - The same target compiles `interface Readable<T> { fn echo<U>(value: U): U; }`. It verifies that interface signature `U` is absent at `echo`, becomes visible only at its declaration, retains the exact compiler-registered signature owner `SymbolId` and canonical generic-parameter `TypeId`, and can see enclosing `T` through the published type-to-signature scope chain. The interface compiler uses the same canonical type-member registration helper; the scope producer emits no interface candidate unless that exact symbol exists.
 - `tests/parser/test_semantic_query_contract.c` freezes Plan 03 query contract behavior: `TypeAt` fails closed for an approximate expression fact, `FactsAt` returns the same borrowed fact view on repeated reads, and `Diagnostics` cannot materialize context state without the explicit lifecycle operation.
 - `tests/language_server/test_lsp_semantic_query_diagnostics.c` covers LSP publishing of semantic query diagnostics by opening a constant ternary branch fixture and requiring `GetDiagnostics` to include `unreachable_code`; it also covers `numeric_overflow`, array bounds errors/warnings, known non-integer array index errors, min-only array negative-interval warnings, and a branch-join `possibly_uninitialized_read` with one declaration relatedInformation entry through the same LSP diagnostic path.

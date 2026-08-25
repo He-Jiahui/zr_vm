@@ -1340,6 +1340,58 @@ static void test_visible_symbols_projects_direct_import_alias(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_symbol_at_projects_native_module_function_identity(void) {
+    const TZrChar *source =
+            "var math = import(\"zr.math\");\n"
+            "fn probe(): float { return math.abs(-3.0); }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    const SZrSemanticReferenceFact *reference;
+    SZrParserSemanticSymbolQuery symbolAt;
+
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "symbol_at_native_module_function.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    reference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "abs", 0U),
+            ZR_SEMANTIC_REFERENCE_CALL);
+    TEST_ASSERT_NOT_NULL(reference);
+    TEST_ASSERT_TRUE(reference->isResolved);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, reference->symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, reference->typeId);
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)reference->declarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)reference->declarationRange.end.offset);
+    memset(&symbolAt, 0, sizeof(symbolAt));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "abs", 0U),
+            ZR_NULL,
+            &symbolAt));
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, symbolAt.symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, symbolAt.typeId);
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbolAt.declarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbolAt.declarationRange.end.offset);
+
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_visible_symbols_projects_destructured_import_and_type_value_aliases(void) {
     const TZrChar *source =
             "var {Vec3: Vector3} = import(\"zr.math\");\n"
@@ -1658,6 +1710,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_const_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_interface_method_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_direct_import_alias);
+    RUN_TEST(test_symbol_at_projects_native_module_function_identity);
     RUN_TEST(test_visible_symbols_projects_destructured_import_and_type_value_aliases);
     RUN_TEST(test_visible_symbols_projects_source_type_members);
     RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);

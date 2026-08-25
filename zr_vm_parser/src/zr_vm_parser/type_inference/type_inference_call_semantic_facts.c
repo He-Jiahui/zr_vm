@@ -393,12 +393,19 @@ static TZrTypeId type_inference_resolved_member_call_type_id(
 
 static TZrSymbolId type_inference_member_symbol_id(
         SZrCompilerState *cs,
-        const SZrTypeMemberInfo *memberInfo,
+        SZrTypeMemberInfo *memberInfo,
         TZrTypeId callTypeId) {
     TZrSize index;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberInfo == ZR_NULL ||
-        memberInfo->name == ZR_NULL || memberInfo->declarationNode == ZR_NULL) {
+        memberInfo->name == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    if (memberInfo->symbolId != ZR_SEMANTIC_ID_INVALID) {
+        return memberInfo->symbolId;
+    }
+    if (memberInfo->declarationNode == ZR_NULL &&
+        memberInfo->genericParameters.length != 0U) {
         return ZR_SEMANTIC_ID_INVALID;
     }
     for (index = 0U; index < cs->semanticContext->symbols.length; index++) {
@@ -407,18 +414,23 @@ static TZrSymbolId type_inference_member_symbol_id(
                         &cs->semanticContext->symbols, index);
         if (symbol != ZR_NULL &&
             symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
+            memberInfo->declarationNode != ZR_NULL &&
             symbol->astNode == memberInfo->declarationNode) {
+            memberInfo->symbolId = symbol->id;
             return symbol->id;
         }
     }
-    return ZrParser_Semantic_RegisterSymbol(
+    memberInfo->symbolId = ZrParser_Semantic_RegisterSymbol(
             cs->semanticContext,
             memberInfo->name,
             ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
             callTypeId,
             ZR_SEMANTIC_ID_INVALID,
             memberInfo->declarationNode,
-            memberInfo->declarationNode->location);
+            memberInfo->declarationNode != ZR_NULL
+                    ? memberInfo->declarationNode->location
+                    : (SZrFileRange){0});
+    return memberInfo->symbolId;
 }
 
 static TZrTypeId type_inference_unbound_member_reference_type_id(
@@ -510,7 +522,7 @@ static TZrTypeId type_inference_unbound_member_reference_type_id(
 void type_inference_record_unbound_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
-        const SZrTypeMemberInfo *memberInfo) {
+        SZrTypeMemberInfo *memberInfo) {
     SZrSemanticReferenceFact fact;
     SZrAstNode *target;
     TZrTypeId typeId;
@@ -612,7 +624,7 @@ void type_inference_record_external_callable_member_reference_fact(
 void type_inference_record_member_call_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
-        const SZrTypeMemberInfo *memberInfo,
+        SZrTypeMemberInfo *memberInfo,
         const SZrResolvedCallSignature *resolvedSignature) {
     SZrSemanticReferenceFact fact;
     SZrAstNode *target;
@@ -636,8 +648,8 @@ void type_inference_record_member_call_reference_fact(
     fact.node = target != ZR_NULL ? target : memberNode;
     fact.range = fact.node->location;
     fact.declarationRange = memberInfo->declarationNode != ZR_NULL
-                                    ? memberInfo->declarationNode->location
-                                    : fact.range;
+                                     ? memberInfo->declarationNode->location
+                                     : (SZrFileRange){0};
     fact.kind = ZR_SEMANTIC_REFERENCE_CALL;
     fact.symbolId = symbolId;
     fact.typeId = callTypeId;
