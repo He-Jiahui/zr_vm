@@ -382,6 +382,11 @@ static TZrBool semantic_scope_facts_visit_method(
             params = node->data.classMethod.params;
             body = node->data.classMethod.body;
             break;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            generic = node->data.interfaceMethodSignature.generic;
+            params = node->data.interfaceMethodSignature.params;
+            body = ZR_NULL;
+            break;
         default:
             return ZR_FALSE;
     }
@@ -529,6 +534,7 @@ static TZrBool semantic_scope_facts_visit_node(
             return semantic_scope_facts_visit_type(builder, node, parentScopeId);
         case ZR_AST_STRUCT_METHOD:
         case ZR_AST_CLASS_METHOD:
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
             return semantic_scope_facts_visit_method(builder, node, parentScopeId);
         case ZR_AST_VARIABLE_DECLARATION:
             return semantic_scope_facts_publish_declaration(

@@ -256,6 +256,15 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.parameterCount = (TZrUInt32)memberInfo.parameterTypes.length;
                     cs->currentFunctionNode = previousFunctionNode;
                     if (memberInfo.name != ZR_NULL) {
+                        if (!compiler_type_member_register_function_symbol(cs, &memberInfo)) {
+                            ZrParser_Compiler_Error(
+                                    cs,
+                                    "Failed to register canonical interface method symbol",
+                                    member->location);
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                            return;
+                        }
                         ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
                     }
                     break;
