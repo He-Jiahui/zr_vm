@@ -710,7 +710,8 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
 
     // Reuse the script and untouched top-level declarations only after a
     // declaration-local parse proves that every retained source range is stable.
-    if (parser->enableIncrementalParse && fileVersion->ast != ZR_NULL &&
+    if (parser->enableIncrementalParse && parser->retainedPreviousAstOutput == ZR_NULL &&
+        fileVersion->ast != ZR_NULL &&
         fileVersion->hasIncrementalInfo) {
         SZrFileVersionContentSnapshot previousSnapshot = {0};
 

@@ -598,8 +598,8 @@ static void test_incremental_parse_matches_clean_full_parse(SZrState *state) {
     SZrString *cleanUri = test_string(state, "file:///incremental-equivalence.zr");
     SZrFileVersion *incrementalVersion;
     SZrFileVersion *cleanVersion;
-    SZrTestJsonBuffer incrementalJson;
-    SZrTestJsonBuffer cleanJson;
+    SZrTestJsonBuffer incrementalJson = {0};
+    SZrTestJsonBuffer cleanJson = {0};
     SZrSymbol *incrementalAlpha;
     SZrSymbol *incrementalBeta;
     SZrSymbol *cleanAlpha;
@@ -648,8 +648,8 @@ static void test_incremental_parse_matches_clean_full_parse(SZrState *state) {
         return;
     }
 
-    check(incrementalVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_DECLARATION_REPARSE,
-          "equal-length declaration edit must use declaration reparse");
+    check(incrementalVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE,
+          "LSP snapshot retention must full-reparse an equal-length declaration edit");
     check(cleanVersion->lastParseMode == ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE,
           "clean comparison context must use full reparse");
     check(ast_nodes_equal(incrementalVersion->ast, cleanVersion->ast, 0U),

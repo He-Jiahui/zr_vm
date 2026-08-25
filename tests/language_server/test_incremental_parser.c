@@ -441,9 +441,9 @@ static void test_incremental_parser_rejects_non_monotonic_versions(SZrState *sta
     TEST_PASS(timer, "Incremental Parser Rejects Non-Monotonic Versions");
 }
 
-static void test_incremental_parser_reparses_one_declaration_and_reuses_siblings(
+static void test_incremental_parser_honors_declaration_retention_boundary(
         SZrState *state) {
-    const TZrChar *summary = "Incremental Parser Reuses Unchanged Declarations";
+    const TZrChar *summary = "Incremental Parser Honors Declaration Retention Boundary";
     const TZrChar *before =
             "fn first(): int { return 1; }\n"
             "fn second(): int { return 2; }\n";
@@ -464,8 +464,8 @@ static void test_incremental_parser_reparses_one_declaration_and_reuses_siblings
 
     TEST_START(summary);
     TEST_INFO(
-            "Declaration-scoped reparse",
-            "An equal-length body edit must replace only its declaration and retain unaffected sibling identity");
+            "Fast path and historical ownership",
+            "Ordinary parsing may reparse one declaration, but retention must transfer an untouched old root");
 
     parser = ZrLanguageServer_IncrementalParser_New(state);
     uri = ZrCore_String_Create(
@@ -499,11 +499,7 @@ static void test_incremental_parser_reparses_one_declaration_and_reuses_siblings
     if (initialFirst == ZR_NULL || initialSecond == ZR_NULL ||
         !ZrLanguageServer_IncrementalParser_UpdateFile(
                 state, parser, uri, after, strlen(after), 2U) ||
-        !ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
-                state, parser, uri, &retainedPreviousAst)) {
-        if (retainedPreviousAst != ZR_NULL) {
-            ZrParser_Ast_Free(state, retainedPreviousAst);
-        }
+        !ZrLanguageServer_IncrementalParser_Parse(state, parser, uri)) {
         ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, summary, "Equal-length declaration update did not parse");
         return;
@@ -511,8 +507,8 @@ static void test_incremental_parser_reparses_one_declaration_and_reuses_siblings
 
     fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
     updatedRoot = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
-    if (retainedPreviousAst != ZR_NULL || updatedRoot != initialRoot ||
-        updatedRoot == ZR_NULL || updatedRoot->data.script.statements == ZR_NULL ||
+    if (updatedRoot != initialRoot || updatedRoot == ZR_NULL ||
+        updatedRoot->data.script.statements == ZR_NULL ||
         updatedRoot->data.script.statements->count != 2U ||
         updatedRoot->data.script.statements->nodes[0] == initialFirst ||
         updatedRoot->data.script.statements->nodes[1] != initialSecond ||
@@ -523,16 +519,48 @@ static void test_incremental_parser_reparses_one_declaration_and_reuses_siblings
                 initialFirstStartOffset ||
         fileVersion->lastChangeInfo.declarationRange.end.offset !=
                 initialFirstEndOffset) {
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer,
+                  summary,
+                  "An ordinary safe edit must reparse one declaration and reuse the script root");
+        return;
+    }
+
+    initialRoot = updatedRoot;
+    initialFirst = updatedRoot->data.script.statements->nodes[0];
+    initialSecond = updatedRoot->data.script.statements->nodes[1];
+    if (!ZrLanguageServer_IncrementalParser_UpdateFile(
+                state, parser, uri, before, strlen(before), 3U) ||
+        !ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
+                state, parser, uri, &retainedPreviousAst)) {
+        if (retainedPreviousAst != ZR_NULL) {
+            ZrParser_Ast_Free(state, retainedPreviousAst);
+        }
+        ZrLanguageServer_IncrementalParser_Free(state, parser);
+        TEST_FAIL(timer, summary, "Retaining declaration update did not parse");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_IncrementalParser_GetFileVersion(parser, uri);
+    updatedRoot = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
+    if (retainedPreviousAst != initialRoot || updatedRoot == ZR_NULL ||
+        updatedRoot == initialRoot || updatedRoot->data.script.statements == ZR_NULL ||
+        updatedRoot->data.script.statements->count != 2U ||
+        updatedRoot->data.script.statements->nodes[0] == initialFirst ||
+        updatedRoot->data.script.statements->nodes[1] == initialSecond ||
+        fileVersion == ZR_NULL ||
+        fileVersion->lastParseMode != ZR_INCREMENTAL_PARSE_MODE_FULL_REPARSE) {
         if (retainedPreviousAst != ZR_NULL) {
             ZrParser_Ast_Free(state, retainedPreviousAst);
         }
         ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer,
                   summary,
-                  "A safe declaration edit must retain the root and unaffected sibling instead of full reparsing");
+                  "A retention request must transfer the old root and build an independent full tree");
         return;
     }
 
+    ZrParser_Ast_Free(state, retainedPreviousAst);
     ZrLanguageServer_IncrementalParser_Free(state, parser);
     TEST_PASS(timer, summary);
 }
@@ -864,7 +892,7 @@ int main(void) {
     test_incremental_parser_rejects_non_monotonic_versions(state);
     TEST_DIVIDER();
 
-    test_incremental_parser_reparses_one_declaration_and_reuses_siblings(state);
+    test_incremental_parser_honors_declaration_retention_boundary(state);
     TEST_DIVIDER();
 
     test_incremental_parser_falls_back_for_unstable_declaration_range(state);

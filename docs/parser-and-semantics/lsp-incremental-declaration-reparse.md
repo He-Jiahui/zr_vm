@@ -49,6 +49,13 @@ has passed every guard. The current implementation deliberately falls back to
 or otherwise unproven edits. That fallback is part of the contract, not a
 silent optimization failure.
 
+Historical snapshot retention is also an explicit full-reparse boundary.
+`ParseRetainingPreviousAst` must transfer the untouched previous root to its
+caller, so it cannot use declaration reparse, which mutates that root in
+place. An equal-length declaration edit therefore uses `full_reparse` when
+retention is requested, while the ordinary non-retaining parse path continues
+to use `declaration_reparse` and preserve unchanged sibling identities.
+
 ## Semantic Invalidation
 
 A declaration replacement changes AST-node identity even when a structural AST
@@ -68,6 +75,14 @@ symbols, semantic tokens, and TypeId/SymbolId relationships. The project
 refresh regression additionally proves that a public function body edit keeps
 the importer analysis when the canonical public contract is unchanged.
 
+`test_incremental_parser.c` applies the same safe declaration-edit shape
+through both parser entry points. Ordinary parsing must reuse the root and
+unchanged sibling through `declaration_reparse`; historical retention must
+return the old root unchanged, independently allocate the current root, and
+record `full_reparse`. This prevents semantic snapshot history from aliasing
+an in-place updated current tree. The LSP differential also records
+`full_reparse` because document updates retain semantic snapshot history.
+
 The acceptance differential additionally performs 10,000 deterministic random
 equal-length replacements over ASCII, three-byte UTF-8 CJK, and four-byte
 astral-plane code points. Every iteration round-trips UTF-16 positions, checks
@@ -86,3 +101,4 @@ aggregation, and the cross-toolchain acceptance matrix remain separate work.
 | 完成时间 | 状态 | 完成项目 | 证据 |
 | --- | --- | --- | --- |
 | 2026-08-23 13:27 +08:00 | 已完成 | 发布 declaration-scoped incremental reparse、显式 full fallback 和 public-contract dependency gate。 | GCC focused direct tests exit 0：incremental parser、incremental equivalence、semantic snapshot、project features。 |
+| 2026-08-26 06:49 +08:00 | 已完成 | 将历史 AST 保留请求设为 full-reparse 边界，避免语义快照与原地更新后的当前根别名。 | GCC、Clang、MSVC 的 incremental parser、10,000 次 incremental equivalence 与完整 LSP interface 均直接 exit 0。 |
