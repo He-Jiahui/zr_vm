@@ -180,13 +180,14 @@ M1 仍暂时使用 existing GC ignore registry 保持 direct resource storage；
 
 - readonly/mutable reborrow分别发出`OWN_VIEW_SHARED`/`OWN_VIEW_MUT`；
 - `intoGc(uniqueResource)`发出`OWN_INTO_GC_BOX`；
-- 显式`detach`/return-to-GC发出`OWN_RETURN_TO_GC`。
+- 当前source surface不提供`detach`或return-to-GC intrinsic，也不发出`OWN_RETURN_TO_GC`。
 
-legacy `OWN_BORROW`、`OWN_LOAN`与`OWN_DETACH`的numeric opcode仍由VM/AOT reader保留，供旧
-artifact兼容，但compiler/writer不再从新source发出它们。`OWN_INTO_GC_BOX`只调用
-`ZrLibrary_AotRuntime_OwnIntoGcBox`，`OWN_RETURN_TO_GC`只调用
-`ZrLibrary_AotRuntime_OwnReturnToGc`；旧`OwnDetach` helper保留旧artifact fallback，不能成为
-新lowering的字符串别名。C与LLVM backend按structured opcode选择helper。
+legacy `OWN_BORROW`、`OWN_LOAN`、`OWN_DETACH`与`OWN_RETURN_TO_GC`的numeric opcode仍由
+VM/AOT reader保留，供旧artifact兼容，但compiler/writer不再从新source发出它们。
+当前`OWN_INTO_GC_BOX` lowering只调用`ZrLibrary_AotRuntime_OwnIntoGcBox`；兼容路径中的
+`OWN_RETURN_TO_GC`只调用`ZrLibrary_AotRuntime_OwnReturnToGc`，旧`OwnDetach` helper也只保留
+旧artifact fallback，二者都不能成为新lowering的字符串别名。C与LLVM backend按structured
+opcode选择helper。
 
 ## Artifact 收口
 
@@ -210,10 +211,10 @@ artifact兼容，但compiler/writer不再从新source发出它们。`OWN_INTO_GC
 - task / borrow rules
   - borrowed / loaned binding 不可跨 `await`
 - SemIR / AOT
-  - `OWN_VIEW_SHARED/OWN_VIEW_MUT/OWN_INTO_GC_BOX/OWN_RETURN_TO_GC`在Semantic IR、
-    ExecBC、AOT C与AOT LLVM保持一致
+  - `OWN_VIEW_SHARED/OWN_VIEW_MUT/OWN_INTO_GC_BOX`在Semantic IR、ExecBC、AOT C与AOT LLVM保持一致
+  - legacy `OWN_RETURN_TO_GC`只验证旧artifact reader/runtime/AOT兼容路径，不作为当前source产物
   - 新source function tree明确不包含legacy `OWN_BORROW/OWN_LOAN/OWN_DETACH`
   - canonical `using` statement 继续走 `MARK_TO_BE_CLOSED`
 - runtime lifecycle
-  - `intoGc()` 拒绝 multi-owner shared
+  - `intoGc(owner)` 拒绝 multi-owner shared
   - 最后一个 shared drop 后 weak 升级返回 `null`
