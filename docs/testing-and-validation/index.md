@@ -1,5 +1,8 @@
 ---
 related_code:
+  - zr_vm_common/include/zr_vm_common/zr_common_conf.h
+  - zr_vm_core/include/zr_vm_core/array.h
+  - zr_vm_core/include/zr_vm_core/string.h
   - tests/benchmarks/README.md
   - tests/benchmarks/registry.cmake
   - tests/CMakeLists.txt
@@ -15,6 +18,7 @@ related_code:
   - docs/zr_language_specification.md
   - docs/zr_language_test_requirements.md
 implementation_files:
+  - zr_vm_common/include/zr_vm_common/zr_common_conf.h
   - tests/benchmarks/README.md
   - tests/benchmarks/registry.cmake
   - tests/CMakeLists.txt
@@ -33,6 +37,8 @@ plan_sources:
   - docs/zr_language_specification.md
   - docs/zr_language_test_requirements.md
 tests:
+  - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/acceptance/2026-08-25-clang-force-inline-portability.md
   - tests/benchmarks/test_benchmark_registry.c
   - tests/benchmarks/registry.cmake
   - tests/cmake/run_performance_suite.cmake
@@ -55,6 +61,10 @@ doc_type: category-index
 
 ## 当前主题
 
+- `compiler-inline-portability.md`
+  - GCC、Clang 与 MSVC 的 compiler detection 和 force-inline 合同
+  - 为什么 Clang Debug 静态链接必须使用 `always_inline`
+  - 如何用真实静态 test executable 证明 public header helpers 不产生悬空外部符号
 - `core-semantics-reference-alignment.md`
   - 6 个核心语义主题的 reference manifest 结构
   - 第一阶段新增的 4 个 fixture 及其期望结果
@@ -79,10 +89,11 @@ doc_type: category-index
 
 ## 阅读顺序
 
-1. 先看 `core-semantics-reference-alignment.md`，了解 reference manifests、fixture 组织方式和本阶段覆盖边界。
-2. 需要看性能报告链路时打开 `ctest-performance-reporting.md`，确认 benchmark suite、报告产物和环境变量覆盖。
-3. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及现有分层验证入口。
-4. 需要跟进 Syntax 07A fixture 时看 `syntax-reference-v1-fixture.md`，确认 feature slot 是否为 current、negative 或 design-pending。
-5. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
-6. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
-7. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。
+1. 先看 `compiler-inline-portability.md`，确认当前工具链检测和 header-inline 链接合同。
+2. 再看 `core-semantics-reference-alignment.md`，了解 reference manifests、fixture 组织方式和本阶段覆盖边界。
+3. 需要看性能报告链路时打开 `ctest-performance-reporting.md`，确认 benchmark suite、报告产物和环境变量覆盖。
+4. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及现有分层验证入口。
+5. 需要跟进 Syntax 07A fixture 时看 `syntax-reference-v1-fixture.md`，确认 feature slot 是否为 current、negative 或 design-pending。
+6. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
+7. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
+8. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。

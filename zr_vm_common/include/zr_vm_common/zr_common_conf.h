@@ -128,7 +128,7 @@ typedef union TZrNativeObject TZrNativeObject;
 #elif defined(ZR_COMPILER_CLANG)
 #define ZR_STRUCT_ALIGN __attribute__((aligned(alignof(max_align_t))))
 #define ZR_ALIGN_SIZE (sizeof(max_align_t))
-#define ZR_FORCE_INLINE inline
+#define ZR_FORCE_INLINE __attribute__((always_inline)) inline
 #if defined(_MSC_VER)
 #define ZR_NO_RETURN _Noreturn
 #else
