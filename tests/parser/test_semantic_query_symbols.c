@@ -7,6 +7,8 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_lib_math/module.h"
+#include "zr_vm_library/native_binding.h"
+#include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
@@ -17,6 +19,53 @@
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 static SZrState *g_state;
+
+static const ZrLibGenericParameterDescriptor kSymbolGenericEchoParameters[] = {
+        {"T", "The generic value passed through the native receiver method.", ZR_NULL, 0U},
+};
+
+static const ZrLibParameterDescriptor kSymbolGenericEchoValueParameters[] = {
+        {"value", "T", "The value to return.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+};
+
+static const ZrLibMethodDescriptor kSymbolGenericEchoMethods[] = {
+        {
+                .name = "echo",
+                .minArgumentCount = 1U,
+                .maxArgumentCount = 1U,
+                .callback = ZR_NULL,
+                .returnTypeName = "T",
+                .documentation = "Return a value through a native method generic.",
+                .isStatic = ZR_FALSE,
+                .parameters = kSymbolGenericEchoValueParameters,
+                .parameterCount = ZR_ARRAY_COUNT(kSymbolGenericEchoValueParameters),
+                .genericParameters = kSymbolGenericEchoParameters,
+                .genericParameterCount = ZR_ARRAY_COUNT(kSymbolGenericEchoParameters),
+        },
+};
+
+static const ZrLibTypeDescriptor kSymbolGenericEchoTypes[] = {
+        {
+                .name = "NativeEchoDevice",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                .methods = kSymbolGenericEchoMethods,
+                .methodCount = ZR_ARRAY_COUNT(kSymbolGenericEchoMethods),
+                .documentation = "A native receiver with one generic method.",
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeEchoDevice()",
+        },
+};
+
+static const ZrLibModuleDescriptor kSymbolGenericEchoModule = {
+        .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
+        .moduleName = "semantic.generic_identity",
+        .types = kSymbolGenericEchoTypes,
+        .typeCount = ZR_ARRAY_COUNT(kSymbolGenericEchoTypes),
+        .documentation = "Native generic identity semantic-query fixture.",
+        .moduleVersion = "1.0.0",
+        .minRuntimeAbi = ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
+};
 
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -1392,6 +1441,125 @@ static void test_symbol_at_projects_native_module_function_identity(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_symbol_at_projects_native_generic_receiver_declaration_identity(void) {
+    const TZrChar *source =
+            "var api = import(\"semantic.generic_identity\");\n"
+            "var device = new api.NativeEchoDevice();\n"
+            "var inferred = device.echo(1);\n"
+            "var explicit = device.echo<string>(\"text\");\n";
+    const TZrChar *inferredCallText = strstr(source, "device.echo(1)");
+    const TZrChar *explicitCallText =
+            strstr(source, "device.echo<string>(\"text\")");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    const SZrSemanticReferenceFact *inferred;
+    const SZrSemanticReferenceFact *explicitCall;
+    SZrParserSemanticSymbolQuery inferredSymbol;
+    SZrParserSemanticSymbolQuery explicitSymbol;
+    SZrParserSemanticCallQuery inferredQuery;
+    SZrParserSemanticCallQuery explicitQuery;
+    SZrFileRange inferredCallPosition;
+    SZrFileRange explicitCallPosition;
+    TZrChar inferredLabel[128];
+    TZrChar explicitLabel[128];
+
+    TEST_ASSERT_NOT_NULL(inferredCallText);
+    TEST_ASSERT_NOT_NULL(explicitCallText);
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "symbol_at_native_generic_receiver.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrLibrary_NativeRegistry_RegisterModule(
+            g_state->global, &kSymbolGenericEchoModule));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    inferred = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "echo", 0U),
+            ZR_SEMANTIC_REFERENCE_CALL);
+    explicitCall = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "echo", 1U),
+            ZR_SEMANTIC_REFERENCE_CALL);
+    TEST_ASSERT_NOT_NULL(inferred);
+    TEST_ASSERT_NOT_NULL(explicitCall);
+    TEST_ASSERT_TRUE(inferred->isResolved);
+    TEST_ASSERT_TRUE(explicitCall->isResolved);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, inferred->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(inferred->symbolId, explicitCall->symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(inferred->typeId, explicitCall->typeId);
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)inferred->declarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)explicitCall->declarationRange.start.offset);
+
+    memset(&inferredCallPosition, 0, sizeof(inferredCallPosition));
+    inferredCallPosition.source = sourceName;
+    inferredCallPosition.start.offset =
+            (TZrSize)(inferredCallText - source + strlen("device.echo("));
+    inferredCallPosition.end = inferredCallPosition.start;
+    memset(&explicitCallPosition, 0, sizeof(explicitCallPosition));
+    explicitCallPosition.source = sourceName;
+    explicitCallPosition.start.offset =
+            (TZrSize)(explicitCallText - source + strlen("device.echo<string>("));
+    explicitCallPosition.end = explicitCallPosition.start;
+    memset(&inferredQuery, 0, sizeof(inferredQuery));
+    memset(&explicitQuery, 0, sizeof(explicitQuery));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            inferredCallPosition,
+            ZR_NULL,
+            &inferredQuery));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            explicitCallPosition,
+            ZR_NULL,
+            &explicitQuery));
+    TEST_ASSERT_TRUE(inferredQuery.hasResolvedTarget);
+    TEST_ASSERT_TRUE(explicitQuery.hasResolvedTarget);
+    TEST_ASSERT_EQUAL_UINT32(inferred->symbolId, inferredQuery.targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT32(inferredQuery.targetSymbolId, explicitQuery.targetSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(
+            inferredQuery.callableTypeId, explicitQuery.callableTypeId);
+    TEST_ASSERT_EQUAL_UINT32(
+            0U, (TZrUInt32)inferredQuery.targetDeclarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(
+            0U, (TZrUInt32)explicitQuery.targetDeclarationRange.start.offset);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &inferredQuery, inferredLabel, sizeof(inferredLabel)));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &explicitQuery, explicitLabel, sizeof(explicitLabel)));
+    TEST_ASSERT_EQUAL_STRING("fn echo<T>(value: int): int", inferredLabel);
+    TEST_ASSERT_EQUAL_STRING("fn echo<T>(value: string): string", explicitLabel);
+
+    memset(&inferredSymbol, 0, sizeof(inferredSymbol));
+    memset(&explicitSymbol, 0, sizeof(explicitSymbol));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "echo", 0U),
+            ZR_NULL,
+            &inferredSymbol));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_SymbolAt(
+            cs.semanticContext,
+            symbol_source_position(source, sourceName, "echo", 1U),
+            ZR_NULL,
+            &explicitSymbol));
+    TEST_ASSERT_EQUAL_UINT32(inferredSymbol.symbolId, explicitSymbol.symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(inferredSymbol.typeId, explicitSymbol.typeId);
+
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_visible_symbols_projects_destructured_import_and_type_value_aliases(void) {
     const TZrChar *source =
             "var {Vec3: Vector3} = import(\"zr.math\");\n"
@@ -1711,6 +1879,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_interface_method_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_direct_import_alias);
     RUN_TEST(test_symbol_at_projects_native_module_function_identity);
+    RUN_TEST(test_symbol_at_projects_native_generic_receiver_declaration_identity);
     RUN_TEST(test_visible_symbols_projects_destructured_import_and_type_value_aliases);
     RUN_TEST(test_visible_symbols_projects_source_type_members);
     RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);

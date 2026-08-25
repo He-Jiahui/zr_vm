@@ -396,6 +396,7 @@ static TZrSymbolId type_inference_member_symbol_id(
         SZrTypeMemberInfo *memberInfo,
         TZrTypeId callTypeId) {
     TZrSize index;
+    TZrTypeId declarationTypeId;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberInfo == ZR_NULL ||
         memberInfo->name == ZR_NULL) {
@@ -403,10 +404,6 @@ static TZrSymbolId type_inference_member_symbol_id(
     }
     if (memberInfo->symbolId != ZR_SEMANTIC_ID_INVALID) {
         return memberInfo->symbolId;
-    }
-    if (memberInfo->declarationNode == ZR_NULL &&
-        memberInfo->genericParameters.length != 0U) {
-        return ZR_SEMANTIC_ID_INVALID;
     }
     for (index = 0U; index < cs->semanticContext->symbols.length; index++) {
         const SZrSemanticSymbolRecord *symbol =
@@ -420,11 +417,16 @@ static TZrSymbolId type_inference_member_symbol_id(
             return symbol->id;
         }
     }
+    declarationTypeId =
+            memberInfo->declarationNode == ZR_NULL &&
+                    memberInfo->genericParameters.length != 0U
+                    ? ZR_SEMANTIC_ID_INVALID
+                    : callTypeId;
     memberInfo->symbolId = ZrParser_Semantic_RegisterSymbol(
             cs->semanticContext,
             memberInfo->name,
             ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
-            callTypeId,
+            declarationTypeId,
             ZR_SEMANTIC_ID_INVALID,
             memberInfo->declarationNode,
             memberInfo->declarationNode != ZR_NULL
