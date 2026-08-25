@@ -7,6 +7,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_lib_math/module.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
@@ -128,6 +129,44 @@ static const SZrSemanticSymbolRecord *relation_find_symbol(
                 : ZR_NULL;
         if (symbolName != ZR_NULL && strcmp(symbolName, name) == 0) {
             return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
+static const SZrSemanticSymbolRecord *relation_find_symbol_by_node(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node) {
+    TZrSize index;
+
+    if (context == ZR_NULL || node == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+        if (symbol != ZR_NULL && symbol->astNode == node) {
+            return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
+static const SZrSemanticVisibleSymbolFact *relation_find_visible_fact(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    TZrSize index;
+
+    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->visibleSymbolFacts.length; index++) {
+        const SZrSemanticVisibleSymbolFact *fact =
+                (const SZrSemanticVisibleSymbolFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->visibleSymbolFacts, index);
+        if (fact != ZR_NULL && fact->symbolId == symbolId) {
+            return fact;
         }
     }
     return ZR_NULL;
@@ -475,6 +514,104 @@ static void test_compiled_source_publishes_reference_definition_relations(void) 
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_compiled_import_publishes_external_origin_relation(void) {
+    const TZrChar *source =
+            "var {Vec3: Vector3} = import(\"zr.math\");\n"
+            "return 0;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_import.zr");
+    SZrAstNode *ast;
+    SZrAstNode *modulePath;
+    SZrAstNode *bindingNode;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *alias;
+    const SZrSemanticVisibleSymbolFact *visible;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_VARIABLE_DECLARATION, ast->data.script.statements->nodes[0]->type);
+    TEST_ASSERT_NOT_NULL(
+            ast->data.script.statements->nodes[0]->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_IMPORT_EXPRESSION,
+            ast->data.script.statements->nodes[0]->data.variableDeclaration.value->type);
+    modulePath = ast->data.script.statements->nodes[0]->data.variableDeclaration.value->data
+            .importExpression.modulePath;
+    TEST_ASSERT_NOT_NULL(modulePath);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRING_LITERAL, modulePath->type);
+    TEST_ASSERT_NOT_NULL(modulePath->data.stringLiteral.value);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math",
+            ZrCore_String_GetNativeString(modulePath->data.stringLiteral.value));
+    TEST_ASSERT_NOT_NULL(
+            ast->data.script.statements->nodes[0]->data.variableDeclaration.pattern);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_DESTRUCTURING_OBJECT,
+            ast->data.script.statements->nodes[0]->data.variableDeclaration.pattern->type);
+    TEST_ASSERT_NOT_NULL(
+            ast->data.script.statements->nodes[0]->data.variableDeclaration.pattern->data
+                    .destructuringObject.keys);
+    TEST_ASSERT_NOT_NULL(
+            ast->data.script.statements->nodes[0]->data.variableDeclaration.pattern->data
+                    .destructuringObject.keys->nodes[0]);
+    bindingNode = ast->data.script.statements->nodes[0]->data.variableDeclaration.pattern->data
+            .destructuringObject.keys->nodes[0]->data.keyValuePair.key;
+    TEST_ASSERT_NOT_NULL(bindingNode);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRING_LITERAL, modulePath->type);
+    TEST_ASSERT_NOT_NULL(modulePath->data.stringLiteral.value);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math",
+            ZrCore_String_GetNativeString(modulePath->data.stringLiteral.value));
+    alias = relation_find_symbol_by_node(cs.semanticContext, bindingNode);
+    TEST_ASSERT_NOT_NULL(alias);
+    visible = relation_find_visible_fact(cs.semanticContext, alias->id);
+    TEST_ASSERT_NOT_NULL(visible);
+    TEST_ASSERT_TRUE(visible->isImport);
+    TEST_ASSERT_NOT_NULL(visible->externalOriginUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math", ZrCore_String_GetNativeString(visible->externalOriginUri));
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishImportOrigins(
+            cs.semanticContext));
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            cs.semanticContext, alias->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN,
+                          relation->kind);
+    TEST_ASSERT_EQUAL_UINT(alias->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, relation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->sourceTypeId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->targetTypeId);
+    TEST_ASSERT_TRUE(relation->isExternal);
+    TEST_ASSERT_NOT_NULL(relation->externalOriginUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math", ZrCore_String_GetNativeString(relation->externalOriginUri));
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
@@ -484,5 +621,6 @@ int main(void) {
     RUN_TEST(test_property_contract_relations_reject_mismatched_accessor_atomically);
     RUN_TEST(test_reference_definitions_publish_declaration_edges_once);
     RUN_TEST(test_compiled_source_publishes_reference_definition_relations);
+    RUN_TEST(test_compiled_import_publishes_external_origin_relation);
     return UNITY_END();
 }

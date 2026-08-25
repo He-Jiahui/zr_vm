@@ -222,6 +222,25 @@ static TZrBool semantic_scope_facts_is_type_value_alias(
            declaration->value->type == ZR_AST_TYPE_LITERAL_EXPRESSION;
 }
 
+static SZrString *semantic_scope_facts_import_origin_uri(
+        const SZrAstNode *node) {
+    const SZrVariableDeclaration *declaration;
+    const SZrAstNode *modulePath;
+
+    if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_NULL;
+    }
+    declaration = &node->data.variableDeclaration;
+    if (declaration->value == ZR_NULL ||
+        declaration->value->type != ZR_AST_IMPORT_EXPRESSION) {
+        return ZR_NULL;
+    }
+    modulePath = declaration->value->data.importExpression.modulePath;
+    return modulePath != ZR_NULL && modulePath->type == ZR_AST_STRING_LITERAL
+            ? modulePath->data.stringLiteral.value
+            : ZR_NULL;
+}
+
 static TZrBool semantic_scope_facts_publish_reference_declaration(
         SZrSemanticScopeFactBuilder *builder,
         TZrSemanticScopeId scopeId,
@@ -229,7 +248,8 @@ static TZrBool semantic_scope_facts_publish_reference_declaration(
         TZrSymbolId ownerSymbolId,
         TZrBool isHoisted,
         TZrBool isImport,
-        TZrBool isAlias) {
+        TZrBool isAlias,
+        SZrString *externalOriginUri) {
     const SZrSemanticReferenceFact *reference;
     const SZrSemanticSymbolRecord *symbol;
     SZrSemanticVisibleSymbolFact fact;
@@ -257,6 +277,7 @@ static TZrBool semantic_scope_facts_publish_reference_declaration(
     fact.definitionRange = reference->definitionRange;
     fact.hasDefinitionRange = reference->hasDefinitionRange;
     fact.signatureDisplay = reference->signatureDisplay;
+    fact.externalOriginUri = externalOriginUri;
     fact.isHoisted = isHoisted;
     fact.isAccessible = ZR_TRUE;
     fact.isImport = isImport;
@@ -279,7 +300,8 @@ static TZrBool semantic_scope_facts_publish_declaration(
             ownerSymbolId,
             isHoisted,
             isImport,
-            (TZrBool)(isImport || semantic_scope_facts_is_type_value_alias(node)));
+            (TZrBool)(isImport || semantic_scope_facts_is_type_value_alias(node)),
+            isImport ? semantic_scope_facts_import_origin_uri(node) : ZR_NULL);
 }
 
 static SZrAstNode *semantic_scope_facts_destructuring_binding_node(
@@ -306,6 +328,7 @@ static TZrBool semantic_scope_facts_publish_variable_declaration(
         TZrSymbolId ownerSymbolId) {
     SZrVariableDeclaration *declaration;
     TZrBool isImport;
+    SZrString *externalOriginUri;
     TZrSize index;
 
     if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
@@ -319,6 +342,7 @@ static TZrBool semantic_scope_facts_publish_variable_declaration(
     }
     isImport = (TZrBool)(declaration->value != ZR_NULL &&
                           declaration->value->type == ZR_AST_IMPORT_EXPRESSION);
+    externalOriginUri = isImport ? semantic_scope_facts_import_origin_uri(node) : ZR_NULL;
     if (declaration->pattern->data.destructuringObject.keys == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -334,7 +358,8 @@ static TZrBool semantic_scope_facts_publish_variable_declaration(
                     ownerSymbolId,
                     ZR_FALSE,
                     isImport,
-                    isImport)) {
+                    isImport,
+                    externalOriginUri)) {
             return ZR_FALSE;
         }
     }

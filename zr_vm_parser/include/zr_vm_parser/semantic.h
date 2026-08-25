@@ -119,6 +119,7 @@ typedef struct SZrSemanticVisibleSymbolFact {
     SZrFileRange declarationRange;
     SZrFileRange definitionRange;
     SZrString *signatureDisplay;
+    SZrString *externalOriginUri;
     TZrBool hasDefinitionRange;
     TZrBool isHoisted;
     TZrBool isAccessible;

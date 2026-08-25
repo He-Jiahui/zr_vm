@@ -820,6 +820,12 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     cs, "Failed to publish source semantic scope facts", node->location);
             return;
         }
+        if (!cs->hasError && cs->semanticContext != ZR_NULL &&
+            !ZrParser_SemanticRelations_PublishImportOrigins(cs->semanticContext)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to publish semantic import origin relations", node->location);
+            return;
+        }
 
         exit_scope(cs);
     }

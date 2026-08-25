@@ -446,6 +446,76 @@ TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
     return ZR_TRUE;
 }
 
+static TZrBool semantic_relations_has_import_origin(
+        const SZrSemanticContext *context,
+        TZrSymbolId sourceSymbolId,
+        TZrTypeId targetTypeId,
+        SZrString *originUri) {
+    TZrSize index;
+
+    if (context == ZR_NULL || originUri == ZR_NULL || !context->relationFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->relationFacts.length; index++) {
+        const SZrSemanticRelationFact *fact =
+                (const SZrSemanticRelationFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->relationFacts, index);
+        if (fact != ZR_NULL &&
+            fact->kind == ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN &&
+            fact->sourceSymbolId == sourceSymbolId &&
+            fact->targetTypeId == targetTypeId && fact->isExternal &&
+            fact->externalOriginUri != ZR_NULL &&
+            ZrCore_String_Equal(fact->externalOriginUri, originUri)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
+        SZrSemanticContext *context) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->visibleSymbolFacts.isValid ||
+        !context->relationFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->visibleSymbolFacts.length; index++) {
+        const SZrSemanticVisibleSymbolFact *visible =
+                (const SZrSemanticVisibleSymbolFact *)ZrCore_Array_Get(
+                        &context->visibleSymbolFacts, index);
+        const SZrSemanticSymbolRecord *symbol;
+        SZrSemanticRelationFact fact;
+
+        if (visible == ZR_NULL || !visible->isImport ||
+            visible->symbolId == ZR_SEMANTIC_ID_INVALID ||
+            visible->externalOriginUri == ZR_NULL) {
+            continue;
+        }
+        symbol = ZrParser_Semantic_FindSymbolById(context, visible->symbolId);
+        if (symbol == ZR_NULL || symbol->typeId == ZR_SEMANTIC_ID_INVALID ||
+            !semantic_relations_range_is_known(&symbol->location) ||
+            semantic_relations_has_import_origin(
+                    context, symbol->id, symbol->typeId, visible->externalOriginUri)) {
+            continue;
+        }
+
+        memset(&fact, 0, sizeof(fact));
+        fact.kind = ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN;
+        fact.sourceSymbolId = symbol->id;
+        fact.sourceTypeId = symbol->typeId;
+        fact.targetTypeId = symbol->typeId;
+        fact.sourceRange = symbol->location;
+        fact.externalOriginUri = visible->externalOriginUri;
+        fact.hasSourceRange = ZR_TRUE;
+        fact.isExternal = ZR_TRUE;
+        if (!ZrParser_SemanticRelations_Append(context, &fact)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,

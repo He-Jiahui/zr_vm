@@ -2,6 +2,23 @@
 #include "zr_vm_parser/diagnostic_builder.h"
 
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/string.h"
+
+static SZrString *semantic_context_clone_string(
+        SZrSemanticContext *context,
+        SZrString *value) {
+    TZrNativeString text;
+
+    if (context == ZR_NULL || context->state == ZR_NULL || value == ZR_NULL) {
+        return ZR_NULL;
+    }
+    text = ZrCore_String_GetNativeString(value);
+    if (text == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return ZrCore_String_Create(
+            context->state, text, ZrCore_String_GetByteLength(value));
+}
 
 static void semantic_context_init_arrays(SZrSemanticContext *context) {
     ZrCore_Array_Init(context->state,
@@ -515,6 +532,11 @@ TZrBool ZrParser_Semantic_PublishVisibleSymbolFact(
     }
 
     copy = *fact;
+    copy.externalOriginUri = semantic_context_clone_string(
+            context, fact->externalOriginUri);
+    if (fact->externalOriginUri != ZR_NULL && copy.externalOriginUri == ZR_NULL) {
+        return ZR_FALSE;
+    }
     ZrCore_Array_Push(context->state, &context->visibleSymbolFacts, &copy);
     return ZR_TRUE;
 }

@@ -233,6 +233,19 @@ the snapshot remains idempotent while preserving distinct definition sites.
 Facts without a resolved symbol, canonical type, or exact ranges are omitted
 until a source, binary, or native producer can provide a complete relation.
 
+Task 3.4 publishes `ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN` for source
+`import(...)` aliases. During source-scope construction, the compiler copies
+the normalized import URI into the snapshot-owned visible-symbol fact together
+with the resolved local alias SymbolId. The relation producer runs after that
+scope pass and uses only the visible fact and its registered symbol record: the
+local alias is the source endpoint, the canonical TypeId is retained for the
+external endpoint, and the URI is the explicit external origin. It emits no
+target SymbolId, source range, or relation when a canonical URI, SymbolId,
+TypeId, or declaration range is absent. Re-publication is idempotent by local
+SymbolId, canonical TypeId, and URI. It never finds an imported entity by a
+spelling, so a native symbol with the same name cannot replace the source
+alias.
+
 Source inheritance, implementation, alias, binary/native origin, and call graph
 publishers remain later slices. LSP must not infer an absent relation.
 

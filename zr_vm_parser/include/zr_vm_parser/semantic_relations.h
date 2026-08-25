@@ -44,5 +44,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
 /* Publishes declaration-to-write edges from resolved reference facts only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
         SZrSemanticContext *context);
+/* Publishes external import origins from existing source scope facts only. */
+ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
+        SZrSemanticContext *context);
 
 #endif // ZR_VM_PARSER_SEMANTIC_RELATIONS_H
