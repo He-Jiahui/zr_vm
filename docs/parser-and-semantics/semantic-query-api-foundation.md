@@ -5,6 +5,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_display.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_canonical.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
@@ -68,6 +69,7 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_canonical.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
@@ -297,6 +299,19 @@ callable TypeId remains on `CallAt`, so a generic call does not overwrite every
 candidate with a call-site specialization. The candidate list deliberately
 does not claim overload viability, conversion score, argument-to-parameter
 mapping, or a text-derived alternative when the target is unresolved.
+
+### CallAt Metadata Projection
+
+`CallAt` also copies the selected canonical expression fact's `range`,
+`callTargetRange`, `argumentCount`, `hasNamedArguments`, and `isMemberCall` into
+the value fields `callSiteRange`, `callTargetRange`, `argumentCount`,
+`hasNamedArguments`, and `isMemberCall`. The query never recomputes the
+arguments, resolves a receiver, scans source text, or substitutes a name when
+the selected call fact is incomplete. The copied ranges remain valid after a
+caller discards its borrowed expression/reference views, while their identity
+continues to be scoped to the same semantic snapshot. Argument-to-parameter
+mapping, conversion/exactness, receiver TypeId, and external-call metadata
+remain unavailable until their canonical producers publish complete facts.
 
 ## Test Coverage
 

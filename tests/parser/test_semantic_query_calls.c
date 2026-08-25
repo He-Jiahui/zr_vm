@@ -250,6 +250,8 @@ static void test_call_candidates_project_resolved_overload_set(void) {
     const SZrSemanticSymbolRecord *stringChoice;
     SZrParserSemanticCallQuery call;
     SZrArray candidates;
+    SZrFileRange expectedCallRange;
+    SZrFileRange expectedTargetRange;
     TZrSize selectedCount = 0U;
 
     TEST_ASSERT_NOT_NULL(sourceName);
@@ -283,6 +285,18 @@ static void test_call_candidates_project_resolved_overload_set(void) {
             &call));
     TEST_ASSERT_TRUE(call.hasResolvedTarget);
     TEST_ASSERT_EQUAL_UINT(intChoice->id, call.targetSymbolId);
+    expectedTargetRange = call_source_position(source, sourceName, "choose", 2U);
+    expectedCallRange = expectedTargetRange;
+    expectedCallRange.end.offset += strlen("(1)");
+    TEST_ASSERT_EQUAL_PTR(sourceName, call.callSiteRange.source);
+    TEST_ASSERT_EQUAL_UINT64(expectedCallRange.start.offset, call.callSiteRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(expectedCallRange.end.offset, call.callSiteRange.end.offset);
+    TEST_ASSERT_EQUAL_PTR(sourceName, call.callTargetRange.source);
+    TEST_ASSERT_EQUAL_UINT64(expectedTargetRange.start.offset, call.callTargetRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(expectedTargetRange.end.offset, call.callTargetRange.end.offset);
+    TEST_ASSERT_EQUAL_UINT(1U, call.argumentCount);
+    TEST_ASSERT_FALSE(call.hasNamedArguments);
+    TEST_ASSERT_FALSE(call.isMemberCall);
 
     ZrCore_Array_Construct(&candidates);
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallCandidatesAt(

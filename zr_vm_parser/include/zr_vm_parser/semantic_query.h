@@ -55,6 +55,11 @@ typedef struct SZrParserSemanticCallQuery {
     TZrTypeId callableTypeId;
     const SZrSemanticExpressionFact *expression;
     const SZrSemanticReferenceFact *reference;
+    SZrFileRange callSiteRange;
+    SZrFileRange callTargetRange;
+    TZrSize argumentCount;
+    TZrBool hasNamedArguments;
+    TZrBool isMemberCall;
     TZrBool hasResolvedTarget;
     TZrSymbolId targetSymbolId;
     SZrFileRange targetDeclarationRange;
