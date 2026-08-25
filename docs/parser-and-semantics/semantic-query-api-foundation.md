@@ -305,6 +305,13 @@ a usable output buffer before validating its inputs, so a failed inexact query
 cannot leave a previous signature visible. It does not recover a display from a
 name, AST, broader fact, or language-server state.
 
+`ZrParser_SemanticQuery_CanonicalTypeAt` similarly returns a value `TypeId` when
+it falls back to an expression fact. That fallback requires an `EXACT`
+expression. A reference-backed result remains governed by its published
+reference identity, while an approximate expression fallback leaves `typeId`
+invalid and returns false; callers may still inspect the borrowed fact pointers
+without treating an inexact type as a value result.
+
 This first Task 4 slice covers source function callers and resolved overload
 declaration membership only. Lambda scopes, argument-to-parameter mappings,
 compatibility scores, conversions, receiver TypeIds, and binary/native

@@ -98,6 +98,23 @@ static void test_type_at_fails_closed_for_approximate_expression_fact(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_canonical_type_at_fails_closed_for_approximate_expression_fact(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode node;
+    SZrParserSemanticTypeQuery query;
+
+    TEST_ASSERT_NOT_NULL(context);
+    contract_init_node(&node, 16U, 18U);
+    contract_append_expression(context, &node, ZR_SEMANTIC_FACT_APPROXIMATE);
+    memset(&query, 0, sizeof(query));
+
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            context, contract_range(17U, 17U), ZR_NULL, &query));
+    TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.typeId);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_facts_at_returns_repeatable_borrowed_fact_view(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrAstNode node;
@@ -147,6 +164,7 @@ static void test_diagnostics_query_does_not_materialize_context_state(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_type_at_fails_closed_for_approximate_expression_fact);
+    RUN_TEST(test_canonical_type_at_fails_closed_for_approximate_expression_fact);
     RUN_TEST(test_facts_at_returns_repeatable_borrowed_fact_view);
     RUN_TEST(test_diagnostics_query_does_not_materialize_context_state);
     return UNITY_END();

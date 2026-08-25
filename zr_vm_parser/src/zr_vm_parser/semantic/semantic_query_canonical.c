@@ -67,6 +67,7 @@ TZrBool ZrParser_SemanticQuery_CanonicalTypeAt(
         return ZR_TRUE;
     }
     if (expression != ZR_NULL && expression->typeId != ZR_SEMANTIC_ID_INVALID &&
+        ZrParser_SemanticQuery_ExactnessAllowsProjection(expression->exactness) &&
         canonical_query_scope_allows(scope, &expression->range)) {
         outQuery->typeId = expression->typeId;
         return ZR_TRUE;
