@@ -2,11 +2,13 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
   - zr_vm_parser/include/zr_vm_parser/semantic_calls.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_display.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
@@ -52,6 +54,7 @@ related_code:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_symbols.c
   - tests/parser/test_semantic_query_calls.c
+  - tests/parser/test_semantic_display.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_reaching_definition_navigation.c
@@ -59,6 +62,7 @@ related_code:
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
   - zr_vm_parser/include/zr_vm_parser/semantic_calls.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_display.h
   - zr_vm_parser/include/zr_vm_parser/semantic_relations.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
@@ -66,6 +70,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
@@ -114,6 +119,7 @@ tests:
   - tests/parser/test_semantic_query_symbols.c
   - tests/parser/test_semantic_query_relations.c
   - tests/parser/test_semantic_query_calls.c
+  - tests/parser/test_semantic_display.c
   - tests/parser/test_type_inference.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
@@ -337,6 +343,38 @@ The same compiler diagnostic target covers semantic query diagnostics for existi
 - `tests/language_server/test_lsp_reaching_definition_navigation.c` covers LSP definition navigation through parser reaching-definition facts by requiring `return seed` after `seed = 3` to jump to the write token instead of the declaration token. It also covers divergent branch writes by requiring `return seed` after an `if/else` pair of writes to return both branch write locations and not the declaration.
 
 The parser test targets are `zr_vm_compiler_semantic_query_diagnostics_test`, `zr_vm_semantic_query_test`, and `zr_vm_semantic_query_symbols_test`; the LSP publication targets are `zr_vm_language_server_semantic_query_diagnostics_test` and `zr_vm_language_server_reaching_definition_navigation_test`. They are registered in `tests/CMakeLists.txt`.
+
+## Canonical Display Facade
+
+`semantic_display.h` is a snapshot-scoped formatting facade for callers that
+already hold canonical identities. `ZrParser_SemanticDisplay_FormatType` simply
+delegates to `ZrParser_CanonicalType_Format`; it therefore preserves every
+canonical wrapper and function contract without maintaining a second type-name
+table. A missing TypeId, an invalid context, or insufficient output capacity
+clears the caller buffer and returns `ZR_FALSE`.
+
+`ZrParser_SemanticDisplay_FormatSymbol` accepts an exact registered SymbolId.
+It first considers resolved declaration reference facts with the same SymbolId
+and TypeId. A matching `signatureDisplay` is returned unchanged, which retains
+source or imported generic parameter names that a closed function TypeId does
+not encode. If such a fact is absent, the fallback is limited to that exact
+symbol record's display name and canonical TypeId. It never scans source,
+searches a same-name record, or obtains a function signature from another
+overload.
+
+`ZrParser_SemanticDisplay_FormatProperty` accepts an already-published
+`SZrSemanticPropertyContract`, validates its property SymbolId and TypeId
+against the registry, and verifies every advertised getter, setter, or
+initializer SymbolId is a registered function with a canonical function TypeId.
+It formats only the structured
+static, receiver-effect, reference-access, type, and accessor fields. An
+incomplete contract leaves the output empty rather than guessing hidden
+accessor names. `ZrParser_SemanticQuery_FormatCall` remains the existing
+canonical call display API; the facade does not create a parallel call resolver.
+
+The facade does not publish documentation metadata. A later producer must add
+that fact before hover, completion, or signature help can display documentation
+without extracting comments or source text independently.
 
 ## Limits And Next Steps
 
