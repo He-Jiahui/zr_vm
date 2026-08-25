@@ -51,7 +51,8 @@ consumer.
 - RED: the dedicated MSVC relation test failed to link because
   `ZrParser_SemanticRelations_PublishReferenceDefinitions` did not exist.
 - GREEN: the dedicated MSVC static cache directly executed relation graph
-  `6 Tests 0 Failures 0 Ignored`, semantic query `29 Tests 0 Failures 0
+  `7 Tests 0 Failures 0 Ignored`, including a `compile_script` source
+  integration assertion, semantic query `29 Tests 0 Failures 0
   Ignored`, property consumer contracts `11 Tests 0 Failures 0 Ignored`, and
   compiler semantic diagnostics `46 Tests 0 Failures 0 Ignored`, each with
   process exit zero.
@@ -65,3 +66,7 @@ consumer.
   publication，以及关系/查询/属性/诊断回归。
 - 后续项目：CFG 多定义按读点关联、source base/interface/override/alias、
   binary/native origin、call graph 与 LSP relation consumers。
+- 补充完成时间：2026-08-26 00:27 +08:00。
+- 补充状态：已完成并将随补充测试提交；不改变本子项或 Plan 03 Task 3 的完成范围。
+- 补充项目：`compile_script` source snapshot 的 declaration-definition
+  relation 端到端断言，覆盖 compiler late-publication 顺序。

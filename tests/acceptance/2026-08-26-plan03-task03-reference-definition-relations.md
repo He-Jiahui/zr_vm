@@ -40,8 +40,9 @@ or LSP state.
 
 The dedicated MSVC static cache
 `.codex/build-lsp-plan03-native-generic-msvc-r2` directly returned process exit
-zero for `zr_vm_semantic_query_relations_test` (`6 Tests 0 Failures 0
-Ignored`), `zr_vm_semantic_query_test` (`29 Tests 0 Failures 0 Ignored`),
+zero for `zr_vm_semantic_query_relations_test` (`7 Tests 0 Failures 0
+Ignored`, including compiled-source publication), `zr_vm_semantic_query_test`
+(`29 Tests 0 Failures 0 Ignored`),
 `zr_vm_property_consumer_contracts_test` (`11 Tests 0 Failures 0 Ignored`),
 and `zr_vm_compiler_semantic_query_diagnostics_test` (`46 Tests 0 Failures 0
 Ignored`). The shared working tree contains unrelated uncommitted work, so
@@ -60,3 +61,7 @@ producers, and LSP consumers remain unaccepted.
 - 完成项目：canonical declaration-definition producer、精确 SymbolId/TypeId/
   range 投影、幂等性、关系图与既有查询/属性/诊断回归。
 - 后续项目：CFG 多定义、外部 origin、其他 relation producer 和 LSP projection。
+- 补充完成时间：2026-08-26 00:27 +08:00。
+- 补充状态：已完成并将随 compiler-backed relation 测试提交。
+- 补充项目：验证 `compile_script` 的 late publication 使 source snapshot
+  可查询到 declaration-definition edge。

@@ -4,11 +4,16 @@
 
 #include "harness/runtime_support.h"
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/semantic_relations.h"
+
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 static SZrState *g_state;
 
@@ -89,6 +94,43 @@ static TZrSymbolId relation_register_symbol(
             ZR_SEMANTIC_ID_INVALID,
             ZR_NULL,
             relation_range(offset, offset + 1U));
+}
+
+static void relation_release_compiler_function(SZrCompilerState *cs) {
+    if (cs == ZR_NULL) {
+        return;
+    }
+    if (cs->topLevelFunction != ZR_NULL &&
+        cs->topLevelFunction != cs->currentFunction) {
+        ZrCore_Function_Free(g_state, cs->topLevelFunction);
+        cs->topLevelFunction = ZR_NULL;
+    }
+    if (cs->currentFunction != ZR_NULL) {
+        ZrCore_Function_Free(g_state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+    }
+}
+
+static const SZrSemanticSymbolRecord *relation_find_symbol(
+        const SZrSemanticContext *context,
+        TZrNativeString name) {
+    TZrSize index;
+
+    if (context == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+        const TZrChar *symbolName = symbol != ZR_NULL && symbol->name != ZR_NULL
+                ? ZrCore_String_GetNativeString(symbol->name)
+                : ZR_NULL;
+        if (symbolName != ZR_NULL && strcmp(symbolName, name) == 0) {
+            return symbol;
+        }
+    }
+    return ZR_NULL;
 }
 
 static void test_relations_of_symbol_projects_sorted_snapshot_edges(void) {
@@ -380,6 +422,59 @@ static void test_reference_definitions_publish_declaration_edges_once(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_compiled_source_publishes_reference_definition_relations(void) {
+    const TZrChar *source =
+            "fn read(): int {\n"
+            "    var seed: int;\n"
+            "    seed = 2;\n"
+            "    return seed;\n"
+            "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_source.zr");
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *seed;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+    const TZrChar *definitionText;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    seed = relation_find_symbol(cs.semanticContext, "seed");
+    TEST_ASSERT_NOT_NULL(seed);
+    definitionText = strstr(strstr(source, "seed") + 1U, "seed");
+    TEST_ASSERT_NOT_NULL(definitionText);
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            cs.semanticContext, seed->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION,
+                          relation->kind);
+    TEST_ASSERT_EQUAL_UINT(seed->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(seed->id, relation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(
+            (TZrUInt32)(definitionText - source),
+            relation->targetRange.start.offset);
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
@@ -388,5 +483,6 @@ int main(void) {
     RUN_TEST(test_property_contracts_publish_accessor_relations_once);
     RUN_TEST(test_property_contract_relations_reject_mismatched_accessor_atomically);
     RUN_TEST(test_reference_definitions_publish_declaration_edges_once);
+    RUN_TEST(test_compiled_source_publishes_reference_definition_relations);
     return UNITY_END();
 }
