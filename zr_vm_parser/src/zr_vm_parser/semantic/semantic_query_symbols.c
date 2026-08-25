@@ -85,9 +85,10 @@ static const SZrSemanticScopeFact *semantic_query_symbols_find_innermost_scope(
             continue;
         }
         width = semantic_query_symbols_range_width(&candidate->range);
-        if (best == ZR_NULL || width < bestWidth ||
-            (width == bestWidth &&
-             semantic_query_symbols_scope_descends_from(context, candidate, best))) {
+        if (best == ZR_NULL ||
+            semantic_query_symbols_scope_descends_from(context, candidate, best) ||
+            (!semantic_query_symbols_scope_descends_from(context, best, candidate) &&
+             width < bestWidth)) {
             best = candidate;
             bestWidth = width;
         }

@@ -229,7 +229,7 @@ static TZrBool semantic_scope_facts_publish_generic_parameter(
     return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
 }
 
-static TZrBool semantic_scope_facts_publish_type_generic_parameters(
+static TZrBool semantic_scope_facts_publish_generic_parameters(
         SZrSemanticScopeFactBuilder *builder,
         TZrSemanticScopeId scopeId,
         TZrSymbolId ownerSymbolId,
@@ -315,6 +315,11 @@ static TZrBool semantic_scope_facts_visit_function(
     if (scopeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
+    if (ownerSymbolId != ZR_SEMANTIC_ID_INVALID &&
+        !semantic_scope_facts_publish_generic_parameters(
+                builder, scopeId, ownerSymbolId, declaration->generic)) {
+        return ZR_FALSE;
+    }
     if (declaration->params != ZR_NULL) {
         for (index = 0U; index < declaration->params->count; index++) {
             if (!semantic_scope_facts_publish_declaration(
@@ -366,7 +371,7 @@ static TZrBool semantic_scope_facts_visit_type(
             return ZR_FALSE;
     }
     return scopeId != ZR_SEMANTIC_ID_INVALID &&
-           semantic_scope_facts_publish_type_generic_parameters(
+           semantic_scope_facts_publish_generic_parameters(
                    builder, scopeId, symbol->id, generic);
 }
 

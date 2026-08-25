@@ -910,6 +910,72 @@ static void test_visible_symbols_projects_source_type_generic_parameter(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_visible_symbols_projects_source_function_generic_parameter(void) {
+    const TZrChar *source = "fn identity<T>(value: T): T { return value; }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    const SZrParserSemanticSymbolQuery *function;
+    const SZrParserSemanticSymbolQuery *parameter;
+    const SZrCanonicalTypeNode *parameterType;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_generic_function.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)ast->data.script.statements->count);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, declaration->type);
+    TEST_ASSERT_NOT_NULL(declaration->data.functionDeclaration.generic);
+    TEST_ASSERT_NOT_NULL(declaration->data.functionDeclaration.generic->params);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)declaration->data.functionDeclaration.generic->params->count);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    position = symbol_source_position(source, sourceName, "identity", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "T"));
+
+    position = symbol_source_position(source, sourceName, "T", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "T"));
+    function = symbol_find_visible_name(&symbols, "identity");
+    parameter = symbol_find_visible_name(&symbols, "T");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(parameter);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, parameter->symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, parameter->typeId);
+    TEST_ASSERT_EQUAL_UINT32(function->symbolId, parameter->ownerSymbolId);
+    parameterType = ZrParser_CanonicalType_Find(cs.semanticContext, parameter->typeId);
+    TEST_ASSERT_NOT_NULL(parameterType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_GENERIC_PARAMETER, parameterType->kind);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
@@ -920,5 +986,6 @@ int main(void) {
     RUN_TEST(test_visible_symbols_does_not_leak_for_initializer);
     RUN_TEST(test_visible_symbols_projects_source_type_declarations);
     RUN_TEST(test_visible_symbols_projects_source_type_generic_parameter);
+    RUN_TEST(test_visible_symbols_projects_source_function_generic_parameter);
     return UNITY_END();
 }
