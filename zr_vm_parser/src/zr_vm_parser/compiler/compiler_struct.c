@@ -1653,6 +1653,28 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             }
 
             if (memberInfo.name != ZR_NULL) {
+                if (member->type == ZR_AST_STRUCT_FIELD &&
+                    !compiler_type_member_register_field_symbol(cs, &memberInfo)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to register canonical struct field symbol",
+                            member->location);
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
+                if (member->type == ZR_AST_STRUCT_METHOD &&
+                    !compiler_type_member_register_function_symbol(cs, &memberInfo)) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to register canonical struct method symbol",
+                            member->location);
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
                 ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
                 if (memberInfo.isMetaMethod &&
                     memberInfo.metaType == ZR_META_CONSTRUCTOR &&

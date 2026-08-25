@@ -134,6 +134,12 @@ Resolved callable consumers also use `ZrParser_SemanticQuery_CallAt` and `ZrPars
 
 ## Test Coverage
 
+`tests/parser/test_semantic_query_symbols.c` now compiles source `class Meter`,
+`struct Point`, and `interface Readable` fields and methods. It verifies exact
+field symbols, opt-in receiver visibility, canonical owner identity, and
+static-method exclusion of instance members through published scope state
+rather than a member-name check.
+
 `tests/parser/test_compiler_semantic_query_diagnostics.c` covers compiler-side publication by compiling `return true ? 1 : 2`, requiring `SZrSemanticContext.queryDiagnostics` to contain `unreachable_code`, and asserting that warning-level query diagnostics do not put the compiler in an error state. It also covers CFG-backed definite-assignment diagnostics by compiling `var seed: int; if (flag) { seed = 1; } return seed;` and requiring `possibly_uninitialized_read` at the branch-join read. For reaching definitions, it compiles `if/else` divergent branch writes and verifies the linear resolver would choose the last source-order write, while the CFG-backed resolver clears the final read's single-definition payload. It also compiles a straight-line `seed = 3; return seed;` fixture and verifies `ZrParser_SemanticQuery_DefinitionOf` can resolve the compiled context's read directly to the write token without a test-local resolver call.
 
 The same compiler diagnostic target covers semantic query diagnostics for existing numeric overflow facts and array index diagnostics. Array coverage includes fixed-size constant indexes, definite out-of-range intervals, partial-overlap warnings, primitive full-range indexes, finite `arrayMaxSize` / `min==max` upper bounds, known non-integer indexes, and min-only `int[1 ..]` arrays whose index range may be negative while positive `u8` indexes remain silent.
@@ -170,5 +176,13 @@ The same compiler diagnostic target covers semantic query diagnostics for existi
 The parser test targets are `zr_vm_compiler_semantic_query_diagnostics_test`, `zr_vm_semantic_query_test`, and `zr_vm_semantic_query_symbols_test`; the LSP publication targets are `zr_vm_language_server_semantic_query_diagnostics_test` and `zr_vm_language_server_reaching_definition_navigation_test`. They are registered in `tests/CMakeLists.txt`.
 
 ## Limits And Next Steps
+
+Source struct/class/interface fields and methods are complete in the source
+producer subset. Their facts originate only from compiler-registered member
+symbols and carry canonical owner identity, declaration range, access, and
+static flags. Static method state propagates through nested scopes for the
+existing receiver/static filter. Imports/aliases, `.zro`, and native descriptor
+analyzers remain the missing visibility producers; no LSP consumer has migrated
+in this slice.
 
 The API does not yet expose local re-analysis, compiler frontend binary/external serialization of query diagnostics, or CFG loop reaching-definition fixed points. `VisibleSymbols` now consumes compiler-published source module/function/block facts for functions, parameters, locals, top-level types, source type/free-function generic parameters including const parameters, and struct/class/interface method type-generic parameters. Type members, imports/aliases, receiver members, `.zro`, and native descriptor analyzers still need to publish the remaining candidate facts before completion can serve real workspaces. No LSP consumer has migrated in this slice. `DefinitionsOf` exposes the first multi-definition surface and deterministic same-source source-order ranking, but ranking remains local-symbol oriented rather than overload/member aware. LSP definition navigation and compiler-side semantic contexts now consume both linear and first-slice CFG-backed reaching definitions for local symbols. Definite-assignment diagnostics can consume explicit read states, the straight-line semantic-facts resolver, or the CFG-backed resolver for source reads across branch joins, declaration initializers, and cloned `finally` paths. Current diagnostic related information is limited to declaration locations for definite-assignment read diagnostics; fix-its, descriptor IDs, registry entries, ownership related locations, and type-mismatch related locations remain pending. Array index diagnostics still keep truly unknown and no-inferable-range indexes silent. Loop precision, remaining finally edge cases, local re-analysis, richer source mapping, and non-cache compiler diagnostic channels remain pending.

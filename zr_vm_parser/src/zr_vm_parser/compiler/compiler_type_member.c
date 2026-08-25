@@ -24,9 +24,10 @@ TZrBool compiler_type_member_capture_structured_return_type(
     return ZR_TRUE;
 }
 
-TZrBool compiler_type_member_register_function_symbol(
+static TZrBool compiler_type_member_register_symbol(
         SZrCompilerState *cs,
-        SZrTypeMemberInfo *memberInfo) {
+        SZrTypeMemberInfo *memberInfo,
+        EZrSemanticSymbolKind kind) {
     TZrTypeId ownerTypeId;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberInfo == ZR_NULL ||
@@ -45,10 +46,24 @@ TZrBool compiler_type_member_register_function_symbol(
     memberInfo->symbolId = ZrParser_Semantic_RegisterSymbol(
             cs->semanticContext,
             memberInfo->name,
-            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            kind,
             ownerTypeId,
             ZR_SEMANTIC_ID_INVALID,
             memberInfo->declarationNode,
             memberInfo->declarationNode->location);
     return memberInfo->symbolId != ZR_SEMANTIC_ID_INVALID;
+}
+
+TZrBool compiler_type_member_register_function_symbol(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo) {
+    return compiler_type_member_register_symbol(
+            cs, memberInfo, ZR_SEMANTIC_SYMBOL_KIND_FUNCTION);
+}
+
+TZrBool compiler_type_member_register_field_symbol(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo) {
+    return compiler_type_member_register_symbol(
+            cs, memberInfo, ZR_SEMANTIC_SYMBOL_KIND_FIELD);
 }

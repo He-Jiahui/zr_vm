@@ -1256,6 +1256,174 @@ static void test_visible_symbols_projects_source_interface_method_generic_parame
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_visible_symbols_projects_source_type_members(void) {
+    const TZrChar *source =
+            "class Meter {\n"
+            "    var reading: int;\n"
+            "    static var total: int;\n"
+            "    fn instance(): int { return 0; }\n"
+            "    static fn factory(): int { return 0; }\n"
+            "}\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *classNode;
+    SZrAstNode *readingNode;
+    SZrAstNode *totalNode;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    const SZrSemanticSymbolRecord *classSymbol;
+    const SZrSemanticSymbolRecord *reading;
+    const SZrSemanticSymbolRecord *total;
+    const SZrParserSemanticSymbolQuery *visibleReading;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_type_members.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)ast->data.script.statements->count);
+    classNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(classNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classNode->type);
+    TEST_ASSERT_NOT_NULL(classNode->data.classDeclaration.members);
+    TEST_ASSERT_EQUAL_UINT32(4U, (TZrUInt32)classNode->data.classDeclaration.members->count);
+    readingNode = classNode->data.classDeclaration.members->nodes[0];
+    totalNode = classNode->data.classDeclaration.members->nodes[1];
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_FIELD, readingNode->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_FIELD, totalNode->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    classSymbol = symbol_find_registered_node(cs.semanticContext, classNode);
+    reading = symbol_find_registered_node(cs.semanticContext, readingNode);
+    total = symbol_find_registered_node(cs.semanticContext, totalNode);
+    TEST_ASSERT_NOT_NULL(classSymbol);
+    TEST_ASSERT_NOT_NULL(reading);
+    TEST_ASSERT_NOT_NULL(total);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FIELD, reading->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FIELD, total->kind);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, reading->id);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, total->id);
+
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    position = symbol_source_position(source, sourceName, "return", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "reading"));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "total"));
+
+    options.includeReceiverMembers = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "reading"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "total"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "instance"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "factory"));
+    visibleReading = symbol_find_visible_name(&symbols, "reading");
+    TEST_ASSERT_NOT_NULL(visibleReading);
+    TEST_ASSERT_EQUAL_UINT32(reading->id, visibleReading->symbolId);
+    TEST_ASSERT_EQUAL_UINT32(classSymbol->id, visibleReading->ownerSymbolId);
+
+    position = symbol_source_position(source, sourceName, "return", 1U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "reading"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "total"));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "instance"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "factory"));
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_visible_symbols_projects_source_struct_and_interface_members(void) {
+    const TZrChar *source =
+            "struct Point { var x: int; fn read(): int { return 0; } }\n"
+            "interface Readable { var ready: int; fn read(): int; }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *pointNode;
+    SZrAstNode *readableNode;
+    SZrAstNode *pointFieldNode;
+    SZrAstNode *interfaceFieldNode;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    const SZrSemanticSymbolRecord *pointField;
+    const SZrSemanticSymbolRecord *interfaceField;
+    const SZrParserSemanticSymbolQuery *visiblePointField;
+    const SZrParserSemanticSymbolQuery *visibleInterfaceField;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "visible_symbols_struct_interface_members.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(2U, (TZrUInt32)ast->data.script.statements->count);
+    pointNode = ast->data.script.statements->nodes[0];
+    readableNode = ast->data.script.statements->nodes[1];
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, pointNode->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTERFACE_DECLARATION, readableNode->type);
+    pointFieldNode = pointNode->data.structDeclaration.members->nodes[0];
+    interfaceFieldNode = readableNode->data.interfaceDeclaration.members->nodes[0];
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_FIELD, pointFieldNode->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTERFACE_FIELD_DECLARATION, interfaceFieldNode->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    pointField = symbol_find_registered_node(cs.semanticContext, pointFieldNode);
+    interfaceField = symbol_find_registered_node(cs.semanticContext, interfaceFieldNode);
+    TEST_ASSERT_NOT_NULL(pointField);
+    TEST_ASSERT_NOT_NULL(interfaceField);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FIELD, pointField->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FIELD, interfaceField->kind);
+
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    options.includeReceiverMembers = ZR_TRUE;
+    position = symbol_source_position(source, sourceName, "return", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    visiblePointField = symbol_find_visible_name(&symbols, "x");
+    TEST_ASSERT_NOT_NULL(visiblePointField);
+    TEST_ASSERT_EQUAL_UINT32(pointField->id, visiblePointField->symbolId);
+
+    position = symbol_source_position(source, sourceName, "read", 1U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    visibleInterfaceField = symbol_find_visible_name(&symbols, "ready");
+    TEST_ASSERT_NOT_NULL(visibleInterfaceField);
+    TEST_ASSERT_EQUAL_UINT32(interfaceField->id, visibleInterfaceField->symbolId);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
@@ -1271,5 +1439,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_class_method_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_const_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_interface_method_generic_parameter);
+    RUN_TEST(test_visible_symbols_projects_source_type_members);
+    RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);
     return UNITY_END();
 }

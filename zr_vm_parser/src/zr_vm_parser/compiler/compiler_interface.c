@@ -217,6 +217,15 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                             : ZR_OWNERSHIP_QUALIFIER_NONE;
                     memberInfo.fieldSize = field->typeInfo != ZR_NULL ? calculate_type_size(cs, field->typeInfo) : 0;
                     if (memberInfo.name != ZR_NULL) {
+                        if (!compiler_type_member_register_field_symbol(cs, &memberInfo)) {
+                            ZrParser_Compiler_Error(
+                                    cs,
+                                    "Failed to register canonical interface field symbol",
+                                    member->location);
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                            return;
+                        }
                         ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
                     }
                     break;

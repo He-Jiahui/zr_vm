@@ -99,8 +99,10 @@ static TZrSemanticScopeId semantic_scope_facts_publish_scope(
         TZrSemanticScopeId parentScopeId,
         EZrSemanticScopeKind kind,
         SZrFileRange range,
-        TZrSymbolId ownerSymbolId) {
+        TZrSymbolId ownerSymbolId,
+        TZrBool isStaticContext) {
     SZrSemanticScopeFact fact;
+    const SZrSemanticScopeFact *parent;
 
     if (builder == ZR_NULL || builder->context == ZR_NULL) {
         return ZR_SEMANTIC_ID_INVALID;
@@ -110,7 +112,84 @@ static TZrSemanticScopeId semantic_scope_facts_publish_scope(
     fact.kind = kind;
     fact.range = range;
     fact.ownerSymbolId = ownerSymbolId;
+    parent = ZrParser_Semantic_FindScopeFactById(builder->context, parentScopeId);
+    fact.isStaticContext = isStaticContext ||
+                           (parent != ZR_NULL && parent->isStaticContext);
     return ZrParser_Semantic_PublishScopeFact(builder->context, &fact);
+}
+
+static TZrBool semantic_scope_facts_receiver_member_metadata(
+        const SZrAstNode *node,
+        EZrAccessModifier *outAccess,
+        TZrBool *outIsStatic) {
+    if (node == ZR_NULL || outAccess == ZR_NULL || outIsStatic == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    switch (node->type) {
+        case ZR_AST_STRUCT_FIELD:
+            *outAccess = node->data.structField.access;
+            *outIsStatic = node->data.structField.isStatic;
+            return ZR_TRUE;
+        case ZR_AST_CLASS_FIELD:
+            *outAccess = node->data.classField.access;
+            *outIsStatic = node->data.classField.isStatic;
+            return ZR_TRUE;
+        case ZR_AST_INTERFACE_FIELD_DECLARATION:
+            *outAccess = node->data.interfaceFieldDeclaration.access;
+            *outIsStatic = ZR_FALSE;
+            return ZR_TRUE;
+        case ZR_AST_STRUCT_METHOD:
+            *outAccess = node->data.structMethod.access;
+            *outIsStatic = node->data.structMethod.isStatic;
+            return ZR_TRUE;
+        case ZR_AST_CLASS_METHOD:
+            *outAccess = node->data.classMethod.access;
+            *outIsStatic = node->data.classMethod.isStatic;
+            return ZR_TRUE;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            *outAccess = node->data.interfaceMethodSignature.access;
+            *outIsStatic = ZR_FALSE;
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool semantic_scope_facts_publish_receiver_member(
+        SZrSemanticScopeFactBuilder *builder,
+        TZrSemanticScopeId scopeId,
+        const SZrAstNode *node,
+        TZrSymbolId ownerSymbolId) {
+    const SZrSemanticSymbolRecord *symbol;
+    SZrSemanticVisibleSymbolFact fact;
+    EZrAccessModifier access;
+    TZrBool isStatic;
+
+    if (builder == ZR_NULL || builder->context == ZR_NULL ||
+        scopeId == ZR_SEMANTIC_ID_INVALID ||
+        !semantic_scope_facts_receiver_member_metadata(node, &access, &isStatic)) {
+        return ZR_TRUE;
+    }
+    symbol = semantic_scope_facts_find_symbol_by_node(builder->context, node);
+    if (symbol == ZR_NULL ||
+        (symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FIELD &&
+         symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION)) {
+        return ZR_TRUE;
+    }
+    memset(&fact, 0, sizeof(fact));
+    fact.scopeId = scopeId;
+    fact.symbolId = symbol->id;
+    fact.ownerSymbolId = ownerSymbolId;
+    fact.access = access;
+    fact.declarationOrder = ++builder->nextDeclarationOrder;
+    fact.declarationRange = symbol->location;
+    fact.definitionRange = symbol->location;
+    fact.hasDefinitionRange = ZR_TRUE;
+    fact.isHoisted = ZR_TRUE;
+    fact.isAccessible = ZR_TRUE;
+    fact.isReceiverMember = ZR_TRUE;
+    fact.isStatic = isStatic;
+    return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
 }
 
 static TZrBool semantic_scope_facts_publish_declaration(
@@ -306,7 +385,12 @@ static TZrBool semantic_scope_facts_visit_block(
     TZrSemanticScopeId scopeId;
 
     scopeId = semantic_scope_facts_publish_scope(
-            builder, parentScopeId, ZR_SEMANTIC_SCOPE_KIND_BLOCK, node->location, ownerSymbolId);
+            builder,
+            parentScopeId,
+            ZR_SEMANTIC_SCOPE_KIND_BLOCK,
+            node->location,
+            ownerSymbolId,
+            ZR_FALSE);
     return scopeId != ZR_SEMANTIC_ID_INVALID &&
            semantic_scope_facts_visit_nodes(
                    builder, node->data.block.body, scopeId, ownerSymbolId);
@@ -332,7 +416,12 @@ static TZrBool semantic_scope_facts_visit_function(
         ownerSymbolId = reference->symbolId;
     }
     scopeId = semantic_scope_facts_publish_scope(
-            builder, parentScopeId, ZR_SEMANTIC_SCOPE_KIND_FUNCTION, node->location, ownerSymbolId);
+            builder,
+            parentScopeId,
+            ZR_SEMANTIC_SCOPE_KIND_FUNCTION,
+            node->location,
+            ownerSymbolId,
+            ZR_FALSE);
     if (scopeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
@@ -366,6 +455,7 @@ static TZrBool semantic_scope_facts_visit_method(
     SZrAstNodeArray *params;
     SZrAstNode *body;
     TZrSemanticScopeId scopeId;
+    TZrBool isStatic = ZR_FALSE;
     TZrSize index;
 
     if (node == ZR_NULL) {
@@ -376,11 +466,13 @@ static TZrBool semantic_scope_facts_visit_method(
             generic = node->data.structMethod.generic;
             params = node->data.structMethod.params;
             body = node->data.structMethod.body;
+            isStatic = node->data.structMethod.isStatic;
             break;
         case ZR_AST_CLASS_METHOD:
             generic = node->data.classMethod.generic;
             params = node->data.classMethod.params;
             body = node->data.classMethod.body;
+            isStatic = node->data.classMethod.isStatic;
             break;
         case ZR_AST_INTERFACE_METHOD_SIGNATURE:
             generic = node->data.interfaceMethodSignature.generic;
@@ -400,7 +492,8 @@ static TZrBool semantic_scope_facts_visit_method(
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_FUNCTION,
             node->location,
-            symbol->id);
+            symbol->id,
+            isStatic);
     if (scopeId == ZR_SEMANTIC_ID_INVALID ||
         !semantic_scope_facts_publish_generic_parameters(
                 builder, scopeId, symbol->id, generic)) {
@@ -443,7 +536,8 @@ static TZrBool semantic_scope_facts_visit_type(
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_TYPE,
             node->location,
-            symbol->id);
+            symbol->id,
+            ZR_FALSE);
     switch (node->type) {
         case ZR_AST_STRUCT_DECLARATION:
             generic = node->data.structDeclaration.generic;
@@ -487,7 +581,8 @@ static TZrBool semantic_scope_facts_visit_for_loop(
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_BLOCK,
             semantic_scope_facts_loop_range(node, node->data.forLoop.block),
-            ownerSymbolId);
+            ownerSymbolId,
+            ZR_FALSE);
 
     return scopeId != ZR_SEMANTIC_ID_INVALID &&
            semantic_scope_facts_visit_node(
@@ -506,7 +601,8 @@ static TZrBool semantic_scope_facts_visit_foreach_loop(
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_BLOCK,
             semantic_scope_facts_loop_range(node, node->data.foreachLoop.block),
-            ownerSymbolId);
+            ownerSymbolId,
+            ZR_FALSE);
 
     return scopeId != ZR_SEMANTIC_ID_INVALID &&
            semantic_scope_facts_publish_declaration(
@@ -535,7 +631,14 @@ static TZrBool semantic_scope_facts_visit_node(
         case ZR_AST_STRUCT_METHOD:
         case ZR_AST_CLASS_METHOD:
         case ZR_AST_INTERFACE_METHOD_SIGNATURE:
-            return semantic_scope_facts_visit_method(builder, node, parentScopeId);
+            return semantic_scope_facts_publish_receiver_member(
+                           builder, parentScopeId, node, ownerSymbolId) &&
+                   semantic_scope_facts_visit_method(builder, node, parentScopeId);
+        case ZR_AST_STRUCT_FIELD:
+        case ZR_AST_CLASS_FIELD:
+        case ZR_AST_INTERFACE_FIELD_DECLARATION:
+            return semantic_scope_facts_publish_receiver_member(
+                    builder, parentScopeId, node, ownerSymbolId);
         case ZR_AST_VARIABLE_DECLARATION:
             return semantic_scope_facts_publish_declaration(
                     builder, parentScopeId, node, ownerSymbolId, ZR_FALSE);
@@ -624,7 +727,8 @@ TZrBool ZrParser_Semantic_BuildSourceScopeFacts(
             ZR_SEMANTIC_ID_INVALID,
             ZR_SEMANTIC_SCOPE_KIND_MODULE,
             root->location,
-            ZR_SEMANTIC_ID_INVALID);
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_FALSE);
     return moduleScopeId != ZR_SEMANTIC_ID_INVALID &&
            semantic_scope_facts_visit_nodes(
                    &builder,
