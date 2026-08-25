@@ -183,6 +183,11 @@ TZrBool ZrParser_SemanticCalls_Publish(SZrSemanticContext *context) {
         }
         memset(&edge, 0, sizeof(edge));
         expression = semantic_calls_find_expression(context, reference);
+        if (expression != ZR_NULL &&
+            !ZrParser_SemanticQuery_ExactnessAllowsProjection(
+                    expression->exactness)) {
+            continue;
+        }
         edge.callSiteRange = expression != ZR_NULL ? expression->range : reference->range;
         edge.callableTypeId = reference->typeId;
         edge.callerSymbolId = semantic_calls_find_caller(context, &edge.callSiteRange);

@@ -283,6 +283,14 @@ never selects a same-name function. A resolved target without a declaration
 range uses `TARGET_DECLARATION_UNAVAILABLE`. Output arrays are reusable and
 contain no pointers into mutable AST structures.
 
+Call-edge value rows have no exactness field. When a matching call expression
+fact is present, the producer therefore publishes an edge only when that fact
+is `EXACT`; `UNKNOWN` and `APPROXIMATE` facts publish no hierarchy edge. It
+does not substitute a wider expression, a reference spelling, or a target name
+for an inexact selected fact. A missing expression fact retains the existing
+reference-only unresolved-edge behavior, because it has no conflicting
+inexactness assertion to project.
+
 This first Task 4 slice covers source function callers and resolved overload
 declaration membership only. Lambda scopes, argument-to-parameter mappings,
 compatibility scores, conversions, receiver TypeIds, and binary/native
@@ -397,6 +405,11 @@ lambda SymbolId. It verifies that the return-expression traversal creates the
 nearest unowned function scope, so the resolved `callee` edge is
 `CALLER_UNAVAILABLE` and does not appear in the enclosing function's outgoing
 edges.
+
+It also constructs a resolved call reference with a matching
+`APPROXIMATE` call expression fact. The edge producer must leave the outgoing
+array empty rather than projecting hierarchy identity whose exactness cannot
+be represented by the value query.
 
 ## Canonical Display Facade
 
