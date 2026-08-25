@@ -44,8 +44,9 @@ by the compiler source-scope pass.
 
 The dedicated MSVC static cache
 `.codex/build-lsp-plan03-native-generic-msvc-r2` directly returned process exit
-zero for `zr_vm_semantic_query_relations_test` (`8 Tests 0 Failures 0
-Ignored`), `zr_vm_semantic_query_symbols_test` (`19 Tests 0 Failures 0
+zero for `zr_vm_semantic_query_relations_test` (`9 Tests 0 Failures 0
+Ignored`, including direct and destructured imports),
+`zr_vm_semantic_query_symbols_test` (`19 Tests 0 Failures 0
 Ignored`), `zr_vm_semantic_query_test` (`29 Tests 0 Failures 0 Ignored`),
 `zr_vm_property_consumer_contracts_test` (`11 Tests 0 Failures 0 Ignored`),
 and `zr_vm_compiler_semantic_query_diagnostics_test` (`46 Tests 0 Failures 0
@@ -60,7 +61,12 @@ origin, other relation producers, and LSP consumers remain unaccepted.
 ## 状态与产出记录
 
 - 完成时间：2026-08-26 00:51 +08:00。
-- 状态：已完成并将随本子项精确提交。
+- 状态：已完成；主实现已精确提交为 `0f1d59a`，本次 direct-import 覆盖将随
+  补充测试提交。
 - 完成项目：snapshot-owned import URI、结构化 external origin relation、
-  native 同名碰撞防护、精确 local alias identity、幂等性与既有查询回归。
+  native 同名碰撞防护、精确 local alias identity、幂等性与 direct/destructured
+  查询回归。
+- 补充完成时间：2026-08-26 00:58 +08:00。
+- 补充完成项目：direct import alias 的 compiler-backed relation 查询验证，
+  维持 no-fallback 合同。
 - 后续项目：alias/export/binary/native relation producers、call graph 和 LSP projection。

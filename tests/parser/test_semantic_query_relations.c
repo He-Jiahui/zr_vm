@@ -612,6 +612,60 @@ static void test_compiled_import_publishes_external_origin_relation(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_compiled_direct_import_publishes_external_origin_relation(void) {
+    const TZrChar *source =
+            "var math = import(\"zr.math\");\n"
+            "return 0;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_direct_import.zr");
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *alias;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, declaration->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    alias = relation_find_symbol_by_node(cs.semanticContext, declaration);
+    TEST_ASSERT_NOT_NULL(alias);
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            cs.semanticContext, alias->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN,
+                          relation->kind);
+    TEST_ASSERT_EQUAL_UINT(alias->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->targetTypeId);
+    TEST_ASSERT_TRUE(relation->isExternal);
+    TEST_ASSERT_NOT_NULL(relation->externalOriginUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zr.math", ZrCore_String_GetNativeString(relation->externalOriginUri));
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
@@ -622,5 +676,6 @@ int main(void) {
     RUN_TEST(test_reference_definitions_publish_declaration_edges_once);
     RUN_TEST(test_compiled_source_publishes_reference_definition_relations);
     RUN_TEST(test_compiled_import_publishes_external_origin_relation);
+    RUN_TEST(test_compiled_direct_import_publishes_external_origin_relation);
     return UNITY_END();
 }

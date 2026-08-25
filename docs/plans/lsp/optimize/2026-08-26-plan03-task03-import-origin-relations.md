@@ -55,7 +55,8 @@ It does not migrate an LSP consumer or add a token/name fallback.
   corrected test uses the registered binding AST identity and proves that the
   producer does not select the same-name native symbol.
 - GREEN: the dedicated MSVC static cache directly executed relation graph
-  `8 Tests 0 Failures 0 Ignored`, visible symbols `19 Tests 0 Failures 0
+  `9 Tests 0 Failures 0 Ignored`, including both destructured and direct
+  import aliases, visible symbols `19 Tests 0 Failures 0
   Ignored`, semantic query `29 Tests 0 Failures 0 Ignored`, property consumer
   contracts `11 Tests 0 Failures 0 Ignored`, and compiler semantic diagnostics
   `46 Tests 0 Failures 0 Ignored`, all with process exit zero.
@@ -63,10 +64,14 @@ It does not migrate an LSP consumer or add a token/name fallback.
 ## 状态与产出记录
 
 - 完成时间：2026-08-26 00:51 +08:00。
-- 状态：已完成并将随本子项精确提交；不声明 Plan 03 Task 3 完成。
+- 状态：已完成；主实现已精确提交为 `0f1d59a`，本次 direct-import 覆盖将随
+  补充测试提交；不声明 Plan 03 Task 3 完成。
 - 完成项目：source import URI 的 snapshot-owned carrier、direct/destructured
   alias origin producer、external TypeId/URI endpoint、name-collision
-  fail-closed、幂等 late publication，以及关系/visible/query/property/diagnostic
-  回归。
+  fail-closed、幂等 late publication，以及 direct/destructured compiler-backed
+  relation、visible/query/property/diagnostic 回归。
+- 补充完成时间：2026-08-26 00:58 +08:00。
+- 补充完成项目：direct `var alias = import(uri)` 使用声明 AST identity 查询
+  同一 structured external-origin relation，未增加生产回退。
 - 后续项目：alias-target、export member、source base/interface/override、
   binary/native origin、CFG 多定义读点关联、call graph 与 LSP relation consumers。
