@@ -15,6 +15,8 @@ typedef struct SZrTestTimer {
     clock_t endTime;
 } SZrTestTimer;
 
+static int g_failures = 0;
+
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -41,6 +43,7 @@ typedef struct SZrTestTimer {
            summary, \
            reason); \
     fflush(stdout); \
+    g_failures++; \
 } while (0)
 
 #define TEST_DIVIDER() do { \
@@ -1342,5 +1345,6 @@ int main(void) {
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);
-    return 0;
+    printf("LSP language feature matrix: %d failure(s)\n", g_failures);
+    return g_failures == 0 ? 0 : 1;
 }
