@@ -321,6 +321,9 @@ without treating an inexact type as a value result.
 before rejecting an invalid SymbolId. A failed navigation query therefore
 cannot leave a previous symbol's references visible.
 
+`OutgoingCalls` and `IncomingCalls` apply the same reusable value-array rule:
+they clear output before rejecting an invalid caller or target SymbolId.
+
 This first Task 4 slice covers source function callers and resolved overload
 declaration membership only. Lambda scopes, argument-to-parameter mappings,
 compatibility scores, conversions, receiver TypeIds, and binary/native

@@ -352,8 +352,8 @@ TZrBool ZrParser_SemanticQuery_OutgoingCalls(
         SZrArray *outEdges) {
     TZrSize index;
 
-    if (callerSymbolId == ZR_SEMANTIC_ID_INVALID ||
-        !semantic_calls_prepare_output(context, outEdges)) {
+    if (!semantic_calls_prepare_output(context, outEdges) ||
+        callerSymbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
     for (index = 0U; index < context->callEdgeFacts.length; index++) {
@@ -376,8 +376,8 @@ TZrBool ZrParser_SemanticQuery_IncomingCalls(
         SZrArray *outEdges) {
     TZrSize index;
 
-    if (targetSymbolId == ZR_SEMANTIC_ID_INVALID ||
-        !semantic_calls_prepare_output(context, outEdges)) {
+    if (!semantic_calls_prepare_output(context, outEdges) ||
+        targetSymbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
     for (index = 0U; index < context->callEdgeFacts.length; index++) {

@@ -161,6 +161,13 @@ static void test_compiled_call_edges_publish_stable_incoming_and_outgoing(void) 
     TEST_ASSERT_EQUAL_UINT(caller->id, edge->callerSymbolId);
     TEST_ASSERT_EQUAL_UINT(callee->id, edge->targetSymbolId);
 
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_OutgoingCalls(
+            cs.semanticContext, ZR_SEMANTIC_ID_INVALID, ZR_NULL, &edges));
+    TEST_ASSERT_EQUAL_UINT(0U, edges.length);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_IncomingCalls(
+            cs.semanticContext, ZR_SEMANTIC_ID_INVALID, ZR_NULL, &edges));
+    TEST_ASSERT_EQUAL_UINT(0U, edges.length);
+
     ZrCore_Array_Free(g_state, &edges);
     call_release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
