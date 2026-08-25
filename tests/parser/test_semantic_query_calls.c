@@ -629,6 +629,61 @@ static void test_call_candidates_project_resolved_overload_set(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_call_candidates_fail_closed_for_approximate_call_fact(void) {
+    const TZrChar *source =
+            "fn choose(value: int): int { return value; }\n"
+            "fn choose(value: string): int { return 0; }\n"
+            "fn caller(): int { return choose(1); }\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_call_candidates_exactness.zr");
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    SZrFileRange callPosition;
+    const SZrSemanticExpressionFact *expression;
+    SZrParserSemanticCallQuery call;
+    SZrArray candidates;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    callPosition = call_source_position(source, sourceName, "choose", 2U);
+    memset(&call, 0, sizeof(call));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, callPosition, ZR_NULL, &call));
+    expression = call.expression;
+    TEST_ASSERT_NOT_NULL(expression);
+    TEST_ASSERT_TRUE(expression->hasCallInfo);
+    ((SZrSemanticExpressionFact *)expression)->exactness =
+            ZR_SEMANTIC_FACT_APPROXIMATE;
+
+    memset(&call, 0, sizeof(call));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, callPosition, ZR_NULL, &call));
+    TEST_ASSERT_NOT_NULL(call.expression);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_FACT_APPROXIMATE,
+                          call.expression->exactness);
+
+    ZrCore_Array_Construct(&candidates);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallCandidatesAt(
+            cs.semanticContext, callPosition, ZR_NULL, &candidates));
+    TEST_ASSERT_EQUAL_UINT(0U, candidates.length);
+
+    ZrCore_Array_Free(g_state, &candidates);
+    call_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compiled_call_edges_publish_stable_incoming_and_outgoing);
@@ -638,5 +693,6 @@ int main(void) {
     RUN_TEST(test_lambda_call_edge_uses_lambda_caller_identity);
     RUN_TEST(test_returned_unowned_lambda_call_edge_fails_closed);
     RUN_TEST(test_call_candidates_project_resolved_overload_set);
+    RUN_TEST(test_call_candidates_fail_closed_for_approximate_call_fact);
     return UNITY_END();
 }

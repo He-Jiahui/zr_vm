@@ -291,6 +291,13 @@ for an inexact selected fact. A missing expression fact retains the existing
 reference-only unresolved-edge behavior, because it has no conflicting
 inexactness assertion to project.
 
+`CallAt` remains a borrowed query and exposes its selected expression fact, so
+its caller can inspect that fact's exactness. `CallCandidatesAt` instead
+returns only copied candidate values. It therefore requires the selected
+`CallAt` expression to be `EXACT` before projecting the overload set; an
+inexact selected call returns an empty candidate result rather than exposing
+uncertainty without an exactness field.
+
 This first Task 4 slice covers source function callers and resolved overload
 declaration membership only. Lambda scopes, argument-to-parameter mappings,
 compatibility scores, conversions, receiver TypeIds, and binary/native
@@ -410,6 +417,11 @@ It also constructs a resolved call reference with a matching
 `APPROXIMATE` call expression fact. The edge producer must leave the outgoing
 array empty rather than projecting hierarchy identity whose exactness cannot
 be represented by the value query.
+
+After compiling an overloaded source call, the same target changes the exact
+selected expression fact to `APPROXIMATE`. `CallAt` still exposes that borrowed
+fact, while `CallCandidatesAt` must clear its reusable candidate array and
+fail closed instead of returning value-only overload rows.
 
 ## Canonical Display Facade
 

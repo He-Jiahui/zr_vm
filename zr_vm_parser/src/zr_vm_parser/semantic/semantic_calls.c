@@ -498,6 +498,9 @@ TZrBool ZrParser_SemanticQuery_CallCandidatesAt(
     }
     memset(&call, 0, sizeof(call));
     if (!ZrParser_SemanticQuery_CallAt(context, position, scope, &call) ||
+        call.expression == ZR_NULL ||
+        !ZrParser_SemanticQuery_ExactnessAllowsProjection(
+                call.expression->exactness) ||
         !call.hasResolvedTarget ||
         call.targetSymbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
