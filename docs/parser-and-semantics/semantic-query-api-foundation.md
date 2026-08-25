@@ -330,6 +330,14 @@ scope identity. Lambda expressions reached through other expression positions
 remain unavailable until the source scope walker has a complete structured
 traversal for those positions.
 
+The walker also follows a return expression. A returned lambda therefore gets
+the same nearest `FUNCTION` scope even when the compiler has not registered a
+lambda SymbolId for that expression position. That scope deliberately has no
+owner, so calls in its body publish `CALLER_UNAVAILABLE` rather than being
+incorrectly attributed to the enclosing function. This is a containment
+guarantee, not a synthetic lambda identity or a claim that the lambda is
+eligible for an outgoing-calls query.
+
 ## Test Coverage
 
 `tests/parser/test_semantic_query_symbols.c` now compiles source `class Meter`,
@@ -383,6 +391,12 @@ the compiler-registered lambda SymbolId rather than the enclosing `outer`
 function. A fact-only nested function scope with an invalid owner proves that
 the publisher returns `CALLER_UNAVAILABLE` instead of falling back to the
 outer function scope.
+
+The same target compiles a returned lambda that has no compiler-registered
+lambda SymbolId. It verifies that the return-expression traversal creates the
+nearest unowned function scope, so the resolved `callee` edge is
+`CALLER_UNAVAILABLE` and does not appear in the enclosing function's outgoing
+edges.
 
 ## Canonical Display Facade
 

@@ -397,6 +397,77 @@ static void test_lambda_call_edge_uses_lambda_caller_identity(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_returned_unowned_lambda_call_edge_fails_closed(void) {
+    const TZrChar *source =
+            "fn callee(): int { return 1; }\n"
+            "fn makeRunner(): fn() -> int {\n"
+            "    return fn(): int => { return callee(); };\n"
+            "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_returned_lambda_call_edges.zr");
+    SZrAstNode *ast;
+    SZrAstNode *calleeNode;
+    SZrAstNode *makerNode;
+    SZrAstNode *lambdaNode;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *callee;
+    const SZrSemanticSymbolRecord *maker;
+    SZrArray edges;
+    const SZrParserSemanticCallEdgeQuery *edge;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT(2U, ast->data.script.statements->count);
+    calleeNode = ast->data.script.statements->nodes[0];
+    makerNode = ast->data.script.statements->nodes[1];
+    TEST_ASSERT_NOT_NULL(calleeNode);
+    TEST_ASSERT_NOT_NULL(makerNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, makerNode->type);
+    TEST_ASSERT_NOT_NULL(makerNode->data.functionDeclaration.body);
+    TEST_ASSERT_NOT_NULL(makerNode->data.functionDeclaration.body->data.block.body);
+    lambdaNode = makerNode->data.functionDeclaration.body->data.block.body->nodes[0]
+            ->data.returnStatement.expr;
+    TEST_ASSERT_NOT_NULL(lambdaNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, lambdaNode->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    callee = call_find_symbol_by_node(cs.semanticContext, calleeNode);
+    maker = call_find_symbol_by_node(cs.semanticContext, makerNode);
+    TEST_ASSERT_NOT_NULL(callee);
+    TEST_ASSERT_NOT_NULL(maker);
+    TEST_ASSERT_NULL(call_find_symbol_by_node(cs.semanticContext, lambdaNode));
+
+    ZrCore_Array_Construct(&edges);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_IncomingCalls(
+            cs.semanticContext, callee->id, ZR_NULL, &edges));
+    TEST_ASSERT_EQUAL_UINT(1U, edges.length);
+    edge = (const SZrParserSemanticCallEdgeQuery *)ZrCore_Array_Get(&edges, 0U);
+    TEST_ASSERT_NOT_NULL(edge);
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, edge->callerSymbolId);
+    TEST_ASSERT_EQUAL_UINT(callee->id, edge->targetSymbolId);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_CALL_EDGE_RESOLUTION_CALLER_UNAVAILABLE,
+                          edge->resolution);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_OutgoingCalls(
+            cs.semanticContext, maker->id, ZR_NULL, &edges));
+    TEST_ASSERT_EQUAL_UINT(0U, edges.length);
+
+    ZrCore_Array_Free(g_state, &edges);
+    call_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_call_candidates_project_resolved_overload_set(void) {
     const TZrChar *source =
             "fn choose(value: int): int { return value; }\n"
@@ -499,6 +570,7 @@ int main(void) {
     RUN_TEST(test_unresolved_call_edge_never_selects_same_name_target);
     RUN_TEST(test_nested_function_scope_without_owner_fails_closed);
     RUN_TEST(test_lambda_call_edge_uses_lambda_caller_identity);
+    RUN_TEST(test_returned_unowned_lambda_call_edge_fails_closed);
     RUN_TEST(test_call_candidates_project_resolved_overload_set);
     return UNITY_END();
 }

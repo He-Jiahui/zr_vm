@@ -829,6 +829,12 @@ static TZrBool semantic_scope_facts_visit_node(
                            node->data.variableDeclaration.value,
                            parentScopeId,
                            ownerSymbolId);
+        case ZR_AST_RETURN_STATEMENT:
+            return semantic_scope_facts_visit_node(
+                    builder,
+                    node->data.returnStatement.expr,
+                    parentScopeId,
+                    ownerSymbolId);
         case ZR_AST_LAMBDA_EXPRESSION:
             return semantic_scope_facts_visit_lambda(builder, node, parentScopeId);
         case ZR_AST_BLOCK:
