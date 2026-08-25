@@ -44,6 +44,26 @@ static TZrBool semantic_query_symbols_scope_allows_position(
            semantic_query_symbols_range_contains(&scope->root->location, &position);
 }
 
+static TZrBool semantic_query_symbols_scope_descends_from(
+        const SZrSemanticContext *context,
+        const SZrSemanticScopeFact *candidate,
+        const SZrSemanticScopeFact *ancestor) {
+    const SZrSemanticScopeFact *current = candidate;
+    TZrSize depth = 0U;
+
+    if (context == ZR_NULL || candidate == ZR_NULL || ancestor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    while (current != ZR_NULL && depth < context->scopeFacts.length) {
+        if (current->parentScopeId == ancestor->id) {
+            return ZR_TRUE;
+        }
+        current = ZrParser_Semantic_FindScopeFactById(context, current->parentScopeId);
+        depth++;
+    }
+    return ZR_FALSE;
+}
+
 static const SZrSemanticScopeFact *semantic_query_symbols_find_innermost_scope(
         const SZrSemanticContext *context,
         SZrFileRange position) {
@@ -65,7 +85,9 @@ static const SZrSemanticScopeFact *semantic_query_symbols_find_innermost_scope(
             continue;
         }
         width = semantic_query_symbols_range_width(&candidate->range);
-        if (best == ZR_NULL || width < bestWidth) {
+        if (best == ZR_NULL || width < bestWidth ||
+            (width == bestWidth &&
+             semantic_query_symbols_scope_descends_from(context, candidate, best))) {
             best = candidate;
             bestWidth = width;
         }

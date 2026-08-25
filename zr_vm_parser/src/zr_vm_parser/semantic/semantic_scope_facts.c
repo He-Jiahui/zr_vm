@@ -52,6 +52,28 @@ static const SZrSemanticSymbolRecord *semantic_scope_facts_find_type_declaration
     return ZR_NULL;
 }
 
+static const SZrSemanticSymbolRecord *semantic_scope_facts_find_generic_parameter(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node) {
+    TZrSize index;
+
+    if (context == ZR_NULL || node == ZR_NULL || !context->symbols.isValid) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+
+        if (symbol != ZR_NULL &&
+            symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_PARAMETER &&
+            symbol->astNode == node) {
+            return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
 static TZrSemanticScopeId semantic_scope_facts_publish_scope(
         SZrSemanticScopeFactBuilder *builder,
         TZrSemanticScopeId parentScopeId,
@@ -138,6 +160,98 @@ static TZrBool semantic_scope_facts_publish_type_declaration(
     return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
 }
 
+static TZrBool semantic_scope_facts_publish_generic_parameter(
+        SZrSemanticScopeFactBuilder *builder,
+        TZrSemanticScopeId scopeId,
+        TZrSymbolId ownerSymbolId,
+        SZrAstNode *node,
+        TZrUInt32 ordinal) {
+    const SZrSemanticSymbolRecord *symbol;
+    SZrParameter *parameter;
+    SZrSemanticVisibleSymbolFact fact;
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+
+    if (builder == ZR_NULL || builder->context == ZR_NULL ||
+        scopeId == ZR_SEMANTIC_ID_INVALID ||
+        ownerSymbolId == ZR_SEMANTIC_ID_INVALID ||
+        node == ZR_NULL || node->type != ZR_AST_PARAMETER) {
+        return ZR_FALSE;
+    }
+    parameter = &node->data.parameter;
+    if (parameter->genericKind != ZR_GENERIC_PARAMETER_TYPE ||
+        parameter->name == ZR_NULL || parameter->name->name == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    typeId = ZrParser_CanonicalType_InternGenericParameter(
+            builder->context, ownerSymbolId, ordinal);
+    if (typeId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrParser_Semantic_RegisterCanonicalType(
+                builder->context,
+                typeId,
+                ZR_SEMANTIC_TYPE_KIND_GENERIC_PARAMETER,
+                parameter->name->name,
+                node)) {
+        return ZR_FALSE;
+    }
+    symbol = semantic_scope_facts_find_generic_parameter(builder->context, node);
+    if (symbol != ZR_NULL) {
+        if (symbol->typeId != typeId) {
+            return ZR_FALSE;
+        }
+        symbolId = symbol->id;
+    } else {
+        symbolId = ZrParser_Semantic_RegisterSymbol(
+                builder->context,
+                parameter->name->name,
+                ZR_SEMANTIC_SYMBOL_KIND_PARAMETER,
+                typeId,
+                ZR_SEMANTIC_ID_INVALID,
+                node,
+                parameter->nameLocation);
+        if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.scopeId = scopeId;
+    fact.symbolId = symbolId;
+    fact.ownerSymbolId = ownerSymbolId;
+    fact.access = ZR_ACCESS_PUBLIC;
+    fact.declarationOrder = ++builder->nextDeclarationOrder;
+    fact.declarationRange = parameter->nameLocation;
+    fact.definitionRange = parameter->nameLocation;
+    fact.hasDefinitionRange = ZR_TRUE;
+    fact.isAccessible = ZR_TRUE;
+    fact.isGenericParameter = ZR_TRUE;
+    return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
+}
+
+static TZrBool semantic_scope_facts_publish_type_generic_parameters(
+        SZrSemanticScopeFactBuilder *builder,
+        TZrSemanticScopeId scopeId,
+        TZrSymbolId ownerSymbolId,
+        SZrGenericDeclaration *generic) {
+    TZrSize index;
+
+    if (generic == ZR_NULL || generic->params == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (index = 0U; index < generic->params->count; index++) {
+        if (!semantic_scope_facts_publish_generic_parameter(
+                    builder,
+                    scopeId,
+                    ownerSymbolId,
+                    generic->params->nodes[index],
+                    (TZrUInt32)index)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool semantic_scope_facts_visit_node(
         SZrSemanticScopeFactBuilder *builder,
         SZrAstNode *node,
@@ -222,6 +336,7 @@ static TZrBool semantic_scope_facts_visit_type(
         SZrAstNode *node,
         TZrSemanticScopeId parentScopeId) {
     const SZrSemanticSymbolRecord *symbol;
+    SZrGenericDeclaration *generic = ZR_NULL;
     TZrSemanticScopeId scopeId;
 
     if (!semantic_scope_facts_publish_type_declaration(builder, parentScopeId, node)) {
@@ -237,7 +352,22 @@ static TZrBool semantic_scope_facts_visit_type(
             ZR_SEMANTIC_SCOPE_KIND_TYPE,
             node->location,
             symbol->id);
-    return scopeId != ZR_SEMANTIC_ID_INVALID;
+    switch (node->type) {
+        case ZR_AST_STRUCT_DECLARATION:
+            generic = node->data.structDeclaration.generic;
+            break;
+        case ZR_AST_CLASS_DECLARATION:
+            generic = node->data.classDeclaration.generic;
+            break;
+        case ZR_AST_INTERFACE_DECLARATION:
+            generic = node->data.interfaceDeclaration.generic;
+            break;
+        default:
+            return ZR_FALSE;
+    }
+    return scopeId != ZR_SEMANTIC_ID_INVALID &&
+           semantic_scope_facts_publish_type_generic_parameters(
+                   builder, scopeId, symbol->id, generic);
 }
 
 static SZrFileRange semantic_scope_facts_loop_range(

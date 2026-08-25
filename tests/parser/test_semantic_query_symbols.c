@@ -306,6 +306,23 @@ static TZrSize symbol_count_visible_name(const SZrArray *symbols, const TZrChar 
     return count;
 }
 
+static const SZrParserSemanticSymbolQuery *symbol_find_visible_name(
+        const SZrArray *symbols,
+        const TZrChar *name) {
+    if (symbols == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0U; index < symbols->length; index++) {
+        const SZrParserSemanticSymbolQuery *symbol = symbol_visible_at(symbols, index);
+
+        if (symbol != ZR_NULL && symbol->displayName != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(symbol->displayName), name) == 0) {
+            return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
 static void test_visible_symbols_uses_scope_facts_for_shadowing_and_options(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     TZrSemanticScopeId moduleScope;
@@ -796,6 +813,103 @@ static void test_visible_symbols_projects_source_type_declarations(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_visible_symbols_projects_source_type_generic_parameter(void) {
+    const TZrChar *source =
+            "struct Box<T> { }\n"
+            "class Crate<U> { }\n"
+            "interface Readable<V> { }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    const SZrParserSemanticSymbolQuery *box;
+    const SZrParserSemanticSymbolQuery *crate;
+    const SZrParserSemanticSymbolQuery *parameter;
+    const SZrCanonicalTypeNode *parameterType;
+    const SZrParserSemanticSymbolQuery *readable;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_generic_type.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(3U, (TZrUInt32)ast->data.script.statements->count);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, declaration->type);
+    TEST_ASSERT_NOT_NULL(declaration->data.structDeclaration.generic);
+    TEST_ASSERT_NOT_NULL(declaration->data.structDeclaration.generic->params);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)declaration->data.structDeclaration.generic->params->count);
+    TEST_ASSERT_NOT_NULL(declaration->data.structDeclaration.generic->params->nodes[0]);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_PARAMETER,
+            declaration->data.structDeclaration.generic->params->nodes[0]->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    position = symbol_source_position(source, sourceName, "Box", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "T"));
+
+    position = symbol_source_position(source, sourceName, "T", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "T"));
+    box = symbol_find_visible_name(&symbols, "Box");
+    parameter = symbol_find_visible_name(&symbols, "T");
+    TEST_ASSERT_NOT_NULL(box);
+    TEST_ASSERT_NOT_NULL(parameter);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, parameter->symbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, parameter->typeId);
+    TEST_ASSERT_EQUAL_UINT32(box->symbolId, parameter->ownerSymbolId);
+    parameterType = ZrParser_CanonicalType_Find(cs.semanticContext, parameter->typeId);
+    TEST_ASSERT_NOT_NULL(parameterType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_GENERIC_PARAMETER, parameterType->kind);
+
+    position = symbol_source_position(source, sourceName, "U", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "T"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "U"));
+    crate = symbol_find_visible_name(&symbols, "Crate");
+    parameter = symbol_find_visible_name(&symbols, "U");
+    TEST_ASSERT_NOT_NULL(crate);
+    TEST_ASSERT_NOT_NULL(parameter);
+    TEST_ASSERT_EQUAL_UINT32(crate->symbolId, parameter->ownerSymbolId);
+
+    position = symbol_source_position(source, sourceName, "V", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "U"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "V"));
+    readable = symbol_find_visible_name(&symbols, "Readable");
+    parameter = symbol_find_visible_name(&symbols, "V");
+    TEST_ASSERT_NOT_NULL(readable);
+    TEST_ASSERT_NOT_NULL(parameter);
+    TEST_ASSERT_EQUAL_UINT32(readable->symbolId, parameter->ownerSymbolId);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
@@ -805,5 +919,6 @@ int main(void) {
     RUN_TEST(test_visible_symbols_project_compiled_source_scope_facts);
     RUN_TEST(test_visible_symbols_does_not_leak_for_initializer);
     RUN_TEST(test_visible_symbols_projects_source_type_declarations);
+    RUN_TEST(test_visible_symbols_projects_source_type_generic_parameter);
     return UNITY_END();
 }
