@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
+  - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ownership_intrinsic.c
@@ -24,6 +25,7 @@ related_code:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_ownership.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ownership_intrinsic.c

@@ -1019,6 +1019,41 @@ static void test_removed_detach_builtin_id_cannot_lower(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+static void test_removed_detach_builtin_id_is_rejected_by_type_inference(void) {
+    SZrCompilerState *compiler = create_compiler_state();
+    SZrAstNode *script = parse_source("new owner();\n");
+    SZrAstNode *expression = statement_expression(script, 0u);
+    SZrInferredType result;
+
+    register_resource_prototype(compiler);
+    register_owner_binding(
+            compiler,
+            "owner",
+            ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+            ZR_FALSE,
+            "Resource",
+            701u,
+            801u);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CONSTRUCT_EXPRESSION, expression->type);
+    expression->data.constructExpression.isNew = ZR_FALSE;
+    expression->data.constructExpression.builtinKind =
+            (EZrOwnershipBuiltinKind)8;
+
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(
+            compiler, expression, &result));
+    TEST_ASSERT_TRUE(compiler->hasError);
+    TEST_ASSERT_NOT_NULL(compiler->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(
+            compiler->errorMessage, "Unknown ownership builtin kind"));
+    TEST_ASSERT_NULL(ZrParser_SemanticFacts_FindOwnershipByNode(
+            compiler->semanticContext, expression));
+
+    ZrParser_InferredType_Free(g_state, &result);
+    ZrParser_Ast_Free(g_state, script);
+    destroy_compiler_state(compiler);
+}
+
 static void test_intrinsic_spellings_on_objects_use_normal_member_calls(void) {
     const TZrChar *source =
             "class Service {\n"
@@ -1510,6 +1545,7 @@ int main(void) {
     RUN_TEST(test_construct_qualifier_does_not_publish_ownership_semantics);
     RUN_TEST(test_construct_qualifier_does_not_select_ownership_lowering);
     RUN_TEST(test_removed_detach_builtin_id_cannot_lower);
+    RUN_TEST(test_removed_detach_builtin_id_is_rejected_by_type_inference);
     RUN_TEST(test_intrinsic_spellings_on_objects_use_normal_member_calls);
     RUN_TEST(test_removed_ownership_member_calls_publish_structured_fixes);
     RUN_TEST(test_expired_weak_optional_call_skips_arguments);

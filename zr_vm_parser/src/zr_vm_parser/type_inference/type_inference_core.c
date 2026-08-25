@@ -4850,6 +4850,23 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     builtinKind = construct->builtinKind;
 
     if (!construct->isNew && builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
+        switch (builtinKind) {
+            case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+            case ZR_OWNERSHIP_BUILTIN_KIND_SHARE:
+            case ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE:
+            case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+            case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            case ZR_OWNERSHIP_BUILTIN_KIND_WAKE:
+            case ZR_OWNERSHIP_BUILTIN_KIND_DROP:
+            case ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC:
+                break;
+            case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+            case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
+            default:
+                ZrParser_Compiler_Error(
+                        cs, "Unknown ownership builtin kind", node->location);
+                return ZR_FALSE;
+        }
         if (!ZrParser_ExpressionType_Infer(cs, construct->target, result)) {
             return ZR_FALSE;
         }
