@@ -199,7 +199,8 @@ static TZrBool semantic_scope_facts_publish_generic_parameter(
         return ZR_FALSE;
     }
     parameter = &node->data.parameter;
-    if (parameter->genericKind != ZR_GENERIC_PARAMETER_TYPE ||
+    if ((parameter->genericKind != ZR_GENERIC_PARAMETER_TYPE &&
+         parameter->genericKind != ZR_GENERIC_PARAMETER_CONST_INT) ||
         parameter->name == ZR_NULL || parameter->name->name == ZR_NULL) {
         return ZR_TRUE;
     }
