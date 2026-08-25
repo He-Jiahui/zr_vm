@@ -1,10 +1,12 @@
 ---
 related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_calls.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
@@ -49,18 +51,21 @@ related_code:
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_symbols.c
+  - tests/parser/test_semantic_query_calls.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/language_server/test_lsp_reference_callable_consumer_cases.h
   - tests/language_server/test_lsp_reaching_definition_navigation.c
   - tests/CMakeLists.txt
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_calls.h
   - zr_vm_parser/include/zr_vm_parser/semantic_relations.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
@@ -108,6 +113,7 @@ tests:
   - tests/parser/test_semantic_query_contract.c
   - tests/parser/test_semantic_query_symbols.c
   - tests/parser/test_semantic_query_relations.c
+  - tests/parser/test_semantic_query_calls.c
   - tests/parser/test_type_inference.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
@@ -246,8 +252,34 @@ SymbolId, canonical TypeId, and URI. It never finds an imported entity by a
 spelling, so a native symbol with the same name cannot replace the source
 alias.
 
-Source inheritance, implementation, alias, binary/native origin, and call graph
+Source inheritance, implementation, alias, and binary/native relation
 publishers remain later slices. LSP must not infer an absent relation.
+
+## Call Edge Snapshot Foundation
+
+`SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph
+carrier. `ZrParser_SemanticCalls_Publish` runs only after source lexical scope
+facts exist. For every existing `CALL` reference, it selects the narrowest
+containing scope whose owner is an already-registered function SymbolId. It
+uses the matching compiler expression fact for the full call-site range and
+uses the resolved call reference's SymbolId, closed callable TypeId, and
+declaration range for the target. It does not traverse a name, choose an
+overload by spelling, or retain an AST pointer in the edge.
+
+`CallEdgesAt`, `OutgoingCalls`, and `IncomingCalls` project copied values from
+that carrier and sort by call-site range then stable ids. An edge whose source
+scope has no function owner is published with `CALLER_UNAVAILABLE`; an edge
+whose call reference is unresolved or whose target is absent is published with
+`TARGET_UNRESOLVED`. Such an edge retains the call-site and callable TypeId but
+never selects a same-name function. A resolved target without a declaration
+range uses `TARGET_DECLARATION_UNAVAILABLE`. Output arrays are reusable and
+contain no pointers into mutable AST structures.
+
+This first Task 4 slice covers source function callers only. Lambda scopes,
+overload candidate sets, argument-to-parameter mappings, conversions, receiver
+TypeIds, and binary/native call-edge producers remain unavailable until their
+canonical producers can supply complete identity. LSP hierarchy consumers must
+continue to fail closed for those cases.
 
 ## Test Coverage
 

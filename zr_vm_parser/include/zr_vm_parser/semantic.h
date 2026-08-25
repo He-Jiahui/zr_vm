@@ -105,6 +105,28 @@ typedef struct SZrSemanticScopeFact {
     TZrBool isStaticContext;
 } SZrSemanticScopeFact;
 
+typedef enum EZrSemanticCallEdgeResolution {
+    ZR_SEMANTIC_CALL_EDGE_RESOLUTION_UNKNOWN = 0,
+    ZR_SEMANTIC_CALL_EDGE_RESOLUTION_RESOLVED,
+    ZR_SEMANTIC_CALL_EDGE_RESOLUTION_CALLER_UNAVAILABLE,
+    ZR_SEMANTIC_CALL_EDGE_RESOLUTION_TARGET_UNRESOLVED,
+    ZR_SEMANTIC_CALL_EDGE_RESOLUTION_TARGET_DECLARATION_UNAVAILABLE
+} EZrSemanticCallEdgeResolution;
+
+/*
+ * A call edge is produced from existing CALL references and lexical scope
+ * ownership. It never resolves an endpoint by spelling.
+ */
+typedef struct SZrSemanticCallEdgeFact {
+    TZrSymbolId callerSymbolId;
+    TZrSymbolId targetSymbolId;
+    TZrTypeId callableTypeId;
+    SZrFileRange callSiteRange;
+    SZrFileRange targetDeclarationRange;
+    EZrSemanticCallEdgeResolution resolution;
+    TZrBool hasTargetDeclarationRange;
+} SZrSemanticCallEdgeFact;
+
 /*
  * A producer publishes one candidate for every symbol it has already bound to
  * a lexical scope. The query only projects this fact; it never searches names
@@ -210,6 +232,7 @@ typedef struct SZrSemanticContext {
     SZrArray diagnosticFacts;   // SZrSemanticDiagnosticFact
     SZrArray propertyContracts; // SZrSemanticPropertyContract
     SZrArray relationFacts;     // SZrSemanticRelationFact
+    SZrArray callEdgeFacts;     // SZrSemanticCallEdgeFact
 } SZrSemanticContext;
 
 typedef struct SZrHirModule {

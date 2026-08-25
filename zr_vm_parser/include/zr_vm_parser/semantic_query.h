@@ -60,6 +60,16 @@ typedef struct SZrParserSemanticCallQuery {
     SZrFileRange targetDeclarationRange;
 } SZrParserSemanticCallQuery;
 
+typedef struct SZrParserSemanticCallEdgeQuery {
+    TZrSymbolId callerSymbolId;
+    TZrSymbolId targetSymbolId;
+    TZrTypeId callableTypeId;
+    SZrFileRange callSiteRange;
+    SZrFileRange targetDeclarationRange;
+    EZrSemanticCallEdgeResolution resolution;
+    TZrBool hasTargetDeclarationRange;
+} SZrParserSemanticCallEdgeQuery;
+
 typedef struct SZrParserSemanticSymbolQuery {
     TZrSymbolId symbolId;
     TZrTypeId typeId;
@@ -124,6 +134,22 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_FormatCall(
         const SZrParserSemanticCallQuery *query,
         TZrChar *buffer,
         TZrSize bufferSize);
+/* outEdges contains snapshot-borrowed value copies, never AST pointers. */
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_CallEdgesAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outEdges);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_OutgoingCalls(
+        const SZrSemanticContext *context,
+        TZrSymbolId callerSymbolId,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outEdges);
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_IncomingCalls(
+        const SZrSemanticContext *context,
+        TZrSymbolId targetSymbolId,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outEdges);
 ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DefinitionOf(
         const SZrSemanticContext *context,
         SZrFileRange position,
