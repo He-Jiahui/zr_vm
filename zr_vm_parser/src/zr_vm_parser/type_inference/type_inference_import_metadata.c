@@ -429,54 +429,30 @@ static SZrString *primitive_type_name(SZrCompilerState *cs, EZrValueType baseTyp
     return ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)name);
 }
 
-static const SZrFunction *find_runtime_function_metadata_recursive(const SZrFunction *function,
-                                                                   SZrString *name,
-                                                                   TZrUInt32 parameterCount) {
-    if (function == ZR_NULL || name == ZR_NULL) {
+static const SZrFunction *import_runtime_callable_metadata_by_child_index(
+        const SZrFunction *moduleFunction,
+        TZrUInt32 callableChildIndex) {
+    if (moduleFunction == ZR_NULL ||
+        callableChildIndex == ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE ||
+        callableChildIndex >= moduleFunction->childFunctionLength ||
+        moduleFunction->childFunctionList == ZR_NULL) {
         return ZR_NULL;
     }
 
-    if (function->functionName != ZR_NULL &&
-        ZrCore_String_Equal(function->functionName, name) &&
-        (function->parameterMetadataCount == parameterCount || function->parameterCount == parameterCount ||
-         parameterCount == 0)) {
-        return function;
-    }
-
-    for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
-        const SZrFunction *match =
-                find_runtime_function_metadata_recursive(&function->childFunctionList[index], name, parameterCount);
-        if (match != ZR_NULL) {
-            return match;
-        }
-    }
-
-    return ZR_NULL;
+    return &moduleFunction->childFunctionList[callableChildIndex];
 }
 
-static const SZrIoFunction *find_io_function_metadata_recursive(const SZrIoFunction *function,
-                                                                SZrString *name,
-                                                                TZrSize parameterCount) {
-    if (function == ZR_NULL || name == ZR_NULL) {
+static const SZrIoFunction *import_io_callable_metadata_by_child_index(
+        const SZrIoFunction *moduleFunction,
+        TZrUInt32 callableChildIndex) {
+    if (moduleFunction == ZR_NULL ||
+        callableChildIndex == ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE ||
+        callableChildIndex >= moduleFunction->closuresLength ||
+        moduleFunction->closures == ZR_NULL) {
         return ZR_NULL;
     }
 
-    if (function->name != ZR_NULL &&
-        ZrCore_String_Equal(function->name, name) &&
-        (function->parameterMetadataLength == parameterCount || function->parametersLength == parameterCount ||
-         parameterCount == 0)) {
-        return function;
-    }
-
-    for (TZrSize index = 0; index < function->closuresLength; index++) {
-        const SZrIoFunction *match =
-                find_io_function_metadata_recursive(function->closures[index].subFunction, name, parameterCount);
-        if (match != ZR_NULL) {
-            return match;
-        }
-    }
-
-    return ZR_NULL;
+    return moduleFunction->closures[callableChildIndex].subFunction;
 }
 
 static void import_copy_runtime_parameter_metadata(SZrCompilerState *cs,
@@ -578,6 +554,134 @@ static void import_copy_io_parameter_metadata(SZrCompilerState *cs,
     }
 }
 
+static TZrBool import_copy_runtime_typed_export_generic_parameters(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo,
+        const SZrFunctionTypedExportSymbol *symbol) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || memberInfo == ZR_NULL || symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (symbol->genericParameterCount == 0U) {
+        return ZR_TRUE;
+    }
+    if (symbol->genericParameters == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0U; index < symbol->genericParameterCount; index++) {
+        const SZrFunctionTypedGenericParameter *source = &symbol->genericParameters[index];
+        if (source->name == ZR_NULL ||
+            (source->constraintTypeCount > 0U && source->constraintTypeNames == ZR_NULL)) {
+            return ZR_FALSE;
+        }
+    }
+
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->genericParameters,
+                      sizeof(SZrTypeGenericParameterInfo),
+                      symbol->genericParameterCount);
+    for (TZrUInt32 index = 0U; index < symbol->genericParameterCount; index++) {
+        const SZrFunctionTypedGenericParameter *source = &symbol->genericParameters[index];
+        SZrTypeGenericParameterInfo destination;
+
+        ZrCore_Memory_RawSet(&destination, 0, sizeof(destination));
+        destination.name = source->name;
+        destination.genericKind = (EZrGenericParameterKind)source->genericKind;
+        destination.variance = (EZrGenericVariance)source->variance;
+        destination.requiresClass = source->requiresClass ? ZR_TRUE : ZR_FALSE;
+        destination.requiresStruct = source->requiresStruct ? ZR_TRUE : ZR_FALSE;
+        destination.requiresNew = source->requiresNew ? ZR_TRUE : ZR_FALSE;
+        destination.requiresOwner = source->requiresOwner ? ZR_TRUE : ZR_FALSE;
+        destination.requiredOwnershipQualifier =
+                (EZrOwnershipQualifier)source->requiredOwnershipQualifier;
+        ZrCore_Array_Construct(&destination.constraintTypeNames);
+        if (source->constraintTypeCount > 0U) {
+            ZrCore_Array_Init(cs->state,
+                              &destination.constraintTypeNames,
+                              sizeof(SZrString *),
+                              source->constraintTypeCount);
+            for (TZrUInt32 constraintIndex = 0U;
+                 constraintIndex < source->constraintTypeCount;
+                 constraintIndex++) {
+                SZrString *constraintTypeName = source->constraintTypeNames[constraintIndex];
+                if (constraintTypeName == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                ZrCore_Array_Push(cs->state,
+                                  &destination.constraintTypeNames,
+                                  &constraintTypeName);
+            }
+        }
+        ZrCore_Array_Push(cs->state, &memberInfo->genericParameters, &destination);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool import_copy_io_typed_export_generic_parameters(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo,
+        const SZrIoFunctionTypedExportSymbol *symbol) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || memberInfo == ZR_NULL || symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (symbol->genericParameterCount == 0U) {
+        return ZR_TRUE;
+    }
+    if (symbol->genericParameters == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0U; index < symbol->genericParameterCount; index++) {
+        const SZrIoFunctionTypedGenericParameter *source = &symbol->genericParameters[index];
+        if (source->name == ZR_NULL ||
+            (source->constraintTypeCount > 0U && source->constraintTypeNames == ZR_NULL)) {
+            return ZR_FALSE;
+        }
+    }
+
+    ZrCore_Array_Init(cs->state,
+                      &memberInfo->genericParameters,
+                      sizeof(SZrTypeGenericParameterInfo),
+                      symbol->genericParameterCount);
+    for (TZrSize index = 0U; index < symbol->genericParameterCount; index++) {
+        const SZrIoFunctionTypedGenericParameter *source = &symbol->genericParameters[index];
+        SZrTypeGenericParameterInfo destination;
+
+        ZrCore_Memory_RawSet(&destination, 0, sizeof(destination));
+        destination.name = source->name;
+        destination.genericKind = (EZrGenericParameterKind)source->genericKind;
+        destination.variance = (EZrGenericVariance)source->variance;
+        destination.requiresClass = source->requiresClass ? ZR_TRUE : ZR_FALSE;
+        destination.requiresStruct = source->requiresStruct ? ZR_TRUE : ZR_FALSE;
+        destination.requiresNew = source->requiresNew ? ZR_TRUE : ZR_FALSE;
+        destination.requiresOwner = source->requiresOwner ? ZR_TRUE : ZR_FALSE;
+        destination.requiredOwnershipQualifier =
+                (EZrOwnershipQualifier)source->requiredOwnershipQualifier;
+        ZrCore_Array_Construct(&destination.constraintTypeNames);
+        if (source->constraintTypeCount > 0U) {
+            ZrCore_Array_Init(cs->state,
+                              &destination.constraintTypeNames,
+                              sizeof(SZrString *),
+                              source->constraintTypeCount);
+            for (TZrUInt32 constraintIndex = 0U;
+                 constraintIndex < source->constraintTypeCount;
+                 constraintIndex++) {
+                SZrString *constraintTypeName = source->constraintTypeNames[constraintIndex];
+                if (constraintTypeName == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                ZrCore_Array_Push(cs->state,
+                                  &destination.constraintTypeNames,
+                                  &constraintTypeName);
+            }
+        }
+        ZrCore_Array_Push(cs->state, &memberInfo->genericParameters, &destination);
+    }
+
+    return ZR_TRUE;
+}
+
 static const SZrFunction *resolve_runtime_member_metadata_function(SZrState *state,
                                                                    const SZrFunction *ownerFunction,
                                                                    const SZrCompiledMemberInfo *compiledMember,
@@ -591,14 +695,6 @@ static const SZrFunction *resolve_runtime_member_metadata_function(SZrState *sta
     if (compiledMember->functionConstantIndex < ownerFunction->constantValueLength) {
         metadataFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state,
                                                                        &ownerFunction->constantValueList[compiledMember->functionConstantIndex]);
-    }
-
-    if (metadataFunction == ZR_NULL &&
-        memberInfo != ZR_NULL &&
-        memberInfo->name != ZR_NULL) {
-        metadataFunction = find_runtime_function_metadata_recursive(ownerFunction,
-                                                                    memberInfo->name,
-                                                                    memberInfo->parameterCount);
     }
 
     return metadataFunction;
@@ -797,8 +893,9 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
         }
     }
 
-    metadataFunction =
-            find_runtime_function_metadata_recursive(moduleFunction, symbol->name, symbol->parameterCount);
+    import_copy_runtime_typed_export_generic_parameters(cs, &memberInfo, symbol);
+    metadataFunction = import_runtime_callable_metadata_by_child_index(
+            moduleFunction, symbol->callableChildIndex);
     import_copy_runtime_parameter_metadata(cs, &memberInfo, metadataFunction);
 
     ZrCore_Array_Push(cs->state, &modulePrototype->members, &memberInfo);
@@ -849,7 +946,9 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
         }
     }
 
-    metadataFunction = find_io_function_metadata_recursive(moduleFunction, symbol->name, symbol->parameterCount);
+    import_copy_io_typed_export_generic_parameters(cs, &memberInfo, symbol);
+    metadataFunction = import_io_callable_metadata_by_child_index(
+            moduleFunction, symbol->callableChildIndex);
     import_copy_io_parameter_metadata(cs, &memberInfo, metadataFunction);
 
     ZrCore_Array_Push(cs->state, &modulePrototype->members, &memberInfo);

@@ -21,6 +21,17 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_reaching_definitions.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_export_generics.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c
+  - zr_vm_parser/src/zr_vm_parser/writer.c
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/include/zr_vm_core/io.h
+  - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_array_diagnostics.c
@@ -63,6 +74,15 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/semantic_reaching_definitions.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_export_generics.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c
+  - zr_vm_parser/src/zr_vm_parser/writer.c
+  - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_array_diagnostics.c
@@ -85,6 +105,7 @@ tests:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_semantic_query_contract.c
   - tests/parser/test_semantic_query_symbols.c
+  - tests/parser/test_type_inference.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/acceptance/2026-06-20-semantic-stage1-semantic-query.md
 doc_type: module-detail
@@ -138,6 +159,40 @@ Resolved callable consumers also use `ZrParser_SemanticQuery_CallAt` and `ZrPars
 
 `ZrParser_Compiler_PublishSemanticQueryDiagnostics` is the compiler-side bridge. `compile_script` calls it after statement compilation and script typed metadata generation succeed. The bridge runs the straight-line definite-assignment resolver, the straight-line reaching-definition resolver, and, when the script AST is available, the CFG-backed definite-assignment and reaching-definition resolvers before explicitly materializing and then reading module-scope diagnostics; it leaves the resulting structured diagnostics in `SZrSemanticContext.queryDiagnostics`. Because the reaching-definition payload is resolved on the same context, compiler-side callers can also ask `ZrParser_SemanticQuery_DefinitionOf` on the compiled semantic context and get a unique write definition when one reaches a read. The bridge does not route warnings through `ZrParser_Compiler_Error`, so semantic query warnings such as `unreachable_code` or `possibly_uninitialized_read` do not set `hasError` or `hasStructuredError`. This is currently context-cache publication only; binary metadata, CLI output, or another external compiler diagnostic channel still needs a later serialization path.
 
+## Binary Generic Callable Artifact Contract
+
+Typed `.zro` exports carry an open callable generic contract separately from a
+call-site closed canonical `TypeId`. Patch 42 adds a version-gated generic row
+after each typed export's parameter TypeRefs. A row preserves the declaration
+generic name, kind, variance, class/struct/new/owner constraints, ownership
+qualifier constraint, and constraint type names. Old artifacts do not expose a
+partial substitute: their generic row count is zero and a generic invocation
+remains unavailable rather than being reconstructed from signature text.
+
+`compiler_typed_export_generics.c` is the narrow producer adapter. It gathers
+the parser declaration's existing `SZrTypeGenericParameterInfo` records into
+the typed export carrier, and can carry the same records for an imported
+callable alias. The writer, IO reader, runtime copier, and function free path
+own the serialized row lifecycle. The metadata token's method-signature arity
+is emitted from the same typed export count, but token arity is not used as a
+replacement for the structured rows.
+
+The importer projects only those rows into `SZrTypeMemberInfo.genericParameters`.
+For a typed function export, parameter metadata comes from the export's stable
+`callableChildIndex`; it no longer recursively selects a runtime child by
+member spelling and parameter count. Invalid child indexes or malformed generic
+rows leave the metadata unavailable, so type inference and LSP consumers fail
+closed instead of selecting a same-name overload.
+
+For `fn identity<T>(value: T): T`, inferred `identity(1)` and explicit
+`identity<string>("text")` share the imported external declaration SymbolId,
+have distinct closed callable TypeIds, retain a zero external declaration
+range, and format through the canonical fact as
+`identity<T>(value: int): int` and
+`identity<T>(value: string): string`. The free-call form deliberately has no
+receiver-effect `fn ` prefix; receiver calls retain their separately published
+`fn ` or `const fn ` contract.
+
 ## Test Coverage
 
 `tests/parser/test_semantic_query_symbols.c` now compiles source `class Meter`,
@@ -190,10 +245,12 @@ Source struct/class/interface fields and methods, direct imports, destructured
 imports, type-value aliases, and native callable identities for non-generic and
 generic descriptor members are complete in the source producer subset.
 Their facts originate only from compiler-registered symbols and carry canonical
-identity, declaration range, access, and static flags. Static method state
-propagates through nested scopes for the existing receiver/static filter.
-Binary metadata and native descriptor analyzers remain the missing visibility
-producers; no LSP consumer has migrated in this slice.
+identity, declaration range, access, and static flags. Binary typed exports
+now preserve structured open generic callable declaration rows for imported
+`CallAt` and `FormatCall`, but they and native descriptor analyzers remain
+missing visibility producers. Static method state propagates through nested
+scopes for the existing receiver/static filter; no LSP consumer has migrated
+in this slice.
 
 Direct source module bindings of the shape `identifier = import("...")` now
 reuse their compiler-registered variable declaration symbol and range as one

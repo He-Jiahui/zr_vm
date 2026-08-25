@@ -7479,6 +7479,94 @@ static void test_type_inference_native_generic_receiver_call_publishes_closed_co
     TEST_DIVIDER();
 }
 
+static void test_type_inference_binary_import_generic_function_publishes_closed_contract(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Binary Import Generic Function Publishes Closed Contract";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *moduleSource = "fn identity<T>(value: T): T { return value; }";
+        const char *source =
+                "let generic = import(\"generic\");\n"
+                "var inferred = generic.identity(1);\n"
+                "var explicit = generic.identity<string>(\"text\");\n";
+        const char *binaryPath = "test_type_inference_import_generic_contract.zro";
+        const char *inferredCall = strstr(source, "generic.identity(1)");
+        const char *explicitCall = strstr(source, "generic.identity<string>");
+        TZrByte *binaryBytes = ZR_NULL;
+        TZrSize binaryLength = 0;
+        SZrString *sourceName = ZrCore_String_Create(
+                state, "binary_import_generic_contract_test.zr", 39);
+        SZrAstNode *ast;
+        SZrParserSemanticCallQuery inferredQuery;
+        SZrParserSemanticCallQuery explicitQuery;
+        SZrFileRange position;
+        TZrChar callLabel[192];
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        TEST_ASSERT_NOT_NULL(inferredCall);
+        TEST_ASSERT_NOT_NULL(explicitCall);
+        ZrParser_ToGlobalState_Register(state);
+        binaryBytes = build_binary_import_fixture(state, moduleSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        install_import_test_fixture(state, "generic", binaryBytes, binaryLength, ZR_TRUE);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        cs->suppressErrorOutput = ZR_TRUE;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        compile_script(cs, ast);
+        TEST_ASSERT_FALSE_MESSAGE(
+                cs->hasError,
+                cs->errorMessage != ZR_NULL ? cs->errorMessage
+                                             : "binary generic import compile failed");
+        TEST_ASSERT_NOT_NULL(cs->semanticContext);
+
+        position = type_inference_query_position(
+                sourceName,
+                (TZrSize)(inferredCall - source + strlen("generic.identity(")));
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+                cs->semanticContext, position, ZR_NULL, &inferredQuery));
+        TEST_ASSERT_TRUE(inferredQuery.hasResolvedTarget);
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+                cs->semanticContext, &inferredQuery, callLabel, sizeof(callLabel)));
+        TEST_ASSERT_EQUAL_STRING("identity<T>(value: int): int", callLabel);
+
+        position = type_inference_query_position(
+                sourceName,
+                (TZrSize)(explicitCall - source + strlen("generic.identity<string>(")));
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+                cs->semanticContext, position, ZR_NULL, &explicitQuery));
+        TEST_ASSERT_TRUE(explicitQuery.hasResolvedTarget);
+        TEST_ASSERT_EQUAL_UINT32(inferredQuery.targetSymbolId, explicitQuery.targetSymbolId);
+        TEST_ASSERT_NOT_EQUAL(inferredQuery.callableTypeId, explicitQuery.callableTypeId);
+        TEST_ASSERT_EQUAL_UINT32(0, inferredQuery.targetDeclarationRange.start.offset);
+        TEST_ASSERT_EQUAL_UINT32(0, explicitQuery.targetDeclarationRange.start.offset);
+        TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+                cs->semanticContext, &explicitQuery, callLabel, sizeof(callLabel)));
+        TEST_ASSERT_EQUAL_STRING("identity<T>(value: string): string", callLabel);
+
+        ZrParser_Ast_Free(state, ast);
+        state->global->sourceLoader = ZR_NULL;
+        free(binaryBytes);
+        remove(binaryPath);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_native_method_call_rejects_registered_parameter_mismatch(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Method Call Rejects Registered Parameter Mismatch";
@@ -8606,6 +8694,7 @@ int main(void) {
     RUN_TEST(test_type_inference_binary_import_function_call_rejects_argument_mismatch);
     RUN_TEST(test_type_inference_native_import_function_member_preserves_metadata_signature_identity);
     RUN_TEST(test_type_inference_native_generic_receiver_call_publishes_closed_contract);
+    RUN_TEST(test_type_inference_binary_import_generic_function_publishes_closed_contract);
     RUN_TEST(test_type_inference_native_method_call_rejects_registered_parameter_mismatch);
     RUN_TEST(test_type_inference_native_instance_method_uses_registered_return_type);
     RUN_TEST(test_type_inference_native_nested_module_method_call_returns_null);

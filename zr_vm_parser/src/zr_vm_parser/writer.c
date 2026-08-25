@@ -888,6 +888,39 @@ static void write_function_typed_closure_bindings(FILE *file, SZrState *state, S
     }
 }
 
+static void write_function_typed_export_generic_parameter(
+        FILE *file,
+        SZrState *state,
+        const SZrFunctionTypedGenericParameter *parameter) {
+    TZrUInt32 constraintTypeCount =
+            parameter != ZR_NULL && parameter->constraintTypeNames != ZR_NULL
+                    ? parameter->constraintTypeCount
+                    : 0u;
+    TZrUInt8 genericKind = parameter != ZR_NULL ? parameter->genericKind : 0u;
+    TZrUInt8 variance = parameter != ZR_NULL ? parameter->variance : 0u;
+    TZrUInt8 requiresClass = parameter != ZR_NULL ? parameter->requiresClass : 0u;
+    TZrUInt8 requiresStruct = parameter != ZR_NULL ? parameter->requiresStruct : 0u;
+    TZrUInt8 requiresNew = parameter != ZR_NULL ? parameter->requiresNew : 0u;
+    TZrUInt8 requiresOwner = parameter != ZR_NULL ? parameter->requiresOwner : 0u;
+    TZrUInt16 reserved0 = parameter != ZR_NULL ? parameter->reserved0 : 0u;
+    TZrUInt32 requiredOwnershipQualifier =
+            parameter != ZR_NULL ? parameter->requiredOwnershipQualifier : 0u;
+
+    write_string_with_length(state, file, parameter != ZR_NULL ? parameter->name : ZR_NULL);
+    fwrite(&genericKind, sizeof(TZrUInt8), 1, file);
+    fwrite(&variance, sizeof(TZrUInt8), 1, file);
+    fwrite(&requiresClass, sizeof(TZrUInt8), 1, file);
+    fwrite(&requiresStruct, sizeof(TZrUInt8), 1, file);
+    fwrite(&requiresNew, sizeof(TZrUInt8), 1, file);
+    fwrite(&requiresOwner, sizeof(TZrUInt8), 1, file);
+    fwrite(&reserved0, sizeof(TZrUInt16), 1, file);
+    fwrite(&requiredOwnershipQualifier, sizeof(TZrUInt32), 1, file);
+    fwrite(&constraintTypeCount, sizeof(TZrUInt32), 1, file);
+    for (TZrUInt32 index = 0; index < constraintTypeCount; index++) {
+        write_string_with_length(state, file, parameter->constraintTypeNames[index]);
+    }
+}
+
 static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZrFunction *function) {
     TZrUInt64 symbolCount = function != ZR_NULL ? function->typedExportedSymbolLength : 0;
 
@@ -895,6 +928,8 @@ static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZr
     for (TZrUInt64 index = 0; index < symbolCount; index++) {
         SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[index];
         TZrUInt64 parameterCount = symbol->parameterCount;
+        TZrUInt32 genericParameterCount =
+                symbol->genericParameters != ZR_NULL ? symbol->genericParameterCount : 0u;
 
         write_string_with_length(state, file, symbol->name);
         fwrite(&symbol->stackSlot, sizeof(TZrUInt32), 1, file);
@@ -910,6 +945,11 @@ static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZr
             const SZrFunctionTypedTypeRef *parameterType =
                     symbol->parameterTypes != ZR_NULL ? &symbol->parameterTypes[paramIndex] : ZR_NULL;
             write_function_typed_type_ref(file, state, parameterType);
+        }
+        fwrite(&genericParameterCount, sizeof(TZrUInt32), 1, file);
+        for (TZrUInt32 genericIndex = 0; genericIndex < genericParameterCount; genericIndex++) {
+            write_function_typed_export_generic_parameter(
+                    file, state, &symbol->genericParameters[genericIndex]);
         }
         fwrite(&symbol->lineInSourceStart, sizeof(TZrUInt32), 1, file);
         fwrite(&symbol->columnInSourceStart, sizeof(TZrUInt32), 1, file);

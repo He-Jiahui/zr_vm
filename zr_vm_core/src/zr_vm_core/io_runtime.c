@@ -298,6 +298,80 @@ static void io_runtime_copy_typed_type_ref(SZrFunctionTypedTypeRef *destination,
     destination->staticCTypeId = source->staticCTypeId;
 }
 
+static TZrBool io_runtime_copy_typed_export_generic_parameters(
+        SZrState *state,
+        const SZrIoFunctionTypedExportSymbol *source,
+        SZrFunctionTypedExportSymbol *destination) {
+    if (state == ZR_NULL || state->global == ZR_NULL || source == ZR_NULL ||
+        destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (source->genericParameterCount == 0 || source->genericParameters == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (source->genericParameterCount > (TZrSize)0xFFFFFFFFu) {
+        return ZR_FALSE;
+    }
+
+    destination->genericParameterCount = (TZrUInt32)source->genericParameterCount;
+    destination->genericParameters =
+            (SZrFunctionTypedGenericParameter *)ZrCore_Memory_RawMallocWithType(
+                    state->global,
+                    sizeof(SZrFunctionTypedGenericParameter) *
+                            destination->genericParameterCount,
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (destination->genericParameters == ZR_NULL) {
+        destination->genericParameterCount = 0;
+        return ZR_FALSE;
+    }
+    ZrCore_Memory_RawSet(destination->genericParameters,
+                         0,
+                         sizeof(SZrFunctionTypedGenericParameter) *
+                                 destination->genericParameterCount);
+
+    for (TZrUInt32 index = 0; index < destination->genericParameterCount; index++) {
+        const SZrIoFunctionTypedGenericParameter *sourceParameter =
+                &source->genericParameters[index];
+        SZrFunctionTypedGenericParameter *destinationParameter =
+                &destination->genericParameters[index];
+
+        destinationParameter->name = sourceParameter->name;
+        destinationParameter->genericKind = sourceParameter->genericKind;
+        destinationParameter->variance = sourceParameter->variance;
+        destinationParameter->requiresClass = sourceParameter->requiresClass;
+        destinationParameter->requiresStruct = sourceParameter->requiresStruct;
+        destinationParameter->requiresNew = sourceParameter->requiresNew;
+        destinationParameter->requiresOwner = sourceParameter->requiresOwner;
+        destinationParameter->reserved0 = sourceParameter->reserved0;
+        destinationParameter->requiredOwnershipQualifier =
+                sourceParameter->requiredOwnershipQualifier;
+        destinationParameter->constraintTypeCount = sourceParameter->constraintTypeCount;
+        if (sourceParameter->constraintTypeCount == 0) {
+            continue;
+        }
+        if (sourceParameter->constraintTypeNames == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        destinationParameter->constraintTypeNames =
+                (SZrString **)ZrCore_Memory_RawMallocWithType(
+                        state->global,
+                        sizeof(SZrString *) * sourceParameter->constraintTypeCount,
+                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (destinationParameter->constraintTypeNames == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        for (TZrUInt32 constraintIndex = 0;
+             constraintIndex < sourceParameter->constraintTypeCount;
+             constraintIndex++) {
+            destinationParameter->constraintTypeNames[constraintIndex] =
+                    sourceParameter->constraintTypeNames[constraintIndex];
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool io_runtime_copy_metadata_token_model(SZrState *state,
                                                     const SZrIoFunction *source,
                                                     SZrFunction *function) {
@@ -1117,6 +1191,11 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             destinationSymbol->signatureBlobOffset = sourceSymbol->signatureBlobOffset;
             destinationSymbol->signatureBlobLength = sourceSymbol->signatureBlobLength;
             destinationSymbol->signatureHash = sourceSymbol->signatureHash;
+
+            if (!io_runtime_copy_typed_export_generic_parameters(
+                        state, sourceSymbol, destinationSymbol)) {
+                return ZR_FALSE;
+            }
 
             if (sourceSymbol->parameterCount > 0) {
                 destinationSymbol->parameterTypes =

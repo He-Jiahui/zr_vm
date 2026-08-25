@@ -456,6 +456,65 @@ static void io_read_function_typed_closure_bindings(SZrIo *io,
     }
 }
 
+static void io_read_function_typed_export_generic_parameters(
+        SZrIo *io,
+        SZrIoFunctionTypedExportSymbol *symbol) {
+    SZrGlobalState *global;
+    TZrUInt32 serializedCount = 0;
+
+    if (io == ZR_NULL || io->state == ZR_NULL || io->state->global == ZR_NULL || symbol == ZR_NULL) {
+        return;
+    }
+
+    global = io->state->global;
+    ZR_IO_READ_NATIVE_TYPE(io, serializedCount, TZrUInt32);
+    if (serializedCount == 0) {
+        return;
+    }
+
+    symbol->genericParameters = ZR_IO_MALLOC_NATIVE_DATA(
+            global, sizeof(SZrIoFunctionTypedGenericParameter) * serializedCount);
+    if (symbol->genericParameters != ZR_NULL) {
+        symbol->genericParameterCount = serializedCount;
+    }
+
+    for (TZrUInt32 index = 0; index < serializedCount; index++) {
+        SZrIoFunctionTypedGenericParameter discardedParameter;
+        SZrIoFunctionTypedGenericParameter *parameter =
+                symbol->genericParameters != ZR_NULL ? &symbol->genericParameters[index]
+                                                     : &discardedParameter;
+        TZrUInt32 serializedConstraintCount = 0;
+
+        ZrCore_Memory_RawSet(parameter, 0, sizeof(*parameter));
+        parameter->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->genericKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->variance, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->requiresClass, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->requiresStruct, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->requiresNew, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->requiresOwner, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->reserved0, TZrUInt16);
+        ZR_IO_READ_NATIVE_TYPE(io, parameter->requiredOwnershipQualifier, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, serializedConstraintCount, TZrUInt32);
+
+        if (symbol->genericParameters != ZR_NULL && serializedConstraintCount > 0) {
+            parameter->constraintTypeNames = ZR_IO_MALLOC_NATIVE_DATA(
+                    global, sizeof(SZrString *) * serializedConstraintCount);
+            if (parameter->constraintTypeNames != ZR_NULL) {
+                parameter->constraintTypeCount = serializedConstraintCount;
+            }
+        }
+        for (TZrUInt32 constraintIndex = 0;
+             constraintIndex < serializedConstraintCount;
+             constraintIndex++) {
+            SZrString *constraintName = io_read_string_with_length(io);
+            if (parameter->constraintTypeNames != ZR_NULL) {
+                parameter->constraintTypeNames[constraintIndex] = constraintName;
+            }
+        }
+    }
+}
+
 static void io_read_function_typed_export_symbols(SZrIo *io,
                                                   SZrIoFunctionTypedExportSymbol *symbols,
                                                   TZrSize count) {
@@ -487,6 +546,10 @@ static void io_read_function_typed_export_symbols(SZrIo *io,
             }
         } else {
             symbol->parameterTypes = ZR_NULL;
+        }
+
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_TYPED_EXPORT_GENERIC_PARAMETERS) {
+            io_read_function_typed_export_generic_parameters(io, symbol);
         }
 
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_TYPED_EXPORT_DECLARATION_SPANS) {

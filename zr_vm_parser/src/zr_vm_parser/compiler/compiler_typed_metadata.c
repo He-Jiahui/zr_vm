@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_typed_export_generics.h"
 #include "type_inference_internal.h"
 #include "compile_time_executor_internal.h"
 #include "compile_time_binding_metadata.h"
@@ -641,6 +642,7 @@ static void free_typed_export_symbols(SZrState *state,
 
     for (TZrUInt32 index = 0; index < count; index++) {
         SZrFunctionTypedExportSymbol *symbol = &symbols[index];
+        compiler_typed_export_generic_contract_free(state, symbol);
         if (symbol->parameterTypes != ZR_NULL && symbol->parameterCount > 0) {
             ZrCore_Memory_RawFreeWithType(state->global,
                                           symbol->parameterTypes,
@@ -1015,6 +1017,7 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
                                                  const SZrExportedVariable *exportedVar,
                                                  SZrAstNodeArray *params,
                                                  SZrType *returnType,
+                                                 const SZrGenericDeclaration *genericDeclaration,
                                                  SZrFunctionTypedExportSymbol *outSymbol) {
     SZrFunctionTypeInfo *functionInfo;
     TZrUInt32 parameterCount = 0;
@@ -1033,6 +1036,11 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
     outSymbol->reserved0 = 0;
     outSymbol->callableChildIndex = exportedVar->callableChildIndex;
     functionInfo = find_callable_binding_info(cs, exportedVar->name);
+
+    if (!compiler_typed_export_generic_contract_copy_from_declaration(
+                cs, genericDeclaration, outSymbol)) {
+        return ZR_FALSE;
+    }
 
     if (returnType != ZR_NULL) {
         if (!typed_type_ref_from_ast_type(cs, returnType, &outSymbol->valueType)) {
@@ -1118,6 +1126,7 @@ static TZrBool build_function_export_symbol(SZrCompilerState *cs,
                                              exportedVar,
                                              declaration->params,
                                              declaration->returnType,
+                                             declaration->generic,
                                              outSymbol);
 }
 
@@ -1205,6 +1214,11 @@ static TZrBool build_imported_callable_member_alias_export_symbol(SZrCompilerSta
     outSymbol->reserved0 = 0;
     outSymbol->callableChildIndex = exportedVar->callableChildIndex;
     typed_type_ref_from_type_name(cs, memberInfo->returnTypeName, &outSymbol->valueType);
+
+    if (!compiler_typed_export_generic_contract_copy_from_infos(
+                cs, &memberInfo->genericParameters, outSymbol)) {
+        return ZR_FALSE;
+    }
 
     if (memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
         memberInfo->parameterTypes.length == 0) {
@@ -2474,10 +2488,11 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
 
                 if (declaration->value != ZR_NULL && declaration->value->type == ZR_AST_LAMBDA_EXPRESSION) {
                     if (!build_function_like_export_symbol(cs,
-                                                           exportedVar,
-                                                           declaration->value->data.lambdaExpression.params,
-                                                           ZR_NULL,
-                                                           &symbols[index])) {
+                                                            exportedVar,
+                                                            declaration->value->data.lambdaExpression.params,
+                                                            ZR_NULL,
+                                                            ZR_NULL,
+                                                            &symbols[index])) {
                         free_typed_export_symbols(cs->state, symbols, exportCount);
                         return ZR_FALSE;
                     }

@@ -201,6 +201,24 @@ typedef struct SZrFunctionTypedTypeRef {
     TZrUInt32 staticCTypeId;
 } SZrFunctionTypedTypeRef;
 
+/*
+ * Open callable generic contract carried by typed exports. The rows describe
+ * the declaration; individual call facts still carry their own closed TypeId.
+ */
+typedef struct SZrFunctionTypedGenericParameter {
+    struct SZrString *name;
+    TZrUInt8 genericKind;
+    TZrUInt8 variance;
+    TZrUInt8 requiresClass;
+    TZrUInt8 requiresStruct;
+    TZrUInt8 requiresNew;
+    TZrUInt8 requiresOwner;
+    TZrUInt16 reserved0;
+    TZrUInt32 requiredOwnershipQualifier;
+    TZrUInt32 constraintTypeCount;
+    struct SZrString **constraintTypeNames;
+} SZrFunctionTypedGenericParameter;
+
 enum {
     ZR_FUNCTION_TYPED_LOCAL_ROLE_NONE = 0u,
     ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER = 1u << 0,
@@ -301,6 +319,8 @@ typedef struct SZrFunctionTypedExportSymbol {
     SZrFunctionTypedTypeRef valueType;
     TZrUInt32 parameterCount;
     SZrFunctionTypedTypeRef *parameterTypes;
+    TZrUInt32 genericParameterCount;
+    SZrFunctionTypedGenericParameter *genericParameters;
     TZrUInt32 lineInSourceStart;
     TZrUInt32 columnInSourceStart;
     TZrUInt32 lineInSourceEnd;

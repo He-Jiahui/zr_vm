@@ -144,6 +144,20 @@ typedef struct SZrIoFunctionTypedTypeRef {
     TZrUInt32 staticCTypeId;
 } SZrIoFunctionTypedTypeRef;
 
+typedef struct SZrIoFunctionTypedGenericParameter {
+    struct SZrString *name;
+    TZrUInt8 genericKind;
+    TZrUInt8 variance;
+    TZrUInt8 requiresClass;
+    TZrUInt8 requiresStruct;
+    TZrUInt8 requiresNew;
+    TZrUInt8 requiresOwner;
+    TZrUInt16 reserved0;
+    TZrUInt32 requiredOwnershipQualifier;
+    TZrUInt32 constraintTypeCount;
+    struct SZrString **constraintTypeNames;
+} SZrIoFunctionTypedGenericParameter;
+
 typedef struct SZrIoFunctionTypedLocalBinding {
     struct SZrString *name;
     TZrUInt32 stackSlot;
@@ -181,6 +195,8 @@ typedef struct SZrIoFunctionTypedExportSymbol {
     SZrIoFunctionTypedTypeRef valueType;
     TZrSize parameterCount;
     SZrIoFunctionTypedTypeRef *parameterTypes;
+    TZrSize genericParameterCount;
+    SZrIoFunctionTypedGenericParameter *genericParameters;
     TZrUInt32 lineInSourceStart;
     TZrUInt32 columnInSourceStart;
     TZrUInt32 lineInSourceEnd;

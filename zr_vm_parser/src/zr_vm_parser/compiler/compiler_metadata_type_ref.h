@@ -14,6 +14,7 @@ typedef struct SZrMetadataTokenTargetSignature {
     TZrUInt8 readiness;
     TZrUInt8 reserved0;
     SZrFunctionTypedTypeRef valueType;
+    TZrUInt32 genericParameterCount;
     TZrUInt32 parameterCount;
     SZrFunctionTypedTypeRef *parameterTypes;
     TZrMetadataToken metadataToken;

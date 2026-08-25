@@ -435,10 +435,12 @@ void metadata_token_write_type_ref_signature(TZrByte *buffer,
 
 TZrSize metadata_token_method_signature_size(SZrCompilerState *cs,
                                              const SZrFunctionTypedTypeRef *returnType,
+                                             TZrUInt32 genericParameterCount,
                                              TZrUInt32 parameterCount,
                                              const SZrFunctionTypedTypeRef *parameterTypes) {
     TZrSize size;
 
+    ZR_UNUSED_PARAMETER(genericParameterCount);
     size = 1 + 1 + 1 + sizeof(TZrUInt32) +
            metadata_token_type_ref_signature_size(cs, returnType) +
            sizeof(TZrUInt32);
@@ -454,13 +456,18 @@ void metadata_token_write_method_signature(TZrByte *buffer,
                                            TZrSize *offset,
                                            SZrCompilerState *cs,
                                            const SZrFunctionTypedTypeRef *returnType,
+                                           TZrUInt32 genericParameterCount,
                                            TZrUInt32 parameterCount,
                                            const SZrFunctionTypedTypeRef *parameterTypes,
                                            const SZrMetadataStringHeapEntry *stringHeapEntries,
                                            TZrUInt32 stringHeapEntryCount) {
     metadata_token_write_u8(buffer, offset, ZR_METADATA_SIGNATURE_NODE_METHOD_SIG);
     metadata_token_write_u8(buffer, offset, 1u);
-    metadata_token_write_u8(buffer, offset, 0u);
+    metadata_token_write_u8(buffer,
+                            offset,
+                            genericParameterCount <= 0xFFu
+                                    ? (TZrUInt8)genericParameterCount
+                                    : 0xFFu);
     metadata_token_write_u32(buffer, offset, 0u);
     metadata_token_write_type_ref_signature(buffer,
                                             offset,
@@ -513,8 +520,9 @@ TZrSize metadata_token_symbol_signature_size(SZrCompilerState *cs, const SZrFunc
     }
 
     return metadata_token_method_signature_size(cs,
-                                                &symbol->valueType,
-                                                symbol->parameterCount,
+                                                 &symbol->valueType,
+                                                 symbol->genericParameterCount,
+                                                 symbol->parameterCount,
                                                 symbol->parameterTypes);
 }
 
@@ -542,6 +550,7 @@ void metadata_token_write_symbol_signature(TZrByte *buffer,
                                           offset,
                                           cs,
                                           &symbol->valueType,
+                                          symbol->genericParameterCount,
                                           symbol->parameterCount,
                                           symbol->parameterTypes,
                                           stringHeapEntries,

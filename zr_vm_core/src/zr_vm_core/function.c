@@ -1228,6 +1228,27 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
                                               sizeof(SZrFunctionTypedTypeRef) * symbol->parameterCount,
                                               ZR_MEMORY_NATIVE_TYPE_FUNCTION);
             }
+            if (symbol->genericParameters != ZR_NULL && symbol->genericParameterCount > 0) {
+                for (TZrUInt32 genericIndex = 0;
+                     genericIndex < symbol->genericParameterCount;
+                     genericIndex++) {
+                    SZrFunctionTypedGenericParameter *parameter =
+                            &symbol->genericParameters[genericIndex];
+                    if (parameter->constraintTypeNames != ZR_NULL &&
+                        parameter->constraintTypeCount > 0) {
+                        ZrCore_Memory_RawFreeWithType(
+                                global,
+                                parameter->constraintTypeNames,
+                                sizeof(SZrString *) * parameter->constraintTypeCount,
+                                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                    }
+                }
+                ZrCore_Memory_RawFreeWithType(global,
+                                              symbol->genericParameters,
+                                              sizeof(SZrFunctionTypedGenericParameter) *
+                                                      symbol->genericParameterCount,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
         }
         ZrCore_Memory_RawFreeWithType(global,
                                       function->typedExportedSymbols,

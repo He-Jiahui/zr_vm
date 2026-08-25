@@ -332,6 +332,7 @@ static TZrBool metadata_token_string_heap_collect_effect(SZrMetadataStringHeapBu
         ZrCore_Memory_RawSet(&symbol, 0, sizeof(symbol));
         symbol.symbolKind = targetSignature->symbolKind;
         symbol.valueType = targetSignature->valueType;
+        symbol.genericParameterCount = targetSignature->genericParameterCount;
         symbol.parameterCount = targetSignature->parameterCount;
         symbol.parameterTypes = targetSignature->parameterTypes;
         return metadata_token_string_heap_collect_symbol(builder, &symbol);
@@ -477,6 +478,7 @@ static TZrSize metadata_token_target_method_sig_size(SZrCompilerState *cs,
 
     return metadata_token_method_signature_size(cs,
                                                 &targetSignature->valueType,
+                                                targetSignature->genericParameterCount,
                                                 targetSignature->parameterCount,
                                                 targetSignature->parameterTypes);
 }
@@ -522,6 +524,7 @@ static void metadata_token_write_target_method_sig(TZrByte *buffer,
                                           offset,
                                           cs,
                                           &targetSignature->valueType,
+                                          targetSignature->genericParameterCount,
                                           targetSignature->parameterCount,
                                           targetSignature->parameterTypes,
                                           stringHeapEntries,
