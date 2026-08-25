@@ -218,8 +218,9 @@ Each edge has the visible property SymbolId as its source and the canonical
 getter, setter, or initializer function SymbolId as its target. The producer
 requires the contract's callable TypeId to match the registered accessor symbol
 and takes the source declaration range and target declaration range directly
-from those facts. Repeated publication is idempotent. A missing or inconsistent
-canonical accessor makes the producer fail closed; it never scans property AST
+from those facts. It validates every contract before appending any edge, so a
+missing or inconsistent canonical accessor fails closed without leaving partial
+relations. Repeated publication is idempotent. It never scans property AST
 nodes or reconstructs hidden accessor names.
 
 Source inheritance, implementation, alias, binary/native origin, and call graph

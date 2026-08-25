@@ -282,11 +282,52 @@ static void test_property_contracts_publish_accessor_relations_once(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_property_contract_relations_reject_mismatched_accessor_atomically(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticPropertyContract contract;
+    SZrArray relations;
+    TZrSymbolId propertySymbolId;
+    TZrSymbolId getterSymbolId;
+    TZrSymbolId setterSymbolId;
+    TZrSymbolId setterValueSymbolId;
+
+    TEST_ASSERT_NOT_NULL(context);
+    propertySymbolId = relation_register_symbol(
+            context, "value", ZR_SEMANTIC_SYMBOL_KIND_PROPERTY, 21U, 10U);
+    getterSymbolId = relation_register_symbol(
+            context, "getValue", ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, 31U, 20U);
+    setterSymbolId = relation_register_symbol(
+            context, "setValue", ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, 32U, 30U);
+    setterValueSymbolId = relation_register_symbol(
+            context, "next", ZR_SEMANTIC_SYMBOL_KIND_PARAMETER, 21U, 31U);
+
+    memset(&contract, 0, sizeof(contract));
+    contract.propertySymbolId = propertySymbolId;
+    contract.propertyTypeId = 21U;
+    contract.getterSymbolId = getterSymbolId;
+    contract.setterSymbolId = setterSymbolId;
+    contract.setterValueSymbolId = setterValueSymbolId;
+    contract.getterCallableTypeId = 31U;
+    contract.setterCallableTypeId = 99U;
+    contract.declarationRange = relation_range(10U, 15U);
+    TEST_ASSERT_TRUE(ZrParser_Semantic_PublishPropertyContract(context, &contract));
+    TEST_ASSERT_FALSE(ZrParser_SemanticRelations_PublishPropertyContracts(context));
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, propertySymbolId, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
+    ZrCore_Array_Free(g_state, &relations);
+    ZrParser_SemanticContext_Free(context);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
     RUN_TEST(test_type_and_implementation_queries_preserve_edge_direction);
     RUN_TEST(test_relations_of_symbol_honors_node_scope);
     RUN_TEST(test_property_contracts_publish_accessor_relations_once);
+    RUN_TEST(test_property_contract_relations_reject_mismatched_accessor_atomically);
     return UNITY_END();
 }

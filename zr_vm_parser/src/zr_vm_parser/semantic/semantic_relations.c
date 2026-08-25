@@ -233,6 +233,51 @@ static TZrBool semantic_relations_has_property_accessor(
     return ZR_FALSE;
 }
 
+static TZrBool semantic_relations_property_accessor_is_valid(
+        const SZrSemanticContext *context,
+        TZrSymbolId accessorSymbolId,
+        TZrTypeId callableTypeId) {
+    const SZrSemanticSymbolRecord *accessor;
+
+    if (accessorSymbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_TRUE;
+    }
+    accessor = ZrParser_Semantic_FindSymbolById(context, accessorSymbolId);
+    return (TZrBool)(accessor != ZR_NULL &&
+                      accessor->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
+                      callableTypeId != ZR_SEMANTIC_ID_INVALID &&
+                      accessor->typeId == callableTypeId);
+}
+
+static TZrBool semantic_relations_property_contract_is_valid(
+        const SZrSemanticContext *context,
+        const SZrSemanticPropertyContract *contract) {
+    const SZrSemanticSymbolRecord *property;
+
+    if (context == ZR_NULL || contract == ZR_NULL ||
+        contract->propertySymbolId == ZR_SEMANTIC_ID_INVALID ||
+        contract->propertyTypeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    property = ZrParser_Semantic_FindSymbolById(
+            context, contract->propertySymbolId);
+    return (TZrBool)(property != ZR_NULL &&
+                      property->kind == ZR_SEMANTIC_SYMBOL_KIND_PROPERTY &&
+                      property->typeId == contract->propertyTypeId &&
+                      semantic_relations_property_accessor_is_valid(
+                              context,
+                              contract->getterSymbolId,
+                              contract->getterCallableTypeId) &&
+                      semantic_relations_property_accessor_is_valid(
+                              context,
+                              contract->setterSymbolId,
+                              contract->setterCallableTypeId) &&
+                      semantic_relations_property_accessor_is_valid(
+                              context,
+                              contract->initializerSymbolId,
+                              contract->initializerCallableTypeId));
+}
+
 static TZrBool semantic_relations_publish_property_accessor(
         SZrSemanticContext *context,
         const SZrSemanticPropertyContract *contract,
@@ -245,10 +290,9 @@ static TZrBool semantic_relations_publish_property_accessor(
         return ZR_TRUE;
     }
     accessor = ZrParser_Semantic_FindSymbolById(context, accessorSymbolId);
-    if (accessor == ZR_NULL ||
-        accessor->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
-        callableTypeId == ZR_SEMANTIC_ID_INVALID ||
-        accessor->typeId != callableTypeId) {
+    if (!semantic_relations_property_accessor_is_valid(
+                context, accessorSymbolId, callableTypeId) ||
+        accessor == ZR_NULL) {
         return ZR_FALSE;
     }
     if (semantic_relations_has_property_accessor(
@@ -282,10 +326,16 @@ TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
                 (const SZrSemanticPropertyContract *)ZrCore_Array_Get(
                         &context->propertyContracts, index);
 
-        if (contract == ZR_NULL ||
-            contract->propertySymbolId == ZR_SEMANTIC_ID_INVALID ||
-            contract->propertyTypeId == ZR_SEMANTIC_ID_INVALID ||
-            !semantic_relations_publish_property_accessor(
+        if (!semantic_relations_property_contract_is_valid(context, contract)) {
+            return ZR_FALSE;
+        }
+    }
+    for (index = 0U; index < context->propertyContracts.length; index++) {
+        const SZrSemanticPropertyContract *contract =
+                (const SZrSemanticPropertyContract *)ZrCore_Array_Get(
+                        &context->propertyContracts, index);
+
+        if (!semantic_relations_publish_property_accessor(
                     context,
                     contract,
                     contract->getterSymbolId,
