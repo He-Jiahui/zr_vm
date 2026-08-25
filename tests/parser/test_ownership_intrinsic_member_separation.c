@@ -36,6 +36,8 @@ static void test_ownership_operation_ids_remain_stable(void) {
     TEST_ASSERT_EQUAL_INT(3, ZR_OWNERSHIP_BUILTIN_KIND_DEGRADE);
     TEST_ASSERT_EQUAL_INT(6, ZR_OWNERSHIP_BUILTIN_KIND_WAKE);
     TEST_ASSERT_EQUAL_INT(7, ZR_OWNERSHIP_BUILTIN_KIND_DROP);
+    TEST_ASSERT_EQUAL_INT(9, ZR_OWNERSHIP_BUILTIN_KIND_INTO_GC);
+    TEST_ASSERT_EQUAL_INT(10, ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN);
 
     TEST_ASSERT_EQUAL_INT(2, ZR_SEMANTIC_OWNERSHIP_SHARE);
     TEST_ASSERT_EQUAL_INT(3, ZR_SEMANTIC_OWNERSHIP_DEGRADE);
@@ -1195,12 +1197,15 @@ static void test_expired_weak_direct_call_throws_named_runtime_error(void) {
             "    var shared = share(seed);\n"
             "    var weak = degrade(shared);\n"
             "    drop(shared);\n"
+            "    var nullable = wake(weak);\n"
             "    var mask = 0;\n"
             "    try { weak.read(); }\n"
             "    catch (error: NullReferenceError) { mask = mask + 1; }\n"
             "    catch (error: RuntimeError) { mask = mask + 8; }\n"
             "    try { weak.read(); }\n"
             "    catch (error: RuntimeError) { mask = mask + 2; }\n"
+            "    try { nullable.read(); }\n"
+            "    catch (error: NullReferenceError) { mask = mask + 4; }\n"
             "    return mask;\n"
             "}\n"
             "return run();\n";
@@ -1218,7 +1223,7 @@ static void test_expired_weak_direct_call_throws_named_runtime_error(void) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(3, result);
+    TEST_ASSERT_EQUAL_INT64(7, result);
 
     ZrCore_Function_Free(g_state, function);
 }
@@ -1282,6 +1287,38 @@ static void test_live_nullable_shared_receiver_projects_owned_fields(void) {
             "return 0;\n";
     SZrString *sourceName = ZrCore_String_CreateFromNative(
             g_state, "nullable_shared_owned_field_projection.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
+static void test_weak_optional_field_chain_releases_hidden_owner_after_success(void) {
+    const TZrChar *source =
+            "resource class Child {\n"
+            "    pub var value: int;\n"
+            "    pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "resource class Parent {\n"
+            "    pub var child: Unique<Child>;\n"
+            "    pub @constructor() { this.child = own Child(7); }\n"
+            "}\n"
+            "var seed = own Parent();\n"
+            "var shared = share(seed);\n"
+            "var weak = degrade(shared);\n"
+            "var value = weak?.child.value;\n"
+            "drop(shared);\n"
+            "var after = wake(weak);\n"
+            "if (value == 7 && after == null) { return 1; }\n"
+            "return 0;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "weak_optional_field_chain_releases_owner.zr");
     SZrFunction *function = ZrParser_Source_Compile(
             g_state, source, strlen(source), sourceName);
     TZrInt64 result = 0;
@@ -1480,6 +1517,7 @@ int main(void) {
     RUN_TEST(test_expired_weak_direct_call_throws_named_runtime_error);
     RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);
     RUN_TEST(test_live_nullable_shared_receiver_projects_owned_fields);
+    RUN_TEST(test_weak_optional_field_chain_releases_hidden_owner_after_success);
     RUN_TEST(test_weak_member_optional_callable_chain_skips_arguments);
     RUN_TEST(test_live_weak_optional_chain_survives_native_gc_pressure);
     RUN_TEST(test_live_weak_missing_member_is_not_null_reference_error);

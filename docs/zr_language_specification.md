@@ -61,6 +61,21 @@ access the receiver target. Direct access to an absent nullable/Weak target
 throws `NullReferenceError`; optional access returns null or performs a void
 no-op and skips the guarded suffix.
 
+Postfix target access and calls use these forms:
+
+```zr
+receiver.member
+receiver.method(args)
+receiver?.member
+receiver?.method(args)
+callable(args)
+callable?.(args)
+```
+
+`?.(` is the optional-call segment. There is no `callable.(args)` form. An
+optional receiver or callable guard skips the complete remaining postfix suffix,
+including argument evaluation, when its target is absent.
+
 Runtime type construction never reuses static construction syntax. It goes
 through `zr.reflection`:
 

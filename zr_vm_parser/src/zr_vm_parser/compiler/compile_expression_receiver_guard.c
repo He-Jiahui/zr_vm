@@ -255,6 +255,14 @@ TZrBool compiler_receiver_guard_finish(
                             ZR_INSTRUCTION_ENUM(RESET_STACK_NULL),
                             (TZrUInt16)currentSlot));
         }
+        if (frame->guardedSlot != currentSlot &&
+            frame->guardedSlot != frame->mergeSlot) {
+            emit_instruction(
+                    cs,
+                    create_instruction_0(
+                            ZR_INSTRUCTION_ENUM(RESET_STACK_NULL),
+                            (TZrUInt16)frame->guardedSlot));
+        }
         jumpEndIndex = cs->instructionCount;
         emit_instruction(
                 cs,

@@ -197,7 +197,11 @@ A receiver guard evaluates the base once. Optional guards branch to one merge
 slot; direct guards emit `REQUIRE_NON_NULL`. Weak guards emit exactly one
 `OWN_WAKE`, retain its Shared result across the complete guarded suffix, and use
 ordinary member/property/call instructions for the live path. The guard merge
-does not repeat lookup, argument evaluation, or wake operations.
+does not repeat lookup, argument evaluation, or wake operations. When the live
+path copies its result into the merge slot, it also resets any distinct guarded
+slot before leaving the frame. The null path and exceptional cleanup retain the
+same release requirement. Therefore a successful chain such as
+`weak?.child.value` cannot keep the hidden Shared owner alive after the chain.
 
 `degrade(shared)` and `wake(weak)` read an identifier from its original local
 slot instead of first value-copying the ownership wrapper into a compiler
