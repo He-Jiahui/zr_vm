@@ -523,11 +523,11 @@ TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
         SZrArray *outRelations) {
     TZrSize index;
 
-    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID ||
-        !context->relationFacts.isValid ||
+    if (context == ZR_NULL || !context->relationFacts.isValid ||
         !semantic_relations_prepare_output(context, outRelations)) {
         return ZR_FALSE;
     }
+    if (symbolId == ZR_SEMANTIC_ID_INVALID) return ZR_FALSE;
     for (index = 0U; index < context->relationFacts.length; index++) {
         const SZrSemanticRelationFact *fact =
                 (const SZrSemanticRelationFact *)ZrCore_Array_Get(
@@ -549,11 +549,11 @@ TZrBool ZrParser_SemanticQuery_ImplementationsOf(
         SZrArray *outRelations) {
     TZrSize index;
 
-    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID ||
-        !context->relationFacts.isValid ||
+    if (context == ZR_NULL || !context->relationFacts.isValid ||
         !semantic_relations_prepare_output(context, outRelations)) {
         return ZR_FALSE;
     }
+    if (symbolId == ZR_SEMANTIC_ID_INVALID) return ZR_FALSE;
     for (index = 0U; index < context->relationFacts.length; index++) {
         const SZrSemanticRelationFact *fact =
                 (const SZrSemanticRelationFact *)ZrCore_Array_Get(
@@ -574,11 +574,11 @@ TZrBool ZrParser_SemanticQuery_BaseTypesOf(
         SZrArray *outRelations) {
     TZrSize index;
 
-    if (context == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID ||
-        !context->relationFacts.isValid ||
+    if (context == ZR_NULL || !context->relationFacts.isValid ||
         !semantic_relations_prepare_output(context, outRelations)) {
         return ZR_FALSE;
     }
+    if (typeId == ZR_SEMANTIC_ID_INVALID) return ZR_FALSE;
     for (index = 0U; index < context->relationFacts.length; index++) {
         const SZrSemanticRelationFact *fact =
                 (const SZrSemanticRelationFact *)ZrCore_Array_Get(
@@ -598,11 +598,11 @@ TZrBool ZrParser_SemanticQuery_DerivedTypesOf(
         SZrArray *outRelations) {
     TZrSize index;
 
-    if (context == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID ||
-        !context->relationFacts.isValid ||
+    if (context == ZR_NULL || !context->relationFacts.isValid ||
         !semantic_relations_prepare_output(context, outRelations)) {
         return ZR_FALSE;
     }
+    if (typeId == ZR_SEMANTIC_ID_INVALID) return ZR_FALSE;
     for (index = 0U; index < context->relationFacts.length; index++) {
         const SZrSemanticRelationFact *fact =
                 (const SZrSemanticRelationFact *)ZrCore_Array_Get(

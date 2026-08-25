@@ -324,6 +324,10 @@ cannot leave a previous symbol's references visible.
 `OutgoingCalls` and `IncomingCalls` apply the same reusable value-array rule:
 they clear output before rejecting an invalid caller or target SymbolId.
 
+Relation queries clear reusable relation arrays before rejecting invalid symbol
+or type identities, so implementation and type-hierarchy consumers cannot
+reuse a previous graph result after a failed lookup.
+
 This first Task 4 slice covers source function callers and resolved overload
 declaration membership only. Lambda scopes, argument-to-parameter mappings,
 compatibility scores, conversions, receiver TypeIds, and binary/native

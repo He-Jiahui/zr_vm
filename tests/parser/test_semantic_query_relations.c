@@ -265,6 +265,32 @@ static void test_type_and_implementation_queries_preserve_edge_direction(void) {
     TEST_ASSERT_EQUAL_UINT(41U, relation->sourceSymbolId);
     TEST_ASSERT_EQUAL_UINT(99U, relation->targetSymbolId);
 
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, 41U, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, ZR_SEMANTIC_ID_INVALID, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ImplementationsOf(
+            context, 99U, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_ImplementationsOf(
+            context, ZR_SEMANTIC_ID_INVALID, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_BaseTypesOf(context, 21U, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_BaseTypesOf(
+            context, ZR_SEMANTIC_ID_INVALID, &relations));
+    TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_DerivedTypesOf(context, 22U, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_DerivedTypesOf(
+            context, ZR_SEMANTIC_ID_INVALID, &relations));
+    TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
     ZrCore_Array_Free(g_state, &relations);
     ZrParser_SemanticContext_Free(context);
 }
