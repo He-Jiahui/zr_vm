@@ -305,6 +305,11 @@ a usable output buffer before validating its inputs, so a failed inexact query
 cannot leave a previous signature visible. It does not recover a display from a
 name, AST, broader fact, or language-server state.
 
+Before formatting, `FormatCall` also verifies that its call reference is a
+`CALL` fact with the same callable TypeId and a range inside the selected
+expression's call target. A caller cannot combine two otherwise-valid facts to
+display a signature for the wrong call.
+
 `ZrParser_SemanticQuery_CanonicalTypeAt` similarly returns a value `TypeId` when
 it falls back to an expression fact. That fallback requires an `EXACT`
 expression. A reference-backed result remains governed by its published

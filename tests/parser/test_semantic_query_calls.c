@@ -727,6 +727,57 @@ static void test_format_call_fails_closed_for_approximate_call_fact(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_format_call_fails_closed_for_mismatched_reference_fact(void) {
+    const TZrChar *source =
+            "fn first(value: int): int { return value; }\n"
+            "fn second(value: string): int { return 0; }\n"
+            "fn caller(): int { var value = first(1); return second(\"x\"); }\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_call_format_coherence.zr");
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    SZrParserSemanticCallQuery first;
+    SZrParserSemanticCallQuery second;
+    TZrChar display[128] = "stale display";
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "first", 1U),
+            ZR_NULL,
+            &first));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "second", 1U),
+            ZR_NULL,
+            &second));
+    TEST_ASSERT_NOT_NULL(first.reference);
+    TEST_ASSERT_NOT_NULL(second.reference);
+    first.reference = second.reference;
+
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &first, display, sizeof(display)));
+    TEST_ASSERT_EQUAL_CHAR('\0', display[0]);
+
+    call_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compiled_call_edges_publish_stable_incoming_and_outgoing);
@@ -738,5 +789,6 @@ int main(void) {
     RUN_TEST(test_call_candidates_project_resolved_overload_set);
     RUN_TEST(test_call_candidates_fail_closed_for_approximate_call_fact);
     RUN_TEST(test_format_call_fails_closed_for_approximate_call_fact);
+    RUN_TEST(test_format_call_fails_closed_for_mismatched_reference_fact);
     return UNITY_END();
 }

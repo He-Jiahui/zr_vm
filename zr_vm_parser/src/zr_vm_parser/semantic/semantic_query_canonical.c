@@ -191,11 +191,16 @@ TZrBool ZrParser_SemanticQuery_FormatCall(
         buffer[0] = '\0';
     }
     if (context == ZR_NULL || query == ZR_NULL || query->expression == ZR_NULL ||
+        query->reference == ZR_NULL ||
         !query->expression->hasCallInfo ||
         !ZrParser_SemanticQuery_ExactnessAllowsProjection(
                 query->expression->exactness) ||
         buffer == ZR_NULL || bufferSize == 0u ||
-        query->callableTypeId == ZR_SEMANTIC_ID_INVALID) {
+        query->callableTypeId == ZR_SEMANTIC_ID_INVALID ||
+        query->reference->kind != ZR_SEMANTIC_REFERENCE_CALL ||
+        query->reference->typeId != query->callableTypeId ||
+        !canonical_query_contains(
+                &query->expression->callTargetRange, &query->reference->range)) {
         return ZR_FALSE;
     }
     if (query->reference != ZR_NULL && query->reference->signatureDisplay != ZR_NULL) {
