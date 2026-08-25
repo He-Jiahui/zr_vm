@@ -304,6 +304,30 @@ static TZrBool compiler_struct_register_canonical_definition(
     for (TZrSize memberIndex = 0U; memberIndex < info->members.length; memberIndex++) {
         SZrTypeMemberInfo *member = (SZrTypeMemberInfo *)ZrCore_Array_Get(
                 &info->members, memberIndex);
+
+        if (member == ZR_NULL || member->declarationNode == ZR_NULL ||
+            member->declarationNode->type != ZR_AST_STRUCT_METHOD ||
+            member->name == ZR_NULL || member->symbolId != ZR_SEMANTIC_ID_INVALID) {
+            continue;
+        }
+        member->symbolId = ZrParser_Semantic_RegisterSymbol(
+                cs->semanticContext,
+                member->name,
+                ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                typeId,
+                ZR_SEMANTIC_ID_INVALID,
+                member->declarationNode,
+                member->declarationNode->location);
+        if (member->symbolId == ZR_SEMANTIC_ID_INVALID) {
+            if (genericBindings.isValid) {
+                ZrCore_Array_Free(cs->state, &genericBindings);
+            }
+            return ZR_FALSE;
+        }
+    }
+    for (TZrSize memberIndex = 0U; memberIndex < info->members.length; memberIndex++) {
+        SZrTypeMemberInfo *member = (SZrTypeMemberInfo *)ZrCore_Array_Get(
+                &info->members, memberIndex);
         SZrCanonicalConstructorParameter *parameters = ZR_NULL;
         TZrSize parameterCount;
         TZrBool registered;
