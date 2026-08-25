@@ -192,6 +192,21 @@ static TZrBool semantic_scope_facts_publish_receiver_member(
     return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
 }
 
+static TZrBool semantic_scope_facts_is_direct_import_alias(
+        const SZrAstNode *node) {
+    const SZrVariableDeclaration *declaration;
+
+    if (node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_FALSE;
+    }
+    declaration = &node->data.variableDeclaration;
+    return declaration->pattern != ZR_NULL &&
+           declaration->pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
+           declaration->pattern->data.identifier.name != ZR_NULL &&
+           declaration->value != ZR_NULL &&
+           declaration->value->type == ZR_AST_IMPORT_EXPRESSION;
+}
+
 static TZrBool semantic_scope_facts_publish_declaration(
         SZrSemanticScopeFactBuilder *builder,
         TZrSemanticScopeId scopeId,
@@ -227,6 +242,8 @@ static TZrBool semantic_scope_facts_publish_declaration(
     fact.signatureDisplay = reference->signatureDisplay;
     fact.isHoisted = isHoisted;
     fact.isAccessible = ZR_TRUE;
+    fact.isImport = semantic_scope_facts_is_direct_import_alias(node);
+    fact.isAlias = fact.isImport;
     return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
 }
 

@@ -6,6 +6,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_lib_math/module.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
@@ -336,6 +337,24 @@ static const SZrSemanticSymbolRecord *symbol_find_registered_node(
 
         if (symbol != ZR_NULL && symbol->astNode == node) {
             return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
+static const SZrSemanticVisibleSymbolFact *symbol_find_visible_fact(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0U; index < context->visibleSymbolFacts.length; index++) {
+        const SZrSemanticVisibleSymbolFact *fact =
+                (const SZrSemanticVisibleSymbolFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->visibleSymbolFacts, index);
+
+        if (fact != ZR_NULL && fact->symbolId == symbolId) {
+            return fact;
         }
     }
     return ZR_NULL;
@@ -1256,6 +1275,71 @@ static void test_visible_symbols_projects_source_interface_method_generic_parame
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_visible_symbols_projects_direct_import_alias(void) {
+    const TZrChar *source =
+            "var math = import(\"zr.math\");\n"
+            "fn probe(): int { return 0; }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *importDeclaration;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    const SZrSemanticSymbolRecord *importSymbol;
+    const SZrSemanticVisibleSymbolFact *importFact;
+    const SZrParserSemanticSymbolQuery *visibleImport;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_import_alias.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(2U, (TZrUInt32)ast->data.script.statements->count);
+    importDeclaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(importDeclaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, importDeclaration->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    importSymbol = symbol_find_registered_node(cs.semanticContext, importDeclaration);
+    TEST_ASSERT_NOT_NULL(importSymbol);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_VARIABLE, importSymbol->kind);
+    importFact = symbol_find_visible_fact(cs.semanticContext, importSymbol->id);
+    TEST_ASSERT_NOT_NULL(importFact);
+    TEST_ASSERT_TRUE(importFact->isImport);
+    TEST_ASSERT_TRUE(importFact->isAlias);
+
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    position = symbol_source_position(source, sourceName, "return", 0U);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbol_count_visible_name(&symbols, "math"));
+
+    options.includeImports = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "math"));
+    visibleImport = symbol_find_visible_name(&symbols, "math");
+    TEST_ASSERT_NOT_NULL(visibleImport);
+    TEST_ASSERT_EQUAL_UINT32(importSymbol->id, visibleImport->symbolId);
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_visible_symbols_projects_source_type_members(void) {
     const TZrChar *source =
             "class Meter {\n"
@@ -1439,6 +1523,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_source_class_method_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_const_generic_parameter);
     RUN_TEST(test_visible_symbols_projects_source_interface_method_generic_parameter);
+    RUN_TEST(test_visible_symbols_projects_direct_import_alias);
     RUN_TEST(test_visible_symbols_projects_source_type_members);
     RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);
     return UNITY_END();

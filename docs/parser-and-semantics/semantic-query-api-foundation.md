@@ -185,4 +185,13 @@ existing receiver/static filter. Imports/aliases, `.zro`, and native descriptor
 analyzers remain the missing visibility producers; no LSP consumer has migrated
 in this slice.
 
+Direct source module bindings of the shape `identifier = import("...")` now
+reuse their compiler-registered variable declaration symbol and range as one
+module-scope candidate. The scope producer classifies the binding from the
+declaration and import-expression AST kinds alone, marks it as both import and
+alias, and lets `includeImports` control exposure. It does not inspect a module
+path, look up a module by text, or manufacture an alias target. Destructured
+imports, type-value aliases, binary metadata, and native descriptor imports
+remain separate producers.
+
 The API does not yet expose local re-analysis, compiler frontend binary/external serialization of query diagnostics, or CFG loop reaching-definition fixed points. `VisibleSymbols` now consumes compiler-published source module/function/block facts for functions, parameters, locals, top-level types, source type/free-function generic parameters including const parameters, and struct/class/interface method type-generic parameters. Type members, imports/aliases, receiver members, `.zro`, and native descriptor analyzers still need to publish the remaining candidate facts before completion can serve real workspaces. No LSP consumer has migrated in this slice. `DefinitionsOf` exposes the first multi-definition surface and deterministic same-source source-order ranking, but ranking remains local-symbol oriented rather than overload/member aware. LSP definition navigation and compiler-side semantic contexts now consume both linear and first-slice CFG-backed reaching definitions for local symbols. Definite-assignment diagnostics can consume explicit read states, the straight-line semantic-facts resolver, or the CFG-backed resolver for source reads across branch joins, declaration initializers, and cloned `finally` paths. Current diagnostic related information is limited to declaration locations for definite-assignment read diagnostics; fix-its, descriptor IDs, registry entries, ownership related locations, and type-mismatch related locations remain pending. Array index diagnostics still keep truly unknown and no-inferable-range indexes silent. Loop precision, remaining finally edge cases, local re-analysis, richer source mapping, and non-cache compiler diagnostic channels remain pending.
