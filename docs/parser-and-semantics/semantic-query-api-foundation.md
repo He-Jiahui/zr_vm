@@ -313,6 +313,23 @@ continues to be scoped to the same semantic snapshot. Argument-to-parameter
 mapping, conversion/exactness, receiver TypeId, and external-call metadata
 remain unavailable until their canonical producers publish complete facts.
 
+### Lambda Caller Scope Facts
+
+For a lambda used as a variable initializer, the source scope-fact builder
+visits that initializer and publishes a `FUNCTION` scope for the lambda's
+existing compiler-registered function SymbolId. Its parameters and block are
+then visited beneath that scope. No lambda name is synthesized and no call
+edge retains an AST pointer.
+
+When publishing call edges, the call carrier first selects the narrowest
+containing `FUNCTION` scope and only then validates its owner as a registered
+function SymbolId. An invalid nearest owner publishes `CALLER_UNAVAILABLE`; it
+does not skip that scope and attribute the call to an outer function. This
+keeps incoming and outgoing hierarchy facts fail-closed for incomplete nested
+scope identity. Lambda expressions reached through other expression positions
+remain unavailable until the source scope walker has a complete structured
+traversal for those positions.
+
 ## Test Coverage
 
 `tests/parser/test_semantic_query_symbols.c` now compiles source `class Meter`,
@@ -357,7 +374,15 @@ The same compiler diagnostic target covers semantic query diagnostics for existi
 - `tests/language_server/test_lsp_reference_callable_consumer_cases.h` covers resolved callable `CallAt/FormatCall` parity across signature help and hover, scoped reference parameter information, exact receiver target identity, and one persistent `%ref` call-marker `compiler_error` without an inference cascade.
 - `tests/language_server/test_lsp_reaching_definition_navigation.c` covers LSP definition navigation through parser reaching-definition facts by requiring `return seed` after `seed = 3` to jump to the write token instead of the declaration token. It also covers divergent branch writes by requiring `return seed` after an `if/else` pair of writes to return both branch write locations and not the declaration.
 
-The parser test targets are `zr_vm_compiler_semantic_query_diagnostics_test`, `zr_vm_semantic_query_test`, and `zr_vm_semantic_query_symbols_test`; the LSP publication targets are `zr_vm_language_server_semantic_query_diagnostics_test` and `zr_vm_language_server_reaching_definition_navigation_test`. They are registered in `tests/CMakeLists.txt`.
+The parser test targets are `zr_vm_compiler_semantic_query_diagnostics_test`, `zr_vm_semantic_query_test`, `zr_vm_semantic_query_symbols_test`, and `zr_vm_semantic_query_calls_test`; the LSP publication targets are `zr_vm_language_server_semantic_query_diagnostics_test` and `zr_vm_language_server_reaching_definition_navigation_test`. They are registered in `tests/CMakeLists.txt`.
+
+`tests/parser/test_semantic_query_calls.c` covers source call-edge identity
+and fail-closed caller selection. It compiles a variable-initialized lambda
+whose body calls `callee`, then requires the incoming and outgoing edge to use
+the compiler-registered lambda SymbolId rather than the enclosing `outer`
+function. A fact-only nested function scope with an invalid owner proves that
+the publisher returns `CALLER_UNAVAILABLE` instead of falling back to the
+outer function scope.
 
 ## Canonical Display Facade
 

@@ -532,6 +532,52 @@ static TZrBool semantic_scope_facts_visit_block(
                    builder, node->data.block.body, scopeId, ownerSymbolId);
 }
 
+static TZrBool semantic_scope_facts_visit_lambda(
+        SZrSemanticScopeFactBuilder *builder,
+        SZrAstNode *node,
+        TZrSemanticScopeId parentScopeId) {
+    const SZrSemanticSymbolRecord *symbol;
+    SZrLambdaExpression *lambda;
+    TZrSemanticScopeId scopeId;
+    TZrSymbolId ownerSymbolId = ZR_SEMANTIC_ID_INVALID;
+    TZrSize index;
+
+    if (builder == ZR_NULL || builder->context == ZR_NULL || node == ZR_NULL ||
+        node->type != ZR_AST_LAMBDA_EXPRESSION) {
+        return ZR_FALSE;
+    }
+    lambda = &node->data.lambdaExpression;
+    symbol = semantic_scope_facts_find_symbol_by_node(builder->context, node);
+    if (symbol != ZR_NULL && symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
+        symbol->id != ZR_SEMANTIC_ID_INVALID) {
+        ownerSymbolId = symbol->id;
+    }
+    scopeId = semantic_scope_facts_publish_scope(
+            builder,
+            parentScopeId,
+            ZR_SEMANTIC_SCOPE_KIND_FUNCTION,
+            node->location,
+            ownerSymbolId,
+            ZR_FALSE);
+    if (scopeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (lambda->params != ZR_NULL) {
+        for (index = 0U; index < lambda->params->count; index++) {
+            if (!semantic_scope_facts_publish_declaration(
+                        builder,
+                        scopeId,
+                        lambda->params->nodes[index],
+                        ownerSymbolId,
+                        ZR_FALSE)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+    return lambda->block == ZR_NULL ||
+           semantic_scope_facts_visit_node(builder, lambda->block, scopeId, ownerSymbolId);
+}
+
 static TZrBool semantic_scope_facts_visit_function(
         SZrSemanticScopeFactBuilder *builder,
         SZrAstNode *node,
@@ -777,7 +823,14 @@ static TZrBool semantic_scope_facts_visit_node(
                     builder, parentScopeId, node, ownerSymbolId);
         case ZR_AST_VARIABLE_DECLARATION:
             return semantic_scope_facts_publish_variable_declaration(
-                    builder, parentScopeId, node, ownerSymbolId);
+                           builder, parentScopeId, node, ownerSymbolId) &&
+                   semantic_scope_facts_visit_node(
+                           builder,
+                           node->data.variableDeclaration.value,
+                           parentScopeId,
+                           ownerSymbolId);
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return semantic_scope_facts_visit_lambda(builder, node, parentScopeId);
         case ZR_AST_BLOCK:
             return semantic_scope_facts_visit_block(builder, node, parentScopeId, ownerSymbolId);
         case ZR_AST_IF_EXPRESSION:

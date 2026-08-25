@@ -48,7 +48,7 @@ static TZrSize semantic_calls_range_width(const SZrFileRange *range) {
 static TZrSymbolId semantic_calls_find_caller(
         const SZrSemanticContext *context,
         const SZrFileRange *callSiteRange) {
-    TZrSymbolId callerSymbolId = ZR_SEMANTIC_ID_INVALID;
+    const SZrSemanticScopeFact *bestScope = ZR_NULL;
     TZrSize bestWidth = ZR_MAX_SIZE;
     TZrSize index;
 
@@ -60,24 +60,27 @@ static TZrSymbolId semantic_calls_find_caller(
         const SZrSemanticScopeFact *scope =
                 (const SZrSemanticScopeFact *)ZrCore_Array_Get(
                         (SZrArray *)&context->scopeFacts, index);
-        const SZrSemanticSymbolRecord *owner;
         TZrSize width;
 
-        if (scope == ZR_NULL || scope->ownerSymbolId == ZR_SEMANTIC_ID_INVALID ||
+        if (scope == ZR_NULL || scope->kind != ZR_SEMANTIC_SCOPE_KIND_FUNCTION ||
             !semantic_calls_range_contains(&scope->range, callSiteRange)) {
             continue;
         }
-        owner = ZrParser_Semantic_FindSymbolById(context, scope->ownerSymbolId);
-        if (owner == ZR_NULL || owner->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
-            continue;
-        }
         width = semantic_calls_range_width(&scope->range);
-        if (callerSymbolId == ZR_SEMANTIC_ID_INVALID || width < bestWidth) {
-            callerSymbolId = owner->id;
+        if (bestScope == ZR_NULL || width < bestWidth) {
+            bestScope = scope;
             bestWidth = width;
         }
     }
-    return callerSymbolId;
+    if (bestScope != ZR_NULL &&
+        bestScope->ownerSymbolId != ZR_SEMANTIC_ID_INVALID) {
+        const SZrSemanticSymbolRecord *owner = ZrParser_Semantic_FindSymbolById(
+                context, bestScope->ownerSymbolId);
+        if (owner != ZR_NULL && owner->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
+            return owner->id;
+        }
+    }
+    return ZR_SEMANTIC_ID_INVALID;
 }
 
 static const SZrSemanticExpressionFact *semantic_calls_find_expression(
