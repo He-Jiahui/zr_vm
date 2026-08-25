@@ -275,11 +275,22 @@ never selects a same-name function. A resolved target without a declaration
 range uses `TARGET_DECLARATION_UNAVAILABLE`. Output arrays are reusable and
 contain no pointers into mutable AST structures.
 
-This first Task 4 slice covers source function callers only. Lambda scopes,
-overload candidate sets, argument-to-parameter mappings, conversions, receiver
-TypeIds, and binary/native call-edge producers remain unavailable until their
-canonical producers can supply complete identity. LSP hierarchy consumers must
-continue to fail closed for those cases.
+This first Task 4 slice covers source function callers and resolved overload
+declaration membership only. Lambda scopes, argument-to-parameter mappings,
+compatibility scores, conversions, receiver TypeIds, and binary/native
+call-edge producers remain unavailable until their canonical producers can
+supply complete identity. LSP hierarchy consumers must continue to fail closed
+for those cases.
+
+`CallCandidatesAt` adds the declaration-membership portion of overload facts.
+It first requires `CallAt` to expose a resolved target, then projects only the
+registered function members of that target's `overloadSetId`, sorted by
+SymbolId. Each candidate carries its declaration callable TypeId and range;
+exactly one carries `isSelected`. The selected invocation's potentially closed
+callable TypeId remains on `CallAt`, so a generic call does not overwrite every
+candidate with a call-site specialization. The candidate list deliberately
+does not claim overload viability, conversion score, argument-to-parameter
+mapping, or a text-derived alternative when the target is unresolved.
 
 ## Test Coverage
 

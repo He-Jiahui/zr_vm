@@ -384,3 +384,148 @@ TZrBool ZrParser_SemanticQuery_IncomingCalls(
     semantic_calls_sort(outEdges);
     return ZR_TRUE;
 }
+
+static TZrBool semantic_calls_prepare_candidates(
+        const SZrSemanticContext *context,
+        SZrArray *outCandidates) {
+    if (context == ZR_NULL || outCandidates == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (outCandidates->isValid) {
+        if (outCandidates->elementSize != sizeof(SZrParserSemanticCallCandidateQuery)) {
+            return ZR_FALSE;
+        }
+        outCandidates->length = 0U;
+        return ZR_TRUE;
+    }
+    ZrCore_Array_Init(context->state,
+                      outCandidates,
+                      sizeof(SZrParserSemanticCallCandidateQuery),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    return ZR_TRUE;
+}
+
+static TZrBool semantic_calls_has_candidate(
+        const SZrArray *candidates,
+        TZrSymbolId symbolId) {
+    TZrSize index;
+
+    if (candidates == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < candidates->length; index++) {
+        const SZrParserSemanticCallCandidateQuery *candidate =
+                (const SZrParserSemanticCallCandidateQuery *)ZrCore_Array_Get(
+                        (SZrArray *)candidates, index);
+        if (candidate != ZR_NULL && candidate->symbolId == symbolId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static void semantic_calls_append_candidate(
+        const SZrSemanticContext *context,
+        SZrArray *outCandidates,
+        const SZrSemanticSymbolRecord *symbol,
+        TZrSymbolId selectedSymbolId) {
+    SZrParserSemanticCallCandidateQuery candidate;
+
+    if (context == ZR_NULL || outCandidates == ZR_NULL || symbol == ZR_NULL ||
+        symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
+        symbol->id == ZR_SEMANTIC_ID_INVALID ||
+        symbol->typeId == ZR_SEMANTIC_ID_INVALID ||
+        semantic_calls_has_candidate(outCandidates, symbol->id)) {
+        return;
+    }
+    memset(&candidate, 0, sizeof(candidate));
+    candidate.symbolId = symbol->id;
+    candidate.callableTypeId = symbol->typeId;
+    candidate.declarationRange = symbol->location;
+    candidate.isSelected = symbol->id == selectedSymbolId;
+    ZrCore_Array_Push(context->state, outCandidates, &candidate);
+}
+
+static void semantic_calls_sort_candidates(SZrArray *candidates) {
+    TZrSize index;
+
+    if (candidates == ZR_NULL) {
+        return;
+    }
+    for (index = 1U; index < candidates->length; index++) {
+        TZrSize current = index;
+        while (current > 0U) {
+            SZrParserSemanticCallCandidateQuery *before =
+                    (SZrParserSemanticCallCandidateQuery *)ZrCore_Array_Get(
+                            candidates, current - 1U);
+            SZrParserSemanticCallCandidateQuery *after =
+                    (SZrParserSemanticCallCandidateQuery *)ZrCore_Array_Get(
+                            candidates, current);
+            SZrParserSemanticCallCandidateQuery swap;
+
+            if (before == ZR_NULL || after == ZR_NULL ||
+                before->symbolId <= after->symbolId) {
+                break;
+            }
+            swap = *before;
+            *before = *after;
+            *after = swap;
+            current--;
+        }
+    }
+}
+
+TZrBool ZrParser_SemanticQuery_CallCandidatesAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outCandidates) {
+    SZrParserSemanticCallQuery call;
+    const SZrSemanticSymbolRecord *selected;
+    const SZrSemanticOverloadSetRecord *overloads = ZR_NULL;
+    TZrSize index;
+
+    if (!semantic_calls_prepare_candidates(context, outCandidates)) {
+        return ZR_FALSE;
+    }
+    memset(&call, 0, sizeof(call));
+    if (!ZrParser_SemanticQuery_CallAt(context, position, scope, &call) ||
+        !call.hasResolvedTarget ||
+        call.targetSymbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    selected = ZrParser_Semantic_FindSymbolById(context, call.targetSymbolId);
+    if (selected == ZR_NULL || selected->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
+        selected->typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (selected->overloadSetId != ZR_SEMANTIC_ID_INVALID) {
+        for (index = 0U; index < context->overloadSets.length; index++) {
+            const SZrSemanticOverloadSetRecord *candidateSet =
+                    (const SZrSemanticOverloadSetRecord *)ZrCore_Array_Get(
+                            (SZrArray *)&context->overloadSets, index);
+            if (candidateSet != ZR_NULL && candidateSet->id == selected->overloadSetId) {
+                overloads = candidateSet;
+                break;
+            }
+        }
+    }
+    if (overloads == ZR_NULL) {
+        semantic_calls_append_candidate(
+                context, outCandidates, selected, call.targetSymbolId);
+    } else {
+        for (index = 0U; index < overloads->members.length; index++) {
+            const TZrSymbolId *symbolId = (const TZrSymbolId *)ZrCore_Array_Get(
+                    (SZrArray *)&overloads->members, index);
+            if (symbolId != ZR_NULL) {
+                semantic_calls_append_candidate(
+                        context,
+                        outCandidates,
+                        ZrParser_Semantic_FindSymbolById(context, *symbolId),
+                        call.targetSymbolId);
+            }
+        }
+    }
+    semantic_calls_sort_candidates(outCandidates);
+    return outCandidates->length > 0U;
+}

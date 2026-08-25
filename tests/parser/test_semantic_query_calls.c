@@ -174,6 +174,7 @@ static void test_unresolved_call_edge_never_selects_same_name_target(void) {
     TZrSymbolId callerId;
     TZrSymbolId sameNameTargetId;
     SZrArray edges;
+    SZrArray candidates;
     const SZrParserSemanticCallEdgeQuery *edge;
 
     TEST_ASSERT_NOT_NULL(context);
@@ -226,13 +227,102 @@ static void test_unresolved_call_edge_never_selects_same_name_target(void) {
                           edge->resolution);
     TEST_ASSERT_NOT_EQUAL_UINT(sameNameTargetId, edge->targetSymbolId);
 
+    ZrCore_Array_Construct(&candidates);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CallCandidatesAt(
+            context, callReference.range, ZR_NULL, &candidates));
+    TEST_ASSERT_EQUAL_UINT(0U, candidates.length);
+
+    ZrCore_Array_Free(g_state, &candidates);
     ZrCore_Array_Free(g_state, &edges);
     ZrParser_SemanticContext_Free(context);
+}
+
+static void test_call_candidates_project_resolved_overload_set(void) {
+    const TZrChar *source =
+            "fn choose(value: int): int { return value; }\n"
+            "fn choose(value: string): int { return 0; }\n"
+            "fn caller(): int { return choose(1); }\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_call_candidates.zr");
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *intChoice;
+    const SZrSemanticSymbolRecord *stringChoice;
+    SZrParserSemanticCallQuery call;
+    SZrArray candidates;
+    TZrSize selectedCount = 0U;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT(3U, ast->data.script.statements->count);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    intChoice = call_find_symbol_by_node(
+            cs.semanticContext, ast->data.script.statements->nodes[0]);
+    stringChoice = call_find_symbol_by_node(
+            cs.semanticContext, ast->data.script.statements->nodes[1]);
+    TEST_ASSERT_NOT_NULL(intChoice);
+    TEST_ASSERT_NOT_NULL(stringChoice);
+    TEST_ASSERT_NOT_EQUAL_UINT(intChoice->id, stringChoice->id);
+
+    memset(&call, 0, sizeof(call));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "choose", 2U),
+            ZR_NULL,
+            &call));
+    TEST_ASSERT_TRUE(call.hasResolvedTarget);
+    TEST_ASSERT_EQUAL_UINT(intChoice->id, call.targetSymbolId);
+
+    ZrCore_Array_Construct(&candidates);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallCandidatesAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "choose", 2U),
+            ZR_NULL,
+            &candidates));
+    TEST_ASSERT_EQUAL_UINT(2U, candidates.length);
+    for (TZrSize index = 0U; index < candidates.length; index++) {
+        const SZrParserSemanticCallCandidateQuery *candidate =
+                (const SZrParserSemanticCallCandidateQuery *)ZrCore_Array_Get(
+                        &candidates, index);
+
+        TEST_ASSERT_NOT_NULL(candidate);
+        TEST_ASSERT_TRUE(candidate->symbolId == intChoice->id ||
+                         candidate->symbolId == stringChoice->id);
+        if (candidate->isSelected) {
+            selectedCount++;
+            TEST_ASSERT_EQUAL_UINT(call.targetSymbolId, candidate->symbolId);
+            TEST_ASSERT_EQUAL_UINT(intChoice->typeId, candidate->callableTypeId);
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(1U, selectedCount);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallCandidatesAt(
+            cs.semanticContext,
+            call_source_position(source, sourceName, "choose", 2U),
+            ZR_NULL,
+            &candidates));
+    TEST_ASSERT_EQUAL_UINT(2U, candidates.length);
+
+    ZrCore_Array_Free(g_state, &candidates);
+    call_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
 }
 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compiled_call_edges_publish_stable_incoming_and_outgoing);
     RUN_TEST(test_unresolved_call_edge_never_selects_same_name_target);
+    RUN_TEST(test_call_candidates_project_resolved_overload_set);
     return UNITY_END();
 }

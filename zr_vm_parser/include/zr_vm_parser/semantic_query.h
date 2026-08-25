@@ -70,6 +70,13 @@ typedef struct SZrParserSemanticCallEdgeQuery {
     TZrBool hasTargetDeclarationRange;
 } SZrParserSemanticCallEdgeQuery;
 
+typedef struct SZrParserSemanticCallCandidateQuery {
+    TZrSymbolId symbolId;
+    TZrTypeId callableTypeId;
+    SZrFileRange declarationRange;
+    TZrBool isSelected;
+} SZrParserSemanticCallCandidateQuery;
+
 typedef struct SZrParserSemanticSymbolQuery {
     TZrSymbolId symbolId;
     TZrTypeId typeId;
@@ -150,6 +157,16 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_IncomingCalls(
         TZrSymbolId targetSymbolId,
         const SZrParserSemanticQueryScope *scope,
         SZrArray *outEdges);
+/*
+ * Projects the selected target's canonical overload-set membership. Candidate
+ * callableTypeId values are declaration signatures; CallAt retains the closed
+ * callable TypeId for the selected invocation.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_CallCandidatesAt(
+        const SZrSemanticContext *context,
+        SZrFileRange position,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outCandidates);
 ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DefinitionOf(
         const SZrSemanticContext *context,
         SZrFileRange position,
