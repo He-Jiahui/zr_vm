@@ -753,6 +753,49 @@ static void test_visible_symbols_does_not_leak_for_initializer(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_visible_symbols_projects_source_type_declarations(void) {
+    const TZrChar *source =
+            "struct Point { var x: int; }\n"
+            "class Meter { }\n"
+            "interface Readable { fn read(): int; }\n"
+            "fn probe(): int { return 0; }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    SZrFileRange position;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_types.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    position = symbol_source_position(source, sourceName, "probe", 0U);
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "Point"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "Meter"));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "Readable"));
+
+    ZrCore_Array_Free(g_state, &symbols);
+    symbol_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
@@ -761,5 +804,6 @@ int main(void) {
     RUN_TEST(test_visible_symbols_excludes_instance_members_from_static_scope);
     RUN_TEST(test_visible_symbols_project_compiled_source_scope_facts);
     RUN_TEST(test_visible_symbols_does_not_leak_for_initializer);
+    RUN_TEST(test_visible_symbols_projects_source_type_declarations);
     return UNITY_END();
 }

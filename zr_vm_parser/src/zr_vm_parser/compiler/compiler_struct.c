@@ -1252,7 +1252,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     ZrCore_Value_ResetAsNull(&info.decoratorMetadataValue);
 
     if (cs->typeEnv != ZR_NULL &&
-        !ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName)) {
+        !ZrParser_TypeEnvironment_RegisterTypeDeclaration(
+                cs->state, cs->typeEnv, typeName, node)) {
         ZrParser_Compiler_Error(cs, "Failed to register struct symbol before expansion", node->location);
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
@@ -1727,4 +1728,3 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
     cs->currentTypeNode = oldTypeNode;
 }
-

@@ -344,6 +344,13 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupFunctions(SZrState *state, 
 // 注册类型名称
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterType(SZrState *state, SZrTypeEnvironment *env, SZrString *typeName);
 
+// 注册携带 source declaration identity 的类型名称。
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterTypeDeclaration(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *typeName,
+        SZrAstNode *declarationNode);
+
 // 查找类型名称
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupType(SZrTypeEnvironment *env, SZrString *typeName);
 

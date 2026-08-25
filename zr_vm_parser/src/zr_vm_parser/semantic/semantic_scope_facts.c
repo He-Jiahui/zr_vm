@@ -31,6 +31,27 @@ static const SZrSemanticReferenceFact *semantic_scope_facts_find_declaration(
     return ZR_NULL;
 }
 
+static const SZrSemanticSymbolRecord *semantic_scope_facts_find_type_declaration(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node) {
+    TZrSize index;
+
+    if (context == ZR_NULL || node == ZR_NULL || !context->symbols.isValid) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+
+        if (symbol != ZR_NULL && symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_TYPE &&
+            symbol->astNode == node && symbol->typeId != ZR_SEMANTIC_ID_INVALID) {
+            return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
 static TZrSemanticScopeId semantic_scope_facts_publish_scope(
         SZrSemanticScopeFactBuilder *builder,
         TZrSemanticScopeId parentScopeId,
@@ -84,6 +105,35 @@ static TZrBool semantic_scope_facts_publish_declaration(
     fact.hasDefinitionRange = reference->hasDefinitionRange;
     fact.signatureDisplay = reference->signatureDisplay;
     fact.isHoisted = isHoisted;
+    fact.isAccessible = ZR_TRUE;
+    return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
+}
+
+static TZrBool semantic_scope_facts_publish_type_declaration(
+        SZrSemanticScopeFactBuilder *builder,
+        TZrSemanticScopeId scopeId,
+        const SZrAstNode *node) {
+    const SZrSemanticSymbolRecord *symbol;
+    SZrSemanticVisibleSymbolFact fact;
+
+    if (builder == ZR_NULL || builder->context == ZR_NULL ||
+        scopeId == ZR_SEMANTIC_ID_INVALID || node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    symbol = semantic_scope_facts_find_type_declaration(builder->context, node);
+    if (symbol == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.scopeId = scopeId;
+    fact.symbolId = symbol->id;
+    fact.access = ZR_ACCESS_PUBLIC;
+    fact.declarationOrder = ++builder->nextDeclarationOrder;
+    fact.declarationRange = symbol->location;
+    fact.definitionRange = symbol->location;
+    fact.hasDefinitionRange = ZR_TRUE;
+    fact.isHoisted = ZR_TRUE;
     fact.isAccessible = ZR_TRUE;
     return ZrParser_Semantic_PublishVisibleSymbolFact(builder->context, &fact);
 }
@@ -167,6 +217,29 @@ static TZrBool semantic_scope_facts_visit_function(
            semantic_scope_facts_visit_node(builder, declaration->body, scopeId, ownerSymbolId);
 }
 
+static TZrBool semantic_scope_facts_visit_type(
+        SZrSemanticScopeFactBuilder *builder,
+        SZrAstNode *node,
+        TZrSemanticScopeId parentScopeId) {
+    const SZrSemanticSymbolRecord *symbol;
+    TZrSemanticScopeId scopeId;
+
+    if (!semantic_scope_facts_publish_type_declaration(builder, parentScopeId, node)) {
+        return ZR_FALSE;
+    }
+    symbol = semantic_scope_facts_find_type_declaration(builder->context, node);
+    if (symbol == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    scopeId = semantic_scope_facts_publish_scope(
+            builder,
+            parentScopeId,
+            ZR_SEMANTIC_SCOPE_KIND_TYPE,
+            node->location,
+            symbol->id);
+    return scopeId != ZR_SEMANTIC_ID_INVALID;
+}
+
 static SZrFileRange semantic_scope_facts_loop_range(
         const SZrAstNode *node,
         const SZrAstNode *body) {
@@ -229,6 +302,10 @@ static TZrBool semantic_scope_facts_visit_node(
         case ZR_AST_FUNCTION_DECLARATION:
             return semantic_scope_facts_visit_function(
                     builder, node, parentScopeId, ownerSymbolId);
+        case ZR_AST_STRUCT_DECLARATION:
+        case ZR_AST_CLASS_DECLARATION:
+        case ZR_AST_INTERFACE_DECLARATION:
+            return semantic_scope_facts_visit_type(builder, node, parentScopeId);
         case ZR_AST_VARIABLE_DECLARATION:
             return semantic_scope_facts_publish_declaration(
                     builder, parentScopeId, node, ownerSymbolId, ZR_FALSE);

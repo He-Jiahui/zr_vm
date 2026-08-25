@@ -304,7 +304,8 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
     if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
+        ZrParser_TypeEnvironment_RegisterTypeDeclaration(
+                cs->state, cs->typeEnv, typeName, node);
     }
     if (!cs->hasError) {
         compiler_validate_interface_variance_rules(cs, node);

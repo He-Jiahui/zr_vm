@@ -2255,43 +2255,6 @@ TZrBool ZrParser_TypeEnvironment_LookupFunctions(SZrState *state, SZrTypeEnviron
     return results->length > 0;
 }
 
-// 注册类型名称
-TZrBool ZrParser_TypeEnvironment_RegisterType(SZrState *state, SZrTypeEnvironment *env, SZrString *typeName) {
-    TZrTypeId typeId;
-    SZrFileRange location = {0};
-
-    if (state == ZR_NULL || env == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    
-    // 检查是否已存在
-    for (TZrSize i = 0; i < env->typeNames.length; i++) {
-        SZrString **storedTypeName = (SZrString **)ZrCore_Array_Get(&env->typeNames, i);
-        if (storedTypeName != ZR_NULL && *storedTypeName != ZR_NULL && ZrCore_String_Equal(*storedTypeName, typeName)) {
-            // 已存在，不需要重复注册
-            return ZR_TRUE;
-        }
-    }
-    
-    // 添加类型名称（字符串本身由GC管理，只存储引用）
-    ZrCore_Array_Push(state, &env->typeNames, &typeName);
-
-    if (env->semanticContext != ZR_NULL) {
-        typeId = ZrParser_Semantic_RegisterNamedType(env->semanticContext,
-                                             typeName,
-                                             ZR_SEMANTIC_TYPE_KIND_UNKNOWN,
-                                             ZR_NULL);
-        ZrParser_Semantic_RegisterSymbol(env->semanticContext,
-                                 typeName,
-                                 ZR_SEMANTIC_SYMBOL_KIND_TYPE,
-                                 typeId,
-                                 ZR_SEMANTIC_ID_INVALID,
-                                 ZR_NULL,
-                                 location);
-    }
-    return ZR_TRUE;
-}
-
 // 查找类型名称
 TZrBool ZrParser_TypeEnvironment_LookupType(SZrTypeEnvironment *env, SZrString *typeName) {
     if (env == ZR_NULL || typeName == ZR_NULL) {
