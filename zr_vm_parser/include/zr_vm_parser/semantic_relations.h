@@ -41,5 +41,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_Append(
 /* Publishes property-to-accessor edges from existing canonical contracts only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
         SZrSemanticContext *context);
+/* Publishes declaration-to-write edges from resolved reference facts only. */
+ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
+        SZrSemanticContext *context);
 
 #endif // ZR_VM_PARSER_SEMANTIC_RELATIONS_H

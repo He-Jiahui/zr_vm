@@ -223,6 +223,16 @@ missing or inconsistent canonical accessor fails closed without leaving partial
 relations. Repeated publication is idempotent. It never scans property AST
 nodes or reconstructs hidden accessor names.
 
+Task 3.3 publishes `ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION` edges from
+resolved `WRITE` reference facts. The producer looks up the existing stable
+symbol record by `SymbolId`, takes the declaration range from that record, and
+takes each definition range from the canonical reference fact. It does not
+turn reads into definitions, look up a spelling, or use an AST fallback. A
+repeated publication skips an existing symbol-and-definition-range edge, so
+the snapshot remains idempotent while preserving distinct definition sites.
+Facts without a resolved symbol, canonical type, or exact ranges are omitted
+until a source, binary, or native producer can provide a complete relation.
+
 Source inheritance, implementation, alias, binary/native origin, and call graph
 publishers remain later slices. LSP must not infer an absent relation.
 

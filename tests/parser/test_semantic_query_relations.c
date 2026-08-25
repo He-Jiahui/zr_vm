@@ -322,6 +322,64 @@ static void test_property_contract_relations_reject_mismatched_accessor_atomical
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_reference_definitions_publish_declaration_edges_once(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticReferenceFact fact;
+    SZrArray relations;
+    TZrSymbolId symbolId;
+    SZrFileRange declarationRange;
+
+    TEST_ASSERT_NOT_NULL(context);
+    declarationRange = relation_range(10U, 14U);
+    symbolId = relation_register_symbol(
+            context, "seed", ZR_SEMANTIC_SYMBOL_KIND_VARIABLE, 21U, 10U);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, symbolId);
+
+    memset(&fact, 0, sizeof(fact));
+    fact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
+    fact.symbolId = symbolId;
+    fact.typeId = 21U;
+    fact.range = declarationRange;
+    fact.declarationRange = declarationRange;
+    fact.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+
+    memset(&fact, 0, sizeof(fact));
+    fact.kind = ZR_SEMANTIC_REFERENCE_WRITE;
+    fact.symbolId = symbolId;
+    fact.typeId = 21U;
+    fact.range = relation_range(30U, 34U);
+    fact.declarationRange = declarationRange;
+    fact.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+
+    memset(&fact, 0, sizeof(fact));
+    fact.kind = ZR_SEMANTIC_REFERENCE_READ;
+    fact.symbolId = symbolId;
+    fact.typeId = 21U;
+    fact.range = relation_range(50U, 54U);
+    fact.declarationRange = declarationRange;
+    fact.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &fact));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(context));
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishReferenceDefinitions(context));
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishReferenceDefinitions(context));
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, symbolId, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION,
+                          relation_at(&relations, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT(symbolId, relation_at(&relations, 0U)->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(symbolId, relation_at(&relations, 0U)->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(10U, relation_at(&relations, 0U)->sourceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(30U, relation_at(&relations, 0U)->targetRange.start.offset);
+
+    ZrCore_Array_Free(g_state, &relations);
+    ZrParser_SemanticContext_Free(context);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
@@ -329,5 +387,6 @@ int main(void) {
     RUN_TEST(test_relations_of_symbol_honors_node_scope);
     RUN_TEST(test_property_contracts_publish_accessor_relations_once);
     RUN_TEST(test_property_contract_relations_reject_mismatched_accessor_atomically);
+    RUN_TEST(test_reference_definitions_publish_declaration_edges_once);
     return UNITY_END();
 }

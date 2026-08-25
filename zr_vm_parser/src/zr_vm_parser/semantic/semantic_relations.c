@@ -278,6 +278,49 @@ static TZrBool semantic_relations_property_contract_is_valid(
                               contract->initializerCallableTypeId));
 }
 
+static TZrBool semantic_relations_ranges_equal(
+        const SZrFileRange *left,
+        const SZrFileRange *right) {
+    if (left == ZR_NULL || right == ZR_NULL ||
+        left->start.offset != right->start.offset ||
+        left->end.offset != right->end.offset ||
+        left->start.line != right->start.line ||
+        left->start.column != right->start.column ||
+        left->end.line != right->end.line ||
+        left->end.column != right->end.column) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(left->source == right->source ||
+                      (left->source != ZR_NULL && right->source != ZR_NULL &&
+                       ZrCore_String_Equal(left->source, right->source)));
+}
+
+static TZrBool semantic_relations_has_reference_definition(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        const SZrFileRange *definitionRange) {
+    TZrSize index;
+
+    if (context == ZR_NULL || definitionRange == ZR_NULL ||
+        !context->relationFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->relationFacts.length; index++) {
+        const SZrSemanticRelationFact *fact =
+                (const SZrSemanticRelationFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->relationFacts, index);
+        if (fact != ZR_NULL &&
+            fact->kind == ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION &&
+            fact->sourceSymbolId == symbolId &&
+            fact->targetSymbolId == symbolId &&
+            fact->hasTargetRange &&
+            semantic_relations_ranges_equal(&fact->targetRange, definitionRange)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool semantic_relations_publish_property_accessor(
         SZrSemanticContext *context,
         const SZrSemanticPropertyContract *contract,
@@ -350,6 +393,53 @@ TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
                     contract,
                     contract->initializerSymbolId,
                     contract->initializerCallableTypeId)) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
+        SZrSemanticContext *context) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->referenceFacts.isValid ||
+        !context->relationFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *reference =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        &context->referenceFacts, index);
+        const SZrSemanticSymbolRecord *symbol;
+        SZrSemanticRelationFact fact;
+
+        if (reference == ZR_NULL || !reference->isResolved ||
+            reference->kind != ZR_SEMANTIC_REFERENCE_WRITE ||
+            reference->symbolId == ZR_SEMANTIC_ID_INVALID ||
+            !reference->hasDefinitionRange ||
+            !semantic_relations_range_is_known(&reference->definitionRange)) {
+            continue;
+        }
+        symbol = ZrParser_Semantic_FindSymbolById(context, reference->symbolId);
+        if (symbol == ZR_NULL || symbol->typeId == ZR_SEMANTIC_ID_INVALID ||
+            !semantic_relations_range_is_known(&symbol->location) ||
+            semantic_relations_has_reference_definition(
+                    context, reference->symbolId, &reference->definitionRange)) {
+            continue;
+        }
+
+        memset(&fact, 0, sizeof(fact));
+        fact.kind = ZR_SEMANTIC_RELATION_DECLARATION_DEFINITION;
+        fact.sourceSymbolId = reference->symbolId;
+        fact.targetSymbolId = reference->symbolId;
+        fact.sourceTypeId = symbol->typeId;
+        fact.targetTypeId = symbol->typeId;
+        fact.sourceRange = symbol->location;
+        fact.targetRange = reference->definitionRange;
+        fact.hasSourceRange = ZR_TRUE;
+        fact.hasTargetRange = ZR_TRUE;
+        if (!ZrParser_SemanticRelations_Append(context, &fact)) {
             return ZR_FALSE;
         }
     }
