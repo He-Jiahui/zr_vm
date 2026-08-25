@@ -41,6 +41,14 @@ static TZrBool semantic_relations_range_contains(
               inner->end.column <= outer->end.column)));
 }
 
+static TZrBool semantic_relations_range_is_known(const SZrFileRange *range) {
+    return (TZrBool)(range != ZR_NULL &&
+                      (range->source != ZR_NULL ||
+                       range->start.offset > 0U || range->end.offset > 0U ||
+                       range->start.line > 0 || range->end.line > 0 ||
+                       range->start.column > 0 || range->end.column > 0));
+}
+
 static TZrBool semantic_relations_scope_allows(
         const SZrParserSemanticQueryScope *scope,
         const SZrSemanticRelationFact *fact) {
@@ -199,6 +207,102 @@ TZrBool ZrParser_SemanticRelations_Append(
         return ZR_FALSE;
     }
     ZrCore_Array_Push(context->state, &context->relationFacts, &copy);
+    return ZR_TRUE;
+}
+
+static TZrBool semantic_relations_has_property_accessor(
+        const SZrSemanticContext *context,
+        TZrSymbolId propertySymbolId,
+        TZrSymbolId accessorSymbolId) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->relationFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->relationFacts.length; index++) {
+        const SZrSemanticRelationFact *fact =
+                (const SZrSemanticRelationFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->relationFacts, index);
+        if (fact != ZR_NULL &&
+            fact->kind == ZR_SEMANTIC_RELATION_PROPERTY_ACCESSOR &&
+            fact->sourceSymbolId == propertySymbolId &&
+            fact->targetSymbolId == accessorSymbolId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool semantic_relations_publish_property_accessor(
+        SZrSemanticContext *context,
+        const SZrSemanticPropertyContract *contract,
+        TZrSymbolId accessorSymbolId,
+        TZrTypeId callableTypeId) {
+    const SZrSemanticSymbolRecord *accessor;
+    SZrSemanticRelationFact fact;
+
+    if (accessorSymbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_TRUE;
+    }
+    accessor = ZrParser_Semantic_FindSymbolById(context, accessorSymbolId);
+    if (accessor == ZR_NULL ||
+        accessor->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
+        callableTypeId == ZR_SEMANTIC_ID_INVALID ||
+        accessor->typeId != callableTypeId) {
+        return ZR_FALSE;
+    }
+    if (semantic_relations_has_property_accessor(
+                context, contract->propertySymbolId, accessorSymbolId)) {
+        return ZR_TRUE;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.kind = ZR_SEMANTIC_RELATION_PROPERTY_ACCESSOR;
+    fact.sourceSymbolId = contract->propertySymbolId;
+    fact.targetSymbolId = accessorSymbolId;
+    fact.sourceTypeId = contract->propertyTypeId;
+    fact.targetTypeId = callableTypeId;
+    fact.sourceRange = contract->declarationRange;
+    fact.targetRange = accessor->location;
+    fact.hasSourceRange = semantic_relations_range_is_known(&fact.sourceRange);
+    fact.hasTargetRange = semantic_relations_range_is_known(&fact.targetRange);
+    return ZrParser_SemanticRelations_Append(context, &fact);
+}
+
+TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
+        SZrSemanticContext *context) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->propertyContracts.isValid ||
+        !context->relationFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->propertyContracts.length; index++) {
+        const SZrSemanticPropertyContract *contract =
+                (const SZrSemanticPropertyContract *)ZrCore_Array_Get(
+                        &context->propertyContracts, index);
+
+        if (contract == ZR_NULL ||
+            contract->propertySymbolId == ZR_SEMANTIC_ID_INVALID ||
+            contract->propertyTypeId == ZR_SEMANTIC_ID_INVALID ||
+            !semantic_relations_publish_property_accessor(
+                    context,
+                    contract,
+                    contract->getterSymbolId,
+                    contract->getterCallableTypeId) ||
+            !semantic_relations_publish_property_accessor(
+                    context,
+                    contract,
+                    contract->setterSymbolId,
+                    contract->setterCallableTypeId) ||
+            !semantic_relations_publish_property_accessor(
+                    context,
+                    contract,
+                    contract->initializerSymbolId,
+                    contract->initializerCallableTypeId)) {
+            return ZR_FALSE;
+        }
+    }
     return ZR_TRUE;
 }
 

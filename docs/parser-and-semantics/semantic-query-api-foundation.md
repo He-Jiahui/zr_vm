@@ -212,10 +212,18 @@ with borrowed URI fields, and order edges by relation kind, stable ids, and
 ranges. A node scope admits only an edge whose source or target range is within
 the root. The query does not scan AST names or manufacture external origins.
 
-The current Task 3.1 slice deliberately provides the carrier and query contract
-before compiler producers. Source inheritance, implementation, property, alias,
-and artifact relation publishers must append exact resolved edges in later
-slices; LSP must not infer an absent relation.
+Task 3.2 publishes source property-accessor edges from the existing
+`SZrSemanticPropertyContract` rows after compiler property binding completes.
+Each edge has the visible property SymbolId as its source and the canonical
+getter, setter, or initializer function SymbolId as its target. The producer
+requires the contract's callable TypeId to match the registered accessor symbol
+and takes the source declaration range and target declaration range directly
+from those facts. Repeated publication is idempotent. A missing or inconsistent
+canonical accessor makes the producer fail closed; it never scans property AST
+nodes or reconstructs hidden accessor names.
+
+Source inheritance, implementation, alias, binary/native origin, and call graph
+publishers remain later slices. LSP must not infer an absent relation.
 
 ## Test Coverage
 

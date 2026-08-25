@@ -75,6 +75,22 @@ static const SZrParserSemanticRelationQuery *relation_at(SZrArray *relations,
             relations, index);
 }
 
+static TZrSymbolId relation_register_symbol(
+        SZrSemanticContext *context,
+        TZrNativeString name,
+        EZrSemanticSymbolKind kind,
+        TZrTypeId typeId,
+        TZrSize offset) {
+    return ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_Create(g_state, name, strlen(name)),
+            kind,
+            typeId,
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_NULL,
+            relation_range(offset, offset + 1U));
+}
+
 static void test_relations_of_symbol_projects_sorted_snapshot_edges(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrArray relations;
@@ -212,10 +228,65 @@ static void test_relations_of_symbol_honors_node_scope(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_property_contracts_publish_accessor_relations_once(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticPropertyContract contract;
+    SZrArray relations;
+    TZrSymbolId propertySymbolId;
+    TZrSymbolId getterSymbolId;
+    TZrSymbolId setterSymbolId;
+    TZrSymbolId setterValueSymbolId;
+
+    TEST_ASSERT_NOT_NULL(context);
+    propertySymbolId = relation_register_symbol(
+            context, "value", ZR_SEMANTIC_SYMBOL_KIND_PROPERTY, 21U, 10U);
+    getterSymbolId = relation_register_symbol(
+            context, "getValue", ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, 31U, 20U);
+    setterSymbolId = relation_register_symbol(
+            context, "setValue", ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, 32U, 30U);
+    setterValueSymbolId = relation_register_symbol(
+            context, "next", ZR_SEMANTIC_SYMBOL_KIND_PARAMETER, 21U, 31U);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, propertySymbolId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, getterSymbolId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, setterSymbolId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, setterValueSymbolId);
+
+    memset(&contract, 0, sizeof(contract));
+    contract.propertySymbolId = propertySymbolId;
+    contract.propertyTypeId = 21U;
+    contract.getterSymbolId = getterSymbolId;
+    contract.setterSymbolId = setterSymbolId;
+    contract.setterValueSymbolId = setterValueSymbolId;
+    contract.getterCallableTypeId = 31U;
+    contract.setterCallableTypeId = 32U;
+    contract.declarationRange = relation_range(10U, 15U);
+    TEST_ASSERT_TRUE(ZrParser_Semantic_PublishPropertyContract(context, &contract));
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishPropertyContracts(context));
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishPropertyContracts(context));
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, propertySymbolId, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_PROPERTY_ACCESSOR,
+                          relation_at(&relations, 0U)->kind);
+    TEST_ASSERT_EQUAL_UINT(propertySymbolId, relation_at(&relations, 0U)->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(getterSymbolId, relation_at(&relations, 0U)->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(setterSymbolId, relation_at(&relations, 1U)->targetSymbolId);
+    TEST_ASSERT_TRUE(relation_at(&relations, 0U)->hasSourceRange);
+    TEST_ASSERT_EQUAL_UINT(10U, relation_at(&relations, 0U)->sourceRange.start.offset);
+    TEST_ASSERT_TRUE(relation_at(&relations, 0U)->hasTargetRange);
+    TEST_ASSERT_EQUAL_UINT(20U, relation_at(&relations, 0U)->targetRange.start.offset);
+
+    ZrCore_Array_Free(g_state, &relations);
+    ZrParser_SemanticContext_Free(context);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
     RUN_TEST(test_type_and_implementation_queries_preserve_edge_direction);
     RUN_TEST(test_relations_of_symbol_honors_node_scope);
+    RUN_TEST(test_property_contracts_publish_accessor_relations_once);
     return UNITY_END();
 }

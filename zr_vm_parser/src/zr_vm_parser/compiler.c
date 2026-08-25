@@ -803,6 +803,12 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             (void)ZrParser_Compiler_PublishSemanticQueryDiagnostics(cs);
         }
         if (!cs->hasError && cs->semanticContext != ZR_NULL &&
+            !ZrParser_SemanticRelations_PublishPropertyContracts(cs->semanticContext)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to publish semantic property accessor relations", node->location);
+            return;
+        }
+        if (!cs->hasError && cs->semanticContext != ZR_NULL &&
             !ZrParser_Semantic_BuildSourceScopeFacts(cs->semanticContext, node)) {
             ZrParser_Compiler_Error(
                     cs, "Failed to publish source semantic scope facts", node->location);
