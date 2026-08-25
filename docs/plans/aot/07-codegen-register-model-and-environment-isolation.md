@@ -143,6 +143,15 @@ callable metadata 与 supplied thunk 精确匹配 frame snapshot；所有 descri
 storage/writeback、aggregate destination/return、spill/address-taken、A7.3 environment generation key 与完整 A7.2
 仍开放。
 
+[2026-08-25 readonly aggregate parameter borrowed storage](./07-codegen/2026-08-25-readonly-aggregate-parameter-borrowed-storage.md)
+完成 A7.2P 的 source-declared inline aggregate `in/ref readonly/scoped ref readonly` 参数 borrowed frame storage、
+普通 free call 可复用隔离连续窗口与 canonical role/type 对完整或 partial physical storage 的裁剪前交叉校验。
+active window 内显式 struct-init 通过 high-water constructor/result pair 隔离其隐式 callable，嵌套 scalar 调用保持
+VALUE 参数槽且不复用外层 readonly argument 槽；混合 `in int + in Snapshot` 签名只给 resolved inline aggregate
+参数写 readonly marker，scalar `in` 参数保持 VALUE，并可随完整签名复用窗口。
+tail/receiver/member/imported/spread 调用、原始 caller Place/provenance、可写 ref/out/writeback、aggregate return/
+destination、spill/address-taken、GC/debug map 与完整 A7.2 仍开放。
+
 ## 实施包与证据
 
 1. **A7.1 register schema**：为每个register class定义合法Canonical Type/representation、copy/move规则与serialization；invalid class/type pair在ExecIR verifier失败。

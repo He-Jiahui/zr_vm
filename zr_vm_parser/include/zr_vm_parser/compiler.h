@@ -32,6 +32,11 @@ typedef struct SZrCompilerStackSlotTypeHint {
     TZrBool isFieldAlias;
     TZrBool isArrayElementAlias;
     TZrBool isInlineReceiverArgument;
+    TZrBool isReadonlyAggregateArgument;
+    TZrBool isReadonlyAggregateCallWindowSlot;
+    TZrBool isReadonlyAggregateCallWindowCallable;
+    TZrBool isReadonlyAggregateCallWindowActive;
+    TZrUInt32 readonlyAggregateCallWindowArgumentCount;
 } SZrCompilerStackSlotTypeHint;
 
 // 编译器状态结构

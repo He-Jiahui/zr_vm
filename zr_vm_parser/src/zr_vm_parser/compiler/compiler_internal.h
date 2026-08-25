@@ -900,6 +900,14 @@ TZrBool compiler_register_stack_slot_inline_receiver_argument_alias(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,
         TZrUInt32 receiverStackSlot);
+TZrBool compiler_register_stack_slot_readonly_aggregate_argument(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot);
+TZrBool compiler_register_isolated_call_window_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrUInt32 callableSlot,
+        TZrUInt32 argumentCount);
 TZrBool compiler_register_stack_slot_field_alias(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,

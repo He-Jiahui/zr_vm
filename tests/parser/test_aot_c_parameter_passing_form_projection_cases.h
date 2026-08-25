@@ -355,6 +355,613 @@ static void test_aot_c_value_semir_typed_call_accepts_only_value_passing_paramet
 #endif
 }
 
+static const char *passing_form_readonly_aggregate_source(void) {
+    return
+            "readonly struct Snapshot {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "fn inspectIn(value: in Snapshot): int { var copied: int = value.value; return copied; }\n"
+            "fn identity(value: int): int { return value; }\n"
+            "fn inspectRef(value: ref readonly Snapshot): int { var copied: int = value.value; return copied; }\n"
+            "fn inspectScoped(value: scoped ref readonly Snapshot): int { var copied: int = value.value; return copied; }\n"
+            "fn inspectOffset(prefix: in int, value: in Snapshot): int { return prefix + value.value; }\n"
+            "fn inspectUnused(value: in Snapshot): int { var copied: int = value.value; return copied; }\n"
+            "var snapshot: Snapshot = init Snapshot(7);\n"
+            "var inValue: int = inspectIn(snapshot);\n"
+            "var scalarValue: int = identity(snapshot.value);\n"
+            "var refValue: int = inspectRef(ref snapshot);\n"
+            "var scopedValue: int = inspectScoped(ref snapshot);\n"
+            "var offsetValue: int = inspectOffset(identity(1), snapshot);\n"
+            "var repeatedOffsetValue: int = inspectOffset(2, snapshot);\n"
+            "var temporaryValue: int = inspectIn(init Snapshot(2));\n"
+            "return inValue + scalarValue + refValue + scopedValue + offsetValue + repeatedOffsetValue + temporaryValue;\n";
+}
+
+static TZrBool passing_form_is_call_with_arguments(
+        EZrInstructionCode opcode) {
+    return (TZrBool)(
+            opcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(DYN_CALL) ||
+            opcode == ZR_INSTRUCTION_ENUM(META_CALL));
+}
+
+static const SZrFunctionFrameSlotLayout *
+passing_form_nth_call_argument_layout(
+        const SZrFunction *function,
+        TZrUInt32 argumentCount,
+        TZrUInt32 occurrence,
+        TZrUInt32 argumentIndex,
+        TZrUInt32 *outStackSlot) {
+    TZrUInt32 matchedCount = 0u;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrUInt32 index = 0u; index < function->instructionsLength; index++) {
+        const TZrInstruction *instruction = &function->instructionsList[index];
+        const EZrInstructionCode opcode =
+                (EZrInstructionCode)instruction->instruction.operationCode;
+        TZrUInt32 candidateArgumentCount;
+        TZrUInt32 argumentSlot;
+
+        if (!passing_form_is_call_with_arguments(opcode)) {
+            continue;
+        }
+        candidateArgumentCount = instruction->instruction.operand.operand1[1];
+        if (candidateArgumentCount != argumentCount ||
+            argumentIndex >= candidateArgumentCount) {
+            continue;
+        }
+        if (matchedCount++ != occurrence) {
+            continue;
+        }
+        argumentSlot =
+                (TZrUInt32)instruction->instruction.operand.operand1[0] +
+                1u + argumentIndex;
+        if (outStackSlot != ZR_NULL) {
+            *outStackSlot = argumentSlot;
+        }
+        return ZrCore_Function_FindFrameSlotLayout(function, argumentSlot);
+    }
+    return ZR_NULL;
+}
+
+static SZrFunction *passing_form_find_runtime_function_named(
+        SZrState *state,
+        SZrFunction *function,
+        const char *name,
+        TZrUInt32 depth) {
+    if (state == ZR_NULL || function == ZR_NULL || name == ZR_NULL ||
+        depth > 32u) {
+        return ZR_NULL;
+    }
+    if (passing_form_function_name_equals(function, name)) {
+        return function;
+    }
+    for (TZrUInt32 childIndex = 0u;
+         function->childFunctionList != ZR_NULL &&
+         childIndex < function->childFunctionLength;
+         childIndex++) {
+        SZrFunction *found = passing_form_find_runtime_function_named(
+                state,
+                &function->childFunctionList[childIndex],
+                name,
+                depth + 1u);
+
+        if (found != ZR_NULL) {
+            return found;
+        }
+    }
+    for (TZrUInt32 constantIndex = 0u;
+         function->constantValueList != ZR_NULL &&
+         constantIndex < function->constantValueLength;
+         constantIndex++) {
+        SZrTypeValue *constant = &function->constantValueList[constantIndex];
+        SZrFunction *candidate;
+        SZrFunction *found;
+
+        if (constant->type != ZR_VALUE_TYPE_FUNCTION ||
+            constant->value.object == ZR_NULL || constant->isNative) {
+            continue;
+        }
+        candidate = ZR_CAST_FUNCTION(state, constant->value.object);
+        if (candidate == function) {
+            continue;
+        }
+        found = passing_form_find_runtime_function_named(
+                state, candidate, name, depth + 1u);
+        if (found != ZR_NULL) {
+            return found;
+        }
+    }
+    return ZR_NULL;
+}
+
+static SZrFunctionFrameSlotLayout *passing_form_readonly_parameter_layout(
+        SZrState *state,
+        SZrFunction *entryFunction,
+        const char *functionName,
+        TZrUInt32 stackSlot) {
+    SZrFunction *function = passing_form_find_runtime_function_named(
+            state, entryFunction, functionName, 0u);
+
+    TEST_ASSERT_NOT_NULL(function);
+    return (SZrFunctionFrameSlotLayout *)ZrCore_Function_FindFrameSlotLayout(
+            function, stackSlot);
+}
+
+static void passing_form_assert_readonly_parameter_borrowed(
+        SZrState *state,
+        SZrFunction *entryFunction,
+        const char *functionName,
+        TZrUInt32 stackSlot) {
+    SZrAotExecIrFrameLayout frameLayout;
+    SZrFunction *function = passing_form_find_runtime_function_named(
+            state, entryFunction, functionName, 0u);
+    const SZrFunctionFrameSlotLayout *layout =
+            passing_form_readonly_parameter_layout(
+                    state, entryFunction, functionName, stackSlot);
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(layout);
+    TEST_ASSERT_TRUE_MESSAGE(layout->isParameter, functionName);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+            ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
+            layout->slotKind,
+            functionName);
+    TEST_ASSERT_BITS_HIGH_MESSAGE(
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS,
+            layout->reserved0,
+            functionName);
+#if defined(ZR_PLATFORM_UNIX)
+    memset(&frameLayout, 0, sizeof(frameLayout));
+    TEST_ASSERT_TRUE_MESSAGE(
+            backend_aot_exec_ir_build_frame_layout(
+                    state, function, &frameLayout),
+            functionName);
+    backend_aot_exec_ir_release_frame_layout(state, &frameLayout);
+#else
+    (void)frameLayout;
+#endif
+}
+
+#if defined(ZR_PLATFORM_UNIX)
+static void passing_form_assert_readonly_argument_marker_requires_call_window(
+        SZrState *state) {
+    SZrCompilerState compilerState;
+    SZrCompilerStackSlotTypeHint bareHint;
+    SZrCompilerStackSlotTypeHint *storedHint;
+
+    memset(&compilerState, 0, sizeof(compilerState));
+    memset(&bareHint, 0, sizeof(bareHint));
+    compilerState.state = state;
+    ZrCore_Array_Init(
+            state,
+            &compilerState.stackSlotTypeHints,
+            sizeof(SZrCompilerStackSlotTypeHint),
+            4u);
+    bareHint.stackSlot = 5u;
+    ZrCore_Array_Push(
+            state, &compilerState.stackSlotTypeHints, &bareHint);
+    TEST_ASSERT_TRUE(
+            compiler_register_stack_slot_readonly_aggregate_argument(
+                    &compilerState, 5u));
+    storedHint = (SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get(
+            &compilerState.stackSlotTypeHints, 0u);
+    TEST_ASSERT_NOT_NULL(storedHint);
+    TEST_ASSERT_FALSE(storedHint->isReadonlyAggregateArgument);
+
+    TEST_ASSERT_TRUE(compiler_register_isolated_call_window_slot(
+            &compilerState, 10u, 10u, 1u));
+    TEST_ASSERT_TRUE(compiler_register_isolated_call_window_slot(
+            &compilerState, 11u, 10u, 1u));
+    TEST_ASSERT_TRUE(
+            compiler_register_stack_slot_readonly_aggregate_argument(
+                    &compilerState, 11u));
+    storedHint = (SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get(
+            &compilerState.stackSlotTypeHints, 2u);
+    TEST_ASSERT_NOT_NULL(storedHint);
+    TEST_ASSERT_TRUE(storedHint->isReadonlyAggregateArgument);
+    ZrCore_Array_Free(state, &compilerState.stackSlotTypeHints);
+}
+#endif
+
+static void test_aot_readonly_aggregate_parameters_use_borrowed_frame_storage(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+#if defined(ZR_PLATFORM_UNIX)
+    SZrAotExecIrModule module;
+#endif
+    SZrBinaryWriterOptions binaryOptions;
+    SZrAotWriterOptions aotOptions;
+    TZrChar binaryPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedLlvmPath[ZR_TESTS_PATH_MAX];
+    TZrInt64 result = 0;
+    TZrUInt32 readonlyArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 reusedReadonlyArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 scalarArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 nestedScalarArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 offsetScalarArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 offsetReadonlyArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 repeatedOffsetScalarArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 repeatedOffsetReadonlyArgumentSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 temporaryConstructorReceiverSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 temporaryReadonlyArgumentSlot = ZR_PARSER_SLOT_NONE;
+    const SZrFunctionFrameSlotLayout *readonlyArgumentLayout;
+    const SZrFunctionFrameSlotLayout *reusedReadonlyArgumentLayout;
+    const SZrFunctionFrameSlotLayout *scalarArgumentLayout;
+    const SZrFunctionFrameSlotLayout *nestedScalarArgumentLayout;
+    const SZrFunctionFrameSlotLayout *offsetScalarArgumentLayout;
+    const SZrFunctionFrameSlotLayout *offsetReadonlyArgumentLayout;
+    const SZrFunctionFrameSlotLayout *repeatedOffsetScalarArgumentLayout;
+    const SZrFunctionFrameSlotLayout *repeatedOffsetReadonlyArgumentLayout;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(
+            state,
+            passing_form_readonly_aggregate_source(),
+            "aot_readonly_aggregate_parameter_storage.zr");
+    TEST_ASSERT_NOT_NULL(function);
+
+    passing_form_assert_readonly_parameter_borrowed(
+            state, function, "inspectIn", 0u);
+    passing_form_assert_readonly_parameter_borrowed(
+            state, function, "inspectRef", 0u);
+    passing_form_assert_readonly_parameter_borrowed(
+            state, function, "inspectScoped", 0u);
+    passing_form_assert_readonly_parameter_borrowed(
+            state, function, "inspectOffset", 1u);
+    readonlyArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 1u, 0u, 0u, &readonlyArgumentSlot);
+    scalarArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 1u, 1u, 0u, &scalarArgumentSlot);
+    reusedReadonlyArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 1u, 2u, 0u, &reusedReadonlyArgumentSlot);
+    nestedScalarArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 1u, 4u, 0u, &nestedScalarArgumentSlot);
+    offsetScalarArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 2u, 1u, 0u, &offsetScalarArgumentSlot);
+    offsetReadonlyArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 2u, 1u, 1u, &offsetReadonlyArgumentSlot);
+    repeatedOffsetScalarArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 2u, 2u, 0u, &repeatedOffsetScalarArgumentSlot);
+    repeatedOffsetReadonlyArgumentLayout = passing_form_nth_call_argument_layout(
+            function, 2u, 2u, 1u, &repeatedOffsetReadonlyArgumentSlot);
+    TEST_ASSERT_NOT_NULL(passing_form_nth_call_argument_layout(
+            function,
+            2u,
+            3u,
+            0u,
+            &temporaryConstructorReceiverSlot));
+    TEST_ASSERT_NOT_NULL(passing_form_nth_call_argument_layout(
+            function,
+            1u,
+            5u,
+            0u,
+            &temporaryReadonlyArgumentSlot));
+    TEST_ASSERT_NOT_NULL(readonlyArgumentLayout);
+    TEST_ASSERT_NOT_NULL(reusedReadonlyArgumentLayout);
+    TEST_ASSERT_NOT_NULL(scalarArgumentLayout);
+    TEST_ASSERT_NOT_NULL(nestedScalarArgumentLayout);
+    TEST_ASSERT_NOT_NULL(offsetScalarArgumentLayout);
+    TEST_ASSERT_NOT_NULL(offsetReadonlyArgumentLayout);
+    TEST_ASSERT_NOT_NULL(repeatedOffsetScalarArgumentLayout);
+    TEST_ASSERT_NOT_NULL(repeatedOffsetReadonlyArgumentLayout);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
+            readonlyArgumentLayout->slotKind);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
+            reusedReadonlyArgumentLayout->slotKind);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+            scalarArgumentLayout->slotKind);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+            nestedScalarArgumentLayout->slotKind);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+            offsetScalarArgumentLayout->slotKind);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
+            offsetReadonlyArgumentLayout->slotKind);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+            repeatedOffsetScalarArgumentLayout->slotKind);
+    TEST_ASSERT_EQUAL_UINT8(
+            ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
+            repeatedOffsetReadonlyArgumentLayout->slotKind);
+    TEST_ASSERT_NOT_EQUAL(readonlyArgumentSlot, scalarArgumentSlot);
+    TEST_ASSERT_NOT_EQUAL(
+            nestedScalarArgumentSlot, offsetReadonlyArgumentSlot);
+    TEST_ASSERT_EQUAL_UINT32(
+            offsetScalarArgumentSlot, repeatedOffsetScalarArgumentSlot);
+    TEST_ASSERT_EQUAL_UINT32(
+            offsetReadonlyArgumentSlot,
+            repeatedOffsetReadonlyArgumentSlot);
+    TEST_ASSERT_NOT_EQUAL(
+            temporaryConstructorReceiverSlot,
+            temporaryReadonlyArgumentSlot);
+    TEST_ASSERT_EQUAL_UINT32(
+            readonlyArgumentSlot, reusedReadonlyArgumentSlot);
+#if defined(ZR_PLATFORM_UNIX)
+    memset(&module, 0, sizeof(module));
+    TEST_ASSERT_TRUE_MESSAGE(
+            backend_aot_exec_ir_build_module(state, function, &module),
+            "readonly aggregate ExecIR module build failed");
+    backend_aot_exec_ir_release_module(state, &module);
+#endif
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(
+                    state, function, &result),
+            "readonly aggregate interpreter execution failed");
+    TEST_ASSERT_EQUAL_INT64(47, result);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_readonly_aggregate_parameter_storage",
+            "binary",
+            "main",
+            ".zro",
+            binaryPath,
+            sizeof(binaryPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_readonly_aggregate_parameter_storage",
+            "aot_c",
+            "main",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_readonly_aggregate_parameter_storage",
+            "aot_llvm",
+            "main",
+            ".ll",
+            generatedLlvmPath,
+            sizeof(generatedLlvmPath)));
+    memset(&binaryOptions, 0, sizeof(binaryOptions));
+    binaryOptions.moduleName = "aot_readonly_aggregate_parameter_storage";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFileWithOptions(
+            state, function, binaryPath, &binaryOptions));
+    memset(&aotOptions, 0, sizeof(aotOptions));
+    aotOptions.moduleName = "aot_readonly_aggregate_parameter_storage";
+    aotOptions.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    aotOptions.inputHash = "readonly-aggregate-parameter-storage";
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &aotOptions));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFileWithOptions(
+            state, function, generatedLlvmPath, &aotOptions));
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_aot_exec_ir_rejects_readonly_aggregate_parameter_storage_role_mismatch(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE(
+            "private ExecIR frame validation symbols are not exported by the Windows parser DLL");
+#else
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *callee;
+    SZrFunction *offsetCallee;
+    SZrFunctionTypedLocalBinding *binding = ZR_NULL;
+    SZrFunctionFrameSlotLayout *layout;
+    SZrAotExecIrFrameLayout frameLayout;
+    TZrUInt32 originalRoleFlags;
+    TZrUInt32 originalTypeLayoutId;
+    TZrUInt32 originalByteSize;
+    TZrUInt32 originalByteAlign;
+    TZrUInt8 originalSlotKind;
+    TZrUInt8 originalIsParameter;
+    TZrUInt16 originalLayoutFlags;
+    TZrUInt32 originalFrameSlotLayoutLength;
+    TZrBool built;
+
+    TEST_ASSERT_NOT_NULL(state);
+    passing_form_assert_readonly_argument_marker_requires_call_window(state);
+    function = compile_source(
+            state,
+            passing_form_readonly_aggregate_source(),
+            "aot_readonly_aggregate_parameter_validation.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    callee = passing_form_find_named_function(function, "inspectIn");
+    TEST_ASSERT_NOT_NULL(callee);
+    layout = (SZrFunctionFrameSlotLayout *)
+            ZrCore_Function_FindFrameSlotLayout(callee, 0u);
+    TEST_ASSERT_NOT_NULL(layout);
+    for (TZrUInt32 bindingIndex = 0u;
+         callee->typedLocalBindings != ZR_NULL &&
+         bindingIndex < callee->typedLocalBindingLength;
+         bindingIndex++) {
+        if (callee->typedLocalBindings[bindingIndex].stackSlot == 0u) {
+            binding = &callee->typedLocalBindings[bindingIndex];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(binding);
+    originalLayoutFlags = layout->reserved0;
+    originalTypeLayoutId = layout->typeLayoutId;
+    originalByteSize = layout->byteSize;
+    originalByteAlign = layout->byteAlign;
+    originalSlotKind = layout->slotKind;
+    originalIsParameter = layout->isParameter;
+    originalRoleFlags = binding->roleFlags;
+    layout->reserved0 &= (TZrUInt16)~(
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS);
+
+    memset(&frameLayout, 0, sizeof(frameLayout));
+    built = backend_aot_exec_ir_build_frame_layout(
+            state, callee, &frameLayout);
+    if (built) {
+        backend_aot_exec_ir_release_frame_layout(state, &frameLayout);
+    }
+    TEST_ASSERT_FALSE(built);
+
+    layout->reserved0 = 0u;
+    layout->typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    layout->slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    layout->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout->byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    memset(&frameLayout, 0, sizeof(frameLayout));
+    built = backend_aot_exec_ir_build_frame_layout(
+            state, callee, &frameLayout);
+    if (built) {
+        backend_aot_exec_ir_release_frame_layout(state, &frameLayout);
+    }
+    TEST_ASSERT_FALSE(built);
+
+    layout->reserved0 = originalLayoutFlags;
+    layout->typeLayoutId = originalTypeLayoutId;
+    layout->slotKind = originalSlotKind;
+    layout->byteSize = originalByteSize;
+    layout->byteAlign = originalByteAlign;
+    binding->roleFlags =
+            (originalRoleFlags &
+             ~ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK) |
+            ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_VALUE;
+    memset(&frameLayout, 0, sizeof(frameLayout));
+    built = backend_aot_exec_ir_build_frame_layout(
+            state, callee, &frameLayout);
+    if (built) {
+        backend_aot_exec_ir_release_frame_layout(state, &frameLayout);
+    }
+    TEST_ASSERT_FALSE(built);
+
+    binding->roleFlags = originalRoleFlags;
+    offsetCallee = passing_form_find_named_function(
+            function, "inspectOffset");
+    TEST_ASSERT_NOT_NULL(offsetCallee);
+    TEST_ASSERT_GREATER_THAN_UINT32(
+            1u, offsetCallee->frameSlotLayoutLength);
+    originalFrameSlotLayoutLength = offsetCallee->frameSlotLayoutLength;
+    offsetCallee->frameSlotLayoutLength = 1u;
+    memset(&frameLayout, 0, sizeof(frameLayout));
+    built = backend_aot_exec_ir_build_frame_layout(
+            state, offsetCallee, &frameLayout);
+    if (built) {
+        backend_aot_exec_ir_release_frame_layout(state, &frameLayout);
+    }
+    TEST_ASSERT_FALSE(built);
+    offsetCallee->frameSlotLayoutLength = originalFrameSlotLayoutLength;
+
+    offsetCallee->frameSlotLayoutLength = 0u;
+    memset(&frameLayout, 0, sizeof(frameLayout));
+    built = backend_aot_exec_ir_build_frame_layout(
+            state, offsetCallee, &frameLayout);
+    if (built) {
+        backend_aot_exec_ir_release_frame_layout(state, &frameLayout);
+    }
+    TEST_ASSERT_FALSE(built);
+    offsetCallee->frameSlotLayoutLength = originalFrameSlotLayoutLength;
+
+    TEST_ASSERT_GREATER_THAN_UINT32(1u, callee->frameSlotLayoutLength);
+    originalFrameSlotLayoutLength = callee->frameSlotLayoutLength;
+    callee->frameSlotLayoutLength = 1u;
+    layout->reserved0 = 0u;
+    layout->typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    layout->slotKind = (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    layout->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout->byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    layout->isParameter = 0u;
+    memset(&frameLayout, 0, sizeof(frameLayout));
+    built = backend_aot_exec_ir_build_frame_layout(
+            state, callee, &frameLayout);
+    if (built) {
+        backend_aot_exec_ir_release_frame_layout(state, &frameLayout);
+    }
+    TEST_ASSERT_FALSE(built);
+    callee->frameSlotLayoutLength = originalFrameSlotLayoutLength;
+    layout->reserved0 = originalLayoutFlags;
+    layout->typeLayoutId = originalTypeLayoutId;
+    layout->slotKind = originalSlotKind;
+    layout->byteSize = originalByteSize;
+    layout->byteAlign = originalByteAlign;
+    layout->isParameter = originalIsParameter;
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+#endif
+}
+
+static void test_aot_code_writers_reject_unreachable_readonly_aggregate_storage_mismatch_before_stripping(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrFunction *callee;
+    SZrFunctionFrameSlotLayout *layout;
+    SZrAotWriterOptions options;
+    TZrChar generatedCPath[ZR_TESTS_PATH_MAX];
+    TZrChar generatedLlvmPath[ZR_TESTS_PATH_MAX];
+    FILE *unexpectedArtifact;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(
+            state,
+            passing_form_readonly_aggregate_source(),
+            "aot_unreachable_readonly_aggregate_parameter_storage.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    callee = passing_form_find_runtime_function_named(
+            state, function, "inspectUnused", 0u);
+    TEST_ASSERT_NOT_NULL(callee);
+    layout = (SZrFunctionFrameSlotLayout *)
+            ZrCore_Function_FindFrameSlotLayout(callee, 0u);
+    TEST_ASSERT_NOT_NULL(layout);
+    layout->reserved0 &= (TZrUInt16)~(
+            ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS);
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_unreachable_readonly_aggregate_parameter_storage",
+            "aot_c",
+            "main",
+            ".c",
+            generatedCPath,
+            sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_unreachable_readonly_aggregate_parameter_storage",
+            "aot_llvm",
+            "main",
+            ".ll",
+            generatedLlvmPath,
+            sizeof(generatedLlvmPath)));
+    memset(&options, 0, sizeof(options));
+    options.moduleName =
+            "aot_unreachable_readonly_aggregate_parameter_storage";
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = "unreachable-readonly-aggregate-storage";
+    options.enableCodeStripping = ZR_TRUE;
+    options.requireExecutableLowering = ZR_TRUE;
+
+    remove(generatedCPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotCFileWithOptions(
+            state, function, generatedCPath, &options));
+    unexpectedArtifact = fopen(generatedCPath, "rb");
+    if (unexpectedArtifact != ZR_NULL) {
+        fclose(unexpectedArtifact);
+    }
+    TEST_ASSERT_NULL(unexpectedArtifact);
+
+    remove(generatedLlvmPath);
+    TEST_ASSERT_FALSE(ZrParser_Writer_WriteAotLlvmFileWithOptions(
+            state, function, generatedLlvmPath, &options));
+    unexpectedArtifact = fopen(generatedLlvmPath, "rb");
+    if (unexpectedArtifact != ZR_NULL) {
+        fclose(unexpectedArtifact);
+    }
+    TEST_ASSERT_NULL(unexpectedArtifact);
+
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_aot_c_code_stripping_rejects_unreachable_partial_parameter_passing_forms(void) {
     const char *source =
             "fn keep(value: int): int { return value; }\n"

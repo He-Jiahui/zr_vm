@@ -207,6 +207,48 @@ unknown frame flags, non-inline slot kinds, undersized/misaligned bindings and
 bindings outside frame storage. This prevents an older runtime or malformed
 artifact from interpreting inline payload bytes as a live caller-frame alias.
 
+## Readonly aggregate parameters
+
+Source-declared inline aggregate `in`, `ref readonly`, and
+`scoped ref readonly` parameters use the same callee borrowed-storage contract
+as readonly aggregate receivers. Their frame rows are `INLINE_STRUCT` aliases
+with `ALIAS | INDIRECT_ALIAS | BORROWED_ALIAS`; the parameter typed binding
+retains the canonical struct TypeLayout identity used to verify that physical
+row. A known VALUE parameter may not carry borrowed storage.
+
+Ordinary known free calls containing one of these parameters use a dedicated
+contiguous callable/argument window. An inactive window is reused only when its
+argument count, per-argument TypeLayout identity, and readonly role pattern all
+match; a window active while nested argument expressions compile is unavailable
+until its owning call has been emitted. This prevents an inline aggregate hint
+from remaining attached to an ordinary scalar slot without making frame size
+grow with repeated calls of one physical signature. The callable is copied into
+the selected window and the expression result still returns to the original
+result slot. This slice is limited to source-declared, non-receiver, non-spread,
+non-tail calls; other paths cannot set the window marker, and a callsite without
+exact parameter AST evidence does not infer readonly storage from a name or
+compatible type alone.
+
+Readonly source syntax alone does not make a scalar parameter an aggregate
+borrow. A mixed `in int` plus `in Snapshot` signature marks only the parameter
+whose resolved type has an inline TypeLayout; the scalar row remains VALUE and
+does not prevent exact-signature window reuse.
+
+An explicit struct initializer compiled into an active readonly call window
+uses a fresh high-water constructor/result pair and copies the completed value
+into the argument slot. Its implicit constructor callable at `targetSlot - 1`
+therefore cannot overwrite the outer call's callable. Nested scalar calls keep
+ordinary VALUE argument slots and do not inherit the outer readonly marker.
+
+ExecIR frame construction cross-checks the canonical passing role and struct
+TypeLayout against the physical row before reachability stripping. Validation
+also walks canonical parameter bindings in reverse, so a zero/partial physical
+table cannot omit the row or clear `isParameter` to avoid the check. Missing
+borrowed flags, a physical VALUE downgrade, or borrowed storage attached to a
+known VALUE role rejects the complete function tree, including an unreachable
+owner. This adds no runtime or serialized artifact schema; it populates existing
+typed TypeRef fields and reuses the patch-35 borrowed alias representation.
+
 ## Semantic identity boundary
 
 Receiver effect alone is not a call-target identity. Any semantic query or LSP

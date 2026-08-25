@@ -3014,3 +3014,28 @@ exact provider prototype (or its open generic base). This metadata is emitted
 only for imported struct/union types carrying a contiguous-view protocol, so
 other ref-like native guards such as `PoolRef<T>` retain their scoped object
 semantics. VM and generated-C Span fixtures assert equivalent execution.
+
+Focused 2026-08-25 AOT 07-A7.2P projects source-declared inline aggregate `in`,
+`ref readonly`, and `scoped ref readonly` parameters into the existing borrowed
+frame-alias representation. Callee rows are `INLINE_STRUCT` with
+`ALIAS | INDIRECT_ALIAS | BORROWED_ALIAS`, and their existing typed TypeRef now
+carries the canonical struct TypeLayout identity. Ordinary non-receiver,
+non-spread, non-tail free calls use an isolated contiguous call window so a
+readonly aggregate staging hint cannot contaminate a later scalar VALUE call.
+Inactive windows are reused only for an exact argument-count, TypeLayout, and
+readonly-role pattern; active windows remain reserved across nested argument
+compilation. Explicit struct-init arguments inside an active window compile through
+a fresh high-water constructor/result pair before copying into the argument slot,
+so their implicit `targetSlot - 1` callable cannot overwrite the outer callable.
+Nested scalar calls remain VALUE and use a different argument slot. A mixed
+`in int` plus `in Snapshot` signature marks only the resolved inline aggregate;
+the scalar prefix remains VALUE and does not block exact-signature window reuse.
+The ExecIR verifier walks both physical rows and canonical bindings,
+rejecting missing rows in zero/partial tables plus role, type, layout, and storage
+drift before stripping, including unreachable owners passed to either C or LLVM
+writers. Interpreter execution and `.zro`, C, and LLVM artifact writing are
+covered; no VM ABI, opcode, serialized artifact, manifest, or ExecIR schema is
+added. Generated C/LLVM execution for this fixture, tail/member/imported/spread
+callsites, original caller Place/provenance, writable ref/out writeback,
+aggregate return/destination, spill/address-taken storage, and GC/debug maps
+remain open.

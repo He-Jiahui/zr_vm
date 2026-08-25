@@ -71,6 +71,25 @@ static TZrBool typed_metadata_current_function_borrows_receiver(
     return (TZrBool)(effect == ZR_CANONICAL_RECEIVER_READONLY);
 }
 
+static TZrBool typed_metadata_parameter_borrows_inline_storage(
+        const SZrFunctionTypedLocalBinding *binding) {
+    TZrUInt32 passingRoleFlags;
+
+    if (binding == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    passingRoleFlags =
+            binding->roleFlags &
+            ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_MASK;
+    return (TZrBool)(
+            passingRoleFlags ==
+                    ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_IN ||
+            passingRoleFlags ==
+                    ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_REF_READONLY ||
+            passingRoleFlags ==
+                    ZR_FUNCTION_TYPED_LOCAL_ROLE_PARAMETER_PASSING_SCOPED_REF_READONLY);
+}
+
 static SZrGenericDeclaration *typed_metadata_current_generic_declaration(SZrCompilerState *cs) {
     SZrAstNode *node;
 
@@ -1456,8 +1475,9 @@ static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(co
     return ZR_NULL;
 }
 
-static const SZrFunctionTypedLocalBinding *find_typed_local_binding_for_slot(const SZrFunction *function,
-                                                                             TZrUInt32 stackSlot) {
+static SZrFunctionTypedLocalBinding *find_typed_local_binding_for_slot(
+        SZrFunction *function,
+        TZrUInt32 stackSlot) {
     if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1839,6 +1859,58 @@ TZrBool compiler_register_stack_slot_inline_receiver_argument_alias(
     return ZR_TRUE;
 }
 
+TZrBool compiler_register_stack_slot_readonly_aggregate_argument(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot) {
+    SZrCompilerStackSlotTypeHint *hint;
+
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    hint = (SZrCompilerStackSlotTypeHint *)find_stack_slot_type_hint_for_slot(
+            cs, stackSlot);
+    if (hint == ZR_NULL ||
+        !hint->isReadonlyAggregateCallWindowSlot ||
+        hint->isReadonlyAggregateCallWindowCallable) {
+        return ZR_TRUE;
+    }
+    hint->isReadonlyAggregateArgument = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+TZrBool compiler_register_isolated_call_window_slot(
+        SZrCompilerState *cs,
+        TZrUInt32 stackSlot,
+        TZrUInt32 callableSlot,
+        TZrUInt32 argumentCount) {
+    SZrCompilerStackSlotTypeHint hint;
+
+    if (cs == ZR_NULL || !cs->stackSlotTypeHints.isValid ||
+        stackSlot > UINT16_MAX || callableSlot > stackSlot ||
+        stackSlot - callableSlot > argumentCount) {
+        return ZR_FALSE;
+    }
+    if (find_stack_slot_type_hint_for_slot(cs, stackSlot) != ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Memory_RawSet(&hint, 0, sizeof(hint));
+    hint.stackSlot = stackSlot;
+    hint.isReadonlyAggregateCallWindowSlot = ZR_TRUE;
+    hint.isReadonlyAggregateCallWindowCallable =
+            (TZrBool)(stackSlot == callableSlot);
+    hint.isReadonlyAggregateCallWindowActive =
+            hint.isReadonlyAggregateCallWindowCallable;
+    hint.readonlyAggregateCallWindowArgumentCount = argumentCount;
+    ZrCore_Array_Push(cs->state, &cs->stackSlotTypeHints, &hint);
+    if (cs->stackSlotCount <= (TZrSize)stackSlot) {
+        cs->stackSlotCount = (TZrSize)stackSlot + 1u;
+    }
+    if (cs->maxStackSlotCount < cs->stackSlotCount) {
+        cs->maxStackSlotCount = cs->stackSlotCount;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool compiler_register_stack_slot_field_alias(
         SZrCompilerState *cs,
         TZrUInt32 stackSlot,
@@ -2167,13 +2239,16 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
     cursor = frame_layout_align_offset((TZrUInt32)(slotCount * sizeof(SZrTypeValueOnStack)), ZR_ALIGN_SIZE);
 
     for (TZrUInt32 slot = 0; slot < slotCount; slot++) {
-        const SZrFunctionTypedLocalBinding *binding = find_typed_local_binding_for_slot(function, slot);
+        SZrFunctionTypedLocalBinding *binding =
+                find_typed_local_binding_for_slot(function, slot);
         const SZrCompilerStackSlotTypeHint *rawHint =
                 find_stack_slot_type_hint_for_slot(cs, slot);
         const SZrCompilerStackSlotTypeHint *hint =
                 (binding == ZR_NULL &&
-                 (!compiler_stack_slot_requires_plain_value_layout(function, slot) ||
-                  (rawHint != ZR_NULL && rawHint->isInlineReceiverArgument)))
+                  (!compiler_stack_slot_requires_plain_value_layout(function, slot) ||
+                   (rawHint != ZR_NULL &&
+                    (rawHint->isInlineReceiverArgument ||
+                     rawHint->isReadonlyAggregateArgument))))
                         ? rawHint
                         : ZR_NULL;
         SZrFunctionTypedTypeRef hintTypeRef;
@@ -2308,6 +2383,11 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
                                              &byteAlign,
                                              &inlineFieldCount)) {
             slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+            if (slotIsParameter &&
+                typed_metadata_parameter_borrows_inline_storage(binding)) {
+                binding->type.staticCType = ZR_STATIC_C_TYPE_STRUCT;
+                binding->type.staticCTypeId = typeLayoutId;
+            }
         }
 
         if (byteAlign == 0) {
@@ -2317,9 +2397,11 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             frameAlign = byteAlign;
         }
 
-        if (slot == 0u && slotIsParameter &&
+        if (slotIsParameter &&
             slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
-            typed_metadata_current_function_borrows_receiver(cs)) {
+            ((slot == 0u &&
+              typed_metadata_current_function_borrows_receiver(cs)) ||
+             typed_metadata_parameter_borrows_inline_storage(binding))) {
             TZrUInt32 bindingAlign =
                     (TZrUInt32)_Alignof(SZrFunctionFrameBorrowedAliasBinding);
 

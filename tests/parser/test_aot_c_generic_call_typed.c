@@ -17,6 +17,8 @@
 #include "zr_vm_parser/writer.h"
 
 #include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h"
+#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"
@@ -842,6 +844,9 @@ int main(void) {
     RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_unknown_parameter_passing_form);
     RUN_TEST(test_aot_c_reference_generic_call_typed_rejects_non_value_parameter_passing_form);
     RUN_TEST(test_aot_c_value_semir_typed_call_accepts_only_value_passing_parameters);
+    RUN_TEST(test_aot_readonly_aggregate_parameters_use_borrowed_frame_storage);
+    RUN_TEST(test_aot_exec_ir_rejects_readonly_aggregate_parameter_storage_role_mismatch);
+    RUN_TEST(test_aot_code_writers_reject_unreachable_readonly_aggregate_storage_mismatch_before_stripping);
     RUN_TEST(test_aot_c_code_stripping_rejects_unreachable_partial_parameter_passing_forms);
     RUN_TEST(test_aot_c_reference_generic_call_typed_full_aot_omits_missing_instance_deopt);
     RUN_TEST(test_aot_c_reference_generic_call_typed_missing_instance_deopts_to_interpreter);

@@ -153,6 +153,13 @@ receiver/passing 组合、多 bit、未知 bit 与参数前缀外 role 均 fail 
 合法 3→2 fixture 保持既有结果；不新增 reachability node、manifest、artifact 或 public schema，S1/S3/S6 与
 AOT 12 仍为部分完成。
 
+[2026-08-25 readonly aggregate parameter borrowed storage](./07-codegen/2026-08-25-readonly-aggregate-parameter-borrowed-storage.md)
+在 complete function tree 的 ExecIR 构建期间、裁剪前交叉验证 readonly aggregate parameter 的 canonical
+passing role、struct TypeLayout identity 与 `INLINE_STRUCT + BORROWED_ALIAS` 物理存储；不可达 owner 的缺失 borrowed
+flags、VALUE downgrade、VALUE role/borrowed storage 漂移以及 zero/partial table 省略参数行均 fail closed。沿用
+既有 frame owner 和 manifest，不新增 graph node 或 schema；caller direct struct-init 的 callable 隔离属于 A7.2P
+前端窗口正确性，不改变裁剪图或 owner schema。S1/S3/S6 与 AOT 12 仍为部分完成。
+
 ## 阶段与可证明性
 
 | 阶段 | 图输入 | 输出/验证 |
