@@ -1366,6 +1366,44 @@ static void test_weak_optional_field_chain_releases_hidden_owner_after_success(v
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_weak_optional_guard_skips_computed_index_suffix(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub var values: int[1];\n"
+            "    pub @constructor() { this.values = [7]; }\n"
+            "}\n"
+            "var sideEffects = 0;\n"
+            "fn bump(): int { sideEffects = sideEffects + 1; return 0; }\n"
+            "fn run(): int {\n"
+            "    var liveSeed = own Service();\n"
+            "    var liveShared = share(liveSeed);\n"
+            "    var liveWeak = degrade(liveShared);\n"
+            "    var liveValue = liveWeak?.values[bump()];\n"
+            "    var expiredSeed = own Service();\n"
+            "    var expiredShared = share(expiredSeed);\n"
+            "    var expiredWeak = degrade(expiredShared);\n"
+            "    drop(expiredShared);\n"
+            "    var expiredValue = expiredWeak?.values[bump()];\n"
+            "    if (liveValue == 7 && expiredValue == null && sideEffects == 1) {\n"
+            "        return 1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "weak_optional_computed_index_suffix.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_weak_member_optional_callable_chain_skips_arguments(void) {
     const TZrChar *source =
             "resource class Service {\n"
@@ -1554,6 +1592,7 @@ int main(void) {
     RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);
     RUN_TEST(test_live_nullable_shared_receiver_projects_owned_fields);
     RUN_TEST(test_weak_optional_field_chain_releases_hidden_owner_after_success);
+    RUN_TEST(test_weak_optional_guard_skips_computed_index_suffix);
     RUN_TEST(test_weak_member_optional_callable_chain_skips_arguments);
     RUN_TEST(test_live_weak_optional_chain_survives_native_gc_pressure);
     RUN_TEST(test_live_weak_missing_member_is_not_null_reference_error);
