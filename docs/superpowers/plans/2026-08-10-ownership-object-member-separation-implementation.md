@@ -778,6 +778,20 @@ function data, and produces the same Weak optional/direct result. This remains
 focused pre-acceptance evidence until Clang/MSVC and the full graph replay on the
 post-L8 stable baseline.
 
+The checked-in `lsp_language_feature_matrix` artifact graph was also rebuilt
+through the WSL GCC `zr_vm_cli --compile ... --intermediate` entry. Seven
+tracked outputs changed semantically: three module `.zri` projections and all
+four `.zro` files. Repeating generation at the canonical repository path
+changed zero SHA-256 hashes, and the new `async_native.zro` contains `wakeView`
+with no historical `upgraded` spelling. GCC, Clang, and MSVC each load that same
+binary graph, print `matrix`, return `64`, report `executed_via=binary`, and
+exit zero. The current execution-layout schema remains producer-ABI-sensitive:
+an MSVC-produced diagnostic artifact's smaller private value slots were not
+portable to the WSL loaders, while the larger WSL-produced layout was accepted
+by all three. Cross-worktree `.zro` hashes also differ because the schema
+retains absolute source/project mappings. Keep this step open until the same
+WSL-producer/three-consumer replay is made on the final integrated baseline.
+
 - [ ] **Step 6: Remove generated build products and logs requested by the user**
 
 Resolve each cleanup target under `E:\Git\zr_vm\build` or the explicit test log

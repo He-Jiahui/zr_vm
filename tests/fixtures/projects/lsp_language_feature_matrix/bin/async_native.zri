@@ -284,17 +284,17 @@ CHILD_FUNCTIONS (2):
       [12] int: 1
 
     LOCAL_VARIABLES (11):
-      [0] vector: offset_activate=18, offset_dead=152
-      [1] handle: offset_activate=27, offset_dead=152
-      [2] tcp: offset_activate=30, offset_dead=152
-      [3] list: offset_activate=38, offset_dead=152
-      [4] owner: offset_activate=44, offset_dead=152
-      [5] shared: offset_activate=50, offset_dead=152
-      [6] weak: offset_activate=58, offset_dead=152
-      [7] wakeView: offset_activate=66, offset_dead=152
-      [8] releasedShared: offset_activate=70, offset_dead=152
-      [9] releasedWakeRef: offset_activate=73, offset_dead=152
-      [10] escaped: offset_activate=77, offset_dead=152
+      [0] vector: offset_activate=18, offset_dead=144
+      [1] handle: offset_activate=27, offset_dead=144
+      [2] tcp: offset_activate=30, offset_dead=144
+      [3] list: offset_activate=38, offset_dead=144
+      [4] owner: offset_activate=44, offset_dead=144
+      [5] shared: offset_activate=50, offset_dead=144
+      [6] weak: offset_activate=54, offset_dead=144
+      [7] wakeView: offset_activate=58, offset_dead=144
+      [8] releasedShared: offset_activate=62, offset_dead=144
+      [9] releasedWakeRef: offset_activate=65, offset_dead=144
+      [10] escaped: offset_activate=69, offset_dead=144
 
     CLOSURE_VARIABLES (5):
       [0] ffi: in_stack=true, index=5, type=NULL
@@ -396,37 +396,37 @@ CHILD_FUNCTIONS (2):
       [5] DYN_CALL exec=33 type=6 effect=5 dst=6 op0=6 op1=1 deopt=6
       [6] OWN_UNIQUE exec=41 type=5 effect=6 dst=5 op0=6 op1=0 deopt=0
       [7] OWN_SHARE exec=45 type=7 effect=7 dst=7 op0=5 op1=0 deopt=0
-      [8] OWN_DEGRADE exec=54 type=8 effect=8 dst=8 op0=9 op1=0 deopt=0
-      [9] OWN_WAKE exec=62 type=9 effect=9 dst=9 op0=10 op1=0 deopt=0
-      [10] OWN_DROP exec=67 type=9 effect=10 dst=10 op0=6 op1=0 deopt=0
-      [11] OWN_DROP exec=70 type=0 effect=11 dst=11 op0=8 op1=0 deopt=0
-      [12] DYN_CALL exec=75 type=0 effect=12 dst=12 op0=12 op1=1 deopt=7
-      [13] META_GET exec=79 type=0 effect=13 dst=12 op0=12 op1=4 deopt=8
-      [14] DYN_CALL exec=83 type=0 effect=14 dst=12 op0=12 op1=2 deopt=9
-      [15] META_GET exec=86 type=0 effect=15 dst=17 op0=17 op1=7 deopt=10
-      [16] DYN_CALL exec=89 type=0 effect=16 dst=17 op0=17 op1=1 deopt=11
-      [17] DYN_ARITHMETIC exec=91 type=0 effect=17 dst=14 op0=12 op1=13 deopt=12
-      [18] DYN_ARITHMETIC exec=96 type=0 effect=18 dst=18 op0=16 op1=17 deopt=13
-      [19] OWN_DROP exec=100 type=8 effect=19 dst=8 op0=8 op1=0 deopt=0
-      [20] OWN_DROP exec=102 type=7 effect=20 dst=7 op0=7 op1=0 deopt=0
-      [21] OWN_DROP exec=104 type=6 effect=21 dst=6 op0=6 op1=0 deopt=0
-      [22] OWN_DROP exec=106 type=5 effect=22 dst=5 op0=5 op1=0 deopt=0
-      [23] DYN_ARITHMETIC exec=111 type=0 effect=23 dst=14 op0=12 op1=13 deopt=14
-      [24] DYN_ARITHMETIC exec=115 type=0 effect=24 dst=23 op0=21 op1=22 deopt=15
-      [25] DYN_CALL exec=121 type=0 effect=25 dst=22 op0=22 op1=1 deopt=16
-      [26] DYN_ARITHMETIC exec=122 type=0 effect=26 dst=23 op0=21 op1=22 deopt=17
-      [27] OWN_DROP exec=123 type=8 effect=27 dst=8 op0=8 op1=0 deopt=0
-      [28] OWN_DROP exec=125 type=7 effect=28 dst=7 op0=7 op1=0 deopt=0
-      [29] OWN_DROP exec=127 type=6 effect=29 dst=6 op0=6 op1=0 deopt=0
-      [30] OWN_DROP exec=129 type=5 effect=30 dst=5 op0=5 op1=0 deopt=0
-      [31] OWN_DROP exec=135 type=8 effect=31 dst=8 op0=8 op1=0 deopt=0
-      [32] OWN_DROP exec=137 type=7 effect=32 dst=7 op0=7 op1=0 deopt=0
-      [33] OWN_DROP exec=139 type=6 effect=33 dst=6 op0=6 op1=0 deopt=0
-      [34] OWN_DROP exec=141 type=5 effect=34 dst=5 op0=5 op1=0 deopt=0
-      [35] OWN_DROP exec=144 type=8 effect=35 dst=8 op0=8 op1=0 deopt=0
-      [36] OWN_DROP exec=146 type=7 effect=36 dst=7 op0=7 op1=0 deopt=0
-      [37] OWN_DROP exec=148 type=6 effect=37 dst=6 op0=6 op1=0 deopt=0
-      [38] OWN_DROP exec=150 type=5 effect=38 dst=5 op0=5 op1=0 deopt=0
+      [8] OWN_DEGRADE exec=51 type=8 effect=8 dst=8 op0=6 op1=0 deopt=0
+      [9] OWN_WAKE exec=55 type=9 effect=9 dst=9 op0=7 op1=0 deopt=0
+      [10] OWN_DROP exec=59 type=9 effect=10 dst=10 op0=6 op1=0 deopt=0
+      [11] OWN_DROP exec=62 type=0 effect=11 dst=11 op0=8 op1=0 deopt=0
+      [12] DYN_CALL exec=67 type=0 effect=12 dst=12 op0=12 op1=1 deopt=7
+      [13] META_GET exec=71 type=0 effect=13 dst=12 op0=12 op1=4 deopt=8
+      [14] DYN_CALL exec=75 type=0 effect=14 dst=12 op0=12 op1=2 deopt=9
+      [15] META_GET exec=78 type=0 effect=15 dst=17 op0=17 op1=7 deopt=10
+      [16] DYN_CALL exec=81 type=0 effect=16 dst=17 op0=17 op1=1 deopt=11
+      [17] DYN_ARITHMETIC exec=83 type=0 effect=17 dst=14 op0=12 op1=13 deopt=12
+      [18] DYN_ARITHMETIC exec=88 type=0 effect=18 dst=18 op0=16 op1=17 deopt=13
+      [19] OWN_DROP exec=92 type=8 effect=19 dst=8 op0=8 op1=0 deopt=0
+      [20] OWN_DROP exec=94 type=7 effect=20 dst=7 op0=7 op1=0 deopt=0
+      [21] OWN_DROP exec=96 type=6 effect=21 dst=6 op0=6 op1=0 deopt=0
+      [22] OWN_DROP exec=98 type=5 effect=22 dst=5 op0=5 op1=0 deopt=0
+      [23] DYN_ARITHMETIC exec=103 type=0 effect=23 dst=14 op0=12 op1=13 deopt=14
+      [24] DYN_ARITHMETIC exec=107 type=0 effect=24 dst=23 op0=21 op1=22 deopt=15
+      [25] DYN_CALL exec=113 type=0 effect=25 dst=22 op0=22 op1=1 deopt=16
+      [26] DYN_ARITHMETIC exec=114 type=0 effect=26 dst=23 op0=21 op1=22 deopt=17
+      [27] OWN_DROP exec=115 type=8 effect=27 dst=8 op0=8 op1=0 deopt=0
+      [28] OWN_DROP exec=117 type=7 effect=28 dst=7 op0=7 op1=0 deopt=0
+      [29] OWN_DROP exec=119 type=6 effect=29 dst=6 op0=6 op1=0 deopt=0
+      [30] OWN_DROP exec=121 type=5 effect=30 dst=5 op0=5 op1=0 deopt=0
+      [31] OWN_DROP exec=127 type=8 effect=31 dst=8 op0=8 op1=0 deopt=0
+      [32] OWN_DROP exec=129 type=7 effect=32 dst=7 op0=7 op1=0 deopt=0
+      [33] OWN_DROP exec=131 type=6 effect=33 dst=6 op0=6 op1=0 deopt=0
+      [34] OWN_DROP exec=133 type=5 effect=34 dst=5 op0=5 op1=0 deopt=0
+      [35] OWN_DROP exec=136 type=8 effect=35 dst=8 op0=8 op1=0 deopt=0
+      [36] OWN_DROP exec=138 type=7 effect=36 dst=7 op0=7 op1=0 deopt=0
+      [37] OWN_DROP exec=140 type=6 effect=37 dst=6 op0=6 op1=0 deopt=0
+      [38] OWN_DROP exec=142 type=5 effect=38 dst=5 op0=5 op1=0 deopt=0
 
     DEOPT_MAP (17):
       [0] deopt=1 exec=11
@@ -435,32 +435,32 @@ CHILD_FUNCTIONS (2):
       [3] deopt=4 exec=23
       [4] deopt=5 exec=32
       [5] deopt=6 exec=33
-      [6] deopt=7 exec=75
-      [7] deopt=8 exec=79
-      [8] deopt=9 exec=83
-      [9] deopt=10 exec=86
-      [10] deopt=11 exec=89
-      [11] deopt=12 exec=91
-      [12] deopt=13 exec=96
-      [13] deopt=14 exec=111
-      [14] deopt=15 exec=115
-      [15] deopt=16 exec=121
-      [16] deopt=17 exec=122
+      [6] deopt=7 exec=67
+      [7] deopt=8 exec=71
+      [8] deopt=9 exec=75
+      [9] deopt=10 exec=78
+      [10] deopt=11 exec=81
+      [11] deopt=12 exec=83
+      [12] deopt=13 exec=88
+      [13] deopt=14 exec=103
+      [14] deopt=15 exec=107
+      [15] deopt=16 exec=113
+      [16] deopt=17 exec=114
 
     CALLSITE_CACHE_TABLE (9):
       [0] kind=MEMBER_GET inst=19 member=1 deopt=0 args=0 hits=0 misses=0
       [1] kind=MEMBER_GET inst=28 member=3 deopt=0 args=0 hits=0 misses=0
-      [2] kind=MEMBER_GET inst=84 member=5 deopt=0 args=0 hits=0 misses=0
-      [3] kind=MEMBER_GET inst=93 member=6 deopt=0 args=0 hits=0 misses=0
-      [4] kind=MEMBER_GET inst=142 member=8 deopt=0 args=0 hits=0 misses=0
-      [5] kind=DYN_CALL inst=121 member=4294967295 deopt=16 args=1 hits=0 misses=0
+      [2] kind=MEMBER_GET inst=76 member=5 deopt=0 args=0 hits=0 misses=0
+      [3] kind=MEMBER_GET inst=85 member=6 deopt=0 args=0 hits=0 misses=0
+      [4] kind=MEMBER_GET inst=134 member=8 deopt=0 args=0 hits=0 misses=0
+      [5] kind=DYN_CALL inst=113 member=4294967295 deopt=16 args=1 hits=0 misses=0
       [6] kind=MEMBER_GET inst=11 member=0 deopt=1 args=0 hits=0 misses=0
       [7] kind=MEMBER_GET inst=32 member=0 deopt=5 args=0 hits=0 misses=0
-      [8] kind=MEMBER_GET inst=79 member=4 deopt=8 args=0 hits=0 misses=0
+      [8] kind=MEMBER_GET inst=71 member=4 deopt=8 args=0 hits=0 misses=0
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (154):
+    INSTRUCTIONS (146):
       [0] CREATE_OBJECT (extra=1)
       [1] OPCODE_37 (extra=1, operand2=1, operand1=1, operand1_1=0)
       [2] GET_CONSTANT (extra=5, operand=1)
@@ -512,108 +512,100 @@ CHILD_FUNCTIONS (2):
       [48] SET_STACK (extra=6, operand=7)
       [49] RESET_STACK_NULL (extra=7)
       [50] OPCODE_130 (extra=6)
-      [51] GET_STACK (extra=10, operand=6)
-      [52] SET_STACK (extra=9, operand=10)
-      [53] RESET_STACK_NULL (extra=10)
-      [54] OWN_DEGRADE (extra=8, operand1=9, operand2=0)
-      [55] RESET_STACK_NULL (extra=9)
-      [56] SET_STACK (extra=7, operand=8)
-      [57] RESET_STACK_NULL (extra=8)
-      [58] OPCODE_130 (extra=7)
-      [59] GET_STACK (extra=11, operand=7)
-      [60] SET_STACK (extra=10, operand=11)
-      [61] RESET_STACK_NULL (extra=11)
-      [62] OWN_WAKE (extra=9, operand1=10, operand2=0)
-      [63] RESET_STACK_NULL (extra=10)
-      [64] SET_STACK (extra=8, operand=9)
-      [65] RESET_STACK_NULL (extra=9)
-      [66] OPCODE_130 (extra=8)
-      [67] OWN_DROP (extra=10, operand1=6, operand2=0)
-      [68] SET_STACK (extra=9, operand=10)
-      [69] RESET_STACK_NULL (extra=10)
-      [70] OWN_DROP (extra=11, operand1=8, operand2=0)
-      [71] SET_STACK (extra=10, operand=11)
-      [72] RESET_STACK_NULL (extra=11)
-      [73] OPCODE_6 (extra=12, operand2=3, operand1=3, operand1_1=0)
-      [74] GET_CONSTANT (extra=13, operand=8)
-      [75] OPCODE_109 (extra=12, operand1=12, operand2=1)
-      [76] SET_STACK (extra=11, operand=12)
-      [77] GET_STACK (extra=12, operand=4)
-      [78] SET_STACK (extra=13, operand=12)
-      [79] GET_MEMBER_SLOT (extra=12, operand1=12, operand2=8)
-      [80] GET_MEMBER_SLOT (extra=15, operand1=1, operand2=2)
-      [81] TO_INT_FLOAT (extra=16, operand2=15, operand1=15, operand1_1=0)
-      [82] SET_STACK (extra=14, operand=16)
-      [83] KNOWN_NATIVE_CALL (extra=12, operand1=12, operand2=2)
-      [84] OPCODE_6 (extra=12, operand2=4, operand1=4, operand1_1=0)
-      [85] GET_MEMBER_SLOT (extra=17, operand1=12, operand2=3)
-      [86] OPCODE_8 (extra=17, operand1=17, operand2=7)
-      [87] GET_CONSTANT (extra=19, operand=9)
-      [88] SET_STACK (extra=18, operand=19)
-      [89] OPCODE_109 (extra=17, operand1=17, operand2=1)
-      [90] RESET_STACK_NULL (extra=13)
-      [91] OPCODE_95 (extra=14, operand1=2, operand2=13)
-      [92] SET_STACK (extra=15, operand=14)
-      [93] JUMP_IF_BOOL_FALSE (extra=14, operand=1)
-      [94] OPCODE_114 (extra=0, operand=2)
-      [95] RESET_STACK_NULL (extra=17)
-      [96] OPCODE_95 (extra=15, operand1=3, operand2=17)
-      [97] JUMP_IF_BOOL_FALSE (extra=15, operand=12)
-      [98] GET_CONSTANT (extra=17, operand=10)
-      [99] NEG_SIGNED (extra=16, operand2=17, operand1=17, operand1_1=0)
-      [100] OWN_DROP (extra=8, operand1=8, operand2=0)
-      [101] OPCODE_131 (extra=1)
-      [102] OWN_DROP (extra=7, operand1=7, operand2=0)
-      [103] OPCODE_131 (extra=1)
-      [104] OWN_DROP (extra=6, operand1=6, operand2=0)
-      [105] OPCODE_131 (extra=1)
-      [106] OWN_DROP (extra=5, operand1=5, operand2=0)
-      [107] OPCODE_131 (extra=1)
-      [108] FUNCTION_RETURN (extra=1, operand1=16, operand2=0)
-      [109] OPCODE_114 (extra=0, operand=0)
-      [110] RESET_STACK_NULL (extra=13)
-      [111] OPCODE_95 (extra=14, operand1=9, operand2=13)
-      [112] SET_STACK (extra=20, operand=14)
-      [113] JUMP_IF_BOOL_FALSE (extra=14, operand=2)
-      [114] RESET_STACK_NULL (extra=22)
-      [115] OPCODE_95 (extra=20, operand1=10, operand2=22)
-      [116] JUMP_IF_BOOL_FALSE (extra=20, operand=16)
-      [117] GET_MEMBER_SLOT (extra=21, operand1=4, operand2=4)
-      [118] GET_STACK (extra=22, operand=11)
-      [119] GET_CONSTANT (extra=24, operand=11)
-      [120] SET_STACK (extra=23, operand=24)
-      [121] SUPER_DYN_CALL_CACHED (extra=22, operand1=22, operand2=5)
-      [122] OPCODE_39 (extra=23, operand2=1441813, operand1=21, operand1_1=22)
-      [123] OWN_DROP (extra=8, operand1=8, operand2=0)
-      [124] OPCODE_131 (extra=1)
-      [125] OWN_DROP (extra=7, operand1=7, operand2=0)
-      [126] OPCODE_131 (extra=1)
-      [127] OWN_DROP (extra=6, operand1=6, operand2=0)
+      [51] OWN_DEGRADE (extra=8, operand1=6, operand2=0)
+      [52] SET_STACK (extra=7, operand=8)
+      [53] RESET_STACK_NULL (extra=8)
+      [54] OPCODE_130 (extra=7)
+      [55] OWN_WAKE (extra=9, operand1=7, operand2=0)
+      [56] SET_STACK (extra=8, operand=9)
+      [57] RESET_STACK_NULL (extra=9)
+      [58] OPCODE_130 (extra=8)
+      [59] OWN_DROP (extra=10, operand1=6, operand2=0)
+      [60] SET_STACK (extra=9, operand=10)
+      [61] RESET_STACK_NULL (extra=10)
+      [62] OWN_DROP (extra=11, operand1=8, operand2=0)
+      [63] SET_STACK (extra=10, operand=11)
+      [64] RESET_STACK_NULL (extra=11)
+      [65] OPCODE_6 (extra=12, operand2=3, operand1=3, operand1_1=0)
+      [66] GET_CONSTANT (extra=13, operand=8)
+      [67] OPCODE_109 (extra=12, operand1=12, operand2=1)
+      [68] SET_STACK (extra=11, operand=12)
+      [69] GET_STACK (extra=12, operand=4)
+      [70] SET_STACK (extra=13, operand=12)
+      [71] GET_MEMBER_SLOT (extra=12, operand1=12, operand2=8)
+      [72] GET_MEMBER_SLOT (extra=15, operand1=1, operand2=2)
+      [73] TO_INT_FLOAT (extra=16, operand2=15, operand1=15, operand1_1=0)
+      [74] SET_STACK (extra=14, operand=16)
+      [75] KNOWN_NATIVE_CALL (extra=12, operand1=12, operand2=2)
+      [76] OPCODE_6 (extra=12, operand2=4, operand1=4, operand1_1=0)
+      [77] GET_MEMBER_SLOT (extra=17, operand1=12, operand2=3)
+      [78] OPCODE_8 (extra=17, operand1=17, operand2=7)
+      [79] GET_CONSTANT (extra=19, operand=9)
+      [80] SET_STACK (extra=18, operand=19)
+      [81] OPCODE_109 (extra=17, operand1=17, operand2=1)
+      [82] RESET_STACK_NULL (extra=13)
+      [83] OPCODE_95 (extra=14, operand1=2, operand2=13)
+      [84] SET_STACK (extra=15, operand=14)
+      [85] JUMP_IF_BOOL_FALSE (extra=14, operand=1)
+      [86] OPCODE_114 (extra=0, operand=2)
+      [87] RESET_STACK_NULL (extra=17)
+      [88] OPCODE_95 (extra=15, operand1=3, operand2=17)
+      [89] JUMP_IF_BOOL_FALSE (extra=15, operand=12)
+      [90] GET_CONSTANT (extra=17, operand=10)
+      [91] NEG_SIGNED (extra=16, operand2=17, operand1=17, operand1_1=0)
+      [92] OWN_DROP (extra=8, operand1=8, operand2=0)
+      [93] OPCODE_131 (extra=1)
+      [94] OWN_DROP (extra=7, operand1=7, operand2=0)
+      [95] OPCODE_131 (extra=1)
+      [96] OWN_DROP (extra=6, operand1=6, operand2=0)
+      [97] OPCODE_131 (extra=1)
+      [98] OWN_DROP (extra=5, operand1=5, operand2=0)
+      [99] OPCODE_131 (extra=1)
+      [100] FUNCTION_RETURN (extra=1, operand1=16, operand2=0)
+      [101] OPCODE_114 (extra=0, operand=0)
+      [102] RESET_STACK_NULL (extra=13)
+      [103] OPCODE_95 (extra=14, operand1=9, operand2=13)
+      [104] SET_STACK (extra=20, operand=14)
+      [105] JUMP_IF_BOOL_FALSE (extra=14, operand=2)
+      [106] RESET_STACK_NULL (extra=22)
+      [107] OPCODE_95 (extra=20, operand1=10, operand2=22)
+      [108] JUMP_IF_BOOL_FALSE (extra=20, operand=16)
+      [109] GET_MEMBER_SLOT (extra=21, operand1=4, operand2=4)
+      [110] GET_STACK (extra=22, operand=11)
+      [111] GET_CONSTANT (extra=24, operand=11)
+      [112] SET_STACK (extra=23, operand=24)
+      [113] SUPER_DYN_CALL_CACHED (extra=22, operand1=22, operand2=5)
+      [114] OPCODE_39 (extra=23, operand2=1441813, operand1=21, operand1_1=22)
+      [115] OWN_DROP (extra=8, operand1=8, operand2=0)
+      [116] OPCODE_131 (extra=1)
+      [117] OWN_DROP (extra=7, operand1=7, operand2=0)
+      [118] OPCODE_131 (extra=1)
+      [119] OWN_DROP (extra=6, operand1=6, operand2=0)
+      [120] OPCODE_131 (extra=1)
+      [121] OWN_DROP (extra=5, operand1=5, operand2=0)
+      [122] OPCODE_131 (extra=1)
+      [123] FUNCTION_RETURN (extra=1, operand1=23, operand2=0)
+      [124] OPCODE_114 (extra=0, operand=0)
+      [125] GET_CONSTANT (extra=25, operand=12)
+      [126] NEG_SIGNED (extra=24, operand2=25, operand1=25, operand1_1=0)
+      [127] OWN_DROP (extra=8, operand1=8, operand2=0)
       [128] OPCODE_131 (extra=1)
-      [129] OWN_DROP (extra=5, operand1=5, operand2=0)
+      [129] OWN_DROP (extra=7, operand1=7, operand2=0)
       [130] OPCODE_131 (extra=1)
-      [131] FUNCTION_RETURN (extra=1, operand1=23, operand2=0)
-      [132] OPCODE_114 (extra=0, operand=0)
-      [133] GET_CONSTANT (extra=25, operand=12)
-      [134] NEG_SIGNED (extra=24, operand2=25, operand1=25, operand1_1=0)
-      [135] OWN_DROP (extra=8, operand1=8, operand2=0)
-      [136] OPCODE_131 (extra=1)
-      [137] OWN_DROP (extra=7, operand1=7, operand2=0)
-      [138] OPCODE_131 (extra=1)
-      [139] OWN_DROP (extra=6, operand1=6, operand2=0)
-      [140] OPCODE_131 (extra=1)
-      [141] OWN_DROP (extra=5, operand1=5, operand2=0)
-      [142] OPCODE_131 (extra=1)
-      [143] FUNCTION_RETURN (extra=1, operand1=24, operand2=0)
-      [144] OWN_DROP (extra=8, operand1=8, operand2=0)
-      [145] OPCODE_131 (extra=1)
-      [146] OWN_DROP (extra=7, operand1=7, operand2=0)
-      [147] OPCODE_131 (extra=1)
-      [148] OWN_DROP (extra=6, operand1=6, operand2=0)
-      [149] OPCODE_131 (extra=1)
-      [150] OWN_DROP (extra=5, operand1=5, operand2=0)
-      [151] OPCODE_131 (extra=1)
-      [152] RESET_STACK_NULL (extra=25)
-      [153] FUNCTION_RETURN (extra=1, operand1=25, operand2=0)
+      [131] OWN_DROP (extra=6, operand1=6, operand2=0)
+      [132] OPCODE_131 (extra=1)
+      [133] OWN_DROP (extra=5, operand1=5, operand2=0)
+      [134] OPCODE_131 (extra=1)
+      [135] FUNCTION_RETURN (extra=1, operand1=24, operand2=0)
+      [136] OWN_DROP (extra=8, operand1=8, operand2=0)
+      [137] OPCODE_131 (extra=1)
+      [138] OWN_DROP (extra=7, operand1=7, operand2=0)
+      [139] OPCODE_131 (extra=1)
+      [140] OWN_DROP (extra=6, operand1=6, operand2=0)
+      [141] OPCODE_131 (extra=1)
+      [142] OWN_DROP (extra=5, operand1=5, operand2=0)
+      [143] OPCODE_131 (extra=1)
+      [144] RESET_STACK_NULL (extra=25)
+      [145] FUNCTION_RETURN (extra=1, operand1=25, operand2=0)
 
 

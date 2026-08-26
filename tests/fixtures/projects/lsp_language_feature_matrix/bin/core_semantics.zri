@@ -132,8 +132,8 @@ class Counter : ScoreReadable, zr.builtin.Object {
 // --- Prototype 3 ---
 struct Pair {
   access: public (0),
-  layoutByteSize: 16,
-  layoutByteAlign: 8,
+  layoutByteSize: 64,
+  layoutByteAlign: 32,
   members: [
     {
       type: STRUCT_FIELD (14),
@@ -150,7 +150,7 @@ struct Pair {
       access: public (0),
       static: false,
       fieldType: "int",
-      fieldOffset: 8,
+      fieldOffset: 32,
       fieldSize: 8
     },
     {
