@@ -482,7 +482,11 @@ TZrBool ZrParser_SemanticFacts_AppendDiagnostic(
     if (context == ZR_NULL || fact == ZR_NULL ||
         !context->diagnosticFacts.isValid ||
         fact->diagnostic.code == ZR_NULL ||
-        fact->diagnostic.message == ZR_NULL) {
+        fact->diagnostic.message == ZR_NULL ||
+        ((!fact->diagnostic.fixes.isValid ||
+          fact->diagnostic.fixes.length == 0U) &&
+         fact->diagnostic.noFixReason ==
+                 ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED)) {
         return ZR_FALSE;
     }
     for (index = 0U; index < context->diagnosticFacts.length; index++) {

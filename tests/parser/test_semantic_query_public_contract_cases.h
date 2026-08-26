@@ -416,6 +416,9 @@ static void test_semantic_query_public_contract_rejects_poisoned_or_unsupported_
             "Published compiler diagnostic",
             ZR_NULL,
             ZR_NULL));
+    TEST_ASSERT_TRUE(ZrParser_StructuredDiagnostic_SetNoFixReason(
+            &diagnostic,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT));
     memset(&diagnosticFact, 0, sizeof(diagnosticFact));
     diagnosticFact.diagnostic = diagnostic;
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendDiagnostic(

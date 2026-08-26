@@ -309,6 +309,52 @@ static void test_type_mismatch_disposition_depends_on_typed_cast_contract(void) 
     ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
 }
 
+static void test_conditional_migration_builders_publish_complete_disposition(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange declaration = diagnostic_range(70U, 82U);
+    SZrFileRange name = diagnostic_range(71U, 75U);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
+            g_state,
+            &diagnostic,
+            declaration,
+            name,
+            ZR_NULL,
+            ZR_NULL,
+            ZR_NULL));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
+            g_state,
+            &diagnostic,
+            declaration,
+            name,
+            ZR_NULL,
+            ZR_NULL,
+            "property value: int { get; }"));
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildRemovedOwnershipMemberSyntax(
+            g_state, &diagnostic, declaration, ZR_NULL));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildRemovedOwnershipMemberSyntax(
+            g_state, &diagnostic, declaration, "share(owner)"));
+    TEST_ASSERT_TRUE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_no_fix_reason_survives_fact_and_query_materialization);
@@ -318,5 +364,6 @@ int main(void) {
     RUN_TEST(test_pattern_import_builders_publish_user_decision_reason);
     RUN_TEST(test_ownership_builders_publish_explicit_no_fix_reasons);
     RUN_TEST(test_type_mismatch_disposition_depends_on_typed_cast_contract);
+    RUN_TEST(test_conditional_migration_builders_publish_complete_disposition);
     return UNITY_END();
 }

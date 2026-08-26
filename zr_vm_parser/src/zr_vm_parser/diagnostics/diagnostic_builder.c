@@ -927,14 +927,20 @@ TZrBool ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
         ZrParser_StructuredDiagnostic_Free(state, out);
         return ZR_FALSE;
     }
-    if (replacementText != ZR_NULL &&
-        !ZrParser_StructuredDiagnostic_AddFix(
-                state,
-                out,
-                "Migrate legacy property syntax",
-                declarationLocation,
-                replacementText,
-                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+    if (replacementText != ZR_NULL) {
+        if (!ZrParser_StructuredDiagnostic_AddFix(
+                    state,
+                    out,
+                    "Migrate legacy property syntax",
+                    declarationLocation,
+                    replacementText,
+                    ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+            ZrParser_StructuredDiagnostic_Free(state, out);
+            return ZR_FALSE;
+        }
+    } else if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                       out,
+                       ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
         ZrParser_StructuredDiagnostic_Free(state, out);
         return ZR_FALSE;
     }
@@ -957,14 +963,20 @@ TZrBool ZrParser_DiagnosticBuilder_BuildRemovedOwnershipMemberSyntax(
                 "Replace the removed ownership member call with its reserved intrinsic form.")) {
         return ZR_FALSE;
     }
-    if (replacementText != ZR_NULL &&
-        !ZrParser_StructuredDiagnostic_AddFix(
-                state,
-                out,
-                "Migrate ownership operation",
-                location,
-                replacementText,
-                ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+    if (replacementText != ZR_NULL) {
+        if (!ZrParser_StructuredDiagnostic_AddFix(
+                    state,
+                    out,
+                    "Migrate ownership operation",
+                    location,
+                    replacementText,
+                    ZR_DIAGNOSTIC_FIX_MACHINE_APPLICABLE)) {
+            ZrParser_StructuredDiagnostic_Free(state, out);
+            return ZR_FALSE;
+        }
+    } else if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                       out,
+                       ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT)) {
         ZrParser_StructuredDiagnostic_Free(state, out);
         return ZR_FALSE;
     }

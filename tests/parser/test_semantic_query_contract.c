@@ -77,6 +77,10 @@ static void contract_append_persistent_diagnostic(SZrSemanticContext *context) {
             "Persistent diagnostic",
             "The semantic fact is present before a query runs.",
             "Resolve the semantic condition."));
+    TEST_ASSERT_FALSE(ZrParser_SemanticFacts_AppendDiagnostic(context, &fact));
+    TEST_ASSERT_TRUE(ZrParser_StructuredDiagnostic_SetNoFixReason(
+            &fact.diagnostic,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION));
     TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendDiagnostic(context, &fact));
     ZrParser_StructuredDiagnostic_Free(g_state, &fact.diagnostic);
 }

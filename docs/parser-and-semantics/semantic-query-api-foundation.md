@@ -679,6 +679,15 @@ range and migration guidance, but not one exact replacement expression or
 declaration. Related reference-origin ranges and all existing stable codes,
 severity, and messages remain unchanged.
 
+Persistent semantic facts enforce disposition completeness. Append rejects a
+diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
+the producer must resolve that state before the fact crosses the snapshot
+boundary. Legacy property migration without an exact replacement publishes
+`REQUIRES_USER_DECISION`, while a removed ownership member without a canonical
+intrinsic replacement publishes `INSUFFICIENT_CONTEXT`. Supplying an exact
+replacement retains the existing machine-applicable fix and leaves the
+no-fix reason unspecified.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured
