@@ -265,6 +265,74 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
     free(callBoundaryText);
 }
 
+static void test_aot_c_source_prepares_known_member_calls_with_argument_source(void) {
+    static const char *const callBoundaryNeedles[] = {
+            "backend_aot_write_c_known_member_call(FILE *file,",
+            "ZrAotGeneratedDirectCall zr_aot_known_member_direct_call = {0};",
+            "ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u)",
+            "ZrLibrary_AotRuntime_PrepareDirectCall(state,",
+            "&zr_aot_known_member_direct_call",
+            "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(state,",
+            "&zr_aot_next_instruction",
+            "zr_aot_known_member_call_sync_i64_local_boundary",
+            "zr_aot_known_member_call_sync_bool_local_boundary",
+            "zr_aot_known_member_call_sync_u64_local_boundary",
+            "zr_aot_known_member_call_sync_f64_local_boundary",
+    };
+    static const char *const runtimeNeedles[] = {
+            "aot_runtime_try_prepare_direct_call(SZrState *state,",
+            "ZrCore_Closure_GetMetadataFunctionFromValue(state, functionValue)",
+            "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(SZrState *state,",
+            "state->callInfoList == directCall->callerCallInfo",
+            "aot_runtime_frame_resume_index(frame, state->callInfoList, outResumeInstructionIndex)",
+            "state->hasCurrentException &&",
+            "state->callInfoList != frame->callInfo",
+    };
+    static const char *const runtimeHeaderNeedles[] = {
+            "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(struct SZrState *state,",
+            "TZrUInt32 *outResumeInstructionIndex",
+    };
+    static const char *const llvmLoweringNeedles[] = {
+            "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume",
+            "i32 1, ptr %%resume_instruction",
+            "backend_aot_llvm_write_resume_dispatch(context->file,",
+    };
+    static const char *const llvmPreludeNeedles[] = {
+            "declare i1 @ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(ptr, ptr, ptr, i32, i32, i32, i32, ptr)",
+    };
+    static const char *const forbiddenRuntimeNeedles[] = {
+            "aot_runtime_try_prepare_direct_native_call",
+    };
+    char *callBoundaryText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_call_boundaries.c");
+    char *runtimeText = read_repo_text_file_owned(
+            "zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeHeaderText = read_repo_text_file_owned(
+            "zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    char *llvmLoweringText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_function_calls.c");
+    char *llvmPreludeText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c");
+
+    TEST_ASSERT_NOT_NULL(callBoundaryText);
+    TEST_ASSERT_NOT_NULL(runtimeText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(llvmLoweringText);
+    TEST_ASSERT_NOT_NULL(llvmPreludeText);
+    assert_text_contains_all(callBoundaryText, callBoundaryNeedles, ARRAY_COUNT(callBoundaryNeedles));
+    assert_text_contains_all(runtimeText, runtimeNeedles, ARRAY_COUNT(runtimeNeedles));
+    assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
+    assert_text_contains_all(llvmLoweringText, llvmLoweringNeedles, ARRAY_COUNT(llvmLoweringNeedles));
+    assert_text_contains_all(llvmPreludeText, llvmPreludeNeedles, ARRAY_COUNT(llvmPreludeNeedles));
+    assert_text_contains_none(runtimeText, forbiddenRuntimeNeedles, ARRAY_COUNT(forbiddenRuntimeNeedles));
+
+    free(callBoundaryText);
+    free(runtimeText);
+    free(runtimeHeaderText);
+    free(llvmLoweringText);
+    free(llvmPreludeText);
+}
+
 static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(void) {
     static const char *const callBoundaryNeedles[] = {
             "backend_aot_write_c_static_direct_function_call(FILE *file,",
@@ -574,6 +642,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_calls);
     RUN_TEST(test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls);
+    RUN_TEST(test_aot_c_source_prepares_known_member_calls_with_argument_source);
     RUN_TEST(test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls);
     RUN_TEST(test_aot_c_source_makes_meta_calls_explicit_boundary);
     RUN_TEST(test_aot_c_source_wraps_i64_typed_direct_calls_with_metadata_guard);

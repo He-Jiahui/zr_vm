@@ -2149,16 +2149,12 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "zr_aot_return_value = (expr);",
             "goto zr_aot_function_exit;",
             "#define ZR_AOT_C_FAIL()",
-            "ZrCore_Debug_RunError(state,",
-            "generated AOT function failed: functionIndex=%%u instructionIndex=%%u",
-            "(unsigned)zr_aot_function_index",
-            "UINT32_MAX);",
-            "ZR_AOT_C_RETURN(0);",
+            "ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_FailGeneratedFunctionAt(",
+            "state, zr_aot_failure_frame, zr_aot_function_index)",
     };
     static const char *const emitterForbiddenNeedles[] = {
-            "ZrLibrary_AotRuntime_FailGeneratedFunction(state, &frame)",
-            "(unsigned)frame.functionIndex",
-            "frame.currentInstructionIndex == ZR_AOT_RUNTIME_RESUME_FALLTHROUGH",
+            "ZrCore_Debug_RunError(state,",
+            "generated AOT function failed: functionIndex=%%u instructionIndex=%%u",
     };
     static const char *const cleanupHeaderNeedles[] = {
             "backend_aot_c_frame_cleanup_would_emit_for_function(",
@@ -2188,6 +2184,8 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "#include \"backend_aot_c_frame_cleanup.h\"",
             "ZrAotGeneratedFrame frame = {0};",
             "const TZrUInt32 zr_aot_function_index = %uu;",
+            "const ZrAotGeneratedFrame *zr_aot_failure_frame = %s;",
+            "includeFrameDescriptor ? \"&frame\" : \"ZR_NULL\"",
             "entry->flatIndex",
             "TZrInt64 zr_aot_return_value = 0;",
             "TZrBool zr_aot_frame_started = ZR_FALSE;",

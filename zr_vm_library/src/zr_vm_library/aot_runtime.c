@@ -2133,12 +2133,12 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
-                                                          ZrAotGeneratedFrame *frame,
-                                                          TZrUInt32 destinationSlot,
-                                                          TZrUInt32 functionSlot,
-                                                          TZrUInt32 argumentCount,
-                                                          ZrAotGeneratedDirectCall *directCall) {
+static TZrBool aot_runtime_try_prepare_direct_call(SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 functionSlot,
+                                                   TZrUInt32 argumentCount,
+                                                   ZrAotGeneratedDirectCall *directCall) {
     SZrLibraryAotRuntimeState *runtimeState;
     TZrStackValuePointer callBase;
     SZrTypeValue *functionValue;
@@ -2159,15 +2159,16 @@ static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
     }
 
     functionValue = ZrCore_Stack_GetValue(callBase);
-    if (functionValue == ZR_NULL || functionValue->type != ZR_VALUE_TYPE_CLOSURE || !functionValue->isNative ||
-        functionValue->value.object == ZR_NULL) {
+    metadataFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, functionValue);
+    if (metadataFunction == ZR_NULL) {
         return ZR_TRUE;
     }
 
-    closureNative = ZR_CAST_NATIVE_CLOSURE(state, functionValue->value.object);
-    metadataFunction = closureNative != ZR_NULL ? closureNative->aotShimFunction : ZR_NULL;
-    if (closureNative == ZR_NULL || closureNative->nativeFunction == ZR_NULL || metadataFunction == ZR_NULL) {
-        return ZR_TRUE;
+    if (functionValue->type == ZR_VALUE_TYPE_CLOSURE && functionValue->isNative) {
+        closureNative = ZR_CAST_NATIVE_CLOSURE(state, functionValue->value.object);
+        if (closureNative == ZR_NULL || closureNative->nativeFunction == ZR_NULL) {
+            return ZR_TRUE;
+        }
     }
 
     record = aot_runtime_find_record_for_function(runtimeState, metadataFunction);
@@ -7952,18 +7953,67 @@ TZrBool ZrLibrary_AotRuntime_CallPreparedOrGeneric(SZrState *state,
     return ZrLibrary_AotRuntime_FinishDirectCall(state, frame, directCall, resultCount);
 }
 
+TZrBool ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        ZrAotGeneratedDirectCall *directCall,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
+        TZrUInt32 argumentCount,
+        TZrUInt32 resultCount,
+        TZrUInt32 *outResumeInstructionIndex) {
+    SZrLibraryAotRuntimeState *runtimeState;
+
+    if (outResumeInstructionIndex != ZR_NULL) {
+        *outResumeInstructionIndex = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
+    }
+    runtimeState = state != ZR_NULL && state->global != ZR_NULL
+                           ? aot_runtime_get_state_from_global(state->global)
+                           : ZR_NULL;
+    if (state == ZR_NULL || frame == ZR_NULL || directCall == ZR_NULL ||
+        outResumeInstructionIndex == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!directCall->prepared) {
+        return ZrLibrary_AotRuntime_Call(
+                state, frame, destinationSlot, functionSlot, argumentCount);
+    }
+    if (directCall->nativeFunction == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "generated AOT direct call is missing native thunk");
+        return ZR_FALSE;
+    }
+
+    if (!directCall->nativeFunction(state)) {
+        if (state->callInfoList == directCall->callerCallInfo &&
+            state->callInfoList != directCall->calleeCallInfo &&
+            state->threadStatus == ZR_THREAD_STATUS_FINE &&
+            state->hasCurrentException) {
+            if (!aot_runtime_refresh_frame_from_callinfo(state, frame, state->callInfoList) ||
+                !aot_runtime_frame_resume_index(frame, state->callInfoList, outResumeInstructionIndex)) {
+                return ZR_FALSE;
+            }
+            memset(directCall, 0, sizeof(*directCall));
+            return ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+
+    return ZrLibrary_AotRuntime_FinishDirectCall(state, frame, directCall, resultCount);
+}
+
 TZrBool ZrLibrary_AotRuntime_PrepareDirectCall(SZrState *state,
                                                ZrAotGeneratedFrame *frame,
                                                TZrUInt32 destinationSlot,
                                                TZrUInt32 functionSlot,
                                                TZrUInt32 argumentCount,
                                                ZrAotGeneratedDirectCall *directCall) {
-    return aot_runtime_try_prepare_direct_native_call(state,
-                                                      frame,
-                                                      destinationSlot,
-                                                      functionSlot,
-                                                      argumentCount,
-                                                      directCall);
+    return aot_runtime_try_prepare_direct_call(state,
+                                               frame,
+                                               destinationSlot,
+                                               functionSlot,
+                                               argumentCount,
+                                               directCall);
 }
 
 TZrBool ZrLibrary_AotRuntime_PrepareMetaCall(SZrState *state,
@@ -10021,12 +10071,20 @@ TZrInt64 ZrLibrary_AotRuntime_ReportUnsupportedInstruction(SZrState *state,
     return 0;
 }
 
-TZrInt64 ZrLibrary_AotRuntime_FailGeneratedFunction(SZrState *state, const ZrAotGeneratedFrame *frame) {
+TZrInt64 ZrLibrary_AotRuntime_FailGeneratedFunctionAt(
+        SZrState *state,
+        const ZrAotGeneratedFrame *frame,
+        TZrUInt32 functionIndex) {
     SZrLibraryAotRuntimeState *runtimeState =
             state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
-    TZrUInt32 functionIndex = frame != ZR_NULL ? frame->functionIndex : UINT32_MAX;
     TZrUInt32 instructionIndex =
             frame != ZR_NULL ? frame->currentInstructionIndex : ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
+
+    if (state != ZR_NULL && frame != ZR_NULL && state->hasCurrentException &&
+        state->callInfoList != ZR_NULL && frame->callInfo != ZR_NULL &&
+        state->callInfoList != frame->callInfo) {
+        return 0;
+    }
 
     if (runtimeState != ZR_NULL && runtimeState->lastError[0] != '\0') {
         return 0;
@@ -10043,6 +10101,13 @@ TZrInt64 ZrLibrary_AotRuntime_FailGeneratedFunction(SZrState *state, const ZrAot
                      (unsigned)functionIndex,
                      instructionIndex == ZR_AOT_RUNTIME_RESUME_FALLTHROUGH ? UINT32_MAX : (unsigned)instructionIndex);
     return 0;
+}
+
+TZrInt64 ZrLibrary_AotRuntime_FailGeneratedFunction(SZrState *state, const ZrAotGeneratedFrame *frame) {
+    return ZrLibrary_AotRuntime_FailGeneratedFunctionAt(
+            state,
+            frame,
+            frame != ZR_NULL ? frame->functionIndex : UINT32_MAX);
 }
 
 TZrInt64 ZrLibrary_AotRuntime_InvokeActiveShim(SZrState *state, EZrAotBackendKind backendKind) {

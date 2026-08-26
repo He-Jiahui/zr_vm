@@ -531,6 +531,9 @@ void backend_aot_write_c_function_body(FILE *file,
         fprintf(file, "    ZrAotGeneratedFrame frame = {0};\n");
     }
     fprintf(file, "    const TZrUInt32 zr_aot_function_index = %uu;\n", (unsigned)entry->flatIndex);
+    fprintf(file,
+            "    const ZrAotGeneratedFrame *zr_aot_failure_frame = %s;\n",
+            includeFrameDescriptor ? "&frame" : "ZR_NULL");
     fprintf(file, "    TZrInt64 zr_aot_return_value = 0;\n");
     if (needsFrameCleanup) {
         fprintf(file, "    TZrBool zr_aot_frame_started = ZR_FALSE;\n");

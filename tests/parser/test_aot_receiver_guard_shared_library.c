@@ -42,6 +42,7 @@ void tearDown(void) {}
 static const char *receiver_guard_source(void) {
     return "resource class Service {\n"
            "    pub const fn add(value: int): int { return value + 10; }\n"
+           "    pub const fn explode(): int { throw \"receiver guard suffix failure\"; }\n"
            "}\n"
            "fn failIfEvaluated(): int { throw \"receiver guard evaluated arguments\"; }\n"
            "fn run(): int {\n"
@@ -51,12 +52,37 @@ static const char *receiver_guard_source(void) {
            "    var live = weak?.add(1);\n"
            "    var observed = 0;\n"
            "    if (live != null) { observed = 10; }\n"
+           "    var suffixCaught = false;\n"
+           "    try { weak.explode(); }\n"
+           "    catch (error) { suffixCaught = true; }\n"
            "    drop(shared);\n"
+           "    var afterSuffixThrow = wake(weak);\n"
+           "    var suffixWakeReleased = afterSuffixThrow == null;\n"
            "    var expired = weak?.add(failIfEvaluated());\n"
            "    var caught = 0;\n"
            "    try { weak.add(failIfEvaluated()); }\n"
            "    catch (error: NullReferenceError) { caught = 1; }\n"
-           "    return observed + caught;\n"
+           "    if (suffixCaught && suffixWakeReleased) { return observed + caught + 100; }\n"
+           "    return 0;\n"
+           "}\n"
+           "return run();\n";
+}
+
+static const char *ownership_intrinsics_source(void) {
+    return "resource class Box {}\n"
+           "fn run(): int {\n"
+           "    var owner = own Box();\n"
+           "    var shared = share(owner);\n"
+           "    var weak = degrade(shared);\n"
+           "    var awakened = wake(weak);\n"
+           "    var gcOwner = own Box();\n"
+           "    var gcBox = intoGc(gcOwner);\n"
+           "    var allLive = awakened != null && gcBox != null;\n"
+           "    drop(awakened);\n"
+           "    drop(shared);\n"
+           "    var expired = wake(weak);\n"
+           "    if (allLive && expired == null) { return 1; }\n"
+           "    return 0;\n"
            "}\n"
            "return run();\n";
 }
@@ -122,12 +148,13 @@ static int run_command_expect_success(const char *command) {
     return result;
 }
 
-static void execute_receiver_guard_backend(EZrAotBackendKind backendKind,
-                                           EZrLibraryProjectExecutionMode executionMode,
-                                           EZrLibraryExecutedVia expectedExecutedVia,
-                                           const char *artifactName,
-                                           const char *backendDirectory) {
-    const char *source = receiver_guard_source();
+static void execute_source_backend(const char *source,
+                                   TZrInt64 expectedResult,
+                                   EZrAotBackendKind backendKind,
+                                   EZrLibraryProjectExecutionMode executionMode,
+                                   EZrLibraryExecutedVia expectedExecutedVia,
+                                   const char *artifactName,
+                                   const char *backendDirectory) {
     const char *projectJson =
             "{"
             "\"name\":\"aot-receiver-guard-smoke\","
@@ -153,6 +180,7 @@ static void execute_receiver_guard_backend(EZrAotBackendKind backendKind,
     TZrChar libraryDirectory[ZR_TESTS_PATH_MAX];
     char command[4096];
 
+    TEST_ASSERT_NOT_NULL(source);
     TEST_ASSERT_NOT_NULL(state);
     function = compile_source(state, source);
     TEST_ASSERT_NOT_NULL(function);
@@ -276,7 +304,7 @@ static void execute_receiver_guard_backend(EZrAotBackendKind backendKind,
                                                                &result),
                              ZrLibrary_AotRuntime_GetLastError(state->global));
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(11, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT64(expectedResult, result.value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_INT(expectedExecutedVia,
                           ZrLibrary_AotRuntime_GetExecutedVia(state->global));
 
@@ -291,11 +319,13 @@ static void test_aot_c_receiver_guards_execute_optional_and_direct_contracts(voi
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT receiver-guard shared-library smoke validates the Unix toolchain path");
 #else
-    execute_receiver_guard_backend(ZR_AOT_BACKEND_KIND_C,
-                                   ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
-                                   ZR_LIBRARY_EXECUTED_VIA_AOT_C,
-                                   "aot_c_receiver_guard_shared_library",
-                                   "aot_c");
+    execute_source_backend(receiver_guard_source(),
+                           111,
+                           ZR_AOT_BACKEND_KIND_C,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                           "aot_c_receiver_guard_shared_library",
+                           "aot_c");
 #endif
 }
 
@@ -303,11 +333,41 @@ static void test_aot_llvm_receiver_guards_execute_optional_and_direct_contracts(
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT receiver-guard shared-library smoke validates the Unix toolchain path");
 #else
-    execute_receiver_guard_backend(ZR_AOT_BACKEND_KIND_LLVM,
-                                   ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
-                                   ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
-                                   "aot_llvm_receiver_guard_shared_library",
-                                   "aot_llvm");
+    execute_source_backend(receiver_guard_source(),
+                           111,
+                           ZR_AOT_BACKEND_KIND_LLVM,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                           "aot_llvm_receiver_guard_shared_library",
+                           "aot_llvm");
+#endif
+}
+
+static void test_aot_c_ownership_intrinsics_execute_all_operations(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT ownership-intrinsic shared-library smoke validates the Unix toolchain path");
+#else
+    execute_source_backend(ownership_intrinsics_source(),
+                           1,
+                           ZR_AOT_BACKEND_KIND_C,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                           "aot_c_ownership_intrinsic_shared_library",
+                           "aot_c");
+#endif
+}
+
+static void test_aot_llvm_ownership_intrinsics_execute_all_operations(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT ownership-intrinsic shared-library smoke validates the Unix toolchain path");
+#else
+    execute_source_backend(ownership_intrinsics_source(),
+                           1,
+                           ZR_AOT_BACKEND_KIND_LLVM,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                           "aot_llvm_ownership_intrinsic_shared_library",
+                           "aot_llvm");
 #endif
 }
 
@@ -315,5 +375,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_receiver_guards_execute_optional_and_direct_contracts);
     RUN_TEST(test_aot_llvm_receiver_guards_execute_optional_and_direct_contracts);
+    RUN_TEST(test_aot_c_ownership_intrinsics_execute_all_operations);
+    RUN_TEST(test_aot_llvm_ownership_intrinsics_execute_all_operations);
     return UNITY_END();
 }

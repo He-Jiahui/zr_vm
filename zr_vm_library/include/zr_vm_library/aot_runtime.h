@@ -1107,6 +1107,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallPreparedOrGeneric(struct SZrStat
                                                                   TZrUInt32 argumentCount,
                                                                   TZrUInt32 resultCount);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        ZrAotGeneratedDirectCall *directCall,
+        TZrUInt32 destinationSlot,
+        TZrUInt32 functionSlot,
+        TZrUInt32 argumentCount,
+        TZrUInt32 resultCount,
+        TZrUInt32 *outResumeInstructionIndex);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallStackValue(struct SZrState *state,
                                                            ZrAotGeneratedFrame *frame,
                                                            TZrUInt32 destinationSlot,
@@ -1328,5 +1338,9 @@ ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_ReportUnsupportedInstruction(struct
 
 ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_FailGeneratedFunction(struct SZrState *state,
                                                                    const ZrAotGeneratedFrame *frame);
+ZR_LIBRARY_API TZrInt64 ZrLibrary_AotRuntime_FailGeneratedFunctionAt(
+        struct SZrState *state,
+        const ZrAotGeneratedFrame *frame,
+        TZrUInt32 functionIndex);
 
 #endif

@@ -281,6 +281,7 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PrepareMetaCall(ptr, ptr, i32, i32, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_PrepareStaticDirectCall(ptr, ptr, i32, i32, i32, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CallPreparedOrGeneric(ptr, ptr, ptr, i32, i32, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(ptr, ptr, ptr, i32, i32, i32, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_FinishDirectCall(ptr, ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CallSpread(ptr, ptr, i32, i32, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Try(ptr, ptr, i32)\n");

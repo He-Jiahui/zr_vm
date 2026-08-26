@@ -178,18 +178,24 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
         fprintf(context->file, "%s:\n", prepareOkLabel);
         snprintf(argsBuffer,
                  sizeof(argsBuffer),
-                 "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1",
+                 "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1, ptr %%resume_instruction",
                  (unsigned)instruction->destinationSlot,
                  (unsigned)instruction->destinationSlot,
                  (unsigned)argumentCount);
         backend_aot_llvm_write_guarded_call_text(context->file,
                                                  context->tempCounter,
-                                                 "ZrLibrary_AotRuntime_CallPreparedOrGeneric",
+                                                 "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume",
                                                  argsBuffer,
                                                  finishOkLabel,
                                                  context->failLabel);
         fprintf(context->file, "%s:\n", finishOkLabel);
-        fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
+        backend_aot_llvm_write_resume_dispatch(context->file,
+                                               context->tempCounter,
+                                               context->entry->flatIndex,
+                                               instruction->instructionIndex,
+                                               context->instructionCount,
+                                               "%resume_instruction",
+                                               instruction->nextLabel);
         return ZR_TRUE;
     }
 

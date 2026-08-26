@@ -826,6 +826,58 @@ and targets, passes all 4/4, 26/26, 4/4, and 8/8 portable contracts, and reports
 the 2, 6, and 9 Unix shared-library cases as explicitly capability-ignored.
 No review finding remains in this exact slice.
 
+### Real AOT receiver-call and intrinsic closure
+
+The earlier two-case receiver runner proved guard branches but did not execute a
+known VM member callable, unwind a thrown member call into a generated caller
+catch, or execute all five ownership intrinsics in generated products. New TDD
+cases first failed in both C and LLVM because the member-call route used the
+generic stack-value call frame and lost the receiver argument-source window.
+
+Known member calls now prepare the actual VM function/closure metadata before
+invocation and use a shared call boundary that can return a caller resume
+instruction after exception unwinding. Generated C dispatches that resume before
+scalar-local synchronization; LLVM consumes the same runtime result through its
+existing resume dispatcher. The generated C failure macro also uses the unified
+`FailGeneratedFunctionAt` boundary, so a caught nested exception is not replaced
+by a generic AOT failure. Full frame paths publish their function identity;
+descriptor-free scalar paths retain a null failure-frame pointer.
+
+The four-case executable contract now proves:
+
+- a live `weak.explode()` member call reaches the VM method;
+- the thrown call is caught, and dropping the last explicit Shared proves the
+  hidden wake owner was released during unwind;
+- an expired `weak?.method(failIfEvaluated())` skips the argument and returns the
+  optional no-op result;
+- direct expired access is catchable as `NullReferenceError`;
+- generated C and LLVM each execute `share`, `degrade`, `wake`, `intoGc`, and
+  `drop` through source-level intrinsic calls.
+
+Fresh fixed-snapshot direct evidence is:
+
+| Suite | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| receiver/intrinsic generated C and LLVM | 4/4 | 4/4 | 4 capability-ignored |
+| AOT C source contracts | 26/26 | 26/26 | 26/26 |
+| AOT C frame setup | 1/1 | 1/1 | 1/1 |
+| AOT C call contracts | 9/9 | 9/9 | 9/9 |
+| typed scalar | 1/1 | 1/1 | 1 capability-ignored |
+| runtime direct-call identity | 12/12 | 12/12 | 12/12 |
+| generic typed calls | 27/27 | 27/27 | 21 pass, 6 capability-ignored |
+| exceptions | 8/8 | 8/8 | 8/8 |
+
+All listed processes returned zero. GCC and Clang additionally pass call 5/5,
+control 2/2, ownership 2/2, and scope 1/1 generated shared-library suites.
+MSVC builds the complete affected backend and reports those Unix execution
+bodies with their explicit capability reason. This closes the focused AOT gap;
+the milestone remains pending until the stable post-L8 full graph is replayed.
+
+The 10,000-line root AOT runtime file is pre-existing. The repair remains in its
+current direct-call/failure coordinator because an isolated helper extraction
+would split prepare, invoke, resume, post-call refresh, and error ownership.
+Extracting that complete coordinator is the smallest coherent future split.
+
 ## Pending final acceptance
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate

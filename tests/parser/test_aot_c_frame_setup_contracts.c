@@ -342,6 +342,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "ZrCore_Debug_RunError(state,",
             "generated AOT function has no call frame",
             "frame.function = zr_aot_context.metadataFunction;",
+            "frame.functionIndex = %u;",
             "if (includeFrameDescriptor) {",
             "if (!includeStackFrameSetup) {",
             "if (frameByteSize > 0u) {",

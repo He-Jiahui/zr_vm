@@ -549,6 +549,15 @@ manual sync tables and textual writers to canonical names.
 Run focused AOT targets under WSL GCC and Clang, execute generated binaries, and
 compare results/exceptions with interpreter execution.
 
+The final executable closure adds known VM member calls to the prepared-call
+route, returns a caller resume instruction when a thrown generated callee
+unwinds into a generated catch, and unifies C/LLVM failure handling. Its four
+generated-product cases execute live/expired Weak member calls, optional
+argument skipping, caught `NullReferenceError`, cleanup of the hidden wake
+Shared owner, and all five ownership intrinsics. GCC and Clang pass 4/4; MSVC
+builds the same backend paths and capability-ignores the Unix execution body.
+Portable source/frame/call contracts pass 26/26, 1/1, and 9/9 on all three.
+
 - [x] **Step 4: Commit AOT parity**
 
 ```powershell
@@ -970,6 +979,19 @@ expanded serial matrix on both toolchains also passes logical 6/6, generic jump
 and call contracts 8/8. MSVC 19.44 rebuilds the affected parser DLL and test
 targets, passes portable 4/4, 26/26, 4/4, and 8/8, and capability-ignores the
 2 control, 6 logical, and 9 generic-jump Unix bodies with explicit reasons.
+
+The AOT completion-criteria review then found a separate P1 receiver-call ABI
+gap. A known VM member callable was invoked through the generic stack-value
+frame, which omitted the receiver argument-source window. After prepared-frame
+repair, nested throws still failed because generated C reported the callee's
+false return after core had already unwound into the caller catch. The accepted
+runtime boundary now returns the caller resume instruction and the generated C
+failure path preserves an already-restored caller frame. The final TDD runner
+passes 4/4 real C/LLVM cases on GCC and Clang; MSVC compiles the complete path
+and capability-ignores only Unix shared-library execution. Portable source,
+frame, and call contracts pass 26/26, 1/1, and 9/9 on all three toolchains.
+Keep Step 5 open only for the stable post-L8 registered full graph, artifact,
+inventory, and final exact-diff review.
 
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 

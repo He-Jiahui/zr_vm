@@ -135,13 +135,15 @@ void backend_aot_write_c_frame_setup(FILE *file,
     if (includeFrameDescriptor) {
         fprintf(file,
                 "    frame.function = zr_aot_context.metadataFunction;\n"
+                "    frame.functionIndex = %u;\n"
                 "    frame.callInfo = zr_aot_call_info;\n"
                 "    frame.slotBase = zr_aot_slot_base;\n"
                 "    frame.generatedFrameSlotCount = zr_aot_context.generatedFrameSlotCount;\n"
                 "    frame.functionTable = zr_aot_context.functionTable;\n"
                 "    frame.functionCount = zr_aot_context.functionCount;\n"
                 "    frame.functionThunks = zr_aot_context.functionThunks;\n"
-                "    frame.functionThunkCount = zr_aot_context.functionThunkCount;\n");
+                "    frame.functionThunkCount = zr_aot_context.functionThunkCount;\n",
+                (unsigned)functionIndex);
         if (includeExportContext) {
             fprintf(file,
                     "    frame.module = zr_aot_context.module;\n"
