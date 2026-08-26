@@ -121,6 +121,9 @@ static void assert_ref_struct_rules(
                 strstr(compiler.errorMessage, expectedMessage),
                 compiler.errorMessage);
         TEST_ASSERT_TRUE(compiler.hasStructuredError);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+                compiler.structuredError.noFixReason);
     }
 
     ZrParser_CompilerState_Free(&compiler);
@@ -151,6 +154,9 @@ static void assert_ref_struct_escape(
                 strstr(compiler.errorMessage, expectedMessage),
                 compiler.errorMessage);
         TEST_ASSERT_TRUE(compiler.hasStructuredError);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+                compiler.structuredError.noFixReason);
     }
 
     ZrParser_CompilerState_Free(&compiler);

@@ -669,6 +669,16 @@ only an exact message and range after an unstructured compiler failure; it
 publishes `INSUFFICIENT_CONTEXT` rather than inferring a repair from that
 message. Definite-assignment diagnostics retain their typed placeholder fix.
 
+Compiler and parser rule producers follow the same boundary. Ref-struct
+storage violations, reference escapes, resource strong-cycle warnings, and
+type mismatches without a typed conversion contract publish
+`REQUIRES_USER_DECISION`. A type mismatch with a canonical conversion hint
+retains its placeholder cast fix instead. Removed legacy syntax publishes
+`INSUFFICIENT_CONTEXT` because the cutover parser owns the rejected token
+range and migration guidance, but not one exact replacement expression or
+declaration. Related reference-origin ranges and all existing stable codes,
+severity, and messages remain unchanged.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured

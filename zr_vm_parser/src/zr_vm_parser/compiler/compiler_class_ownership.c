@@ -52,6 +52,12 @@ static void compiler_class_ownership_publish_cycle_warning(
                 "Use Weak for the back-reference, or use a GC class when arbitrary strong cycles are required.")) {
         return;
     }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
+        return;
+    }
 
     memset(&fact, 0, sizeof(fact));
     fact.node = memberInfo->declarationNode;

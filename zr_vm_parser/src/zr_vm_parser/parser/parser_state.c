@@ -207,6 +207,13 @@ TZrBool report_removed_percent_syntax(SZrParserState *ps) {
         report_error_with_token(ps, message, ps->lexer->t.token);
         return ZR_TRUE;
     }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT)) {
+        ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+        report_error_with_token(ps, message, ps->lexer->t.token);
+        return ZR_TRUE;
+    }
 
     report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
     ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
@@ -248,6 +255,13 @@ void report_removed_legacy_syntax_at(SZrParserState *ps,
                 message,
                 "The one-time syntax cutover keeps legacy recognition only for migration diagnostics.",
                 suggestion)) {
+        report_error_with_token(ps, message, token);
+        return;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT)) {
+        ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
         report_error_with_token(ps, message, token);
         return;
     }

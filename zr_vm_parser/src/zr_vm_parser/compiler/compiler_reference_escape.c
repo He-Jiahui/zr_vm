@@ -159,6 +159,13 @@ static TZrBool reference_escape_report(
         ZrParser_Compiler_Error(context->compiler, message, escapeRange);
         return ZR_FALSE;
     }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(context->compiler->state, &diagnostic);
+        ZrParser_Compiler_Error(context->compiler, message, escapeRange);
+        return ZR_FALSE;
+    }
     ZrParser_Compiler_StructuredError(context->compiler, &diagnostic);
     return ZR_FALSE;
 }

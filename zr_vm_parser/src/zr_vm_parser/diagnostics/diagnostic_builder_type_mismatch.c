@@ -72,6 +72,12 @@ TZrBool ZrParser_DiagnosticBuilder_BuildTypeMismatchDetailed(
         return ZR_FALSE;
     }
     if (conversionHint == ZR_NULL) {
+        if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                    out,
+                    ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+            ZrParser_StructuredDiagnostic_Free(state, out);
+            return ZR_FALSE;
+        }
         return ZR_TRUE;
     }
 

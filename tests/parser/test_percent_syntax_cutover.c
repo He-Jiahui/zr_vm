@@ -13,6 +13,7 @@
 typedef struct SZrCutoverDiagnosticCapture {
     TZrUInt32 errorCount;
     TZrUInt32 removedSyntaxCount;
+    TZrUInt32 removedSyntaxTypedNoFixCount;
 } SZrCutoverDiagnosticCapture;
 
 static SZrState *g_state;
@@ -71,6 +72,10 @@ static void capture_cutover_diagnostic(TZrPtr userData,
                    : ZR_NULL;
     if (code != ZR_NULL && strcmp(code, "legacy_syntax_removed") == 0) {
         capture->removedSyntaxCount++;
+        if (diagnostic->noFixReason ==
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT) {
+            capture->removedSyntaxTypedNoFixCount++;
+        }
     }
 }
 
@@ -107,6 +112,10 @@ static void assert_legacy_source_is_rejected(const TZrChar *source) {
     ast = ZrParser_ParseWithState(&parserState);
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0U, capture.errorCount, source);
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0U, capture.removedSyntaxCount, source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            capture.removedSyntaxCount,
+            capture.removedSyntaxTypedNoFixCount,
+            source);
     TEST_ASSERT_NULL_MESSAGE(ast, source);
     ZrParser_State_Free(&parserState);
 }

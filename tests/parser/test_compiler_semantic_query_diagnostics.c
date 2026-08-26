@@ -1167,6 +1167,48 @@ static void test_compiler_structured_error_publisher_deep_copies_diagnostic(void
     ZrParser_CompilerState_Free(&cs);
 }
 
+static void test_resource_strong_cycle_warning_publishes_user_decision_reason(void) {
+    const TZrChar *source =
+            "resource class Node {\n"
+            "    var next: Shared<Node>;\n"
+            "}\n";
+    const SZrStructuredDiagnostic *diagnostic;
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_resource_strong_cycle_diagnostics_test.zr",
+            strlen("compiler_resource_strong_cycle_diagnostics_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    diagnostic = find_query_diagnostic_by_code(
+            cs.semanticContext, "resource_shared_strong_cycle");
+    TEST_ASSERT_NOT_NULL(diagnostic);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_STRUCTURED_DIAGNOSTIC_WARNING, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic->noFixReason);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_missing_statement_semicolon_builder_publishes_machine_fix(void) {
     SZrStructuredDiagnostic diagnostic;
     SZrStructuredDiagnosticFix *fix;
@@ -2231,6 +2273,7 @@ int main(void) {
     RUN_TEST(test_compile_script_suppresses_true_loop_break_definite_assignment_diagnostic);
     RUN_TEST(test_compiler_error_publishes_persistent_semantic_diagnostic_fact);
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
+    RUN_TEST(test_resource_strong_cycle_warning_publishes_user_decision_reason);
     RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_declaration_body_open_builder_publishes_machine_fix);
     RUN_TEST(test_missing_statement_body_open_builder_publishes_machine_fix);

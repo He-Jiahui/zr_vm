@@ -272,6 +272,14 @@ static TZrBool ref_struct_report(
                 message,
                 "Ref-like values are stack/region bound and cannot enter this storage boundary",
                 "Keep the value in a local/ref-like aggregate or shorten its lifetime")) {
+        if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                    &diagnostic,
+                    ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+            ZrParser_StructuredDiagnostic_Free(
+                    context->compiler->state, &diagnostic);
+            ZrParser_Compiler_Error(context->compiler, message, range);
+            return ZR_FALSE;
+        }
         ZrParser_Compiler_StructuredError(context->compiler, &diagnostic);
     } else {
         ZrParser_Compiler_Error(context->compiler, message, range);

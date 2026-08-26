@@ -87,6 +87,9 @@ static void assert_escape_validation(
                 strstr(compiler.errorMessage, expectedMessage),
                 compiler.errorMessage);
         TEST_ASSERT_TRUE(compiler.hasStructuredError);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+                compiler.structuredError.noFixReason);
         TEST_ASSERT_EQUAL_INT(expectedEscapeLine, compiler.structuredError.location.start.line);
         TEST_ASSERT_GREATER_THAN_UINT32(
                 0U, (TZrUInt32)compiler.structuredError.relatedInformation.length);
