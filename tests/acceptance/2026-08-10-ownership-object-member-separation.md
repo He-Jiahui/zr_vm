@@ -680,9 +680,11 @@ changed. The remaining L8 stdio failure still prevents final full-graph
 promotion.
 
 The current first-party test-source audit found zero disabled `#if 0` blocks,
-zero commented `RUN_TEST` registrations, 165 `TEST_IGNORE_MESSAGE` sites with a
-nearby explicit platform/capability guard, and zero globally unreferenced
-`static test_*` candidates across 4,544 declarations. The six executable `.zr`
+zero commented `RUN_TEST` registrations, 156 `TEST_IGNORE_MESSAGE` sites with
+an enclosing compile-time platform/capability guard, and zero globally
+unreferenced `static test_*` candidates across 5,498 declarations. Of the
+explicit ignores, 155 are non-Unix shared-library/toolchain boundaries and one
+is the Windows non-`_DLL` native-extern boundary. The six executable `.zr`
 paths that still contain removed percent spellings are intentionally scoped as
 negative migration input or literal/comment filtering fixtures. They remain
 current rejection coverage and are not stale positive syntax tests.
