@@ -3,6 +3,8 @@
 // WASM 导出函数实现（使用 EMSCRIPTEN_BINDINGS）
 //
 
+#include "wasm_diagnostic_json.h"
+
 // 在 C++ 模式下，用 extern "C" 包装 C 头文件以避免冲突
 #ifdef __cplusplus
 extern "C" {
@@ -152,47 +154,6 @@ static SZrString* cstr_to_string(SZrState *state, const char *cstr, int len) {
         return ZR_NULL;
     }
     return ZrCore_String_Create(state, (TZrNativeString)cstr, (TZrSize)len);
-}
-
-// 序列化诊断数组
-static cJSON* serialize_diagnostics(SZrState *state, SZrArray *diagnostics) {
-    cJSON *json = cJSON_CreateArray();
-    if (json == ZR_NULL || state == ZR_NULL || diagnostics == ZR_NULL) {
-        return json;
-    }
-    
-    for (TZrSize i = 0; i < diagnostics->length; i++) {
-        SZrLspDiagnostic **diagPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, i);
-        if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-                SZrLspDiagnostic *diag = *diagPtr;
-                cJSON *diagJson = cJSON_CreateObject();
-                if (diagJson != ZR_NULL) {
-                    cJSON *range = serialize_lsp_range(diag->range);
-                    cJSON_AddItemToObject(diagJson, ZR_LSP_FIELD_RANGE, range);
-                    cJSON_AddNumberToObject(diagJson, ZR_LSP_FIELD_SEVERITY, diag->severity);
-                
-                    if (diag->code != ZR_NULL) {
-                        const char *codeStr = string_to_cstr(state, diag->code);
-                        if (codeStr != ZR_NULL) {
-                            cJSON_AddStringToObject(diagJson, ZR_LSP_FIELD_CODE, codeStr);
-                            free_cstr(state, codeStr);
-                        }
-                    }
-                
-                    if (diag->message != ZR_NULL) {
-                        const char *msgStr = string_to_cstr(state, diag->message);
-                        if (msgStr != ZR_NULL) {
-                            cJSON_AddStringToObject(diagJson, ZR_LSP_FIELD_MESSAGE, msgStr);
-                            free_cstr(state, msgStr);
-                        }
-                    }
-                
-                cJSON_AddItemToArray(json, diagJson);
-            }
-        }
-    }
-    
-    return json;
 }
 
 // 序列化补全项数组
@@ -1056,17 +1017,12 @@ const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen)
     TZrBool result = ZrLanguageServer_Lsp_GetDiagnostics(g_wasm_state, (SZrLspContext*)context, uriStr, &diagnostics);
     
     if (result) {
-        cJSON *data = serialize_diagnostics(g_wasm_state, &diagnostics);
+        cJSON *data = ZrLanguageServer_Wasm_SerializeDiagnostics(
+                g_wasm_state,
+                &diagnostics,
+                uriStr);
         const char *jsonStr = create_success_response(data);
-        
-        // 清理
-        for (TZrSize i = 0; i < diagnostics.length; i++) {
-            SZrLspDiagnostic **diagPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, i);
-            if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-                ZrCore_Memory_RawFree(g_wasm_state->global, *diagPtr, sizeof(SZrLspDiagnostic));
-            }
-        }
-        ZrCore_Array_Free(g_wasm_state, &diagnostics);
+        free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
         
         return jsonStr;
     } else {
@@ -1358,7 +1314,13 @@ const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int ur
     report = cJSON_CreateObject();
     if (report != ZR_NULL) {
         cJSON_AddStringToObject(report, "resultId", resultId);
-        cJSON_AddItemToObject(report, "items", serialize_diagnostics(g_wasm_state, &diagnostics));
+        cJSON_AddItemToObject(
+                report,
+                "items",
+                ZrLanguageServer_Wasm_SerializeDiagnostics(
+                        g_wasm_state,
+                        &diagnostics,
+                        uriStr));
     }
     free_lsp_diagnostic_array(g_wasm_state, &diagnostics);
     return report != ZR_NULL ? create_success_response(report) : create_error_response("Out of memory");
@@ -1429,7 +1391,13 @@ const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
                 cJSON_AddNullToObject(report, "version");
             }
             cJSON_AddStringToObject(report, "resultId", resultId);
-            cJSON_AddItemToObject(report, "items", serialize_diagnostics(g_wasm_state, &diagnostics));
+            cJSON_AddItemToObject(
+                    report,
+                    "items",
+                    ZrLanguageServer_Wasm_SerializeDiagnostics(
+                            g_wasm_state,
+                            &diagnostics,
+                            *uri));
             cJSON_AddItemToArray(result, report);
         }
         free_cstr(g_wasm_state, uriText);

@@ -41,6 +41,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
   - zr_vm_language_server/stdio/stdio_diagnostic_json.c
+  - zr_vm_language_server/wasm/wasm_diagnostic_json.cpp
+  - zr_vm_language_server/wasm/wasm_diagnostic_json.h
   - zr_vm_language_server/stdio/stdio_editing.c
   - zr_vm_language_server/stdio/stdio_editing_json.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
@@ -101,6 +103,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
   - zr_vm_language_server/stdio/stdio_diagnostic_json.c
+  - zr_vm_language_server/wasm/wasm_diagnostic_json.cpp
+  - zr_vm_language_server/wasm/wasm_diagnostic_json.h
   - zr_vm_language_server/stdio/stdio_editing.c
   - zr_vm_language_server/stdio/stdio_editing_json.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
@@ -150,6 +154,7 @@ tests:
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/language_server/test_lsp_type_mismatch_diagnostic_cases.h
   - tests/language_server/stdio_diagnostic_fix_smoke.js
+  - tests/language_server/wasm_diagnostic_projection_smoke.js
   - tests/acceptance/2026-06-20-lsp-position-stage0.md
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_position_encoding_smoke.js
@@ -260,8 +265,10 @@ no-fix reason；它不根据 code、message 或源码文本重建修复策略。
 `Diagnostic.codeDescription.href`，并将 explicit no-fix reason 写入
 `Diagnostic.data.noFixReason`。带 typed fix 的诊断省略 no-fix reason。resultId
 payload hash 同时覆盖 help URI 和 no-fix reason，避免 disposition 变化被错误复用为
-unchanged report。WASM JSON 投影不属于该 native/stdIO 子里程碑，必须在后续独立门禁
-中保持同构。
+unchanged report。`wasm_diagnostic_json.cpp` 消费同一 `SZrLspDiagnostic` 投影，向
+WASM push、pull 和 workspace diagnostic API 输出相同的 codeDescription、descriptor、
+related information、typed fixes 与 explicit no-fix reason；WASM 层不按 code、message、
+member name 或源码文本重建诊断策略。
 
 `stdio_documents.c` 处理 didOpen/didChange/didClose/didSave 文档生命周期。`textDocument/didChange` 在套用 incremental content changes 前会 acquire owned snapshot 作为旧内容基底，并用 snapshot version 推导默认下一版本，避免增量变更计算期间直接读取 live `fileVersion->content`。
 

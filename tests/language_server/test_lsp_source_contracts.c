@@ -1010,6 +1010,40 @@ static void test_stdio_position_encoding_uses_content_snapshot(void) {
     free(source);
 }
 
+static void test_wasm_diagnostics_use_canonical_projection(void) {
+    char *cmake = read_repo_text_file_owned(
+        "zr_vm_language_server/CMakeLists.txt");
+    char *exports = read_repo_text_file_owned(
+        "zr_vm_language_server/wasm/wasm_exports.cpp");
+    char *projection = read_repo_text_file_owned(
+        "zr_vm_language_server/wasm/wasm_diagnostic_json.cpp");
+
+    if (cmake == NULL || exports == NULL || projection == NULL) {
+        printf("FAIL: could not read WASM diagnostic projection sources\n");
+        g_failures++;
+        free(cmake);
+        free(exports);
+        free(projection);
+        return;
+    }
+
+    assert_text_contains(cmake, "_wasm_ZrLspGetDiagnosticReport");
+    assert_text_contains(cmake, "_wasm_ZrLspGetWorkspaceDiagnosticReports");
+    assert_text_contains(exports, "#include \"wasm_diagnostic_json.h\"");
+    assert_text_contains(exports, "ZrLanguageServer_Wasm_SerializeDiagnostics");
+    assert_text_contains_none(exports, "static cJSON* serialize_diagnostics");
+    assert_text_contains(projection, "ZR_LSP_FIELD_RELATED_INFORMATION");
+    assert_text_contains(projection, "ZR_LSP_FIELD_FIXES");
+    assert_text_contains(projection, "ZR_LSP_FIELD_DESCRIPTOR_ID");
+    assert_text_contains(projection, "ZR_LSP_FIELD_CODE_DESCRIPTION");
+    assert_text_contains(projection, "ZR_LSP_FIELD_NO_FIX_REASON");
+    assert_text_contains(projection, "ZrLanguageServer_Lsp_DiagnosticNoFixReasonName");
+
+    free(cmake);
+    free(exports);
+    free(projection);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1053,6 +1087,7 @@ int main(void) {
     test_stdio_documents_uses_content_snapshot();
     test_stdio_inline_value_uses_content_snapshot();
     test_stdio_position_encoding_uses_content_snapshot();
+    test_wasm_diagnostics_use_canonical_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1097,6 +1132,7 @@ int main(void) {
     printf("PASS: stdio documents uses content snapshot\n");
     printf("PASS: stdio inline value uses content snapshot\n");
     printf("PASS: stdio position encoding uses content snapshot\n");
+    printf("PASS: WASM diagnostics use canonical projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }
