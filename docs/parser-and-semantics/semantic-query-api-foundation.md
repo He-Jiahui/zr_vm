@@ -326,6 +326,16 @@ import URI as target identity. Import aliases retain a separate
 remain orthogonal. Re-publication is idempotent by source SymbolId and target
 TypeId.
 
+Task 3.11 defines `ImplementationsOf(targetSymbolId)` as the reverse lookup for
+both `IMPLEMENTATION` and `OVERRIDE` relation facts. Interface implementations
+and class overrides therefore share one consumer query while preserving their
+distinct relation kinds. Results retain the canonical direction from the
+implementing/overriding source SymbolId to the requested base target SymbolId,
+apply the existing relation scope filter, and use the same stable sort. The
+query never searches member names, inheritance syntax, virtual slots, or ASTs;
+if a lower-layer producer has not published an exact edge, no implementation is
+returned.
+
 ## Call Edge Snapshot Foundation
 
 `SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph

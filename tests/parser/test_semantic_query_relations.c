@@ -264,6 +264,15 @@ static void test_type_and_implementation_queries_preserve_edge_direction(void) {
                     44U,
                     4U,
                     ZR_NULL);
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_OVERRIDE,
+                    42U,
+                    99U,
+                    33U,
+                    32U,
+                    45U,
+                    4U,
+                    ZR_NULL);
 
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_BaseTypesOf(context, 21U, &relations));
     TEST_ASSERT_EQUAL_UINT(1U, relations.length);
@@ -279,8 +288,12 @@ static void test_type_and_implementation_queries_preserve_edge_direction(void) {
 
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ImplementationsOf(
             context, 99U, ZR_NULL, &relations));
-    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
     relation = relation_at(&relations, 0U);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_OVERRIDE, relation->kind);
+    TEST_ASSERT_EQUAL_UINT(42U, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(99U, relation->targetSymbolId);
+    relation = relation_at(&relations, 1U);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_IMPLEMENTATION, relation->kind);
     TEST_ASSERT_EQUAL_UINT(41U, relation->sourceSymbolId);
     TEST_ASSERT_EQUAL_UINT(99U, relation->targetSymbolId);
@@ -294,7 +307,7 @@ static void test_type_and_implementation_queries_preserve_edge_direction(void) {
 
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ImplementationsOf(
             context, 99U, ZR_NULL, &relations));
-    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
     TEST_ASSERT_FALSE(ZrParser_SemanticQuery_ImplementationsOf(
             context, ZR_SEMANTIC_ID_INVALID, ZR_NULL, &relations));
     TEST_ASSERT_EQUAL_UINT(0U, relations.length);
@@ -870,6 +883,15 @@ static void test_compiled_source_publishes_override_relation(void) {
             derivedMethodNode->location.start.offset, relation->sourceRange.start.offset);
     TEST_ASSERT_EQUAL_UINT(
             baseMethodNode->location.start.offset, relation->targetRange.start.offset);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ImplementationsOf(
+            cs.semanticContext, baseMethod->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_OVERRIDE, relation->kind);
+    TEST_ASSERT_EQUAL_UINT(derivedMethod->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(baseMethod->id, relation->targetSymbolId);
 
     ZrCore_Array_Free(g_state, &relations);
     relation_release_compiler_function(&cs);

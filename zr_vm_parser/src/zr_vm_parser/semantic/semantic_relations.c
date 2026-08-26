@@ -789,7 +789,9 @@ TZrBool ZrParser_SemanticQuery_ImplementationsOf(
         const SZrSemanticRelationFact *fact =
                 (const SZrSemanticRelationFact *)ZrCore_Array_Get(
                         (SZrArray *)&context->relationFacts, index);
-        if (fact != ZR_NULL && fact->kind == ZR_SEMANTIC_RELATION_IMPLEMENTATION &&
+        if (fact != ZR_NULL &&
+            (fact->kind == ZR_SEMANTIC_RELATION_IMPLEMENTATION ||
+             fact->kind == ZR_SEMANTIC_RELATION_OVERRIDE) &&
             fact->targetSymbolId == symbolId &&
             semantic_relations_scope_allows(scope, fact)) {
             semantic_relations_append_query(context, outRelations, fact);
