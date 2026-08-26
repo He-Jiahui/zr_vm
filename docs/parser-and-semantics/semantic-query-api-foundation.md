@@ -635,6 +635,13 @@ without that expression it publishes `INSUFFICIENT_CONTEXT`. These builders
 live in the focused diagnostic fix-disposition module rather than expanding
 the general diagnostic builder.
 
+Syntax recovery producers follow the same rule. Missing assignment values,
+right operands, condition expressions, and member names require user-authored
+semantics and publish `REQUIRES_USER_DECISION`. The test declaration name-close
+builder does not receive a precise insertion range, so it publishes
+`INSUFFICIENT_CONTEXT` instead of manufacturing an edit from its primary
+range. These producers also live in the focused fix-disposition module.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured

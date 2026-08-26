@@ -156,10 +156,56 @@ static void test_syntax_no_fix_builders_publish_explicit_reasons(void) {
     ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
 }
 
+typedef TZrBool (*FZrSimpleDiagnosticBuilder)(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location);
+
+static void assert_simple_builder_no_fix_reason(
+        FZrSimpleDiagnosticBuilder builder,
+        EZrDiagnosticNoFixReason expectedReason) {
+    SZrStructuredDiagnostic diagnostic;
+
+    TEST_ASSERT_TRUE(builder(g_state, &diagnostic, diagnostic_range(30U, 34U)));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(expectedReason, diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
+static void test_syntax_recovery_builders_publish_explicit_no_fix_reasons(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location = diagnostic_range(30U, 34U);
+
+    assert_simple_builder_no_fix_reason(
+            ZrParser_DiagnosticBuilder_BuildMissingExpressionAfterAssignment,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingRightOperand(
+            g_state, &diagnostic, location, "+"));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingCondition(
+            g_state, &diagnostic, location, "if"));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    assert_simple_builder_no_fix_reason(
+            ZrParser_DiagnosticBuilder_BuildMissingTestNameClose,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT);
+    assert_simple_builder_no_fix_reason(
+            ZrParser_DiagnosticBuilder_BuildMissingMemberName,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_no_fix_reason_survives_fact_and_query_materialization);
     RUN_TEST(test_fix_and_no_fix_reason_are_mutually_exclusive);
     RUN_TEST(test_syntax_no_fix_builders_publish_explicit_reasons);
+    RUN_TEST(test_syntax_recovery_builders_publish_explicit_no_fix_reasons);
     return UNITY_END();
 }
