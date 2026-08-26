@@ -642,6 +642,13 @@ builder does not receive a precise insertion range, so it publishes
 `INSUFFICIENT_CONTEXT` instead of manufacturing an edit from its primary
 range. These producers also live in the focused fix-disposition module.
 
+Invalid using binders, non-constant import paths, and union pattern
+shape/field/arity/variant mismatches also publish
+`REQUIRES_USER_DECISION`. Their dynamic names and available-field lists remain
+display metadata only; they cannot select a fix policy or synthesize a source
+edit. Correcting these diagnostics requires choosing a binding, module path,
+or pattern that matches the canonical declaration.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured

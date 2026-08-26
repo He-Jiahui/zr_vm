@@ -201,11 +201,54 @@ static void test_syntax_recovery_builders_publish_explicit_no_fix_reasons(void) 
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+static void assert_user_decision_diagnostic(SZrStructuredDiagnostic *diagnostic) {
+    TEST_ASSERT_FALSE(diagnostic->fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic->noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, diagnostic);
+}
+
+static void test_pattern_import_builders_publish_user_decision_reason(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location = diagnostic_range(40U, 44U);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(
+            g_state, &diagnostic, location));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(
+            g_state, &diagnostic, location, "import"));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildPatternShapeMismatch(
+            g_state, &diagnostic, location, ZR_NULL, ZR_NULL, ZR_NULL));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildPatternUnknownField(
+            g_state, &diagnostic, location, "missing", "first, second"));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildPatternArityMismatch(
+            g_state, &diagnostic, location, 2U, 1U, "first, second"));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(
+            g_state,
+            &diagnostic,
+            location,
+            "ExpectedUnion",
+            "Selected",
+            "ResourceUnion"));
+    assert_user_decision_diagnostic(&diagnostic);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_no_fix_reason_survives_fact_and_query_materialization);
     RUN_TEST(test_fix_and_no_fix_reason_are_mutually_exclusive);
     RUN_TEST(test_syntax_no_fix_builders_publish_explicit_reasons);
     RUN_TEST(test_syntax_recovery_builders_publish_explicit_no_fix_reasons);
+    RUN_TEST(test_pattern_import_builders_publish_user_decision_reason);
     return UNITY_END();
 }

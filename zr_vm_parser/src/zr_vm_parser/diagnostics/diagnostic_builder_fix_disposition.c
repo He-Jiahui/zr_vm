@@ -136,6 +136,197 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingMemberName(
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+TZrBool ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location) {
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "using_binder_invalid",
+            "using_binder_invalid: invalid using guard binder",
+            "A using guard binder must be an import binding name or a union destructuring pattern.",
+            "Use `using (let name = import(...))` for plugin guards, `using (let [value]: Union.Variant = resource)` for tuple variants, or `using (let {local: field}: Union.Variant = resource)` for struct variants.",
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *directiveName) {
+    TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    TZrChar cause[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    TZrChar suggestion[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    const TZrChar *name = directiveName != ZR_NULL ? directiveName : "import";
+
+    snprintf(message,
+             sizeof(message),
+             "%s(...) requires a string literal module path",
+             name);
+    snprintf(cause,
+             sizeof(cause),
+             "The module path inside %s(...) must be known at parse time; variables and expressions cannot participate in module signature binding.",
+             name);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Use `%s(\"zr.module\")`; static import paths must be string literals in parentheses.",
+             name);
+
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "import_path_not_constant",
+            message,
+            cause,
+            suggestion,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternShapeMismatch(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *message,
+        const TZrChar *cause,
+        const TZrChar *suggestion) {
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "pattern_shape_mismatch",
+            message != ZR_NULL ? message : "Union pattern destructuring shape does not match variant payload shape",
+            cause != ZR_NULL
+                ? cause
+                : "The pattern uses a destructuring shape that does not match the selected union variant payload.",
+            suggestion != ZR_NULL
+                ? suggestion
+                : "Use tuple destructuring for positional variants and object destructuring for named-field variants.",
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternUnknownField(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *fieldName,
+        const TZrChar *availableFields) {
+    TZrChar message[256];
+    TZrChar cause[512];
+    TZrChar suggestion[512];
+
+    snprintf(message,
+             sizeof(message),
+             "Unknown union pattern field '%s'",
+             fieldName != ZR_NULL ? fieldName : "<unknown>");
+    snprintf(cause,
+             sizeof(cause),
+             "The selected union variant does not declare a payload field named '%s'.",
+             fieldName != ZR_NULL ? fieldName : "<unknown>");
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Use one of the declared payload fields: %s.",
+             availableFields != ZR_NULL && availableFields[0] != '\0' ? availableFields : "<none>");
+
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "pattern_unknown_field",
+            message,
+            cause,
+            suggestion,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternArityMismatch(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        TZrSize expectedCount,
+        TZrSize actualCount,
+        const TZrChar *availableFields) {
+    TZrChar message[256];
+    TZrChar cause[256];
+    TZrChar suggestion[512];
+
+    snprintf(message,
+             sizeof(message),
+             "Union pattern arity mismatch: expects %u binding(s)",
+             (unsigned)expectedCount);
+    snprintf(cause,
+             sizeof(cause),
+             "The selected union variant expects %u payload binding(s), but got %u.",
+             (unsigned)expectedCount,
+             (unsigned)actualCount);
+    if (availableFields != ZR_NULL && availableFields[0] != '\0') {
+        snprintf(suggestion,
+                 sizeof(suggestion),
+                 "Use object destructuring and bind exactly the named payload fields: %s.",
+                 availableFields);
+    } else {
+        snprintf(suggestion,
+                 sizeof(suggestion),
+                 "Use tuple destructuring with exactly %u binding(s).",
+                 (unsigned)expectedCount);
+    }
+
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "pattern_arity_mismatch",
+            message,
+            cause,
+            suggestion,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *annotationUnionName,
+        const TZrChar *variantName,
+        const TZrChar *resourceUnionName) {
+    TZrChar selectedVariant[256];
+    TZrChar message[384];
+    TZrChar cause[512];
+    TZrChar suggestion[512];
+
+    snprintf(selectedVariant,
+             sizeof(selectedVariant),
+             "%s.%s",
+             annotationUnionName != ZR_NULL ? annotationUnionName : "<unknown>",
+             variantName != ZR_NULL ? variantName : "<unknown>");
+    snprintf(message,
+             sizeof(message),
+             "Union pattern variant '%s' does not match the resource union type",
+             selectedVariant);
+    snprintf(cause,
+             sizeof(cause),
+             "The using resource has union type '%s', but the pattern annotation selects '%s'.",
+             resourceUnionName != ZR_NULL ? resourceUnionName : "<unknown>",
+             selectedVariant);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Use a variant declared on '%s' or change the resource expression to match '%s'.",
+             resourceUnionName != ZR_NULL ? resourceUnionName : "<unknown>",
+             selectedVariant);
+
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "pattern_variant_mismatch",
+            message,
+            cause,
+            suggestion,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
 TZrBool ZrParser_DiagnosticBuilder_BuildArrayElementAssignment(
         SZrState *state,
         SZrStructuredDiagnostic *out,
