@@ -1040,6 +1040,8 @@ static void lsp_append_diagnostic_internal(SZrState *state,
     lspDiag->severity = (TZrInt32)diag->severity + 1;
     lspDiag->code = diag->code;
     lspDiag->message = lsp_diagnostic_message_with_context(state, diag);
+    lspDiag->codeDescriptionHref = diag->codeDescriptionHref;
+    lspDiag->noFixReason = diag->noFixReason;
     ZrCore_Array_Init(state,
                       &lspDiag->relatedInformation,
                       sizeof(SZrLspDiagnosticRelatedInformation),

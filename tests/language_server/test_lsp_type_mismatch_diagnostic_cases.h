@@ -142,6 +142,10 @@ static TZrBool type_mismatch_diagnostic_has_expected_relation_and_fix(
 
     if (diagnostic == ZR_NULL ||
         diagnostic->descriptorId != 2011 ||
+        diagnostic->codeDescriptionHref == ZR_NULL ||
+        strcmp(test_string_text(diagnostic->codeDescriptionHref),
+               "https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md") != 0 ||
+        diagnostic->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED ||
         diagnostic->range.start.character != primaryStart ||
         diagnostic->range.end.character != primaryEnd ||
         !diagnostic->relatedInformation.isValid ||
@@ -211,7 +215,7 @@ static void test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mis
     returnDiagnostic = type_mismatch_diagnostic_find_at_line(&diagnostics, 1);
     assignmentDiagnostic = type_mismatch_diagnostic_find_at_line(&diagnostics, 5);
     if (!type_mismatch_diagnostic_has_expected_relation_and_fix(
-                returnDiagnostic, 11, 14, 0, 12, 15) ||
+                returnDiagnostic, 11, 14, 0, 10, 13) ||
         !type_mismatch_diagnostic_has_expected_relation_and_fix(
                 assignmentDiagnostic, 13, 17, 4, 16, 19)) {
         TZrSize index;

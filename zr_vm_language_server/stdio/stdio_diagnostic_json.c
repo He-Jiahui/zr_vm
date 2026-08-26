@@ -65,6 +65,7 @@ static cJSON *serialize_diagnostic_data(const SZrLspDiagnostic *diagnostic, cons
     cJSON *data;
     cJSON *fixes;
     char *codeText;
+    const TZrChar *noFixReason;
 
     if (diagnostic == NULL || uriText == NULL) {
         return NULL;
@@ -79,6 +80,10 @@ static cJSON *serialize_diagnostic_data(const SZrLspDiagnostic *diagnostic, cons
     cJSON_AddItemToObject(data, ZR_LSP_FIELD_RANGE, serialize_range(diagnostic->range));
     cJSON_AddStringToObject(data, ZR_LSP_FIELD_SOURCE, ZR_LSP_DIAGNOSTIC_SOURCE_NAME);
     cJSON_AddNumberToObject(data, ZR_LSP_FIELD_DESCRIPTOR_ID, diagnostic->descriptorId);
+    noFixReason = ZrLanguageServer_Lsp_DiagnosticNoFixReasonName(diagnostic->noFixReason);
+    if (noFixReason != ZR_NULL) {
+        cJSON_AddStringToObject(data, ZR_LSP_FIELD_NO_FIX_REASON, noFixReason);
+    }
     if (diagnostic->code != ZR_NULL) {
         codeText = zr_string_to_c_string(diagnostic->code);
         if (codeText != NULL) {
@@ -135,6 +140,18 @@ static cJSON *serialize_diagnostic_for_uri(const SZrLspDiagnostic *diagnostic, c
             cJSON_AddStringToObject(json, ZR_LSP_FIELD_CODE, codeText);
             free(codeText);
         }
+    }
+
+    if (diagnostic->codeDescriptionHref != ZR_NULL) {
+        char *hrefText = zr_string_to_c_string(diagnostic->codeDescriptionHref);
+        cJSON *codeDescription = cJSON_CreateObject();
+        if (hrefText != NULL && codeDescription != NULL) {
+            cJSON_AddStringToObject(codeDescription, ZR_LSP_FIELD_HREF, hrefText);
+            cJSON_AddItemToObject(json, ZR_LSP_FIELD_CODE_DESCRIPTION, codeDescription);
+        } else {
+            cJSON_Delete(codeDescription);
+        }
+        free(hrefText);
     }
 
     data = serialize_diagnostic_data(diagnostic, uriText);

@@ -6,6 +6,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_position_codec.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_projection.c
+  - zr_vm_language_server/src/zr_vm_language_server/diagnostics/lsp_diagnostic_store.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
@@ -23,6 +25,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_projection.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
@@ -37,6 +40,7 @@ related_code:
   - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
+  - zr_vm_language_server/stdio/stdio_diagnostic_json.c
   - zr_vm_language_server/stdio/stdio_editing.c
   - zr_vm_language_server/stdio/stdio_editing_json.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
@@ -63,6 +67,8 @@ related_code:
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_projection.c
+  - zr_vm_language_server/src/zr_vm_language_server/diagnostics/lsp_diagnostic_store.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_workspace_edit_snapshot.h
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c
@@ -79,6 +85,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_projection.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
@@ -93,6 +100,7 @@ implementation_files:
   - zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h
   - zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c
   - zr_vm_language_server/stdio/stdio_editor_features.c
+  - zr_vm_language_server/stdio/stdio_diagnostic_json.c
   - zr_vm_language_server/stdio/stdio_editing.c
   - zr_vm_language_server/stdio/stdio_editing_json.c
   - zr_vm_language_server/stdio/stdio_linked_editing.c
@@ -139,6 +147,9 @@ tests:
   - tests/language_server/test_lsp_expression_fact_hover.c
   - tests/language_server/test_lsp_local_semantic_hover.c
   - tests/language_server/test_lsp_computed_member_hover.c
+  - tests/language_server/test_lsp_semantic_query_diagnostics.c
+  - tests/language_server/test_lsp_type_mismatch_diagnostic_cases.h
+  - tests/language_server/stdio_diagnostic_fix_smoke.js
   - tests/acceptance/2026-06-20-lsp-position-stage0.md
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_position_encoding_smoke.js
@@ -238,6 +249,19 @@ doc_type: module-detail
 `stdio_document_color.c` 为 `textDocument/documentColor` / `colorPresentation` 提供轻量 hex color literal 支持。它仍会识别真实源码字符串中的 `"#336699"` 这类颜色字面量并返回 presentation edit，但 line comment 和 block comment 中的 `#RRGGBB` / `#RRGGBBAA` 文本不再生成 color entry；`colorPresentation` 也会先确认请求 range 对应同一组非注释 color literal，否则返回空数组，避免注释说明变成可编辑颜色 UI。
 
 `stdio_diagnostics.c` 为 push/pull/workspace diagnostics 生成 JSON report。诊断 range 仍由 C 层 `ZrLanguageServer_Lsp_GetDiagnostics` 统一生成；stdio 层现在在生成 resultId hash 时 acquire owned snapshot，用同一份 snapshot content/version/length 计算 full/unchanged report 标识，避免 resultId 计算期间直接读取 live `fileVersion->content`。
+
+`semantic_analyzer_diagnostic_projection.c` 将 parser/compiler 发布的
+`SZrStructuredDiagnostic` 投影为 LSP analyzer 诊断。该投影保留 registry
+descriptor identity、help URI、related information、typed fixes 和 explicit
+no-fix reason；它不根据 code、message 或源码文本重建修复策略。
+
+`lsp_diagnostic_projection.c` 只把 canonical no-fix enum 映射为稳定协议字符串。
+`stdio_diagnostic_json.c` 将 registry help URI 写入标准
+`Diagnostic.codeDescription.href`，并将 explicit no-fix reason 写入
+`Diagnostic.data.noFixReason`。带 typed fix 的诊断省略 no-fix reason。resultId
+payload hash 同时覆盖 help URI 和 no-fix reason，避免 disposition 变化被错误复用为
+unchanged report。WASM JSON 投影不属于该 native/stdIO 子里程碑，必须在后续独立门禁
+中保持同构。
 
 `stdio_documents.c` 处理 didOpen/didChange/didClose/didSave 文档生命周期。`textDocument/didChange` 在套用 incremental content changes 前会 acquire owned snapshot 作为旧内容基底，并用 snapshot version 推导默认下一版本，避免增量变更计算期间直接读取 live `fileVersion->content`。
 

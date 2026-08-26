@@ -121,7 +121,9 @@ static TZrBool diagnostic_payload_hash(SZrState *state,
     diagnostic_hash_range(&hash, diagnostic->range);
     diagnostic_hash_word(&hash, (TZrUInt64)(TZrUInt32)diagnostic->severity);
     diagnostic_hash_word(&hash, (TZrUInt64)diagnostic->descriptorId);
+    diagnostic_hash_word(&hash, (TZrUInt64)(TZrUInt32)diagnostic->noFixReason);
     diagnostic_hash_string(&hash, diagnostic->code);
+    diagnostic_hash_string(&hash, diagnostic->codeDescriptionHref);
     diagnostic_hash_string(&hash, diagnostic->message);
     if (!diagnostic_hash_sorted_children(state,
                                          &diagnostic->relatedInformation,

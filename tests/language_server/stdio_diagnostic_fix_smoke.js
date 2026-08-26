@@ -649,6 +649,12 @@ const diagnostic = publication.params.diagnostics.find((entry) =>
     entry.code === 'possibly_uninitialized_read');
 assert(diagnostic.data && diagnostic.data.descriptorId === 3003,
     'Expected the registered descriptorId to survive Diagnostic.data serialization');
+assert(diagnostic.codeDescription &&
+    diagnostic.codeDescription.href ===
+        'https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md',
+    'Expected the registered diagnostic help URI to survive codeDescription serialization');
+assert(!Object.prototype.hasOwnProperty.call(diagnostic.data, 'noFixReason'),
+    'Expected a diagnostic with a typed fix to omit noFixReason');
 assert(Array.isArray(diagnostic.data.fixes) && diagnostic.data.fixes.length === 1,
     'Expected one serialized diagnostic fix');
 
@@ -1286,3 +1292,10 @@ assert(!arrayElementAssignmentDiagnostic.data ||
     !Array.isArray(arrayElementAssignmentDiagnostic.data.fixes) ||
     arrayElementAssignmentDiagnostic.data.fixes.length === 0,
     'Expected array_element_assignment to publish no machine-applicable fix');
+assert(arrayElementAssignmentDiagnostic.data &&
+    arrayElementAssignmentDiagnostic.data.noFixReason === 'requires_user_decision',
+    'Expected array_element_assignment to publish its canonical no-fix reason');
+assert(arrayElementAssignmentDiagnostic.codeDescription &&
+    arrayElementAssignmentDiagnostic.codeDescription.href ===
+        'https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md',
+    'Expected array_element_assignment to publish its registered code description');

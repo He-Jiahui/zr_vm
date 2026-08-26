@@ -52,6 +52,8 @@ typedef struct SZrDiagnostic {
     SZrArray relatedInformation;       // SZrDiagnosticRelatedInformation
     SZrArray fixes;                    // SZrDiagnosticFix
     TZrUInt32 descriptorId;
+    SZrString *codeDescriptionHref;
+    EZrDiagnosticNoFixReason noFixReason;
 } SZrDiagnostic;
 
 // 代码补全项

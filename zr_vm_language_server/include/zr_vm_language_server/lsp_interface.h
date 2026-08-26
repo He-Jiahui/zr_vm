@@ -53,6 +53,8 @@ typedef struct SZrLspDiagnostic {
     SZrArray relatedInformation;      // SZrLspDiagnosticRelatedInformation
     SZrArray fixes;                   // SZrLspDiagnosticFix
     TZrUInt32 descriptorId;
+    SZrString *codeDescriptionHref;
+    EZrDiagnosticNoFixReason noFixReason;
 } SZrLspDiagnostic;
 
 // LSP 补全项
@@ -460,6 +462,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(SZr
 
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeTextEdits(SZrState *state, SZrArray *result);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeDiagnostics(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API const TZrChar *ZrLanguageServer_Lsp_DiagnosticNoFixReasonName(
+        EZrDiagnosticNoFixReason reason);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeCodeActions(SZrState *state, SZrArray *result);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeFoldingRanges(SZrState *state, SZrArray *result);
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeSelectionRanges(SZrState *state, SZrArray *result);

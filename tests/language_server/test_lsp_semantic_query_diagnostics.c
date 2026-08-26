@@ -205,6 +205,10 @@ static void test_lsp_diagnostics_publish_definite_assignment_related_information
     if (diagnostic == ZR_NULL ||
         diagnostic->severity != 2 ||
         diagnostic->descriptorId == 0 ||
+        diagnostic->codeDescriptionHref == ZR_NULL ||
+        strcmp(test_string_text(diagnostic->codeDescriptionHref),
+               "https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md") != 0 ||
+        diagnostic->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED ||
         !diagnostic->relatedInformation.isValid ||
         diagnostic->relatedInformation.length != 1 ||
         !diagnostic->fixes.isValid ||
@@ -365,6 +369,7 @@ static void test_lsp_diagnostics_publish_numeric_overflow(SZrState *state) {
         "fn overflow(): int {\n"
         "    return 9223372036854775807 + 1;\n"
         "}\n";
+    const SZrLspDiagnostic *diagnostic;
     SZrTestTimer timer;
     SZrLspContext *context;
     SZrString *uri;
@@ -401,6 +406,19 @@ static void test_lsp_diagnostics_publish_numeric_overflow(SZrState *state) {
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    diagnostic = diagnostic_array_find_code(&diagnostics, "numeric_overflow");
+    if (diagnostic == ZR_NULL ||
+        diagnostic->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+        diagnostic->codeDescriptionHref == ZR_NULL ||
+        strcmp(test_string_text(diagnostic->codeDescriptionHref),
+               "https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md") != 0 ||
+        (diagnostic->fixes.isValid && diagnostic->fixes.length != 0)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Expected canonical no-fix disposition and code description");
         return;
     }
 

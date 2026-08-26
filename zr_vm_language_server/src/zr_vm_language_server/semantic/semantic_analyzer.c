@@ -2583,37 +2583,6 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(SZrState *state,
     return ZR_TRUE;
 }
 
-// 创建诊断
-static EZrDiagnosticSeverity semantic_diagnostic_severity_from_structured(
-        EZrStructuredDiagnosticSeverity severity) {
-    switch (severity) {
-        case ZR_STRUCTURED_DIAGNOSTIC_WARNING:
-            return ZR_DIAGNOSTIC_WARNING;
-        case ZR_STRUCTURED_DIAGNOSTIC_INFO:
-            return ZR_DIAGNOSTIC_INFO;
-        case ZR_STRUCTURED_DIAGNOSTIC_HINT:
-            return ZR_DIAGNOSTIC_HINT;
-        case ZR_STRUCTURED_DIAGNOSTIC_ERROR:
-        default:
-            return ZR_DIAGNOSTIC_ERROR;
-    }
-}
-
-static SZrString *semantic_diagnostic_clone_string(SZrState *state, SZrString *value) {
-    TZrNativeString text;
-
-    if (state == ZR_NULL || value == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    text = ZrCore_String_GetNativeString(value);
-    if (text == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    return ZrCore_String_Create(state, text, ZrCore_String_GetByteLength(value));
-}
-
 SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
                                 EZrDiagnosticSeverity severity,
                                 SZrFileRange location,
@@ -2637,92 +2606,14 @@ SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
     ZrCore_Array_Construct(&diagnostic->relatedInformation);
     ZrCore_Array_Construct(&diagnostic->fixes);
     diagnostic->descriptorId = 0;
+    diagnostic->codeDescriptionHref = ZR_NULL;
+    diagnostic->noFixReason = ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED;
     
     if (diagnostic->message == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, diagnostic, sizeof(SZrDiagnostic));
         return ZR_NULL;
     }
     
-    return diagnostic;
-}
-
-SZrDiagnostic *ZrLanguageServer_Diagnostic_FromStructured(
-        SZrState *state,
-        const SZrStructuredDiagnostic *structured) {
-    const TZrChar *messageText;
-    const TZrChar *codeText = ZR_NULL;
-    SZrDiagnostic *diagnostic;
-    TZrSize i;
-
-    if (state == ZR_NULL || structured == ZR_NULL || structured->message == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    messageText = ZrCore_String_GetNativeString(structured->message);
-    if (messageText == ZR_NULL) {
-        return ZR_NULL;
-    }
-    if (structured->code != ZR_NULL) {
-        codeText = ZrCore_String_GetNativeString(structured->code);
-    }
-
-    diagnostic = ZrLanguageServer_Diagnostic_New(
-            state,
-            semantic_diagnostic_severity_from_structured(structured->severity),
-            structured->location,
-            messageText,
-            codeText);
-    if (diagnostic == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (structured->cause != ZR_NULL) {
-        diagnostic->cause = semantic_diagnostic_clone_string(state, structured->cause);
-        if (diagnostic->cause == ZR_NULL) {
-            ZrLanguageServer_Diagnostic_Free(state, diagnostic);
-            return ZR_NULL;
-        }
-    }
-    if (structured->suggestion != ZR_NULL) {
-        diagnostic->suggestion = semantic_diagnostic_clone_string(state, structured->suggestion);
-        if (diagnostic->suggestion == ZR_NULL) {
-            ZrLanguageServer_Diagnostic_Free(state, diagnostic);
-            return ZR_NULL;
-        }
-    }
-    diagnostic->descriptorId = structured->descriptorId;
-    if (structured->fixes.isValid) {
-        for (i = 0; i < structured->fixes.length; i++) {
-            const SZrStructuredDiagnosticFix *fix =
-                (const SZrStructuredDiagnosticFix *)ZrCore_Array_Get((SZrArray *)&structured->fixes, i);
-            if (fix == ZR_NULL || !ZrLanguageServer_Diagnostic_AddFix(state, diagnostic, fix)) {
-                ZrLanguageServer_Diagnostic_Free(state, diagnostic);
-                return ZR_NULL;
-            }
-        }
-    }
-    if (structured->relatedInformation.isValid) {
-        for (i = 0; i < structured->relatedInformation.length; i++) {
-            const SZrStructuredDiagnosticRelatedInformation *related =
-                (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
-                        (SZrArray *)&structured->relatedInformation,
-                        i);
-            const TZrChar *relatedMessage =
-                related != ZR_NULL && related->message != ZR_NULL
-                    ? ZrCore_String_GetNativeString(related->message)
-                    : ZR_NULL;
-            if (relatedMessage == ZR_NULL ||
-                !ZrLanguageServer_Diagnostic_AddRelatedInformation(
-                        state,
-                        diagnostic,
-                        related->location,
-                        relatedMessage)) {
-                ZrLanguageServer_Diagnostic_Free(state, diagnostic);
-                return ZR_NULL;
-            }
-        }
-    }
-
     return diagnostic;
 }
 
