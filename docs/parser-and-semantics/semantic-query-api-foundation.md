@@ -649,6 +649,17 @@ display metadata only; they cannot select a fix policy or synthesize a source
 edit. Correcting these diagnostics requires choosing a binding, module path,
 or pattern that matches the canonical declaration.
 
+Ownership diagnostics complete the direct-builder classification. Weak wake,
+borrow escape, loan escape, owner-to-plain escape, ownership mismatch, and
+use-after-move all require a semantic choice from the user and publish
+`REQUIRES_USER_DECISION`. The legacy ownership type warning publishes
+`INSUFFICIENT_CONTEXT`: it can describe the generic wrapper form, but its
+builder does not own a precise typed replacement range and therefore cannot
+publish a safe edit. Ownership type names remain display data only. The
+focused disposition module owns the six general producers, while the
+use-after-move producer remains in its ownership-specific module and applies
+the same structured contract.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured

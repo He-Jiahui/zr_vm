@@ -412,3 +412,127 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalAlternate(
             "Add the alternate expression after ':'.",
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
+
+TZrBool ZrParser_DiagnosticBuilder_BuildWeakWake(SZrState *state,
+                                                 SZrStructuredDiagnostic *out,
+                                                 SZrFileRange location) {
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "weak_value_requires_wake",
+            "Weak value must be woken before it can be borrowed",
+            "A Weak<T> value does not keep its owner alive, so it cannot satisfy a ref readonly T use directly.",
+            "Call wake(weak) and handle the nullable shared owner before borrowing it.",
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *legacyQualifier,
+        const TZrChar *wrapperName) {
+    TZrChar message[192];
+    TZrChar suggestion[192];
+
+    snprintf(message,
+             sizeof(message),
+             "Legacy ownership type syntax '%s T' is deprecated",
+             legacyQualifier != ZR_NULL ? legacyQualifier : "%ownership");
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Write %s<T> instead.",
+             wrapperName != ZR_NULL ? wrapperName : "Owner");
+
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_WARNING,
+                location,
+                "legacy_ownership_type_syntax",
+                message,
+                "Ownership qualifiers are now intrinsic generic types; the legacy percent-prefixed type form is kept only as migration syntax.",
+                suggestion)) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                out, ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildBorrowEscape(SZrState *state,
+                                                     SZrStructuredDiagnostic *out,
+                                                     SZrFileRange location) {
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "borrow_escape",
+            "Borrowed value cannot escape its owner",
+            "The expression uses ref, which creates a temporary borrow tied to the source owner.",
+            "Return the owner or keep the borrow inside the current scope.",
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildLoanEscape(SZrState *state,
+                                                   SZrStructuredDiagnostic *out,
+                                                   SZrFileRange location) {
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "loan_escape",
+            "Loaned value cannot escape its owner",
+            "The expression uses ref, which creates a temporary loan tied to the source owner.",
+            "Return the owner or keep the loan inside the current scope.",
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildOwnerToPlainEscape(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location) {
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "owner_to_plain_escape",
+            "Owned value cannot flow into a plain GC value implicitly",
+            "A Unique<T> or Shared<T> value owns deterministic cleanup; assigning it to a plain value would drop ownership semantics.",
+            "Keep the ownership wrapper in the target type or revise the ownership transfer explicitly.",
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildOwnershipMismatch(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location,
+        const TZrChar *expectedType,
+        const TZrChar *actualType) {
+    TZrChar cause[256];
+    TZrChar suggestion[256];
+
+    snprintf(cause,
+             sizeof(cause),
+             "Actual value has type %s, but the target requires %s.",
+             actualType != ZR_NULL ? actualType : "unknown",
+             expectedType != ZR_NULL ? expectedType : "unknown");
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Provide a %s value, use an ownership builtin, or change the target annotation to match.",
+             expectedType != ZR_NULL ? expectedType : "matching ownership");
+
+    return diagnostic_builder_build_without_fix(
+            state,
+            out,
+            location,
+            "ownership_mismatch",
+            "Ownership qualifier mismatch",
+            cause,
+            suggestion,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
+}

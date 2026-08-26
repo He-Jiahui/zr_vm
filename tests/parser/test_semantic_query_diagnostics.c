@@ -243,6 +243,43 @@ static void test_pattern_import_builders_publish_user_decision_reason(void) {
     assert_user_decision_diagnostic(&diagnostic);
 }
 
+static void test_ownership_builders_publish_explicit_no_fix_reasons(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location = diagnostic_range(50U, 54U);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildWeakWake(
+            g_state, &diagnostic, location));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildBorrowEscape(
+            g_state, &diagnostic, location));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildLoanEscape(
+            g_state, &diagnostic, location));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildOwnerToPlainEscape(
+            g_state, &diagnostic, location));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildOwnershipMismatch(
+            g_state, &diagnostic, location, "Unique<Resource>", "Resource"));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildUseAfterMove(
+            g_state, &diagnostic, location));
+    assert_user_decision_diagnostic(&diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(
+            g_state, &diagnostic, location, "%unique", "Unique"));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_no_fix_reason_survives_fact_and_query_materialization);
@@ -250,5 +287,6 @@ int main(void) {
     RUN_TEST(test_syntax_no_fix_builders_publish_explicit_reasons);
     RUN_TEST(test_syntax_recovery_builders_publish_explicit_no_fix_reasons);
     RUN_TEST(test_pattern_import_builders_publish_user_decision_reason);
+    RUN_TEST(test_ownership_builders_publish_explicit_no_fix_reasons);
     return UNITY_END();
 }
