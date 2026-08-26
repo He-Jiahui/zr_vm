@@ -2553,6 +2553,10 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                 SZrResolvedCallSignature resolvedSignature;
                 TZrBool hasRuntimeFunction = ZR_FALSE;
                 TZrBool hasCompileTimeFunction = ZR_FALSE;
+                TZrBool hasVisibleVariable =
+                        cs->typeEnv != ZR_NULL &&
+                        ZrParser_TypeEnvironment_FindVariableBinding(
+                                cs->typeEnv, funcName) != ZR_NULL;
 
                 ZrParser_InferredType_Init(cs->state, &baseType, ZR_VALUE_TYPE_OBJECT);
                 memset(&resolvedSignature, 0, sizeof(resolvedSignature));
@@ -2568,7 +2572,8 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                     return ZR_FALSE;
                 }
 
-                if (find_compiler_type_prototype_inference(cs, funcName) != ZR_NULL) {
+                if (!hasVisibleVariable &&
+                    find_compiler_type_prototype_inference(cs, funcName) != ZR_NULL) {
                     ZrParser_Compiler_Error(cs,
                                             "Prototype references are not callable; use init Type(...) for values or new Type(...) for GC classes",
                                             firstMember->location);
@@ -2576,9 +2581,20 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                     return ZR_FALSE;
                 }
 
-                if (cs->typeEnv != ZR_NULL) {
+                if (!hasVisibleVariable && cs->typeEnv != ZR_NULL) {
                     hasRuntimeFunction = ZrParser_TypeEnvironment_LookupFunction(cs->typeEnv, funcName, &funcTypeInfo);
                     funcTypeInfo = ZR_NULL;
+                }
+
+                if (hasRuntimeFunction &&
+                    call->accessMode == ZR_POSTFIX_ACCESS_OPTIONAL) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "redundant_optional_access",
+                            firstMember->location);
+                    ZrParser_InferredType_Free(cs->state, &baseType);
+                    free_resolved_call_signature(cs->state, &resolvedSignature);
+                    return ZR_FALSE;
                 }
 
                 if (hasRuntimeFunction &&
@@ -2624,10 +2640,21 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                     return ZR_FALSE;
                 }
 
-                if (cs->compileTimeTypeEnv != ZR_NULL) {
+                if (!hasVisibleVariable && cs->compileTimeTypeEnv != ZR_NULL) {
                     hasCompileTimeFunction =
                         ZrParser_TypeEnvironment_LookupFunction(cs->compileTimeTypeEnv, funcName, &funcTypeInfo);
                     funcTypeInfo = ZR_NULL;
+                }
+
+                if (hasCompileTimeFunction &&
+                    call->accessMode == ZR_POSTFIX_ACCESS_OPTIONAL) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "redundant_optional_access",
+                            firstMember->location);
+                    ZrParser_InferredType_Free(cs->state, &baseType);
+                    free_resolved_call_signature(cs->state, &resolvedSignature);
+                    return ZR_FALSE;
                 }
 
                 if (hasCompileTimeFunction &&

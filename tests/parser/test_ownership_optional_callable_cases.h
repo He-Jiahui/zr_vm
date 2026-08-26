@@ -103,4 +103,111 @@ static void test_weak_callable_optional_and_direct_call_contracts(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_named_function_optional_call_is_rejected(void) {
+    for (TZrSize environmentIndex = 0u; environmentIndex < 2u;
+         environmentIndex++) {
+        SZrCompilerState *compiler = create_compiler_state();
+        SZrAstNode *script = parse_source("callback?.(1);");
+        SZrAstNode *expression = statement_expression(script, 0u);
+        SZrTypeEnvironment *environment = environmentIndex == 0u
+                ? compiler->typeEnv
+                : compiler->compileTimeTypeEnv;
+        SZrInferredType intType;
+        SZrInferredType result;
+        SZrArray parameterTypes;
+
+        TEST_ASSERT_NOT_NULL(environment);
+        ZrParser_InferredType_Init(g_state, &intType, ZR_VALUE_TYPE_INT64);
+        ZrCore_Array_Init(
+                g_state, &parameterTypes, sizeof(SZrInferredType), 1u);
+        ZrCore_Array_Push(g_state, &parameterTypes, &intType);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+                g_state,
+                environment,
+                ZrCore_String_CreateFromNative(g_state, "callback"),
+                &intType,
+                &parameterTypes));
+
+        ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(
+                compiler, expression, &result));
+        TEST_ASSERT_TRUE(compiler->hasError);
+        TEST_ASSERT_NOT_NULL(compiler->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(
+                compiler->errorMessage, "redundant_optional_access"));
+
+        ZrParser_InferredType_Free(g_state, &result);
+        ZrCore_Array_Free(g_state, &parameterTypes);
+        ZrParser_InferredType_Free(g_state, &intType);
+        ZrParser_Ast_Free(g_state, script);
+        destroy_compiler_state(compiler);
+    }
+}
+
+static void test_nullable_callable_variable_shadows_named_function(void) {
+    for (TZrSize environmentIndex = 0u; environmentIndex < 2u;
+         environmentIndex++) {
+        SZrCompilerState *compiler = create_compiler_state();
+        SZrAstNode *script = parse_source("callback?.(1);");
+        SZrAstNode *expression = statement_expression(script, 0u);
+        SZrAstNode *callSegment = postfix_segment(expression, 0u);
+        SZrTypeEnvironment *functionEnvironment = environmentIndex == 0u
+                ? compiler->typeEnv
+                : compiler->compileTimeTypeEnv;
+        const SZrReceiverGuardFact *guard;
+        SZrInferredType callableType;
+        SZrInferredType intType;
+        SZrInferredType result;
+        SZrArray parameterTypes;
+
+        TEST_ASSERT_NOT_NULL(functionEnvironment);
+        ZrParser_InferredType_Init(
+                g_state, &callableType, ZR_VALUE_TYPE_FUNCTION);
+        callableType.isNullable = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+                g_state,
+                compiler->typeEnv,
+                ZrCore_String_CreateFromNative(g_state, "callback"),
+                &callableType));
+
+        ZrParser_InferredType_Init(g_state, &intType, ZR_VALUE_TYPE_INT64);
+        ZrCore_Array_Init(
+                g_state, &parameterTypes, sizeof(SZrInferredType), 1u);
+        ZrCore_Array_Push(g_state, &parameterTypes, &intType);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+                g_state,
+                functionEnvironment,
+                ZrCore_String_CreateFromNative(g_state, "callback"),
+                &intType,
+                &parameterTypes));
+
+        ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+                compiler, expression, &result));
+        TEST_ASSERT_FALSE(compiler->hasError);
+        guard = ZrParser_SemanticFacts_FindReceiverGuardByNode(
+                compiler->semanticContext, callSegment);
+        TEST_ASSERT_NOT_NULL(guard);
+        TEST_ASSERT_EQUAL_INT(ZR_RECEIVER_GUARD_NULL, guard->kind);
+        TEST_ASSERT_EQUAL_INT(ZR_RECEIVER_GUARD_OPTIONAL, guard->mode);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_RECEIVER_GUARD_RESULT_NULLABLE, guard->resultLift);
+        TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)guard->chainSegmentStart);
+        TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)guard->chainSegmentEnd);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_VALUE_TYPE_FUNCTION, guard->receiverType.baseType);
+        TEST_ASSERT_TRUE(guard->receiverType.isNullable);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_VALUE_TYPE_FUNCTION, guard->guardedType.baseType);
+        TEST_ASSERT_FALSE(guard->guardedType.isNullable);
+
+        ZrParser_InferredType_Free(g_state, &result);
+        ZrCore_Array_Free(g_state, &parameterTypes);
+        ZrParser_InferredType_Free(g_state, &intType);
+        ZrParser_InferredType_Free(g_state, &callableType);
+        ZrParser_Ast_Free(g_state, script);
+        destroy_compiler_state(compiler);
+    }
+}
+
 #endif

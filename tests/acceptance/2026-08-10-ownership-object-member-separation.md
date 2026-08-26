@@ -4,14 +4,14 @@
 
 - Design: `docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md`
 - Implementation plan: `docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md`
-- Review date: 2026-08-26 (UTC+08:00)
+- Review date: 2026-08-27 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
 
 ## Accepted source contract
 
 | Requirement | Implementation evidence | Focused evidence |
 | --- | --- | --- |
-| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | GCC/Clang/MSVC ownership 39/39 and Shared/Weak 19/19; final full-graph replay pending |
+| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | GCC/Clang/MSVC ownership 41/41 and Shared/Weak 19/19; final full-graph replay pending |
 | `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name object method and real-member tests |
 | Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes against the materialized named runtime prototype |
 | A live weak target keeps ordinary object-member failures | guard resolves before member dispatch; standard system registration materializes the exception hierarchy | missing member follows the ordinary member-error path, not `NullReferenceError` |
@@ -535,9 +535,9 @@ the earlier fixed-`b1f6884` 8/8 cross-toolchain evidence.
 
 The review's suggestion to restore `weak?.add?.(bump())` was rejected on
 contract grounds: `add` is a statically non-null method, so the second optional
-segment must eventually receive `redundant_optional_access`. A real nullable
-member-to-call regression belongs with the pending callable-inference gate; the
-old test must not make invalid syntax executable again.
+segment must receive `redundant_optional_access`. A real nullable member-to-call
+regression belongs to canonical nullable-callable support rather than this
+named non-null gate; the old test must not make invalid syntax executable again.
 
 The artifact requirement was then reviewed against the real `.zro` writer and
 reader. `SZrOwnershipIntrinsicFact` and `SZrReceiverGuardFact` are AST-backed
@@ -639,8 +639,9 @@ Guard inference publishes the receiver expression fact, lowering compares the
 guard's receiver type against it before deriving kind/guarded type, and missing
 member or function-call facts fail closed for canonical nullable/Weak receivers.
 The design instead requires a known non-null optional callable to fail with
-`redundant_optional_access`; the pending negative inference regression records
-that remaining gate and lowering must not fabricate a guard fact.
+`redundant_optional_access`. The final negative inference regression now covers
+both runtime and compile-time named-function environments, and lowering still
+must not fabricate a guard fact.
 
 Fresh isolated snapshots representing main `075d68c` plus the exact ownership
 overlay report the following serial direct results on GCC 11.4, Clang 14, and
@@ -699,15 +700,54 @@ current rejection coverage and are not stale positive syntax tests.
 | Intrinsic spellings remain legal member names | The focused collision case executes members named `share`, `degrade`, `wake`, `intoGc`, and `drop` through normal dispatch | Implemented; final matrix pending |
 | Old source syntax and string compatibility routes are removed | Production searches are empty; migration cases require canonical receiver facts and structured fixes | Implemented; final inventory pending |
 | Artifacts, LSP, docs, tests, and status describe one language | The tracked matrix artifacts were regenerated deterministically; `async_native.zri/.zro` both contain `wakeView`, and binary execution returns `64` through the regenerated graph | Implemented; final stable-HEAD consumer replay pending |
-| Evidence is fresh on GCC, Clang, and MSVC | Isolated snapshots on all three directly pass Shared/Weak 19/19, ownership 37/37, type inference 123/123, expression facts 28/28, and compiler integration 127/127; SemIR is 13/13 on GCC/Clang and 12/12 on MSVC | Focused correction accepted; full integrated replay pending |
+| Evidence is fresh on GCC, Clang, and MSVC | Isolated snapshots on all three directly pass Shared/Weak 19/19, ownership 41/41, type inference 123/123, expression facts 28/28, and compiler integration 127/127; SemIR is 13/13 on GCC/Clang and 12/12 on MSVC | Focused correction accepted; full integrated replay pending |
+
+### Statically non-null named callable gate
+
+The remaining inference gap was reproduced before the production change:
+`callback?.(1)` resolved a registered non-null runtime function and returned
+success, so the GCC ownership runner reported 40 tests with one failure. The
+first-call fast path had bypassed receiver-guard inference and never inspected
+the call segment's access mode.
+
+The first correction rejected optional access after proving the name existed in
+the runtime or compile-time function environment and before overload selection.
+An independent review found that this was insufficient: identifier inference
+gives visible variables precedence over functions, but the fast path did not.
+A nullable function-typed `callback` variable therefore received the named-
+function diagnostic when either function environment contained the same name.
+The added shadowing regression produced a second meaningful RED at 41 tests
+with one failure.
+
+The fast path now checks the recursive visible-variable binding first. Only an
+identifier that is not shadowed can enter prototype or named-function shortcut
+resolution. One regression exercises both named-function environments and
+requires `redundant_optional_access`; the other proves a nullable callable
+variable shadows each environment and follows ordinary receiver inference. The
+implementation does not inspect the function spelling and does not create a
+receiver guard for a non-null named target.
+
+The shadowing case verifies the semantic contract rather than only successful
+inference: the call segment owns a NULL/OPTIONAL guard with nullable result
+lifting and `[0, 1)` bounds; its receiver is nullable FUNCTION and its guarded
+type is non-null FUNCTION.
+
+Serial direct replay on GCC 11.4, Clang 14, and MSVC 19.44 produced:
+
+```text
+ownership intrinsic/member separation    41 Tests / 0 Failures / 0 Ignored
+type inference                           123 Tests / 0 Failures / 0 Ignored
+expression facts                          28 Tests / 0 Failures / 0 Ignored
+compiler integration                     127 Tests / 0 Failures / 0 Ignored
+```
+
+The ownership runners are intentionally serial because their artifact
+round-trip case uses a fixed fixture path. A parallel exploratory invocation
+confirmed that shared-path limitation; each serial process returned exit code
+zero and created no persistent log.
 
 ## Pending final acceptance
 
-- Add the final negative inference regression for a statically non-null callable
-  used with `?.(args)`. The design requires `redundant_optional_access`; the
-  removed `71b914e` fixture instead executed that form and must not be counted
-  as acceptance evidence. The currently reserved callable inference paths must
-  reach a stable integrated baseline before this final gate is changed.
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
   baseline `0a46151` each passed all 133 registered CTests with zero failures.
   The three CLI smokes printed `hello world` and exited zero. This closes the
@@ -749,5 +789,17 @@ current rejection coverage and are not stale positive syntax tests.
 - The post-review MSVC confirmation removed and verified absent
   `E:\zrs\ownership-review-final` and `E:\zrb\ownership-review-final-msvc`.
   It created no persistent log or transfer archive.
+- The named-callable correction removed and verified absent
+  `E:\zrs\ownership-d146109`, `E:\zrb\odm`,
+  `E:\zrb\ownership-nonnull-call.patch`, the WSL
+  `/home/hejiahui/.codex-snapshots/ownership-d146109` source snapshot, and its
+  GCC/Clang build roots. It created no persistent log; unrelated shared logs
+  remain untouched.
+
+`type_inference.c` is 4,182 lines, but this exact correction changes the
+ordering of one existing primary-expression/first-call resolution decision.
+A local extraction would leave the same orchestration split across files. The
+smallest coherent follow-up is extraction of that complete coordinator after
+L8 releases its current `type_inference_internal.h` and native-inference work.
 
 No plan or syntax status is promoted to completed until all pending gates pass.

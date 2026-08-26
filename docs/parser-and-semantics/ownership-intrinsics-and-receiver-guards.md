@@ -5,6 +5,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -30,6 +31,7 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -56,6 +58,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
 tests:
   - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/parser/test_ownership_optional_callable_cases.h
   - tests/parser/test_ownership_receiver_guard_contract_cases.h
   - tests/parser/test_ownership_receiver_guard_performance.c
   - tests/parser/test_legacy_migration.c
@@ -167,6 +170,14 @@ For nullable and weak receivers:
 `.b` throws. Use `weak?.a?.b` to guard both boundaries. Optional access on a
 known non-null target and optional access on an unknown/dynamic receiver are
 rejected rather than silently adding runtime guessing.
+
+That rule also applies to the first-call fast path. If a bare function name is
+resolved in either the runtime or compile-time type environment, `name?.(args)`
+is rejected with `redundant_optional_access` before overload selection. Normal
+`name(args)` resolution is unchanged. A visible variable binding keeps lexical
+precedence over same-name runtime and compile-time functions and follows the
+ordinary callable receiver path; unresolved/dynamic callables do not gain a
+name-based compatibility path.
 
 ## Parser and facts
 
@@ -322,6 +333,14 @@ checksums are mandatory.
 - Historical plan and acceptance documents may quote removed syntax as migration
   evidence, but current examples and executable fixtures use only this contract.
 
+Repository-local QuickJS evidence implements optional calls by testing the
+receiver before call evaluation and branching over the guarded suffix. Mono's
+conditional-access lowering likewise separates the guarded path from direct
+null-reference behavior, while Rust's `Weak::upgrade` returns `Option` when a
+target cannot be retained. ZR adopts those control/lifetime principles but
+deliberately rejects optional access when its canonical type already proves the
+target non-null.
+
 ## Test coverage
 
 `test_ownership_intrinsic_member_separation.c` owns syntax, semantic facts,
@@ -349,3 +368,13 @@ meta-call and deep Weak-result boundary cases. GCC 11.4, Clang 14, and MSVC
 39-case runner executes both live and expired `Weak<Service>?.(args)`, proves
 argument skipping and catchable direct expiry, and verifies the canonical
 readonly receiver effect of `virtual const @call`.
+
+The 2026-08-27 named-callable follow-up closes the remaining statically non-null
+call gate. A TDD regression registers the same `callback(int): int` signature
+independently in the runtime and compile-time type environments and requires
+`callback?.(1)` to report `redundant_optional_access`. A second regression
+registers a nullable function-typed variable with that name and proves it
+shadows either function environment. GCC 11.4, Clang 14, and MSVC 19.44 each
+pass the resulting ownership runner 41/41. On the same exact source overlay,
+type inference passes 123/123, expression facts 28/28, and compiler integration
+127/127 on all three toolchains.

@@ -867,10 +867,36 @@ The same review extends temporary-wake escape coverage through
 `weak.child.borrowValue()`: a deep `ref int` cannot escape, while a copied
 `weak.child.value` can. Final GCC 11.4, Clang 14, and MSVC 19.44 isolated
 snapshots each pass ownership 39/39, owner/borrow 8/8, semantic relations
-19/19, and compiler integration 127/127. One distinct design gate remains open:
-the statically non-null callable `?.(args)` negative regression must be closed
-after the reserved callable-inference baseline is integrated. Therefore Step 5
-and final acceptance remain unchecked.
+19/19, and compiler integration 127/127. At that snapshot one distinct design
+gate remained open: the statically non-null callable `?.(args)` negative
+regression had to wait until the reserved callable-inference paths were
+released.
+
+That named-callable gate was closed on 2026-08-27 without editing the concurrent
+L8 callable-value support paths. The primary-expression first-call fast path now
+checks the parsed call access mode after resolving a function in either the
+runtime or compile-time type environment and reports
+`redundant_optional_access` before overload selection. The initial GCC RED was
+40 tests with one failure because `callback?.(1)` succeeded. Independent review
+then found that a visible nullable callable variable could be misclassified when
+it shadowed a same-name function. That regression produced a second RED at
+41 tests with one failure. The fast path now preserves recursive visible-
+variable precedence before prototype/runtime/compile-time shortcut resolution.
+GCC 11.4, Clang 14, and MSVC 19.44 each pass ownership 41/41, type inference
+123/123, expression facts 28/28, and compiler integration 127/127. Step 5
+remains open only for the final integrated CTest graph, artifact/inventory
+replay, and exact final review already listed above.
+
+The shadowing regression also asserts the emitted NULL/OPTIONAL receiver guard,
+nullable result lift, `[0, 1)` segment bounds, nullable FUNCTION receiver, and
+non-null FUNCTION guarded type. `type_inference.c` is currently 4,182 lines,
+above the modularization threshold, but this correction remains a narrow edit
+to the ordering inside the existing primary-expression/first-call coordinator.
+Extracting only the new gate would split one resolution decision without
+creating a coherent responsibility. The smallest useful follow-up is to move
+the complete primary-expression/first-call coordinator into a dedicated
+module after L8 releases `type_inference_internal.h` and the native inference
+interfaces it is currently changing.
 
 Read-only code review then raised two test-quality concerns. The removed
 `weak?.add?.(bump())` case was not restored: `add` is a statically non-null
@@ -893,6 +919,13 @@ removal. Windows `E:\zrs\ownership-review-f77` and `E:\zrb\orm`, plus WSL
 Clang `.codex-builds` roots, are removed and verified absent. No persistent log
 was created for the final serial matrix. Existing `.codex/logs` evidence owned
 by L8, Q6, and other sessions is deliberately preserved.
+
+The named-callable correction used a later isolated snapshot and was cleaned
+the same way. Windows `E:\zrs\ownership-d146109`, `E:\zrb\odm`, and
+`E:\zrb\ownership-nonnull-call.patch`, plus WSL
+`/home/hejiahui/.codex-snapshots/ownership-d146109` and the matching GCC/Clang
+build roots, were resolved explicitly, removed, and verified absent. No
+persistent log was created.
 
 The later full-graph audit also removed and verified absent the disposable
 Windows worktree `E:\zrs\ownership-full-2de`, MSVC cache
