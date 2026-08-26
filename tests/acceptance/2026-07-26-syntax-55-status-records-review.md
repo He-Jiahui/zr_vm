@@ -466,3 +466,33 @@ Clang 的“119/119 覆盖”是完整运行 117/119 加两个超时项成功复
 这不关闭根 Syntax 计划尚未实现的更高层切片，也不改变个别记录对历史 baseline 或
 范围的限定。后续只有在根 `README.md` 的剩余 promotion gate 分别关闭后，才能声明
 整个 Syntax redesign 完成。
+
+## 2026-08-27 当前仓库复验
+
+本次按已经接受的 canonical selector 重新机械清点：只选择编号子目录中的
+milestone 状态文档，排除 `*-implementation-plan.md`，并排除独立支持记录
+`05-property-unified-ast/m5-task4-property-import-bootstrap.md`。结果仍为
+`TOTAL=55 COMPLETE=55 MISSING=0`，目录分布保持 01=5、02=6、03=5、04=7、
+05=6、06=2、07=1、10=5、12=15、13=3。额外的 M5 task-level 支持记录仍是
+completed，但不被重复计入冻结的 55 份 milestone 集合。
+
+生产源码重新搜索 `%module`、`%compileTime`、`%extern`、`%test`、`%owned`、
+`%import`、`%borrow/%loan/%unique/%shared` 与 `%func`，在 parser、AOT parser 和
+language-server production 路径中均无原始旧拼写分支。`legacy_syntax_removed`
+只在 `parser_state.c` 的结构化诊断入口和对应 cutover test 中出现；没有旧 AST、
+类型或 lowering 恢复路径。
+
+固定 `682f9c0` 源码快照上的 `zr_vm_percent_syntax_cutover_test` 在 GCC 11.4、
+Clang 14 和 MSVC 19.44 均直接报告 `7 Tests / 0 Failures / 0 Ignored`。覆盖面包括
+已知 `%` directive 仅诊断、非 `%` legacy form 仅诊断、未知 percent identifier
+不被误判为迁移规则、当前语法与 `%`/`%=` 运算符仍可解析、ownership 同名成员
+只走对象派发、旧 using/reference ownership form 不 lowering，以及 canonical
+reference binding 不恢复 legacy ownership type。运行中打印的 mutable-ref `using`
+编译错误是第六项负例的预期诊断，Unity 结果和进程退出码均为成功。
+
+因此 2026-08-27 的新鲜结论仍是 **55/55 confirmed**，严格 percent 破坏性切换
+保持成立，当前测试无需删除或放宽。本文末尾关于 root promotion 尚未关闭的文字是
+原始验收时点的历史边界；后续根计划晋级已经由
+`tests/acceptance/2026-08-05-syntax-06b-repository-promotion.md`、
+`tests/acceptance/2026-08-05-syntax-07b-current-reference.md` 和
+`docs/plans/syntax/README.md` 的当前状态另行收口，本次复验不重开这些 gate。
