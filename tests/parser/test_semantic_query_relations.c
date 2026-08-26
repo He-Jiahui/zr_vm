@@ -822,6 +822,84 @@ static void test_compiled_source_publishes_type_hierarchy_relations(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_compiled_source_publishes_interface_member_implementation(void) {
+    const TZrChar *source =
+            "interface Readable { fn read(): int; }\n"
+            "class Device : Readable {\n"
+            "    pub fn read(): int { return 1; }\n"
+            "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_interface_members.zr");
+    SZrAstNode *ast;
+    SZrAstNode *interfaceMethodNode;
+    SZrAstNode *classMethodNode;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *interfaceMethod;
+    const SZrSemanticSymbolRecord *classMethod;
+    const SZrParserSemanticRelationQuery *relation;
+    SZrArray relations;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT(2U, ast->data.script.statements->count);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements->nodes[1]);
+    TEST_ASSERT_NOT_NULL(
+            ast->data.script.statements->nodes[0]->data.interfaceDeclaration.members);
+    TEST_ASSERT_NOT_NULL(
+            ast->data.script.statements->nodes[1]->data.classDeclaration.members);
+    interfaceMethodNode = ast->data.script.statements->nodes[0]
+                                  ->data.interfaceDeclaration.members->nodes[0];
+    classMethodNode = ast->data.script.statements->nodes[1]
+                              ->data.classDeclaration.members->nodes[0];
+    TEST_ASSERT_NOT_NULL(interfaceMethodNode);
+    TEST_ASSERT_NOT_NULL(classMethodNode);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    interfaceMethod = relation_find_symbol_by_node(
+            cs.semanticContext, interfaceMethodNode);
+    classMethod = relation_find_symbol_by_node(cs.semanticContext, classMethodNode);
+    TEST_ASSERT_NOT_NULL(interfaceMethod);
+    TEST_ASSERT_NOT_NULL(classMethod);
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ImplementationsOf(
+            cs.semanticContext, interfaceMethod->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_IMPLEMENTATION, relation->kind);
+    TEST_ASSERT_EQUAL_UINT(classMethod->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(interfaceMethod->id, relation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(classMethod->typeId, relation->sourceTypeId);
+    TEST_ASSERT_EQUAL_UINT(interfaceMethod->typeId, relation->targetTypeId);
+    TEST_ASSERT_TRUE(relation->hasSourceRange);
+    TEST_ASSERT_TRUE(relation->hasTargetRange);
+    TEST_ASSERT_EQUAL_UINT(
+            classMethodNode->location.start.offset, relation->sourceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(
+            classMethodNode->location.end.offset, relation->sourceRange.end.offset);
+    TEST_ASSERT_EQUAL_UINT(
+            interfaceMethodNode->location.start.offset, relation->targetRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(
+            interfaceMethodNode->location.end.offset, relation->targetRange.end.offset);
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_compiled_source_publishes_override_relation(void) {
     const TZrChar *source =
             "abstract class Base {\n"
@@ -1251,6 +1329,7 @@ int main(void) {
     RUN_TEST(test_reference_definitions_publish_declaration_edges_once);
     RUN_TEST(test_compiled_source_publishes_reference_definition_relations);
     RUN_TEST(test_compiled_source_publishes_type_hierarchy_relations);
+    RUN_TEST(test_compiled_source_publishes_interface_member_implementation);
     RUN_TEST(test_compiled_source_publishes_override_relation);
     RUN_TEST(test_compiled_source_publishes_explicit_constructor_relation);
     RUN_TEST(test_compiled_source_omits_synthesized_constructor_relation);

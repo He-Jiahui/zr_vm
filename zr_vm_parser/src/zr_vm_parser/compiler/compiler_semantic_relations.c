@@ -36,6 +36,21 @@ TZrBool compiler_publish_member_override_relation(
             targetMember->symbolId);
 }
 
+TZrBool compiler_publish_member_implementation_relation(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *sourceMember,
+        const SZrTypeMemberInfo *targetMember) {
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        sourceMember == ZR_NULL || targetMember == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    return ZrParser_SemanticRelations_PublishSymbolRelation(
+            cs->semanticContext,
+            ZR_SEMANTIC_RELATION_IMPLEMENTATION,
+            sourceMember->symbolId,
+            targetMember->symbolId);
+}
+
 TZrBool compiler_publish_type_constructor_relation(
         SZrCompilerState *cs,
         const SZrAstNode *sourceTypeDeclaration,

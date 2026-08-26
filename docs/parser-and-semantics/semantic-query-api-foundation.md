@@ -336,6 +336,23 @@ query never searches member names, inheritance syntax, virtual slots, or ASTs;
 if a lower-layer producer has not published an exact edge, no implementation is
 returned.
 
+Task 3.12 publishes source class-to-interface member `IMPLEMENTATION` facts at
+the point where class validation has already selected the exact
+`SZrTypeMemberInfo` pair and verified its signature, receiver effect, abstract,
+and shadow contracts. The relation source is the implementing class member's
+registered SymbolId and the target is the required interface member's
+registered SymbolId. TypeIds and declaration ranges remain projections of
+those symbol records. Repeated validation is idempotent in the shared relation
+store; the producer never reconstructs an edge from a member name, signature
+text, interface slot, inheritance spelling, or an LSP-side AST walk.
+
+The source syntax currently permits interface requirements on classes but does
+not expose a struct inheritance/interface list. This relation milestone keeps
+that syntax boundary: it publishes class implementation edges only and does
+not add a struct parser extension. Binary metadata, native descriptors, and
+external interface member identities need their own canonical relation
+producers before `ImplementationsOf` can return those edges.
+
 ## Call Edge Snapshot Foundation
 
 `SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph

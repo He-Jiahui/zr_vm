@@ -43,6 +43,10 @@ TZrBool compiler_publish_member_override_relation(
         SZrCompilerState *cs,
         const SZrTypeMemberInfo *sourceMember,
         const SZrTypeMemberInfo *targetMember);
+TZrBool compiler_publish_member_implementation_relation(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *sourceMember,
+        const SZrTypeMemberInfo *targetMember);
 TZrBool compiler_publish_type_constructor_relation(
         SZrCompilerState *cs,
         const SZrAstNode *sourceTypeDeclaration,

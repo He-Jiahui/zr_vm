@@ -647,6 +647,8 @@ static TZrBool compiler_class_validate_required_members_recursive(SZrCompilerSta
                 (const SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, memberIndex);
         const SZrTypeMemberInfo *implementation = ZR_NULL;
         TZrBool declaredInCurrentClass = ZR_FALSE;
+        TZrBool requirementFromInterface;
+        TZrBool satisfiesRequirement;
 
         if (requiredMember == ZR_NULL ||
             (requiredMember->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) == 0) {
@@ -657,15 +659,18 @@ static TZrBool compiler_class_validate_required_members_recursive(SZrCompilerSta
                                                                                   info,
                                                                                   requiredMember,
                                                                                   &declaredInCurrentClass);
-        if (compiler_class_requirement_owner_is_interface(cs, requiredMember)) {
+        requirementFromInterface =
+                compiler_class_requirement_owner_is_interface(cs, requiredMember);
+        if (requirementFromInterface) {
             compiler_class_bind_interface_contract_slot(requiredMember, implementation, declaredInCurrentClass);
         }
+        satisfiesRequirement = compiler_class_member_satisfies_requirement(cs,
+                                                                            requiredMember,
+                                                                            implementation,
+                                                                            declaredInCurrentClass);
 
         if (!compiler_class_has_modifier(info, ZR_DECLARATION_MODIFIER_ABSTRACT) &&
-            !compiler_class_member_satisfies_requirement(cs,
-                                                         requiredMember,
-                                                         implementation,
-                                                         declaredInCurrentClass)) {
+            !satisfiesRequirement) {
             ZrParser_Compiler_Error(cs,
                                     "Concrete class does not implement all abstract/interface members",
                                     requiredMember->declarationNode != ZR_NULL
@@ -674,6 +679,20 @@ static TZrBool compiler_class_validate_required_members_recursive(SZrCompilerSta
                                                       ZrParser_FilePosition_Create(0, 0, 0),
                                                       ZrParser_FilePosition_Create(0, 0, 0),
                                                       ZR_NULL));
+            return ZR_FALSE;
+        }
+        if (requirementFromInterface && satisfiesRequirement &&
+            !compiler_publish_member_implementation_relation(
+                    cs, implementation, requiredMember)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to publish canonical interface member relation",
+                    requiredMember->declarationNode != ZR_NULL
+                            ? requiredMember->declarationNode->location
+                            : ZrParser_FileRange_Create(
+                                      ZrParser_FilePosition_Create(0, 0, 0),
+                                      ZrParser_FilePosition_Create(0, 0, 0),
+                                      ZR_NULL));
             return ZR_FALSE;
         }
     }
