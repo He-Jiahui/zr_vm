@@ -11,11 +11,11 @@
 
 | Requirement | Implementation evidence | Focused evidence |
 | --- | --- | --- |
-| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | GCC/Clang/MSVC ownership 37/37 and Shared/Weak 19/19; final full-graph replay pending |
+| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | GCC/Clang/MSVC ownership 39/39 and Shared/Weak 19/19; final full-graph replay pending |
 | `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name object method and real-member tests |
 | Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes against the materialized named runtime prototype |
 | A live weak target keeps ordinary object-member failures | guard resolves before member dispatch; standard system registration materializes the exception hierarchy | missing member follows the ordinary member-error path, not `NullReferenceError` |
-| `?.member`, `?.method(args)`, and `?.(args)` skip the complete suffix | per-segment access mode and chain-level receiver-guard lowering | optional failure skips argument side effects; optional success runs once |
+| `?.member`, `?.method(args)`, and `?.(args)` skip the complete suffix | per-segment access mode and chain-level receiver-guard lowering | exact `Weak<Service>?.(args)` failure skips arguments; success runs once through readonly `const @call` |
 | Explicit `wake(weak)` returns nullable Shared | canonical intrinsic fact and `OWN_WAKE` | type/fact/opcode execution tests |
 | VM, AOT C, LLVM, and artifacts use canonical operation names | `OWN_SHARE/DEGRADE/WAKE/INTO_GC_BOX/DROP` | SemIR 13/13; focused AOT C/LLVM ownership and receiver-guard replay passes |
 | Old member calls are not executable aliases | diagnostic is emitted only after canonical member lookup fails, and compilation stops | structured fix tests and same-name real member tests |
@@ -487,14 +487,57 @@ returns null without evaluating the index. `abc681d` proves that the receiver
 expression itself is evaluated exactly once for both live and expired optional
 chains. `80f0476` proves that a live optional property access enters its
 throwing getter and catch path, while an expired receiver returns null without
-invoking the getter. `71b914e` executes a canonical nullable callable through
-`?.(params)`: the live path evaluates its argument once, the absent optional
-path skips the argument and returns null, and the absent direct call raises
-catchable `NullReferenceError` before argument evaluation. Direct GCC execution
-passes the expanded ownership runner with `36 Tests / 0 Failures / 0 Ignored`
-and exit zero. These additions are not yet three-toolchain evidence; Clang,
-MSVC, and the full registered graph remain part of the final stable-baseline
-replay.
+invoking the getter. The `71b914e` fixture mixed a statically non-null
+`live?.(params)` call with its nullable branch and therefore was not valid
+evidence for the design's redundant-optional rule. That stale case is removed
+rather than preserved as a compatibility contract.
+
+The replacement uses the language form requested by the design itself. A
+resource class declares `pub const @call(value: int): int`; a live
+`Weak<Service>?.(bump())` returns `11` and evaluates the argument once; an
+expired target returns null without evaluating the argument; and direct
+`expiredWeak(bump())` raises catchable `NullReferenceError` before argument
+evaluation. The parser records the meta function's const receiver modifier and
+canonical readonly receiver effect, accepts the normal
+`pub virtual const @call` modifier order, rejects `static const @call`, and the
+compiler rejects mutation of `this` from the const body.
+
+The same review extended the temporary-wake escape boundary from direct
+properties/methods to a deep `weak.child.borrowValue()` chain. Returning its
+`ref int` is rejected, while returning the scalar copy `weak.child.value`
+executes and returns `7`. On the final isolated source overlay based on
+`b1f6884`, GCC 11.4, Clang 14, and MSVC 19.44 each directly report:
+
+```text
+ownership intrinsic/member separation    39 Tests / 0 Failures / 0 Ignored
+owner/borrow receiver guards               8 Tests / 0 Failures / 0 Ignored
+semantic query relations                  19 Tests / 0 Failures / 0 Ignored
+compiler integration                     127 Tests / 0 Failures / 0 Ignored
+```
+
+The first parallel MSVC cold build encountered only the known shared-PDB
+`C1041` contention; the serial incremental retry built all targets and every
+direct executable returned zero. This focused evidence still does not replace
+the final registered graph on the post-L8 integrated baseline.
+
+Final read-only review correctly noted that the deep ref test could be made
+more specific. Its member is now `const fn borrowValue(): ref readonly int` and
+the enclosing function also returns `ref readonly int`, so the Weak call is
+receiver-capability-valid before the escape boundary is checked. On main
+`3de790c` plus the exact overlay, MSVC reports that case as PASS and emits
+`Borrowed and loaned owners cannot escape through return` for
+`resource_weak_deep_ref_method_escape_rejected.zr`. The complete runner is 7/8
+on that newer baseline because the pre-existing
+`test_owner_ref_last_use_allows_later_move` now fails with
+`Expected 'int' but found 'int'` after the integrated call-diagnostic/type-
+inference changes. The failure is outside this write set and does not replace
+the earlier fixed-`b1f6884` 8/8 cross-toolchain evidence.
+
+The review's suggestion to restore `weak?.add?.(bump())` was rejected on
+contract grounds: `add` is a statically non-null method, so the second optional
+segment must eventually receive `redundant_optional_access`. A real nullable
+member-to-call regression belongs with the pending callable-inference gate; the
+old test must not make invalid syntax executable again.
 
 The artifact requirement was then reviewed against the real `.zro` writer and
 reader. `SZrOwnershipIntrinsicFact` and `SZrReceiverGuardFact` are AST-backed
@@ -595,8 +638,9 @@ receiver drift, guarded-type drift, and a missing nullable callable guard fact.
 Guard inference publishes the receiver expression fact, lowering compares the
 guard's receiver type against it before deriving kind/guarded type, and missing
 member or function-call facts fail closed for canonical nullable/Weak receivers.
-Known non-null optional callable lowering remains valid without a fabricated
-guard fact.
+The design instead requires a known non-null optional callable to fail with
+`redundant_optional_access`; the pending negative inference regression records
+that remaining gate and lowering must not fabricate a guard fact.
 
 Fresh isolated snapshots representing main `075d68c` plus the exact ownership
 overlay report the following serial direct results on GCC 11.4, Clang 14, and
@@ -649,7 +693,7 @@ current rejection coverage and are not stale positive syntax tests.
 | Ownership control has only the five intrinsic source calls | Dedicated intrinsic AST/facts and focused parse/type/lower tests; production percent branches and ownership-lowering member selector searches are empty | Implemented; final matrix pending |
 | `.` and `?.` always perform target access | Same-name object/module member regressions use ordinary member lowering; the post-failed-lookup migration diagnostic cannot select ownership semantics | Implemented; final matrix pending |
 | Direct absent nullable/Weak access throws `NullReferenceError` | Direct weak runtime case verifies the named error; live missing-member regression preserves its distinct error | Implemented; final matrix pending |
-| Optional absence skips the complete suffix and returns null or a void no-op | Optional member/call, nullable callable, argument-side-effect, computed-index, receiver single-evaluation, getter-skip, mixed-boundary, repeated-transition, nullable-lift, and void-noop focused cases pass; injected fact drift and missing member/call guards fail closed | GCC/Clang/MSVC Shared/Weak 19/19; full matrix pending |
+| Optional absence skips the complete suffix and returns null or a void no-op | Optional member/call, exact Weak target-call, argument-side-effect, computed-index, receiver single-evaluation, getter-skip, mixed-boundary, repeated-transition, nullable-lift, and void-noop focused cases pass; injected fact drift and missing member/call guards fail closed | GCC/Clang/MSVC Shared/Weak 19/19 and ownership 39/39; full matrix pending |
 | A Weak chain wakes once, retains the hidden Shared owner through the suffix, and releases it afterward | Every guard wake has an adjacent close marker; deep-chain, suffix-throw cleanup, caught-inner-throw cleanup, ownership-valued direct/mixed results, repeated-call, mixed `weak?.a.b`/`weak?.a?.b`, 32-transition loop, native-GC-pressure, and performance cases pass | GCC/Clang/MSVC Shared/Weak 19/19 and ownership 37/37; full matrix pending |
 | Intrinsic and guard facts drive VM and AOT backends | Lowering validates and consumes guard bounds/lift; semantic-fact, SemIR, interpreter, AOT C, LLVM, artifact-reader, and cleanup regressions exist; recursive `.zro` comparison proves the lowered execution projection rather than serializing AST-backed facts | three-toolchain 123/28/127 plus SemIR 13/13 (GCC/Clang), 12/12 (MSVC); final integrated replay pending |
 | Intrinsic spellings remain legal member names | The focused collision case executes members named `share`, `degrade`, `wake`, `intoGc`, and `drop` through normal dispatch | Implemented; final matrix pending |
@@ -659,6 +703,11 @@ current rejection coverage and are not stale positive syntax tests.
 
 ## Pending final acceptance
 
+- Add the final negative inference regression for a statically non-null callable
+  used with `?.(args)`. The design requires `redundant_optional_access`; the
+  removed `71b914e` fixture instead executed that form and must not be counted
+  as acceptance evidence. The currently reserved callable inference paths must
+  reach a stable integrated baseline before this final gate is changed.
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
   baseline `0a46151` each passed all 133 registered CTests with zero failures.
   The three CLI smokes printed `hello world` and exited zero. This closes the
@@ -692,5 +741,13 @@ current rejection coverage and are not stale positive syntax tests.
   `ownership-full-2de` source/GCC/Clang roots, and the temporary tar/patch files
   used to transfer the exact overlay. Its CTest logs were inside the removed
   build roots; unrelated shared logs remain untouched.
+- The readonly-meta-call/deep-escape replay removed and verified absent
+  `E:\zrs\ownership-deep-escape`, `E:\zrb\ownership-deep-escape-msvc`, all eight
+  `E:\zrb\ownership-deep-*.tar` transfer files, the WSL
+  `ownership-deep-escape` source snapshot, and its three GCC/Clang build roots.
+  Summary extraction used only command-local temporary files and left no log.
+- The post-review MSVC confirmation removed and verified absent
+  `E:\zrs\ownership-review-final` and `E:\zrb\ownership-review-final-msvc`.
+  It created no persistent log or transfer archive.
 
 No plan or syntax status is promoted to completed until all pending gates pass.

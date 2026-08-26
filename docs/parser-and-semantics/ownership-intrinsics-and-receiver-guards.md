@@ -135,6 +135,24 @@ callable?.(args)
 There is no direct `.(args)` form. Direct calls use `(args)`; `?.(args)` is the
 optional-call segment.
 
+A resource class can make its target callable through `@call`. Calling through
+`Weak<T>` requires that meta function to publish a readonly receiver effect, so
+the declaration uses the same `const` receiver contract as an ordinary method:
+
+```zr
+resource class Service {
+    pub const @call(value: int): int { return value + 10; }
+}
+
+var result = weak?.(makeValue());
+```
+
+`const @call` may be combined with declaration modifiers in the normal order,
+for example `pub virtual const @call(...)`. `static const @call` is invalid
+because a static meta function has no receiver. A const meta body cannot mutate
+`this`, and a live Weak call uses that readonly receiver effect after its single
+wake.
+
 For nullable and weak receivers:
 
 - direct `.` or direct call requires a live target and raises the catchable
@@ -190,8 +208,9 @@ with a shortened suffix, direct/optional mismatch, receiver-type or
 nullable/Weak kind mismatch, guarded-type drift, or value/void lift mismatch is
 a compile error. Optional member segments always require a guard fact. Member
 and function-call segments also require one when the current or canonical
-receiver is nullable/Weak. A known non-null optional callable remains on its
-ordinary optional-call lowering path and is not forced to invent a guard fact.
+receiver is nullable/Weak. A known non-null optional callable must be rejected
+as redundant optional access during inference; lowering never invents a guard
+fact or a compatibility branch for it.
 
 Move checking, loan conflicts, throw profiling, compiler lowering, LSP hover,
 signature help, completion, diagnostics, and migration edits consume these
@@ -322,3 +341,11 @@ expression facts 28/28, and compiler integration 127/127. GCC and Clang passed
 SemIR 13/13; MSVC passed its registered SemIR set 12/12. The detailed commands,
 baseline distinction, and remaining full-graph gate are recorded in
 `tests/acceptance/2026-08-10-ownership-object-member-separation.md`.
+
+A later exact review snapshot based on main `b1f6884` adds the readonly class
+meta-call and deep Weak-result boundary cases. GCC 11.4, Clang 14, and MSVC
+19.44 each directly pass ownership separation 39/39, owner/borrow receivers
+8/8, semantic query relations 19/19, and compiler integration 127/127. The
+39-case runner executes both live and expired `Weak<Service>?.(args)`, proves
+argument skipping and catchable direct expiry, and verifies the canonical
+readonly receiver effect of `virtual const @call`.

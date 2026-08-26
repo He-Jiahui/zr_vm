@@ -825,8 +825,9 @@ canonical receiver drift, guarded-type drift, and missing nullable-callable fact
 cases. Guard inference now publishes the receiver expression fact, lowering
 compares against that canonical type before deriving kind/guarded type, and a
 member or call segment with a canonical nullable/Weak receiver fails closed when
-its guard fact is absent. Known non-null optional callable lowering remains
-valid without a fabricated guard fact.
+its guard fact is absent. The design does not permit a known non-null optional
+callable: inference must emit `redundant_optional_access`, and lowering must not
+fabricate a guard fact.
 
 Isolated GCC 11.4, Clang 14, and MSVC 19.44 snapshots representing main
 `075d68c` plus the exact ownership overlay each pass Shared/Weak 19/19,
@@ -851,6 +852,39 @@ the existing function-symbol path before override validation. GCC 11.4, Clang
 LSP or name-based fallback. It is not a replacement for a fresh single-command
 full graph on the post-L8 stable baseline.
 
+The next requirement review removed the stale pseudo-nullable callable fixture
+and exercised the exact Weak target-call syntax. The initial RED proved that a
+class could not declare a readonly `@call`, so a Weak receiver could only find a
+writable callable member and was correctly rejected. Class meta functions now
+carry the ordinary receiver modifier contract: `pub const @call` publishes a
+readonly effect, `pub virtual const @call` follows the normal declaration-
+modifier order, `static const @call` is rejected, and mutating `this` in the
+const body fails. A live `weak?.(bump())` evaluates once and returns `11`; an
+expired optional call skips the argument and returns null; the direct expired
+call throws catchable `NullReferenceError` before argument evaluation.
+
+The same review extends temporary-wake escape coverage through
+`weak.child.borrowValue()`: a deep `ref int` cannot escape, while a copied
+`weak.child.value` can. Final GCC 11.4, Clang 14, and MSVC 19.44 isolated
+snapshots each pass ownership 39/39, owner/borrow 8/8, semantic relations
+19/19, and compiler integration 127/127. One distinct design gate remains open:
+the statically non-null callable `?.(args)` negative regression must be closed
+after the reserved callable-inference baseline is integrated. Therefore Step 5
+and final acceptance remain unchecked.
+
+Read-only code review then raised two test-quality concerns. The removed
+`weak?.add?.(bump())` case was not restored: `add` is a statically non-null
+method, so its second optional call contradicts the design's redundant-
+optional rule rather than covering a nullable callable. The deep escape method
+was strengthened to `const fn -> ref readonly`, matching the already-valid
+readonly Weak receiver contract and excluding a writable-capability false
+positive. On the current `3de790c` integration baseline, that exact case passes
+and reports `Borrowed and loaned owners cannot escape through return`. The same
+runner is currently 7/8 because the earlier, unrelated
+`test_owner_ref_last_use_allows_later_move` now reports
+`Expected 'int' but found 'int'` after the integrated call-diagnostic/type-
+inference work. Those reserved inference paths remain outside this exact commit.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -867,6 +901,19 @@ Windows worktree `E:\zrs\ownership-full-2de`, MSVC cache
 caches. The temporary full-snapshot tar and both generated patch files under
 `E:\zrb` were deleted as well. CTest's internal logs were contained in those
 removed caches; no repository or shared `.codex/logs` path was changed.
+
+The readonly-meta-call and deep-escape replay likewise removed and verified
+absent the disposable Windows worktree `E:\zrs\ownership-deep-escape`, MSVC
+cache `E:\zrb\ownership-deep-escape-msvc`, its eight explicit dependency/source
+tar files under `E:\zrb`, the WSL source snapshot
+`/home/hejiahui/.codex-snapshots/ownership-deep-escape`, and the three matching
+GCC/Clang build roots. The final result summaries used command-local temporary
+files that were deleted before each command returned; no persistent log or
+shared cache was changed.
+
+The post-review MSVC confirmation also removed and verified absent
+`E:\zrs\ownership-review-final` and `E:\zrb\ownership-review-final-msvc`.
+No persistent test log or transfer archive was created for that replay.
 
 - [ ] **Step 7: Commit final acceptance status**
 
