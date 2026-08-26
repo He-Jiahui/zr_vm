@@ -3113,6 +3113,83 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
     TEST_PASS(timer, "Semantic Analyzer Reports Invalid Interface Variance Positions");
 }
 
+static void test_semantic_analyzer_projects_interface_const_field_contract(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Projects Interface Const Field Contract");
+
+    TEST_INFO("Interface const field diagnostics",
+              "Non-const and missing implementations should project parser-owned diagnostics with exact ranges and no-fix disposition");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "interface Versioned {\n"
+            "    pub const version: int;\n"
+            "}\n"
+            "class MutableVersion: Versioned {\n"
+            "    pub var version: int;\n"
+            "}\n"
+            "class MissingVersion: Versioned {\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(
+            state,
+            "interface_const_field_contract_test.zr",
+            strlen("interface_const_field_contract_test.zr"));
+        SZrAstNode *ast = ZrParser_Parse(
+            state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *mutableDiagnostic;
+        SZrDiagnostic *missingDiagnostic;
+
+        if (analyzer == ZR_NULL || ast == ZR_NULL ||
+            !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            if (ast != ZR_NULL) {
+                ZrParser_Ast_Free(state, ast);
+            }
+            if (analyzer != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            }
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Projects Interface Const Field Contract",
+                      "Failed to analyze interface const field fixture");
+            return;
+        }
+
+        mutableDiagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "const_interface_mismatch", 5);
+        missingDiagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "const_interface_mismatch", 7);
+        if (count_diagnostics_with_code(analyzer, "const_interface_mismatch") != 2 ||
+            mutableDiagnostic == ZR_NULL || missingDiagnostic == ZR_NULL ||
+            mutableDiagnostic->descriptorId != 2014U ||
+            missingDiagnostic->descriptorId != 2014U ||
+            mutableDiagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+            missingDiagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+            mutableDiagnostic->location.start.column != 13 ||
+            missingDiagnostic->location.start.column != 7 ||
+            !mutableDiagnostic->relatedInformation.isValid ||
+            mutableDiagnostic->relatedInformation.length != 1U ||
+            !missingDiagnostic->relatedInformation.isValid ||
+            missingDiagnostic->relatedInformation.length != 1U ||
+            mutableDiagnostic->noFixReason !=
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+            missingDiagnostic->noFixReason !=
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+            mutableDiagnostic->fixes.isValid || missingDiagnostic->fixes.isValid) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Projects Interface Const Field Contract",
+                      "Expected two canonical descriptor-2014 diagnostics with exact primary/related ranges");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Projects Interface Const Field Contract");
+}
+
 static void test_semantic_analyzer_preserves_owner_generic_context_in_member_signatures(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
@@ -4865,6 +4942,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_invalid_interface_variance_positions(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_projects_interface_const_field_contract(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_owner_generic_context_in_member_signatures(state);

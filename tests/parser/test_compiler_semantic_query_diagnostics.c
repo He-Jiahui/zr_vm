@@ -1532,6 +1532,67 @@ static void test_invalid_interface_variance_publishes_structured_semantic_diagno
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_interface_const_field_mismatch_publishes_structured_semantic_diagnostic(void) {
+    const TZrChar *source =
+            "interface Versioned {\n"
+            "    pub const version: int;\n"
+            "}\n"
+            "class MutableVersion: Versioned {\n"
+            "    pub var version: int;\n"
+            "}\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    const SZrStructuredDiagnosticRelatedInformation *related;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_interface_const_field_diagnostics_test.zr",
+            strlen("compiler_interface_const_field_diagnostics_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2014U, cs.structuredError.descriptorId);
+    TEST_ASSERT_EQUAL_STRING(
+            "const_interface_mismatch",
+            ZrCore_String_GetNativeString(cs.structuredError.code));
+    TEST_ASSERT_EQUAL_STRING(
+            "Interface const field 'version' must remain const in implementing class",
+            ZrCore_String_GetNativeString(cs.structuredError.message));
+    TEST_ASSERT_EQUAL_INT(5, cs.structuredError.location.start.line);
+    TEST_ASSERT_EQUAL_INT(13, cs.structuredError.location.start.column);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            cs.structuredError.noFixReason);
+    TEST_ASSERT_TRUE(cs.structuredError.relatedInformation.isValid);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)cs.structuredError.relatedInformation.length);
+    TEST_ASSERT_FALSE(cs.structuredError.fixes.isValid);
+    related = (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
+            &cs.structuredError.relatedInformation, 0U);
+    TEST_ASSERT_NOT_NULL(related);
+    TEST_ASSERT_EQUAL_INT(2, related->location.start.line);
+    TEST_ASSERT_EQUAL_INT(15, related->location.start.column);
+    TEST_ASSERT_EQUAL_INT(2, related->location.end.line);
+    TEST_ASSERT_EQUAL_INT(22, related->location.end.column);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_resource_strong_cycle_warning_publishes_user_decision_reason(void) {
     const TZrChar *source =
             "resource class Node {\n"
@@ -2643,6 +2704,7 @@ int main(void) {
     RUN_TEST(test_const_assignment_publishes_structured_semantic_diagnostic);
     RUN_TEST(test_const_field_assignment_matches_constructor_context_contract);
     RUN_TEST(test_invalid_interface_variance_publishes_structured_semantic_diagnostic);
+    RUN_TEST(test_interface_const_field_mismatch_publishes_structured_semantic_diagnostic);
     RUN_TEST(test_resource_strong_cycle_warning_publishes_user_decision_reason);
     RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_declaration_body_open_builder_publishes_machine_fix);

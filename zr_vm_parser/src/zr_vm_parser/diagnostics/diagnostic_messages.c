@@ -196,6 +196,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Invalid variance",
             "Generic parameter is used in an incompatible variance position"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "const_interface_mismatch",
+            "Interface const field mismatch",
+            "Interface const field must remain const in the implementing class"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),

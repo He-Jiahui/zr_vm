@@ -1205,6 +1205,33 @@ static void test_variance_diagnostics_use_parser_query_projection(void) {
     free(variance);
 }
 
+static void test_interface_const_field_diagnostics_use_parser_query_projection(void) {
+    char *symbols = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c");
+
+    if (symbols == NULL) {
+        printf("FAIL: could not read semantic analyzer symbols source\n");
+        g_failures++;
+        return;
+    }
+
+    assert_text_contains(
+        symbols,
+        "ZrParser_InterfaceContract_ConstFieldViolationAt");
+    assert_text_contains(
+        symbols,
+        "ZrParser_InterfaceContract_BuildConstFieldDiagnostic");
+    assert_text_contains(
+        symbols,
+        "ZrParser_SemanticFacts_AppendDiagnostic");
+    assert_text_contains_none(
+        symbols,
+        "Interface field '%s' is const, but implementation field is not const");
+    assert_text_contains_none(symbols, "TODO: \u5982\u679c\u5b57\u6bb5\u672a\u627e\u5230");
+
+    free(symbols);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1253,6 +1280,7 @@ int main(void) {
     test_reachability_diagnostics_use_semantic_query_projection();
     test_const_assignment_diagnostics_use_semantic_query_projection();
     test_variance_diagnostics_use_parser_query_projection();
+    test_interface_const_field_diagnostics_use_parser_query_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1301,6 +1329,7 @@ int main(void) {
     printf("PASS: Type mismatch diagnostics use compiler query projection\n");
     printf("PASS: Reachability diagnostics use semantic query projection\n");
     printf("PASS: Variance diagnostics use parser query projection\n");
+    printf("PASS: Interface const-field diagnostics use parser query projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

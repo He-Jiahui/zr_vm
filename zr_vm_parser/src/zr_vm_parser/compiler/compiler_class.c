@@ -8,6 +8,7 @@
 #include "cfg_internal.h"
 #include "compiler_attribute_binding.h"
 #include "compiler_decorator_contract.h"
+#include "zr_vm_parser/interface_contract.h"
 
 static TZrBool compiler_class_ffi_integer_type_name_supported(SZrString *typeName) {
     static const TZrChar *const kSupportedIntegerTypeNames[] = {
@@ -54,22 +55,6 @@ static TZrBool compiler_class_view_type_is_source_extern_struct(SZrCompilerState
     }
 
     return ZR_FALSE;
-}
-
-static SZrTypeMemberInfo *compiler_class_find_declared_member(SZrTypePrototypeInfo *info, SZrString *memberName) {
-    if (info == ZR_NULL || memberName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < info->members.length; index++) {
-        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, index);
-        if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL &&
-            ZrCore_String_Equal(memberInfo->name, memberName)) {
-            return memberInfo;
-        }
-    }
-
-    return ZR_NULL;
 }
 
 static TZrUInt32 compiler_member_virtual_slot_none(void) {
@@ -939,64 +924,27 @@ static TZrBool compiler_class_apply_builtin_ffi_wrapper_decorators(SZrCompilerSt
     return ZR_TRUE;
 }
 
-static TZrBool compiler_class_validate_interface_const_fields(SZrCompilerState *cs,
-                                                              const SZrTypePrototypeInfo *classInfo,
-                                                              const SZrArray *inherits,
-                                                              SZrFileRange errorLocation) {
-    if (cs == ZR_NULL || classInfo == ZR_NULL || inherits == ZR_NULL) {
+static TZrBool compiler_class_validate_interface_const_fields(
+        SZrCompilerState *cs,
+        SZrAstNode *classNode) {
+    SZrInterfaceConstFieldViolation violation;
+    SZrStructuredDiagnostic diagnostic;
+
+    if (!ZrParser_InterfaceContract_ConstFieldViolationAt(
+                cs, classNode, 0U, &violation)) {
         return ZR_TRUE;
     }
-
-    for (TZrSize inheritIndex = 0; inheritIndex < inherits->length; inheritIndex++) {
-        SZrString **inheritTypeNamePtr =
-                (SZrString **)ZrCore_Array_Get((SZrArray *)inherits, inheritIndex);
-        SZrString *inheritTypeName =
-                inheritTypeNamePtr != ZR_NULL ? *inheritTypeNamePtr : ZR_NULL;
-        SZrTypePrototypeInfo *inheritInfo;
-
-        if (inheritTypeName == ZR_NULL) {
-            continue;
-        }
-
-        inheritInfo = find_compiler_type_prototype(cs, inheritTypeName);
-        if (inheritInfo == ZR_NULL || inheritInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
-            continue;
-        }
-
-        for (TZrSize memberIndex = 0; memberIndex < inheritInfo->members.length; memberIndex++) {
-            SZrTypeMemberInfo *interfaceMember =
-                    (SZrTypeMemberInfo *)ZrCore_Array_Get(&inheritInfo->members, memberIndex);
-            SZrTypeMemberInfo *classMember;
-            TZrNativeString fieldNameText;
-            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-
-            if (interfaceMember == ZR_NULL || interfaceMember->name == ZR_NULL ||
-                interfaceMember->memberType != ZR_AST_CLASS_FIELD || !interfaceMember->isConst) {
-                continue;
-            }
-
-            classMember = compiler_class_find_declared_member((SZrTypePrototypeInfo *)classInfo, interfaceMember->name);
-            if (classMember != ZR_NULL && classMember->isConst) {
-                continue;
-            }
-
-            fieldNameText = ZrCore_String_GetNativeStringShort(interfaceMember->name);
-            if (fieldNameText != ZR_NULL) {
-                snprintf(errorMsg,
-                         sizeof(errorMsg),
-                         "Interface const field '%s' must remain const in implementing class",
-                         fieldNameText);
-            } else {
-                snprintf(errorMsg,
-                         sizeof(errorMsg),
-                         "Interface const field must remain const in implementing class");
-            }
-            ZrParser_Compiler_Error(cs, errorMsg, errorLocation);
-            return ZR_FALSE;
-        }
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
+                cs->state, &violation, &diagnostic)) {
+        ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    } else {
+        ZrParser_Compiler_Error(
+                cs,
+                "Interface const field contract is not satisfied",
+                violation.location);
     }
-
-    return ZR_TRUE;
+    return ZR_FALSE;
 }
 
 static void compiler_class_append_parameter_type(SZrCompilerState *cs,
@@ -1611,8 +1559,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
-    if (!compiler_class_validate_interface_const_fields(
-                cs, &info, &info.inherits, node->location)) {
+    if (!compiler_class_validate_interface_const_fields(cs, node)) {
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;

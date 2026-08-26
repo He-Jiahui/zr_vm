@@ -6,6 +6,8 @@
 #include "semantic/lsp_property_contract.h"
 #include "semantic/semantic_analyzer_duplicate_diagnostics.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
+#include "zr_vm_parser/interface_contract.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
@@ -2022,6 +2024,44 @@ static void collect_switch_expression_symbols(SZrState *state,
     }
 }
 
+static void semantic_append_interface_const_field_diagnostics(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *classNode) {
+    TZrSize violationIndex = 0U;
+    SZrInterfaceConstFieldViolation violation;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->compilerState == ZR_NULL ||
+        analyzer->semanticContext == ZR_NULL || classNode == ZR_NULL) {
+        return;
+    }
+    while (ZrParser_InterfaceContract_ConstFieldViolationAt(
+            analyzer->compilerState,
+            classNode,
+            violationIndex,
+            &violation)) {
+        SZrStructuredDiagnostic diagnostic;
+        SZrSemanticDiagnosticFact fact;
+
+        ZrParser_StructuredDiagnostic_Init(&diagnostic);
+        if (!ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
+                    state, &violation, &diagnostic)) {
+            return;
+        }
+        memset(&fact, 0, sizeof(fact));
+        fact.node = violation.node;
+        fact.diagnostic = diagnostic;
+        if (!ZrParser_SemanticFacts_AppendDiagnostic(
+                    analyzer->semanticContext, &fact)) {
+            ZrParser_StructuredDiagnostic_Free(state, &diagnostic);
+            return;
+        }
+        ZrParser_StructuredDiagnostic_Free(state, &diagnostic);
+        violationIndex++;
+    }
+}
+
 void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZrSemanticAnalyzer *analyzer, SZrAstNode *node) {
     if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL) {
         return;
@@ -2356,75 +2396,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                           ZR_SEMANTIC_TYPE_KIND_REFERENCE);
                 ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
                 
-                // 检查类实现的接口，验证 const 字段匹配
-                if (classDecl->inherits != ZR_NULL && classDecl->inherits->count > 0) {
-                    for (TZrSize i = 0; i < classDecl->inherits->count; i++) {
-                        SZrAstNode *inheritNode = classDecl->inherits->nodes[i];
-                        if (inheritNode != ZR_NULL && inheritNode->type == ZR_AST_TYPE) {
-                            // 查找接口定义
-                            SZrType *inheritType = &inheritNode->data.type;
-                            if (inheritType->name != ZR_NULL && 
-                                inheritType->name->type == ZR_AST_IDENTIFIER_LITERAL) {
-                                SZrString *interfaceName = inheritType->name->data.identifier.name;
-                                if (interfaceName != ZR_NULL) {
-                                    SZrSymbol *interfaceSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, interfaceName, ZR_NULL);
-                                    if (interfaceSymbol != ZR_NULL && 
-                                        interfaceSymbol->type == ZR_SYMBOL_INTERFACE &&
-                                        interfaceSymbol->astNode != ZR_NULL &&
-                                        interfaceSymbol->astNode->type == ZR_AST_INTERFACE_DECLARATION) {
-                                        // 检查接口中的 const 字段是否在类中也标记为 const
-                                        SZrInterfaceDeclaration *interfaceDecl = &interfaceSymbol->astNode->data.interfaceDeclaration;
-                                        if (interfaceDecl->members != ZR_NULL) {
-                                            for (TZrSize j = 0; j < interfaceDecl->members->count; j++) {
-                                                SZrAstNode *interfaceMember = interfaceDecl->members->nodes[j];
-                                                if (interfaceMember != ZR_NULL && 
-                                                    interfaceMember->type == ZR_AST_INTERFACE_FIELD_DECLARATION) {
-                                                    SZrInterfaceFieldDeclaration *interfaceField = &interfaceMember->data.interfaceFieldDeclaration;
-                                                    if (interfaceField->isConst && interfaceField->name != ZR_NULL) {
-                                                        SZrString *fieldName = interfaceField->name->name;
-                                                        // 在类中查找对应的字段
-                                                        if (classDecl->members != ZR_NULL) {
-                                                            for (TZrSize k = 0; k < classDecl->members->count; k++) {
-                                                                SZrAstNode *classMember = classDecl->members->nodes[k];
-                                                                if (classMember != ZR_NULL && 
-                                                                    classMember->type == ZR_AST_CLASS_FIELD) {
-                                                                    SZrClassField *classField = &classMember->data.classField;
-                                                                    if (classField->name != ZR_NULL && 
-                                                                        ZrCore_String_Equal(classField->name->name, fieldName)) {
-                                                                        // 检查类字段是否也是 const
-                                                                        if (!classField->isConst) {
-                                                                            TZrChar errorMsg[ZR_LSP_TEXT_BUFFER_LENGTH];
-                                                                            TZrNativeString fieldNameStr = ZrCore_String_GetNativeStringShort(fieldName);
-                                                                            if (fieldNameStr != ZR_NULL) {
-                                                                                snprintf(errorMsg, sizeof(errorMsg), 
-                                                                                        "Interface field '%s' is const, but implementation field is not const", 
-                                                                                        fieldNameStr);
-                                                                            } else {
-                                                                                snprintf(errorMsg, sizeof(errorMsg), 
-                                                                                        "Interface field is const, but implementation field is not const");
-                                                                            }
-                                                                            ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer,
-                                                                                                            ZR_DIAGNOSTIC_ERROR,
-                                                                                                            classMember->location,
-                                                                                                            errorMsg,
-                                            "const_interface_mismatch");
-                                                                        }
-                                                                        break;
-                                                                    }
-                                                                }
-                                                            }
-                                                            // TODO: 如果字段未找到，也应该报告错误（字段缺失）
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                semantic_append_interface_const_field_diagnostics(
+                        state, analyzer, node);
             }
 
             if (classDecl->members != ZR_NULL) {

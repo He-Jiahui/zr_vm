@@ -144,6 +144,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/include/zr_vm_parser/variance.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_generic_semantics.c
+  - zr_vm_parser/include/zr_vm_parser/interface_contract.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/interface_contract.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_system_numeric_segments.c
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
@@ -441,6 +443,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/include/zr_vm_parser/variance.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_generic_semantics.c
+  - zr_vm_parser/include/zr_vm_parser/interface_contract.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/interface_contract.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_system_numeric_segments.c
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
@@ -536,6 +540,7 @@ implementation_files:
   - tests/CMakeLists.txt
 plan_sources:
   - user: 2026-07-18 按 docs/plans/lsp 分阶段优化语义推断并回写状态与产出记录
+  - docs/plans/lsp/optimize/2026-08-27-plan03-task06-interface-const-field-query-projection.md
   - docs/plans/lsp/optimize/2026-08-27-plan03-task06-variance-query-projection.md
   - docs/plans/lsp/optimize/2026-08-27-plan03-task06-const-assignment-query-projection.md
   - docs/plans/lsp/01-semantic-inference-core.md
@@ -548,6 +553,8 @@ plan_sources:
   - .codex/plans/Rust-First using  Ownership 语义收敛计划.md
   - docs/plans/using/01-ownership-as-generics.md
 tests:
+  - tests/language_server/stdio_interface_const_field_diagnostic_smoke.js
+  - tests/acceptance/2026-08-27-plan03-task06-interface-const-field-query-projection.md
   - tests/language_server/stdio_variance_diagnostic_smoke.js
   - tests/acceptance/2026-08-27-plan03-task06-variance-query-projection.md
   - tests/language_server/stdio_const_assignment_diagnostic_smoke.js
@@ -725,6 +732,32 @@ The dedicated stdio fixture freezes one covariant-parameter input violation at
 the exact `T` use and declaration ranges. Source-contract coverage rejects a
 return to direct LSP diagnostics, symbol-table lookup, the removed recursive
 analyzer implementation, or an analyzer-owned `invalid_variance` literal.
+
+## Interface Const-Field Diagnostic Ownership
+
+Interface const-field implementation validation is parser-owned. The
+snapshot-scoped `ZrParser_InterfaceContract_ConstFieldViolationAt` query
+enumerates inherited interface requirements in stable inheritance/member order
+and reports either a missing field or an implementation field that drops
+`const`. Its result borrows canonical member and AST identities from the active
+compiler snapshot. Consumers must not retain those pointers after releasing the
+snapshot.
+
+`ZrParser_InterfaceContract_BuildConstFieldDiagnostic` owns descriptor `2014`,
+code `const_interface_mismatch`, error severity, canonical cause and
+kind-specific suggestion, the required interface field related range, and the
+`requires_user_decision` no-fix disposition. The compiler consumes the first
+violation as a structured compilation failure. The LSP analyzer enumerates all
+violations, calls the same builder, and deep-copies each result into semantic
+diagnostic facts; it does not scan inheritance AST, query its symbol table, pair
+fields by name, or build diagnostic text directly.
+
+`SZrInterfaceFieldDeclaration.nameLocation` preserves the parser token range
+needed for exact related information. The contract never estimates that range
+from modifier widths or field-name text. The dedicated stdio fixture freezes
+both failure kinds: a non-const implementation points at its field identifier,
+a missing implementation points at the class identifier, and both point back
+to the exact required interface field identifier.
 
 - Private bitwise zero-minus shift supported-nonnegative count bitwise-not OR counterpart deep-chain inference is now modularized without changing the accepted semantic fact surface or local LSP query behavior. The behavior-preserving split moves the zero-minus / unary-minus zero-minus bitwise-not OR counterpart deep helper chain into internal `type_inference_bitwise_identity_bitwise_not_or_counterpart_deep.c/.h`, while `type_inference_bitwise_identity_bitwise_not_or_counterpart.c` keeps safe negation, unary-minus direct leaf, zero-wrapper skipper, and the public dispatcher. No parser or LSP cases were added or removed: the private parser target remains 260 cases and the private-mask LSP target remains 224 queries. WSL gcc and WSL clang isolated focused validation passed private parser 260 tests / 0 failures plus private-mask LSP PASS; Windows MSVC validation passed the same focused pair under `build-msvc-lsp-bitwise-zero` with `VSCMD_VER=17.14.34`. Public headers, ordinary supported-count files, private mask count-side readers, wrapped supported-count readers, global zero-wrapper stripping, semantic facts, arbitrary normalization, fixed point, and CFG-wide loop dataflow remain unchanged. Full repository GREEN is not claimed.
 

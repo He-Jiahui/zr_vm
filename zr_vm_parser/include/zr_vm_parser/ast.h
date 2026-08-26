@@ -915,6 +915,7 @@ typedef struct SZrInterfaceFieldDeclaration {
     EZrAccessModifier access;
     TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrType *typeInfo; // 可选
 } SZrInterfaceFieldDeclaration;
 

@@ -59,6 +59,7 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
     node->data.interfaceFieldDeclaration.access = access;
     node->data.interfaceFieldDeclaration.isConst = isConst;
     node->data.interfaceFieldDeclaration.name = name;
+    node->data.interfaceFieldDeclaration.nameLocation = nameNode->location;
     node->data.interfaceFieldDeclaration.typeInfo = typeInfo;
     return node;
 }
