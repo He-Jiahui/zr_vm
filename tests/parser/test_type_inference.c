@@ -353,30 +353,6 @@ static const ZrLibModuleDescriptor kProbeNativeModuleDescriptor = {
         .requiredCapabilities = 0,
 };
 
-// 简单的测试分配器
-static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
-    ZR_UNUSED_PARAMETER(userData);
-    ZR_UNUSED_PARAMETER(originalSize);
-    ZR_UNUSED_PARAMETER(flag);
-
-    if (newSize == 0) {
-        if (pointer != ZR_NULL && (TZrPtr) pointer >= (TZrPtr) 0x1000) {
-            free(pointer);
-        }
-        return ZR_NULL;
-    }
-
-    if (pointer == ZR_NULL) {
-        return malloc(newSize);
-    } else {
-        if ((TZrPtr) pointer >= (TZrPtr) 0x1000) {
-            return realloc(pointer, newSize);
-        } else {
-            return malloc(newSize);
-        }
-    }
-}
-
 // 创建测试用的SZrState
 static SZrState *create_test_state(void) {
     SZrState *mainState = ZrTests_State_Create(ZR_NULL);
