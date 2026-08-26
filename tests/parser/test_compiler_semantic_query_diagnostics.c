@@ -162,6 +162,9 @@ static void test_compile_script_publishes_semantic_query_diagnostics_without_err
     diagnostic = find_query_diagnostic_by_code(cs.semanticContext, "unreachable_code");
     TEST_ASSERT_NOT_NULL(diagnostic);
     TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_WARNING, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_UNSAFE_EDIT,
+            diagnostic->noFixReason);
 
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -202,6 +205,9 @@ static void test_compile_script_publishes_interval_logical_unreachable_branch_di
     diagnostic = find_query_diagnostic_by_code(cs.semanticContext, "unreachable_code");
     TEST_ASSERT_NOT_NULL(diagnostic);
     TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_WARNING, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_UNSAFE_EDIT,
+            diagnostic->noFixReason);
 
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -242,6 +248,9 @@ static void test_compile_script_publishes_numeric_overflow_diagnostic(void) {
     diagnostic = find_query_diagnostic_by_code(cs.semanticContext, "numeric_overflow");
     TEST_ASSERT_NOT_NULL(diagnostic);
     TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_WARNING, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic->noFixReason);
 
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -283,6 +292,9 @@ static void test_compile_script_publishes_array_bounds_diagnostic(void) {
     diagnostic = find_query_diagnostic_by_code(cs.semanticContext, "array_index_out_of_bounds");
     TEST_ASSERT_NOT_NULL(diagnostic);
     TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic->noFixReason);
 
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -374,6 +386,9 @@ static void test_compile_script_publishes_possible_interval_array_bounds_warning
     diagnostic = find_query_diagnostic_by_code(cs.semanticContext, "array_index_may_be_out_of_bounds");
     TEST_ASSERT_NOT_NULL(diagnostic);
     TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_WARNING, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic->noFixReason);
 
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -578,6 +593,9 @@ static void test_compile_script_publishes_non_integer_array_index_diagnostic(voi
     diagnostic = find_query_diagnostic_by_code(cs.semanticContext, "array_index_type_mismatch");
     TEST_ASSERT_NOT_NULL(diagnostic);
     TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic->noFixReason);
 
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -1033,6 +1051,9 @@ static void test_compiler_error_publishes_persistent_semantic_diagnostic_fact(vo
     TEST_ASSERT_NOT_NULL(strstr(
             ZrCore_String_GetNativeString(diagnostic->message),
             "ref parameter requires the 'ref' argument marker"));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT,
+            diagnostic->noFixReason);
 
     memset(&diagnostics, 0, sizeof(diagnostics));
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(

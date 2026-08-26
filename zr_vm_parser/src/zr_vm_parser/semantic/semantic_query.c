@@ -508,6 +508,11 @@ static TZrBool semantic_query_append_unreachable_diagnostic(
             semantic_query_reachability_suggestion_text(fact->cause))) {
         return ZR_FALSE;
     }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic, ZR_DIAGNOSTIC_NO_FIX_REASON_UNSAFE_EDIT)) {
+        ZrParser_StructuredDiagnostic_Free(context->state, &diagnostic);
+        return ZR_FALSE;
+    }
 
     ZrCore_Array_Push(context->state, &context->queryDiagnostics, &diagnostic);
     return ZR_TRUE;
@@ -611,6 +616,12 @@ static TZrBool semantic_query_append_numeric_overflow_diagnostic(
             "Use a wider type or guard the expression before evaluating it.")) {
         return ZR_FALSE;
     }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(context->state, &diagnostic);
+        return ZR_FALSE;
+    }
 
     ZrCore_Array_Push(context->state, &context->queryDiagnostics, &diagnostic);
     return ZR_TRUE;
@@ -690,6 +701,12 @@ static TZrBool semantic_query_append_array_bounds_diagnostic(
             message,
             cause,
             suggestion)) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(context->state, &diagnostic);
         return ZR_FALSE;
     }
 

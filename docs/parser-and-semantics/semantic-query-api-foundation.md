@@ -660,6 +660,15 @@ focused disposition module owns the six general producers, while the
 use-after-move producer remains in its ownership-specific module and applies
 the same structured contract.
 
+Query-materialized diagnostics also own an explicit disposition. Removing
+unreachable code is not a semantics-preserving edit, so `unreachable_code`
+publishes `UNSAFE_EDIT`. Numeric overflow and array bounds/type diagnostics
+require choosing a wider type, guard, or different index and publish
+`REQUIRES_USER_DECISION`. The generic compiler-error persistence bridge has
+only an exact message and range after an unstructured compiler failure; it
+publishes `INSUFFICIENT_CONTEXT` rather than inferring a repair from that
+message. Definite-assignment diagnostics retain their typed placeholder fix.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured

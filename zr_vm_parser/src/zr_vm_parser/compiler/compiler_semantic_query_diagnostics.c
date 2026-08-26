@@ -72,6 +72,12 @@ TZrBool ZrParser_Compiler_PublishCurrentDiagnostic(SZrCompilerState *cs) {
                 ZR_NULL)) {
         return ZR_FALSE;
     }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT)) {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
+        return ZR_FALSE;
+    }
     fact.diagnostic = diagnostic;
     result = ZrParser_SemanticFacts_AppendDiagnostic(
             cs->semanticContext, &fact);
