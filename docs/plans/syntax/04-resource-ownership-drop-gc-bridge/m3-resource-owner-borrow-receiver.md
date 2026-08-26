@@ -12,13 +12,15 @@
     `Unique<T>` / `Shared<T>`、mode=`in`、parameter qualifier=`NONE` 且 inner contract
     匹配时成立，value/out/ref/generic/name 路径不放宽。
   - 已建立 `Unique<T>` readonly/writable receiver 与 `Shared<T>` readonly receiver；Weak
-    direct call 拒绝，必须显式 upgrade，不按 member name/source text 补偿。
+    direct/optional target access 由 structured receiver-guard fact 单次 wake，direct 失效时抛
+    `NullReferenceError`，optional 失效时跳过完整后缀，不按 member name/source text 补偿。
   - 已让 direct owner receiver 与 `in T` 参数投影同一 canonical Place/LoanId facts；nested
     readonly 可共存，Shared writable 与 active shared loan 下的 mutable receiver 拒绝。
   - 已让 Place-to-result 指令消费 reaching Place loans，使 local ref 的 later load 延长 owner
     loan 到真实 last use；无 later use 时 NLL 允许后续 move。
-  - 已把 drop、Unique move、share 统一分类为 active loan 下的 exclusive owner access；share
-    由 structured `OWN_CONSTRUCT + SHARE` 判定，不按 opcode message/source 推断。
+  - 已把 drop、Unique move、share 统一分类为 active loan 下的 exclusive owner access；五个
+    source ownership operation 由 dedicated `OwnershipIntrinsicFact` 与 canonical PlaceId 判定，
+    不按 opcode message、member name 或 source text 推断。
   - 已让 direct source TypeDef 的 ref-return member result 继承 receiver Place/escape bound，
     阻止返回超过 owner borrow；external/inherited/chained unavailable 保持保守边界。
   - 已消除 source TypeDef 内同名 overload 的声明顺序依赖；value-return overload 不会遮蔽
@@ -48,3 +50,17 @@
   保守合并，external descriptor、inherited/chained receiver 仍返回 unavailable。
 - M3 不包含 M4 `GcDomain`、`Gc<T>`/`GcBox<T>` bridge、cross-domain write gate 或
   no-hidden-ignore-registry 晋级门。
+
+## 2026-08-26 ownership/object member separation 收敛
+
+- source ownership control 现只保留 `share(owner)`、`degrade(shared)`、`wake(weak)`、
+  `intoGc(owner)` 与 `drop(owner)` 五个 reserved intrinsic；`.` 与 `?.` 只执行 target
+  access，同名对象成员继续走普通 member lookup/call。
+- Weak guard 在整个 dominated suffix 中只 materialize 一次 hidden Shared owner；成功、null、
+  throw 与 scope cleanup 均释放该 owner。Weak receiver 产生的 method/property ref-like result
+  不能逃逸这个临时 owner。
+- GCC 11.4、Clang 14 与 MSVC 19.44 在提交 `3a36ddf` 的相同 SHA-256 source fence 下直接通过
+  ownership/member separation 32/32 与 owner/borrow receiver 7/7，所有进程 exit 0。
+- production parser C/H 对已移除 percent-prefixed ownership/source forms 为零匹配；旧 ownership
+  member semantic selector为零匹配。结构化迁移诊断只在真实成员查找失败后发布 fix，不选择
+  ownership typing 或 lowering。
