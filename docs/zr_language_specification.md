@@ -157,13 +157,20 @@ The following are not accepted by the production parser:
 - `$Type(...)`, `$(runtimeType)(...)`, bare ownership constructors, and old
   generator `out` statements;
 - user-authored `intermediate ...` instruction declarations.
-- ownership-member operations such as `owner.share()`, `shared.weak()`,
-  `weak.upgrade()`, and `owner.intoGc()`; use the reserved intrinsic calls.
+- unresolved legacy ownership-member operations such as `owner.share()`,
+  `shared.weak()`, `weak.upgrade()`, and `owner.intoGc()` have no ownership
+  meaning. A matching real target member remains a legal ordinary member call;
+  otherwise use the reserved intrinsic call named by the migration diagnostic.
 
-The lexer/parser may recognize a removed spelling only to emit the fatal
-`legacy_syntax_removed` diagnostic. That path returns no production AST and
-cannot reach semantic lowering, VM/AOT, artifact, CLI, or LSP execution.
-Migration edits are produced only by the explicit syntax migration frontend.
+The lexer/parser may recognize a removed percent-prefixed or grammar spelling
+only to emit the fatal `legacy_syntax_removed` diagnostic. That path returns no
+production AST and cannot reach semantic lowering, VM/AOT, artifact, CLI, or
+LSP execution. A legacy ownership-member spelling is different: it first parses
+as ordinary target access, and only a failed real member lookup may publish the
+fatal `removed_ownership_member_syntax` diagnostic and its structured intrinsic
+edit. That diagnostic cannot select ownership typing or lowering. Repository-
+wide batch edits remain the responsibility of the explicit syntax migration
+frontend.
 
 ## Executable Reference
 
