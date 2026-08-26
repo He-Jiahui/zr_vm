@@ -1047,10 +1047,16 @@ static void test_wasm_diagnostics_use_canonical_projection(void) {
 static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+    char *support = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c");
+    const char *consumerStart;
+    const char *consumerEnd;
 
-    if (typecheck == NULL) {
-        printf("FAIL: could not read semantic analyzer typecheck source\n");
+    if (typecheck == NULL || support == NULL) {
+        printf("FAIL: could not read semantic analyzer type mismatch sources\n");
         g_failures++;
+        free(typecheck);
+        free(support);
         return;
     }
 
@@ -1070,7 +1076,30 @@ static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
         typecheck,
         "semantic_analyzer_type_mismatch_diagnostics.h");
 
+    consumerStart = strstr(
+        support,
+        "void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic");
+    consumerEnd = consumerStart != NULL
+        ? strstr(consumerStart + 1, "TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType")
+        : NULL;
+    assert_text_section_contains(
+        "compiler error query consumer",
+        consumerStart,
+        consumerEnd,
+        "ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic");
+    assert_text_section_contains_none(
+        "compiler error query consumer",
+        consumerStart,
+        consumerEnd,
+        "ZrLanguageServer_Diagnostic_FromStructured");
+    assert_text_section_contains_none(
+        "compiler error query consumer",
+        consumerStart,
+        consumerEnd,
+        "ZrLanguageServer_SemanticAnalyzer_AddDiagnostic");
+
     free(typecheck);
+    free(support);
 }
 
 int main(void) {

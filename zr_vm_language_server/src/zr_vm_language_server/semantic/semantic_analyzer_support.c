@@ -507,7 +507,6 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
                                                                       SZrFileRange fallbackLocation) {
     SZrCompilerState *compilerState;
     SZrFileRange location;
-    SZrDiagnostic *structuredDiagnostic;
 
     if (state == ZR_NULL || analyzer == ZR_NULL) {
         return;
@@ -526,21 +525,14 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
 
     if (compilerState->hasStructuredError) {
         compilerState->structuredError.location = location;
-        structuredDiagnostic = ZrLanguageServer_Diagnostic_FromStructured(state, &compilerState->structuredError);
-        if (structuredDiagnostic != ZR_NULL) {
-            ZrCore_Array_Push(state, &analyzer->diagnostics, &structuredDiagnostic);
-            compilerState->hasError = ZR_FALSE;
-            ZrParser_Compiler_ClearStructuredError(compilerState);
-            return;
-        }
     }
-
-    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                    analyzer,
-                                                    ZR_DIAGNOSTIC_ERROR,
-                                                    location,
-                                                    compilerState->errorMessage,
-                                                    "compiler_error");
+    compilerState->errorLocation = location;
+    if (!ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
+                state,
+                analyzer,
+                fallbackLocation)) {
+        return;
+    }
     compilerState->hasError = ZR_FALSE;
     ZrParser_Compiler_ClearStructuredError(compilerState);
 }

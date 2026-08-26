@@ -6,6 +6,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
+#include "type_inference_call_diagnostics.h"
 #include "zr_vm_parser/iteration_contract.h"
 #include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
@@ -4080,13 +4081,17 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
                                                   const SZrFunctionTypeInfo *funcType,
                                                   const SZrResolvedCallSignature *resolvedSignature,
                                                   const SZrArray *argTypes,
-                                                  const TZrChar **outOwnershipDiagnostic) {
+                                                  const TZrChar **outOwnershipDiagnostic,
+                                                  TZrSize *outTypeMismatchIndex) {
     if (cs == ZR_NULL || resolvedSignature == ZR_NULL || argTypes == ZR_NULL) {
         return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
     }
 
     if (outOwnershipDiagnostic != ZR_NULL) {
         *outOwnershipDiagnostic = ZR_NULL;
+    }
+    if (outTypeMismatchIndex != ZR_NULL) {
+        *outTypeMismatchIndex = argTypes->length;
     }
 
     if (resolvedSignature->parameterTypes.length != argTypes->length) {
@@ -4135,6 +4140,9 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
                 !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
                 if (outOwnershipDiagnostic != ZR_NULL && *outOwnershipDiagnostic == ZR_NULL) {
                     *outOwnershipDiagnostic = type_inference_ownership_flow_diagnostic_message(paramType, argType);
+                }
+                if (outTypeMismatchIndex != ZR_NULL) {
+                    *outTypeMismatchIndex = i;
                 }
                 return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
@@ -4185,6 +4193,7 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
         SZrResolvedCallSignature candidateResolvedSignature;
         TZrBool mismatch = ZR_FALSE;
         const TZrChar *candidateOwnershipDiagnostic = ZR_NULL;
+        TZrSize typeMismatchIndex;
         TZrInt32 score;
         EZrGenericCallResolveStatus genericStatus;
 
@@ -4260,15 +4269,32 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
                                                   *candidatePtr,
                                                   &candidateResolvedSignature,
                                                   &candidateArgTypes,
-                                                  &candidateOwnershipDiagnostic);
-        free_inferred_type_array(cs->state, &candidateArgTypes);
+                                                  &candidateOwnershipDiagnostic,
+                                                  &typeMismatchIndex);
         if (score == ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE) {
             if (ownershipDiagnostic == ZR_NULL && candidateOwnershipDiagnostic != ZR_NULL) {
                 ownershipDiagnostic = candidateOwnershipDiagnostic;
             }
+            if (candidates.length == 1U &&
+                candidateOwnershipDiagnostic == ZR_NULL &&
+                typeMismatchIndex < candidateArgTypes.length) {
+                const SZrInferredType *argumentType =
+                        (const SZrInferredType *)ZrCore_Array_Get(
+                                &candidateArgTypes,
+                                typeMismatchIndex);
+                (void)type_inference_call_diagnostic_report_argument_mismatch(
+                        cs,
+                        *candidatePtr,
+                        &candidateResolvedSignature,
+                        call,
+                        typeMismatchIndex,
+                        argumentType);
+            }
+            free_inferred_type_array(cs->state, &candidateArgTypes);
             free_resolved_call_signature(cs->state, &candidateResolvedSignature);
             continue;
         }
+        free_inferred_type_array(cs->state, &candidateArgTypes);
 
         if (score < bestScore) {
             free_resolved_call_signature(cs->state, &bestResolvedSignature);
@@ -4300,7 +4326,9 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
                      "No matching overload for function '%s'",
                      ZrCore_String_GetNativeString(funcName));
         }
-        ZrParser_Compiler_Error(cs, errorMsg, location);
+        if (!cs->hasError) {
+            ZrParser_Compiler_Error(cs, errorMsg, location);
+        }
         free_resolved_call_signature(cs->state, &bestResolvedSignature);
         return ZR_FALSE;
     }

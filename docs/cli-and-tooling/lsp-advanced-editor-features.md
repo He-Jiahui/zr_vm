@@ -1065,3 +1065,29 @@ query and source-contract targets. The stdio structured-diagnostic smoke also
 exited zero on all three builds. This closes the type-mismatch migration slice;
 remaining duplicate semantic-analyzer diagnostics and final compiler/LSP
 golden parity remain Plan 03 Task 6 work.
+
+## 2026-08-26 Function Call Mismatch Query Projection
+
+A single resolved free-function candidate now reports an incompatible value
+argument through parser/compiler descriptor `2011` instead of falling through
+to a broad overload/compiler diagnostic. The overload scorer exposes the exact
+parameter index, and a dedicated parser module maps it to the source argument
+and declared parameter type ranges before invoking the shared detailed
+type-error builder.
+
+`SemanticAnalyzer_ConsumeCompilerErrorDiagnostic` now publishes the current
+compiler diagnostic into persistent semantic-query facts and projects that
+query result. It no longer directly converts the structured compiler error or
+constructs a broad LSP fallback. Failed publication preserves the compiler
+error, so the consumer fails closed.
+
+The parser, LSP, and stdio fixtures require exactly one `type_mismatch` for
+`pick(2.5)`, with the argument as primary range, the `int` parameter type as
+related information, and the parser-owned typed placeholder fix. GCC 11.4,
+Clang 14, and MSVC 19.44 directly passed parser diagnostic query `49/49`, query
+disposition `8/8`, type inference `123/123`, compiler integration `127/127`,
+LSP focused/source-contract regressions, and stdio.
+
+Receiver method-call mismatch is not included in this result. Its existing RED
+requires a canonical producer change in the separately owned receiver
+inference path; no LSP name, member, or message fallback was added.

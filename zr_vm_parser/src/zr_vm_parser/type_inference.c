@@ -98,6 +98,22 @@ void ZrParser_TypeError_Report(
             ZR_NULL);
 }
 
+void ZrParser_TypeError_ReportDetailed(
+        SZrCompilerState *cs,
+        const TZrChar *message,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType,
+        SZrFileRange location,
+        const SZrFileRange *expectedTypeLocation) {
+    type_error_report_detailed(
+            cs,
+            message,
+            expectedType,
+            actualType,
+            location,
+            expectedTypeLocation);
+}
+
 static TZrBool type_inference_named_struct_is_move_only(SZrCompilerState *cs, SZrString *typeName, TZrUInt32 depth) {
     SZrTypePrototypeInfo *prototype;
 

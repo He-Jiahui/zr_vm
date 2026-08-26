@@ -68,6 +68,8 @@ const arrayElementSeparatorDocumentUri =
     'file:///zr-diagnostic-array-element-separator-fix-smoke.zr';
 const arrayElementAssignmentDocumentUri =
     'file:///zr-diagnostic-array-element-assignment-fix-smoke.zr';
+const functionCallMismatchDocumentUri =
+    'file:///zr-diagnostic-function-call-mismatch-smoke.zr';
 const documentText = [
     'fn choose(flag: bool): int {',
     '    var seed: int;',
@@ -99,6 +101,14 @@ const conditionalAlternateDocumentText = 'return true ? 1 : ;';
 const conditionalWithoutAlternateDocumentText = 'return true ? 1;';
 const arrayElementSeparatorDocumentText = 'return [1 2];';
 const arrayElementAssignmentDocumentText = 'return [value = 1];';
+const functionCallMismatchDocumentText = [
+    'fn pick(value: int): int { return value; }',
+    'fn main(): int {',
+    '    pick(2.5);',
+    '    return 0;',
+    '}',
+    '',
+].join('\n');
 
 const payload = Buffer.concat([
     createMessage({
@@ -621,7 +631,25 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: arrayElementAssignmentDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 33, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: functionCallMismatchDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: functionCallMismatchDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 33,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: functionCallMismatchDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 34, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -1299,3 +1327,40 @@ assert(arrayElementAssignmentDiagnostic.codeDescription &&
     arrayElementAssignmentDiagnostic.codeDescription.href ===
         'https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md',
     'Expected array_element_assignment to publish its registered code description');
+
+const functionCallMismatchPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === functionCallMismatchDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics));
+assert(functionCallMismatchPublication,
+    'Expected function-call mismatch publication');
+const functionCallMismatchDiagnostics =
+    functionCallMismatchPublication.params.diagnostics.filter((entry) =>
+        entry.code === 'type_mismatch');
+assert(functionCallMismatchDiagnostics.length === 1,
+    'Expected exactly one canonical function-call type mismatch');
+const functionCallMismatchDiagnostic = functionCallMismatchDiagnostics[0];
+assert(functionCallMismatchDiagnostic.range.start.line === 2 &&
+    functionCallMismatchDiagnostic.range.start.character === 9 &&
+    functionCallMismatchDiagnostic.range.end.line === 2 &&
+    functionCallMismatchDiagnostic.range.end.character === 12,
+    'Expected the function-call mismatch primary range on the argument');
+assert(Array.isArray(functionCallMismatchDiagnostic.relatedInformation) &&
+    functionCallMismatchDiagnostic.relatedInformation.length === 1 &&
+    functionCallMismatchDiagnostic.relatedInformation[0].location &&
+    functionCallMismatchDiagnostic.relatedInformation[0].location.range.start.line === 0 &&
+    functionCallMismatchDiagnostic.relatedInformation[0].location.range.start.character === 15 &&
+    functionCallMismatchDiagnostic.relatedInformation[0].location.range.end.line === 0 &&
+    functionCallMismatchDiagnostic.relatedInformation[0].location.range.end.character === 18,
+    'Expected the function-call mismatch relation on the parameter type');
+assert(functionCallMismatchDiagnostic.data &&
+    Array.isArray(functionCallMismatchDiagnostic.data.fixes) &&
+    functionCallMismatchDiagnostic.data.fixes.length === 1,
+    'Expected one canonical function-call mismatch fix');
+const functionCallMismatchFix = functionCallMismatchDiagnostic.data.fixes[0];
+assert(functionCallMismatchFix.applicability === 2 &&
+    functionCallMismatchFix.edit &&
+    functionCallMismatchFix.edit.newText === '<int> <expression>',
+    'Expected the typed placeholder fix from the parser diagnostic fact');

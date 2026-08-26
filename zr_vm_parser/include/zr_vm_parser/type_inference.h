@@ -152,6 +152,13 @@ ZR_PARSER_API TZrBool ZrParser_FunctionCallOverload_Resolve(SZrCompilerState *cs
 
 // 报告类型错误
 ZR_PARSER_API void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, const SZrInferredType *expectedType, const SZrInferredType *actualType, SZrFileRange location);
+ZR_PARSER_API void ZrParser_TypeError_ReportDetailed(
+        SZrCompilerState *cs,
+        const TZrChar *message,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType,
+        SZrFileRange location,
+        const SZrFileRange *expectedTypeLocation);
 
 // 获取类型名称字符串（用于错误报告）
 ZR_PARSER_API const TZrChar *ZrParser_TypeNameString_Get(SZrState *state, const SZrInferredType *type, TZrChar *buffer, TZrSize bufferSize);

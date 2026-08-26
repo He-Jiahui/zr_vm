@@ -265,4 +265,92 @@ static void test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mis
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_diagnostics_publish_detailed_function_call_argument_type_mismatch(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Diagnostics Publish Detailed Function Call Argument Type Mismatch";
+    TZrChar uriText[] = "file:///function_call_argument_type_mismatch.zr";
+    const TZrChar *content =
+            "fn pick(value: int): int { return value; }\n"
+            "fn main(): int {\n"
+            "    pick(2.5);\n"
+            "    return 0;\n"
+            "}\n";
+    const SZrLspDiagnostic *functionDiagnostic;
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrArray diagnostics;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to prepare call argument mismatch fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Diagnostics request failed");
+        return;
+    }
+
+    functionDiagnostic = type_mismatch_diagnostic_find_at_line(&diagnostics, 2);
+    if (diagnostic_array_count_code(&diagnostics, "type_mismatch") != 1 ||
+        !type_mismatch_diagnostic_has_expected_relation_and_fix(
+                functionDiagnostic, 9, 12, 0, 15, 18)) {
+        TZrSize index;
+        for (index = 0; index < diagnostics.length; index++) {
+            SZrLspDiagnostic **diagnosticPtr =
+                    (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, index);
+            const SZrLspDiagnostic *observed =
+                    diagnosticPtr != ZR_NULL ? *diagnosticPtr : ZR_NULL;
+            const TZrChar *code = observed != ZR_NULL && observed->code != ZR_NULL
+                                          ? test_string_text(observed->code)
+                                          : ZR_NULL;
+            const SZrLspDiagnosticRelatedInformation *related =
+                    observed != ZR_NULL && observed->relatedInformation.isValid &&
+                            observed->relatedInformation.length > 0
+                            ? (const SZrLspDiagnosticRelatedInformation *)ZrCore_Array_Get(
+                                      (SZrArray *)&observed->relatedInformation,
+                                      0)
+                            : ZR_NULL;
+            printf("Observed call diagnostic code=%s id=%u primary=%d:%d..%d:%d related=%llu fixes=%llu",
+                   code != ZR_NULL ? code : "<none>",
+                   observed != ZR_NULL ? observed->descriptorId : 0,
+                   observed != ZR_NULL ? observed->range.start.line : -1,
+                   observed != ZR_NULL ? observed->range.start.character : -1,
+                   observed != ZR_NULL ? observed->range.end.line : -1,
+                   observed != ZR_NULL ? observed->range.end.character : -1,
+                   (unsigned long long)(observed != ZR_NULL
+                                                ? observed->relatedInformation.length
+                                                : 0),
+                   (unsigned long long)(observed != ZR_NULL
+                                                ? observed->fixes.length
+                                                : 0));
+            if (related != ZR_NULL) {
+                printf(" relatedRange=%d:%d..%d:%d",
+                       related->location.range.start.line,
+                       related->location.range.start.character,
+                       related->location.range.end.line,
+                       related->location.range.end.character);
+            }
+            printf("\n");
+        }
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Expected a canonical function-call mismatch at the argument with a parameter relation");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif // ZR_VM_TESTS_LANGUAGE_SERVER_LSP_TYPE_MISMATCH_DIAGNOSTIC_CASES_H
