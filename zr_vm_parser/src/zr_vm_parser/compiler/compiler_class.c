@@ -1059,6 +1059,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrTypePrototypeInfo info;
     memset(&info, 0, sizeof(info));
     info.name = typeName;
+    info.declarationNode = node;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
     info.accessModifier = classDecl->accessModifier;
     info.modifierFlags = classDecl->modifierFlags;
@@ -1109,6 +1110,19 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 SZrTypePrototypeInfo *inheritPrototype = find_compiler_type_prototype(cs, inheritTypeName);
                 if (inheritPrototype != ZR_NULL && inheritPrototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
                     ZrCore_Array_Push(cs->state, &info.implements, &inheritTypeName);
+                }
+                if (!compiler_publish_type_hierarchy_relation(
+                            cs, node, inheritPrototype, ZR_FALSE) ||
+                    (inheritPrototype != ZR_NULL &&
+                     inheritPrototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
+                     !compiler_publish_type_hierarchy_relation(
+                             cs, node, inheritPrototype, ZR_TRUE))) {
+                    ZrParser_Compiler_Error(
+                            cs, "Failed to publish resolved class type relation", node->location);
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
                 }
                 if (primarySuperTypeName == ZR_NULL &&
                     (inheritPrototype == ZR_NULL || inheritPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE)) {

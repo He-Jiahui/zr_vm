@@ -1250,6 +1250,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrTypePrototypeInfo info;
     memset(&info, 0, sizeof(info));
     info.name = typeName;
+    info.declarationNode = node;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     info.accessModifier = structDecl->accessModifier;
     info.modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
@@ -1305,7 +1306,22 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             if (inheritType != ZR_NULL && inheritType->type == ZR_AST_TYPE) {
                 SZrString *inheritTypeName = extract_type_name_string(cs, &inheritType->data.type);
                 if (inheritTypeName != ZR_NULL) {
+                    SZrTypePrototypeInfo *inheritPrototype =
+                            find_compiler_type_prototype(cs, inheritTypeName);
                     ZrCore_Array_Push(cs->state, &info.inherits, &inheritTypeName);
+                    if (!compiler_publish_type_hierarchy_relation(
+                                cs, node, inheritPrototype, ZR_FALSE) ||
+                        (inheritPrototype != ZR_NULL &&
+                         inheritPrototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
+                         !compiler_publish_type_hierarchy_relation(
+                                 cs, node, inheritPrototype, ZR_TRUE))) {
+                        ZrParser_Compiler_Error(
+                                cs, "Failed to publish resolved struct type relation", node->location);
+                        cs->currentTypeName = oldTypeName;
+                        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                        cs->currentTypeNode = oldTypeNode;
+                        return;
+                    }
                     if (info.extendsTypeName == ZR_NULL) {
                         info.extendsTypeName = inheritTypeName;
                     }

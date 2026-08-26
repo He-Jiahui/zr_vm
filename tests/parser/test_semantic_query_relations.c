@@ -153,6 +153,25 @@ static const SZrSemanticSymbolRecord *relation_find_symbol_by_node(
     return ZR_NULL;
 }
 
+static const SZrParserSemanticRelationQuery *relation_find_type_target(
+        SZrArray *relations,
+        EZrSemanticRelationKind kind,
+        TZrTypeId targetTypeId) {
+    TZrSize index;
+
+    if (relations == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < relations->length; index++) {
+        const SZrParserSemanticRelationQuery *relation = relation_at(relations, index);
+        if (relation != ZR_NULL && relation->kind == kind &&
+            relation->targetTypeId == targetTypeId) {
+            return relation;
+        }
+    }
+    return ZR_NULL;
+}
+
 static const SZrSemanticVisibleSymbolFact *relation_find_visible_fact(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -290,6 +309,66 @@ static void test_type_and_implementation_queries_preserve_edge_direction(void) {
     TEST_ASSERT_FALSE(ZrParser_SemanticQuery_DerivedTypesOf(
             context, ZR_SEMANTIC_ID_INVALID, &relations));
     TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
+    ZrCore_Array_Free(g_state, &relations);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_type_declaration_relation_publishes_identity_edge_once(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode sourceDeclaration;
+    SZrAstNode targetDeclaration;
+    SZrArray relations;
+    TZrSymbolId sourceSymbolId;
+    TZrSymbolId targetSymbolId;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&sourceDeclaration, 0, sizeof(sourceDeclaration));
+    memset(&targetDeclaration, 0, sizeof(targetDeclaration));
+    sourceDeclaration.location = relation_range(10U, 16U);
+    targetDeclaration.location = relation_range(30U, 36U);
+    sourceSymbolId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_Create(g_state, "Derived", strlen("Derived")),
+            ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+            21U,
+            ZR_SEMANTIC_ID_INVALID,
+            &sourceDeclaration,
+            sourceDeclaration.location);
+    targetSymbolId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_Create(g_state, "Base", strlen("Base")),
+            ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+            22U,
+            ZR_SEMANTIC_ID_INVALID,
+            &targetDeclaration,
+            targetDeclaration.location);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, sourceSymbolId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, targetSymbolId);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
+            context,
+            ZR_SEMANTIC_RELATION_BASE_TYPE,
+            &sourceDeclaration,
+            &targetDeclaration));
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
+            context,
+            ZR_SEMANTIC_RELATION_BASE_TYPE,
+            &sourceDeclaration,
+            &targetDeclaration));
+    TEST_ASSERT_FALSE(ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
+            context,
+            ZR_SEMANTIC_RELATION_ALIAS_TARGET,
+            &sourceDeclaration,
+            &targetDeclaration));
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_BaseTypesOf(context, 21U, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_EQUAL_UINT(sourceSymbolId, relation_at(&relations, 0U)->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(targetSymbolId, relation_at(&relations, 0U)->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(10U, relation_at(&relations, 0U)->sourceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(30U, relation_at(&relations, 0U)->targetRange.start.offset);
 
     ZrCore_Array_Free(g_state, &relations);
     ZrParser_SemanticContext_Free(context);
@@ -540,6 +619,105 @@ static void test_compiled_source_publishes_reference_definition_relations(void) 
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_compiled_source_publishes_type_hierarchy_relations(void) {
+    const TZrChar *source =
+            "class Base { }\n"
+            "interface Readable { fn read(): int; }\n"
+            "class Device : Base, Readable {\n"
+            "    pub fn read(): int { return 1; }\n"
+            "}\n"
+            "interface StreamReadable : Readable { fn available(): int; }\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_type_hierarchy.zr");
+    SZrAstNode *ast;
+    SZrAstNode *baseNode;
+    SZrAstNode *readableNode;
+    SZrAstNode *deviceNode;
+    SZrAstNode *streamReadableNode;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *base;
+    const SZrSemanticSymbolRecord *readable;
+    const SZrSemanticSymbolRecord *device;
+    const SZrSemanticSymbolRecord *streamReadable;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    baseNode = ast->data.script.statements->nodes[0];
+    readableNode = ast->data.script.statements->nodes[1];
+    deviceNode = ast->data.script.statements->nodes[2];
+    streamReadableNode = ast->data.script.statements->nodes[3];
+    TEST_ASSERT_NOT_NULL(baseNode);
+    TEST_ASSERT_NOT_NULL(readableNode);
+    TEST_ASSERT_NOT_NULL(deviceNode);
+    TEST_ASSERT_NOT_NULL(streamReadableNode);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    base = relation_find_symbol_by_node(cs.semanticContext, baseNode);
+    readable = relation_find_symbol_by_node(cs.semanticContext, readableNode);
+    device = relation_find_symbol_by_node(cs.semanticContext, deviceNode);
+    streamReadable = relation_find_symbol_by_node(
+            cs.semanticContext, streamReadableNode);
+    TEST_ASSERT_NOT_NULL(base);
+    TEST_ASSERT_NOT_NULL(readable);
+    TEST_ASSERT_NOT_NULL(device);
+    TEST_ASSERT_NOT_NULL(streamReadable);
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_BaseTypesOf(
+            cs.semanticContext, device->typeId, &relations));
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
+    relation = relation_find_type_target(
+            &relations, ZR_SEMANTIC_RELATION_BASE_TYPE, base->typeId);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_UINT(device->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(base->id, relation->targetSymbolId);
+    relation = relation_find_type_target(
+            &relations, ZR_SEMANTIC_RELATION_BASE_TYPE, readable->typeId);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_UINT(device->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(readable->id, relation->targetSymbolId);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_DerivedTypesOf(
+            cs.semanticContext, base->typeId, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    TEST_ASSERT_EQUAL_UINT(device->typeId, relation_at(&relations, 0U)->sourceTypeId);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_BaseTypesOf(
+            cs.semanticContext, streamReadable->typeId, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_BASE_TYPE, relation->kind);
+    TEST_ASSERT_EQUAL_UINT(streamReadable->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(readable->id, relation->targetSymbolId);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_ImplementationsOf(
+            cs.semanticContext, readable->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_IMPLEMENTATION, relation->kind);
+    TEST_ASSERT_EQUAL_UINT(device->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(readable->id, relation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(device->typeId, relation->sourceTypeId);
+    TEST_ASSERT_EQUAL_UINT(readable->typeId, relation->targetTypeId);
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_compiled_import_publishes_external_origin_relation(void) {
     const TZrChar *source =
             "var {Vec3: Vector3} = import(\"zr.math\");\n"
@@ -696,11 +874,13 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
     RUN_TEST(test_type_and_implementation_queries_preserve_edge_direction);
+    RUN_TEST(test_type_declaration_relation_publishes_identity_edge_once);
     RUN_TEST(test_relations_of_symbol_honors_node_scope);
     RUN_TEST(test_property_contracts_publish_accessor_relations_once);
     RUN_TEST(test_property_contract_relations_reject_mismatched_accessor_atomically);
     RUN_TEST(test_reference_definitions_publish_declaration_edges_once);
     RUN_TEST(test_compiled_source_publishes_reference_definition_relations);
+    RUN_TEST(test_compiled_source_publishes_type_hierarchy_relations);
     RUN_TEST(test_compiled_import_publishes_external_origin_relation);
     RUN_TEST(test_compiled_direct_import_publishes_external_origin_relation);
     return UNITY_END();

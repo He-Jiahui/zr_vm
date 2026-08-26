@@ -86,6 +86,10 @@ static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInf
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
 }
 
+static SZrTypePrototypeInfo *compiler_interface_find_prototype(
+        SZrCompilerState *cs,
+        SZrString *name);
+
 void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrInterfaceDeclaration *interfaceDecl;
     SZrString *typeName;
@@ -115,6 +119,7 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     memset(&info, 0, sizeof(info));
     info.name = typeName;
+    info.declarationNode = node;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE;
     info.accessModifier = interfaceDecl->accessModifier;
     info.modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT;
@@ -324,6 +329,22 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs->typeEnv != ZR_NULL) {
         ZrParser_TypeEnvironment_RegisterTypeDeclaration(
                 cs->state, cs->typeEnv, typeName, node);
+    }
+    for (TZrSize index = 0U; index < info.inherits.length; index++) {
+        SZrString **inheritName = (SZrString **)ZrCore_Array_Get(
+                &info.inherits, index);
+        SZrTypePrototypeInfo *inheritPrototype =
+                inheritName != ZR_NULL
+                        ? compiler_interface_find_prototype(cs, *inheritName)
+                        : ZR_NULL;
+        if (!compiler_publish_type_hierarchy_relation(
+                cs, node, inheritPrototype, ZR_FALSE)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to publish resolved interface type relation", node->location);
+            cs->currentTypeName = oldTypeName;
+            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+            return;
+        }
     }
     if (!cs->hasError) {
         compiler_validate_interface_variance_rules(cs, node);

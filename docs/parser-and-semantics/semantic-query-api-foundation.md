@@ -8,7 +8,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_canonical.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_relations.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_relations.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_calls.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_relations.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
@@ -260,8 +262,21 @@ SymbolId, canonical TypeId, and URI. It never finds an imported entity by a
 spelling, so a native symbol with the same name cannot replace the source
 alias.
 
-Source inheritance, implementation, alias, and binary/native relation
-publishers remain later slices. LSP must not infer an absent relation.
+Task 3.6 publishes source hierarchy edges after the compiler resolver has
+selected a concrete base or interface prototype. Each source
+`SZrTypePrototypeInfo` retains its declaration AST identity; the compact
+compiler bridge passes that identity and the resolved target prototype's
+declaration identity to
+`ZrParser_SemanticRelations_PublishTypeDeclarationRelation`. The relation
+producer maps both endpoints only by exact `symbol.astNode` identity in the
+already-published semantic registry. It then emits `BASE_TYPE` for class and
+struct bases, `IMPLEMENTATION` only when the resolver has already classified an
+implemented interface, and `BASE_TYPE` for interface inheritance. Repeated
+publication is idempotent by relation kind and endpoint SymbolIds. Metadata-only,
+imported, builtin, or unresolved targets have no source declaration identity and
+therefore publish no local edge. LSP and query consumers must not recover such
+an absent edge from type names, member spellings, or AST traversal. Override,
+alias, binary, and native relation producers remain later slices.
 
 ## Call Edge Snapshot Foundation
 

@@ -360,6 +360,7 @@ typedef struct SZrTypeGenericParameterInfo {
 
 typedef struct SZrTypePrototypeInfo {
     SZrString *name;                    // 类型名称
+    SZrAstNode *declarationNode;         // source declaration identity; NULL for metadata-only types
     EZrObjectPrototypeType type;        // STRUCT 或 CLASS
     EZrAccessModifier accessModifier;   // 访问修饰符
     TZrUInt32 modifierFlags;            // abstract/final 等类型修饰符

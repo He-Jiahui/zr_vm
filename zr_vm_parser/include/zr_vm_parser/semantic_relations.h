@@ -47,5 +47,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
 /* Publishes external import origins from existing source scope facts only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
         SZrSemanticContext *context);
+/* Publishes a resolved type relation from compiler declaration identities only. */
+ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
+        SZrSemanticContext *context,
+        EZrSemanticRelationKind kind,
+        const SZrAstNode *sourceDeclaration,
+        const SZrAstNode *targetDeclaration);
 
 #endif // ZR_VM_PARSER_SEMANTIC_RELATIONS_H

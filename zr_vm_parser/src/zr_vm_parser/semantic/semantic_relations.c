@@ -516,6 +516,89 @@ TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
     return ZR_TRUE;
 }
 
+static const SZrSemanticSymbolRecord *semantic_relations_find_type_declaration(
+        const SZrSemanticContext *context,
+        const SZrAstNode *declaration) {
+    TZrSize index;
+
+    if (context == ZR_NULL || declaration == ZR_NULL || !context->symbols.isValid) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+        if (symbol != ZR_NULL && symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_TYPE &&
+            symbol->astNode == declaration &&
+            symbol->typeId != ZR_SEMANTIC_ID_INVALID &&
+            semantic_relations_range_is_known(&symbol->location)) {
+            return symbol;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrBool semantic_relations_has_type_declaration_relation(
+        const SZrSemanticContext *context,
+        EZrSemanticRelationKind kind,
+        TZrSymbolId sourceSymbolId,
+        TZrSymbolId targetSymbolId) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->relationFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->relationFacts.length; index++) {
+        const SZrSemanticRelationFact *fact =
+                (const SZrSemanticRelationFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->relationFacts, index);
+        if (fact != ZR_NULL && fact->kind == kind &&
+            fact->sourceSymbolId == sourceSymbolId &&
+            fact->targetSymbolId == targetSymbolId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
+        SZrSemanticContext *context,
+        EZrSemanticRelationKind kind,
+        const SZrAstNode *sourceDeclaration,
+        const SZrAstNode *targetDeclaration) {
+    const SZrSemanticSymbolRecord *source;
+    const SZrSemanticSymbolRecord *target;
+    SZrSemanticRelationFact fact;
+
+    if (context == ZR_NULL || !context->relationFacts.isValid ||
+        (kind != ZR_SEMANTIC_RELATION_BASE_TYPE &&
+         kind != ZR_SEMANTIC_RELATION_IMPLEMENTATION)) {
+        return ZR_FALSE;
+    }
+    source = semantic_relations_find_type_declaration(context, sourceDeclaration);
+    target = semantic_relations_find_type_declaration(context, targetDeclaration);
+    if (source == ZR_NULL || target == ZR_NULL ||
+        source->id == ZR_SEMANTIC_ID_INVALID || target->id == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    if (semantic_relations_has_type_declaration_relation(
+            context, kind, source->id, target->id)) {
+        return ZR_TRUE;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.kind = kind;
+    fact.sourceSymbolId = source->id;
+    fact.targetSymbolId = target->id;
+    fact.sourceTypeId = source->typeId;
+    fact.targetTypeId = target->typeId;
+    fact.sourceRange = source->location;
+    fact.targetRange = target->location;
+    fact.hasSourceRange = ZR_TRUE;
+    fact.hasTargetRange = ZR_TRUE;
+    return ZrParser_SemanticRelations_Append(context, &fact);
+}
+
 TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,

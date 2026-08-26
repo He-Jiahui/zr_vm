@@ -33,6 +33,12 @@
 TZrBool compiler_submission_seed_context(
         SZrCompilerState *cs,
         const SZrParserSubmissionContext *context);
+
+TZrBool compiler_publish_type_hierarchy_relation(
+        SZrCompilerState *cs,
+        const SZrAstNode *sourceDeclaration,
+        const SZrTypePrototypeInfo *targetPrototype,
+        TZrBool isImplementation);
 TZrBool compiler_submission_append_declared_capture(
         SZrCompilerState *cs,
         SZrString *name,
