@@ -1044,6 +1044,35 @@ static void test_wasm_diagnostics_use_canonical_projection(void) {
     free(projection);
 }
 
+static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+
+    if (typecheck == NULL) {
+        printf("FAIL: could not read semantic analyzer typecheck source\n");
+        g_failures++;
+        return;
+    }
+
+    assert_text_contains(
+        typecheck,
+        "ZrParser_AssignmentCompatibility_CheckDetailed");
+    assert_text_contains(
+        typecheck,
+        "semantic_publish_current_compiler_diagnostic");
+    assert_text_contains(
+        typecheck,
+        "expr->type != ZR_AST_ASSIGNMENT_EXPRESSION");
+    assert_text_contains_none(
+        typecheck,
+        "ZrLanguageServer_SemanticAnalyzer_ReportTypeMismatch");
+    assert_text_contains_none(
+        typecheck,
+        "semantic_analyzer_type_mismatch_diagnostics.h");
+
+    free(typecheck);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1088,6 +1117,7 @@ int main(void) {
     test_stdio_inline_value_uses_content_snapshot();
     test_stdio_position_encoding_uses_content_snapshot();
     test_wasm_diagnostics_use_canonical_projection();
+    test_type_mismatch_diagnostics_use_compiler_query_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1133,6 +1163,7 @@ int main(void) {
     printf("PASS: stdio inline value uses content snapshot\n");
     printf("PASS: stdio position encoding uses content snapshot\n");
     printf("PASS: WASM diagnostics use canonical projection\n");
+    printf("PASS: Type mismatch diagnostics use compiler query projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

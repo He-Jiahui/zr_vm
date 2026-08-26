@@ -3,8 +3,8 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "semantic/semantic_analyzer_expected_type.h"
 #include "semantic/semantic_analyzer_ownership_diagnostics.h"
-#include "semantic/semantic_analyzer_type_mismatch_diagnostics.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
@@ -2163,6 +2163,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             SZrAssignmentExpression *assignExpr = &node->data.assignmentExpression;
             if (assignExpr->left != ZR_NULL && assignExpr->right != ZR_NULL) {
                 SZrInferredType leftType, rightType;
+                SZrFileRange expectedLocation;
                 TZrBool hasLeftType;
                 TZrBool hasRightType;
                 ZrParser_InferredType_Init(state, &leftType, ZR_VALUE_TYPE_OBJECT);
@@ -2172,35 +2173,27 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                ? ZrParser_ExpressionType_Infer(analyzer->compilerState, assignExpr->right, &rightType)
                                : ZR_FALSE;
                 if (hasLeftType && hasRightType) {
+                    expectedLocation =
+                            ZrLanguageServer_SemanticAnalyzer_AssignmentExpectedTypeLocation(
+                                    analyzer,
+                                    assignExpr->left);
                     // 检查赋值类型兼容性
-                    if (!ZrParser_AssignmentCompatibility_Check(
+                    if (!ZrParser_AssignmentCompatibility_CheckDetailed(
                                 analyzer->compilerState,
                                 &leftType,
                                 &rightType,
-                                assignExpr->right->location)) {
+                                assignExpr->right->location,
+                                &expectedLocation)) {
                         if (!semantic_emit_ownership_compatibility_diagnostic(state,
                                                                               analyzer,
                                                                               assignExpr->right,
                                                                               assignExpr->right->location,
                                                                               &leftType,
                                                                               &rightType)) {
-                            SZrFileRange expectedLocation =
-                                    ZrLanguageServer_SemanticAnalyzer_AssignmentExpectedTypeLocation(
-                                            analyzer,
-                                            assignExpr->left);
-                            if (!ZrLanguageServer_SemanticAnalyzer_ReportTypeMismatch(
-                                        state,
-                                        analyzer,
-                                        assignExpr->right->location,
-                                        &expectedLocation,
-                                        &leftType,
-                                        &rightType)) {
-                                semantic_add_type_mismatch_diagnostic(
-                                        state,
-                                        analyzer,
-                                        assignExpr->right->location,
-                                        "Type mismatch in assignment");
-                            }
+                            (void)semantic_publish_current_compiler_diagnostic(
+                                    state,
+                                    analyzer,
+                                    assignExpr->right->location);
                         }
                     }
                 }
@@ -2265,6 +2258,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             if (varDecl->typeInfo != ZR_NULL && varDecl->value != ZR_NULL) {
                 SZrInferredType expectedType;
                 SZrInferredType valueType;
+                SZrFileRange expectedLocation;
                 TZrBool hasValueType;
                 TZrBool compatible = ZR_FALSE;
 
@@ -2283,11 +2277,17 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                 if (!hasValueType) {
                     semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, varDecl->value->location);
                 } else {
+                    expectedLocation =
+                            varDecl->typeInfo->name != ZR_NULL
+                                    ? varDecl->typeInfo->name->location
+                                    : node->location;
                     compatible = analyzer->compilerState != ZR_NULL &&
-                                 ZrParser_AssignmentCompatibility_Check(analyzer->compilerState,
-                                                                        &expectedType,
-                                                                        &valueType,
-                                                                        varDecl->value->location);
+                                 ZrParser_AssignmentCompatibility_CheckDetailed(
+                                         analyzer->compilerState,
+                                         &expectedType,
+                                         &valueType,
+                                         varDecl->value->location,
+                                         &expectedLocation);
                 }
                 if (hasValueType && !compatible) {
                     if (!semantic_emit_ownership_compatibility_diagnostic(state,
@@ -2296,23 +2296,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                                           varDecl->value->location,
                                                                           &expectedType,
                                                                           &valueType)) {
-                        SZrFileRange expectedLocation =
-                                varDecl->typeInfo->name != ZR_NULL
-                                        ? varDecl->typeInfo->name->location
-                                        : node->location;
-                        if (!ZrLanguageServer_SemanticAnalyzer_ReportTypeMismatch(
-                                    state,
-                                    analyzer,
-                                    varDecl->value->location,
-                                    &expectedLocation,
-                                    &expectedType,
-                                    &valueType)) {
-                            semantic_add_type_mismatch_diagnostic(
-                                    state,
-                                    analyzer,
-                                    varDecl->value->location,
-                                    "Type mismatch in variable initializer");
-                        }
+                        (void)semantic_publish_current_compiler_diagnostic(
+                                state,
+                                analyzer,
+                                varDecl->value->location);
                     }
                 }
                 ZrParser_InferredType_Free(state, &valueType);
@@ -2330,6 +2317,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                 if (returnTypeNode != ZR_NULL) {
                     SZrInferredType expectedType;
                     SZrInferredType actualType;
+                    SZrFileRange expectedLocation;
                     TZrBool compatible = ZR_FALSE;
                     TZrBool hasActualType;
                     TZrBool emittedOwnershipDiagnostic = ZR_FALSE;
@@ -2363,12 +2351,18 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                         }
                     }
                     hasActualType = semantic_infer_node_type(state, analyzer, returnStmt->expr, &actualType);
+                    expectedLocation =
+                            returnTypeNode->name != ZR_NULL
+                                    ? returnTypeNode->name->location
+                                    : node->location;
                     compatible = hasActualType &&
                                  analyzer->compilerState != ZR_NULL &&
-                                 ZrParser_AssignmentCompatibility_Check(analyzer->compilerState,
-                                                                        &expectedType,
-                                                                        &actualType,
-                                                                        returnStmt->expr->location);
+                                 ZrParser_AssignmentCompatibility_CheckDetailed(
+                                         analyzer->compilerState,
+                                         &expectedType,
+                                         &actualType,
+                                         returnStmt->expr->location,
+                                         &expectedLocation);
                     if (emittedOwnershipDiagnostic) {
                         compatible = ZR_FALSE;
                     }
@@ -2407,23 +2401,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                                                  &actualType);
                     }
                     if (hasActualType && !compatible && !emittedOwnershipDiagnostic) {
-                        SZrFileRange expectedLocation =
-                                returnTypeNode->name != ZR_NULL
-                                        ? returnTypeNode->name->location
-                                        : node->location;
-                        if (!ZrLanguageServer_SemanticAnalyzer_ReportTypeMismatch(
-                                    state,
-                                    analyzer,
-                                    returnStmt->expr->location,
-                                    &expectedLocation,
-                                    &expectedType,
-                                    &actualType)) {
-                            semantic_add_type_mismatch_diagnostic(
-                                    state,
-                                    analyzer,
-                                    returnStmt->expr->location,
-                                    "Type mismatch in return statement");
-                        }
+                        (void)semantic_publish_current_compiler_diagnostic(
+                                state,
+                                analyzer,
+                                returnStmt->expr->location);
                     }
                     ZrParser_InferredType_Free(state, &actualType);
                     ZrParser_InferredType_Free(state, &expectedType);
@@ -2448,7 +2429,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             SZrAstNode *expr = node->data.expressionStatement.expr;
             SZrInferredType exprType;
 
-            if (expr != ZR_NULL) {
+            if (expr != ZR_NULL && expr->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
                 ZrParser_InferredType_Init(state, &exprType, ZR_VALUE_TYPE_OBJECT);
                 (void)semantic_infer_node_type(state, analyzer, expr, &exprType);
                 ZrParser_InferredType_Free(state, &exprType);

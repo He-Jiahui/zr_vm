@@ -26,6 +26,9 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_projection.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
@@ -56,7 +59,9 @@ related_code:
   - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
   - zr_vm_language_server/CMakeLists.txt
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
+  - zr_vm_parser/include/zr_vm_parser/type_inference.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
@@ -88,6 +93,9 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_projection.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_expected_type.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c
   - zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h
   - zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c
@@ -120,7 +128,9 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_position_codec.h
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
+  - zr_vm_parser/include/zr_vm_parser/type_inference.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
@@ -131,6 +141,7 @@ plan_sources:
   - user: 2026-04-24 Zr LSP 现代能力对齐计划
   - user: 2026-07-20 严格执行 LSP semantic inference 计划并逐子里程碑记录产出
   - docs/plans/lsp/03-lsp-robustness-and-position.md
+  - docs/plans/lsp/optimize/03-canonical-semantic-query.md
 tests:
   - tests/language_server/test_lsp_advanced_editor_features.c
   - tests/language_server/test_lsp_parser_diagnostics.c
@@ -153,9 +164,11 @@ tests:
   - tests/language_server/test_lsp_computed_member_hover.c
   - tests/language_server/test_lsp_semantic_query_diagnostics.c
   - tests/language_server/test_lsp_type_mismatch_diagnostic_cases.h
+  - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/language_server/stdio_diagnostic_fix_smoke.js
   - tests/language_server/wasm_diagnostic_projection_smoke.js
   - tests/acceptance/2026-06-20-lsp-position-stage0.md
+  - tests/acceptance/2026-08-26-plan03-task06-type-mismatch-query-projection.md
   - tests/language_server/stdio_smoke.js
   - tests/language_server/stdio_position_encoding_smoke.js
   - tests/language_server/stdio_inline_value_semantic_smoke.js
@@ -1025,3 +1038,30 @@ same contract as CLI Test phase. The stdio fixture uses a dedicated valid typed
 test document, waits for zero diagnostics, resolves the returned run lens, and
 closes that document explicitly. Ordinary documentation fixtures no longer
 gain a test role merely to exercise CodeLens.
+
+## 2026-08-26 Type Mismatch Query Projection
+
+Assignment, explicit variable initializer, and return-value compatibility now
+use `ZrParser_AssignmentCompatibility_CheckDetailed`. The parser diagnostic
+builder receives both the actual expression range and the expected type
+declaration range, then publishes descriptor `2011` / `type_mismatch` with the
+canonical related location and placeholder cast fix. The language server
+publishes that current compiler diagnostic into semantic query facts and only
+projects the resulting diagnostic; it no longer constructs a second mismatch
+diagnostic from inferred type names.
+
+The former `semantic_analyzer_type_mismatch_diagnostics` producer was removed.
+Its non-diagnostic declaration-range lookup remains in
+`semantic_analyzer_expected_type`, which does not create diagnostic policy.
+Expression-statement traversal also leaves assignment compatibility to the
+dedicated assignment node so one source mismatch cannot produce an additional
+wide-range fact before the precise canonical fact.
+
+The focused contract covers descriptor id, help URI, primary and related
+ranges, typed fix text and applicability, and exact diagnostic cardinality.
+GCC 11.4, Clang 14, and MSVC 19.44 directly passed parser diagnostic query
+`48/48`, type inference `123/123`, compiler integration `127/127`, LSP semantic
+query and source-contract targets. The stdio structured-diagnostic smoke also
+exited zero on all three builds. This closes the type-mismatch migration slice;
+remaining duplicate semantic-analyzer diagnostics and final compiler/LSP
+golden parity remain Plan 03 Task 6 work.

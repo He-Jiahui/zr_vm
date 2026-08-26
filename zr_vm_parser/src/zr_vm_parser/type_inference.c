@@ -31,7 +31,13 @@ static void type_inference_record_type_use_reference_fact(
         const SZrType *astType,
         TZrTypeId typeId);
 
-void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, const SZrInferredType *expectedType, const SZrInferredType *actualType, SZrFileRange location) {
+static void type_error_report_detailed(
+        SZrCompilerState *cs,
+        const TZrChar *message,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType,
+        SZrFileRange location,
+        const SZrFileRange *expectedTypeLocation) {
     TZrChar actualTypeStr[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     const TZrChar *actualName = "unknown";
     const TZrChar *conversionHint = ZR_NULL;
@@ -62,7 +68,7 @@ void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, con
                 location,
                 expectedName != ZR_NULL ? expectedName : "unknown",
                 actualName != ZR_NULL ? actualName : "unknown",
-                ZR_NULL,
+                expectedTypeLocation,
                 conversionHint)) {
         ZrParser_Compiler_StructuredError(cs, &diagnostic);
         return;
@@ -75,6 +81,21 @@ void ZrParser_TypeError_Report(SZrCompilerState *cs, const TZrChar *message, con
              expectedName != ZR_NULL ? expectedName : "unknown",
              actualName != ZR_NULL ? actualName : "unknown");
     ZrParser_Compiler_Error(cs, errorMsg, location);
+}
+
+void ZrParser_TypeError_Report(
+        SZrCompilerState *cs,
+        const TZrChar *message,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType,
+        SZrFileRange location) {
+    type_error_report_detailed(
+            cs,
+            message,
+            expectedType,
+            actualType,
+            location,
+            ZR_NULL);
 }
 
 static TZrBool type_inference_named_struct_is_move_only(SZrCompilerState *cs, SZrString *typeName, TZrUInt32 depth) {
@@ -890,8 +911,12 @@ static TZrBool infer_await_expression_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-// 检查类型兼容性（用于赋值等场景）
-TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *fromType, const SZrInferredType *toType, SZrFileRange location) {
+static TZrBool type_compatibility_check_detailed(
+        SZrCompilerState *cs,
+        const SZrInferredType *fromType,
+        const SZrInferredType *toType,
+        SZrFileRange location,
+        const SZrFileRange *expectedTypeLocation) {
     if (cs == ZR_NULL || fromType == ZR_NULL || toType == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -907,8 +932,24 @@ TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferred
         return ZR_TRUE;
     }
     // 类型不兼容，报告错误
-    ZrParser_TypeError_Report(cs, "Type mismatch", toType, fromType, location);
+    type_error_report_detailed(
+            cs,
+            "Type mismatch",
+            toType,
+            fromType,
+            location,
+            expectedTypeLocation);
     return ZR_FALSE;
+}
+
+// 检查类型兼容性（用于赋值等场景）
+TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *fromType, const SZrInferredType *toType, SZrFileRange location) {
+    return type_compatibility_check_detailed(
+            cs,
+            fromType,
+            toType,
+            location,
+            ZR_NULL);
 }
 
 static TZrBool inferred_type_has_non_nullable_owner(const SZrInferredType *type) {
@@ -921,15 +962,25 @@ static TZrBool inferred_type_has_non_nullable_owner(const SZrInferredType *type)
            type->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
 }
 
-// 检查赋值兼容性
-TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *leftType, const SZrInferredType *rightType, SZrFileRange location) {
+TZrBool ZrParser_AssignmentCompatibility_CheckDetailed(
+        SZrCompilerState *cs,
+        const SZrInferredType *leftType,
+        const SZrInferredType *rightType,
+        SZrFileRange location,
+        const SZrFileRange *expectedTypeLocation) {
     if (cs == ZR_NULL || leftType == ZR_NULL || rightType == ZR_NULL) {
         return ZR_FALSE;
     }
 
     if (rightType->baseType == ZR_VALUE_TYPE_NULL &&
         inferred_type_has_non_nullable_owner(leftType)) {
-        ZrParser_TypeError_Report(cs, "Non-nullable owner cannot be null", leftType, rightType, location);
+        type_error_report_detailed(
+                cs,
+                "Non-nullable owner cannot be null",
+                leftType,
+                rightType,
+                location,
+                expectedTypeLocation);
         return ZR_FALSE;
     }
 
@@ -937,7 +988,12 @@ TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrIn
         return ZR_FALSE;
     }
     // 首先检查基本类型兼容性
-    if (!ZrParser_TypeCompatibility_Check(cs, rightType, leftType, location)) {
+    if (!type_compatibility_check_detailed(
+                cs,
+                rightType,
+                leftType,
+                location,
+                expectedTypeLocation)) {
         return ZR_FALSE;
     }
 
@@ -968,6 +1024,16 @@ TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrIn
         }
     }
     return ZR_TRUE;
+}
+
+// 检查赋值兼容性
+TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *leftType, const SZrInferredType *rightType, SZrFileRange location) {
+    return ZrParser_AssignmentCompatibility_CheckDetailed(
+            cs,
+            leftType,
+            rightType,
+            location,
+            ZR_NULL);
 }
 
 // 检查函数调用参数兼容性

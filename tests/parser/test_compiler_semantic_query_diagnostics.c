@@ -11,6 +11,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_query.h"
+#include "zr_vm_parser/type_inference.h"
 
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
@@ -1167,6 +1168,101 @@ static void test_compiler_structured_error_publisher_deep_copies_diagnostic(void
     ZrParser_CompilerState_Free(&cs);
 }
 
+static void test_assignment_compatibility_publishes_detailed_type_mismatch_fact(void) {
+    SZrCompilerState cs;
+    SZrFileRange actualLocation;
+    SZrFileRange expectedLocation;
+    SZrInferredType actualType;
+    SZrInferredType expectedType;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrStructuredDiagnostic *published;
+    const SZrStructuredDiagnosticRelatedInformation *related;
+    const SZrStructuredDiagnosticFix *fix;
+
+    memset(&cs, 0, sizeof(cs));
+    memset(&actualLocation, 0, sizeof(actualLocation));
+    memset(&expectedLocation, 0, sizeof(expectedLocation));
+    actualLocation.start.offset = 22U;
+    actualLocation.start.line = 2;
+    actualLocation.start.column = 23;
+    actualLocation.end.offset = 26U;
+    actualLocation.end.line = 2;
+    actualLocation.end.column = 27;
+    expectedLocation.start.offset = 16U;
+    expectedLocation.start.line = 2;
+    expectedLocation.start.column = 17;
+    expectedLocation.end.offset = 19U;
+    expectedLocation.end.line = 2;
+    expectedLocation.end.column = 20;
+
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    ZrParser_InferredType_Init(g_state, &expectedType, ZR_VALUE_TYPE_INT32);
+    ZrParser_InferredType_Init(g_state, &actualType, ZR_VALUE_TYPE_FLOAT);
+
+    TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_CheckDetailed(
+            &cs,
+            &expectedType,
+            &actualType,
+            actualLocation,
+            &expectedLocation));
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    ZrParser_Compiler_ClearStructuredError(&cs);
+    cs.hasError = ZR_FALSE;
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+    published = find_query_diagnostic_by_code(cs.semanticContext, "type_mismatch");
+    TEST_ASSERT_NOT_NULL(published);
+    TEST_ASSERT_EQUAL_UINT32(2011U, published->descriptorId);
+    TEST_ASSERT_EQUAL_UINT32(22U, (TZrUInt32)published->location.start.offset);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED,
+            published->noFixReason);
+    TEST_ASSERT_TRUE(published->relatedInformation.isValid);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)published->relatedInformation.length);
+    TEST_ASSERT_TRUE(published->fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)published->fixes.length);
+
+    related = (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
+            (SZrArray *)&published->relatedInformation,
+            0U);
+    fix = (const SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            (SZrArray *)&published->fixes,
+            0U);
+    TEST_ASSERT_NOT_NULL(related);
+    TEST_ASSERT_EQUAL_UINT32(
+            16U,
+            (TZrUInt32)related->location.start.offset);
+    TEST_ASSERT_EQUAL_STRING(
+            "Expected type is declared here",
+            ZrCore_String_GetNativeString(related->message));
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "Cast value to 'int'",
+            ZrCore_String_GetNativeString(fix->title));
+    TEST_ASSERT_EQUAL_STRING(
+            "<int> <expression>",
+            ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS,
+            fix->applicability);
+
+    ZrParser_InferredType_Free(g_state, &actualType);
+    ZrParser_InferredType_Free(g_state, &expectedType);
+    ZrParser_CompilerState_Free(&cs);
+}
+
 static void test_resource_strong_cycle_warning_publishes_user_decision_reason(void) {
     const TZrChar *source =
             "resource class Node {\n"
@@ -2273,6 +2369,7 @@ int main(void) {
     RUN_TEST(test_compile_script_suppresses_true_loop_break_definite_assignment_diagnostic);
     RUN_TEST(test_compiler_error_publishes_persistent_semantic_diagnostic_fact);
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
+    RUN_TEST(test_assignment_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_resource_strong_cycle_warning_publishes_user_decision_reason);
     RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_declaration_body_open_builder_publishes_machine_fix);
