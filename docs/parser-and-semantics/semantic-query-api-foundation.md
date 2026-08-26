@@ -626,6 +626,15 @@ producers select it from semantic circumstances; an LSP projection may expose
 or retain it as protocol data but must not infer it from a message, diagnostic
 code, source spelling, or the absence of edits.
 
+The first classified syntax producers use this contract directly. An
+assignment expression inside an array literal and a missing conditional
+consequent or alternate require a user-selected replacement expression, so
+they publish `REQUIRES_USER_DECISION`. A missing conditional colon publishes a
+machine-applicable insertion only when an alternate expression already exists;
+without that expression it publishes `INSUFFICIENT_CONTEXT`. These builders
+live in the focused diagnostic fix-disposition module rather than expanding
+the general diagnostic builder.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured

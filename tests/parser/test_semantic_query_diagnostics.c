@@ -118,9 +118,48 @@ static void test_fix_and_no_fix_reason_are_mutually_exclusive(void) {
     ZrParser_StructuredDiagnostic_Free(g_state, &fixDiagnostic);
 }
 
+static void test_syntax_no_fix_builders_publish_explicit_reasons(void) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location = diagnostic_range(20U, 24U);
+    SZrFileRange fixLocation = diagnostic_range(24U, 24U);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildArrayElementAssignment(
+            g_state, &diagnostic, location));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingConditionalConsequent(
+            g_state, &diagnostic, location));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingConditionalAlternate(
+            g_state, &diagnostic, location));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+
+    TEST_ASSERT_TRUE(ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(
+            g_state, &diagnostic, location, fixLocation, ZR_FALSE));
+    TEST_ASSERT_FALSE(diagnostic.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT,
+            diagnostic.noFixReason);
+    ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_no_fix_reason_survives_fact_and_query_materialization);
     RUN_TEST(test_fix_and_no_fix_reason_are_mutually_exclusive);
+    RUN_TEST(test_syntax_no_fix_builders_publish_explicit_reasons);
     return UNITY_END();
 }
