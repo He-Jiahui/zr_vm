@@ -1444,6 +1444,44 @@ static void test_weak_optional_receiver_expression_runs_once(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_weak_optional_guard_skips_property_getter(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub property value: int { get { throw \"getter\"; } }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var liveSeed = own Service();\n"
+            "    var liveShared = share(liveSeed);\n"
+            "    var liveWeak = degrade(liveShared);\n"
+            "    var mask = 0;\n"
+            "    try {\n"
+            "        var liveValue = liveWeak?.value;\n"
+            "    } catch (error) { mask = mask + 1; }\n"
+            "    var expiredSeed = own Service();\n"
+            "    var expiredShared = share(expiredSeed);\n"
+            "    var expiredWeak = degrade(expiredShared);\n"
+            "    drop(expiredShared);\n"
+            "    try {\n"
+            "        var expiredValue = expiredWeak?.value;\n"
+            "        if (expiredValue == null) { mask = mask + 2; }\n"
+            "    } catch (error) { mask = mask + 8; }\n"
+            "    return mask;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "weak_optional_property_getter_skip.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(3, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_weak_member_optional_callable_chain_skips_arguments(void) {
     const TZrChar *source =
             "resource class Service {\n"
@@ -1634,6 +1672,7 @@ int main(void) {
     RUN_TEST(test_weak_optional_field_chain_releases_hidden_owner_after_success);
     RUN_TEST(test_weak_optional_guard_skips_computed_index_suffix);
     RUN_TEST(test_weak_optional_receiver_expression_runs_once);
+    RUN_TEST(test_weak_optional_guard_skips_property_getter);
     RUN_TEST(test_weak_member_optional_callable_chain_skips_arguments);
     RUN_TEST(test_live_weak_optional_chain_survives_native_gc_pressure);
     RUN_TEST(test_live_weak_missing_member_is_not_null_reference_error);
