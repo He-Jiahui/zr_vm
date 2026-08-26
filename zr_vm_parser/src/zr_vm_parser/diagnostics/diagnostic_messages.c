@@ -192,6 +192,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Immutable assignment",
             "Cannot assign to an immutable target in this context"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "invalid_variance",
+            "Invalid variance",
+            "Generic parameter is used in an incompatible variance position"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),

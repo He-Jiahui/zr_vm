@@ -142,6 +142,8 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/const_assignment.h
   - zr_vm_parser/src/zr_vm_parser/semantic/const_assignment.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/include/zr_vm_parser/variance.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_generic_semantics.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_system_numeric_segments.c
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
@@ -178,6 +180,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_const_assignment.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_variance.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.h
@@ -436,6 +439,8 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/const_assignment.h
   - zr_vm_parser/src/zr_vm_parser/semantic/const_assignment.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/include/zr_vm_parser/variance.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_generic_semantics.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_system_numeric_segments.c
   - zr_vm_language_server/include/zr_vm_language_server/conf.h
@@ -472,6 +477,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_const_assignment.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_variance.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_ownership_diagnostics.h
@@ -530,6 +536,7 @@ implementation_files:
   - tests/CMakeLists.txt
 plan_sources:
   - user: 2026-07-18 按 docs/plans/lsp 分阶段优化语义推断并回写状态与产出记录
+  - docs/plans/lsp/optimize/2026-08-27-plan03-task06-variance-query-projection.md
   - docs/plans/lsp/optimize/2026-08-27-plan03-task06-const-assignment-query-projection.md
   - docs/plans/lsp/01-semantic-inference-core.md
   - docs/plans/lsp/02-diagnostics-and-errors.md
@@ -541,6 +548,8 @@ plan_sources:
   - .codex/plans/Rust-First using  Ownership 语义收敛计划.md
   - docs/plans/using/01-ownership-as-generics.md
 tests:
+  - tests/language_server/stdio_variance_diagnostic_smoke.js
+  - tests/acceptance/2026-08-27-plan03-task06-variance-query-projection.md
   - tests/language_server/stdio_const_assignment_diagnostic_smoke.js
   - tests/acceptance/2026-08-27-plan03-task06-const-assignment-query-projection.md
   - tests/language_server/stdio_diagnostic_fix_smoke.js
@@ -692,6 +701,30 @@ the assignment target with `SymbolAt`, consumes its stable `SymbolId`, and then
 delegates legality and diagnostic construction to the parser API. The dedicated
 stdio smoke requires exact protocol projection of descriptor `2012`, primary and
 related ranges, help URI, no-fix reason, and one-diagnostic cardinality.
+
+## Variance Diagnostic Ownership
+
+Interface variance validation is parser-owned. The snapshot-scoped
+`ZrParser_Variance_InterfaceViolationAt` query enumerates invalid generic
+parameter uses in deterministic AST order and returns the exact use node,
+declared variance, structured member context, nesting state, primary range, and
+generic parameter declaration range. Returned AST and string identities are
+borrowed from the active compiler snapshot and must not be retained after that
+snapshot is released.
+
+`ZrParser_Variance_BuildDiagnostic` is the only formatter for these violations.
+It owns descriptor `2013`, code `invalid_variance`, error severity, the related
+generic declaration range, canonical cause and suggestion, and the
+`requires_user_decision` no-fix disposition. The compiler consumes violation
+zero as a compilation failure; the LSP analyzer enumerates all violations and
+deep-copies each built diagnostic into semantic facts. The LSP no longer walks
+its symbol table, recursively re-evaluates variance, or assembles messages from
+type names.
+
+The dedicated stdio fixture freezes one covariant-parameter input violation at
+the exact `T` use and declaration ranges. Source-contract coverage rejects a
+return to direct LSP diagnostics, symbol-table lookup, the removed recursive
+analyzer implementation, or an analyzer-owned `invalid_variance` literal.
 
 - Private bitwise zero-minus shift supported-nonnegative count bitwise-not OR counterpart deep-chain inference is now modularized without changing the accepted semantic fact surface or local LSP query behavior. The behavior-preserving split moves the zero-minus / unary-minus zero-minus bitwise-not OR counterpart deep helper chain into internal `type_inference_bitwise_identity_bitwise_not_or_counterpart_deep.c/.h`, while `type_inference_bitwise_identity_bitwise_not_or_counterpart.c` keeps safe negation, unary-minus direct leaf, zero-wrapper skipper, and the public dispatcher. No parser or LSP cases were added or removed: the private parser target remains 260 cases and the private-mask LSP target remains 224 queries. WSL gcc and WSL clang isolated focused validation passed private parser 260 tests / 0 failures plus private-mask LSP PASS; Windows MSVC validation passed the same focused pair under `build-msvc-lsp-bitwise-zero` with `VSCMD_VER=17.14.34`. Public headers, ordinary supported-count files, private mask count-side readers, wrapped supported-count readers, global zero-wrapper stripping, semantic facts, arbitrary normalization, fixed point, and CFG-wide loop dataflow remain unchanged. Full repository GREEN is not claimed.
 

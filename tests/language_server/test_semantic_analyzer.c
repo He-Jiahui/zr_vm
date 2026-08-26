@@ -3032,6 +3032,8 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
         SZrDiagnostic *diagSetter;
         SZrDiagnostic *diagGetter;
         SZrDiagnostic *diagNested;
+        SZrDiagnostic *varianceDiagnostics[6];
+        TZrBool hasCanonicalProjection = ZR_TRUE;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -3063,6 +3065,25 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
         diagSetter = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 11);
         diagGetter = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 14);
         diagNested = find_diagnostic_by_code_and_line(analyzer, "invalid_variance", 20);
+        varianceDiagnostics[0] = diagAccept;
+        varianceDiagnostics[1] = diagReturn;
+        varianceDiagnostics[2] = diagField;
+        varianceDiagnostics[3] = diagSetter;
+        varianceDiagnostics[4] = diagGetter;
+        varianceDiagnostics[5] = diagNested;
+        for (TZrSize index = 0U; index < 6U; index++) {
+            SZrDiagnostic *diagnostic = varianceDiagnostics[index];
+            if (diagnostic == ZR_NULL || diagnostic->descriptorId != 2013U ||
+                diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+                diagnostic->noFixReason !=
+                        ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+                !diagnostic->relatedInformation.isValid ||
+                diagnostic->relatedInformation.length != 1U ||
+                diagnostic->fixes.isValid) {
+                hasCanonicalProjection = ZR_FALSE;
+                break;
+            }
+        }
         if (count_diagnostics_with_code(analyzer, "invalid_variance") != 6 ||
             diagAccept == ZR_NULL ||
             diagReturn == ZR_NULL ||
@@ -3075,12 +3096,13 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
             !diagnostic_message_contains(diagField, "field") ||
             !diagnostic_message_contains(diagSetter, "setter") ||
             !diagnostic_message_contains(diagGetter, "getter") ||
-            !diagnostic_message_contains(diagNested, "nested")) {
+            !diagnostic_message_contains(diagNested, "nested") ||
+            !hasCanonicalProjection) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Invalid Interface Variance Positions",
-                      "Expected six invalid_variance diagnostics covering parameter, return, field, property, and nested generic positions");
+                      "Expected six canonical invalid_variance diagnostics with related declarations and no-fix disposition");
             return;
         }
 

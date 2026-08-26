@@ -1172,6 +1172,39 @@ static void test_const_assignment_diagnostics_use_semantic_query_projection(void
     free(projection);
 }
 
+static void test_variance_diagnostics_use_parser_query_projection(void) {
+    char *variance = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_variance.c");
+
+    if (variance == NULL) {
+        printf("FAIL: could not read semantic analyzer variance source\n");
+        g_failures++;
+        return;
+    }
+
+    assert_text_contains(
+        variance,
+        "ZrParser_Variance_InterfaceViolationAt");
+    assert_text_contains(
+        variance,
+        "ZrParser_Variance_BuildDiagnostic");
+    assert_text_contains(
+        variance,
+        "ZrParser_SemanticFacts_AppendDiagnostic");
+    assert_text_contains_none(
+        variance,
+        "ZrLanguageServer_SemanticAnalyzer_AddDiagnostic");
+    assert_text_contains_none(
+        variance,
+        "ZrLanguageServer_SymbolTable_Lookup");
+    assert_text_contains_none(
+        variance,
+        "semantic_validate_interface_type_variance");
+    assert_text_contains_none(variance, "\"invalid_variance\"");
+
+    free(variance);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1219,6 +1252,7 @@ int main(void) {
     test_type_mismatch_diagnostics_use_compiler_query_projection();
     test_reachability_diagnostics_use_semantic_query_projection();
     test_const_assignment_diagnostics_use_semantic_query_projection();
+    test_variance_diagnostics_use_parser_query_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1266,6 +1300,7 @@ int main(void) {
     printf("PASS: WASM diagnostics use canonical projection\n");
     printf("PASS: Type mismatch diagnostics use compiler query projection\n");
     printf("PASS: Reachability diagnostics use semantic query projection\n");
+    printf("PASS: Variance diagnostics use parser query projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

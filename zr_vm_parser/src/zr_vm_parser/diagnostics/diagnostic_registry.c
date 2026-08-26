@@ -110,6 +110,8 @@ static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_TYPE),
     ZR_DIAGNOSTIC_DESCRIPTOR(2012, "const_assignment",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_SEMANTIC),
+    ZR_DIAGNOSTIC_DESCRIPTOR(2013, "invalid_variance",
+                             ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_TYPE),
 
     ZR_DIAGNOSTIC_DESCRIPTOR(3001, "unreachable_code",
                              ZR_STRUCTURED_DIAGNOSTIC_WARNING, ZR_LINT_CATEGORY_FLOW),

@@ -977,13 +977,14 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *possibleUninitialized;
     const SZrDiagnosticDescriptor *typeMismatch;
     const SZrDiagnosticDescriptor *constAssignment;
+    const SZrDiagnosticDescriptor *invalidVariance;
     const SZrDiagnosticDescriptor *useAfterMove;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(59, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(60, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1019,6 +1020,15 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
                           constAssignment->defaultSeverity);
     TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_SEMANTIC,
                           constAssignment->category);
+
+    invalidVariance =
+            ZrParser_DiagnosticRegistry_FindByCode("invalid_variance");
+    TEST_ASSERT_NOT_NULL(invalidVariance);
+    TEST_ASSERT_EQUAL_UINT32(2013, invalidVariance->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                          invalidVariance->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE,
+                          invalidVariance->category);
 
     for (index = 0; index < descriptorCount; index++) {
         const SZrDiagnosticDescriptor *descriptor =

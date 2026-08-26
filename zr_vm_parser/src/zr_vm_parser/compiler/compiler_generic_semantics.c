@@ -5,12 +5,20 @@
 #include "compiler_internal.h"
 #include "compile_expression_internal.h"
 #include "zr_vm_parser/place.h"
+#include "zr_vm_parser/variance.h"
 
 typedef enum EZrVariancePosition {
     ZR_VARIANCE_POSITION_INVARIANT = 0,
     ZR_VARIANCE_POSITION_OUT = 1,
     ZR_VARIANCE_POSITION_IN = -1,
 } EZrVariancePosition;
+
+typedef struct SZrVarianceCollector {
+    TZrSize targetIndex;
+    TZrSize currentIndex;
+    SZrVarianceViolation *outViolation;
+    TZrBool found;
+} SZrVarianceCollector;
 
 static const TZrChar *compiler_string_native(SZrString *value) {
     if (value == ZR_NULL) {
@@ -184,7 +192,13 @@ TZrBool compiler_validate_call_argument_passing_contract(
     return ZR_TRUE;
 }
 
-static EZrGenericVariance interface_generic_variance_for_name(SZrAstNodeArray *params, SZrString *name) {
+static EZrGenericVariance interface_generic_variance_for_name(
+        SZrAstNodeArray *params,
+        SZrString *name,
+        const SZrAstNode **outDeclaration) {
+    if (outDeclaration != ZR_NULL) {
+        *outDeclaration = ZR_NULL;
+    }
     if (params == ZR_NULL || name == ZR_NULL) {
         return ZR_GENERIC_VARIANCE_NONE;
     }
@@ -199,6 +213,9 @@ static EZrGenericVariance interface_generic_variance_for_name(SZrAstNodeArray *p
         }
 
         if (ZrCore_String_Equal(paramNode->data.parameter.name->name, name)) {
+            if (outDeclaration != ZR_NULL) {
+                *outDeclaration = paramNode;
+            }
             return paramNode->data.parameter.variance;
         }
     }
@@ -238,27 +255,44 @@ static EZrVariancePosition combine_variance_position(EZrVariancePosition outerPo
     return outerPosition == ZR_VARIANCE_POSITION_OUT ? ZR_VARIANCE_POSITION_IN : ZR_VARIANCE_POSITION_OUT;
 }
 
-static TZrBool report_invalid_variance_usage(SZrCompilerState *cs,
-                                             SZrString *parameterName,
-                                             EZrGenericVariance declaredVariance,
-                                             const TZrChar *context,
-                                             TZrBool nestedUsage,
-                                             SZrFileRange location) {
-    const TZrChar *nameText = compiler_string_native(parameterName);
-    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
+static SZrFileRange variance_type_location(
+        const SZrType *typeNode,
+        SZrFileRange fallback) {
+    return typeNode != ZR_NULL && typeNode->name != ZR_NULL
+                   ? typeNode->name->location
+                   : fallback;
+}
 
-    if (cs == ZR_NULL || parameterName == ZR_NULL || context == ZR_NULL) {
-        return ZR_FALSE;
+static TZrBool collect_invalid_variance_usage(
+        SZrVarianceCollector *collector,
+        const SZrAstNode *parameterDeclaration,
+        SZrString *parameterName,
+        EZrGenericVariance declaredVariance,
+        EZrVarianceContextKind contextKind,
+        TZrBool nestedUsage,
+        const SZrType *typeNode,
+        SZrFileRange fallbackLocation) {
+    SZrVarianceViolation *violation;
+
+    if (collector == ZR_NULL || collector->outViolation == ZR_NULL ||
+        parameterDeclaration == ZR_NULL || parameterName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (collector->currentIndex++ != collector->targetIndex) {
+        return ZR_TRUE;
     }
 
-    snprintf(errorBuffer,
-             sizeof(errorBuffer),
-             "%s generic parameter '%s' cannot be used in %s%s position",
-             declaredVariance == ZR_GENERIC_VARIANCE_OUT ? "covariant" : "contravariant",
-             nameText != ZR_NULL ? nameText : "<unknown>",
-             nestedUsage ? "nested " : "",
-             context);
-    ZrParser_Compiler_Error(cs, errorBuffer, location);
+    violation = collector->outViolation;
+    memset(violation, 0, sizeof(*violation));
+    violation->node = typeNode != ZR_NULL ? typeNode->name : ZR_NULL;
+    violation->parameterName = parameterName;
+    violation->declaredVariance = declaredVariance;
+    violation->contextKind = contextKind;
+    violation->nestedUsage = nestedUsage;
+    violation->location = variance_type_location(typeNode, fallbackLocation);
+    violation->declarationRange =
+            parameterDeclaration->data.parameter.nameLocation;
+    collector->found = ZR_TRUE;
     return ZR_FALSE;
 }
 
@@ -266,13 +300,16 @@ static TZrBool validate_interface_type_variance(SZrCompilerState *cs,
                                                 SZrAstNodeArray *interfaceGenericParams,
                                                 SZrType *typeNode,
                                                 EZrVariancePosition position,
-                                                const TZrChar *context,
+                                                EZrVarianceContextKind contextKind,
                                                 TZrBool nestedUsage,
-                                                SZrFileRange location) {
+                                                SZrFileRange location,
+                                                SZrVarianceCollector *collector) {
     SZrString *typeName = ZR_NULL;
     EZrGenericVariance declaredVariance;
+    const SZrAstNode *parameterDeclaration = ZR_NULL;
 
-    if (cs == ZR_NULL || interfaceGenericParams == ZR_NULL || typeNode == ZR_NULL || context == ZR_NULL) {
+    if (cs == ZR_NULL || interfaceGenericParams == ZR_NULL ||
+        typeNode == ZR_NULL || collector == ZR_NULL) {
         return ZR_TRUE;
     }
 
@@ -281,9 +318,10 @@ static TZrBool validate_interface_type_variance(SZrCompilerState *cs,
                                           interfaceGenericParams,
                                           typeNode->subType,
                                           ZR_VARIANCE_POSITION_INVARIANT,
-                                          context,
+                                          contextKind,
                                           nestedUsage,
-                                          location)) {
+                                          location,
+                                          collector)) {
         return ZR_FALSE;
     }
 
@@ -293,7 +331,8 @@ static TZrBool validate_interface_type_variance(SZrCompilerState *cs,
 
     if (typeNode->name->type == ZR_AST_IDENTIFIER_LITERAL) {
         typeName = typeNode->name->data.identifier.name;
-        declaredVariance = interface_generic_variance_for_name(interfaceGenericParams, typeName);
+        declaredVariance = interface_generic_variance_for_name(
+                interfaceGenericParams, typeName, &parameterDeclaration);
         if (declaredVariance == ZR_GENERIC_VARIANCE_NONE) {
             return ZR_TRUE;
         }
@@ -301,7 +340,15 @@ static TZrBool validate_interface_type_variance(SZrCompilerState *cs,
         if (position == ZR_VARIANCE_POSITION_INVARIANT ||
             (declaredVariance == ZR_GENERIC_VARIANCE_OUT && position == ZR_VARIANCE_POSITION_IN) ||
             (declaredVariance == ZR_GENERIC_VARIANCE_IN && position == ZR_VARIANCE_POSITION_OUT)) {
-            return report_invalid_variance_usage(cs, typeName, declaredVariance, context, nestedUsage, location);
+            return collect_invalid_variance_usage(
+                    collector,
+                    parameterDeclaration,
+                    typeName,
+                    declaredVariance,
+                    contextKind,
+                    nestedUsage,
+                    typeNode,
+                    location);
         }
 
         return ZR_TRUE;
@@ -322,9 +369,10 @@ static TZrBool validate_interface_type_variance(SZrCompilerState *cs,
                                                  interfaceGenericParams,
                                                  &argNode->data.type,
                                                  childPosition,
-                                                 context,
+                                                 contextKind,
                                                  ZR_TRUE,
-                                                 location)) {
+                                                 location,
+                                                 collector)) {
                 return ZR_FALSE;
             }
         }
@@ -333,20 +381,37 @@ static TZrBool validate_interface_type_variance(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
-                                                   SZrAstNode *interfaceNode) {
-    SZrInterfaceDeclaration *interfaceDecl;
+TZrBool ZrParser_Variance_InterfaceViolationAt(
+        SZrCompilerState *cs,
+        const SZrAstNode *interfaceNode,
+        TZrSize violationIndex,
+        SZrVarianceViolation *outViolation) {
+    const SZrInterfaceDeclaration *interfaceDecl;
+    SZrVarianceCollector collector;
 
-    if (cs == ZR_NULL || interfaceNode == ZR_NULL || interfaceNode->type != ZR_AST_INTERFACE_DECLARATION) {
-        return ZR_TRUE;
+    if (outViolation != ZR_NULL) {
+        memset(outViolation, 0, sizeof(*outViolation));
+    }
+    if (cs == ZR_NULL || interfaceNode == ZR_NULL ||
+        interfaceNode->type != ZR_AST_INTERFACE_DECLARATION ||
+        outViolation == ZR_NULL) {
+        return ZR_FALSE;
     }
 
     interfaceDecl = &interfaceNode->data.interfaceDeclaration;
-    if (interfaceDecl->generic == ZR_NULL || interfaceDecl->generic->params == ZR_NULL || interfaceDecl->members == ZR_NULL) {
-        return ZR_TRUE;
+    if (interfaceDecl->generic == ZR_NULL ||
+        interfaceDecl->generic->params == ZR_NULL ||
+        interfaceDecl->members == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    for (TZrSize memberIndex = 0; memberIndex < interfaceDecl->members->count; memberIndex++) {
+    memset(&collector, 0, sizeof(collector));
+    collector.targetIndex = violationIndex;
+    collector.outViolation = outViolation;
+
+    for (TZrSize memberIndex = 0;
+         memberIndex < interfaceDecl->members->count;
+         memberIndex++) {
         SZrAstNode *member = interfaceDecl->members->nodes[memberIndex];
 
         if (member == ZR_NULL) {
@@ -355,14 +420,16 @@ TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
 
         switch (member->type) {
             case ZR_AST_INTERFACE_FIELD_DECLARATION:
-                if (!validate_interface_type_variance(cs,
-                                                      interfaceDecl->generic->params,
-                                                      member->data.interfaceFieldDeclaration.typeInfo,
-                                                      ZR_VARIANCE_POSITION_INVARIANT,
-                                                      "field",
-                                                      ZR_FALSE,
-                                                      member->location)) {
-                    return ZR_FALSE;
+                if (!validate_interface_type_variance(
+                            cs,
+                            interfaceDecl->generic->params,
+                            member->data.interfaceFieldDeclaration.typeInfo,
+                            ZR_VARIANCE_POSITION_INVARIANT,
+                            ZR_VARIANCE_CONTEXT_FIELD,
+                            ZR_FALSE,
+                            member->location,
+                            &collector)) {
+                    return collector.found;
                 }
                 break;
 
@@ -371,52 +438,62 @@ TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
                     for (TZrSize paramIndex = 0;
                          paramIndex < member->data.interfaceMethodSignature.params->count;
                          paramIndex++) {
-                        SZrAstNode *paramNode = member->data.interfaceMethodSignature.params->nodes[paramIndex];
+                        SZrAstNode *paramNode =
+                                member->data.interfaceMethodSignature.params->nodes[paramIndex];
                         if (paramNode != ZR_NULL &&
                             paramNode->type == ZR_AST_PARAMETER &&
-                            !validate_interface_type_variance(cs,
-                                                              interfaceDecl->generic->params,
-                                                              paramNode->data.parameter.typeInfo,
-                                                              ZR_VARIANCE_POSITION_IN,
-                                                              "contravariant parameter",
-                                                              ZR_FALSE,
-                                                              paramNode->location)) {
-                            return ZR_FALSE;
+                            !validate_interface_type_variance(
+                                    cs,
+                                    interfaceDecl->generic->params,
+                                    paramNode->data.parameter.typeInfo,
+                                    ZR_VARIANCE_POSITION_IN,
+                                    ZR_VARIANCE_CONTEXT_PARAMETER,
+                                    ZR_FALSE,
+                                    paramNode->location,
+                                    &collector)) {
+                            return collector.found;
                         }
                     }
                 }
-                if (!validate_interface_type_variance(cs,
-                                                      interfaceDecl->generic->params,
-                                                      member->data.interfaceMethodSignature.returnType,
-                                                      ZR_VARIANCE_POSITION_OUT,
-                                                      "covariant return",
-                                                      ZR_FALSE,
-                                                      member->location)) {
-                    return ZR_FALSE;
+                if (!validate_interface_type_variance(
+                            cs,
+                            interfaceDecl->generic->params,
+                            member->data.interfaceMethodSignature.returnType,
+                            ZR_VARIANCE_POSITION_OUT,
+                            ZR_VARIANCE_CONTEXT_RETURN,
+                            ZR_FALSE,
+                            member->location,
+                            &collector)) {
+                    return collector.found;
                 }
                 break;
 
             case ZR_AST_INTERFACE_PROPERTY_SIGNATURE: {
-                SZrInterfacePropertySignature *property = &member->data.interfacePropertySignature;
-                EZrVariancePosition propertyPosition = ZR_VARIANCE_POSITION_INVARIANT;
-                const TZrChar *context = "property";
+                SZrInterfacePropertySignature *property =
+                        &member->data.interfacePropertySignature;
+                EZrVariancePosition propertyPosition =
+                        ZR_VARIANCE_POSITION_INVARIANT;
+                EZrVarianceContextKind contextKind =
+                        ZR_VARIANCE_CONTEXT_PROPERTY;
 
                 if (property->hasGet && !property->hasSet) {
                     propertyPosition = ZR_VARIANCE_POSITION_OUT;
-                    context = "getter";
+                    contextKind = ZR_VARIANCE_CONTEXT_GETTER;
                 } else if (property->hasSet && !property->hasGet) {
                     propertyPosition = ZR_VARIANCE_POSITION_IN;
-                    context = "setter";
+                    contextKind = ZR_VARIANCE_CONTEXT_SETTER;
                 }
 
-                if (!validate_interface_type_variance(cs,
-                                                      interfaceDecl->generic->params,
-                                                      property->typeInfo,
-                                                      propertyPosition,
-                                                      context,
-                                                      ZR_FALSE,
-                                                      member->location)) {
-                    return ZR_FALSE;
+                if (!validate_interface_type_variance(
+                            cs,
+                            interfaceDecl->generic->params,
+                            property->typeInfo,
+                            propertyPosition,
+                            contextKind,
+                            ZR_FALSE,
+                            member->location,
+                            &collector)) {
+                    return collector.found;
                 }
                 break;
             }
@@ -428,7 +505,8 @@ TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
                 TZrBool hasWrite = ZR_FALSE;
                 EZrVariancePosition propertyPosition =
                         ZR_VARIANCE_POSITION_INVARIANT;
-                const TZrChar *context = "property";
+                EZrVarianceContextKind contextKind =
+                        ZR_VARIANCE_CONTEXT_PROPERTY;
 
                 if (property->accessors != ZR_NULL) {
                     for (TZrSize accessorIndex = 0U;
@@ -450,20 +528,21 @@ TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
                 }
                 if (hasGet && !hasWrite) {
                     propertyPosition = ZR_VARIANCE_POSITION_OUT;
-                    context = "getter";
+                    contextKind = ZR_VARIANCE_CONTEXT_GETTER;
                 } else if (hasWrite && !hasGet) {
                     propertyPosition = ZR_VARIANCE_POSITION_IN;
-                    context = "setter";
+                    contextKind = ZR_VARIANCE_CONTEXT_SETTER;
                 }
                 if (!validate_interface_type_variance(
                             cs,
                             interfaceDecl->generic->params,
                             property->typeInfo,
                             propertyPosition,
-                            context,
+                            contextKind,
                             ZR_FALSE,
-                            member->location)) {
-                    return ZR_FALSE;
+                            member->location,
+                            &collector)) {
+                    return collector.found;
                 }
                 break;
             }
@@ -473,28 +552,33 @@ TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
                     for (TZrSize paramIndex = 0;
                          paramIndex < member->data.interfaceMetaSignature.params->count;
                          paramIndex++) {
-                        SZrAstNode *paramNode = member->data.interfaceMetaSignature.params->nodes[paramIndex];
+                        SZrAstNode *paramNode =
+                                member->data.interfaceMetaSignature.params->nodes[paramIndex];
                         if (paramNode != ZR_NULL &&
                             paramNode->type == ZR_AST_PARAMETER &&
-                            !validate_interface_type_variance(cs,
-                                                              interfaceDecl->generic->params,
-                                                              paramNode->data.parameter.typeInfo,
-                                                              ZR_VARIANCE_POSITION_IN,
-                                                              "contravariant parameter",
-                                                              ZR_FALSE,
-                                                              paramNode->location)) {
-                            return ZR_FALSE;
+                            !validate_interface_type_variance(
+                                    cs,
+                                    interfaceDecl->generic->params,
+                                    paramNode->data.parameter.typeInfo,
+                                    ZR_VARIANCE_POSITION_IN,
+                                    ZR_VARIANCE_CONTEXT_PARAMETER,
+                                    ZR_FALSE,
+                                    paramNode->location,
+                                    &collector)) {
+                            return collector.found;
                         }
                     }
                 }
-                if (!validate_interface_type_variance(cs,
-                                                      interfaceDecl->generic->params,
-                                                      member->data.interfaceMetaSignature.returnType,
-                                                      ZR_VARIANCE_POSITION_OUT,
-                                                      "covariant return",
-                                                      ZR_FALSE,
-                                                      member->location)) {
-                    return ZR_FALSE;
+                if (!validate_interface_type_variance(
+                            cs,
+                            interfaceDecl->generic->params,
+                            member->data.interfaceMetaSignature.returnType,
+                            ZR_VARIANCE_POSITION_OUT,
+                            ZR_VARIANCE_CONTEXT_RETURN,
+                            ZR_FALSE,
+                            member->location,
+                            &collector)) {
+                    return collector.found;
                 }
                 break;
 
@@ -503,5 +587,99 @@ TZrBool compiler_validate_interface_variance_rules(SZrCompilerState *cs,
         }
     }
 
+    return ZR_FALSE;
+}
+
+static const TZrChar *variance_context_text(EZrVarianceContextKind contextKind) {
+    switch (contextKind) {
+        case ZR_VARIANCE_CONTEXT_FIELD:
+            return "field";
+        case ZR_VARIANCE_CONTEXT_PARAMETER:
+            return "contravariant parameter";
+        case ZR_VARIANCE_CONTEXT_RETURN:
+            return "covariant return";
+        case ZR_VARIANCE_CONTEXT_GETTER:
+            return "getter";
+        case ZR_VARIANCE_CONTEXT_SETTER:
+            return "setter";
+        case ZR_VARIANCE_CONTEXT_PROPERTY:
+        default:
+            return "property";
+    }
+}
+
+TZrBool ZrParser_Variance_BuildDiagnostic(
+        SZrState *state,
+        const SZrVarianceViolation *violation,
+        SZrStructuredDiagnostic *outDiagnostic) {
+    const TZrChar *nameText;
+    const TZrChar *varianceText;
+    const TZrChar *cause;
+    TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || violation == ZR_NULL ||
+        violation->parameterName == ZR_NULL || outDiagnostic == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nameText = compiler_string_native(violation->parameterName);
+    varianceText = violation->declaredVariance == ZR_GENERIC_VARIANCE_OUT
+            ? "covariant"
+            : "contravariant";
+    cause = violation->declaredVariance == ZR_GENERIC_VARIANCE_OUT
+            ? "A covariant generic parameter cannot appear in an input or invariant position."
+            : "A contravariant generic parameter cannot appear in an output or invariant position.";
+    snprintf(message,
+             sizeof(message),
+             "%s generic parameter '%s' cannot be used in %s%s position",
+             varianceText,
+             nameText != ZR_NULL ? nameText : "<unknown>",
+             violation->nestedUsage ? "nested " : "",
+             variance_context_text(violation->contextKind));
+
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                outDiagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                violation->location,
+                "invalid_variance",
+                message,
+                cause,
+                "Change the generic parameter variance or move this type use to a compatible position.")) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_StructuredDiagnostic_AddRelatedInformation(
+                state,
+                outDiagnostic,
+                violation->declarationRange,
+                "Variance parameter is declared here") ||
+        !ZrParser_StructuredDiagnostic_SetNoFixReason(
+                outDiagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(state, outDiagnostic);
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
+}
+
+TZrBool compiler_validate_interface_variance_rules(
+        SZrCompilerState *cs,
+        SZrAstNode *interfaceNode) {
+    SZrVarianceViolation violation;
+    SZrStructuredDiagnostic diagnostic;
+
+    if (!ZrParser_Variance_InterfaceViolationAt(
+                cs, interfaceNode, 0U, &violation)) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (ZrParser_Variance_BuildDiagnostic(
+                cs->state, &violation, &diagnostic)) {
+        ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    } else {
+        ZrParser_Compiler_Error(
+                cs, "Invalid generic variance", violation.location);
+    }
+    return ZR_FALSE;
 }
