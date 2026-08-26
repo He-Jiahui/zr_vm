@@ -573,7 +573,8 @@ TZrBool ZrParser_SemanticRelations_PublishSymbolRelation(
     if (context == ZR_NULL || !context->relationFacts.isValid ||
         (kind != ZR_SEMANTIC_RELATION_BASE_TYPE &&
          kind != ZR_SEMANTIC_RELATION_IMPLEMENTATION &&
-         kind != ZR_SEMANTIC_RELATION_OVERRIDE) ||
+         kind != ZR_SEMANTIC_RELATION_OVERRIDE &&
+         kind != ZR_SEMANTIC_RELATION_CONSTRUCTOR) ||
         sourceSymbolId == ZR_SEMANTIC_ID_INVALID ||
         targetSymbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
@@ -626,6 +627,26 @@ TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
     }
     return ZrParser_SemanticRelations_PublishSymbolRelation(
             context, kind, source->id, target->id);
+}
+
+TZrBool ZrParser_SemanticRelations_PublishConstructorRelation(
+        SZrSemanticContext *context,
+        const SZrAstNode *sourceTypeDeclaration,
+        TZrSymbolId constructorSymbolId) {
+    const SZrSemanticSymbolRecord *source;
+
+    if (context == ZR_NULL || constructorSymbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    source = semantic_relations_find_type_declaration(context, sourceTypeDeclaration);
+    if (source == ZR_NULL || source->id == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    return ZrParser_SemanticRelations_PublishSymbolRelation(
+            context,
+            ZR_SEMANTIC_RELATION_CONSTRUCTOR,
+            source->id,
+            constructorSymbolId);
 }
 
 TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(

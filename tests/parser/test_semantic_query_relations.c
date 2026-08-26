@@ -786,6 +786,111 @@ static void test_compiled_source_publishes_override_relation(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_compiled_source_publishes_explicit_constructor_relation(void) {
+    const TZrChar *source =
+            "struct Point {\n"
+            "    pub var x: int;\n"
+            "    pub @constructor(x: int) { this.x = x; }\n"
+            "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_constructor.zr");
+    SZrAstNode *ast;
+    SZrAstNode *typeNode;
+    SZrAstNode *constructorNode;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *typeSymbol;
+    const SZrSemanticSymbolRecord *constructorSymbol;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    typeNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(typeNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, typeNode->type);
+    TEST_ASSERT_NOT_NULL(typeNode->data.structDeclaration.members);
+    constructorNode = typeNode->data.structDeclaration.members->nodes[1];
+    TEST_ASSERT_NOT_NULL(constructorNode);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    typeSymbol = relation_find_symbol_by_node(cs.semanticContext, typeNode);
+    constructorSymbol = relation_find_symbol_by_node(cs.semanticContext, constructorNode);
+    TEST_ASSERT_NOT_NULL(typeSymbol);
+    TEST_ASSERT_NOT_NULL(constructorSymbol);
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            cs.semanticContext, typeSymbol->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_CONSTRUCTOR, relation->kind);
+    TEST_ASSERT_EQUAL_UINT(typeSymbol->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(constructorSymbol->id, relation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(typeSymbol->typeId, relation->sourceTypeId);
+    TEST_ASSERT_EQUAL_UINT(constructorSymbol->typeId, relation->targetTypeId);
+    TEST_ASSERT_EQUAL_UINT(typeNode->location.start.offset, relation->sourceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT(
+            constructorNode->location.start.offset, relation->targetRange.start.offset);
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_compiled_source_omits_synthesized_constructor_relation(void) {
+    const TZrChar *source =
+            "struct Empty {\n"
+            "    pub var value: int;\n"
+            "}\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_synthesized_constructor.zr");
+    SZrAstNode *ast;
+    SZrAstNode *typeNode;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *typeSymbol;
+    SZrArray relations;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    typeNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(typeNode);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    typeSymbol = relation_find_symbol_by_node(cs.semanticContext, typeNode);
+    TEST_ASSERT_NOT_NULL(typeSymbol);
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            cs.semanticContext, typeSymbol->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_compiled_import_publishes_external_origin_relation(void) {
     const TZrChar *source =
             "var {Vec3: Vector3} = import(\"zr.math\");\n"
@@ -950,6 +1055,8 @@ int main(void) {
     RUN_TEST(test_compiled_source_publishes_reference_definition_relations);
     RUN_TEST(test_compiled_source_publishes_type_hierarchy_relations);
     RUN_TEST(test_compiled_source_publishes_override_relation);
+    RUN_TEST(test_compiled_source_publishes_explicit_constructor_relation);
+    RUN_TEST(test_compiled_source_omits_synthesized_constructor_relation);
     RUN_TEST(test_compiled_import_publishes_external_origin_relation);
     RUN_TEST(test_compiled_direct_import_publishes_external_origin_relation);
     return UNITY_END();

@@ -59,5 +59,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
         EZrSemanticRelationKind kind,
         const SZrAstNode *sourceDeclaration,
         const SZrAstNode *targetDeclaration);
+/* Publishes a source type-to-constructor edge from exact declaration and symbol identities. */
+ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishConstructorRelation(
+        SZrSemanticContext *context,
+        const SZrAstNode *sourceTypeDeclaration,
+        TZrSymbolId constructorSymbolId);
 
 #endif // ZR_VM_PARSER_SEMANTIC_RELATIONS_H

@@ -35,3 +35,51 @@ TZrBool compiler_publish_member_override_relation(
             sourceMember->symbolId,
             targetMember->symbolId);
 }
+
+TZrBool compiler_publish_type_constructor_relation(
+        SZrCompilerState *cs,
+        const SZrAstNode *sourceTypeDeclaration,
+        const SZrTypeMemberInfo *constructorMember) {
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        sourceTypeDeclaration == ZR_NULL || constructorMember == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    return ZrParser_SemanticRelations_PublishConstructorRelation(
+            cs->semanticContext,
+            sourceTypeDeclaration,
+            constructorMember->symbolId);
+}
+
+TZrBool compiler_publish_source_constructor_relations(SZrCompilerState *cs) {
+    TZrSize typeIndex;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (typeIndex = 0U; typeIndex < cs->typePrototypes.length; typeIndex++) {
+        const SZrTypePrototypeInfo *typeInfo =
+                (const SZrTypePrototypeInfo *)ZrCore_Array_Get(
+                        &cs->typePrototypes, typeIndex);
+        TZrSize memberIndex;
+
+        if (typeInfo == ZR_NULL || typeInfo->declarationNode == ZR_NULL) {
+            continue;
+        }
+        for (memberIndex = 0U; memberIndex < typeInfo->members.length; memberIndex++) {
+            const SZrTypeMemberInfo *member =
+                    (const SZrTypeMemberInfo *)ZrCore_Array_Get(
+                            (SZrArray *)&typeInfo->members, memberIndex);
+
+            if (member == ZR_NULL || !member->isMetaMethod ||
+                member->metaType != ZR_META_CONSTRUCTOR ||
+                member->symbolId == ZR_SEMANTIC_ID_INVALID) {
+                continue;
+            }
+            if (!compiler_publish_type_constructor_relation(
+                        cs, typeInfo->declarationNode, member)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+    return ZR_TRUE;
+}

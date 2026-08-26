@@ -290,6 +290,18 @@ source/target SymbolId pair. Imported, metadata-only, and otherwise unresolved
 base members remain unavailable until their producer supplies a stable target
 identity and explicit provenance.
 
+Task 3.8 publishes `ZR_SEMANTIC_RELATION_CONSTRUCTOR` only after
+`ZrParser_Semantic_BuildSourceScopeFacts` has registered source type symbols.
+`compiler_publish_source_constructor_relations` iterates only existing compiler
+`typePrototypes`, takes the retained exact type declaration node and an already
+registered explicit `@constructor` member SymbolId, then delegates to
+`ZrParser_SemanticRelations_PublishConstructorRelation`. The relation module
+maps the source solely through `symbol.astNode`, then projects TypeIds and
+ranges from registered symbol records. Synthesized default constructors have no
+member SymbolId or source range and emit no edge; invalid or missing source
+identities fail closed. No name, constructor token, TypeId-only, AST
+traversal/query fallback, or LSP reconstruction is allowed.
+
 ## Call Edge Snapshot Foundation
 
 `SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph

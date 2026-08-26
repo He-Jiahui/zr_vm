@@ -822,6 +822,12 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             return;
         }
         if (!cs->hasError && cs->semanticContext != ZR_NULL &&
+            !compiler_publish_source_constructor_relations(cs)) {
+            ZrParser_Compiler_Error(
+                    cs, "Failed to publish source semantic constructor relations", node->location);
+            return;
+        }
+        if (!cs->hasError && cs->semanticContext != ZR_NULL &&
             !ZrParser_SemanticCalls_Publish(cs->semanticContext)) {
             ZrParser_Compiler_Error(
                     cs, "Failed to publish semantic call edges", node->location);
