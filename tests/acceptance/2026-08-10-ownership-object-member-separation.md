@@ -11,7 +11,7 @@
 
 | Requirement | Implementation evidence | Focused evidence |
 | --- | --- | --- |
-| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | parser/semantic/runtime suite 30/30 |
+| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | GCC/Clang/MSVC ownership 37/37 and Shared/Weak 19/19; final full-graph replay pending |
 | `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name object method and real-member tests |
 | Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes against the materialized named runtime prototype |
 | A live weak target keeps ordinary object-member failures | guard resolves before member dispatch; standard system registration materializes the exception hierarchy | missing member follows the ordinary member-error path, not `NullReferenceError` |
@@ -544,6 +544,86 @@ the same project is generated below another worktree because the artifact
 retains absolute source/project mappings, so determinism is fenced by repeated
 output at one resolved root.
 
+The requirement-by-requirement code review then identified a remaining
+fact-consumer defect. `SZrReceiverGuardFact` published `chainSegmentEnd` and
+`resultLift`, but compiler lowering used only `chainSegmentStart` and closed all
+optional frames from the AST chain end. An injected shortened-suffix fact first
+produced the expected RED result, `40 Tests / 1 Failure / 0 Ignored`, because
+lowering did not reject the drift. The fix validates guard kind/mode, node and
+start identity, the full dominated-suffix end, and mode-compatible result lift;
+the lowering frame retains the fact-owned end/lift, finalization checks the
+reached end, and absent-result emission explicitly consumes `NULLABLE` versus
+`VOID_NOOP`.
+
+The new cases live in
+`tests/parser/test_ownership_receiver_guard_contract_cases.h` rather than
+expanding the already oversized runner. They compare live and expired
+`weak?.a.b` with `weak?.a?.b`, assert the complete emitted wake count, verify
+direct inner expiry throws while optional inner expiry returns null, prove an
+expired outer receiver skips the whole mixed suffix, and execute 32 repeated
+live/expire/wake transitions.
+
+The first MSVC execution exposed a lifetime defect after the inner direct guard
+threw and was caught: normal chain finalization was bypassed, so the outer hidden
+Shared wake retained `parentShared`'s target. The earlier transient-stack
+hypothesis was falsified by instruction and exception-scope diagnostics. The
+lowering fix emits `MARK_TO_BE_CLOSED` immediately after every guard-owned
+`OWN_WAKE`, closes each registration in LIFO order on normal live/absent paths,
+and relies on the handler's saved scope boundary to close the same registrations
+during exception unwind. The mixed-chain regression also registers
+`zr.system.exception` before execution; otherwise the named
+`NullReferenceError` prototype is absent and the test enters generic status
+normalization instead of the contract under test.
+
+The follow-up review suspected that a direct guard could close an
+ownership-valued result when member lowering reused the marked slot. New direct
+and outer-optional/inner-direct cases both return `Shared<Leaf>`, release every
+other strong owner, and then read the retained leaf. They passed against the
+pre-response lowering, which demonstrates that the VM's registered owner mirror
+releases the hidden wake without clearing the copied final result. No speculative
+production change was made for that disproved finding.
+
+The same review found valid fail-closed gaps. The fact-injection matrix now
+covers a nonzero shortened suffix, AST access-mode drift, nullable-versus-Weak
+kind drift, value-versus-void result-lift drift, and a missing guarded member
+segment. Lowering validates receiver identity/type, guarded type, syntax mode,
+full bounds, and the canonical chain result. A follow-up review showed that
+`receiverType` was still self-certifying and that the member-only missing-fact
+gate allowed a nullable/Weak callable segment to fail open when another guard
+fact suppressed inference repair. Three independent cases now cover canonical
+receiver drift, guarded-type drift, and a missing nullable callable guard fact.
+Guard inference publishes the receiver expression fact, lowering compares the
+guard's receiver type against it before deriving kind/guarded type, and missing
+member or function-call facts fail closed for canonical nullable/Weak receivers.
+Known non-null optional callable lowering remains valid without a fabricated
+guard fact.
+
+Fresh isolated snapshots representing main `075d68c` plus the exact ownership
+overlay report the following serial direct results on GCC 11.4, Clang 14, and
+MSVC 19.44:
+
+```text
+Shared/Weak                               19 Tests / 0 Failures / 0 Ignored
+ownership intrinsic/member separation    37 Tests / 0 Failures / 0 Ignored
+type inference                           123 Tests / 0 Failures / 0 Ignored
+expression facts                          28 Tests / 0 Failures / 0 Ignored
+compiler integration                     127 Tests / 0 Failures / 0 Ignored
+SemIR pipeline (GCC/Clang)                13 Tests / 0 Failures / 0 Ignored
+SemIR pipeline (MSVC registered set)      12 Tests / 0 Failures / 0 Ignored
+```
+
+This accepts the focused receiver-guard correction on all three toolchains. It
+does not replace the pending full-graph replay on the stable integrated L8
+baseline.
+
+The current first-party test-source audit found zero disabled `#if 0` blocks,
+zero commented `RUN_TEST` registrations, 165 `TEST_IGNORE_MESSAGE` sites with a
+nearby explicit platform/capability guard, and zero globally unreferenced
+`static test_*` candidates across 4,544 declarations. The six executable `.zr`
+paths that still contain removed percent spellings are intentionally scoped as
+negative migration input or literal/comment filtering fixtures. They remain
+current rejection coverage and are not stale positive syntax tests.
+
 ### Pre-final completion-criteria audit
 
 | Design criterion | Current evidence | Gate state |
@@ -551,13 +631,13 @@ output at one resolved root.
 | Ownership control has only the five intrinsic source calls | Dedicated intrinsic AST/facts and focused parse/type/lower tests; production percent branches and ownership-lowering member selector searches are empty | Implemented; final matrix pending |
 | `.` and `?.` always perform target access | Same-name object/module member regressions use ordinary member lowering; the post-failed-lookup migration diagnostic cannot select ownership semantics | Implemented; final matrix pending |
 | Direct absent nullable/Weak access throws `NullReferenceError` | Direct weak runtime case verifies the named error; live missing-member regression preserves its distinct error | Implemented; final matrix pending |
-| Optional absence skips the complete suffix and returns null or a void no-op | Optional member/call, nullable callable, argument-side-effect, computed-index, receiver single-evaluation, getter-skip, nullable-lift, and void-noop focused cases pass | GCC 37/37; final Clang/MSVC matrix pending |
-| A Weak chain wakes once, retains the hidden Shared owner through the suffix, and releases it afterward | Deep-chain, suffix-throw cleanup, repeated-call, native-GC-pressure, and performance cases pass; the live-success field-chain regression requires the post-chain Weak target to expire | GCC/Clang/MSVC 32/32 and current GCC 36/36; full matrix pending |
-| Intrinsic and guard facts drive VM and AOT backends | Semantic-fact, SemIR, interpreter, AOT C, LLVM, artifact-reader, and cleanup regressions exist; recursive `.zro` comparison proves the lowered execution projection rather than serializing AST-backed facts | GCC 37/37; final integrated replay pending |
+| Optional absence skips the complete suffix and returns null or a void no-op | Optional member/call, nullable callable, argument-side-effect, computed-index, receiver single-evaluation, getter-skip, mixed-boundary, repeated-transition, nullable-lift, and void-noop focused cases pass; injected fact drift and missing member/call guards fail closed | GCC/Clang/MSVC Shared/Weak 19/19; full matrix pending |
+| A Weak chain wakes once, retains the hidden Shared owner through the suffix, and releases it afterward | Every guard wake has an adjacent close marker; deep-chain, suffix-throw cleanup, caught-inner-throw cleanup, ownership-valued direct/mixed results, repeated-call, mixed `weak?.a.b`/`weak?.a?.b`, 32-transition loop, native-GC-pressure, and performance cases pass | GCC/Clang/MSVC Shared/Weak 19/19 and ownership 37/37; full matrix pending |
+| Intrinsic and guard facts drive VM and AOT backends | Lowering validates and consumes guard bounds/lift; semantic-fact, SemIR, interpreter, AOT C, LLVM, artifact-reader, and cleanup regressions exist; recursive `.zro` comparison proves the lowered execution projection rather than serializing AST-backed facts | three-toolchain 123/28/127 plus SemIR 13/13 (GCC/Clang), 12/12 (MSVC); final integrated replay pending |
 | Intrinsic spellings remain legal member names | The focused collision case executes members named `share`, `degrade`, `wake`, `intoGc`, and `drop` through normal dispatch | Implemented; final matrix pending |
 | Old source syntax and string compatibility routes are removed | Production searches are empty; migration cases require canonical receiver facts and structured fixes | Implemented; final inventory pending |
 | Artifacts, LSP, docs, tests, and status describe one language | The tracked matrix artifacts were regenerated deterministically; `async_native.zri/.zro` both contain `wakeView`, and binary execution returns `64` through the regenerated graph | Implemented; final stable-HEAD consumer replay pending |
-| Evidence is fresh on GCC, Clang, and MSVC | GCC, Clang, and MSVC directly pass the 32-case ownership runner plus 123 type-inference and 14 semantic-fact cases; GCC alone currently passes the four newer optional-access cases plus artifact round trip | Focused partial at 37/37; full integrated replay pending |
+| Evidence is fresh on GCC, Clang, and MSVC | Isolated snapshots on all three directly pass Shared/Weak 19/19, ownership 37/37, type inference 123/123, expression facts 28/28, and compiler integration 127/127; SemIR is 13/13 on GCC/Clang and 12/12 on MSVC | Focused correction accepted; full integrated replay pending |
 
 ## Pending final acceptance
 

@@ -4,10 +4,12 @@
 
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_contract_conf.h"
+#include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
@@ -471,6 +473,8 @@ static void test_resource_shared_field_cycles_publish_process_local_lints(void) 
                     ZR_STRUCTURED_DIAGNOSTIC_WARNING));
 }
 
+#include "test_ownership_receiver_guard_contract_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_resource_share_creates_one_non_atomic_control_block);
@@ -484,5 +488,13 @@ int main(void) {
     RUN_TEST(test_resource_nested_shared_and_weak_fields_release_in_order);
     RUN_TEST(test_resource_drop_body_cannot_wake_weak_self);
     RUN_TEST(test_resource_shared_field_cycles_publish_process_local_lints);
+    RUN_TEST(test_receiver_guard_lowering_rejects_fact_drift);
+    RUN_TEST(test_receiver_guard_lowering_rejects_canonical_receiver_type_drift);
+    RUN_TEST(test_receiver_guard_lowering_rejects_guarded_type_drift);
+    RUN_TEST(test_receiver_guard_lowering_rejects_missing_nullable_callable_fact);
+    RUN_TEST(test_direct_weak_guard_preserves_shared_result);
+    RUN_TEST(test_mixed_weak_guards_preserve_shared_result);
+    RUN_TEST(test_mixed_weak_optional_chain_boundaries);
+    RUN_TEST(test_repeated_weak_live_expire_wake_transitions);
     return UNITY_END();
 }

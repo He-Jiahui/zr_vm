@@ -14,9 +14,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
@@ -37,9 +39,11 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
@@ -52,6 +56,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
 tests:
   - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/parser/test_ownership_receiver_guard_contract_cases.h
   - tests/parser/test_ownership_receiver_guard_performance.c
   - tests/parser/test_legacy_migration.c
   - tests/parser/test_cfg_throw_effects.c
@@ -63,6 +68,7 @@ tests:
   - tests/language_server/test_lsp_expression_fact_hover.c
   - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_advanced_editor_features.c
+  - tests/acceptance/2026-08-10-ownership-object-member-separation.md
 doc_type: module-detail
 ---
 
@@ -169,6 +175,24 @@ Type inference publishes two canonical fact families:
   call returns `void` use `VOID_NOOP`, so downstream consumers never infer a
   nullable value for a statement-only no-op.
 
+Publishing a receiver guard also publishes the exact expression fact for its
+receiver node. This gives lowering an independent canonical receiver type; the
+guard fact cannot validate itself by presenting a mutually consistent but stale
+`receiverType`, guard kind, and guarded type.
+
+`chainSegmentStart` identifies the guarded postfix segment and
+`chainSegmentEnd` is the exclusive end of the complete dominated suffix. The
+current source contract makes that end equal to the postfix-chain segment
+count. Lowering validates the fact's node and receiver identity, start and end,
+AST access mode, canonical receiver type, receiver-derived guard kind and
+guarded type, and chain-result lift before emitting instructions. A stale fact
+with a shortened suffix, direct/optional mismatch, receiver-type or
+nullable/Weak kind mismatch, guarded-type drift, or value/void lift mismatch is
+a compile error. Optional member segments always require a guard fact. Member
+and function-call segments also require one when the current or canonical
+receiver is nullable/Weak. A known non-null optional callable remains on its
+ordinary optional-call lowering path and is not forced to invent a guard fact.
+
 Move checking, loan conflicts, throw profiling, compiler lowering, LSP hover,
 signature help, completion, diagnostics, and migration edits consume these
 facts. Missing or inconsistent facts fail closed; consumers do not recover a
@@ -204,6 +228,18 @@ path copies its result into the merge slot, it also resets any distinct guarded
 slot before leaving the frame. The null path and exceptional cleanup retain the
 same release requirement. Therefore a successful chain such as
 `weak?.child.value` cannot keep the hidden Shared owner alive after the chain.
+The lowering frame stores the fact-owned exclusive chain end and result-lift
+mode. Finalization requires the compiler's reached chain end to match the fact,
+and the absent block explicitly selects nullable versus void-no-op merge
+behavior from that stored mode.
+
+Every guard-owned `OWN_WAKE` is immediately followed by
+`MARK_TO_BE_CLOSED` for the same destination slot. Normal completion closes
+those registrations in reverse guard order after releasing the hidden Shared
+values on both live and absent branches. If a direct inner guard throws before
+normal finalization, the VM exception handler closes registrations above its
+saved scope boundary. This prevents an outer live Weak guard from retaining its
+target after a caught inner `NullReferenceError`.
 
 `degrade(shared)` and `wake(weak)` read an identifier from its original local
 slot instead of first value-copying the ownership wrapper into a compiler
@@ -219,6 +255,12 @@ same named exception identity. The semantic CFG therefore treats every direct
 nullable or weak receiver guard as an unknown throw source and connects it to
 enclosing catch/finally control flow. Optional guards are not throw sources for
 an absent receiver. `wake(weak)` itself never throws for expiry.
+
+Runtime tests that catch `NullReferenceError` must materialize the standard
+exception hierarchy with `ZrParser_ToGlobalState_Register` and
+`ZrVmLibSystem_Register` before execution. Without that registration, a test is
+exercising the generic status-normalization fallback rather than the named
+receiver-guard exception contract.
 
 ## Failure modes
 
@@ -260,3 +302,23 @@ checksums are mandatory.
   postfix chain.
 - Historical plan and acceptance documents may quote removed syntax as migration
   evidence, but current examples and executable fixtures use only this contract.
+
+## Test coverage
+
+`test_ownership_intrinsic_member_separation.c` owns syntax, semantic facts,
+collision names, direct/optional behavior, and backend-facing integration.
+`test_resource_shared_weak.c` includes the modular receiver-guard contract cases:
+fact drift must fail closed, canonical receiver drift and guarded-type drift are
+independent failures, nullable/Weak callable segments cannot omit their guard
+facts, every emitted guard wake must have an adjacent scope-close marker, mixed
+`weak?.a.b` and `weak?.a?.b` chains must release in normal and caught-exception
+paths, direct and nested mixed chains must preserve ownership-valued `Shared<T>`
+results, and 32 live/expire/wake iterations must remain stable.
+
+On the isolated 2026-08-26 review snapshots representing main `075d68c` plus
+the exact ownership overlay, GCC 11.4, Clang 14, and MSVC 19.44 each passed
+Shared/Weak 19/19, ownership separation 37/37, type inference 123/123,
+expression facts 28/28, and compiler integration 127/127. GCC and Clang passed
+SemIR 13/13; MSVC passed its registered SemIR set 12/12. The detailed commands,
+baseline distinction, and remaining full-graph gate are recorded in
+`tests/acceptance/2026-08-10-ownership-object-member-separation.md`.

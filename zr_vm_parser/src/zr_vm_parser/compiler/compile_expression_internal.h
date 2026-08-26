@@ -298,12 +298,18 @@ void compile_primary_member_chain(SZrCompilerState *cs,
 
 typedef struct SZrReceiverGuardLoweringContext {
     SZrArray frames;
+    SZrAstNode *primaryNode;
+    SZrAstNode *propertyNode;
+    SZrAstNodeArray *segments;
+    TZrSize chainSegmentCount;
 } SZrReceiverGuardLoweringContext;
 
 void compiler_receiver_guard_lowering_init(
         SZrCompilerState *cs,
         SZrReceiverGuardLoweringContext *context,
-        TZrSize capacity);
+        SZrAstNode *primaryNode,
+        SZrAstNode *propertyNode,
+        SZrAstNodeArray *segments);
 void compiler_receiver_guard_lowering_free(
         SZrCompilerState *cs,
         SZrReceiverGuardLoweringContext *context);
@@ -327,7 +333,8 @@ TZrBool compiler_receiver_guard_begin_segment(
 TZrBool compiler_receiver_guard_finish(
         SZrCompilerState *cs,
         TZrUInt32 *ioCurrentSlot,
-        SZrReceiverGuardLoweringContext *context);
+        SZrReceiverGuardLoweringContext *context,
+        TZrSize chainSegmentEnd);
 
 SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName);
 SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs,

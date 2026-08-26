@@ -792,6 +792,51 @@ by all three. Cross-worktree `.zro` hashes also differ because the schema
 retains absolute source/project mappings. Keep this step open until the same
 WSL-producer/three-consumer replay is made on the final integrated baseline.
 
+The final code review found one remaining fact-consumer gap: receiver-guard
+lowering validated `chainSegmentStart` but ignored `chainSegmentEnd` and
+`resultLift`, then closed every optional frame from the AST chain end. TDD first
+reproduced the drift because a shortened dominated suffix fact compiled instead
+of failing closed. Lowering now validates the full fact shape, carries the
+fact-owned exclusive end and lift into each frame, requires the reached chain
+end to match, and selects nullable versus void-no-op absence behavior from the
+fact.
+
+The mixed-chain runtime RED exposed a second, lower-level lifetime gap. A caught
+inner direct guard could bypass normal finalization and leave an outer hidden
+Shared wake alive. Each guard-owned `OWN_WAKE` now registers its destination
+with `MARK_TO_BE_CLOSED`; normal live/absent exits close registrations in LIFO
+order, while exception handling closes registrations above the saved handler
+boundary. The test harness also materializes `zr.system.exception` before
+asserting a named `NullReferenceError`, so it no longer enters unrelated generic
+status normalization.
+
+Follow-up review raised a possible early release when a direct guard's result
+reuses the marked slot. Two runtime regressions return `Shared<Leaf>` through a
+direct weak member and through an outer-optional/inner-direct mixed chain. Both
+passed before any production response, proving the registered owner mirror
+releases the hidden wake without clearing the copied expression result. The same
+review did identify real fact-validation gaps. The injected matrix now covers a
+nonzero shortened end, AST/mode drift, receiver kind drift, value/void lift
+drift, and a missing member-chain guard. A second follow-up review then exposed
+two remaining self-certification paths: lowering derived the expected guard from
+the guard fact's own `receiverType`, and missing-fact detection excluded every
+function-call segment before consulting canonical type. TDD added independent
+canonical receiver drift, guarded-type drift, and missing nullable-callable fact
+cases. Guard inference now publishes the receiver expression fact, lowering
+compares against that canonical type before deriving kind/guarded type, and a
+member or call segment with a canonical nullable/Weak receiver fails closed when
+its guard fact is absent. Known non-null optional callable lowering remains
+valid without a fabricated guard fact.
+
+Isolated GCC 11.4, Clang 14, and MSVC 19.44 snapshots representing main
+`075d68c` plus the exact ownership overlay each pass Shared/Weak 19/19,
+ownership separation 37/37, type inference 123/123, expression facts 28/28, and
+compiler integration 127/127. GCC and Clang pass SemIR 13/13; MSVC passes its
+registered 12/12 set. The six focused executables were run serially per
+toolchain because the ownership roundtrip case uses a fixed fixture path. The
+focused receiver-guard correction is accepted. Keep the broader milestone open
+for the full-graph replay on the stable integrated L8 baseline.
+
 - [ ] **Step 6: Remove generated build products and logs requested by the user**
 
 Resolve each cleanup target under `E:\Git\zr_vm\build` or the explicit test log

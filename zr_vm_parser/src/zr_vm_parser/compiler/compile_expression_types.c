@@ -2917,7 +2917,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
         return;
     }
 
-    compiler_receiver_guard_lowering_init(cs, &receiverGuards, members->count);
+    compiler_receiver_guard_lowering_init(
+            cs, &receiverGuards, primaryNode, propertyNode, members);
     currentSlot = *ioCurrentSlot;
     if (!compiler_receiver_guard_prepare_facts(cs,
                                                primaryNode,
@@ -4460,7 +4461,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
         }
     }
 
-    if (!compiler_receiver_guard_finish(cs, &currentSlot, &receiverGuards)) {
+    if (!compiler_receiver_guard_finish(
+                cs, &currentSlot, &receiverGuards, members->count)) {
         goto cleanup;
     }
 

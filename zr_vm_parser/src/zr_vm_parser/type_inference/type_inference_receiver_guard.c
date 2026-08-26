@@ -107,6 +107,8 @@ TZrBool infer_receiver_guard_for_segment(
     fact.chainSegmentEnd = segments != ZR_NULL ? segments->count : segmentIndex + 1u;
     fact.receiverType = *receiverType;
     fact.guardedType = guardedType;
+    type_inference_record_expression_fact(
+            cs, fact.receiver, receiverType);
     if (!ZrParser_SemanticFacts_AppendReceiverGuard(
                 cs->semanticContext, &fact)) {
         ZrParser_InferredType_Free(cs->state, &guardedType);
