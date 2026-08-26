@@ -200,6 +200,14 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Interface const field mismatch",
             "Interface const field must remain const in the implementing class"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "unresolved_reference",
+            "Unresolved reference",
+            "Reference could not be resolved to a declaration"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "member_not_found",
+            "Member not found",
+            "Member could not be resolved on the receiver type"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),

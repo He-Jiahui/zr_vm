@@ -53,6 +53,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_facts.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_unresolved_diagnostics.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_unresolved_diagnostics.h
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_ownership_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_ownership_diagnostics.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
@@ -758,6 +760,30 @@ from modifier widths or field-name text. The dedicated stdio fixture freezes
 both failure kinds: a non-const implementation points at its field identifier,
 a missing implementation points at the class identifier, and both point back
 to the exact required interface field identifier.
+
+## Unresolved-Reference Diagnostic Ownership
+
+Named canonical reference facts with no resolved target payload are
+materialized by the parser query layer as structured diagnostics. Reads,
+writes, calls, and type references use descriptor `2015` and code
+`unresolved_reference`; member reads and writes use descriptor `2016` and code
+`member_not_found`. The fact's exact range is the diagnostic range, and both
+families publish `requires_user_decision` with no machine fix.
+
+`semantic_query_unresolved_diagnostics.c` owns classification and formatting.
+The generic LSP diagnostic projector only consumes
+`ZrParser_SemanticQuery_Diagnostics`; it must not inspect AST member shapes,
+look up names in the LSP symbol table, reconstruct messages, or estimate token
+ranges. A later resolved fact with the same source, range, and name suppresses
+an earlier provisional unresolved fact, including member-access-to-call
+upgrades.
+
+`isResolved == false` alone does not mean that binding failed. External/native
+callable facts deliberately remain unresolved while carrying a canonical
+`TypeId` and signature display. Any symbol, type, callable signature, or
+contract-role payload therefore suppresses unresolved-reference diagnostics.
+The current source end-to-end coverage freezes missing member projection;
+plain identifier source-fact publication remains a separate producer boundary.
 
 - Private bitwise zero-minus shift supported-nonnegative count bitwise-not OR counterpart deep-chain inference is now modularized without changing the accepted semantic fact surface or local LSP query behavior. The behavior-preserving split moves the zero-minus / unary-minus zero-minus bitwise-not OR counterpart deep helper chain into internal `type_inference_bitwise_identity_bitwise_not_or_counterpart_deep.c/.h`, while `type_inference_bitwise_identity_bitwise_not_or_counterpart.c` keeps safe negation, unary-minus direct leaf, zero-wrapper skipper, and the public dispatcher. No parser or LSP cases were added or removed: the private parser target remains 260 cases and the private-mask LSP target remains 224 queries. WSL gcc and WSL clang isolated focused validation passed private parser 260 tests / 0 failures plus private-mask LSP PASS; Windows MSVC validation passed the same focused pair under `build-msvc-lsp-bitwise-zero` with `VSCMD_VER=17.14.34`. Public headers, ordinary supported-count files, private mask count-side readers, wrapped supported-count readers, global zero-wrapper stripping, semantic facts, arbitrary normalization, fixed point, and CFG-wide loop dataflow remain unchanged. Full repository GREEN is not claimed.
 

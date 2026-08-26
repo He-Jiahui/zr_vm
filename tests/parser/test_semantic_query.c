@@ -979,13 +979,15 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *constAssignment;
     const SZrDiagnosticDescriptor *invalidVariance;
     const SZrDiagnosticDescriptor *constInterfaceMismatch;
+    const SZrDiagnosticDescriptor *unresolvedReference;
+    const SZrDiagnosticDescriptor *memberNotFound;
     const SZrDiagnosticDescriptor *useAfterMove;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(61, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(63, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1039,6 +1041,24 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
                           constInterfaceMismatch->defaultSeverity);
     TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE,
                           constInterfaceMismatch->category);
+
+    unresolvedReference =
+            ZrParser_DiagnosticRegistry_FindByCode("unresolved_reference");
+    TEST_ASSERT_NOT_NULL(unresolvedReference);
+    TEST_ASSERT_EQUAL_UINT32(2015, unresolvedReference->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                          unresolvedReference->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_SEMANTIC,
+                          unresolvedReference->category);
+
+    memberNotFound =
+            ZrParser_DiagnosticRegistry_FindByCode("member_not_found");
+    TEST_ASSERT_NOT_NULL(memberNotFound);
+    TEST_ASSERT_EQUAL_UINT32(2016, memberNotFound->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                          memberNotFound->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE,
+                          memberNotFound->category);
 
     for (index = 0; index < descriptorCount; index++) {
         const SZrDiagnosticDescriptor *descriptor =

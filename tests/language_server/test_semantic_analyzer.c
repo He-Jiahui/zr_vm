@@ -4241,6 +4241,77 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
     TEST_PASS(timer, "Semantic Analyzer Reports Method Argument Ownership Mismatch");
 }
 
+static void test_semantic_analyzer_projects_unresolved_member_query_diagnostic(
+        SZrState *state) {
+    const TZrChar *summary =
+            "Semantic Analyzer Projects Unresolved Member Query Diagnostic";
+    const TZrChar *testCode =
+            "class Meter {\n"
+            "    var value: int;\n"
+            "}\n"
+            "fn read(meter: Meter): int {\n"
+            "    return meter.missingField;\n"
+            "}\n";
+    SZrSemanticAnalyzer *analyzer;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange memberRange;
+    const SZrSemanticReferenceFact *fact;
+    SZrDiagnostic *diagnostic;
+    SZrTestTimer timer;
+
+    TEST_START(summary);
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    sourceName = ZrCore_String_Create(
+            state,
+            "unresolved_member_query_diagnostic_test.zr",
+            strlen("unresolved_member_query_diagnostic_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (analyzer == ZR_NULL || ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer, summary, "Failed to analyze unresolved member fixture");
+        return;
+    }
+
+    memberRange = file_range_for_nth_substring(
+            testCode, "missingField", 0U, ZR_FALSE);
+    fact = ZrParser_SemanticFacts_FindReferenceAtPosition(
+            analyzer->semanticContext, memberRange);
+    diagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "member_not_found", memberRange.start.line);
+    if (fact == ZR_NULL ||
+        fact->kind != ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS ||
+        fact->isResolved ||
+        fact->name == ZR_NULL ||
+        strcmp(ZrCore_String_GetNativeStringShort(fact->name), "missingField") != 0 ||
+        diagnostic == ZR_NULL ||
+        diagnostic->descriptorId != 2016U ||
+        diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+        fact->range.start.offset != memberRange.start.offset ||
+        fact->range.end.offset !=
+                memberRange.start.offset + strlen("missingField") ||
+        diagnostic->location.start.offset != fact->range.start.offset ||
+        diagnostic->location.end.offset != fact->range.end.offset ||
+        diagnostic->noFixReason !=
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+        (diagnostic->fixes.isValid && diagnostic->fixes.length != 0U)) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  summary,
+                  "Expected query-projected member_not_found at the unresolved fact range");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, summary);
+}
+
 static void test_semantic_analyzer_resolves_overloads_for_call_compatibility(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Resolves Overloads For Call Compatibility");
@@ -4984,6 +5055,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_method_argument_ownership_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_projects_unresolved_member_query_diagnostic(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_resolves_overloads_for_call_compatibility(state);

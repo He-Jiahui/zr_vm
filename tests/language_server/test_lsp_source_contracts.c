@@ -1232,6 +1232,47 @@ static void test_interface_const_field_diagnostics_use_parser_query_projection(v
     free(symbols);
 }
 
+static void test_unresolved_reference_diagnostics_use_parser_query_projection(void) {
+    char *materializer = read_repo_text_file_owned(
+        "zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_unresolved_diagnostics.c");
+    char *projection = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c");
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+
+    if (materializer == NULL || projection == NULL || typecheck == NULL) {
+        printf("FAIL: could not read unresolved-reference diagnostic sources\n");
+        g_failures++;
+        free(materializer);
+        free(projection);
+        free(typecheck);
+        return;
+    }
+
+    assert_text_contains(materializer, "fact->isResolved");
+    assert_text_contains(materializer, "candidate->isResolved");
+    assert_text_contains(materializer, "&candidate->range, &fact->range");
+    assert_text_contains(materializer, "\"unresolved_reference\"");
+    assert_text_contains(materializer, "\"member_not_found\"");
+    assert_text_contains(
+        materializer,
+        "ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION");
+    assert_text_contains(
+        projection,
+        "ZrParser_SemanticQuery_MaterializeDiagnostics");
+    assert_text_contains(
+        projection,
+        "ZrLanguageServer_Diagnostic_FromStructured");
+    assert_text_contains_none(projection, "\"unresolved_reference\"");
+    assert_text_contains_none(projection, "\"member_not_found\"");
+    assert_text_contains_none(typecheck, "\"unresolved_reference\"");
+    assert_text_contains_none(typecheck, "\"member_not_found\"");
+
+    free(materializer);
+    free(projection);
+    free(typecheck);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1281,6 +1322,7 @@ int main(void) {
     test_const_assignment_diagnostics_use_semantic_query_projection();
     test_variance_diagnostics_use_parser_query_projection();
     test_interface_const_field_diagnostics_use_parser_query_projection();
+    test_unresolved_reference_diagnostics_use_parser_query_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1330,6 +1372,7 @@ int main(void) {
     printf("PASS: Reachability diagnostics use semantic query projection\n");
     printf("PASS: Variance diagnostics use parser query projection\n");
     printf("PASS: Interface const-field diagnostics use parser query projection\n");
+    printf("PASS: Unresolved-reference diagnostics use parser query projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

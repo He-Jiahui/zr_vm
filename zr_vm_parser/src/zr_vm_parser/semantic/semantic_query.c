@@ -2,6 +2,7 @@
 
 #include "semantic_query_ownership_diagnostics.h"
 #include "semantic_query_published_diagnostics.h"
+#include "semantic_query_unresolved_diagnostics.h"
 
 #include <string.h>
 
@@ -954,9 +955,13 @@ TZrBool ZrParser_SemanticQuery_MaterializeDiagnostics(
         for (i = 0; i < context->referenceFacts.length; i++) {
             const SZrSemanticReferenceFact *fact =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get((SZrArray *)&context->referenceFacts, i);
-            if (fact != ZR_NULL &&
-                semantic_query_scope_allows_range(scope, &fact->range) &&
-                semantic_query_reference_is_uninitialized_read_diagnostic(fact)) {
+            if (fact == ZR_NULL ||
+                !semantic_query_scope_allows_range(scope, &fact->range)) {
+                continue;
+            }
+            (void)ZrParser_SemanticQueryUnresolved_AppendDiagnostic(
+                    context, fact);
+            if (semantic_query_reference_is_uninitialized_read_diagnostic(fact)) {
                 (void)semantic_query_append_definite_assignment_diagnostic(context, fact);
             }
         }
