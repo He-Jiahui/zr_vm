@@ -941,7 +941,7 @@ static void test_stdio_linked_editing_uses_content_snapshot(void) {
     free(source);
 }
 
-static void test_stdio_diagnostics_uses_semantic_snapshot(void) {
+static void test_stdio_diagnostics_uses_shared_diagnostic_store(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_diagnostics.c");
 
@@ -951,10 +951,11 @@ static void test_stdio_diagnostics_uses_semantic_snapshot(void) {
         return;
     }
 
-    assert_text_contains(source, "ZrLanguageServer_LspSemanticSnapshot_GetActive");
-    assert_text_contains(source, "ZrLanguageServer_LspSemanticSnapshot_Acquire");
-    assert_text_contains(source, "ZrLanguageServer_LspSemanticSnapshot_FormatResultId");
-    assert_text_contains(source, "ZrLanguageServer_LspSemanticSnapshot_Release");
+    assert_text_contains(source, "ZrLanguageServer_LspDiagnosticStore_BuildResultId");
+    assert_text_contains_none(source, "ZrLanguageServer_LspSemanticSnapshot_GetActive");
+    assert_text_contains_none(source, "ZrLanguageServer_LspSemanticSnapshot_Acquire");
+    assert_text_contains_none(source, "ZrLanguageServer_LspSemanticSnapshot_FormatResultId");
+    assert_text_contains_none(source, "ZrLanguageServer_LspSemanticSnapshot_Release");
     assert_text_contains_none(source, "ZrLanguageServer_FileVersionContentSnapshot_Acquire");
     assert_text_contains_none(source, "fileVersion->content");
 
@@ -1048,7 +1049,7 @@ int main(void) {
     test_stdio_moniker_uses_content_snapshot();
     test_stdio_inline_completion_uses_content_snapshot();
     test_stdio_linked_editing_uses_content_snapshot();
-    test_stdio_diagnostics_uses_semantic_snapshot();
+    test_stdio_diagnostics_uses_shared_diagnostic_store();
     test_stdio_documents_uses_content_snapshot();
     test_stdio_inline_value_uses_content_snapshot();
     test_stdio_position_encoding_uses_content_snapshot();
@@ -1092,7 +1093,7 @@ int main(void) {
     printf("PASS: stdio moniker uses content snapshot\n");
     printf("PASS: stdio inline completion uses content snapshot\n");
     printf("PASS: stdio linked editing uses content snapshot\n");
-    printf("PASS: stdio diagnostics uses semantic snapshot\n");
+    printf("PASS: stdio diagnostics uses shared diagnostic store\n");
     printf("PASS: stdio documents uses content snapshot\n");
     printf("PASS: stdio inline value uses content snapshot\n");
     printf("PASS: stdio position encoding uses content snapshot\n");
