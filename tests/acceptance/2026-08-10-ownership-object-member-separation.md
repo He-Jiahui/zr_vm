@@ -746,6 +746,25 @@ round-trip case uses a fixed fixture path. A parallel exploratory invocation
 confirmed that shared-path limitation; each serial process returned exit code
 zero and created no persistent log.
 
+### AOT shared-library stale assertion cleanup
+
+The fixed `682f9c0` GCC full graph originally reported 132/136 registered CTests.
+Three failures were in the concurrently owned L8 canonical call/fact paths. The
+fourth surfaced through `language_pipeline`: the numeric-arithmetic AOT C
+shared-library case expected the generic `zr_aot_scalar_exec_i64_binary` marker
+even though the same case requires typed direct arithmetic and rejects the old
+runtime arithmetic helpers. A serial rerun reproduced the one failure.
+
+The obsolete marker-presence assertion was removed without changing production
+code or weakening the executable contract. The case still checks all five
+direct arithmetic operators, stack-copy/direct-call lowering, absence of old
+runtime helpers, generated shared-library compilation, loader execution, and
+the numeric result. Direct serial replay now reports `14 Tests / 0 Failures /
+0 Ignored` on GCC 11.4 and Clang 14. The body is deliberately Unix-only and is
+capability-ignored on MSVC. This cleanup is accepted independently; it does not
+promote the milestone while the frozen L8 failures and final stable-HEAD matrix
+remain open.
+
 ## Pending final acceptance
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate

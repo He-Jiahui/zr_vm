@@ -1728,7 +1728,6 @@ static void test_aot_c_generated_shared_library_executes_numeric_arithmetic_dire
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_exec_i64_binary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " + "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " - "));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, " * "));

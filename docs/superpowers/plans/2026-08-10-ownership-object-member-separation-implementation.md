@@ -911,6 +911,19 @@ runner is currently 7/8 because the earlier, unrelated
 `Expected 'int' but found 'int'` after the integrated call-diagnostic/type-
 inference work. Those reserved inference paths remain outside this exact commit.
 
+The fixed `682f9c0` full-graph audit found one independent stale assertion in
+the Unix AOT C shared-library suite. The numeric-arithmetic fixture already
+requires typed direct `+`, `-`, `*`, `/`, and `%` expressions, rejects the old
+runtime arithmetic helpers, builds the generated shared library, and executes
+its result. Requiring the generic `zr_aot_scalar_exec_i64_binary` code-generation
+marker at the same time contradicted that contract and the current module
+documentation. Removing only that marker-presence assertion changes no
+production behavior. The direct shared-library runner now passes 14/14 with
+both GCC 11.4 and Clang 14. The 2,720-line file remains whole because this edit
+removes obsolete coverage from its existing single AOT shared-library suite;
+the smallest coherent future split would extract the numeric-arithmetic cases
+and their fixture helpers together, not move a lone assertion.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
