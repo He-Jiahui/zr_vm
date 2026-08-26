@@ -218,10 +218,14 @@ receiver-effect `fn ` prefix; receiver calls retain their separately published
 declaration/definition, override, implementation, base-type, constructor,
 property-accessor, alias-target, and import/export-origin edges. Every edge
 uses independently stable source/target SymbolId and TypeId values, exact
-endpoint ranges when available, and an explicit external origin URI when the
-endpoint has no source range.
+endpoint ranges when available, and explicit external-origin and virtual-
+declaration URIs when the relation has no source range.
 
-`ZrParser_SemanticRelations_Append` retains the URI in the semantic snapshot.
+`ZrParser_SemanticRelations_Append` retains both URIs in the semantic snapshot.
+An external fact without a source range is rejected unless its metadata
+projection supplies both values. A source import relation still has the local
+alias source range and may omit a virtual declaration until an exact metadata
+producer supplies one; consumers must not synthesize that URI.
 `RelationsOfSymbol`, `ImplementationsOf`, `BaseTypesOf`, and `DerivedTypesOf`
 are read-only projections: they clear reused output arrays, return copied values
 with borrowed URI fields, and order edges by relation kind, stable ids, and
@@ -352,6 +356,13 @@ that syntax boundary: it publishes class implementation edges only and does
 not add a struct parser extension. Binary metadata, native descriptors, and
 external interface member identities need their own canonical relation
 producers before `ImplementationsOf` can return those edges.
+
+Task 3.13 adds `virtualDeclarationUri` to the relation fact and query value.
+The append boundary clones it beside `externalOriginUri`, and the query returns
+both as borrowed snapshot views. An external relation with no source range must
+provide both URIs or fail before mutating the relation store. This is a metadata
+projection contract only: it does not derive a URI from module text, symbol
+spelling, a file path, or the language server's virtual-document scheme.
 
 ## Call Edge Snapshot Foundation
 

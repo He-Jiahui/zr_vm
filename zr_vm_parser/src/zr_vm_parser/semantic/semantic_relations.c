@@ -192,6 +192,7 @@ static void semantic_relations_append_query(
     query.sourceRange = fact->sourceRange;
     query.targetRange = fact->targetRange;
     query.externalOriginUri = fact->externalOriginUri;
+    query.virtualDeclarationUri = fact->virtualDeclarationUri;
     query.hasSourceRange = fact->hasSourceRange;
     query.hasTargetRange = fact->hasTargetRange;
     query.isExternal = fact->isExternal;
@@ -232,12 +233,21 @@ TZrBool ZrParser_SemanticRelations_Append(
         (fact->sourceSymbolId == ZR_SEMANTIC_ID_INVALID &&
          fact->targetSymbolId == ZR_SEMANTIC_ID_INVALID &&
          fact->sourceTypeId == ZR_SEMANTIC_ID_INVALID &&
-         fact->targetTypeId == ZR_SEMANTIC_ID_INVALID)) {
+         fact->targetTypeId == ZR_SEMANTIC_ID_INVALID) ||
+        (fact->isExternal && !fact->hasSourceRange &&
+         (fact->externalOriginUri == ZR_NULL ||
+          fact->virtualDeclarationUri == ZR_NULL))) {
         return ZR_FALSE;
     }
     copy = *fact;
     copy.externalOriginUri = semantic_relations_clone_string(context, fact->externalOriginUri);
     if (fact->externalOriginUri != ZR_NULL && copy.externalOriginUri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    copy.virtualDeclarationUri = semantic_relations_clone_string(
+            context, fact->virtualDeclarationUri);
+    if (fact->virtualDeclarationUri != ZR_NULL &&
+        copy.virtualDeclarationUri == ZR_NULL) {
         return ZR_FALSE;
     }
     ZrCore_Array_Push(context->state, &context->relationFacts, &copy);

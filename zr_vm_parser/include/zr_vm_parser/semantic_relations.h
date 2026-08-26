@@ -24,6 +24,7 @@ typedef struct SZrSemanticRelationFact {
     SZrFileRange sourceRange;
     SZrFileRange targetRange;
     SZrString *externalOriginUri;
+    SZrString *virtualDeclarationUri;
     TZrBool hasSourceRange;
     TZrBool hasTargetRange;
     TZrBool isExternal;

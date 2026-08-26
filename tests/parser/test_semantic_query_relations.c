@@ -239,6 +239,54 @@ static void test_relations_of_symbol_projects_sorted_snapshot_edges(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_external_relation_requires_and_projects_virtual_declaration_uri(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticRelationFact fact;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&fact, 0, sizeof(fact));
+    fact.kind = ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN;
+    fact.sourceSymbolId = 17U;
+    fact.targetTypeId = 29U;
+    fact.isExternal = ZR_TRUE;
+    fact.externalOriginUri = ZrCore_String_Create(
+            g_state,
+            "zro://fixtures/external-library.zro",
+            strlen("zro://fixtures/external-library.zro"));
+    TEST_ASSERT_NOT_NULL(fact.externalOriginUri);
+    TEST_ASSERT_FALSE(ZrParser_SemanticRelations_Append(context, &fact));
+
+    fact.virtualDeclarationUri = ZrCore_String_Create(
+            g_state,
+            "zr-decompiled:/external-library",
+            strlen("zr-decompiled:/external-library"));
+    TEST_ASSERT_NOT_NULL(fact.virtualDeclarationUri);
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_Append(context, &fact));
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            context, fact.sourceSymbolId, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_TRUE(relation->isExternal);
+    TEST_ASSERT_FALSE(relation->hasSourceRange);
+    TEST_ASSERT_FALSE(relation->hasTargetRange);
+    TEST_ASSERT_NOT_NULL(relation->externalOriginUri);
+    TEST_ASSERT_NOT_NULL(relation->virtualDeclarationUri);
+    TEST_ASSERT_EQUAL_STRING(
+            "zro://fixtures/external-library.zro",
+            ZrCore_String_GetNativeString(relation->externalOriginUri));
+    TEST_ASSERT_EQUAL_STRING(
+            "zr-decompiled:/external-library",
+            ZrCore_String_GetNativeString(relation->virtualDeclarationUri));
+
+    ZrCore_Array_Free(g_state, &relations);
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_type_and_implementation_queries_preserve_edge_direction(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrArray relations;
@@ -1320,6 +1368,7 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
+    RUN_TEST(test_external_relation_requires_and_projects_virtual_declaration_uri);
     RUN_TEST(test_type_and_implementation_queries_preserve_edge_direction);
     RUN_TEST(test_relation_queries_project_canonical_module_identities);
     RUN_TEST(test_type_declaration_relation_publishes_identity_edge_once);

@@ -110,6 +110,7 @@ typedef struct SZrParserSemanticRelationQuery {
     SZrFileRange sourceRange;
     SZrFileRange targetRange;
     SZrString *externalOriginUri;
+    SZrString *virtualDeclarationUri;
     TZrBool hasSourceRange;
     TZrBool hasTargetRange;
     TZrBool isExternal;
