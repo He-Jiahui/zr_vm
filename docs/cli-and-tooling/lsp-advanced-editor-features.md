@@ -1091,3 +1091,25 @@ LSP focused/source-contract regressions, and stdio.
 Receiver method-call mismatch is not included in this result. Its existing RED
 requires a canonical producer change in the separately owned receiver
 inference path; no LSP name, member, or message fallback was added.
+
+## 2026-08-27 Reachability Query Projection
+
+Constant branches, false loop bodies, deterministic short-circuit operands,
+statements after control-flow exits, and exhaustive union defaults now publish
+only `SZrSemanticReachabilityFact` values during LSP analysis. The parser
+semantic-query materializer is the sole owner of their diagnostic policy and
+projects descriptor `3001` / `unreachable_code`, warning severity,
+cause-specific explanation and suggestion, and `unsafe_edit`.
+
+The direct analyzer codes `unreachable_branch`, `unreachable_loop_body`,
+`short_circuit_unreachable`, and `unreachable_union_switch_default` were
+removed. Short-circuit facts now carry the skipped right operand range rather
+than the whole logical expression, so query-only projection preserves the
+precise editor highlight.
+
+GCC 11.4, Clang 14, and MSVC 19.44 directly passed query diagnostics `8/8`,
+semantic facts `14/14`, LSP semantic query diagnostics, semantic analyzer,
+local reachability query, source contracts, union-pattern diagnostics, and a
+dedicated stdio reachability smoke. The full stdio suite reached the later
+known native receiver hover assertion in the frozen L8 boundary and is not
+counted as a complete pass for this slice.

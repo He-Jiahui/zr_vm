@@ -596,14 +596,6 @@ void ZrLanguageServer_SemanticAnalyzer_AnalyzeSwitchUnionExhaustiveness(
 
     defaultBlock = defaultCase->data.switchDefault.block;
     defaultRange = defaultBlock != ZR_NULL ? defaultBlock->location : defaultCase->location;
-    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(
-            state,
-            analyzer,
-            ZR_DIAGNOSTIC_WARNING,
-            defaultRange,
-            "Default switch arm is unreachable because all union variants are covered",
-            "unreachable_union_switch_default");
-
     if (analyzer->semanticContext == ZR_NULL) {
         return;
     }

@@ -508,13 +508,6 @@ void ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(
                                          logicalEvidence);
 
     if (!conditionValue && bodyNode != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(
-                state,
-                analyzer,
-                ZR_DIAGNOSTIC_WARNING,
-                bodyNode->location,
-                "Loop body is statically unreachable because the condition is false",
-                "unreachable_loop_body");
         semantic_control_record_unreachable_fact(analyzer,
                                                  bodyNode,
                                                  ZR_SEMANTIC_REACHABILITY_CONDITION_FALSE,

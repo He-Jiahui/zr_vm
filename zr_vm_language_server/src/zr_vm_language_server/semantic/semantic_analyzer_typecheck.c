@@ -222,12 +222,6 @@ static void semantic_record_constant_if_condition_facts(SZrState *state,
                                  conditionValue,
                                  conditionEvidence != ZR_NULL ? conditionEvidence : unreachableBranch);
     if (unreachableBranch != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                        analyzer,
-                                                        ZR_DIAGNOSTIC_WARNING,
-                                                        unreachableBranch->location,
-                                                        "Branch is statically unreachable",
-                                                        "unreachable_branch");
         semantic_record_reachability_fact(analyzer,
                                           unreachableBranch,
                                           ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH,
@@ -2450,12 +2444,6 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                         &leftEvidence) &&
                 ((semantic_text_equals(node->data.logicalExpression.op, "||") && leftValue) ||
                  (semantic_text_equals(node->data.logicalExpression.op, "&&") && !leftValue))) {
-                ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                                analyzer,
-                                                                ZR_DIAGNOSTIC_WARNING,
-                                                                right->location,
-                                                                "Right-hand branch is unreachable due to deterministic short-circuit",
-                                                                "short_circuit_unreachable");
                 semantic_record_logical_fact(analyzer,
                                              node,
                                              ZR_SEMANTIC_LOGICAL_FACT_SHORT_CIRCUIT,
@@ -2464,7 +2452,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                              right);
                 semantic_record_reachability_fact_at_range(analyzer,
                                                            right,
-                                                           node->location,
+                                                           right->location,
                                                            ZR_SEMANTIC_REACHABILITY_SHORT_CIRCUIT,
                                                            leftEvidence != ZR_NULL ? leftEvidence : left);
             }
@@ -2600,12 +2588,6 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                 for (TZrSize i = 0; i < block->body->count; i++) {
                     if (block->body->nodes[i] != ZR_NULL) {
                         if (terminated) {
-                            ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                                            analyzer,
-                                                                            ZR_DIAGNOSTIC_WARNING,
-                                                                            block->body->nodes[i]->location,
-                                                                            "Statement is unreachable",
-                                                                            "unreachable_code");
                             semantic_record_reachability_fact(
                                     analyzer,
                                     block->body->nodes[i],

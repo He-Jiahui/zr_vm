@@ -382,10 +382,11 @@ static void test_local_query_marks_exhaustive_union_switch_default_unreachable(S
 
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
-        !lsp_diagnostics_contain_code(&diagnostics, "unreachable_union_switch_default")) {
+        !lsp_diagnostics_contain_code(&diagnostics, "unreachable_code") ||
+        lsp_diagnostics_contain_code(&diagnostics, "unreachable_union_switch_default")) {
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, summary, "Expected exhaustive union default warning diagnostic");
+        TEST_FAIL(timer, summary, "Expected only the canonical exhaustive union default warning diagnostic");
         return;
     }
     ZrCore_Array_Free(state, &diagnostics);

@@ -1102,6 +1102,37 @@ static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
     free(support);
 }
 
+static void test_reachability_diagnostics_use_semantic_query_projection(void) {
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+    char *reachability = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_reachability.c");
+    char *unionPatterns = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c");
+
+    if (typecheck == NULL || reachability == NULL || unionPatterns == NULL) {
+        printf("FAIL: could not read semantic analyzer reachability sources\n");
+        g_failures++;
+        free(typecheck);
+        free(reachability);
+        free(unionPatterns);
+        return;
+    }
+
+    assert_text_contains(typecheck, "semantic_record_reachability_fact");
+    assert_text_contains(reachability, "semantic_control_record_unreachable_fact");
+    assert_text_contains(unionPatterns, "ZrParser_SemanticFacts_AppendReachability");
+    assert_text_contains_none(typecheck, "\"unreachable_branch\"");
+    assert_text_contains_none(typecheck, "\"short_circuit_unreachable\"");
+    assert_text_contains_none(typecheck, "\"unreachable_code\"");
+    assert_text_contains_none(reachability, "\"unreachable_loop_body\"");
+    assert_text_contains_none(unionPatterns, "\"unreachable_union_switch_default\"");
+
+    free(typecheck);
+    free(reachability);
+    free(unionPatterns);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1147,6 +1178,7 @@ int main(void) {
     test_stdio_position_encoding_uses_content_snapshot();
     test_wasm_diagnostics_use_canonical_projection();
     test_type_mismatch_diagnostics_use_compiler_query_projection();
+    test_reachability_diagnostics_use_semantic_query_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1193,6 +1225,7 @@ int main(void) {
     printf("PASS: stdio position encoding uses content snapshot\n");
     printf("PASS: WASM diagnostics use canonical projection\n");
     printf("PASS: Type mismatch diagnostics use compiler query projection\n");
+    printf("PASS: Reachability diagnostics use semantic query projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

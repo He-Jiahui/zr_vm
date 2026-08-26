@@ -3300,9 +3300,10 @@ static void test_semantic_analyzer_warns_on_unreachable_if_branches(SZrState *st
             return;
         }
 
-        deadElseDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_branch", 4);
-        deadThenDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_branch", 7);
-        if (count_diagnostics_with_code(analyzer, "unreachable_branch") < 2 ||
+        deadElseDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_code", 4);
+        deadThenDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_code", 7);
+        if (count_diagnostics_with_code(analyzer, "unreachable_code") < 2 ||
+            count_diagnostics_with_code(analyzer, "unreachable_branch") != 0 ||
             deadElseDiag == ZR_NULL ||
             deadThenDiag == ZR_NULL ||
             deadElseDiag->severity != ZR_DIAGNOSTIC_WARNING ||
@@ -3365,9 +3366,10 @@ static void test_semantic_analyzer_warns_on_deterministic_short_circuit_branches
             return;
         }
 
-        orDiag = find_diagnostic_by_code_and_line(analyzer, "short_circuit_unreachable", 2);
-        andDiag = find_diagnostic_by_code_and_line(analyzer, "short_circuit_unreachable", 3);
-        if (count_diagnostics_with_code(analyzer, "short_circuit_unreachable") < 2 ||
+        orDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_code", 2);
+        andDiag = find_diagnostic_by_code_and_line(analyzer, "unreachable_code", 3);
+        if (count_diagnostics_with_code(analyzer, "unreachable_code") < 2 ||
+            count_diagnostics_with_code(analyzer, "short_circuit_unreachable") != 0 ||
             orDiag == ZR_NULL ||
             andDiag == ZR_NULL ||
             orDiag->severity != ZR_DIAGNOSTIC_WARNING ||
