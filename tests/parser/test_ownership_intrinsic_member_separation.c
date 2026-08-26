@@ -8,6 +8,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/io.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
@@ -1641,6 +1642,7 @@ static void test_live_weak_supports_repeated_direct_method_calls(void) {
 }
 
 #include "test_ownership_optional_callable_cases.h"
+#include "test_ownership_artifact_roundtrip_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -1680,5 +1682,6 @@ int main(void) {
     RUN_TEST(test_live_weak_missing_member_is_not_null_reference_error);
     RUN_TEST(test_live_weak_supports_repeated_direct_method_calls);
     RUN_TEST(test_nullable_callable_optional_and_direct_call_contracts);
+    RUN_TEST(test_ownership_guard_binary_roundtrip_preserves_execution_projection);
     return UNITY_END();
 }

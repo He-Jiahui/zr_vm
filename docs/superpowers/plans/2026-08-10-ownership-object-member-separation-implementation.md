@@ -414,6 +414,12 @@ named exception when null. Optional guards use existing `JUMP_IF_NULL`. Map both
 through typed metadata, optimizer, quickening/control-flow metadata, SemIR,
 writer, and artifact round trips.
 
+The artifact boundary is the lowered executable projection: opcode and jump
+identity, merge/result slots, typed-binding TypeId/PlaceId, serialized TypeRefs,
+exception tables, and cleanup/reset instructions. Do not serialize borrowed AST
+pointers or the currently invalid (`0`) intrinsic LoanId merely to mirror the
+source fact layout.
+
 - [x] **Step 3: Lower one guard over the dominated suffix**
 
 `compile_expression_receiver_guard.c` consumes `ReceiverGuardFact`. For Weak it
@@ -491,7 +497,10 @@ source compatibility branches.
 - [x] **Step 3: Run ownership, artifact, writer, and focused suites**
 
 Confirm opcode numbers remain stable, textual artifacts use only canonical
-names, and runtime ownership behavior is unchanged before committing.
+names, and runtime ownership behavior is unchanged before committing. The
+binary round-trip case must execute the source and reloaded functions, compare
+their complete recursive ExecBC/SemIR projections, and cover both Weak optional
+short-circuiting and direct `NullReferenceError`.
 
 - [x] **Step 4: Commit runtime convergence**
 
@@ -751,6 +760,23 @@ Audit every completion criterion in the design spec against current source,
 tests, artifact output, and command evidence. Run `git diff --check`, inspect
 every changed file, confirm no compatibility aliases/branches remain, and ensure
 no unrelated dirty LSP/REPL paths are staged.
+
+Pre-final review on 2026-08-26 removed the last named source-level DETACH
+identity and three unused helper APIs, found and fixed a successful optional-
+chain hidden-owner lifetime leak, then found and closed raw historical id `8`
+acceptance in type inference and semantic-fact publication. GCC, Clang, and
+MSVC pass the expanded 32-case ownership runner, 123 type-inference cases, and
+14 semantic-fact cases. Keep this checkbox open until the final registered CTest
+graph is re-enumerated and passes in full, along with the generated artifact
+pair, migration inventory, and final diff review on the stable integrated
+baseline.
+
+The artifact-contract audit added a recursive `.zro` execution-projection
+round trip. Current GCC directly passes 37/37: the reloaded graph preserves
+ExecBC, SemIR, TypeRef, typed-binding TypeId/PlaceId, exception-table, and child-
+function data, and produces the same Weak optional/direct result. This remains
+focused pre-acceptance evidence until Clang/MSVC and the full graph replay on the
+post-L8 stable baseline.
 
 - [ ] **Step 6: Remove generated build products and logs requested by the user**
 

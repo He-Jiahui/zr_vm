@@ -1,6 +1,7 @@
 # Ownership Intrinsics And Object Member Separation Design
 
-**Status:** Design decisions confirmed on 2026-08-10; written review is required before implementation planning.
+**Status:** Implementation complete; final integrated acceptance is pending the
+stable three-toolchain replay, generated-artifact verification, and cleanup.
 
 ## Scope
 
@@ -338,10 +339,16 @@ and AOT lowering consume the same guard and cleanup facts. The success block
 then uses normal member/property/call operations; `GET_MEMBER`, `META_GET`, and
 `FUNCTION_CALL` never inspect ownership operation names.
 
-Artifact round trips must preserve intrinsic operation, guard kind and mode,
-chain bounds, result lift, TypeRef/PlaceId/LoanId identities, exception effects,
-and cleanup edges. Readers reject incomplete or unknown facts instead of
-reconstructing behavior from syntax text.
+Artifact round trips preserve the canonical executable projection, not the
+compiler's AST-backed fact objects. The projection contains intrinsic opcodes,
+Weak wake versus nullable copy, direct `REQUIRE_NON_NULL` versus optional
+`JUMP_IF_NULL`, patched chain bounds, merge-slot result lifting, serialized
+TypeRefs and typed-binding TypeId/PlaceId identities, exception tables, and
+cleanup/reset instructions. The five intrinsic facts currently carry no live
+loan (`loanId == 0`); a compiler-local LoanId must not be copied into an
+artifact without a runtime consumer and a stable artifact identity model.
+Readers and backends consume only this structured projection and never
+reconstruct ownership behavior from syntax text.
 
 ## Runtime Exception Model
 
@@ -482,8 +489,10 @@ TypeRef/Place/Loan model and explicit VM/AOT fact pipeline.
   member-name classification.
 - Interpreter, AOT C, and LLVM produce the same value, side-effect order,
   cleanup, and exception prototype.
-- Artifact serialize/read/execute round trips preserve operation IDs, chain
-  bounds, TypeRef/PlaceId/LoanId, cleanup edges, and exception effects.
+- Artifact serialize/read/execute round trips preserve operation IDs, guarded
+  control-flow bounds, result slots, TypeRefs, typed-binding TypeId/PlaceId,
+  cleanup instructions, and exception tables. Source-only AST pointers and the
+  currently invalid intrinsic LoanId are deliberately not serialized.
 - Old source forms have no lowering entry after migration; any preserved numeric
   artifact IDs do not re-enable old syntax.
 

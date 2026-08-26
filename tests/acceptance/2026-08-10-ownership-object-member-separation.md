@@ -326,14 +326,219 @@ Splitting those switch tables or the cohesive ownership contract runner solely
 around deleted lines would weaken the responsibility boundary, so no structural
 split is included in this removal slice.
 
+## 2026-08-25 current-source identity cleanup pre-acceptance
+
+At main `ea7684a`, the final current-source compatibility residue was reproduced
+with a focused RED: raw historical ownership builtin value `8` was still
+accepted by two public qualifier helpers even though compiler lowering already
+failed closed. Call-site review then proved both qualifier helpers have no
+production consumers and preserve a second, internally inconsistent ownership
+rule table. The narrow cleanup therefore removes the named DETACH enum member,
+both unused qualifier-helper APIs, and the unused ownership-member error-message
+API rather than repairing another compatibility surface. Explicit `INTO_GC=9`
+and `RETURN_LOAN=10` identities remain stable. The legacy `OWN_DETACH` and
+`OWN_RETURN_TO_GC` instruction, SemIR, artifact-reader, runtime, and AOT paths
+remain intentionally available for old artifacts; no current source producer
+selects them.
+
+The retained WSL GCC 11.4 static Debug cache rebuilt the complete focused target
+dependency graph (`612/612`) and linked successfully. Direct execution returned
+exit zero with:
+
+```text
+ownership intrinsic/member separation       30/30
+```
+
+The retained WSL Clang 14 static Debug cache then rebuilt its affected parser,
+runtime, AOT C, LLVM, and test graph (`377/377`) and linked successfully. Five
+overlapping/current files were SHA-256 fenced before and after the build:
+`type_system.h/.c`, `type_inference_call_semantic_facts.c`, `ast.h`, and the
+focused test source all remained byte-identical. Direct Clang execution also
+returned exit zero with `30 Tests / 0 Failures / 0 Ignored`.
+
+A fresh short-path MSVC 19.44.35228 static Debug cache at `E:\zrb\odf` then
+configured and built the complete focused dependency graph (`636` Ninja
+actions) through core, parser, AOT C, LLVM, system exceptions, libraries, and
+the test executable. The same five-file SHA-256 fence remained byte-identical
+across the build. Direct Windows execution returned exit zero with
+`30 Tests / 0 Failures / 0 Ignored`.
+
+The requirement review then extended the existing named-error runtime case to
+cover both absent receiver domains: an expired `Weak<T>` still throws
+`NullReferenceError` through direct member-call syntax, and `wake(weak)` first
+materializes an absent `Shared<T>?` whose direct member call throws the same
+named error. The short-path MSVC cache rebuilt the affected parser/test graph;
+the four-file `ast.h`, `type_system.h/.c`, and focused-test SHA-256 fence stayed
+unchanged throughout, and direct execution remained 30/30 with exit zero. This
+is a worktree precheck; GCC/Clang and final stable-HEAD replay remain required.
+
+`ctest -N` on that configured precheck graph reported 134 registered tests, not
+the 133 from the earlier `0a46151` baseline. Subsequent concurrent work can add
+targets, so the final three-toolchain matrix must re-enumerate and execute the
+complete stable-HEAD graph rather than reuse either earlier count as completion
+evidence.
+
+Requirement-by-requirement review also found a normal-success lifetime defect
+that the method-call and exceptional-unwind cases did not cover. A minimal
+project probe against the latest available precheck CLI executed
+`weak?.child.value`, released the explicit Shared owner, and then called
+`wake(weak)`. The member value was correct, but the probe returned branch code
+`42` because the Weak target remained live; the direct `weak.child.value`
+control returned `1` and released correctly. The optional lowering success path
+copied the suffix result into its merge slot but reset `guardedSlot` only on the
+null branch. The focused regression now requires the post-chain wake to return
+null, and `compiler_receiver_guard_finish` resets a distinct guarded slot after
+the successful result copy. The regression is a separate thirty-first focused
+case, so the prior 30/30 evidence did not cover it.
+
+Commit `e2881bf` (`fix(semantics): complete ownership member cutover`) contains
+the exact seven-path implementation, regression, module-contract, and language-
+specification slice. The retained static Debug caches rebuilt after that commit
+and directly executed the focused runner with real exit code zero:
+
+```text
+                                      GCC 11.4   Clang 14   MSVC 19.44
+ownership intrinsic/member separation    31/31      31/31       31/31
+```
+
+The three runs prove both the direct nullable `NullReferenceError` addition and
+the normal-success hidden-owner release case. The intentionally injected raw
+builtin id `8` still prints its expected compile failure, but the Unity process
+summary is `31 Tests / 0 Failures / 0 Ignored` on every toolchain.
+
+The retained injected-AST regression requires raw id `8` to fail compiler
+lowering, while numeric assertions preserve `INTO_GC=9` and `RETURN_LOAN=10`.
+Static review found zero production consumers for the deleted qualifier/helper
+APIs, zero current-source matches for the removed DETACH identity, zero
+matches for the removed ownership-semantic member selector
+`ZrParser_OwnershipMemberNameToBuiltinKind`, and zero production parser
+branches for the removed percent-prefixed source forms. The retained
+post-lookup migration diagnostic recognizes a removed spelling only after a
+real member lookup fails; it publishes a safe edit and never selects ownership
+typing or lowering. The canonical Syntax leaf selector again reported
+`TOTAL=55 COMPLETE=55 MISSING_STATUS=0 MISSING_TIME=0`.
+
+The subsequent code review found that raw historical builtin id `8` still
+passed construct-expression type inference: the unknown enum produced no
+operand-error message, fell through to qualifier `NONE`, and published an
+`UNKNOWN` ownership fact before compiler lowering rejected it. A dedicated TDD
+case first reproduced `32 Tests / 1 Failure / 0 Ignored` with `Expected FALSE
+Was TRUE`. Commit `7d4029d` (`fix(semantics): reject removed ownership builtin
+ids`) validates allowed construct ownership kinds before operand inference;
+raw id `8` and the internal `RETURN_LOAN` cleanup identity now fail before
+result rewriting or fact publication.
+
+The focused support-first matrix then rebuilt and directly executed on all
+three toolchains with real exit code zero:
+
+```text
+                                      GCC 11.4   Clang 14   MSVC 19.44
+ownership intrinsic/member separation    32/32      32/32       32/32
+type inference                           123/123    123/123     123/123
+semantic facts                            14/14      14/14       14/14
+```
+
+The 4,000-plus-line inference core was not split for this narrow validation:
+the change adds no new responsibility and belongs at the existing construct-
+inference boundary; extracting only a local enum guard would increase
+indirection without reducing that file's established inference scope.
+
+This remains pre-acceptance evidence only. The ownership cleanup is committed
+and `type_system.h/.c` are released, but unrelated L8 and AOT work still changes
+the shared parser baseline. Full CTest, CLI, artifact regeneration, and final
+status promotion must use the stable integrated baseline.
+
+On 2026-08-26, the current Windows shared-library graph was independently
+checked against two reported unresolved-external failures. Existing CMake
+already links the debug expression diagnostics target to the debug library and
+routes the LSP interface target through the language-server link helper. A fresh
+MSVC 19.44 short-path cache linked both targets and direct execution returned
+zero: debug expression diagnostics passed 56/56 and the full LSP interface
+runner reported no failures. No duplicate or compensating CMake link edit was
+made.
+
+After the source type-hierarchy relation work was integrated at `3a36ddf`, the
+two ownership-focused runners were rebuilt again on GCC 11.4, Clang 14, and
+MSVC 19.44. A thirteen-file SHA-256 fence covered both test sources and the
+shared compiler, relation, type-system, and native-inference inputs; every hash
+was identical before and after the builds. The retained GCC cache initially
+linked an old `semantic_relations.c.o` that did not export the newly integrated
+relation publisher. `nm` distinguished that stale object from the Clang object,
+which did export it. Removing only the stale GCC object and letting Ninja
+rebuild it closed the cache issue without a source change. Direct execution on
+all three toolchains then returned zero:
+
+```text
+                                      GCC 11.4   Clang 14   MSVC 19.44
+ownership intrinsic/member separation    32/32      32/32       32/32
+owner/borrow receiver guards                7/7        7/7         7/7
+```
+
+The seven-case receiver suite includes the negative method- and property-ref
+escape checks for a temporary Weak wake owner. This is fresh focused evidence
+on the current committed relation baseline, but the reserved L8 external
+callable-value paths still require integration before the final full graph can
+be accepted.
+
+Four subsequent requirement gaps were closed with test-only exact commits.
+`56ea4b5` adds a computed-index suffix case: a live
+`weak?.values[bump()]` evaluates `bump` exactly once, while an expired target
+returns null without evaluating the index. `abc681d` proves that the receiver
+expression itself is evaluated exactly once for both live and expired optional
+chains. `80f0476` proves that a live optional property access enters its
+throwing getter and catch path, while an expired receiver returns null without
+invoking the getter. `71b914e` executes a canonical nullable callable through
+`?.(params)`: the live path evaluates its argument once, the absent optional
+path skips the argument and returns null, and the absent direct call raises
+catchable `NullReferenceError` before argument evaluation. Direct GCC execution
+passes the expanded ownership runner with `36 Tests / 0 Failures / 0 Ignored`
+and exit zero. These additions are not yet three-toolchain evidence; Clang,
+MSVC, and the full registered graph remain part of the final stable-baseline
+replay.
+
+The artifact requirement was then reviewed against the real `.zro` writer and
+reader. `SZrOwnershipIntrinsicFact` and `SZrReceiverGuardFact` are AST-backed
+compiler facts and are not artifact records. Their canonical executable
+projection is serialized instead: ownership/guard opcodes, patched jump bounds,
+merge/reset slots, SemIR TypeRefs and effects, typed-binding TypeId/PlaceId,
+exception tables, and cleanup instructions. The current five intrinsic facts
+always publish `loanId == 0`, so serializing that compiler-local placeholder
+would add no consumer-visible contract.
+
+A new modular round-trip case compiles and executes live and expired Weak
+member paths, writes `.zro`, reloads the complete function graph, compares the
+recursive ExecBC, SemIR, TypeRef, TypeId/PlaceId, exception-table, and child-
+function projection, then executes the imported graph. Both source and imported
+functions return `2`; the optional path retains/skips correctly and the direct
+expired path catches `NullReferenceError`. Current GCC directly reports
+`37 Tests / 0 Failures / 0 Ignored` with exit zero. The initial test runs also
+locked two writer contracts: zero-length tables are valid, and non-struct
+`staticCTypeId` is normalized to
+`ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE` during serialization.
+
+### Pre-final completion-criteria audit
+
+| Design criterion | Current evidence | Gate state |
+| --- | --- | --- |
+| Ownership control has only the five intrinsic source calls | Dedicated intrinsic AST/facts and focused parse/type/lower tests; production percent branches and ownership-lowering member selector searches are empty | Implemented; final matrix pending |
+| `.` and `?.` always perform target access | Same-name object/module member regressions use ordinary member lowering; the post-failed-lookup migration diagnostic cannot select ownership semantics | Implemented; final matrix pending |
+| Direct absent nullable/Weak access throws `NullReferenceError` | Direct weak runtime case verifies the named error; live missing-member regression preserves its distinct error | Implemented; final matrix pending |
+| Optional absence skips the complete suffix and returns null or a void no-op | Optional member/call, nullable callable, argument-side-effect, computed-index, receiver single-evaluation, getter-skip, nullable-lift, and void-noop focused cases pass | GCC 37/37; final Clang/MSVC matrix pending |
+| A Weak chain wakes once, retains the hidden Shared owner through the suffix, and releases it afterward | Deep-chain, suffix-throw cleanup, repeated-call, native-GC-pressure, and performance cases pass; the live-success field-chain regression requires the post-chain Weak target to expire | GCC/Clang/MSVC 32/32 and current GCC 36/36; full matrix pending |
+| Intrinsic and guard facts drive VM and AOT backends | Semantic-fact, SemIR, interpreter, AOT C, LLVM, artifact-reader, and cleanup regressions exist; recursive `.zro` comparison proves the lowered execution projection rather than serializing AST-backed facts | GCC 37/37; final integrated replay pending |
+| Intrinsic spellings remain legal member names | The focused collision case executes members named `share`, `degrade`, `wake`, `intoGc`, and `drop` through normal dispatch | Implemented; final matrix pending |
+| Old source syntax and string compatibility routes are removed | Production searches are empty; migration cases require canonical receiver facts and structured fixes | Implemented; final inventory pending |
+| Artifacts, LSP, docs, tests, and status describe one language | Source/docs/tests are current, but `async_native.zri` contains `wakeView` while its tracked `.zro` still contains historical `upgraded` strings | Not complete: regenerate pair and replay consumers |
+| Evidence is fresh on GCC, Clang, and MSVC | GCC, Clang, and MSVC directly pass the 32-case ownership runner plus 123 type-inference and 14 semantic-fact cases; GCC alone currently passes the four newer optional-access cases plus artifact round trip | Focused partial at 37/37; full integrated replay pending |
+
 ## Pending final acceptance
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
   baseline `0a46151` each passed all 133 registered CTests with zero failures.
   The three CLI smokes printed `hello world` and exited zero. This closes the
   earlier stdio/document-sync and MSVC project-pressure failures, but it
-  predates the still-unreleased L8 external callable-value parser overlay and
-  therefore is not yet the final stable-HEAD replay.
+  predates the current L8 callable-value support and therefore is not yet the
+  final stable-HEAD replay.
 - The migration-inventory protocol currently passes 9/10. Its only failure is
   the intentionally stale repository golden; regeneration is deferred until the
   concurrent tracked LSP overlay is exact-committed so no intermediate state is
