@@ -16,6 +16,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_ir.h"
+#include "zr_vm_parser/syntax_contract.h"
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/writer.h"
 
@@ -1483,45 +1484,6 @@ static void test_weak_optional_guard_skips_property_getter(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
-static void test_weak_member_optional_callable_chain_skips_arguments(void) {
-    const TZrChar *source =
-            "resource class Service {\n"
-            "    pub const fn add(value: int): int { return value + 10; }\n"
-            "}\n"
-            "var sideEffects = 0;\n"
-            "fn bump(): int { sideEffects = sideEffects + 1; return 1; }\n"
-            "fn run(): int {\n"
-            "    var liveSeed = own Service();\n"
-            "    var liveShared = share(liveSeed);\n"
-            "    var liveWeak = degrade(liveShared);\n"
-            "    var liveResult = liveWeak?.add?.(bump());\n"
-            "    var expiredSeed = own Service();\n"
-            "    var expiredShared = share(expiredSeed);\n"
-            "    var expiredWeak = degrade(expiredShared);\n"
-            "    drop(expiredShared);\n"
-            "    var optionalResult = expiredWeak?.add?.(bump());\n"
-            "    if (liveResult != 11) { return 41; }\n"
-            "    if (optionalResult == null) {\n"
-            "        if (sideEffects == 1) { return 1; }\n"
-            "        return 43;\n"
-            "    }\n"
-            "    return 42;\n"
-            "}\n"
-            "return run();\n";
-    SZrString *sourceName = ZrCore_String_CreateFromNative(
-            g_state, "nullable_callable_optional_call.zr");
-    SZrFunction *function = ZrParser_Source_Compile(
-            g_state, source, strlen(source), sourceName);
-    TZrInt64 result = 0;
-
-    TEST_ASSERT_NOT_NULL(function);
-    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
-            g_state, function, &result));
-    TEST_ASSERT_EQUAL_INT64(1, result);
-
-    ZrCore_Function_Free(g_state, function);
-}
-
 static void test_live_weak_optional_chain_survives_native_gc_pressure(void) {
     const TZrChar *source =
             "resource class Service {\n"
@@ -1677,11 +1639,13 @@ int main(void) {
     RUN_TEST(test_weak_optional_guard_skips_computed_index_suffix);
     RUN_TEST(test_weak_optional_receiver_expression_runs_once);
     RUN_TEST(test_weak_optional_guard_skips_property_getter);
-    RUN_TEST(test_weak_member_optional_callable_chain_skips_arguments);
     RUN_TEST(test_live_weak_optional_chain_survives_native_gc_pressure);
     RUN_TEST(test_live_weak_missing_member_is_not_null_reference_error);
     RUN_TEST(test_live_weak_supports_repeated_direct_method_calls);
-    RUN_TEST(test_nullable_callable_optional_and_direct_call_contracts);
+    RUN_TEST(test_const_meta_call_publishes_readonly_receiver_effect);
+    RUN_TEST(test_static_const_meta_call_is_rejected);
+    RUN_TEST(test_const_meta_call_rejects_receiver_mutation);
+    RUN_TEST(test_weak_callable_optional_and_direct_call_contracts);
     RUN_TEST(test_ownership_guard_binary_roundtrip_preserves_execution_projection);
     return UNITY_END();
 }

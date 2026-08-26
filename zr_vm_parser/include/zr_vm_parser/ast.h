@@ -835,6 +835,7 @@ typedef struct SZrClassProperty {
 typedef struct SZrClassMetaFunction {
     EZrAccessModifier access;
     TZrBool isStatic;
+    EZrMethodReceiverModifier receiverModifier;
     TZrUInt32 modifierFlags;
     SZrIdentifier *meta; // MetaIdentifier
     SZrAstNodeArray *params; // Parameter 数组

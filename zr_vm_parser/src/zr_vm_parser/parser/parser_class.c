@@ -37,9 +37,13 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
         kind = ZR_AST_CLASS_FIELD;
     } else if (ps->lexer->t.token == ZR_TK_CONST) {
         ZrParser_Lexer_Next(ps->lexer);
-        kind = ps->lexer->t.token == ZR_TK_FN
-                       ? ZR_AST_CLASS_METHOD
-                       : ZR_AST_CLASS_FIELD;
+        if (ps->lexer->t.token == ZR_TK_AT) {
+            kind = ZR_AST_CLASS_META_FUNCTION;
+        } else {
+            kind = ps->lexer->t.token == ZR_TK_FN
+                           ? ZR_AST_CLASS_METHOD
+                           : ZR_AST_CLASS_FIELD;
+        }
     } else if (ps->lexer->t.token == ZR_TK_GET || ps->lexer->t.token == ZR_TK_SET) {
         kind = ZR_AST_CLASS_PROPERTY;
     } else if (ps->lexer->t.token == ZR_TK_AT) {
@@ -780,6 +784,7 @@ SZrAstNode *parse_class_property(SZrParserState *ps) {
 SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
+    EZrMethodReceiverModifier receiverModifier = ZR_METHOD_RECEIVER_DEFAULT;
 
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
@@ -792,6 +797,16 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     }
 
     modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
+
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        receiverModifier = ZR_METHOD_RECEIVER_CONST;
+        ZrParser_Lexer_Next(ps->lexer);
+        if (isStatic) {
+            report_error(
+                    ps,
+                    "static const meta function is invalid because static functions have no receiver");
+        }
+    }
 
     // 期望 @ 符号
     expect_token(ps, ZR_TK_AT);
@@ -916,6 +931,7 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
 
     node->data.classMetaFunction.access = access;
     node->data.classMetaFunction.isStatic = isStatic;
+    node->data.classMetaFunction.receiverModifier = receiverModifier;
     node->data.classMetaFunction.modifierFlags = modifierFlags;
     node->data.classMetaFunction.meta = meta;
     node->data.classMetaFunction.params = params;

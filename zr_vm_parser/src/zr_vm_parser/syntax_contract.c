@@ -56,9 +56,12 @@ ZrParser_SyntaxCallable_ReceiverEffectFromDeclaration(
                            ? ZR_CANONICAL_RECEIVER_NONE
                            : ZR_CANONICAL_RECEIVER_MUTABLE;
         case ZR_AST_CLASS_META_FUNCTION:
-            return declaration->data.classMetaFunction.isStatic
-                           ? ZR_CANONICAL_RECEIVER_NONE
-                           : ZR_CANONICAL_RECEIVER_MUTABLE;
+            if (declaration->data.classMetaFunction.isStatic) {
+                return ZR_CANONICAL_RECEIVER_NONE;
+            }
+            return syntax_callable_receiver_effect_from_contract(
+                    declaration->data.classMetaFunction.receiverModifier,
+                    ZR_OWNERSHIP_QUALIFIER_NONE);
         case ZR_AST_INTERFACE_META_SIGNATURE:
             return ZR_CANONICAL_RECEIVER_MUTABLE;
         default:

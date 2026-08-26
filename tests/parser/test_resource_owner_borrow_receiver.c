@@ -79,7 +79,7 @@ static const TZrChar *counter_resource_declaration(void) {
             "  pub @constructor(value: int) { this.value = value; }\n"
             "  pub const fn read(): int { return this.value; }\n"
             "  pub fn write(next: int): int { this.value = next; return this.value; }\n"
-            "  pub fn borrowValue(): ref int { return this.value; }\n"
+            "  pub const fn borrowValue(): ref readonly int { return this.value; }\n"
             "}\n";
 }
 
@@ -235,7 +235,7 @@ static void test_owner_ref_last_use_allows_later_move(void) {
 
 static void test_owner_ref_cannot_escape_its_owner(void) {
     SZrFunction *function = compile_counter_program(
-            "fn leak(): ref int {\n"
+            "fn leak(): ref readonly int {\n"
             "  var owner: Unique<Counter> = own Counter(1);\n"
             "  return owner.borrowValue();\n"
             "}\n",
@@ -288,9 +288,54 @@ static void test_weak_receiver_ref_results_cannot_escape_temporary_wake(void) {
             "  return ref weak.value;\n"
             "}\n",
             "resource_weak_ref_property_escape_rejected.zr");
+    SZrFunction *deepMemberResult = compile_source(
+            "resource class Leaf {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "  pub fn borrowValue(): ref int { return this.value; }\n"
+            "}\n"
+            "resource class Root {\n"
+            "  pub var child: Unique<Leaf>;\n"
+            "  pub @constructor() { this.child = own Leaf(1); }\n"
+            "}\n"
+            "fn leak(): ref int {\n"
+            "  var owner: Unique<Root> = own Root();\n"
+            "  var shared: Shared<Root> = share(owner);\n"
+            "  var weak: Weak<Root> = degrade(shared);\n"
+            "  return weak.child.borrowValue();\n"
+            "}\n",
+            "resource_weak_deep_ref_method_escape_rejected.zr");
 
     TEST_ASSERT_NULL(methodResult);
     TEST_ASSERT_NULL(propertyResult);
+    TEST_ASSERT_NULL(deepMemberResult);
+}
+
+static void test_weak_receiver_value_results_can_leave_temporary_wake(void) {
+    SZrFunction *function = compile_source(
+            "resource class Leaf {\n"
+            "  pub var value: int;\n"
+            "  pub @constructor(value: int) { this.value = value; }\n"
+            "}\n"
+            "resource class Root {\n"
+            "  pub var child: Unique<Leaf>;\n"
+            "  pub @constructor() { this.child = own Leaf(7); }\n"
+            "}\n"
+            "fn read(): int {\n"
+            "  var owner: Unique<Root> = own Root();\n"
+            "  var shared: Shared<Root> = share(owner);\n"
+            "  var weak: Weak<Root> = degrade(shared);\n"
+            "  return weak.child.value;\n"
+            "}\n"
+            "return read();\n",
+            "resource_weak_deep_value_return_allowed.zr");
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(7, result);
+    ZrCore_Function_Free(g_state, function);
 }
 
 int main(void) {
@@ -302,5 +347,6 @@ int main(void) {
     RUN_TEST(test_owner_ref_last_use_allows_later_move);
     RUN_TEST(test_owner_ref_cannot_escape_its_owner);
     RUN_TEST(test_weak_receiver_ref_results_cannot_escape_temporary_wake);
+    RUN_TEST(test_weak_receiver_value_results_can_leave_temporary_wake);
     return UNITY_END();
 }
