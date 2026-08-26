@@ -1640,6 +1640,8 @@ static void test_live_weak_supports_repeated_direct_method_calls(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+#include "test_ownership_optional_callable_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ownership_operation_ids_remain_stable);
@@ -1677,5 +1679,6 @@ int main(void) {
     RUN_TEST(test_live_weak_optional_chain_survives_native_gc_pressure);
     RUN_TEST(test_live_weak_missing_member_is_not_null_reference_error);
     RUN_TEST(test_live_weak_supports_repeated_direct_method_calls);
+    RUN_TEST(test_nullable_callable_optional_and_direct_call_contracts);
     return UNITY_END();
 }
