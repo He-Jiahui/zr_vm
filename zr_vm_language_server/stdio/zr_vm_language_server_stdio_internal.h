@@ -145,7 +145,6 @@ char *zr_string_to_c_string(SZrString *value);
 SZrString *server_get_cached_uri(SZrStdioServer *server, const char *uriText);
 void free_uri_cache(SZrUriCache *cache);
 void free_desynchronized_document_set(SZrDesynchronizedDocumentSet *set);
-void free_diagnostic_push_cache(SZrDiagnosticPushCache *cache);
 
 void send_json_message(cJSON *message);
 void send_result_response(const cJSON *id, cJSON *result);

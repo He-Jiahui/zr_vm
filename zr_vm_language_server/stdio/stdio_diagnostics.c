@@ -74,19 +74,6 @@ static TZrBool diagnostic_push_cache_store(SZrStdioServer *server,
     return ZR_TRUE;
 }
 
-void free_diagnostic_push_cache(SZrDiagnosticPushCache *cache) {
-    if (cache == ZR_NULL) {
-        return;
-    }
-    for (size_t index = 0U; index < cache->count; index++) {
-        free(cache->items[index].uriText);
-        cache->items[index].uriText = ZR_NULL;
-        cache->items[index].resultId[0] = '\0';
-    }
-    free(cache->items);
-    memset(cache, 0, sizeof(*cache));
-}
-
 void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     SZrArray diagnostics;
     cJSON *params;

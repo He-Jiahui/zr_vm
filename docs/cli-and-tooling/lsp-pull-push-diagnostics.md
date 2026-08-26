@@ -4,18 +4,22 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/diagnostics/lsp_diagnostic_store.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_language_server/stdio/stdio_diagnostics.c
+  - zr_vm_language_server/stdio/stdio_server.c
+  - zr_vm_language_server/stdio/zr_vm_language_server_stdio_internal.h
   - zr_vm_language_server/wasm/wasm_exports.cpp
   - zr_vm_language_server_extension/src/browser/worker/wasm-bridge.ts
   - zr_vm_language_server_extension/src/browser/worker/server-worker.ts
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/diagnostics/lsp_diagnostic_store.c
   - zr_vm_language_server/stdio/stdio_diagnostics.c
+  - zr_vm_language_server/stdio/stdio_server.c
   - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_language_server/wasm/wasm_exports.cpp
   - zr_vm_language_server_extension/src/browser/worker/server-worker.ts
 plan_sources:
   - docs/plans/lsp/optimize/02-snapshots-workspaces-and-diagnostics.md
 tests:
+  - tests/language_server/test_stdio_server_lifecycle.c
   - tests/language_server/stdio_diagnostics_generation_smoke.js
   - tests/language_server/stdio_smoke.js
   - zr_vm_language_server_extension/test/serverDiagnostics.test.js
@@ -63,6 +67,12 @@ suppressed only when both the canonical resultId and the open document version
 match. Pull requests do not populate this cache, so a pull response cannot
 prevent the first push for the same editor generation.
 
+The stdio server owns the push-cache lifetime. Diagnostic request handling owns
+lookup and mutation, while `stdio_server.c` performs cache destruction as part
+of server teardown. The destructor is file-local to the server so the focused
+lifecycle target can validate complete teardown without linking unrelated
+diagnostic protocol handlers.
+
 ## Browser Boundary
 
 The browser worker obtains both document and workspace reports from the WASM
@@ -78,4 +88,5 @@ stable unchanged reports, nonsemantic empty reports, unopened workspace source
 coverage, and dependency-driven importer identity changes. The general stdio
 smoke covers push/pull coexistence, latency, and process memory. Browser static
 coverage rejects a reintroduced TypeScript identity implementation and confirms
-the two WASM bridge calls.
+the two WASM bridge calls. `test_stdio_server_lifecycle.c` covers repeated and
+fault-injected server teardown, including release of the diagnostic push cache.

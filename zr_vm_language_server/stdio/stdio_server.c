@@ -56,6 +56,21 @@ static void stdio_server_free_semantic_token_cache(SZrSemanticTokenCache *cache)
     memset(cache, 0, sizeof(*cache));
 }
 
+static void stdio_server_free_diagnostic_push_cache(SZrDiagnosticPushCache *cache) {
+    size_t index;
+
+    if (cache == ZR_NULL) {
+        return;
+    }
+    for (index = 0U; index < cache->count; index++) {
+        free(cache->items[index].uriText);
+        cache->items[index].uriText = ZR_NULL;
+        cache->items[index].resultId[0] = '\0';
+    }
+    free(cache->items);
+    memset(cache, 0, sizeof(*cache));
+}
+
 SZrStdioServer *ZrLanguageServer_StdioServer_New(const SZrStdioServerOptions *options) {
     SZrStdioServer *server;
     SZrCallbackGlobal callbacks = {0};
@@ -133,7 +148,7 @@ void ZrLanguageServer_StdioServer_Free(SZrStdioServer *server) {
     free_desynchronized_document_set(&server->desynchronizedDocuments);
     free_uri_cache(&server->uriCache);
     stdio_server_free_semantic_token_cache(&server->semanticTokenCache);
-    free_diagnostic_push_cache(&server->diagnosticPushCache);
+    stdio_server_free_diagnostic_push_cache(&server->diagnosticPushCache);
     if (server->context != ZR_NULL && server->state != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(server->state, server->context);
     }
