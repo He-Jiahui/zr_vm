@@ -2999,7 +2999,7 @@ void test_intrinsic_ownership_generic_fields_serialize_owner_metadata(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("Intrinsic ownership generic field metadata",
-              "Testing that Unique<T>/Shared<T> fields serialize the same ownership metadata and teardown flags as legacy percent-qualified owner fields");
+              "Testing that canonical Unique<T>/Shared<T> fields serialize ownership metadata and teardown flags");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
