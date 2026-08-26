@@ -47,6 +47,9 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
 /* Publishes external import origins from existing source scope facts only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
         SZrSemanticContext *context);
+/* Publishes alias-to-type edges from existing visible alias facts only. */
+ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishAliasTargets(
+        SZrSemanticContext *context);
 /* Publishes a resolved source relation from stable canonical symbol identities only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishSymbolRelation(
         SZrSemanticContext *context,

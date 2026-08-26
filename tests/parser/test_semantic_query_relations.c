@@ -982,6 +982,67 @@ static void test_compiled_source_omits_synthesized_constructor_relation(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_compiled_type_value_alias_publishes_canonical_target_relation(void) {
+    const TZrChar *source =
+            "var MatrixType = int[][];\n"
+            "return 0;\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "semantic_relation_type_value_alias.zr");
+    SZrAstNode *ast;
+    SZrAstNode *declaration;
+    SZrCompilerState cs;
+    const SZrSemanticSymbolRecord *alias;
+    const SZrSemanticVisibleSymbolFact *visible;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    declaration = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, declaration->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    alias = relation_find_symbol_by_node(cs.semanticContext, declaration);
+    TEST_ASSERT_NOT_NULL(alias);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, alias->typeId);
+    visible = relation_find_visible_fact(cs.semanticContext, alias->id);
+    TEST_ASSERT_NOT_NULL(visible);
+    TEST_ASSERT_FALSE(visible->isImport);
+    TEST_ASSERT_TRUE(visible->isAlias);
+    TEST_ASSERT_TRUE(ZrParser_SemanticRelations_PublishAliasTargets(
+            cs.semanticContext));
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
+            cs.semanticContext, alias->id, ZR_NULL, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_ALIAS_TARGET, relation->kind);
+    TEST_ASSERT_EQUAL_UINT(alias->id, relation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, relation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->sourceTypeId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->targetTypeId);
+    TEST_ASSERT_TRUE(relation->hasSourceRange);
+    TEST_ASSERT_FALSE(relation->hasTargetRange);
+
+    ZrCore_Array_Free(g_state, &relations);
+    relation_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_compiled_import_publishes_external_origin_relation(void) {
     const TZrChar *source =
             "var {Vec3: Vector3} = import(\"zr.math\");\n"
@@ -995,7 +1056,8 @@ static void test_compiled_import_publishes_external_origin_relation(void) {
     const SZrSemanticSymbolRecord *alias;
     const SZrSemanticVisibleSymbolFact *visible;
     SZrArray relations;
-    const SZrParserSemanticRelationQuery *relation;
+    const SZrParserSemanticRelationQuery *aliasRelation;
+    const SZrParserSemanticRelationQuery *originRelation;
 
     TEST_ASSERT_NOT_NULL(sourceName);
     TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
@@ -1060,19 +1122,30 @@ static void test_compiled_import_publishes_external_origin_relation(void) {
     ZrCore_Array_Construct(&relations);
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
             cs.semanticContext, alias->id, ZR_NULL, &relations));
-    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
-    relation = relation_at(&relations, 0U);
-    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
+    aliasRelation = relation_at(&relations, 0U);
+    originRelation = relation_at(&relations, 1U);
+    TEST_ASSERT_NOT_NULL(aliasRelation);
+    TEST_ASSERT_NOT_NULL(originRelation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_ALIAS_TARGET,
+                          aliasRelation->kind);
+    TEST_ASSERT_EQUAL_UINT(alias->id, aliasRelation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID,
+                           aliasRelation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, aliasRelation->sourceTypeId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, aliasRelation->targetTypeId);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN,
-                          relation->kind);
-    TEST_ASSERT_EQUAL_UINT(alias->id, relation->sourceSymbolId);
-    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, relation->targetSymbolId);
-    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->sourceTypeId);
-    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->targetTypeId);
-    TEST_ASSERT_TRUE(relation->isExternal);
-    TEST_ASSERT_NOT_NULL(relation->externalOriginUri);
+                          originRelation->kind);
+    TEST_ASSERT_EQUAL_UINT(alias->id, originRelation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID,
+                           originRelation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, originRelation->sourceTypeId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, originRelation->targetTypeId);
+    TEST_ASSERT_TRUE(originRelation->isExternal);
+    TEST_ASSERT_NOT_NULL(originRelation->externalOriginUri);
     TEST_ASSERT_EQUAL_STRING(
-            "zr.math", ZrCore_String_GetNativeString(relation->externalOriginUri));
+            "zr.math",
+            ZrCore_String_GetNativeString(originRelation->externalOriginUri));
 
     ZrCore_Array_Free(g_state, &relations);
     relation_release_compiler_function(&cs);
@@ -1091,7 +1164,8 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
     SZrCompilerState cs;
     const SZrSemanticSymbolRecord *alias;
     SZrArray relations;
-    const SZrParserSemanticRelationQuery *relation;
+    const SZrParserSemanticRelationQuery *aliasRelation;
+    const SZrParserSemanticRelationQuery *originRelation;
 
     TEST_ASSERT_NOT_NULL(sourceName);
     TEST_ASSERT_TRUE(ZrVmLibMath_Register(g_state->global));
@@ -1116,17 +1190,26 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
     ZrCore_Array_Construct(&relations);
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_RelationsOfSymbol(
             cs.semanticContext, alias->id, ZR_NULL, &relations));
-    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
-    relation = relation_at(&relations, 0U);
-    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_EQUAL_UINT(2U, relations.length);
+    aliasRelation = relation_at(&relations, 0U);
+    originRelation = relation_at(&relations, 1U);
+    TEST_ASSERT_NOT_NULL(aliasRelation);
+    TEST_ASSERT_NOT_NULL(originRelation);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_ALIAS_TARGET,
+                          aliasRelation->kind);
+    TEST_ASSERT_EQUAL_UINT(alias->id, aliasRelation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID,
+                           aliasRelation->targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, aliasRelation->targetTypeId);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_RELATION_IMPORT_EXPORT_ORIGIN,
-                          relation->kind);
-    TEST_ASSERT_EQUAL_UINT(alias->id, relation->sourceSymbolId);
-    TEST_ASSERT_EQUAL_UINT(alias->typeId, relation->targetTypeId);
-    TEST_ASSERT_TRUE(relation->isExternal);
-    TEST_ASSERT_NOT_NULL(relation->externalOriginUri);
+                          originRelation->kind);
+    TEST_ASSERT_EQUAL_UINT(alias->id, originRelation->sourceSymbolId);
+    TEST_ASSERT_EQUAL_UINT(alias->typeId, originRelation->targetTypeId);
+    TEST_ASSERT_TRUE(originRelation->isExternal);
+    TEST_ASSERT_NOT_NULL(originRelation->externalOriginUri);
     TEST_ASSERT_EQUAL_STRING(
-            "zr.math", ZrCore_String_GetNativeString(relation->externalOriginUri));
+            "zr.math",
+            ZrCore_String_GetNativeString(originRelation->externalOriginUri));
 
     ZrCore_Array_Free(g_state, &relations);
     relation_release_compiler_function(&cs);
@@ -1149,6 +1232,7 @@ int main(void) {
     RUN_TEST(test_compiled_source_publishes_override_relation);
     RUN_TEST(test_compiled_source_publishes_explicit_constructor_relation);
     RUN_TEST(test_compiled_source_omits_synthesized_constructor_relation);
+    RUN_TEST(test_compiled_type_value_alias_publishes_canonical_target_relation);
     RUN_TEST(test_compiled_import_publishes_external_origin_relation);
     RUN_TEST(test_compiled_direct_import_publishes_external_origin_relation);
     return UNITY_END();

@@ -314,6 +314,18 @@ relation across snapshot replacement must copy stable ids, module identity
 text, URIs, and ranges into its own snapshot-owned data rather than retaining
 these pointers.
 
+Task 3.10 publishes `ZR_SEMANTIC_RELATION_ALIAS_TARGET` only from an existing
+`SZrSemanticVisibleSymbolFact` whose `isAlias` bit is set and whose exact
+SymbolId resolves to a registered semantic symbol. The edge uses that symbol's
+canonical TypeId as the alias target identity and its declaration range as the
+source range. When no exact target declaration SymbolId exists, the target
+SymbolId and target range remain unavailable; the producer never searches a
+same-name symbol, traverses an alias AST, parses display text, or treats an
+import URI as target identity. Import aliases retain a separate
+`IMPORT_EXPORT_ORIGIN` edge, so type identity and external origin provenance
+remain orthogonal. Re-publication is idempotent by source SymbolId and target
+TypeId.
+
 ## Call Edge Snapshot Foundation
 
 `SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph
