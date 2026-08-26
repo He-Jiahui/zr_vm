@@ -2,6 +2,22 @@
 
 #include <string.h>
 
+TZrBool ZrParser_StructuredDiagnostic_SetNoFixReason(
+        SZrStructuredDiagnostic *diagnostic,
+        EZrDiagnosticNoFixReason reason) {
+    if (diagnostic == ZR_NULL ||
+        reason <= ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED ||
+        reason > ZR_DIAGNOSTIC_NO_FIX_REASON_UNSAFE_EDIT ||
+        (diagnostic->fixes.isValid && diagnostic->fixes.length > 0U) ||
+        (diagnostic->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED &&
+         diagnostic->noFixReason != reason)) {
+        return ZR_FALSE;
+    }
+
+    diagnostic->noFixReason = reason;
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_StructuredDiagnostic_AddFix(
         SZrState *state,
         SZrStructuredDiagnostic *diagnostic,
@@ -11,7 +27,8 @@ TZrBool ZrParser_StructuredDiagnostic_AddFix(
         EZrDiagnosticFixApplicability applicability) {
     SZrStructuredDiagnosticFix fix;
 
-    if (state == ZR_NULL || diagnostic == ZR_NULL || title == ZR_NULL || editText == ZR_NULL) {
+    if (state == ZR_NULL || diagnostic == ZR_NULL || title == ZR_NULL || editText == ZR_NULL ||
+        diagnostic->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED) {
         return ZR_FALSE;
     }
 

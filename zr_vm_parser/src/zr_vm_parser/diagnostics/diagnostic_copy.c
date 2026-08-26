@@ -88,5 +88,11 @@ TZrBool ZrParser_StructuredDiagnostic_Copy(
             return ZR_FALSE;
         }
     }
+    if (source->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED &&
+        !ZrParser_StructuredDiagnostic_SetNoFixReason(
+                outDiagnostic, source->noFixReason)) {
+        ZrParser_StructuredDiagnostic_Free(state, outDiagnostic);
+        return ZR_FALSE;
+    }
     return ZR_TRUE;
 }

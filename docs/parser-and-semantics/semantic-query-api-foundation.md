@@ -604,6 +604,28 @@ documentation string to recover a missing identity. Hover, completion, and
 signature help therefore query documentation independently instead of
 extracting text from one another's display output.
 
+## Diagnostic Fix Disposition
+
+`SZrStructuredDiagnostic` owns the complete fix disposition for one semantic
+diagnostic. A producer either appends one or more typed
+`SZrStructuredDiagnosticFix` rows or sets a nonzero
+`EZrDiagnosticNoFixReason`; the two states are mutually exclusive. An empty
+fix array with an unspecified reason remains an incomplete producer result and
+must not be interpreted by an LSP consumer as an intentional no-fix decision.
+
+`ZrParser_StructuredDiagnostic_SetNoFixReason` accepts only a defined nonzero
+reason, is idempotent for the same reason, rejects a conflicting reason, and
+rejects diagnostics that already own a fix. `AddFix` rejects a diagnostic that
+already owns a no-fix reason. `ZrParser_StructuredDiagnostic_Copy` preserves
+the disposition through persistent semantic facts and the explicitly
+materialized query snapshot while reusing those invariants to reject an
+inconsistent source object.
+
+The reason is structured policy metadata, not display text. Parser/compiler
+producers select it from semantic circumstances; an LSP projection may expose
+or retain it as protocol data but must not infer it from a message, diagnostic
+code, source spelling, or the absence of edits.
+
 ## Limits And Next Steps
 
 Source struct/class/interface fields and methods, direct imports, destructured
@@ -638,4 +660,4 @@ which deliberately filters imports and aliases together; no query, LSP, or
 name-based module/member fallback is involved. Binary metadata and native
 descriptor aliases remain separate producers.
 
-The API does not yet expose local re-analysis, compiler frontend binary/external serialization of query diagnostics, or CFG loop reaching-definition fixed points. `VisibleSymbols` now consumes compiler-published source module/function/block facts for functions, parameters, locals, top-level types, source type/free-function generic parameters including const parameters, struct/class/interface method type-generic parameters, source type members, receiver members, direct imports, object-destructured imports, and type-value aliases. Binary `.zro` metadata still needs to carry canonical open generic callable declaration rows and publish equivalent symbol/visible facts; native descriptor call identity is now covered separately from native visibility. Documentation facts now have an exact SymbolId-keyed parser query surface, while source/binary/native documentation producers and LSP consumer migration remain pending. No LSP consumer has migrated in this slice. `DefinitionsOf` exposes the first multi-definition surface and deterministic same-source source-order ranking, but ranking remains local-symbol oriented rather than overload/member aware. LSP definition navigation and compiler-side semantic contexts now consume both linear and first-slice CFG-backed reaching definitions for local symbols. Definite-assignment diagnostics can consume explicit read states, the straight-line semantic-facts resolver, or the CFG-backed resolver for source reads across branch joins, declaration initializers, and cloned `finally` paths. Current diagnostic related information is limited to declaration locations for definite-assignment read diagnostics; fix-its, descriptor IDs, registry entries, ownership related locations, and type-mismatch related locations remain pending. Array index diagnostics still keep truly unknown and no-inferable-range indexes silent. Loop precision, remaining finally edge cases, local re-analysis, richer source mapping, and non-cache compiler diagnostic channels remain pending.
+The API does not yet expose local re-analysis, compiler frontend binary/external serialization of query diagnostics, or CFG loop reaching-definition fixed points. `VisibleSymbols` now consumes compiler-published source module/function/block facts for functions, parameters, locals, top-level types, source type/free-function generic parameters including const parameters, struct/class/interface method type-generic parameters, source type members, receiver members, direct imports, object-destructured imports, and type-value aliases. Binary `.zro` metadata still needs to carry canonical open generic callable declaration rows and publish equivalent symbol/visible facts; native descriptor call identity is now covered separately from native visibility. Documentation facts now have an exact SymbolId-keyed parser query surface, while source/binary/native documentation producers and LSP consumer migration remain pending. No LSP consumer has migrated in this slice. `DefinitionsOf` exposes the first multi-definition surface and deterministic same-source source-order ranking, but ranking remains local-symbol oriented rather than overload/member aware. LSP definition navigation and compiler-side semantic contexts now consume both linear and first-slice CFG-backed reaching definitions for local symbols. Definite-assignment diagnostics can consume explicit read states, the straight-line semantic-facts resolver, or the CFG-backed resolver for source reads across branch joins, declaration initializers, and cloned `finally` paths. Structured diagnostics now preserve an explicit typed no-fix reason as an alternative to machine edits, but existing producers have not all classified their no-fix cases and LSP golden parity remains pending. Current diagnostic related information is limited to declaration locations for definite-assignment read diagnostics; complete descriptor/registry coverage, ownership related locations, and type-mismatch related locations remain pending. Array index diagnostics still keep truly unknown and no-inferable-range indexes silent. Loop precision, remaining finally edge cases, local re-analysis, richer source mapping, and non-cache compiler diagnostic channels remain pending.

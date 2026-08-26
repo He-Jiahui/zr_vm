@@ -26,6 +26,14 @@ typedef enum EZrDiagnosticFixApplicability {
     ZR_DIAGNOSTIC_FIX_MAYBE_INCORRECT
 } EZrDiagnosticFixApplicability;
 
+typedef enum EZrDiagnosticNoFixReason {
+    ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED = 0,
+    ZR_DIAGNOSTIC_NO_FIX_REASON_NOT_APPLICABLE,
+    ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT,
+    ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+    ZR_DIAGNOSTIC_NO_FIX_REASON_UNSAFE_EDIT
+} EZrDiagnosticNoFixReason;
+
 typedef struct SZrStructuredDiagnosticFix {
     SZrString *title;
     SZrFileRange editRange;
@@ -43,6 +51,7 @@ typedef struct SZrStructuredDiagnostic {
     SZrArray relatedInformation;
     SZrArray fixes;
     TZrUInt32 descriptorId;
+    EZrDiagnosticNoFixReason noFixReason;
 } SZrStructuredDiagnostic;
 
 ZR_PARSER_API void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic);
@@ -62,6 +71,9 @@ ZR_PARSER_API TZrBool ZrParser_StructuredDiagnostic_AddFix(
         SZrFileRange editRange,
         const TZrChar *editText,
         EZrDiagnosticFixApplicability applicability);
+ZR_PARSER_API TZrBool ZrParser_StructuredDiagnostic_SetNoFixReason(
+        SZrStructuredDiagnostic *diagnostic,
+        EZrDiagnosticNoFixReason reason);
 
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,
                                                        SZrStructuredDiagnostic *out,
