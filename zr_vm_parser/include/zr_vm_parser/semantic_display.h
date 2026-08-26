@@ -8,6 +8,23 @@
  * Semantic display is snapshot-scoped. It formats only registered canonical
  * TypeId/SymbolId/property-contract identities and never resolves a spelling.
  */
+typedef struct SZrSemanticDocumentationFact {
+    TZrSymbolId symbolId;
+    SZrString *documentation;
+} SZrSemanticDocumentationFact;
+
+/*
+ * Documentation is copied into the semantic snapshot. Queries return a
+ * borrowed string that remains valid only for that snapshot generation.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticDocumentation_Publish(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        SZrString *documentation);
+ZR_PARSER_API SZrString *ZrParser_SemanticQuery_DocumentationOfSymbol(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId);
+
 ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatType(
         const SZrSemanticContext *context,
         TZrTypeId typeId,

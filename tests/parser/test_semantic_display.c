@@ -203,10 +203,74 @@ static void test_semantic_display_uses_matching_declaration_signature_fact(void)
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_documentation_projects_exact_symbol_fact(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *documentation;
+    TZrTypeId intType;
+    TZrSymbolId documentedSymbol;
+    TZrSymbolId sameNameSymbol;
+
+    TEST_ASSERT_NOT_NULL(context);
+    intType = ZrParser_CanonicalType_InternPrimitive(context, ZR_VALUE_TYPE_INT64);
+    documentedSymbol = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "measure"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            intType,
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_NULL,
+            display_range(40U));
+    sameNameSymbol = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "measure"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            intType,
+            ZR_SEMANTIC_ID_INVALID,
+            ZR_NULL,
+            display_range(50U));
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, documentedSymbol);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, sameNameSymbol);
+    TEST_ASSERT_NOT_EQUAL_UINT32(documentedSymbol, sameNameSymbol);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticDocumentation_Publish(
+            context,
+            documentedSymbol,
+            ZrCore_String_CreateFromNative(g_state, "Returns the exact measurement.")));
+    documentation = ZrParser_SemanticQuery_DocumentationOfSymbol(
+            context, documentedSymbol);
+    TEST_ASSERT_NOT_NULL(documentation);
+    TEST_ASSERT_EQUAL_STRING(
+            "Returns the exact measurement.",
+            ZrCore_String_GetNativeString(documentation));
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_DocumentationOfSymbol(
+            context, sameNameSymbol));
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticDocumentation_Publish(
+            context,
+            documentedSymbol,
+            ZrCore_String_CreateFromNative(g_state, "Returns the exact measurement.")));
+    TEST_ASSERT_FALSE(ZrParser_SemanticDocumentation_Publish(
+            context,
+            documentedSymbol,
+            ZrCore_String_CreateFromNative(g_state, "Conflicting documentation.")));
+    TEST_ASSERT_FALSE(ZrParser_SemanticDocumentation_Publish(
+            context,
+            ZR_SEMANTIC_ID_INVALID,
+            ZrCore_String_CreateFromNative(g_state, "Invalid identity.")));
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_DocumentationOfSymbol(
+            context, ZR_SEMANTIC_ID_INVALID));
+
+    ZrParser_SemanticContext_Reset(context);
+    TEST_ASSERT_NULL(ZrParser_SemanticQuery_DocumentationOfSymbol(
+            context, documentedSymbol));
+    ZrParser_SemanticContext_Free(context);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_semantic_display_formats_canonical_type_symbol_and_property);
     RUN_TEST(test_semantic_display_fails_closed_for_missing_identity);
     RUN_TEST(test_semantic_display_uses_matching_declaration_signature_fact);
+    RUN_TEST(test_semantic_documentation_projects_exact_symbol_fact);
     return UNITY_END();
 }

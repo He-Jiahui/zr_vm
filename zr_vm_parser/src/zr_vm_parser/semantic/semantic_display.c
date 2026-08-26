@@ -70,6 +70,63 @@ static TZrBool semantic_display_is_function_symbol(
                      type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_FUNCTION);
 }
 
+TZrBool ZrParser_SemanticDocumentation_Publish(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        SZrString *documentation) {
+    SZrSemanticDocumentationFact fact;
+    TZrNativeString text;
+    TZrSize index;
+
+    if (context == ZR_NULL || context->state == ZR_NULL ||
+        symbolId == ZR_SEMANTIC_ID_INVALID || documentation == ZR_NULL ||
+        ZrParser_Semantic_FindSymbolById(context, symbolId) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < context->documentationFacts.length; ++index) {
+        const SZrSemanticDocumentationFact *existing =
+                (const SZrSemanticDocumentationFact *)ZrCore_Array_Get(
+                        &context->documentationFacts, index);
+        if (existing != ZR_NULL && existing->symbolId == symbolId) {
+            return ZrCore_String_Equal(existing->documentation, documentation);
+        }
+    }
+    text = ZrCore_String_GetNativeString(documentation);
+    if (text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    fact.symbolId = symbolId;
+    fact.documentation = ZrCore_String_Create(
+            context->state,
+            text,
+            ZrCore_String_GetByteLength(documentation));
+    if (fact.documentation == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Array_Push(context->state, &context->documentationFacts, &fact);
+    return ZR_TRUE;
+}
+
+SZrString *ZrParser_SemanticQuery_DocumentationOfSymbol(
+        const SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    TZrSize index;
+
+    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID ||
+        ZrParser_Semantic_FindSymbolById(context, symbolId) == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->documentationFacts.length; ++index) {
+        const SZrSemanticDocumentationFact *fact =
+                (const SZrSemanticDocumentationFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->documentationFacts, index);
+        if (fact != ZR_NULL && fact->symbolId == symbolId) {
+            return fact->documentation;
+        }
+    }
+    return ZR_NULL;
+}
+
 TZrBool ZrParser_SemanticDisplay_FormatType(
         const SZrSemanticContext *context,
         TZrTypeId typeId,

@@ -1,6 +1,7 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic_calls.h"
+#include "zr_vm_parser/semantic_display.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
@@ -63,6 +64,10 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
     ZrCore_Array_Init(context->state,
                 &context->propertyContracts,
                 sizeof(SZrSemanticPropertyContract),
+                ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(context->state,
+                &context->documentationFacts,
+                sizeof(SZrSemanticDocumentationFact),
                 ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrParser_SemanticFacts_Init(context);
     ZrParser_SemanticCalls_Init(context);
@@ -146,6 +151,7 @@ void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     ZrCore_Array_Free(context->state, &context->queryDiagnostics);
     ZrParser_SemanticCalls_Free(context);
     ZrParser_SemanticFacts_Free(context);
+    ZrCore_Array_Free(context->state, &context->documentationFacts);
     ZrCore_Array_Free(context->state, &context->propertyContracts);
     ZrCore_Memory_RawFree(context->state->global, context, sizeof(SZrSemanticContext));
 }
@@ -186,6 +192,7 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     context->cleanupPlan.length = 0;
     context->templateSegments.length = 0;
     context->propertyContracts.length = 0;
+    context->documentationFacts.length = 0;
     semantic_context_reset_query_diagnostics(context);
     ZrParser_SemanticCalls_Reset(context);
     ZrParser_SemanticFacts_Reset(context);
