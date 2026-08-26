@@ -1365,6 +1365,8 @@ static void test_compiled_direct_import_publishes_external_origin_relation(void)
     ZrParser_Ast_Free(g_state, ast);
 }
 
+#include "test_semantic_query_meta_override_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
@@ -1380,6 +1382,7 @@ int main(void) {
     RUN_TEST(test_compiled_source_publishes_type_hierarchy_relations);
     RUN_TEST(test_compiled_source_publishes_interface_member_implementation);
     RUN_TEST(test_compiled_source_publishes_override_relation);
+    RUN_TEST(test_compiled_source_publishes_meta_function_override_relation);
     RUN_TEST(test_compiled_source_publishes_explicit_constructor_relation);
     RUN_TEST(test_compiled_source_omits_synthesized_constructor_relation);
     RUN_TEST(test_compiled_type_value_alias_publishes_canonical_target_relation);

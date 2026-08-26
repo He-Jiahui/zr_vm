@@ -1520,7 +1520,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             if (memberInfo.name != ZR_NULL) {
                 if (((member->type == ZR_AST_CLASS_FIELD &&
                      !compiler_type_member_register_field_symbol(cs, &memberInfo)) ||
-                     (member->type == ZR_AST_CLASS_METHOD &&
+                    ((member->type == ZR_AST_CLASS_METHOD ||
+                      member->type == ZR_AST_CLASS_META_FUNCTION) &&
                      !compiler_type_member_register_function_symbol(cs, &memberInfo)))) {
                     ZrParser_Compiler_Error(
                             cs,
