@@ -837,6 +837,20 @@ toolchain because the ownership roundtrip case uses a fixed fixture path. The
 focused receiver-guard correction is accepted. Keep the broader milestone open
 for the full-graph replay on the stable integrated L8 baseline.
 
+A fixed `2de3075` GCC 11.4 snapshot then built all 3,421 steps and enumerated
+136 registered CTests. The first complete run finished with 134 passes and two
+failures. `language_server_stdio_smoke` is the already-isolated L8 canonical
+native-receiver contract and remains outside this write set. The independent
+`projects/classes_super` failure exposed a lower semantic support regression:
+class meta functions such as `@call` had no canonical SymbolId when override
+relation publication ran. A focused RED reproduced the failure at 18/19
+relation cases. Commit `592e5bc` registers named class meta functions through
+the existing function-symbol path before override validation. GCC 11.4, Clang
+14, and MSVC 19.44 now each pass the 19/19 relation runner and the complete
+`projects` registered test. This removes the non-L8 failure without adding an
+LSP or name-based fallback. It is not a replacement for a fresh single-command
+full graph on the post-L8 stable baseline.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -845,6 +859,14 @@ removal. Windows `E:\zrs\ownership-review-f77` and `E:\zrb\orm`, plus WSL
 Clang `.codex-builds` roots, are removed and verified absent. No persistent log
 was created for the final serial matrix. Existing `.codex/logs` evidence owned
 by L8, Q6, and other sessions is deliberately preserved.
+
+The later full-graph audit also removed and verified absent the disposable
+Windows worktree `E:\zrs\ownership-full-2de`, MSVC cache
+`E:\zrb\ownership-full-2de-msvc`, WSL source snapshot
+`/home/hejiahui/.codex-snapshots/ownership-full-2de`, and its GCC/Clang build
+caches. The temporary full-snapshot tar and both generated patch files under
+`E:\zrb` were deleted as well. CTest's internal logs were contained in those
+removed caches; no repository or shared `.codex/logs` path was changed.
 
 - [ ] **Step 7: Commit final acceptance status**
 

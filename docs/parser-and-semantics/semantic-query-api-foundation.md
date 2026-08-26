@@ -294,6 +294,16 @@ source/target SymbolId pair. Imported, metadata-only, and otherwise unresolved
 base members remain unavailable until their producer supplies a stable target
 identity and explicit provenance.
 
+Class meta functions participate in the same identity contract as ordinary
+class methods. The compiler registers each named `ZR_AST_CLASS_META_FUNCTION`
+as a canonical function symbol before override validation, so `@call` and other
+non-constructor meta methods cannot reach relation publication with an invalid
+endpoint. Explicit constructors reuse that already-registered SymbolId when
+their constructor contract is published later. The focused regression compiles
+a virtual/override `@call` pair and verifies both the directed `OVERRIDE` edge
+and the reverse `ImplementationsOf` query; no meta spelling or virtual-slot
+fallback is used.
+
 Task 3.8 publishes `ZR_SEMANTIC_RELATION_CONSTRUCTOR` only after
 `ZrParser_Semantic_BuildSourceScopeFacts` has registered source type symbols.
 `compiler_publish_source_constructor_relations` iterates only existing compiler

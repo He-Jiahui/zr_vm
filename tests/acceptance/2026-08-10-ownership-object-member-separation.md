@@ -616,6 +616,24 @@ This accepts the focused receiver-guard correction on all three toolchains. It
 does not replace the pending full-graph replay on the stable integrated L8
 baseline.
 
+A later fixed `2de3075` GCC 11.4 snapshot completed a 3,421-step build and ran
+all 136 registered CTests. The real aggregate result was 134 passes and two
+failures. `language_server_stdio_smoke` failed the known L8 canonical native
+receiver hover contract. `projects` failed at `classes_super` because class
+meta functions were not registered as canonical function symbols before the
+compiler attempted to publish an `@call` override relation.
+
+The semantic support failure was handled independently. The new relation case
+first reported `19 Tests / 1 Failure / 0 Ignored` with `Failed to publish
+canonical override relation`. Commit `592e5bc` routes named
+`ZR_AST_CLASS_META_FUNCTION` members through the existing function-symbol
+registration path before override validation; later constructor publication
+reuses the identity. GCC 11.4, Clang 14, and MSVC 19.44 then each directly
+reported `19 Tests / 0 Failures / 0 Ignored`, and each complete `projects`
+registered test exited zero. No LSP consumer or compatibility fallback was
+changed. The remaining L8 stdio failure still prevents final full-graph
+promotion.
+
 The current first-party test-source audit found zero disabled `#if 0` blocks,
 zero commented `RUN_TEST` registrations, 165 `TEST_IGNORE_MESSAGE` sites with a
 nearby explicit platform/capability guard, and zero globally unreferenced
@@ -669,5 +687,10 @@ current rejection coverage and are not stale positive syntax tests.
   final matrix created no persistent log. Existing `.codex/logs` artifacts are
   owned by L8, Q6, or other sessions and are preserved rather than conflated
   with this task's cleanup scope.
+- The fixed-`2de3075` audit removed and verified absent
+  `E:\zrs\ownership-full-2de`, `E:\zrb\ownership-full-2de-msvc`, the WSL
+  `ownership-full-2de` source/GCC/Clang roots, and the temporary tar/patch files
+  used to transfer the exact overlay. Its CTest logs were inside the removed
+  build roots; unrelated shared logs remain untouched.
 
 No plan or syntax status is promoted to completed until all pending gates pass.
