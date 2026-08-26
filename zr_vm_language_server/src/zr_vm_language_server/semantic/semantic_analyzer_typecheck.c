@@ -525,6 +525,37 @@ static void semantic_typecheck_pop_compiler_context(
     compilerState->currentFunctionNode = snapshot->functionNode;
 }
 
+static void semantic_typecheck_callable_body(SZrState *state,
+                                             SZrSemanticAnalyzer *analyzer,
+                                             SZrAstNode *functionNode,
+                                             SZrAstNodeArray *params,
+                                             SZrAstNodeArray *preludeExpressions,
+                                             SZrAstNode *body) {
+    SZrSemanticTypecheckContextSnapshot contextSnapshot;
+    SZrTypeEnvironment *savedTypeEnv;
+
+    semantic_typecheck_push_compiler_context(analyzer, ZR_NULL, functionNode, &contextSnapshot);
+    savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+    semantic_typecheck_register_parameter_bindings(state, analyzer, params);
+
+    if (params != ZR_NULL && params->nodes != ZR_NULL) {
+        for (TZrSize i = 0; i < params->count; i++) {
+            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, params->nodes[i]);
+        }
+    }
+    if (preludeExpressions != ZR_NULL && preludeExpressions->nodes != ZR_NULL) {
+        for (TZrSize i = 0; i < preludeExpressions->count; i++) {
+            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state,
+                                                                  analyzer,
+                                                                  preludeExpressions->nodes[i]);
+        }
+    }
+    ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, body);
+
+    semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+    semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
+}
+
 static TZrBool semantic_extract_ffi_decorator(SZrAstNode *decoratorNode,
                                               const TZrChar **outLeafName,
                                               TZrBool *outHasCall,
@@ -2198,43 +2229,8 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     ZrParser_InferredType_Free(state, &leftType);
                 }
                 
-                // 检查 const 变量赋值限制
-                if (assignExpr->left != ZR_NULL && assignExpr->left->type == ZR_AST_IDENTIFIER_LITERAL) {
-                    SZrString *varName = assignExpr->left->data.identifier.name;
-                    if (varName != ZR_NULL) {
-                        // 查找符号
-                        SZrSymbol *symbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, varName, ZR_NULL);
-                        if (symbol != ZR_NULL && symbol->isConst) {
-                            // 检查是否是 const 变量
-                            if (symbol->type == ZR_SYMBOL_VARIABLE) {
-                                // const 局部变量：只能在声明时赋值
-                                // TODO: 需要检查是否在声明语句中（通过 AST 上下文判断）
-                                // 暂时报告错误，后续完善
-                                ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer,
-                                                                ZR_DIAGNOSTIC_ERROR,
-                                                                node->location,
-                                                                "Cannot assign to const variable after declaration",
-                                                                "const_assignment");
-                            } else if (symbol->type == ZR_SYMBOL_PARAMETER) {
-                                // const 函数参数：不能在函数体内修改
-                                ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer,
-                                                                ZR_DIAGNOSTIC_ERROR,
-                                                                node->location,
-                                                                "Cannot assign to const parameter",
-                                                                "const_assignment");
-                            } else if (symbol->type == ZR_SYMBOL_FIELD) {
-                                // const 成员字段：只能在构造函数中赋值
-                                // TODO: 需要检查是否在构造函数中（通过检查当前函数是否为 @constructor 元方法）
-                                // 暂时报告错误，后续完善
-                                ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer,
-                                                                ZR_DIAGNOSTIC_ERROR,
-                                                                node->location,
-                                                                "Cannot assign to const field outside constructor",
-                                                                "const_assignment");
-                            }
-                        }
-                    }
-                }
+                (void)ZrLanguageServer_SemanticAnalyzer_ProjectConstAssignment(
+                        state, analyzer, node);
             }
             break;
         }
@@ -2773,6 +2769,9 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
 
         case ZR_AST_STRUCT_DECLARATION: {
             SZrStructDeclaration *structDecl = &node->data.structDeclaration;
+            SZrSemanticTypecheckContextSnapshot contextSnapshot;
+
+            semantic_typecheck_push_compiler_context(analyzer, node, ZR_NULL, &contextSnapshot);
             if (structDecl->members != ZR_NULL && structDecl->members->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < structDecl->members->count; i++) {
                     if (structDecl->members->nodes[i] != ZR_NULL) {
@@ -2780,8 +2779,63 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     }
                 }
             }
+            semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
             break;
         }
+
+        case ZR_AST_CLASS_DECLARATION: {
+            SZrClassDeclaration *classDecl = &node->data.classDeclaration;
+            SZrSemanticTypecheckContextSnapshot contextSnapshot;
+
+            semantic_typecheck_push_compiler_context(analyzer, node, ZR_NULL, &contextSnapshot);
+            if (classDecl->members != ZR_NULL && classDecl->members->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < classDecl->members->count; i++) {
+                    if (classDecl->members->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state,
+                                                                              analyzer,
+                                                                              classDecl->members->nodes[i]);
+                    }
+                }
+            }
+            semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
+            break;
+        }
+
+        case ZR_AST_STRUCT_METHOD:
+            semantic_typecheck_callable_body(state,
+                                             analyzer,
+                                             node,
+                                             node->data.structMethod.params,
+                                             ZR_NULL,
+                                             node->data.structMethod.body);
+            break;
+
+        case ZR_AST_STRUCT_META_FUNCTION:
+            semantic_typecheck_callable_body(state,
+                                             analyzer,
+                                             node,
+                                             node->data.structMetaFunction.params,
+                                             ZR_NULL,
+                                             node->data.structMetaFunction.body);
+            break;
+
+        case ZR_AST_CLASS_METHOD:
+            semantic_typecheck_callable_body(state,
+                                             analyzer,
+                                             node,
+                                             node->data.classMethod.params,
+                                             ZR_NULL,
+                                             node->data.classMethod.body);
+            break;
+
+        case ZR_AST_CLASS_META_FUNCTION:
+            semantic_typecheck_callable_body(state,
+                                             analyzer,
+                                             node,
+                                             node->data.classMetaFunction.params,
+                                             node->data.classMetaFunction.superArgs,
+                                             node->data.classMetaFunction.body);
+            break;
 
         case ZR_AST_ENUM_DECLARATION: {
             SZrEnumDeclaration *enumDecl = &node->data.enumDeclaration;

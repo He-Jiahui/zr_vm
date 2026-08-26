@@ -188,6 +188,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Type mismatch",
             "Expected '%s' but found '%s'"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "const_assignment",
+            "Immutable assignment",
+            "Cannot assign to an immutable target in this context"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),

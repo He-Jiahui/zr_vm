@@ -41,6 +41,10 @@ ZR_FORCE_INLINE TZrBool ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(
 void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node);
+TZrBool ZrLanguageServer_SemanticAnalyzer_ProjectConstAssignment(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *assignment);
 
 void ZrLanguageServer_SemanticAnalyzer_ValidateInterfaceVarianceRules(
         SZrState *state,

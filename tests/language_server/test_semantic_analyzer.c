@@ -632,6 +632,146 @@ static void test_semantic_analyzer_type_checking_assignment_path(SZrState *state
     TEST_PASS(timer, "Semantic Analyzer Type Checking Assignment Path");
 }
 
+static void test_semantic_analyzer_projects_const_field_assignment_context(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer;
+    const TZrChar *testCode =
+        "class Meter {\n"
+        "    pub const value: int;\n"
+        "    pub @constructor(seed: int) {\n"
+        "        this.value = seed;\n"
+        "    }\n"
+        "    pub fn update(next: int) {\n"
+        "        this.value = next;\n"
+        "    }\n"
+        "}\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrDiagnostic *constructorDiagnostic;
+    SZrDiagnostic *methodDiagnostic;
+
+    TEST_START("Semantic Analyzer Projects Const Field Assignment Context");
+    TEST_INFO("Canonical const assignment",
+              "Constructor initialization is accepted while a normal method assignment consumes the canonical parser diagnostic fact");
+
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    if (analyzer == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Projects Const Field Assignment Context",
+                  "Failed to create semantic analyzer");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(
+            state,
+            "const_field_assignment_context_test.zr",
+            strlen("const_field_assignment_context_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Projects Const Field Assignment Context",
+                  "Failed to parse or analyze the const field fixture");
+        return;
+    }
+
+    constructorDiagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "const_assignment", 4);
+    methodDiagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "const_assignment", 7);
+    if (constructorDiagnostic != ZR_NULL ||
+        methodDiagnostic == ZR_NULL ||
+        methodDiagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+        methodDiagnostic->descriptorId != 2012U ||
+        methodDiagnostic->noFixReason !=
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+        !methodDiagnostic->relatedInformation.isValid ||
+        methodDiagnostic->relatedInformation.length != 1U ||
+        methodDiagnostic->fixes.isValid ||
+        count_diagnostics_with_code(analyzer, "const_assignment") != 1U) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Projects Const Field Assignment Context",
+                  "Expected one canonical const_assignment on the normal method and none in the constructor");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, "Semantic Analyzer Projects Const Field Assignment Context");
+}
+
+static void test_semantic_analyzer_projects_all_const_assignment_target_kinds(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer;
+    const TZrChar *testCode =
+        "fn revise(const input: int) {\n"
+        "    input = 2;\n"
+        "    let frozen: int = 1;\n"
+        "    frozen = 2;\n"
+        "}\n"
+        "class Limits {\n"
+        "    pub static const max: int = 10;\n"
+        "    pub fn update() {\n"
+        "        Limits.max = 20;\n"
+        "    }\n"
+        "}\n";
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    TEST_START("Semantic Analyzer Projects All Const Assignment Target Kinds");
+    TEST_INFO("Canonical const assignment targets",
+              "Const parameters, locals, and static fields share descriptor 2012 without analyzer-owned policy");
+
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    if (analyzer == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Projects All Const Assignment Target Kinds",
+                  "Failed to create semantic analyzer");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(
+            state,
+            "const_assignment_target_kinds_test.zr",
+            strlen("const_assignment_target_kinds_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Projects All Const Assignment Target Kinds",
+                  "Failed to parse or analyze the const target fixture");
+        return;
+    }
+
+    if (find_diagnostic_by_code_and_line(analyzer, "const_assignment", 2) == ZR_NULL ||
+        find_diagnostic_by_code_and_line(analyzer, "const_assignment", 4) == ZR_NULL ||
+        find_diagnostic_by_code_and_line(analyzer, "const_assignment", 9) == ZR_NULL ||
+        count_diagnostics_with_code(analyzer, "const_assignment") != 3U) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Projects All Const Assignment Target Kinds",
+                  "Expected canonical diagnostics for const parameter, local, and static field assignments");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, "Semantic Analyzer Projects All Const Assignment Target Kinds");
+}
+
 static void test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics");
@@ -4614,6 +4754,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_type_checking_assignment_path(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_projects_const_field_assignment_context(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_projects_all_const_assignment_target_kinds(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics(state);

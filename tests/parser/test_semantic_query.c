@@ -976,13 +976,14 @@ static void test_semantic_query_diagnostics_consumes_linear_definite_assignment_
 static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *possibleUninitialized;
     const SZrDiagnosticDescriptor *typeMismatch;
+    const SZrDiagnosticDescriptor *constAssignment;
     const SZrDiagnosticDescriptor *useAfterMove;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(58, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(59, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1009,6 +1010,15 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     TEST_ASSERT_NOT_NULL(typeMismatch);
     TEST_ASSERT_EQUAL_UINT32(2011, typeMismatch->id);
     TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE, typeMismatch->category);
+
+    constAssignment =
+            ZrParser_DiagnosticRegistry_FindByCode("const_assignment");
+    TEST_ASSERT_NOT_NULL(constAssignment);
+    TEST_ASSERT_EQUAL_UINT32(2012, constAssignment->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                          constAssignment->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_SEMANTIC,
+                          constAssignment->category);
 
     for (index = 0; index < descriptorCount; index++) {
         const SZrDiagnosticDescriptor *descriptor =

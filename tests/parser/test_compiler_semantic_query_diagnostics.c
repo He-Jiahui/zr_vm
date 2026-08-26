@@ -1347,6 +1347,120 @@ static void test_function_call_compatibility_publishes_detailed_type_mismatch_fa
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_const_assignment_publishes_structured_semantic_diagnostic(void) {
+    const TZrChar *source =
+            "let value: int = 1;\n"
+            "value = 2;\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrStructuredDiagnostic *published;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_const_assignment_diagnostics_test.zr",
+            strlen("compiler_const_assignment_diagnostics_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2012U, cs.structuredError.descriptorId);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    cs.hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(&cs);
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+    published = find_query_diagnostic_by_code(
+            cs.semanticContext, "const_assignment");
+    TEST_ASSERT_NOT_NULL(published);
+    TEST_ASSERT_EQUAL_UINT32(2012U, published->descriptorId);
+    TEST_ASSERT_EQUAL_INT(2, published->location.start.line);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            published->noFixReason);
+    TEST_ASSERT_TRUE(published->relatedInformation.isValid);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)published->relatedInformation.length);
+    TEST_ASSERT_FALSE(published->fixes.isValid);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_const_field_assignment_matches_constructor_context_contract(void) {
+    const TZrChar *source =
+            "class Meter {\n"
+            "    pub const value: int;\n"
+            "    pub @constructor(seed: int) {\n"
+            "        this.value = seed;\n"
+            "    }\n"
+            "    pub fn update(next: int) {\n"
+            "        this.value = next;\n"
+            "    }\n"
+            "}\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    const SZrStructuredDiagnosticRelatedInformation *related;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_const_field_assignment_context_test.zr",
+            strlen("compiler_const_field_assignment_context_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2012U, cs.structuredError.descriptorId);
+    TEST_ASSERT_EQUAL_STRING(
+            "const_assignment",
+            ZrCore_String_GetNativeString(cs.structuredError.code));
+    TEST_ASSERT_EQUAL_INT(7, cs.structuredError.location.start.line);
+    TEST_ASSERT_TRUE(cs.structuredError.relatedInformation.isValid);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)cs.structuredError.relatedInformation.length);
+    TEST_ASSERT_FALSE(cs.structuredError.fixes.isValid);
+    related = (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
+            &cs.structuredError.relatedInformation, 0U);
+    TEST_ASSERT_NOT_NULL(related);
+    TEST_ASSERT_EQUAL_INT(2, related->location.start.line);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_resource_strong_cycle_warning_publishes_user_decision_reason(void) {
     const TZrChar *source =
             "resource class Node {\n"
@@ -2455,6 +2569,8 @@ int main(void) {
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
     RUN_TEST(test_assignment_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_function_call_compatibility_publishes_detailed_type_mismatch_fact);
+    RUN_TEST(test_const_assignment_publishes_structured_semantic_diagnostic);
+    RUN_TEST(test_const_field_assignment_matches_constructor_context_contract);
     RUN_TEST(test_resource_strong_cycle_warning_publishes_user_decision_reason);
     RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_declaration_body_open_builder_publishes_machine_fix);

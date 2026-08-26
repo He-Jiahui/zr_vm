@@ -5,10 +5,40 @@
 #include "compile_expression_internal.h"
 #include "compile_expression_contiguous_view.h"
 #include "type_inference_semantic_facts.h"
+#include "zr_vm_parser/const_assignment.h"
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
                                                     TZrUInt32 stackSlot,
                                                     SZrString *fieldTypeName);
+
+static void compile_assignment_report_const(
+        SZrCompilerState *cs,
+        EZrConstAssignmentTargetKind targetKind,
+        SZrString *targetName,
+        SZrFileRange assignmentRange,
+        SZrFileRange declarationRange) {
+    SZrConstAssignmentResult result;
+    SZrStructuredDiagnostic diagnostic;
+
+    if (cs == ZR_NULL) {
+        return;
+    }
+    memset(&result, 0, sizeof(result));
+    result.targetKind = targetKind;
+    result.targetName = targetName;
+    result.assignmentRange = assignmentRange;
+    result.declarationRange = declarationRange;
+    result.isConstTarget = ZR_TRUE;
+    result.isViolation = ZR_TRUE;
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (ZrParser_ConstAssignment_BuildDiagnostic(
+                cs->state, &result, &diagnostic)) {
+        ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    } else {
+        ZrParser_Compiler_Error(
+                cs, "Cannot assign to immutable target", assignmentRange);
+    }
+}
 
 static TZrBool compile_type_has_protocol_mask(
         SZrCompilerState *cs,
@@ -1827,27 +1857,29 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
         
         // 检查是否是 const 函数参数
         if (is_const_variable(cs, name, &cs->constParameters)) {
-            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            TZrNativeString nameStr = ZrCore_String_GetNativeStringShort(name);
-            if (nameStr != ZR_NULL) {
-                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const parameter '%s'", nameStr);
-            } else {
-                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const parameter");
-            }
-            ZrParser_Compiler_Error(cs, errorMsg, node->location);
+            compile_assignment_report_const(
+                    cs,
+                    ZR_CONST_ASSIGNMENT_TARGET_PARAMETER,
+                    name,
+                    node->location,
+                    hasIdentifierWriteBinding &&
+                            identifierWriteBinding.hasDeclarationRange
+                            ? identifierWriteBinding.declarationRange
+                            : left->location);
             return;
         }
         
         // 检查是否是 const 局部变量
         if (is_const_variable(cs, name, &cs->constLocalVars)) {
-            TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            TZrNativeString nameStr = ZrCore_String_GetNativeStringShort(name);
-            if (nameStr != ZR_NULL) {
-                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const variable '%s' after declaration", nameStr);
-            } else {
-                snprintf(errorMsg, sizeof(errorMsg), "Cannot assign to const variable after declaration");
-            }
-            ZrParser_Compiler_Error(cs, errorMsg, node->location);
+            compile_assignment_report_const(
+                    cs,
+                    ZR_CONST_ASSIGNMENT_TARGET_LOCAL,
+                    name,
+                    node->location,
+                    hasIdentifierWriteBinding &&
+                            identifierWriteBinding.hasDeclarationRange
+                            ? identifierWriteBinding.declarationRange
+                            : left->location);
             return;
         }
 
@@ -2101,38 +2133,36 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 SZrString *fieldName = memberExpr->property->data.identifier.name;
                                 if (fieldName != ZR_NULL && rootTypeName != ZR_NULL &&
                                     find_type_member_is_const(cs, rootTypeName, fieldName)) {
-                                    TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-                                    TZrNativeString fieldNameStr = ZrCore_String_GetNativeStringShort(fieldName);
+                                    SZrTypeMemberInfo *constMember =
+                                            find_compiler_type_member(
+                                                    cs,
+                                                    rootTypeName,
+                                                    fieldName);
+                                    SZrFileRange declarationRange =
+                                            constMember != ZR_NULL &&
+                                                    constMember->declarationNode != ZR_NULL
+                                                    ? constMember->declarationNode->location
+                                                    : memberExpr->property->location;
 
                                     if (rootIsTypeReference) {
-                                        if (fieldNameStr != ZR_NULL) {
-                                            snprintf(errorMsg,
-                                                     sizeof(errorMsg),
-                                                     "Cannot assign to const static field '%s'",
-                                                     fieldNameStr);
-                                        } else {
-                                            snprintf(errorMsg,
-                                                     sizeof(errorMsg),
-                                                     "Cannot assign to const static field");
-                                        }
-                                        ZrParser_Compiler_Error(cs, errorMsg, node->location);
+                                        compile_assignment_report_const(
+                                                cs,
+                                                ZR_CONST_ASSIGNMENT_TARGET_STATIC_FIELD,
+                                                fieldName,
+                                                node->location,
+                                                declarationRange);
                                         return;
                                     }
 
                                     if (!targetsThis ||
                                         cs->initializationPhase ==
                                                 ZR_COMPILER_INITIALIZATION_NONE) {
-                                        if (fieldNameStr != ZR_NULL) {
-                                            snprintf(errorMsg,
-                                                     sizeof(errorMsg),
-                                                     "Cannot assign to immutable field '%s' outside initialization",
-                                                     fieldNameStr);
-                                        } else {
-                                            snprintf(errorMsg,
-                                                     sizeof(errorMsg),
-                                                     "Cannot assign to immutable field outside initialization");
-                                        }
-                                        ZrParser_Compiler_Error(cs, errorMsg, node->location);
+                                        compile_assignment_report_const(
+                                                cs,
+                                                ZR_CONST_ASSIGNMENT_TARGET_INSTANCE_FIELD,
+                                                fieldName,
+                                                node->location,
+                                                declarationRange);
                                         return;
                                     }
 

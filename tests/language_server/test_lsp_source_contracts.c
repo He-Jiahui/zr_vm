@@ -1133,6 +1133,45 @@ static void test_reachability_diagnostics_use_semantic_query_projection(void) {
     free(unionPatterns);
 }
 
+static void test_const_assignment_diagnostics_use_semantic_query_projection(void) {
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+    char *projection = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_const_assignment.c");
+
+    if (typecheck == NULL || projection == NULL) {
+        printf("FAIL: could not read semantic analyzer const assignment sources\n");
+        g_failures++;
+        free(typecheck);
+        free(projection);
+        return;
+    }
+
+    assert_text_contains(
+        typecheck,
+        "ZrLanguageServer_SemanticAnalyzer_ProjectConstAssignment");
+    assert_text_contains_none(typecheck, "\"const_assignment\"");
+    assert_text_contains_none(typecheck, "Cannot assign to const");
+    assert_text_contains(
+        projection,
+        "ZrParser_SemanticQuery_SymbolAt");
+    assert_text_contains(
+        projection,
+        "ZrParser_ConstAssignment_EvaluateContext");
+    assert_text_contains(
+        projection,
+        "ZrParser_SemanticFacts_AppendDiagnostic");
+    assert_text_contains_none(
+        projection,
+        "ZrLanguageServer_SymbolTable_Lookup(");
+    assert_text_contains_none(
+        projection,
+        "ZrLanguageServer_SemanticAnalyzer_AddDiagnostic");
+
+    free(typecheck);
+    free(projection);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1179,6 +1218,7 @@ int main(void) {
     test_wasm_diagnostics_use_canonical_projection();
     test_type_mismatch_diagnostics_use_compiler_query_projection();
     test_reachability_diagnostics_use_semantic_query_projection();
+    test_const_assignment_diagnostics_use_semantic_query_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
