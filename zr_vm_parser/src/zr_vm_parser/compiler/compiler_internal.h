@@ -39,6 +39,10 @@ TZrBool compiler_publish_type_hierarchy_relation(
         const SZrAstNode *sourceDeclaration,
         const SZrTypePrototypeInfo *targetPrototype,
         TZrBool isImplementation);
+TZrBool compiler_publish_member_override_relation(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *sourceMember,
+        const SZrTypeMemberInfo *targetMember);
 TZrBool compiler_submission_append_declared_capture(
         SZrCompilerState *cs,
         SZrString *name,

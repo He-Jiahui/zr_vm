@@ -278,6 +278,18 @@ therefore publish no local edge. LSP and query consumers must not recover such
 an absent edge from type names, member spellings, or AST traversal. Override,
 alias, binary, and native relation producers remain later slices.
 
+Task 3.7 publishes `ZR_SEMANTIC_RELATION_OVERRIDE` after class override
+validation has selected an inherited member and both member declarations
+already have canonical SymbolIds. The compiler bridge passes exactly those two
+ids to `ZrParser_SemanticRelations_PublishSymbolRelation`; the relation module
+looks up the existing symbol records, takes their TypeIds and declaration
+ranges, and rejects missing ids, ranges, or type identities. It does not pair
+members by name, virtual slot, AST traversal, property accessor spelling, or
+language-server state. Re-publication is idempotent by relation kind and the
+source/target SymbolId pair. Imported, metadata-only, and otherwise unresolved
+base members remain unavailable until their producer supplies a stable target
+identity and explicit provenance.
+
 ## Call Edge Snapshot Foundation
 
 `SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph

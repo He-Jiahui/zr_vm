@@ -479,6 +479,13 @@ static TZrBool compiler_class_validate_member_override_semantics(SZrCompilerStat
             memberInfo->virtualSlotIndex == compiler_member_virtual_slot_none()) {
             memberInfo->virtualSlotIndex = info->nextVirtualSlotIndex++;
         }
+        if (!compiler_publish_member_override_relation(cs, memberInfo, baseMember)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to publish canonical override relation",
+                    location);
+            return ZR_FALSE;
+        }
         return ZR_TRUE;
     }
 
