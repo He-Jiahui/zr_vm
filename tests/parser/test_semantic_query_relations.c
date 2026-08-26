@@ -8,6 +8,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_lib_math/module.h"
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
@@ -309,6 +310,96 @@ static void test_type_and_implementation_queries_preserve_edge_direction(void) {
     TEST_ASSERT_FALSE(ZrParser_SemanticQuery_DerivedTypesOf(
             context, ZR_SEMANTIC_ID_INVALID, &relations));
     TEST_ASSERT_EQUAL_UINT(0U, relations.length);
+
+    ZrCore_Array_Free(g_state, &relations);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_relation_queries_project_canonical_module_identities(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *sourceModule;
+    SZrString *targetModule;
+    TZrTypeId sourceTypeId;
+    TZrTypeId targetTypeId;
+    TZrTypeId targetInstanceTypeId;
+    TZrTypeId intTypeId;
+    TZrTypeId localTypeId;
+    SZrArray relations;
+    const SZrParserSemanticRelationQuery *relation;
+
+    TEST_ASSERT_NOT_NULL(context);
+    sourceModule = ZrCore_String_CreateFromNative(g_state, "app.models");
+    targetModule = ZrCore_String_CreateFromNative(g_state, "lib.contracts");
+    TEST_ASSERT_NOT_NULL(sourceModule);
+    TEST_ASSERT_NOT_NULL(targetModule);
+    sourceTypeId = ZrParser_CanonicalType_InternNominal(
+            context,
+            sourceModule,
+            ZrCore_String_CreateFromNative(g_state, "Derived"),
+            7U);
+    targetTypeId = ZrParser_CanonicalType_InternNominal(
+            context,
+            targetModule,
+            ZrCore_String_CreateFromNative(g_state, "Base"),
+            11U);
+    localTypeId = ZrParser_CanonicalType_InternNominal(
+            context,
+            ZR_NULL,
+            ZrCore_String_CreateFromNative(g_state, "Local"),
+            13U);
+    intTypeId = ZrParser_CanonicalType_InternPrimitive(context, ZR_VALUE_TYPE_INT64);
+    targetInstanceTypeId = ZrParser_CanonicalType_InternGenericInstance(
+            context, targetTypeId, &intTypeId, 1U);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, sourceTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, targetTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, localTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, intTypeId);
+    TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, targetInstanceTypeId);
+
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_BASE_TYPE,
+                    ZR_SEMANTIC_ID_INVALID,
+                    ZR_SEMANTIC_ID_INVALID,
+                    sourceTypeId,
+                    targetTypeId,
+                    30U,
+                    2U,
+                    ZR_NULL);
+    relation_append(context,
+                    ZR_SEMANTIC_RELATION_BASE_TYPE,
+                    ZR_SEMANTIC_ID_INVALID,
+                    ZR_SEMANTIC_ID_INVALID,
+                    localTypeId,
+                    targetInstanceTypeId,
+                    40U,
+                    2U,
+                    ZR_NULL);
+
+    ZrCore_Array_Construct(&relations);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_BaseTypesOf(
+            context, sourceTypeId, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_NOT_NULL(relation->sourceModuleIdentity);
+    TEST_ASSERT_NOT_NULL(relation->targetModuleIdentity);
+    TEST_ASSERT_EQUAL_STRING(
+            "app.models",
+            ZrCore_String_GetNativeString(relation->sourceModuleIdentity));
+    TEST_ASSERT_EQUAL_STRING(
+            "lib.contracts",
+            ZrCore_String_GetNativeString(relation->targetModuleIdentity));
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_BaseTypesOf(
+            context, localTypeId, &relations));
+    TEST_ASSERT_EQUAL_UINT(1U, relations.length);
+    relation = relation_at(&relations, 0U);
+    TEST_ASSERT_NOT_NULL(relation);
+    TEST_ASSERT_NULL(relation->sourceModuleIdentity);
+    TEST_ASSERT_NOT_NULL(relation->targetModuleIdentity);
+    TEST_ASSERT_EQUAL_STRING(
+            "lib.contracts",
+            ZrCore_String_GetNativeString(relation->targetModuleIdentity));
 
     ZrCore_Array_Free(g_state, &relations);
     ZrParser_SemanticContext_Free(context);
@@ -1047,6 +1138,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_relations_of_symbol_projects_sorted_snapshot_edges);
     RUN_TEST(test_type_and_implementation_queries_preserve_edge_direction);
+    RUN_TEST(test_relation_queries_project_canonical_module_identities);
     RUN_TEST(test_type_declaration_relation_publishes_identity_edge_once);
     RUN_TEST(test_relations_of_symbol_honors_node_scope);
     RUN_TEST(test_property_contracts_publish_accessor_relations_once);

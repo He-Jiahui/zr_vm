@@ -302,6 +302,18 @@ member SymbolId or source range and emit no edge; invalid or missing source
 identities fail closed. No name, constructor token, TypeId-only, AST
 traversal/query fallback, or LSP reconstruction is allowed.
 
+Task 3.9 projects endpoint module identities directly from each relation's
+canonical source and target TypeId. Nominal nodes expose their snapshot-owned
+`moduleIdentity`; generic instances follow only their canonical
+`definitionTypeId` until reaching that nominal definition. Invalid, unknown,
+unqualified, primitive, structural, or malformed cyclic endpoints remain
+unavailable. The query never substitutes a URI, display name, symbol spelling,
+or source path for module identity. Returned module strings are borrowed from
+the semantic snapshot just like relation URI fields. A consumer that retains a
+relation across snapshot replacement must copy stable ids, module identity
+text, URIs, and ranges into its own snapshot-owned data rather than retaining
+these pointers.
+
 ## Call Edge Snapshot Foundation
 
 `SZrSemanticContext.callEdgeFacts` is a separate snapshot-owned call graph

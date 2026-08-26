@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "zr_vm_parser/canonical_type.h"
+
 static SZrString *semantic_relations_clone_string(
         SZrSemanticContext *context,
         SZrString *value) {
@@ -87,6 +89,34 @@ static TZrBool semantic_relations_prepare_output(
     return ZR_TRUE;
 }
 
+static SZrString *semantic_relations_module_identity_for_type(
+        const SZrSemanticContext *context,
+        TZrTypeId typeId) {
+    TZrSize remaining;
+
+    if (context == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    remaining = context->canonicalTypes.length + 1U;
+    while (remaining-- > 0U) {
+        const SZrCanonicalTypeNode *node =
+                ZrParser_CanonicalType_Find(context, typeId);
+
+        if (node == ZR_NULL) {
+            return ZR_NULL;
+        }
+        if (node->kind == ZR_CANONICAL_TYPE_NOMINAL) {
+            return node->data.nominal.moduleIdentity;
+        }
+        if (node->kind != ZR_CANONICAL_TYPE_GENERIC_INSTANCE ||
+            node->data.genericInstance.definitionTypeId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_NULL;
+        }
+        typeId = node->data.genericInstance.definitionTypeId;
+    }
+    return ZR_NULL;
+}
+
 static TZrBool semantic_relations_query_precedes(
         const SZrParserSemanticRelationQuery *left,
         const SZrParserSemanticRelationQuery *right) {
@@ -155,6 +185,10 @@ static void semantic_relations_append_query(
     query.targetSymbolId = fact->targetSymbolId;
     query.sourceTypeId = fact->sourceTypeId;
     query.targetTypeId = fact->targetTypeId;
+    query.sourceModuleIdentity = semantic_relations_module_identity_for_type(
+            context, fact->sourceTypeId);
+    query.targetModuleIdentity = semantic_relations_module_identity_for_type(
+            context, fact->targetTypeId);
     query.sourceRange = fact->sourceRange;
     query.targetRange = fact->targetRange;
     query.externalOriginUri = fact->externalOriginUri;

@@ -105,6 +105,8 @@ typedef struct SZrParserSemanticRelationQuery {
     TZrSymbolId targetSymbolId;
     TZrTypeId sourceTypeId;
     TZrTypeId targetTypeId;
+    SZrString *sourceModuleIdentity;
+    SZrString *targetModuleIdentity;
     SZrFileRange sourceRange;
     SZrFileRange targetRange;
     SZrString *externalOriginUri;
@@ -213,8 +215,9 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
         const SZrParserSemanticVisibleSymbolOptions *options,
         SZrArray *outSymbols);
 /*
- * outRelations contains copied relation values whose URI fields are borrowed
- * from the semantic snapshot. Reused arrays are cleared before projection.
+ * outRelations contains copied relation values whose URI and module identity
+ * fields are borrowed from the semantic snapshot. Reused arrays are cleared
+ * before projection.
  */
 ZR_PARSER_API TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
         const SZrSemanticContext *context,
