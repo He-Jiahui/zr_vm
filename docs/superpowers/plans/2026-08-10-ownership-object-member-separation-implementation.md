@@ -837,11 +837,14 @@ toolchain because the ownership roundtrip case uses a fixed fixture path. The
 focused receiver-guard correction is accepted. Keep the broader milestone open
 for the full-graph replay on the stable integrated L8 baseline.
 
-- [ ] **Step 6: Remove generated build products and logs requested by the user**
+- [x] **Step 6: Remove generated build products and logs requested by the user**
 
-Resolve each cleanup target under `E:\Git\zr_vm\build` or the explicit test log
-directory before removing it. Do not delete user source, fixtures, tracked
-goldens, or unrelated caches. Record what was removed in the acceptance file.
+The focused source/build roots were resolved to explicit absolute paths before
+removal. Windows `E:\zrs\ownership-review-f77` and `E:\zrb\orm`, plus WSL
+`/home/hejiahui/.codex-snapshots/ownership-review-f77` and the matching GCC and
+Clang `.codex-builds` roots, are removed and verified absent. No persistent log
+was created for the final serial matrix. Existing `.codex/logs` evidence owned
+by L8, Q6, and other sessions is deliberately preserved.
 
 - [ ] **Step 7: Commit final acceptance status**
 

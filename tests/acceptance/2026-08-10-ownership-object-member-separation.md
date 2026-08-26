@@ -661,8 +661,13 @@ current rejection coverage and are not stale positive syntax tests.
 - Run final source/alias search, `git diff --check`, exact-path review, and status
   promotion.
 - Old `ownership-post-stdio-*` WSL caches plus `E:\zrs\of` and `E:\zrb\ofm`
-  were removed after the newer full-matrix evidence superseded them. Retain only
-  the current final-replay caches until L8 integration is verified, then remove
-  those remaining task-owned build/source directories and logs.
+  were removed after newer evidence superseded them. After recording the final
+  serial focused matrix, cleanup also removed and verified absent:
+  `E:\zrs\ownership-review-f77`, `E:\zrb\orm`,
+  `/home/hejiahui/.codex-snapshots/ownership-review-f77`, and the corresponding
+  `ownership-review-f77-gcc` and `ownership-review-f77-clang` build roots. The
+  final matrix created no persistent log. Existing `.codex/logs` artifacts are
+  owned by L8, Q6, or other sessions and are preserved rather than conflated
+  with this task's cleanup scope.
 
 No plan or syntax status is promoted to completed until all pending gates pass.
