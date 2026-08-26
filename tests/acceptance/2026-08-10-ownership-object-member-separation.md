@@ -765,6 +765,65 @@ capability-ignored on MSVC. This cleanup is accepted independently; it does not
 promote the milestone while the frozen L8 failures and final stable-HEAD matrix
 remain open.
 
+### AOT typed bool call scalar-local repair
+
+After the stale numeric assertion was removed, the next serial
+`language_pipeline` run reached the bool short-circuit shared-library case and
+failed its existing generated-product contract. The typed no-argument call
+wrote `zr_aot_b14`, but bool-value dataflow did not publish that write. The
+generic `JUMP_IF` therefore emitted a runtime truthiness read of frame slot 14
+instead of `if (!zr_aot_b14)`. This was a production regression; the existing
+assertion was preserved.
+
+The first implementation covered only ordinary call opcodes and remained RED.
+Inspection of the generated instruction showed opcode 218, a compact
+`SUPER_*_CALL_NO_ARGS` form. The accepted implementation covers ordinary calls
+that can reach typed-direct lowering and the three statically resolved compact
+no-argument forms, while deliberately excluding compact dynamic calls. It
+records a bool write only when the resolved callee satisfies the canonical
+typed-bool thunk contract, and clears stale bool state for other typed call
+results. The regression requires the bool-scalar-local generic-jump marker,
+keeps `if (!zr_aot_b14)`, and rejects
+`GenericPrimitiveIsTruthy(state, &frame, 14, ...)`.
+
+Fresh direct evidence from the fixed `682f9c0` snapshot is:
+
+| Suite | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| control shared library | 2/2 | 2/2 | 2 capability-ignored |
+| logical shared library | 6/6 | 6/6 | 6 capability-ignored |
+| logical contracts | 4/4 | 4/4 | 4/4 |
+| generic jump shared library | 9/9 | 9/9 | 9 capability-ignored |
+| source contracts | 26/26 | 26/26 | 26/26 |
+| frame setup | 1/1 | 1/1 | 1/1 |
+| typed-call contracts | 4/4 | 4/4 | 4/4 |
+
+All listed direct processes returned zero. MSVC compiled the complete backend;
+only the Unix generated-shared-library execution bodies were ignored, each with
+the suite's explicit `dlopen` capability reason. This lower-layer correction is
+accepted independently but does not promote the ownership milestone before the
+stable post-L8 full graph is replayed. The complete fixed-snapshot GCC
+`language_pipeline` aggregate then passed in 1,341.92 seconds, including every
+remaining target after the repaired logical runner.
+
+Independent review found that the first GREEN still left frame-only call
+results outside both typed publication and invalidation. A prior bool write to
+the same destination could therefore survive `SUPER_DYN_CALL_NO_ARGS`, spread,
+or member-call frame writes. A generated-product regression added the exact
+compact dynamic sequence to the existing control smoke and first reported
+`2 Tests / 1 Failure / 0 Ignored`: the required frame truthiness call was
+missing. The finalized recorder invalidates the destination for every
+non-terminal call-result writer, then restores bool only from a canonical
+typed-direct callee proof. It also removes tail opcodes from the typed predicate
+because terminal results have no later consumer and were not uniformly
+recognized by the resolver.
+
+GCC 11.4 and Clang 14 each now pass control 2/2 plus the 6/6, 9/9, 4/4, 26/26,
+4/4, and 8/8 logical/jump/contract matrix. MSVC 19.44 rebuilds the affected DLL
+and targets, passes all 4/4, 26/26, 4/4, and 8/8 portable contracts, and reports
+the 2, 6, and 9 Unix shared-library cases as explicitly capability-ignored.
+No review finding remains in this exact slice.
+
 ## Pending final acceptance
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate

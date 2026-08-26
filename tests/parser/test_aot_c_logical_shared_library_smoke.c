@@ -719,7 +719,10 @@ static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logi
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_destination = &frame.slotBase[15].value;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrBool zr_aot_b14 = ZR_FALSE;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_bool_no_arg_direct_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if_bool_scalar_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b14) {"));
+    TEST_ASSERT_NULL(strstr(generatedCText,
+                            "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame, 14"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_condition = &frame.slotBase[14].value;"));
     TEST_ASSERT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_s14"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, 14"));

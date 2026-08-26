@@ -403,6 +403,8 @@ plan_sources:
   - docs/plans/aot/07-codegen-register-model-and-environment-isolation.md
   - docs/plans/aot/12-code-stripping.md
   - user: 2026-07-18 按 AOT 07~12 计划持续优化代码生成并逐阶段记录状态与产出
+  - docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md
+  - user: 2026-08-27 clean stale tests and repair lower shared regressions found by full acceptance
 tests:
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_aot_c_source_contracts.c
@@ -583,6 +585,7 @@ tests:
   - tests/core/test_type_layout_inline_copy.c
   - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
   - tests/parser/test_aot_c_logical_shared_library_smoke.c
+  - tests/acceptance/2026-08-10-ownership-object-member-separation.md
   - tests/parser/test_aot_c_generic_logical_not_numeric_local_smoke.c
   - tests/parser/test_aot_c_generic_jump_if_bool_local_smoke.c
   - tests/parser/test_aot_c_float_shared_library_smoke.c
@@ -1576,7 +1579,7 @@ Focused 2026-06-05 generic truthiness validation added `test_aot_c_generated_sha
 
 Focused 2026-06-05 generic primitive equality validation added `test_aot_c_generated_shared_library_executes_generic_primitive_equality_direct_expressions` to `tests/parser/test_aot_c_logical_shared_library_smoke.c`. The smoke compiles a source project whose `choose(true)` result is runtime integer `3` while the function can also return `false`, keeping `choose(true) == 3`, `choose(true) != 4`, and `choose(true) == 4` on the generic equality path instead of typed signed comparison. It verifies generated C contains `zr_aot_generic_logical_equal`, `zr_aot_generic_logical_not_equal`, direct signed payload equality, and no `ZrLibrary_AotRuntime_LogicalEqual` / `ZrCore_Value_Equal` helper calls, builds the generated C into a shared library, loads it through `ZrLibrary_AotRuntime_ExecuteEntry`, and returns integer `11` through the AOT C backend.
 
-Focused 2026-06-05 bool logical validation added `test_aot_c_source_lowers_bool_logical_and_or_to_direct_c` to `tests/parser/test_aot_c_logical_contracts.c`. The test first failed on missing `backend_aot_write_c_direct_logical_and`, then passed after `LOGICAL_AND` / `LOGICAL_OR` direct emitters were added. The generated-C source-level smoke was kept on the real frontend path: source `&&` / `||` lowers to short-circuit branches, so `test_aot_c_generated_shared_library_executes_bool_short_circuit_logical_expressions` verifies `zr_aot_jump_if_bool_false` / `zr_aot_bool_not_exec`, rejects `LogicalAnd` / `LogicalOr` helper strings, builds the generated C into a shared library, executes through `ZrLibrary_AotRuntime_ExecuteEntry`, and returns integer `13`.
+Focused 2026-06-05 bool logical validation added `test_aot_c_source_lowers_bool_logical_and_or_to_direct_c` to `tests/parser/test_aot_c_logical_contracts.c`. The test first failed on missing `backend_aot_write_c_direct_logical_and`, then passed after `LOGICAL_AND` / `LOGICAL_OR` direct emitters were added. The generated-C source-level smoke was kept on the real frontend path: source `&&` / `||` lowers to short-circuit branches, so `test_aot_c_generated_shared_library_executes_bool_short_circuit_logical_expressions` verifies `zr_aot_jump_if_bool_false`, bool scalar-local NOT/compare markers, and direct `if (!zr_aot_bN)` branches; rejects the obsolete `zr_aot_bool_not_exec`, `zr_aot_bool_compare_exec`, `LogicalAnd`, and `LogicalOr` routes; builds the generated C into a shared library; executes through `ZrLibrary_AotRuntime_ExecuteEntry`; and returns integer `13`.
 
 Focused 2026-06-05 string equality validation added `test_aot_c_source_lowers_string_equality_to_direct_c` and `test_aot_c_generated_shared_library_executes_string_equality_direct_expressions`. The source contract first failed on missing string direct emitter declarations, then passed after generated C lowered `LOGICAL_EQUAL_STRING` / `LOGICAL_NOT_EQUAL_STRING` with string accessors and `memcmp`. The shared-library smoke compiles explicitly typed string locals, verifies generated C contains `zr_aot_string_logical_equal`, `zr_aot_string_logical_not_equal`, string includes, byte-length/native-string accessors, and the `memcmp` equality expression, rejects the old string equality helper strings, builds the generated C into a shared library, executes through `ZrLibrary_AotRuntime_ExecuteEntry`, and returns integer `17`.
 
@@ -3039,3 +3042,54 @@ added. Generated C/LLVM execution for this fixture, tail/member/imported/spread
 callsites, original caller Place/provenance, writable ref/out writeback,
 aggregate return/destination, spill/address-taken storage, and GC/debug maps
 remain open.
+
+Focused 2026-08-27 full-graph acceptance exposed a scalar-local dataflow gap
+after the obsolete numeric marker assertion had been removed. A statically
+resolved `bool` call wrote its result directly to `zr_aot_b14`, but the
+bool-value analysis did not record that write. The following generic `JUMP_IF`
+therefore read frame slot 14 through
+`ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy` even though the typed local was
+the current value.
+
+The bool-value recorder now treats every non-terminal call-result write as an
+overwrite of the destination's prior bool proof. It restores `BOOL` only for
+ordinary calls that can reach the typed-direct emitter and the three compact
+statically resolved no-argument forms: `SUPER_FUNCTION_CALL_NO_ARGS`,
+`SUPER_KNOWN_VM_CALL_NO_ARGS`, and `SUPER_KNOWN_NATIVE_CALL_NO_ARGS`. It derives
+the result kind from the resolved callee and the existing typed thunk
+eligibility checks, records `BOOL` only for a canonical typed bool return, and
+clears a previous bool proof for all other result kinds and frame-only call
+paths. Compact `SUPER_DYN_*`, spread, and member calls therefore invalidate a
+stale `zr_aot_bN` proof because their emitters write the frame slot. Ordinary
+dynamic opcodes may qualify only when their callable slot resolves statically
+and the same typed-direct emitter can run. Tail calls are outside this
+non-terminal dataflow because they have no following consumer.
+
+`test_aot_c_generated_shared_library_executes_bool_short_circuit_logical_expressions`
+keeps the generated-product requirement `if (!zr_aot_b14)`, additionally
+requires the bool-scalar-local generic-jump marker, and rejects a runtime
+truthiness read of frame slot 14. Direct GCC 11.4 and Clang 14 shared-library
+execution reports logical 6/6, logical contracts 4/4, generic jump 9/9, source
+contracts 26/26, frame setup 1/1, and typed-call contracts 4/4. MSVC 19.44
+compiles the complete backend and reports 4/4, 26/26, 1/1, and 4/4 for the
+portable contract suites; the Unix `dlopen` bodies are capability-ignored with
+their explicit platform reasons. The complete fixed-snapshot GCC
+`language_pipeline` aggregate also passes after 1,341.92 seconds, including all
+targets after the repaired logical shared-library runner.
+
+Follow-up review found that merely excluding compact dynamic calls from typed
+revalidation could leave an older bool proof live. The control shared-library
+smoke now writes a bool, overwrites the same destination with
+`SUPER_DYN_CALL_NO_ARGS`, and requires the following `JUMP_IF` to call frame
+truthiness rather than emit `if (!zr_aot_b1)`. The regression was RED at 1/2
+and GREEN at 2/2 on GCC 11.4 and Clang 14. MSVC compiles the production and
+test target; both Unix control-smoke bodies are capability-ignored.
+
+`backend_aot_c_scalar_locals.c` remains a large single-purpose scalar-local
+dataflow module. Extracting only this opcode predicate would separate it from
+the emitter-aligned proof it protects. The smallest coherent follow-up is to
+move the bool-value dataflow as a unit: instruction write recording, range
+write queries, and block-entry proof behind a private scalar-local analysis
+interface. The shared-library test file likewise remains one cohesive logical
+execution suite; this change strengthens an existing case and adds no new test
+responsibility.

@@ -924,6 +924,53 @@ removes obsolete coverage from its existing single AOT shared-library suite;
 the smallest coherent future split would extract the numeric-arithmetic cases
 and their fixture helpers together, not move a lone assertion.
 
+The next serial `language_pipeline` replay passed that cleaned numeric case and
+then exposed a separate valid production regression in the bool short-circuit
+shared-library case. A compact statically resolved no-argument bool call emitted
+`zr_aot_b14 = ...`, but bool-value dataflow omitted the call result, so the
+following generic `JUMP_IF` fell back to reading frame slot 14 through
+`GenericPrimitiveIsTruthy`. The existing `if (!zr_aot_b14)` assertion was kept:
+this test was current and the backend was repaired.
+
+TDD first reproduced the failure. An initial patch covering only ordinary call
+opcodes remained RED because the fixture uses a compact
+`SUPER_*_CALL_NO_ARGS` opcode. The final predicate mirrors typed-direct call
+eligibility for ordinary calls plus the three statically resolved compact
+no-argument forms, derives `BOOL` from the canonical callee/thunk proof, and
+excludes compact dynamic calls whose emitter writes only the frame slot. The
+test now also requires `zr_aot_generic_jump_if_bool_scalar_local` and rejects a
+frame-slot truthiness read for slot 14.
+
+Direct GCC 11.4 and Clang 14 replay passes logical shared library 6/6, logical
+contracts 4/4, generic jump 9/9, source contracts 26/26, frame setup 1/1, and
+typed-call contracts 4/4. MSVC 19.44 builds the complete backend and passes the
+portable 4/4, 26/26, 1/1, and 4/4 suites; the two Unix shared-library bodies are
+capability-ignored with explicit `dlopen` reasons. The 6,774-line scalar-local
+module stays intact because this change extends its existing dataflow
+responsibility. Its smallest coherent extraction is the complete bool-value
+analysis, including instruction writes, range queries, and block-entry proof.
+The 1,250-line logical shared-library file remains a cohesive suite and gains
+only stronger assertions in an existing test. The complete fixed-snapshot GCC
+`language_pipeline` aggregate subsequently passes in 1,341.92 seconds.
+
+Independent review then found a P1 stale-state boundary in the first patch:
+compact dynamic, spread, and member calls were excluded from typed-direct bool
+publication but did not invalidate an older bool proof for the same destination
+slot. A real generated-C RED extended the existing control smoke with
+`bool write -> SUPER_DYN_CALL_NO_ARGS overwrite -> JUMP_IF`; it reported 1/2
+because frame truthiness was absent. The recorder now clears the destination
+for every call-result write and restores `BOOL` only for a non-terminal
+typed-direct call with canonical bool callee proof. Tail opcodes were removed
+from the typed predicate because they have no following dataflow consumer and
+the result resolver did not classify two of them.
+
+The review regression is GREEN at control 2/2 on GCC 11.4 and Clang 14. The
+expanded serial matrix on both toolchains also passes logical 6/6, generic jump
+9/9, logical contracts 4/4, source contracts 26/26, typed-call contracts 4/4,
+and call contracts 8/8. MSVC 19.44 rebuilds the affected parser DLL and test
+targets, passes portable 4/4, 26/26, 4/4, and 8/8, and capability-ignores the
+2 control, 6 logical, and 9 generic-jump Unix bodies with explicit reasons.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before

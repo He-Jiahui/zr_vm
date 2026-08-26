@@ -10,6 +10,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/value.h"
 #include "zr_vm_parser/writer.h"
 #endif
 
@@ -56,6 +57,16 @@ static TZrInstruction create_slot_instruction(EZrInstructionCode opcode, TZrUInt
     memset(&instruction, 0, sizeof(instruction));
     instruction.instruction.operationCode = (TZrUInt16)opcode;
     instruction.instruction.operandExtra = slotIndex;
+    return instruction;
+}
+
+static TZrInstruction create_get_constant_instruction(TZrUInt16 destinationSlot, TZrInt32 constantIndex) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(GET_CONSTANT);
+    instruction.instruction.operandExtra = destinationSlot;
+    instruction.instruction.operand.operand2[0] = constantIndex;
     return instruction;
 }
 
@@ -123,6 +134,16 @@ static TZrInstruction create_jump_offset_instruction(TZrInt32 offset) {
     return instruction;
 }
 
+static TZrInstruction create_jump_if_instruction(TZrUInt16 conditionSlot, TZrInt32 offset) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(JUMP_IF);
+    instruction.instruction.operandExtra = conditionSlot;
+    instruction.instruction.operand.operand2[0] = offset;
+    return instruction;
+}
+
 static SZrFunction *create_safepoint_boundary_function(SZrState *state) {
     SZrFunction *function;
 
@@ -132,14 +153,24 @@ static SZrFunction *create_safepoint_boundary_function(SZrState *state) {
 
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
             state->global,
-            sizeof(TZrInstruction) * 4u,
+            sizeof(TZrInstruction) * 6u,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
-    function->instructionsList[0] = create_slot_instruction(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0u);
-    function->instructionsList[1] = create_dynamic_no_arg_call_instruction(1u, 0u);
-    function->instructionsList[2] = create_jump_offset_instruction(-3);
-    function->instructionsList[3] = create_return_instruction(1u, 1u);
-    function->instructionsLength = 4u;
+    function->instructionsList[0] = create_get_constant_instruction(1u, 0);
+    function->instructionsList[1] = create_slot_instruction(ZR_INSTRUCTION_ENUM(CREATE_OBJECT), 0u);
+    function->instructionsList[2] = create_dynamic_no_arg_call_instruction(1u, 0u);
+    function->instructionsList[3] = create_jump_if_instruction(1u, 1);
+    function->instructionsList[4] = create_jump_offset_instruction(-5);
+    function->instructionsList[5] = create_return_instruction(1u, 1u);
+    function->instructionsLength = 6u;
+
+    function->constantValueList = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrTypeValue),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->constantValueList);
+    ZrCore_Value_InitAsBool(state, &function->constantValueList[0], ZR_TRUE);
+    function->constantValueLength = 1u;
 
     function->stackSize = 2u;
     function->parameterCount = 0u;
@@ -216,6 +247,10 @@ static void test_aot_c_generated_source_inserts_gc_safepoints_at_all_boundaries(
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_allocation"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_call"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_back_edge"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_GenericPrimitiveIsTruthy(state, &frame, 1"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_jump_if_bool_scalar_local"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "if (!zr_aot_b1) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Gc_SafePoint(state);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_0_ins_0;"));
     free(generatedCText);
