@@ -2,7 +2,7 @@
 
 ## Status
 
-- Review date: 2026-08-23 (UTC+08:00)
+- Review date: 2026-08-26 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
 - Scope: the historical 55 milestone records under `docs/plans/syntax`
 - Relationship to the current tree: `docs/plans/syntax` now contains 91 Markdown
@@ -113,6 +113,129 @@ The ownership/member-separation target also passes 24/24 in a separate GCC
 Debug cache built with ASan+UBSan and frame pointers. Leak detection was disabled
 to isolate executable memory-safety and undefined-behavior evidence; neither
 sanitizer reported an error.
+
+## 2026-08-25 selector and migration preflight
+
+The canonical selector was rerun from the current worktree using the documented
+direct-child, implementation-plan, and independent-support-record exclusions:
+
+```text
+TOTAL=55
+COMPLETE=55
+MISSING_STATUS=0
+MISSING_TIME=0
+01=5 02=6 03=5 04=7 05=6 06=2 07=1 10=5 12=15 13=3
+```
+
+Production parser C/H again has zero matches for the removed percent-prefixed
+keyword branches. Test registration review has zero disabled `#if 0` blocks and
+zero commented `RUN_TEST` calls. The Windows migration-inventory protocol ran
+all ten tests: nine passed, while only the deterministic repository-inventory
+comparison failed because its tracked golden is concurrently modified against a
+still-dirty repository baseline. Classification, UTF-8/LF output, current-syntax
+coverage, and the absence of machine-applicable LSP legacy fixtures all passed.
+The golden is not regenerated or staged until its current owner releases it and
+the final tracked baseline is stable.
+
+## 2026-08-25 legacy test-suite classification
+
+A repository test-source search reclassified every remaining occurrence of the
+removed percent surface. Executable `.zr` files containing those forms are
+limited to the explicit `syntax_reference_v1/negative` fixture and the
+`syntax_migration_frontend` or `syntax_migration_inventory` inputs. In the
+inventory's `current_forms.zr` the text occurs only inside a string literal; in
+`ignored_forms.zr` it occurs only inside comments. Neither file is a positive
+parser-compatibility case.
+
+The few occurrences in general parser or LSP runners are also current
+assertions rather than stale success paths:
+
+- `test_parser.c`, `test_compiler_features.c`, and `test_lsp_interface.c`
+  require `%unique` or field-scoped percent ownership syntax to fail with the
+  directed `legacy_syntax_removed` contract;
+- the LSP completion case requires `import` and rejects `%import` as a
+  completion label;
+- the formatting and CompileTool projection cases require canonical output and
+  explicitly fail if `%compileTime`, `%func`, or `%import` is emitted;
+- `test_legacy_migration.c`, `test_percent_syntax_cutover.c`, the migration CLI
+  smoke, and the migration inventory deliberately retain old spellings as
+  inputs to rejection, classification, or structured rewrite tests.
+
+Therefore no current positive test suite depends on accepting the removed
+percent language. These negative and migration fixtures are retained because
+deleting them would remove proof of the one-time breaking cutover rather than
+modernize a stale success expectation.
+
+The current first-party C/H test tree contains 165 `TEST_IGNORE_MESSAGE` call
+sites. A structural scan found a nearby explicit `#if` or `#elif` capability
+branch for all 165 (`WITHOUT_NEAR_IF=0`). Their messages and guards cover Unix
+shared-library/private-symbol execution or the Windows static-CRT `errno`
+boundary. The one increase from the earlier 164-site audit is the concurrent
+readonly-aggregate ExecIR test, which is guarded because its private validation
+symbols are not exported by the Windows parser DLL. No ignore is used to hide a
+portable current-language failure.
+
+## 2026-08-26 test-runner and inventory review
+
+A broader first-party custom-runner audit found six executables that could
+print an internal failure and still return zero: incremental parser,
+instructions, symbol table, reference tracker, LSP language feature matrix, and
+LSP project features. The first five are corrected by `9f784b1`, `11f5f97`, and
+`da2fd81`. Controlled incremental-parser and Unity failures now return one;
+restored GCC/Clang/MSVC runs return zero with no failure markers. The instruction
+suite reports `95 Tests / 0 Failures / 0 Ignored`, and the language feature
+matrix reports `0 failure(s)` on all three toolchains.
+
+`test_lsp_project_features.c` remains frozen because it is an active L8
+provider/binary callable test path. It still needs the same counted `TEST_FAIL`
+and nonzero-return repair after that exact path is released. Consequently the
+final 134-test CTest graph is not yet accepted even if an intermediate run
+reports green.
+
+The complete Windows migration-inventory protocol was rerun after these test
+changes. Nine of ten cases pass in 118.747 seconds; the sole failure remains the
+deterministic repository golden comparison. Protocol classification, embedded
+source scanning, UTF-8/LF output, current syntax reference coverage, and the
+absence of machine-applicable LSP legacy fixtures all pass. The golden is not
+regenerated on the still-moving tracked baseline.
+
+The canonical selector was rerun again on 2026-08-26 and remains unchanged:
+
+```text
+TOTAL=55
+COMPLETE=55
+MISSING_STATUS=0
+MISSING_TIME=0
+01=5 02=6 03=5 04=7 05=6 06=2 07=1 10=5 12=15 13=3
+```
+
+Content review found one stale current-contract sentence in the completed 04-M3
+record: it still said Weak direct calls were rejected in favor of an explicit
+`upgrade`, and described `share` through the former `OWN_CONSTRUCT + SHARE`
+route. The record now reflects the implemented chain-level Weak receiver guard,
+named direct-access error, dedicated `OwnershipIntrinsicFact`, and canonical
+PlaceId contract. The old `%upgrade` text that remains in the 06 implementation
+plan is an intentional migration input, and M7's historical ownership opcodes
+remain explicitly scoped to artifact-reader compatibility rather than source
+semantics.
+
+The completed Syntax 05 M3 record was also refreshed after the focused optional
+access review. It now records whole-suffix skipping for computed indices and
+property getters, single receiver evaluation, hidden Weak owner lifetime, and
+the direct-access `NullReferenceError` boundary. This is a current-contract
+documentation correction, not a change to the canonical 55-record selector or
+to any historical migration fixture.
+
+The Copilot-reported Windows unresolved externals were also checked against the
+current CMake graph rather than addressed speculatively. The debug expression
+diagnostics target already links `zr_vm_debug_shared` and its network dependency,
+while every language-server support target, including the LSP interface target,
+passes through `zr_vm_link_language_server`. A fresh short-path MSVC 19.44 shared
+Debug cache configured and linked both executables without a CMake change.
+Direct execution returned zero with debug diagnostics `56 Tests / 0 Failures /
+0 Ignored` and the complete LSP interface suite passing. This closes the two
+reported linker failures on the current shared-library configuration; it does
+not replace the final static three-toolchain CTest gate.
 
 ## Pending completion gates
 
