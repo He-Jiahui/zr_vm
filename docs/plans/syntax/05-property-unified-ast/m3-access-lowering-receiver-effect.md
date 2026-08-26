@@ -34,6 +34,18 @@
 - M3 只完成普通 value property access；`ref`/`ref readonly` getter、Place/region/managed interior ref 属于 M4。
 - LSP consumer parity 属于 M5，M3 不修改 language-server 路径或增加文本 fallback。
 
+## 2026-08-26 ownership/object member separation 收敛
+
+- `.` 与 `?.` 现只表示 target member/property/call access；ownership control 只由五个
+  reserved intrinsic 的 dedicated AST/fact 路径承载。成员名为 `share`、`degrade`、`wake`、
+  `intoGc` 或 `drop` 时仍执行普通 visible-member lookup 和 dispatch。
+- optional access mode 由 postfix segment 与 chain-level `ReceiverGuardFact` 表示。receiver
+  expression只求值一次；guard 失败跳过 property getter、computed-index expression、callable
+  suffix 与 arguments，且不改变 existing single-evaluation property lowering contract。
+- 当前 GCC 11.4 focused runner 直接通过 35/35，其中新增 live/expired Weak 的 receiver
+  single-evaluation、computed-index skip 与 throwing property-getter skip 回归。Clang/MSVC 和
+  stable-HEAD full graph 仍属于 ownership separation 最终验收，不改写本记录原 M3 晋级结论。
+
 ## 验收结论
 
 - focused `zr_vm_property_access_lowering_test` 在 GCC/Clang/MSVC 均为 22/22，最终同字节二次复跑均
