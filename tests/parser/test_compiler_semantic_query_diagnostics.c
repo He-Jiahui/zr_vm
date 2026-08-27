@@ -10,6 +10,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/type_inference.h"
 
@@ -1345,6 +1346,112 @@ static void test_function_call_compatibility_publishes_detailed_type_mismatch_fa
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
     ZrParser_Ast_Free(g_state, ast);
+}
+
+static void assert_function_call_ownership_diagnostic(
+        const TZrChar *source,
+        const TZrChar *sourceNameText,
+        const TZrChar *argumentNeedle,
+        const TZrChar *diagnosticCode,
+        TZrUInt32 descriptorId,
+        EZrOwnershipQualifier qualifier) {
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange argumentPosition;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrStructuredDiagnostic *published;
+    const SZrSemanticOwnershipFact *ownershipFact;
+
+    sourceName = ZrCore_String_Create(
+            g_state, sourceNameText, strlen(sourceNameText));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_TRUE(find_position_for_substring(
+            source, sourceName, argumentNeedle, 0U, 0U, &argumentPosition));
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(descriptorId, cs.structuredError.descriptorId);
+    TEST_ASSERT_EQUAL_STRING(
+            diagnosticCode,
+            ZrCore_String_GetNativeString(cs.structuredError.code));
+    TEST_ASSERT_EQUAL_UINT64(
+            argumentPosition.start.offset,
+            cs.structuredError.location.start.offset);
+
+    ownershipFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+            cs.semanticContext, argumentPosition);
+    TEST_ASSERT_NOT_NULL(ownershipFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_OWNERSHIP_FACT_ERROR, ownershipFact->kind);
+    TEST_ASSERT_EQUAL_INT(qualifier, ownershipFact->qualifier);
+    TEST_ASSERT_TRUE(ownershipFact->isViolation);
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    cs.hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(&cs);
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+    published = find_query_diagnostic_by_code(cs.semanticContext, diagnosticCode);
+    TEST_ASSERT_NOT_NULL(published);
+    TEST_ASSERT_EQUAL_UINT32(descriptorId, published->descriptorId);
+    TEST_ASSERT_EQUAL_UINT64(
+            argumentPosition.start.offset,
+            published->location.start.offset);
+    TEST_ASSERT_FALSE(published->fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            published->noFixReason);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_function_call_compatibility_publishes_ownership_diagnostics(void) {
+    const TZrChar *mismatchSource =
+            "resource class Resource {}\n"
+            "fn consume(resource: Unique<Resource>) {}\n"
+            "fn run(resource: Shared<Resource>) {\n"
+            "    consume(resource);\n"
+            "}\n";
+    const TZrChar *weakSource =
+            "resource class Resource {}\n"
+            "fn observe(resource: ref readonly Resource): int { return 0; }\n"
+            "fn run(watcher: Weak<Resource>): int {\n"
+            "    observe(ref watcher);\n"
+            "    return 0;\n"
+            "}\n";
+
+    assert_function_call_ownership_diagnostic(
+            mismatchSource,
+            "compiler_function_call_ownership_mismatch_test.zr",
+            "resource);",
+            "ownership_mismatch",
+            2008U,
+            ZR_OWNERSHIP_QUALIFIER_SHARED);
+    assert_function_call_ownership_diagnostic(
+            weakSource,
+            "compiler_function_call_weak_wake_test.zr",
+            "watcher);",
+            "weak_value_requires_wake",
+            4004U,
+            ZR_OWNERSHIP_QUALIFIER_WEAK);
 }
 
 static void test_const_assignment_publishes_structured_semantic_diagnostic(void) {
@@ -2701,6 +2808,7 @@ int main(void) {
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
     RUN_TEST(test_assignment_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_function_call_compatibility_publishes_detailed_type_mismatch_fact);
+    RUN_TEST(test_function_call_compatibility_publishes_ownership_diagnostics);
     RUN_TEST(test_const_assignment_publishes_structured_semantic_diagnostic);
     RUN_TEST(test_const_field_assignment_matches_constructor_context_contract);
     RUN_TEST(test_invalid_interface_variance_publishes_structured_semantic_diagnostic);

@@ -2042,8 +2042,9 @@ static void test_weak_value_requires_wake_before_borrowed_parameter(void) {
         TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_TRUE(strstr(cs->errorMessage, "Argument type mismatch") != ZR_NULL ||
-                         strstr(cs->errorMessage, "No matching overload") != ZR_NULL);
+        TEST_ASSERT_NOT_NULL(strstr(
+                cs->errorMessage,
+                "Weak value must be woken before it can be borrowed"));
         ZrParser_InferredType_Free(state, &result);
 
         ZrCore_Function_Free(state, cs->currentFunction);

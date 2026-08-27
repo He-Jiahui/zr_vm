@@ -4120,6 +4120,22 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
                 return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
 
+            if (!type_inference_in_parameter_accepts_owner_reborrow(
+                        passingMode, paramType, argType)) {
+                const TZrChar *ownershipDiagnostic =
+                        type_inference_call_diagnostic_ownership_message(
+                                passingMode, paramType, argType);
+                if (ownershipDiagnostic != ZR_NULL) {
+                    if (outOwnershipDiagnostic != ZR_NULL) {
+                        *outOwnershipDiagnostic = ownershipDiagnostic;
+                    }
+                    if (outTypeMismatchIndex != ZR_NULL) {
+                        *outTypeMismatchIndex = i;
+                    }
+                    return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
+                }
+            }
+
             if (passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
                 passingMode == ZR_PARAMETER_PASSING_MODE_OUT) {
                 if (!type_inference_reference_argument_type_equal(
@@ -4276,19 +4292,28 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
                 ownershipDiagnostic = candidateOwnershipDiagnostic;
             }
             if (candidates.length == 1U &&
-                candidateOwnershipDiagnostic == ZR_NULL &&
                 typeMismatchIndex < candidateArgTypes.length) {
                 const SZrInferredType *argumentType =
                         (const SZrInferredType *)ZrCore_Array_Get(
                                 &candidateArgTypes,
                                 typeMismatchIndex);
-                (void)type_inference_call_diagnostic_report_argument_mismatch(
-                        cs,
-                        *candidatePtr,
-                        &candidateResolvedSignature,
-                        call,
-                        typeMismatchIndex,
-                        argumentType);
+                if (candidateOwnershipDiagnostic != ZR_NULL) {
+                    (void)type_inference_call_diagnostic_report_ownership_mismatch(
+                            cs,
+                            *candidatePtr,
+                            &candidateResolvedSignature,
+                            call,
+                            typeMismatchIndex,
+                            argumentType);
+                } else {
+                    (void)type_inference_call_diagnostic_report_argument_mismatch(
+                            cs,
+                            *candidatePtr,
+                            &candidateResolvedSignature,
+                            call,
+                            typeMismatchIndex,
+                            argumentType);
+                }
             }
             free_inferred_type_array(cs->state, &candidateArgTypes);
             free_resolved_call_signature(cs->state, &candidateResolvedSignature);

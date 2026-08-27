@@ -1273,6 +1273,27 @@ static void test_unresolved_reference_diagnostics_use_parser_query_projection(vo
     free(typecheck);
 }
 
+static void test_named_call_compatibility_uses_parser_inference_projection(void) {
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+
+    if (typecheck == NULL) {
+        printf("FAIL: could not read semantic analyzer typecheck source\n");
+        g_failures++;
+        return;
+    }
+
+    assert_text_contains(
+        typecheck,
+        "semantic_check_primary_call_with_parser_inference");
+    assert_text_contains_none(typecheck, "ZrParser_TypeEnvironment_LookupFunction");
+    assert_text_contains_none(typecheck, "ZrParser_FunctionCallOverload_Resolve");
+    assert_text_contains_none(typecheck, "ZrParser_FunctionCallCompatibility_Check");
+    assert_text_contains_none(typecheck, "\"Type mismatch in function call\"");
+
+    free(typecheck);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1323,6 +1344,7 @@ int main(void) {
     test_variance_diagnostics_use_parser_query_projection();
     test_interface_const_field_diagnostics_use_parser_query_projection();
     test_unresolved_reference_diagnostics_use_parser_query_projection();
+    test_named_call_compatibility_uses_parser_inference_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1373,6 +1395,7 @@ int main(void) {
     printf("PASS: Variance diagnostics use parser query projection\n");
     printf("PASS: Interface const-field diagnostics use parser query projection\n");
     printf("PASS: Unresolved-reference diagnostics use parser query projection\n");
+    printf("PASS: Named-call compatibility uses parser inference projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }
