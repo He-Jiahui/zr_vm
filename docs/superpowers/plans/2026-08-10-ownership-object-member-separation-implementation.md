@@ -1060,6 +1060,20 @@ main `e897a19` plus the exact three-test-file overlay, GCC
 passes 44/44 directly. This is test-only and does not close Step 5 before the
 L8-frozen runners and final integrated graph are accepted.
 
+The pre-L8 full MSVC graph exposed a separate test-harness blocker:
+`language_pipeline` was registered but CTest reported `BAD_COMMAND` before the
+suite runner started because the default executable list was embedded three
+times plus the smoke list in one Windows command. Exact commit `685e8e6`
+(`test(cmake): bound aggregate suite command lines`) moves those lists into a
+per-configuration generated manifest while preserving default, smoke, core,
+and stress order and failure propagation. MSVC 19.44, GCC 11.4, and Clang 14
+configure successfully and start the runner. The MSVC Debug command is 377
+characters; its manifest contains 126/41/126/126 executables, default and smoke
+select the expected first child, and a missing manifest fails explicitly. The
+configure-only launch probes fail at the first unbuilt child with CTest exit 8
+and never report `BAD_COMMAND`. Read-only review found no P0-P2 issue. Full
+126-child execution remains part of the stable post-L8 Step 5 replay.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -1123,6 +1137,11 @@ absent from their original paths. WSL roots named
 `ownership-direct-wake-e897` are also absent. The ignored concurrent-runner
 script and its command-local `/tmp` outputs were deleted; no shared cache or log
 was changed.
+
+The CTest manifest gate also removed its generated configuration products.
+`D:\CodexBuilds\ownership-ctest-red-00c9793` was sent to the recycle bin, and
+the WSL GCC/Clang roots named `ownership-ctest-manifest-*` were deleted by exact
+path. All three locations were verified absent. No persistent log was created.
 
 - [ ] **Step 7: Commit final acceptance status**
 
