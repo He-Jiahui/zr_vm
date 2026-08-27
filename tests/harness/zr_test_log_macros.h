@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "unity.h"
+
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
@@ -33,6 +35,8 @@ typedef struct SZrTestTimer {
         double zrTestElapsed = ((double) ((timer).endTime - (timer).startTime) / CLOCKS_PER_SEC) * 1000.0;           \
         printf("Fail - Cost Time:%.3fms - %s:\n %s\n", zrTestElapsed, summary, reason);                               \
         fflush(stdout);                                                                                                \
+        Unity.CurrentTestFailed = 1;                                                                                    \
+        UNITY_OUTPUT_FLUSH();                                                                                           \
     } while (0)
 
 #define ZR_TEST_DIVIDER()                                                                                              \
