@@ -46,6 +46,8 @@
     double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
+    Unity.CurrentTestFailed = 1; \
+    UNITY_OUTPUT_FLUSH(); \
 } while(0)
 
 #define TEST_DIVIDER() do { \
