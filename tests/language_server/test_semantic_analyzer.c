@@ -14,6 +14,8 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
+#include "zr_vm_parser/semantic_query.h"
+#include "zr_vm_parser/diagnostic_registry.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_lib_container/module.h"
@@ -348,6 +350,8 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
 
     return ZR_NULL;
 }
+
+#include "test_semantic_analyzer_diagnostic_golden_parity_cases.h"
 
 static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment) {
     const char *text;
@@ -5111,6 +5115,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_assignment_ownership_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_query_diagnostic_golden_parity(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);
