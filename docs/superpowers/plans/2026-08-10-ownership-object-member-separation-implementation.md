@@ -993,6 +993,17 @@ frame, and call contracts pass 26/26, 1/1, and 9/9 on all three toolchains.
 Keep Step 5 open only for the stable post-L8 registered full graph, artifact,
 inventory, and final exact-diff review.
 
+The performance-criterion review then found that the fifth receiver-guard
+benchmark explicitly evaluated `wake(weak)` before its loop and repeatedly ran
+`guarded?.child.value`. That measured a nullable Shared suffix rather than the
+design's deep Weak hidden-wake path. Exact commit `27e4df5` changes only that
+workload to `weak?.child.value`, renames it `deep_weak_guard`, and refreshes the
+module and acceptance evidence. Static Debug GCC 11.4 and Clang 14 each pass
+1/1, MSVC 19.44 passes three consecutive 1/1 runs, and every variant produces
+checksum 344064. A separate GCC 11.4 Release build passes twice and supplies the
+recorded five-way comparison. This focused correction still does not close Step
+5 before the post-L8 full graph, artifact, inventory, and exact final review.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -1029,6 +1040,13 @@ shared cache was changed.
 The post-review MSVC confirmation also removed and verified absent
 `E:\zrs\ownership-review-final` and `E:\zrb\ownership-review-final-msvc`.
 No persistent test log or transfer archive was created for that replay.
+
+The deep Weak performance correction removed and verified absent the Windows
+source snapshot `E:\zrs\ownership-perf-d6ee3fe`, MSVC cache
+`E:\zrb\ownership-perf-msvc`, and transfer archive
+`E:\zrb\ownership-perf-d6ee3fe.tar`. The matching WSL source snapshot, GCC and
+Clang Debug caches, and GCC Release cache were also removed. The replay created
+no persistent log and did not change shared `.codex/logs` evidence.
 
 - [ ] **Step 7: Commit final acceptance status**
 
