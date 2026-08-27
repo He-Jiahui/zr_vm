@@ -79,6 +79,20 @@ function(zr_vm_add_support_target target_name)
 endfunction()
 
 add_executable(
+        zr_vm_test_log_failure_probe
+        ${CMAKE_SOURCE_DIR}/tests/harness/test_zr_test_log_failure_probe.c
+)
+zr_vm_apply_common_test_settings(zr_vm_test_log_failure_probe)
+target_compile_definitions(zr_vm_test_log_failure_probe PRIVATE UNITY_INCLUDE_CONFIG_H)
+zr_link_third_party_for_target(zr_vm_test_log_failure_probe "zr_unity")
+add_test(
+        NAME test_log_failure_contract
+        COMMAND ${CMAKE_COMMAND}
+                "-DPROBE_EXE=$<TARGET_FILE:zr_vm_test_log_failure_probe>"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/verify_test_log_failure.cmake
+)
+
+add_executable(
         zr_vm_perf_runner
         ${CMAKE_SOURCE_DIR}/tests/performance/perf_runner.c
 )
