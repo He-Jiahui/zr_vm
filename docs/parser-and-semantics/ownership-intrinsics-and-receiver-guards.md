@@ -393,3 +393,13 @@ explicit `drop(shared)`. The member named `drop` adds no ownership operation.
 On the fixed main `a66f001` plus two-test-file overlay, GCC 11.4, Clang 14, and
 MSVC 19.44 each directly pass the resulting ownership runner 42/42 with process
 exit zero.
+
+The generated-product follow-up runs the same five intrinsic-named methods
+through both AOT C and AOT LLVM. The first LLVM run reached the real backend and
+failed on unsupported opcode 120, `JUMP_IF_NOT_EQUAL_SIGNED_CONST`, while the C
+case passed. LLVM branch lowering and the AOT runtime now cover all four signed
+fused comparisons emitted by quickening and distinguish a right frame slot from
+a right constant-table index. On a fixed `515c4eb` snapshot with the exact
+seven-file overlay, GCC 11.4 and Clang 14 each execute 6/6 receiver/intrinsic
+shared-library cases with exit zero. MSVC 19.44 compiles and links the same
+backend and reports 6/6 explicit Unix capability ignores with exit zero.

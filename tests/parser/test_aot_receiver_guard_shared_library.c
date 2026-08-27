@@ -87,6 +87,31 @@ static const char *ownership_intrinsics_source(void) {
            "return run();\n";
 }
 
+static const char *intrinsic_named_members_source(void) {
+    return "resource class Service {\n"
+           "    pub const fn share(): int { return 1; }\n"
+           "    pub const fn degrade(): int { return 2; }\n"
+           "    pub const fn wake(): int { return 4; }\n"
+           "    pub const fn intoGc(): int { return 8; }\n"
+           "    pub const fn drop(): int { return 16; }\n"
+           "}\n"
+           "fn run(): int {\n"
+           "    var seed = own Service();\n"
+           "    var shared = share(seed);\n"
+           "    var weak = degrade(shared);\n"
+           "    var mask = 0;\n"
+           "    if (weak?.share() == 1) { mask = mask + 1; }\n"
+           "    if (weak?.degrade() == 2) { mask = mask + 2; }\n"
+           "    if (weak?.wake() == 4) { mask = mask + 4; }\n"
+           "    if (weak?.intoGc() == 8) { mask = mask + 8; }\n"
+           "    if (weak?.drop() == 16) { mask = mask + 16; }\n"
+           "    drop(shared);\n"
+           "    if (weak?.share() == null) { mask = mask + 32; }\n"
+           "    return mask;\n"
+           "}\n"
+           "return run();\n";
+}
+
 static SZrFunction *compile_source(SZrState *state, const char *source) {
     SZrString *sourceName;
 
@@ -371,11 +396,41 @@ static void test_aot_llvm_ownership_intrinsics_execute_all_operations(void) {
 #endif
 }
 
+static void test_aot_c_optional_intrinsic_named_members_use_normal_dispatch(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT intrinsic-named member smoke validates the Unix toolchain path");
+#else
+    execute_source_backend(intrinsic_named_members_source(),
+                           63,
+                           ZR_AOT_BACKEND_KIND_C,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                           "aot_c_intrinsic_named_member_shared_library",
+                           "aot_c");
+#endif
+}
+
+static void test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT intrinsic-named member smoke validates the Unix toolchain path");
+#else
+    execute_source_backend(intrinsic_named_members_source(),
+                           63,
+                           ZR_AOT_BACKEND_KIND_LLVM,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                           "aot_llvm_intrinsic_named_member_shared_library",
+                           "aot_llvm");
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_receiver_guards_execute_optional_and_direct_contracts);
     RUN_TEST(test_aot_llvm_receiver_guards_execute_optional_and_direct_contracts);
     RUN_TEST(test_aot_c_ownership_intrinsics_execute_all_operations);
     RUN_TEST(test_aot_llvm_ownership_intrinsics_execute_all_operations);
+    RUN_TEST(test_aot_c_optional_intrinsic_named_members_use_normal_dispatch);
+    RUN_TEST(test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch);
     return UNITY_END();
 }

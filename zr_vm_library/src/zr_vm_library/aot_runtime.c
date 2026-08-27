@@ -5000,47 +5000,148 @@ TZrBool ZrLibrary_AotRuntime_IsTruthy(SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrLibrary_AotRuntime_ShouldJumpIfGreaterSigned(SZrState *state,
-                                                       ZrAotGeneratedFrame *frame,
-                                                       TZrUInt32 leftSlot,
-                                                       TZrUInt32 rightSlot,
-                                                       TZrBool *outShouldJump) {
+static TZrBool aot_runtime_should_jump_signed_compare(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        TZrUInt32 leftSlot,
+        TZrUInt32 rightOperand,
+        EZrInstructionCode opcode,
+        TZrBool rightIsConstant,
+        TZrBool *outShouldJump) {
     SZrLibraryAotRuntimeState *runtimeState;
     TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
-    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
-    SZrTypeValue *leftValue;
-    SZrTypeValue *rightValue;
+    TZrStackValuePointer rightPointer =
+            rightIsConstant ? ZR_NULL : aot_runtime_frame_slot(frame, rightOperand);
+    const SZrTypeValue *leftValue;
+    const SZrTypeValue *rightValue;
     TZrInt64 leftNumber;
     TZrInt64 rightNumber;
+    const TZrChar *operationName;
+    TZrChar errorMessage[128];
+
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+            operationName = "JUMP_IF_GREATER_SIGNED";
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+            operationName = "JUMP_IF_LESS_EQUAL_SIGNED";
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+            operationName = "JUMP_IF_NOT_EQUAL_SIGNED";
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            operationName = "JUMP_IF_NOT_EQUAL_SIGNED_CONST";
+            break;
+        default:
+            operationName = "SIGNED_BRANCH";
+            break;
+    }
 
     runtimeState =
             state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
     if (outShouldJump != ZR_NULL) {
         *outShouldJump = ZR_FALSE;
     }
-    if (state == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL || outShouldJump == ZR_NULL) {
-        aot_runtime_fail(state, runtimeState, "JUMP_IF_GREATER_SIGNED: invalid stack slot");
+    if (state == ZR_NULL || leftPointer == ZR_NULL ||
+        (!rightIsConstant && rightPointer == ZR_NULL) || outShouldJump == ZR_NULL) {
+        snprintf(errorMessage, sizeof(errorMessage), "%s: invalid stack slot", operationName);
+        aot_runtime_fail(state, runtimeState, errorMessage);
         return ZR_FALSE;
     }
 
     leftValue = ZrCore_Stack_GetValue(leftPointer);
-    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    rightValue = rightIsConstant
+                         ? aot_runtime_frame_constant(frame, rightOperand)
+                         : ZrCore_Stack_GetValue(rightPointer);
     if (leftValue == ZR_NULL || rightValue == ZR_NULL) {
-        aot_runtime_fail(state, runtimeState, "JUMP_IF_GREATER_SIGNED: missing value");
+        snprintf(errorMessage, sizeof(errorMessage), "%s: missing value", operationName);
+        aot_runtime_fail(state, runtimeState, errorMessage);
         return ZR_FALSE;
     }
-
     if (!aot_runtime_extract_integer_like_value(leftValue, &leftNumber)) {
-        aot_runtime_fail(state, runtimeState, "JUMP_IF_GREATER_SIGNED: left operand is not integer-like");
+        snprintf(errorMessage, sizeof(errorMessage), "%s: left operand is not integer-like", operationName);
+        aot_runtime_fail(state, runtimeState, errorMessage);
         return ZR_FALSE;
     }
     if (!aot_runtime_extract_integer_like_value(rightValue, &rightNumber)) {
-        aot_runtime_fail(state, runtimeState, "JUMP_IF_GREATER_SIGNED: right operand is not integer-like");
+        snprintf(errorMessage, sizeof(errorMessage), "%s: right operand is not integer-like", operationName);
+        aot_runtime_fail(state, runtimeState, errorMessage);
         return ZR_FALSE;
     }
 
-    *outShouldJump = leftNumber > rightNumber ? ZR_TRUE : ZR_FALSE;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+            *outShouldJump = leftNumber > rightNumber ? ZR_TRUE : ZR_FALSE;
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+            *outShouldJump = leftNumber <= rightNumber ? ZR_TRUE : ZR_FALSE;
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            *outShouldJump = leftNumber != rightNumber ? ZR_TRUE : ZR_FALSE;
+            break;
+        default:
+            snprintf(errorMessage, sizeof(errorMessage), "%s: unsupported comparison", operationName);
+            aot_runtime_fail(state, runtimeState, errorMessage);
+            return ZR_FALSE;
+    }
     return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_ShouldJumpIfGreaterSigned(SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot,
+                                                       TZrBool *outShouldJump) {
+    return aot_runtime_should_jump_signed_compare(state,
+                                                  frame,
+                                                  leftSlot,
+                                                  rightSlot,
+                                                  ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED),
+                                                  ZR_FALSE,
+                                                  outShouldJump);
+}
+
+TZrBool ZrLibrary_AotRuntime_ShouldJumpIfLessEqualSigned(SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 leftSlot,
+                                                        TZrUInt32 rightSlot,
+                                                        TZrBool *outShouldJump) {
+    return aot_runtime_should_jump_signed_compare(state,
+                                                  frame,
+                                                  leftSlot,
+                                                  rightSlot,
+                                                  ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED),
+                                                  ZR_FALSE,
+                                                  outShouldJump);
+}
+
+TZrBool ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSigned(SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot,
+                                                       TZrBool *outShouldJump) {
+    return aot_runtime_should_jump_signed_compare(state,
+                                                  frame,
+                                                  leftSlot,
+                                                  rightSlot,
+                                                  ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED),
+                                                  ZR_FALSE,
+                                                  outShouldJump);
+}
+
+TZrBool ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSignedConst(SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 leftSlot,
+                                                            TZrUInt32 constantIndex,
+                                                            TZrBool *outShouldJump) {
+    return aot_runtime_should_jump_signed_compare(state,
+                                                  frame,
+                                                  leftSlot,
+                                                  constantIndex,
+                                                  ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST),
+                                                  ZR_TRUE,
+                                                  outShouldJump);
 }
 
 TZrBool ZrLibrary_AotRuntime_Add(SZrState *state,

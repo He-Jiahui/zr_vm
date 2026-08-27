@@ -132,13 +132,31 @@ static TZrBool backend_aot_llvm_lower_jump_if_null_instruction(const SZrAotLlvmL
     return ZR_TRUE;
 }
 
-static TZrBool backend_aot_llvm_lower_jump_if_greater_signed_instruction(
+static TZrBool backend_aot_llvm_lower_signed_compare_branch_instruction(
         const SZrAotLlvmLoweringContext *context,
         const SZrAotLlvmInstructionContext *instruction) {
     TZrInt64 targetIndex = (TZrInt64)instruction->instructionIndex + (TZrInt64)(TZrInt16)instruction->operandB1 + 1;
     TZrChar compareLabel[96];
     TZrChar targetLabel[96];
     TZrChar argsBuffer[256];
+    const TZrChar *runtimeFunction;
+
+    switch (instruction->opcode) {
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+            runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfGreaterSigned";
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+            runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfLessEqualSigned";
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+            runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSigned";
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            runtimeFunction = "ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSignedConst";
+            break;
+        default:
+            return ZR_FALSE;
+    }
 
     if (targetIndex < 0 || (TZrUInt32)targetIndex >= context->instructionCount) {
         backend_aot_llvm_write_report_unsupported_return(context->file,
@@ -166,7 +184,7 @@ static TZrBool backend_aot_llvm_lower_jump_if_greater_signed_instruction(
              (unsigned)instruction->operandA1);
     backend_aot_llvm_write_guarded_call_text(context->file,
                                              context->tempCounter,
-                                             "ZrLibrary_AotRuntime_ShouldJumpIfGreaterSigned",
+                                             runtimeFunction,
                                              argsBuffer,
                                              compareLabel,
                                              context->failLabel);
@@ -203,7 +221,10 @@ TZrBool backend_aot_llvm_lower_branch_control_family(const SZrAotLlvmLoweringCon
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
             return backend_aot_llvm_lower_jump_if_null_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
-            return backend_aot_llvm_lower_jump_if_greater_signed_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            return backend_aot_llvm_lower_signed_compare_branch_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
             backend_aot_llvm_write_return_call(context->file,
                                                context->tempCounter,

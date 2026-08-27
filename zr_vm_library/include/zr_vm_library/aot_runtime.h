@@ -601,6 +601,21 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfGreaterSigned(struct SZr
                                                                       TZrUInt32 leftSlot,
                                                                       TZrUInt32 rightSlot,
                                                                       TZrBool *outShouldJump);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfLessEqualSigned(struct SZrState *state,
+                                                                        ZrAotGeneratedFrame *frame,
+                                                                        TZrUInt32 leftSlot,
+                                                                        TZrUInt32 rightSlot,
+                                                                        TZrBool *outShouldJump);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSigned(struct SZrState *state,
+                                                                       ZrAotGeneratedFrame *frame,
+                                                                       TZrUInt32 leftSlot,
+                                                                       TZrUInt32 rightSlot,
+                                                                       TZrBool *outShouldJump);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSignedConst(struct SZrState *state,
+                                                                            ZrAotGeneratedFrame *frame,
+                                                                            TZrUInt32 leftSlot,
+                                                                            TZrUInt32 constantIndex,
+                                                                            TZrBool *outShouldJump);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Add(struct SZrState *state,
                                                 ZrAotGeneratedFrame *frame,

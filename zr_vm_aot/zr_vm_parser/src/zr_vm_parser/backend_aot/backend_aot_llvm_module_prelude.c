@@ -210,6 +210,9 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_LogicalLessEqualFloat(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_IsTruthy(ptr, ptr, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ShouldJumpIfGreaterSigned(ptr, ptr, i32, i32, ptr)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ShouldJumpIfLessEqualSigned(ptr, ptr, i32, i32, ptr)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSigned(ptr, ptr, i32, i32, ptr)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSignedConst(ptr, ptr, i32, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Add(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_AddFloat(ptr, ptr, i32, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_Sub(ptr, ptr, i32, i32, i32)\n");

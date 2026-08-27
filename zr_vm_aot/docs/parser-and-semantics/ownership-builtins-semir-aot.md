@@ -215,6 +215,16 @@ opcode选择helper。
   - legacy `OWN_RETURN_TO_GC`只验证旧artifact reader/runtime/AOT兼容路径，不作为当前source产物
   - 新source function tree明确不包含legacy `OWN_BORROW/OWN_LOAN/OWN_DETACH`
   - canonical `using` statement 继续走 `MARK_TO_BE_CLOSED`
+  - LLVM lowering覆盖quickening可发出的四种signed fused branch：`JUMP_IF_GREATER_SIGNED`、`JUMP_IF_LESS_EQUAL_SIGNED`、`JUMP_IF_NOT_EQUAL_SIGNED`和`JUMP_IF_NOT_EQUAL_SIGNED_CONST`
 - runtime lifecycle
   - `intoGc(owner)` 拒绝 multi-owner shared
   - 最后一个 shared drop 后 weak 升级返回 `null`
+
+2026-08-27 的optional intrinsic-name member AOT回放暴露了一个独立backend缺口：
+`weak?.share() == null`经quickening发出`JUMP_IF_NOT_EQUAL_SIGNED_CONST`，AOT C已有
+lowering，而LLVM以unsupported opcode 120失败。LLVM现在与ExecIR/AOT C使用相同的
+operand contract，并通过AOT runtime helper读取frame slot或constant table。resource class
+同时声明`share`、`degrade`、`wake`、`intoGc`和`drop`五个普通方法；live Weak的五个
+`?.name()`调用返回mask 31，最后一个Shared owner释放后`weak?.share()`返回null并形成
+mask 63。固定快照上GCC 11.4与Clang 14均真实执行generated C/LLVM的6/6 cases；
+MSVC 19.44编译并链接同一backend，runner明确报告6个Unix capability ignores。

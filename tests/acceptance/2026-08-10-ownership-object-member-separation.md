@@ -17,7 +17,7 @@
 | A live weak target keeps ordinary object-member failures | guard resolves before member dispatch; standard system registration materializes the exception hierarchy | missing member follows the ordinary member-error path, not `NullReferenceError` |
 | `?.member`, `?.method(args)`, and `?.(args)` skip the complete suffix | per-segment access mode and chain-level receiver-guard lowering | exact `Weak<Service>?.(args)` failure skips arguments; success runs once through readonly `const @call` |
 | Explicit `wake(weak)` returns nullable Shared | canonical intrinsic fact and `OWN_WAKE` | type/fact/opcode execution tests |
-| VM, AOT C, LLVM, and artifacts use canonical operation names | `OWN_SHARE/DEGRADE/WAKE/INTO_GC_BOX/DROP` | SemIR 13/13; focused AOT C/LLVM ownership and receiver-guard replay passes |
+| VM, AOT C, LLVM, and artifacts use canonical operation names | `OWN_SHARE/DEGRADE/WAKE/INTO_GC_BOX/DROP` | SemIR 13/13; focused AOT C/LLVM receiver/intrinsic replay passes 6/6 on GCC and Clang |
 | Old member calls are not executable aliases | diagnostic is emitted only after canonical member lookup fails, and compilation stops | structured fix tests and same-name real member tests |
 | LSP consumes facts rather than spelling/AST fallback | ownership intrinsic and receiver-guard fact consumers | semantic analyzer/local query pass; remaining LSP replay pending |
 
@@ -973,6 +973,36 @@ All build and test processes returned zero. This closes the optional-member-name
 collision gap without changing production code. It does not replace the pending
 stable post-L8 full graph, artifact, inventory, and final exact-diff gates.
 
+### 2026-08-27 AOT optional intrinsic-name member parity
+
+The VM-level collision case exposed a separate generated-product coverage gap.
+The added AOT source declares the same five ordinary methods, requires live
+Weak optional calls to build mask 31, drops the last explicit Shared owner, and
+requires the expired `weak?.share()` null branch to produce final mask 63.
+
+The controlled fixed-snapshot RED was not a source-ownership ambiguity: AOT C
+passed, while LLVM stopped at function 6, instruction 29 with unsupported opcode
+120 (`JUMP_IF_NOT_EQUAL_SIGNED_CONST`). Quickening may emit four signed fused
+branch opcodes, but the LLVM branch family only accepted
+`JUMP_IF_GREATER_SIGNED`. The runtime and LLVM prelude/lowering now cover
+greater, less-or-equal, not-equal slot, and not-equal constant forms with the
+same operand encoding as ExecIR and AOT C.
+
+The exact source baseline is committed main `515c4eb` plus the seven code/test
+paths in this follow-up. Direct results were:
+
+| Suite | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| receiver/intrinsic generated C and LLVM | 6/6 | 6/6 | 6 capability-ignored |
+
+All configure, build, link, and runner processes returned zero. GCC and Clang
+executed both generated backends. MSVC compiled and linked the affected runtime,
+LLVM lowering, and test target, then reported the six Unix-only bodies as
+explicit ignores; those ignores are not counted as Windows behavior evidence.
+This closes the focused backend gap but does not promote the acceptance status
+before the final stable post-L8 full graph, artifact, inventory, and exact-diff
+gates pass.
+
 ## Pending final acceptance
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
@@ -1027,6 +1057,11 @@ stable post-L8 full graph, artifact, inventory, and final exact-diff gates.
   snapshot and MSVC build root named `ownership-optional-member-*`, the WSL
   source snapshot, and its GCC/Clang build roots. It created no persistent log
   and did not touch shared `.codex/logs` evidence.
+- The AOT optional-member parity replay removed and verified absent the WSL
+  `ownership-aot-member-515c4eb` source snapshot and GCC/Clang build roots,
+  `E:\zrb\oam-src`, `E:\zrb\oam-msvc`, and all seven `ownership-aot-member` /
+  `oa-*` transfer archives. Windows items were sent to the recycle bin after
+  direct recursive deletion was rejected; no persistent log was created.
 
 `type_inference.c` is 4,182 lines, but this exact correction changes the
 ordering of one existing primary-expression/first-call resolution decision.

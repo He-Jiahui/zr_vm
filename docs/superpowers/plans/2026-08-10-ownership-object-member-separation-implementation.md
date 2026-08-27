@@ -558,6 +558,16 @@ Shared owner, and all five ownership intrinsics. GCC and Clang pass 4/4; MSVC
 builds the same backend paths and capability-ignores the Unix execution body.
 Portable source/frame/call contracts pass 26/26, 1/1, and 9/9 on all three.
 
+The 2026-08-27 collision follow-up expands the generated-product runner to 6/6
+with C and LLVM cases that call ordinary methods named `share`, `degrade`,
+`wake`, `intoGc`, and `drop` through a Weak optional receiver. Its controlled
+RED was LLVM unsupported opcode 120 after quickening fused the expired-null
+comparison to `JUMP_IF_NOT_EQUAL_SIGNED_CONST`; AOT C passed the same source.
+LLVM and the AOT runtime now lower all four signed fused branch forms. GCC 11.4
+and Clang 14 execute 6/6; MSVC 19.44 compiles and links the affected production
+paths and reports 6 explicit Unix capability ignores. Final Task 10 graph and
+artifact gates remain pending the stable post-L8 baseline.
+
 - [x] **Step 4: Commit AOT parity**
 
 ```powershell
