@@ -58,6 +58,8 @@ typedef struct {
         double elapsed = ((double) (failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                        \
         printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason);                                      \
         fflush(stdout);                                                                                                \
+        Unity.CurrentTestFailed = 1;                                                                                   \
+        UNITY_OUTPUT_FLUSH();                                                                                          \
     } while (0)
 
 #define TEST_DIVIDER()                                                                                                 \
@@ -955,12 +957,12 @@ static void test_execute_create_array_with_elements(void) {
     TEST_DIVIDER();
 }
 
-// ==================== 控制流指令测试 (JUMP, JUMP_IF) ====================
+// ==================== 控制流指令测试 (JUMP, JUMP_IF_BOOL_FALSE) ====================
 
-// 测试 JUMP_IF 指令（通过 if 语句）
+// 测试 JUMP_IF_BOOL_FALSE 指令（通过布尔 if 语句）
 static void test_execute_jump_if_instruction(void) {
     SZrTestTimer timer;
-    const char *testSummary = "JUMP_IF Instruction (If Statement)";
+    const char *testSummary = "JUMP_IF_BOOL_FALSE Instruction (If Statement)";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -968,7 +970,8 @@ static void test_execute_jump_if_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("JUMP_IF instruction via if statement", "Testing JUMP_IF instruction: if (true) { return 42; }");
+    TEST_INFO("JUMP_IF_BOOL_FALSE instruction via if statement",
+              "Testing typed conditional jump: if (true) { return 42; }");
 
     const char *source = "if (true) { return 42; }";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
@@ -988,12 +991,12 @@ static void test_execute_jump_if_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 JUMP_IF 指令）
+    // 验证强类型布尔条件使用专用跳转指令。
     TZrBool hasJumpIf = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
         for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
+            if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE)) {
                 hasJumpIf = ZR_TRUE;
                 break;
             }
@@ -1003,7 +1006,7 @@ static void test_execute_jump_if_instruction(void) {
     ZrParser_Ast_Free(state, ast);
 
     if (!hasJumpIf) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "JUMP_IF instruction not found in compiled function");
+        TEST_FAIL_CUSTOM(timer, testSummary, "JUMP_IF_BOOL_FALSE instruction not found in compiled function");
         destroy_test_state(state);
         return;
     }
@@ -1972,10 +1975,10 @@ static void test_execute_function_stack_anchor_restores_base_after_stack_grow(vo
     TEST_DIVIDER();
 }
 
-// 测试 DIV_SIGNED 指令
+// 测试常量除数优化后的 DIV_SIGNED_LOAD_CONST 指令
 static void test_execute_div_signed_instruction(void) {
     SZrTestTimer timer;
-    const char *testSummary = "DIV_SIGNED Instruction";
+    const char *testSummary = "DIV_SIGNED_LOAD_CONST Instruction";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1983,7 +1986,7 @@ static void test_execute_div_signed_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("DIV_SIGNED instruction", "Testing DIV_SIGNED instruction: 10 / 2");
+    TEST_INFO("DIV_SIGNED_LOAD_CONST instruction", "Testing optimized signed division: 10 / 2");
 
     const char *source = "return 10 / 2;";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
@@ -2003,12 +2006,12 @@ static void test_execute_div_signed_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 DIV_SIGNED 指令）
+    // 两个字面量应 quicken 为常量装载专用有符号除法指令。
     TZrBool hasDivSigned = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
         for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED)) {
+            if (opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST)) {
                 hasDivSigned = ZR_TRUE;
                 break;
             }
@@ -2022,7 +2025,7 @@ static void test_execute_div_signed_instruction(void) {
     ZrParser_Ast_Free(state, ast);
 
     if (!hasDivSigned) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "DIV_SIGNED instruction not found in compiled function");
+        TEST_FAIL_CUSTOM(timer, testSummary, "DIV_SIGNED_LOAD_CONST instruction not found in compiled function");
         destroy_test_state(state);
         return;
     }
@@ -2056,10 +2059,10 @@ static void test_execute_div_signed_instruction(void) {
     TEST_DIVIDER();
 }
 
-// 测试 LOGICAL_NOT 指令
+// 测试强类型布尔 LOGICAL_NOT_BOOL 指令
 static void test_execute_logical_not_instruction(void) {
     SZrTestTimer timer;
-    const char *testSummary = "LOGICAL_NOT Instruction";
+    const char *testSummary = "LOGICAL_NOT_BOOL Instruction";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2067,7 +2070,7 @@ static void test_execute_logical_not_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("LOGICAL_NOT instruction", "Testing LOGICAL_NOT instruction: !true");
+    TEST_INFO("LOGICAL_NOT_BOOL instruction", "Testing typed logical NOT: !true");
 
     const char *source = "return !true;";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
@@ -2087,12 +2090,12 @@ static void test_execute_logical_not_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 LOGICAL_NOT 指令）
+    // 布尔操作数应 lower 为强类型布尔逻辑非指令。
     TZrBool hasLogicalNot = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
         for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT)) {
+            if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL)) {
                 hasLogicalNot = ZR_TRUE;
                 break;
             }
@@ -2106,7 +2109,7 @@ static void test_execute_logical_not_instruction(void) {
     ZrParser_Ast_Free(state, ast);
 
     if (!hasLogicalNot) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "LOGICAL_NOT instruction not found in compiled function");
+        TEST_FAIL_CUSTOM(timer, testSummary, "LOGICAL_NOT_BOOL instruction not found in compiled function");
         destroy_test_state(state);
         return;
     }
