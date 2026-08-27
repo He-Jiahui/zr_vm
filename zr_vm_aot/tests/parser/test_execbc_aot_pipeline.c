@@ -4481,6 +4481,8 @@ static void test_checked_in_aot_llvm_fixtures_use_true_backend_shape(void) {
             TEST_ASSERT_NULL(strstr(llvmText, "ownership.detach"));
             TEST_ASSERT_NULL(strstr(llvmText, "ownership.release"));
             TEST_ASSERT_NULL(strstr(llvmText, "ZrCore_Ownership_UpgradeValue"));
+            TEST_ASSERT_NULL(strstr(llvmText, "ZrLibrary_AotRuntime_OwnUpgrade"));
+            TEST_ASSERT_NOT_NULL(strstr(llvmText, "ZrLibrary_AotRuntime_OwnWake"));
             free(llvmText);
         }
     }
@@ -6836,8 +6838,10 @@ static SZrFunction *compile_ownership_wake_drop_fixture(SZrState *state) {
             "var owner = own Box();\n"
             "var shared = share(owner);\n"
             "var watcher = degrade(shared);\n"
+            "var borrowAlive = false;\n"
             "{\n"
             "    var borrowed: ref readonly Box = ref shared;\n"
+            "    borrowAlive = borrowed != null;\n"
             "}\n"
             "var awakened = wake(watcher);\n"
             "var loanSource = own Box();\n"
@@ -6853,7 +6857,7 @@ static SZrFunction *compile_ownership_wake_drop_fixture(SZrState *state) {
             "var droppedShared = drop(shared);\n"
             "var droppedAwakened = drop(awakened);\n"
             "var after = wake(watcher);\n"
-            "if (loanAlive && loanSourceRestored && detachedAlive && droppedAwakened == null && droppedShared == null && after == null) {\n"
+            "if (borrowAlive && loanAlive && loanSourceRestored && detachedAlive && droppedAwakened == null && droppedShared == null && after == null) {\n"
             "    return 1;\n"
             "}\n"
             "return 0;\n"
