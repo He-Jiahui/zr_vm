@@ -4,7 +4,6 @@
 
 #include "semantic/semantic_analyzer_internal.h"
 #include "semantic/lsp_property_contract.h"
-#include "semantic/semantic_analyzer_duplicate_diagnostics.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
 #include "zr_vm_parser/interface_contract.h"
 #include "zr_vm_parser/semantic_facts.h"
@@ -1094,57 +1093,25 @@ static SZrTypeMemberInfo *find_type_member_info_by_name(SZrTypePrototypeInfo *pr
     return ZR_NULL;
 }
 
-static void report_duplicate_type_name_diagnostic(SZrState *state,
-                                                   SZrSemanticAnalyzer *analyzer,
-                                                   SZrString *name,
-                                                   SZrFileRange location) {
-    SZrSymbol *previousSymbol;
-    const SZrFileRange *previousLocation = ZR_NULL;
-
-    if (state == ZR_NULL || analyzer == ZR_NULL || name == ZR_NULL) {
-        return;
-    }
-
-    previousSymbol = analyzer->symbolTable != ZR_NULL
-                             ? ZrLanguageServer_SymbolTable_Lookup(
-                                       analyzer->symbolTable,
-                                       name,
-                                       ZR_NULL)
-                             : ZR_NULL;
-    if (previousSymbol != ZR_NULL) {
-        previousLocation = &previousSymbol->selectionRange;
-    }
-
-    (void)ZrLanguageServer_SemanticAnalyzer_ReportDuplicateType(
-            state,
-            analyzer,
-            name,
-            location,
-            previousLocation);
-}
-
 static TZrBool register_type_name_binding_in_env(SZrState *state,
                                                  SZrSemanticAnalyzer *analyzer,
                                                  SZrString *name,
-                                                 SZrFileRange location) {
-    SZrTypeEnvironment *typeEnv;
+                                                 SZrFileRange location,
+                                                 SZrAstNode *declaration) {
 
     if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || name == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    typeEnv = analyzer->compilerState->typeEnv;
-    if (typeEnv == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (ZrParser_TypeEnvironment_LookupType(typeEnv, name)) {
-        report_duplicate_type_name_diagnostic(state, analyzer, name, location);
-        return ZR_FALSE;
-    }
-
-    if (!ZrParser_TypeEnvironment_RegisterType(state, typeEnv, name)) {
-        report_duplicate_type_name_diagnostic(state, analyzer, name, location);
+    if (!ZrParser_Compiler_RegisterTypeBinding(
+                analyzer->compilerState,
+                name,
+                location,
+                declaration)) {
+        ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                state,
+                analyzer,
+                location);
         return ZR_FALSE;
     }
 
@@ -1213,7 +1180,8 @@ static void register_imported_destructured_type_aliases(SZrState *state,
             continue;
         }
 
-        register_type_name_binding_in_env(state, analyzer, keyName, keyNode->location);
+        register_type_name_binding_in_env(
+                state, analyzer, keyName, keyNode->location, keyNode);
     }
 }
 
@@ -2381,7 +2349,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             TZrLifetimeRegionId ownerRegionId = 0;
             if (name != ZR_NULL) {
                 if (!register_type_name_binding_in_env(
-                            state, analyzer, name, classDecl->nameLocation)) {
+                            state, analyzer, name, classDecl->nameLocation, node)) {
                     return;
                 }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state, analyzer->symbolTable,
@@ -2595,7 +2563,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrString *name = structDecl->name != ZR_NULL ? structDecl->name->name : ZR_NULL;
             TZrLifetimeRegionId ownerRegionId = 0;
             if (name != ZR_NULL) {
-                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                if (!register_type_name_binding_in_env(
+                            state, analyzer, name, node->location, node)) {
                     return;
                 }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state, analyzer->symbolTable,
@@ -2741,7 +2710,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrSymbol *symbol = ZR_NULL;
 
             if (name != ZR_NULL) {
-                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                if (!register_type_name_binding_in_env(
+                            state, analyzer, name, node->location, node)) {
                     return;
                 }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state,
@@ -2786,7 +2756,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrSymbol *symbol = ZR_NULL;
 
             if (name != ZR_NULL) {
-                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                if (!register_type_name_binding_in_env(
+                            state, analyzer, name, node->location, node)) {
                     return;
                 }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state,
@@ -2933,7 +2904,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrString *name = interfaceDecl->name != ZR_NULL ? interfaceDecl->name->name : ZR_NULL;
 
             if (name != ZR_NULL) {
-                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                if (!register_type_name_binding_in_env(
+                            state, analyzer, name, node->location, node)) {
                     return;
                 }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state,

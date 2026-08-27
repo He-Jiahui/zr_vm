@@ -1851,6 +1851,72 @@ static void test_resource_strong_cycle_warning_publishes_user_decision_reason(vo
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_duplicate_type_publishes_structured_query_diagnostic(void) {
+    const TZrChar *source =
+            "class Pair {}\n"
+            "class Pair {}\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrStructuredDiagnostic *diagnostic;
+    const SZrStructuredDiagnosticRelatedInformation *related;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_duplicate_type_diagnostic_test.zr",
+            strlen("compiler_duplicate_type_diagnostic_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2010U, cs.structuredError.descriptorId);
+    TEST_ASSERT_EQUAL_STRING(
+            "duplicate_type",
+            ZrCore_String_GetNativeString(cs.structuredError.code));
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    cs.hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(&cs);
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+
+    diagnostic = find_query_diagnostic_by_code(cs.semanticContext, "duplicate_type");
+    TEST_ASSERT_NOT_NULL(diagnostic);
+    TEST_ASSERT_EQUAL_UINT32(2010U, diagnostic->descriptorId);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR, diagnostic->severity);
+    TEST_ASSERT_EQUAL_INT(ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+                          diagnostic->noFixReason);
+    TEST_ASSERT_FALSE(diagnostic->fixes.isValid);
+    TEST_ASSERT_TRUE(diagnostic->relatedInformation.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostic->relatedInformation.length);
+    related = (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
+            (SZrArray *)&diagnostic->relatedInformation, 0U);
+    TEST_ASSERT_NOT_NULL(related);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)related->location.start.line);
+    TEST_ASSERT_EQUAL_UINT32(7U, (TZrUInt32)related->location.start.column);
+    TEST_ASSERT_EQUAL_UINT32(2U, (TZrUInt32)diagnostic->location.start.line);
+    TEST_ASSERT_EQUAL_UINT32(7U, (TZrUInt32)diagnostic->location.start.column);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_missing_statement_semicolon_builder_publishes_machine_fix(void) {
     SZrStructuredDiagnostic diagnostic;
     SZrStructuredDiagnosticFix *fix;
@@ -2925,6 +2991,7 @@ int main(void) {
     RUN_TEST(test_invalid_interface_variance_publishes_structured_semantic_diagnostic);
     RUN_TEST(test_interface_const_field_mismatch_publishes_structured_semantic_diagnostic);
     RUN_TEST(test_resource_strong_cycle_warning_publishes_user_decision_reason);
+    RUN_TEST(test_duplicate_type_publishes_structured_query_diagnostic);
     RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_declaration_body_open_builder_publishes_machine_fix);
     RUN_TEST(test_missing_statement_body_open_builder_publishes_machine_fix);

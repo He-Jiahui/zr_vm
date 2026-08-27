@@ -1314,6 +1314,8 @@ static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
     free(typecheck);
 }
 
+#include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1366,6 +1368,7 @@ int main(void) {
     test_unresolved_reference_diagnostics_use_parser_query_projection();
     test_named_call_compatibility_uses_parser_inference_projection();
     test_assignment_ownership_uses_parser_diagnostic_projection();
+    test_duplicate_type_uses_parser_diagnostic_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1418,6 +1421,7 @@ int main(void) {
     printf("PASS: Unresolved-reference diagnostics use parser query projection\n");
     printf("PASS: Named-call compatibility uses parser inference projection\n");
     printf("PASS: Assignment ownership uses parser diagnostic projection\n");
+    printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

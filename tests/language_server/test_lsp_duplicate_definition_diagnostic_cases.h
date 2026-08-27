@@ -38,8 +38,11 @@ static void test_lsp_diagnostics_publish_duplicate_type_related_information(
     }
 
     diagnostic = diagnostic_array_find_code(&diagnostics, "duplicate_type");
-    if (diagnostic == ZR_NULL ||
+    if (diagnostic_array_count_code(&diagnostics, "duplicate_type") != 1 ||
+        diagnostic_array_contains_code(&diagnostics, "compiler_error") ||
+        diagnostic == ZR_NULL ||
         diagnostic->descriptorId != 2010 ||
+        diagnostic->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
         diagnostic->message == ZR_NULL ||
         strstr(test_string_text(diagnostic->message), "Pair") == ZR_NULL ||
         diagnostic->range.start.line != 2 ||
@@ -50,7 +53,7 @@ static void test_lsp_diagnostics_publish_duplicate_type_related_information(
         diagnostic->relatedInformation.length != 1) {
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, summary, "Expected duplicate token range and one related definition");
+        TEST_FAIL(timer, summary, "Expected one canonical duplicate query projection");
         return;
     }
 

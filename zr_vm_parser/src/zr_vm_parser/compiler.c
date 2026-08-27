@@ -5,6 +5,7 @@
 #include "compiler_internal.h"
 #include "compiler/compile_time_executor_internal.h"
 #include "compiler/compiler_attribute_binding.h"
+#include "compiler/compiler_top_level_duplicate.h"
 #include "zr_vm_parser/semantic_calls.h"
 #include "semantic/semantic_scope_facts.h"
 
@@ -542,6 +543,10 @@ static void compiler_compile_top_level_statement(SZrCompilerState *cs, SZrAstNod
         return;
     }
 
+    if (compiler_report_duplicate_top_level_type(cs, statement)) {
+        return;
+    }
+
     switch (statement->type) {
         case ZR_AST_FUNCTION_DECLARATION:
             compile_function_declaration(cs, statement);
@@ -635,6 +640,9 @@ static void compiler_compile_interface_signatures(
         }
         if (statement->type != ZR_AST_INTERFACE_DECLARATION) {
             continue;
+        }
+        if (compiler_report_duplicate_top_level_type(cs, statement)) {
+            return;
         }
         compile_interface_declaration(cs, statement);
         if (cs->hasError) {

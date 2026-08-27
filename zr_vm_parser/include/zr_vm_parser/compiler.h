@@ -577,6 +577,15 @@ ZR_PARSER_API void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *
 ZR_PARSER_API void ZrParser_Compiler_ClearStructuredError(SZrCompilerState *cs);
 ZR_PARSER_API void ZrParser_Compiler_StructuredError(SZrCompilerState *cs,
                                                      const SZrStructuredDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_Compiler_ReportDuplicateTypeDeclaration(
+        SZrCompilerState *cs,
+        SZrAstNode *declaration,
+        SZrAstNode *previousDeclaration);
+ZR_PARSER_API TZrBool ZrParser_Compiler_RegisterTypeBinding(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrFileRange location,
+        SZrAstNode *declaration);
 ZR_PARSER_API TZrBool ZrParser_Compiler_PublishCurrentDiagnostic(
         SZrCompilerState *cs);
 ZR_PARSER_API void ZrParser_Compiler_PatternShapeMismatch(SZrCompilerState *cs,

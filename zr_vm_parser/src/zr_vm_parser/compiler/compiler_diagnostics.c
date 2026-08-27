@@ -75,6 +75,201 @@ void ZrParser_Compiler_StructuredError(SZrCompilerState *cs, const SZrStructured
     cs->hasStructuredError = ZR_TRUE;
 }
 
+static TZrBool compiler_duplicate_type_declaration_identity(
+        SZrAstNode *declaration,
+        SZrString **outName,
+        SZrFileRange *outNameRange) {
+    if (outName != ZR_NULL) {
+        *outName = ZR_NULL;
+    }
+    if (outNameRange != ZR_NULL) {
+        memset(outNameRange, 0, sizeof(*outNameRange));
+    }
+    if (declaration == ZR_NULL || outName == ZR_NULL || outNameRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outNameRange = declaration->location;
+    switch (declaration->type) {
+        case ZR_AST_CLASS_DECLARATION:
+            if (declaration->data.classDeclaration.name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            *outName = declaration->data.classDeclaration.name->name;
+            *outNameRange = declaration->data.classDeclaration.nameLocation;
+            break;
+        case ZR_AST_STRUCT_DECLARATION:
+            if (declaration->data.structDeclaration.name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            *outName = declaration->data.structDeclaration.name->name;
+            break;
+        case ZR_AST_INTERFACE_DECLARATION:
+            if (declaration->data.interfaceDeclaration.name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            *outName = declaration->data.interfaceDeclaration.name->name;
+            break;
+        case ZR_AST_ENUM_DECLARATION:
+            if (declaration->data.enumDeclaration.name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            *outName = declaration->data.enumDeclaration.name->name;
+            break;
+        case ZR_AST_UNION_DECLARATION:
+            if (declaration->data.unionDeclaration.name == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            *outName = declaration->data.unionDeclaration.name->name;
+            break;
+        default:
+            return ZR_FALSE;
+    }
+    return *outName != ZR_NULL;
+}
+
+static TZrBool compiler_report_duplicate_type_binding(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrFileRange location,
+        const SZrFileRange *previousLocation) {
+    SZrStructuredDiagnostic diagnostic;
+    const TZrChar *nameText;
+    TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nameText = ZrCore_String_GetNativeString(name);
+    if (nameText != ZR_NULL) {
+        snprintf(message,
+                 sizeof(message),
+                 "Type name '%s' is already declared in this context",
+                 nameText);
+    } else {
+        snprintf(message, sizeof(message), "Type name is already declared in this context");
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                cs->state,
+                &diagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "duplicate_type",
+                message,
+                "Another type binding with the same name is already visible in this context.",
+                "Rename this type or remove the duplicate declaration.") ||
+        !ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
+        ZrParser_Compiler_Error(cs, message, location);
+        return ZR_FALSE;
+    }
+    if (previousLocation != ZR_NULL &&
+        !ZrParser_StructuredDiagnostic_AddRelatedInformation(
+                cs->state,
+                &diagnostic,
+                *previousLocation,
+                "Type was first declared here")) {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
+        ZrParser_Compiler_Error(cs, message, location);
+        return ZR_FALSE;
+    }
+
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_Compiler_ReportDuplicateTypeDeclaration(
+        SZrCompilerState *cs,
+        SZrAstNode *declaration,
+        SZrAstNode *previousDeclaration) {
+    SZrString *name;
+    SZrString *previousName;
+    SZrFileRange location;
+    SZrFileRange previousLocation;
+    const SZrFileRange *previousLocationPtr = ZR_NULL;
+
+    if (cs == ZR_NULL ||
+        !compiler_duplicate_type_declaration_identity(
+                declaration, &name, &location)) {
+        return ZR_FALSE;
+    }
+    if (previousDeclaration != ZR_NULL &&
+        compiler_duplicate_type_declaration_identity(
+                previousDeclaration, &previousName, &previousLocation) &&
+        previousName != ZR_NULL && ZrCore_String_Equal(previousName, name)) {
+        previousLocationPtr = &previousLocation;
+    }
+    return compiler_report_duplicate_type_binding(
+            cs, name, location, previousLocationPtr);
+}
+
+TZrBool ZrParser_Compiler_RegisterTypeBinding(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrFileRange location,
+        SZrAstNode *declaration) {
+    const SZrSemanticSymbolRecord *previous = ZR_NULL;
+    const SZrFileRange *previousLocation = ZR_NULL;
+    SZrString *previousName;
+    SZrFileRange previousNameRange;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL ||
+        cs->typeEnv == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_TypeEnvironment_LookupType(cs->typeEnv, name)) {
+        return ZrParser_TypeEnvironment_RegisterType(
+                cs->state, cs->typeEnv, name);
+    }
+
+    if (cs->semanticContext != ZR_NULL &&
+        cs->semanticContext->symbols.isValid) {
+        for (TZrSize index = 0U;
+             index < cs->semanticContext->symbols.length;
+             index++) {
+            const SZrSemanticSymbolRecord *candidate =
+                    (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                            &cs->semanticContext->symbols,
+                            index);
+
+            if (candidate == ZR_NULL ||
+                candidate->kind != ZR_SEMANTIC_SYMBOL_KIND_TYPE ||
+                candidate->name == ZR_NULL ||
+                !ZrCore_String_Equal(candidate->name, name)) {
+                continue;
+            }
+            if (previous == ZR_NULL) {
+                previous = candidate;
+            }
+            if (candidate->astNode != ZR_NULL &&
+                candidate->astNode != declaration) {
+                previous = candidate;
+                break;
+            }
+        }
+    }
+    if (previous != ZR_NULL && previous->astNode != declaration) {
+        if (compiler_duplicate_type_declaration_identity(
+                    previous->astNode,
+                    &previousName,
+                    &previousNameRange) &&
+            previousName != ZR_NULL &&
+            ZrCore_String_Equal(previousName, name)) {
+            previousLocation = &previousNameRange;
+        } else {
+            previousLocation = &previous->location;
+        }
+    }
+    (void)compiler_report_duplicate_type_binding(
+            cs, name, location, previousLocation);
+    return ZR_FALSE;
+}
+
 void ZrParser_Compiler_PatternShapeMismatch(SZrCompilerState *cs,
                                             SZrFileRange location,
                                             const TZrChar *message,

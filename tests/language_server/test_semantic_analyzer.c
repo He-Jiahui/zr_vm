@@ -5120,6 +5120,9 @@ int main(void) {
     test_semantic_analyzer_preserves_query_diagnostic_golden_parity(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_preserves_duplicate_type_golden_parity(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);
     TEST_DIVIDER();
 
