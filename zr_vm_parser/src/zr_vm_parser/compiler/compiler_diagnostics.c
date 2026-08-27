@@ -251,6 +251,38 @@ TZrBool ZrParser_Compiler_ValidateVariableDeclaration(
     return ZR_FALSE;
 }
 
+TZrBool ZrParser_Compiler_ReportCannotInferExactType(
+        SZrCompilerState *cs,
+        SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+    const TZrChar *message = "cannot infer exact type";
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                cs->state,
+                &diagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "cannot_infer_exact_type",
+                message,
+                "The compiler could not prove one canonical type for this declaration or expression.",
+                "Add an explicit type annotation or rewrite the expression so one exact type can be inferred.") ||
+        !ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
+        ZrParser_Compiler_Error(cs, message, location);
+        return ZR_FALSE;
+    }
+
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_Compiler_RegisterTypeBinding(
         SZrCompilerState *cs,
         SZrString *name,

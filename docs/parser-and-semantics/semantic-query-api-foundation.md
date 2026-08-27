@@ -679,6 +679,16 @@ only an exact message and range after an unstructured compiler failure; it
 publishes `INSUFFICIENT_CONTEXT` rather than inferring a repair from that
 message. Definite-assignment diagnostics retain their typed placeholder fix.
 
+Exact type inference failure follows the same producer boundary.
+`ZrParser_Compiler_ReportCannotInferExactType` publishes descriptor `2020`,
+code `cannot_infer_exact_type`, error severity, type category, the exact
+declaration or expression range, canonical cause and suggestion text, zero
+fixes, and `REQUIRES_USER_DECISION`. An LSP analyzer first preserves any more
+specific structured compiler error already present; otherwise it invokes this
+reporter and consumes the resulting persistent query fact. It must not create
+the code locally, compare diagnostic text, or delete a same-range inference
+diagnostic after another producer runs.
+
 Compiler and parser rule producers follow the same boundary. Ref-struct
 storage violations, reference escapes, resource strong-cycle warnings, and
 type mismatches without a typed conversion contract publish

@@ -984,6 +984,7 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *initializerRequiresAnnotation;
     const SZrDiagnosticDescriptor *returnTypeNotProvable;
     const SZrDiagnosticDescriptor *invalidDecorator;
+    const SZrDiagnosticDescriptor *cannotInferExactType;
     const SZrDiagnosticDescriptor *useAfterMove;
     const SZrDiagnosticDescriptor *reservedOwnershipIntrinsicName;
     const SZrDiagnosticDescriptor *ownershipIntrinsicCallRequired;
@@ -993,7 +994,7 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(69, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(70, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1130,6 +1131,15 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
                           invalidDecorator->defaultSeverity);
     TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_SEMANTIC,
                           invalidDecorator->category);
+
+    cannotInferExactType =
+            ZrParser_DiagnosticRegistry_FindByCode("cannot_infer_exact_type");
+    TEST_ASSERT_NOT_NULL(cannotInferExactType);
+    TEST_ASSERT_EQUAL_UINT32(2020, cannotInferExactType->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                          cannotInferExactType->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE,
+                          cannotInferExactType->category);
 
     for (index = 0; index < descriptorCount; index++) {
         const SZrDiagnosticDescriptor *descriptor =

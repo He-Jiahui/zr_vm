@@ -900,6 +900,7 @@ static void test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatc
 }
 
 #include "test_semantic_analyzer_exact_type_cases.h"
+#include "test_semantic_analyzer_exact_type_diagnostic_cases.h"
 
 static void test_semantic_analyzer_unannotated_function_records_exact_return_type(SZrState *state) {
     SZrTestTimer timer;
@@ -5141,6 +5142,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_return_type_not_provable_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_cannot_infer_exact_type_golden_parity(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_invalid_callable_decorator_golden_parity(state);

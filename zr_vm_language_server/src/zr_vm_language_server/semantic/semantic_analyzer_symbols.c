@@ -214,15 +214,19 @@ static void copy_inferred_type_into(SZrState *state,
     ZrParser_InferredType_Copy(state, dest, src);
 }
 
-static void semantic_add_cannot_infer_exact_type_diagnostic(SZrState *state,
-                                                            SZrSemanticAnalyzer *analyzer,
-                                                            SZrFileRange location) {
-    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                    analyzer,
-                                                    ZR_DIAGNOSTIC_ERROR,
-                                                    location,
-                                                    "cannot infer exact type",
-                                                    "cannot_infer_exact_type");
+static SZrFileRange semantic_parameter_diagnostic_location(
+        const SZrAstNode *parameterNode) {
+    if (parameterNode != ZR_NULL &&
+        parameterNode->type == ZR_AST_PARAMETER &&
+        parameterNode->data.parameter.name != ZR_NULL) {
+        return parameterNode->data.parameter.nameLocation;
+    }
+    return parameterNode != ZR_NULL
+                   ? parameterNode->location
+                   : ZrParser_FileRange_Create(
+                             ZrParser_FilePosition_Create(0U, 0, 0),
+                             ZrParser_FilePosition_Create(0U, 0, 0),
+                             ZR_NULL);
 }
 
 static void register_variable_type_binding_in_env(SZrState *state,
@@ -318,7 +322,7 @@ static SZrInferredType *create_type_info_for_variable(SZrState *state,
     if (varDecl->typeInfo != ZR_NULL) {
         typeInfo = create_type_info_from_type_node(state, analyzer, varDecl->typeInfo);
         if (typeInfo == ZR_NULL) {
-            semantic_add_cannot_infer_exact_type_diagnostic(
+            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                     state,
                     analyzer,
                     varDecl->typeInfo->name != ZR_NULL ? varDecl->typeInfo->name->location : varDecl->pattern->location);
@@ -337,7 +341,7 @@ static SZrInferredType *create_type_info_for_variable(SZrState *state,
                                                                                  analyzer,
                                                                                  varDecl->value->location);
             } else {
-                semantic_add_cannot_infer_exact_type_diagnostic(
+                ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                         state, analyzer, varDecl->value->location);
             }
         }
@@ -368,7 +372,7 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
                                                                          returnTypeNode,
                                                                          callableDeclarationNode);
         if (typeInfo == ZR_NULL) {
-            semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state, analyzer, diagnosticLocation);
         }
         return typeInfo;
     }
@@ -395,7 +399,10 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
                                                                                   parameter->typeInfo,
                                                                                   callableDeclarationNode);
             if (paramTypeInfo == ZR_NULL) {
-                semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
+                ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                        state,
+                        analyzer,
+                        semantic_parameter_diagnostic_location(paramNode));
                 continue;
             }
 
@@ -422,7 +429,7 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
         ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
                 state, analyzer, diagnosticLocation);
     } else {
-        semantic_add_cannot_infer_exact_type_diagnostic(
+        ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                 state, analyzer, diagnosticLocation);
     }
 
@@ -499,13 +506,19 @@ static void register_function_type_binding_in_env(SZrState *state,
                             declarationNode,
                             paramNode->data.parameter.typeInfo,
                             &paramType)) {
-                    semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
+                    ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                            state,
+                            analyzer,
+                            semantic_parameter_diagnostic_location(paramNode));
                     ZrParser_InferredType_Free(state, &paramType);
                     hasUnresolvedParameter = ZR_TRUE;
                     continue;
                 }
             } else {
-                semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
+                ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                        state,
+                        analyzer,
+                        semantic_parameter_diagnostic_location(paramNode));
                 hasUnresolvedParameter = ZR_TRUE;
                 continue;
             }
@@ -586,7 +599,7 @@ static void register_extern_function_type_binding_in_env(SZrState *state,
                                                                              declarationNode,
                                                                              funcDecl->returnType,
                                                                              &returnType)) {
-            semantic_add_cannot_infer_exact_type_diagnostic(state,
+            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state,
                                                             analyzer,
                                                             funcDecl->returnType->name != ZR_NULL
                                                                 ? funcDecl->returnType->name->location
@@ -626,7 +639,10 @@ static void register_extern_function_type_binding_in_env(SZrState *state,
                             declarationNode,
                             paramNode->data.parameter.typeInfo,
                             &paramType)) {
-                    semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
+                    ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                            state,
+                            analyzer,
+                            semantic_parameter_diagnostic_location(paramNode));
                     ZrParser_InferredType_Free(state, &paramType);
                     continue;
                 }
@@ -821,7 +837,10 @@ static void collect_function_parameters(SZrState *state,
 
         typeInfo = create_type_info_from_type_node(state, analyzer, param->typeInfo);
         if (typeInfo == ZR_NULL) {
-            semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
+            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                    state,
+                    analyzer,
+                    semantic_parameter_diagnostic_location(paramNode));
         }
         ZrLanguageServer_SymbolTable_AddSymbolEx(state,
                                      analyzer->symbolTable,
@@ -1314,7 +1333,7 @@ static void collect_single_parameter_symbol(SZrState *state,
 
     typeInfo = create_type_info_from_type_node(state, analyzer, typeInfoNode);
     if (typeInfo == ZR_NULL) {
-        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, ownerNode->location);
+        ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state, analyzer, ownerNode->location);
     }
     if (ownerNode->type == ZR_AST_PROPERTY_ACCESSOR &&
         analyzer->semanticContext != ZR_NULL) {
@@ -1405,13 +1424,13 @@ static SZrInferredType *create_type_info_for_foreach_element(SZrState *state,
     if (foreachLoop->typeInfo != ZR_NULL) {
         typeInfo = create_type_info_from_type_node(state, analyzer, foreachLoop->typeInfo);
         if (typeInfo == ZR_NULL) {
-            semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state, analyzer, diagnosticLocation);
         }
         return typeInfo;
     }
 
     if (analyzer->compilerState == ZR_NULL || foreachLoop->expr == ZR_NULL) {
-        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state, analyzer, diagnosticLocation);
         return ZR_NULL;
     }
 
@@ -1423,14 +1442,14 @@ static SZrInferredType *create_type_info_for_foreach_element(SZrState *state,
                                                                              analyzer,
                                                                              foreachLoop->expr->location);
         }
-        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state, analyzer, diagnosticLocation);
         ZrParser_InferredType_Free(state, &iterableType);
         ZrParser_InferredType_Free(state, &elementType);
         return ZR_NULL;
     }
 
     if (!bind_foreach_element_type_from_inferred_iterable(analyzer->compilerState, &iterableType, &elementType)) {
-        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(state, analyzer, diagnosticLocation);
         ZrParser_InferredType_Free(state, &iterableType);
         ZrParser_InferredType_Free(state, &elementType);
         return ZR_NULL;

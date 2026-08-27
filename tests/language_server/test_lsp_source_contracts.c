@@ -1354,6 +1354,7 @@ static void test_extern_callable_decorators_use_parser_diagnostic_projection(voi
 #include "test_lsp_source_contract_extern_parameter_decorator_cases.h"
 #include "test_lsp_source_contract_initializer_annotation_cases.h"
 #include "test_lsp_source_contract_return_type_cases.h"
+#include "test_lsp_source_contract_exact_type_diagnostic_cases.h"
 
 int main(void) {
     printf("==========\n");
@@ -1415,6 +1416,7 @@ int main(void) {
     test_duplicate_type_uses_parser_diagnostic_projection();
     test_initializer_annotation_uses_parser_diagnostic_projection();
     test_return_type_inference_uses_parser_diagnostic_projection();
+    test_cannot_infer_exact_type_uses_parser_diagnostic_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);

@@ -529,8 +529,7 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
     compilerState->errorLocation = location;
     if (!ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
                 state,
-                analyzer,
-                fallbackLocation)) {
+                analyzer)) {
         return;
     }
     compilerState->hasError = ZR_FALSE;
@@ -675,13 +674,12 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
 
     typeInfo = create_field_symbol_type(state, analyzer, fieldType);
     if (typeInfo == ZR_NULL && fieldType != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(
+        ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                 state,
                 analyzer,
-                ZR_DIAGNOSTIC_ERROR,
-                fieldType->name != ZR_NULL ? fieldType->name->location : fieldNode->location,
-                "cannot infer exact type",
-                "cannot_infer_exact_type");
+                fieldType->name != ZR_NULL
+                        ? fieldType->name->location
+                        : fieldNode->location);
     }
     if (fieldType != ZR_NULL) {
         ownershipQualifier = fieldType->ownershipQualifier;

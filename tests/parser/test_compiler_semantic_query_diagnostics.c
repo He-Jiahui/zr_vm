@@ -1169,6 +1169,71 @@ static void test_compiler_structured_error_publisher_deep_copies_diagnostic(void
     ZrParser_CompilerState_Free(&cs);
 }
 
+static void test_cannot_infer_exact_type_reporter_publishes_query_diagnostic(void) {
+    SZrCompilerState cs;
+    SZrFileRange location;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrStructuredDiagnostic *diagnostic;
+
+    memset(&cs, 0, sizeof(cs));
+    memset(&location, 0, sizeof(location));
+    location.start = ZrParser_FilePosition_Create(17U, 3, 5);
+    location.end = ZrParser_FilePosition_Create(24U, 3, 12);
+
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ReportCannotInferExactType(
+            &cs, location));
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2020U, cs.structuredError.descriptorId);
+    TEST_ASSERT_EQUAL_STRING(
+            "cannot_infer_exact_type",
+            ZrCore_String_GetNativeString(cs.structuredError.code));
+    TEST_ASSERT_EQUAL_UINT32(
+            17U, (TZrUInt32)cs.structuredError.location.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(
+            24U, (TZrUInt32)cs.structuredError.location.end.offset);
+    TEST_ASSERT_FALSE(cs.structuredError.fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            cs.structuredError.noFixReason);
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    ZrParser_Compiler_ClearStructuredError(&cs);
+    cs.hasError = ZR_FALSE;
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+
+    diagnostic = find_query_diagnostic_by_code(
+            cs.semanticContext, "cannot_infer_exact_type");
+    TEST_ASSERT_NOT_NULL(diagnostic);
+    TEST_ASSERT_EQUAL_UINT32(2020U, diagnostic->descriptorId);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR, diagnostic->severity);
+    TEST_ASSERT_EQUAL_UINT32(
+            17U, (TZrUInt32)diagnostic->location.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(
+            24U, (TZrUInt32)diagnostic->location.end.offset);
+    TEST_ASSERT_EQUAL_STRING(
+            "cannot infer exact type",
+            ZrCore_String_GetNativeString(diagnostic->message));
+    TEST_ASSERT_FALSE(diagnostic->fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic->noFixReason);
+
+    ZrParser_CompilerState_Free(&cs);
+}
+
 static void test_assignment_compatibility_publishes_detailed_type_mismatch_fact(void) {
     SZrCompilerState cs;
     SZrFileRange actualLocation;
@@ -3365,6 +3430,7 @@ int main(void) {
     RUN_TEST(test_compile_script_suppresses_true_loop_break_definite_assignment_diagnostic);
     RUN_TEST(test_compiler_error_publishes_persistent_semantic_diagnostic_fact);
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
+    RUN_TEST(test_cannot_infer_exact_type_reporter_publishes_query_diagnostic);
     RUN_TEST(test_assignment_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_function_call_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_method_call_compatibility_publishes_detailed_type_mismatch_fact);

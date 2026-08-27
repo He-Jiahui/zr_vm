@@ -124,6 +124,10 @@ void ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(SZrSemanticAnalyze
 void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *state,
                                                                       SZrSemanticAnalyzer *analyzer,
                                                                       SZrFileRange fallbackLocation);
+void ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange location);
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(SZrState *state,
                                                                    SZrSemanticAnalyzer *analyzer,
@@ -176,7 +180,6 @@ void ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(SZrState *
                                                                      SZrSemanticAnalyzer *analyzer);
 TZrBool ZrLanguageServer_SemanticAnalyzer_PublishCurrentCompilerQueryDiagnostic(
         SZrState *state,
-        SZrSemanticAnalyzer *analyzer,
-        SZrFileRange shadowedInferenceRange);
+        SZrSemanticAnalyzer *analyzer);
 
 #endif

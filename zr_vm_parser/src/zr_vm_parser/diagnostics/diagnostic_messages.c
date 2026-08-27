@@ -220,6 +220,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Invalid decorator",
             "Decorator is not valid for this declaration"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "cannot_infer_exact_type",
+            "Cannot infer exact type",
+            "Compiler could not prove one exact type"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),
