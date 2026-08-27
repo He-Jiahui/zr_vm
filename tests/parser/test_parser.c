@@ -23,6 +23,7 @@
     #include <unistd.h>
 #endif
 #include "unity.h"
+#include "zr_test_log_macros.h"
 #include "zr_vm_parser.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h"
 #include "zr_vm_core/state.h"
@@ -35,39 +36,16 @@
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 
-// 测试日志宏（符合测试规范）
-#define TEST_START(summary) do { \
-    printf("Unit Test - %s\n", summary); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_INFO(summary, details) do { \
-    printf("Testing %s:\n %s\n", summary, details); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_PASS_CUSTOM(timer, summary) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
-    printf("Pass - Cost Time:%.3fms - %s\n", elapsed, summary); \
-    fflush(stdout); \
-} while(0)
-
+// Preserve historical call sites while using the shared, verified test harness.
+#define TEST_START ZR_TEST_START
+#define TEST_INFO ZR_TEST_INFO
+#define TEST_PASS_CUSTOM ZR_TEST_PASS
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    clock_t failureTime = clock(); \
-    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
-    printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
-    fflush(stdout); \
+    (timer).endTime = clock(); \
+    ZR_TEST_FAIL((timer), summary, reason); \
 } while(0)
-
-#define TEST_DIVIDER() do { \
-    printf("----------\n"); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_MODULE_DIVIDER() do { \
-    printf("==========\n"); \
-    fflush(stdout); \
-} while(0)
+#define TEST_DIVIDER ZR_TEST_DIVIDER
+#define TEST_MODULE_DIVIDER ZR_TEST_MODULE_DIVIDER
 
 // realpath 兼容函数（MSVC使用_fullpath）
 #ifdef _MSC_VER

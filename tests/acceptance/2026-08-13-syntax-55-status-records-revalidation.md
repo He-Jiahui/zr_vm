@@ -261,12 +261,18 @@ The permanent `test_log_failure_contract` CTest also passes 1/1 on all three: it
 requires an intentional probe to return exactly one Unity failure while still
 printing `cleanup_reached=1` after the failure macro.
 
+The root parser runner has now joined the truthful set. A controlled early
+return after its private failure macro reproduced `74 Tests / 0 Failures /
+0 Ignored`, exit zero, despite an explicit failure marker. The runner now
+delegates to the probed shared harness without changing its 31 call sites.
+GCC, Clang, and MSVC each directly pass the normal runner at 74/74, while the
+same bounded intentional probe reports 74/1 and exits 1 on all three.
+
 The remaining non-truthful custom runner set is intentionally not declared
-clean yet. `test_parser.c`, `test_semir_pipeline.c`, and `test_type_inference.c`
-are frozen by the concurrent L8 parser exact-test window, while the already
-recorded LSP project-feature runner is frozen by the same callable-value work.
-They must be repaired and directly replayed after release before final graph
-acceptance.
+clean yet. `test_semir_pipeline.c` and `test_type_inference.c` remain frozen by
+the concurrent L8 parser exact-test window, while the already recorded LSP
+project-feature runner is frozen by the same callable-value work. They must be
+repaired and directly replayed after release before final graph acceptance.
 
 The production-language scan independently returns zero occurrences for all 12
 removed percent spellings and zero ownership-member lowering classifier

@@ -913,10 +913,10 @@ failure state and flush through the normal harness path. Serial direct execution
 on GCC, Clang, and MSVC passes exceptions 8/8, named arguments 10/10,
 instructions 95/95, meta 41/41, and module system 78/78, with every process
 returning zero and no `Fail -` marker. The module runner remains serial because
-its binary-roundtrip cases use fixed fixture paths. Three parser runners and the
-L8 project-feature runner remain frozen until the external callable-value exact
-test paths are released; final acceptance does not treat their current green
-summaries as sufficient.
+its binary-roundtrip cases use fixed fixture paths. The parser runner is now
+truthful as recorded below. Two parser runners and the L8 project-feature runner
+remain frozen until the external callable-value exact test paths are released;
+final acceptance does not treat their current green summaries as sufficient.
 
 The common `ZR_TEST_FAIL` contract now has permanent regression coverage.
 `test_log_failure_contract` launches an unregistered intentional-failure probe
@@ -1061,6 +1061,32 @@ code/test overlays. Direct results were:
 All six direct test processes returned zero. This closes the two remaining
 parser-level intrinsic syntax categories without promoting the overall
 milestone before the final post-L8 graph, artifact, inventory, and runner gates.
+
+### 2026-08-27 parser runner failure propagation
+
+The root parser runner retained a private `TEST_FAIL_CUSTOM` macro that only
+printed `Fail -` and returned to the caller. A controlled `e94252f` snapshot
+injected that macro followed by an early return into the first parser test. The
+process printed `intentional runner failure probe`, then falsely reported
+`74 Tests / 0 Failures / 0 Ignored` and returned zero.
+
+The runner now delegates its historical logging wrappers to the already probed
+`zr_test_log_macros.h` harness. Its failure wrapper records the end time before
+`ZR_TEST_FAIL` marks `Unity.CurrentTestFailed` and flushes output; all 31
+existing call sites and their cleanup/return control flow remain unchanged.
+
+Fixed `e94252f` snapshots with the exact `test_parser.c` overlay passed the
+following direct gates on GCC 11.4, Clang 14, and MSVC 19.44:
+
+| Gate | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| normal parser runner | 74/74, exit 0 | 74/74, exit 0 | 74/74, exit 0 |
+| intentional failure probe | 74/1, exit 1 | 74/1, exit 1 | 74/1, exit 1 |
+
+The source overlay matched both WSL and Windows snapshots by SHA-256 before
+execution, and the injected line was verified inside the target test boundary.
+This closes the root parser runner only. The type-inference, SemIR, and LSP
+project-feature runners remain pending their active L8 path release.
 
 ## Pending final acceptance
 
