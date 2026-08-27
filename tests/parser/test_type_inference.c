@@ -2434,6 +2434,108 @@ static void test_borrowed_and_loaned_values_cannot_escape_through_assignment(voi
     TEST_DIVIDER();
 }
 
+static void test_borrowed_and_loaned_values_bind_to_compatible_references(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Borrowed And Loaned Values Bind To Compatible References";
+    SZrState *state = create_test_state();
+    SZrCompilerState *cs = create_test_compiler_state(state);
+    SZrInferredType readonlyReferenceType;
+    SZrInferredType writableReferenceType;
+    SZrInferredType borrowedType;
+    SZrInferredType loanedType;
+    SZrInferredType plainElementType;
+    SZrInferredType uniqueElementType;
+    SZrInferredType readonlyReferenceBoxType;
+    SZrInferredType borrowedUniqueBoxType;
+    SZrFileRange location = {{0, 1, 1}, {0, 1, 8}, ZR_NULL};
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    init_test_object_type(state,
+                          &readonlyReferenceType,
+                          "Resource",
+                          ZR_OWNERSHIP_QUALIFIER_NONE);
+    readonlyReferenceType.referenceAccess = ZR_REFERENCE_ACCESS_READONLY;
+    init_test_object_type(state,
+                          &writableReferenceType,
+                          "Resource",
+                          ZR_OWNERSHIP_QUALIFIER_NONE);
+    writableReferenceType.referenceAccess = ZR_REFERENCE_ACCESS_WRITABLE;
+    init_test_object_type(state,
+                          &borrowedType,
+                          "Resource",
+                          ZR_OWNERSHIP_QUALIFIER_BORROWED);
+    init_test_object_type(state,
+                          &loanedType,
+                          "Resource",
+                          ZR_OWNERSHIP_QUALIFIER_LOANED);
+    init_test_object_type(state,
+                          &plainElementType,
+                          "Resource",
+                          ZR_OWNERSHIP_QUALIFIER_NONE);
+    init_test_object_type(state,
+                          &uniqueElementType,
+                          "Resource",
+                          ZR_OWNERSHIP_QUALIFIER_UNIQUE);
+    init_test_generic_object_type(state,
+                                  &readonlyReferenceBoxType,
+                                  "Box<Resource>",
+                                  &plainElementType,
+                                  ZR_OWNERSHIP_QUALIFIER_NONE);
+    readonlyReferenceBoxType.referenceAccess = ZR_REFERENCE_ACCESS_READONLY;
+    init_test_generic_object_type(state,
+                                  &borrowedUniqueBoxType,
+                                  "Box<Resource>",
+                                  &uniqueElementType,
+                                  ZR_OWNERSHIP_QUALIFIER_BORROWED);
+
+    TEST_ASSERT_TRUE(ZrParser_AssignmentCompatibility_Check(
+            cs, &readonlyReferenceType, &borrowedType, location));
+    TEST_ASSERT_FALSE(cs->hasError);
+    TEST_ASSERT_TRUE(ZrParser_AssignmentCompatibility_Check(
+            cs, &readonlyReferenceType, &loanedType, location));
+    TEST_ASSERT_FALSE(cs->hasError);
+    TEST_ASSERT_TRUE(ZrParser_AssignmentCompatibility_Check(
+            cs, &writableReferenceType, &loanedType, location));
+    TEST_ASSERT_FALSE(cs->hasError);
+
+    TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(
+            cs, &writableReferenceType, &borrowedType, location));
+    TEST_ASSERT_TRUE(cs->hasError);
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage,
+                               "Borrowed value cannot escape its owner"));
+
+    cs->hasError = ZR_FALSE;
+    cs->errorMessage = ZR_NULL;
+    TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(
+            cs, &readonlyReferenceBoxType, &borrowedUniqueBoxType, location));
+    TEST_ASSERT_TRUE(cs->hasError);
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(
+            cs->errorMessage,
+            "Owned value cannot flow into a plain GC value implicitly"));
+
+    ZrParser_InferredType_Free(state, &readonlyReferenceType);
+    ZrParser_InferredType_Free(state, &writableReferenceType);
+    ZrParser_InferredType_Free(state, &borrowedType);
+    ZrParser_InferredType_Free(state, &loanedType);
+    ZrParser_InferredType_Free(state, &readonlyReferenceBoxType);
+    ZrParser_InferredType_Free(state, &borrowedUniqueBoxType);
+    ZrParser_InferredType_Free(state, &plainElementType);
+    ZrParser_InferredType_Free(state, &uniqueElementType);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_owned_value_rejects_implicit_plain_flow(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Owned Value Rejects Implicit Plain Flow";
@@ -8582,6 +8684,7 @@ int main(void) {
     RUN_TEST(test_ownership_escape_diagnostics_apply_to_assignment_expressions);
     RUN_TEST(test_ownership_escape_diagnostics_apply_to_field_assignment_expressions);
     RUN_TEST(test_borrowed_and_loaned_values_cannot_escape_through_assignment);
+    RUN_TEST(test_borrowed_and_loaned_values_bind_to_compatible_references);
     RUN_TEST(test_owned_value_rejects_implicit_plain_flow);
     RUN_TEST(test_nested_ownership_generic_arguments_cannot_escape_through_assignment);
     RUN_TEST(test_move_only_struct_assignment_rejects_implicit_copy);

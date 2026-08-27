@@ -321,7 +321,12 @@ static TZrBool type_inference_report_ownership_flow_escape(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    if (type_inference_diagnostic_report_ownership_mismatch(
+    if ((!ownership_qualifier_is_borrow_like(sourceType->ownershipQualifier) ||
+         !type_inference_assignment_target_accepts_borrow_like(
+                 targetType->ownershipQualifier,
+                 targetType->referenceAccess,
+                 sourceType->ownershipQualifier)) &&
+        type_inference_diagnostic_report_ownership_mismatch(
             cs,
             ZR_PARAMETER_PASSING_MODE_VALUE,
             ZR_NULL,
