@@ -558,8 +558,10 @@
 
 > Superseded on 2026-08-13 by the ownership/object member separation cutover.
 > The entries below are historical RED/GREEN evidence, not the current language
-> contract. Current source rejects `Module.share()` and keeps plugin lifetime in
-> a compiler-hidden scoped owner.
+> contract. Current source treats `Module.share()` only as ordinary member
+> dispatch and keeps plugin lifetime in a compiler-hidden scoped owner. It never
+> lowers that spelling to `OWN_SHARE`; a missing ordinary member fails through
+> the normal member-resolution contract.
 
 - Timestamp: 2026-06-18 03:25:06 +08:00.
 - Build directory: `build/codex-p1-thread-wsl-gcc-debug`.

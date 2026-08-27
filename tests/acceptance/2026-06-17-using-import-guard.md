@@ -233,7 +233,7 @@
   - Result: `Ownership Builtin Compile Rejects Invalid Operands` passed and emitted `plugin_type_escape` diagnostics for both typed and untyped payload return escape; the full binary later aborted at the existing `execution_dispatch.c:5711` runtime assertion.
 - Follow-up timestamp: 2026-06-18 03:38:06 +08:00.
 - Guard-scoped module `.share()` promotion slice:
-  - Superseded on 2026-08-13: the next two bullets record the former implementation. Current source rejects `Module.share()` and exposes no plugin payload ownership escape hatch.
+  - Superseded on 2026-08-13: the next two bullets record the former implementation. Current source treats `Module.share()` only as ordinary member dispatch, never as ownership promotion, and exposes no plugin payload ownership escape hatch; a missing ordinary member fails through normal member resolution.
   - `ZrCore_Ownership_SharePlainValue` and `ZrCore_Ownership_NativeSharePlain` promote a plain GC module object into a `Shared` owner without consuming or clearing the guard-local source.
   - `math.share()` / `m.share()` on a module prototype receiver lowers to `ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN`; the result can be released with `%release(handle)`.
   - The positive compiler/runtime smoke uses the current default variant syntax: `using (var [math] = %import("zr.math")) { var handle = math.share(); var released = %release(handle); return 1; }`.
