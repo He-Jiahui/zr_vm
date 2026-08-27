@@ -83,14 +83,6 @@ static void compiler_enum_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
 }
 
-static const SZrExternStaticDecoratorRule kExternEnumDecoratorRules[] = {
-        {"underlying", ZR_TRUE},
-};
-
-static const SZrExternStaticDecoratorRule kExternEnumMemberDecoratorRules[] = {
-        {"value", ZR_TRUE},
-};
-
 static const SZrExternStaticDecoratorRule kExternParameterDecoratorRules[] = {
         {"in", ZR_FALSE},
         {"out", ZR_FALSE},
@@ -156,30 +148,8 @@ static TZrBool compiler_extern_validate_declaration_decorators(
                     cs, declaration);
         }
         case ZR_AST_ENUM_DECLARATION: {
-            SZrEnumDeclaration *enumDecl = &declaration->data.enumDeclaration;
-
-            if (!compiler_decorators_validate_static_rules(
-                        cs,
-                        enumDecl->decorators,
-                        kExternEnumDecoratorRules,
-                        ZR_ARRAY_COUNT(kExternEnumDecoratorRules))) {
-                return ZR_FALSE;
-            }
-            if (enumDecl->members != ZR_NULL) {
-                for (TZrSize index = 0; index < enumDecl->members->count; index++) {
-                    SZrAstNode *member = enumDecl->members->nodes[index];
-
-                    if (member != ZR_NULL && member->type == ZR_AST_ENUM_MEMBER &&
-                        !compiler_decorators_validate_static_rules(
-                                cs,
-                                member->data.enumMember.decorators,
-                                kExternEnumMemberDecoratorRules,
-                                ZR_ARRAY_COUNT(kExternEnumMemberDecoratorRules))) {
-                        return ZR_FALSE;
-                    }
-                }
-            }
-            return ZR_TRUE;
+            return ZrParser_Compiler_ValidateExternEnumDecorators(
+                    cs, declaration);
         }
         default:
             return ZR_TRUE;
@@ -404,17 +374,7 @@ static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
             memberInfo.name = memberNode->data.enumMember.name->name;
             memberInfo.fieldTypeName = info->name;
 
-            if (isExternDeclaration) {
-                if (!compiler_decorators_validate_static_rules(
-                            cs,
-                            memberNode->data.enumMember.decorators,
-                            kExternEnumMemberDecoratorRules,
-                            ZR_ARRAY_COUNT(kExternEnumMemberDecoratorRules))) {
-                    extern_compiler_temp_root_end(&membersRoot);
-                    extern_compiler_temp_root_end(&metadataRoot);
-                    return ZR_FALSE;
-                }
-            } else {
+            if (!isExternDeclaration) {
                 if (!ZrParser_CompileTime_ApplyMemberDecorators(
                             cs,
                             memberNode,

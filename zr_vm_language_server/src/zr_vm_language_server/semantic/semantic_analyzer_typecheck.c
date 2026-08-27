@@ -630,12 +630,6 @@ static TZrBool semantic_call_has_single_string_arg(SZrFunctionCall *call, const 
     return ZR_TRUE;
 }
 
-static TZrBool semantic_call_has_single_integer_arg(SZrFunctionCall *call) {
-    return call != ZR_NULL && call->args != ZR_NULL && call->args->count == 1 &&
-           call->args->nodes[0] != ZR_NULL &&
-           call->args->nodes[0]->type == ZR_AST_INTEGER_LITERAL;
-}
-
 static TZrBool semantic_text_in_set(const TZrChar *value, const TZrChar *const *allowedValues, TZrSize count) {
     TZrSize index;
 
@@ -666,75 +660,6 @@ static void semantic_add_invalid_decorator(SZrState *state,
                                                     decoratorNode->location,
                                                     message,
                                                     "invalid_decorator");
-}
-
-static void semantic_validate_extern_enum_decorators(SZrState *state,
-                                                     SZrSemanticAnalyzer *analyzer,
-                                                     SZrAstNodeArray *decorators) {
-    TZrSize index;
-
-    if (decorators == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < decorators->count; index++) {
-        const TZrChar *leafName = ZR_NULL;
-        TZrBool hasCall = ZR_FALSE;
-        SZrFunctionCall *call = ZR_NULL;
-        SZrAstNode *decoratorNode = decorators->nodes[index];
-
-        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) || leafName == ZR_NULL) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "underlying") && hasCall &&
-            semantic_call_has_single_string_arg(call, ZR_NULL)) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "underlying")) {
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                           "zr.ffi.underlying requires a single string argument");
-        } else {
-            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-            snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern enum declarations", leafName);
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
-        }
-    }
-}
-
-static void semantic_validate_extern_enum_member_decorators(SZrState *state,
-                                                            SZrSemanticAnalyzer *analyzer,
-                                                            SZrAstNodeArray *decorators) {
-    TZrSize index;
-
-    if (decorators == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < decorators->count; index++) {
-        const TZrChar *leafName = ZR_NULL;
-        TZrBool hasCall = ZR_FALSE;
-        SZrFunctionCall *call = ZR_NULL;
-        SZrAstNode *decoratorNode = decorators->nodes[index];
-
-        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) || leafName == ZR_NULL) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "value") && hasCall && semantic_call_has_single_integer_arg(call)) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "value")) {
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                           "zr.ffi.value requires a single integer argument");
-        } else {
-            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-            snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern enum members", leafName);
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
-        }
-    }
 }
 
 static TZrBool semantic_ffi_integer_type_name_supported(const TZrChar *typeName) {
@@ -1734,18 +1659,6 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                        node->data.classDeclaration.decorators);
             break;
 
-        case ZR_AST_ENUM_DECLARATION:
-            semantic_validate_extern_enum_decorators(state,
-                                                     analyzer,
-                                                     node->data.enumDeclaration.decorators);
-            break;
-
-        case ZR_AST_ENUM_MEMBER:
-            semantic_validate_extern_enum_member_decorators(state,
-                                                            analyzer,
-                                                            node->data.enumMember.decorators);
-            break;
-
         case ZR_AST_PARAMETER:
             semantic_validate_extern_parameter_decorators(state, analyzer, node);
             break;
@@ -1780,6 +1693,15 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                         SZrAstNode *declaration = externBlock->declarations->nodes[i];
                         if (declaration->type == ZR_AST_STRUCT_DECLARATION &&
                             !ZrParser_Compiler_ValidateExternStructDecorators(
+                                    analyzer->compilerState,
+                                    declaration)) {
+                            ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                                    state,
+                                    analyzer,
+                                    declaration->location);
+                        }
+                        if (declaration->type == ZR_AST_ENUM_DECLARATION &&
+                            !ZrParser_Compiler_ValidateExternEnumDecorators(
                                     analyzer->compilerState,
                                     declaration)) {
                             ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(

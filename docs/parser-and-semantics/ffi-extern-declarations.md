@@ -9,6 +9,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_callable_decorators.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_enum_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
@@ -46,6 +47,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_callable_decorators.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_enum_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
@@ -88,6 +90,7 @@ tests:
   - tests/ffi/ffi_fixture.c
   - tests/module/test_module_system.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
+  - tests/parser/test_extern_enum_decorator_query_diagnostics.c
   - tests/parser/test_semantic_query.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_lsp_source_contracts.c
@@ -227,6 +230,22 @@ decorator walker 和参数形状检查已删除。非法值复用 descriptor `20
 struct member lookahead 使用完整 parser cursor 快照，因此字段 decorator 的 primary range 精确
 覆盖 opening `#` 到 closing `#`。LSP 和 stdio 只投影该 persistent semantic diagnostic fact，
 不得恢复本地 allowed-name/value table 或 `compiler_error` 并行兜底。
+
+### Enum And Member Decorator Validation And Diagnostics
+
+extern enum 及其成员由 parser/compiler 的
+`ZrParser_Compiler_ValidateExternEnumDecorators(...)` 单一校验。声明级
+`underlying` 必须是单个 string literal，并且只接受 `i8`、`u8`、`i16`、`u16`、
+`i32`、`u32`、`i64` 或 `u64`；成员级 `value` 必须是单个 integer literal。
+未知 decorator、错误 call shape 和非法 structured value 均 fail closed。
+
+normal compiler 与 LSP analyzer 调用同一个公共 validator。非法 enum/member decorator
+发布 descriptor `2019` / code `invalid_decorator`，primary range 覆盖完整 decorator，
+并保留 canonical message/cause/suggestion、零 fixes 与
+`REQUIRES_USER_DECISION`。LSP 原有的 enum/member walker 与 integer-shape helper 已删除；
+semantic analyzer 和 stdio 仅投影 persistent semantic query fact，不得按 decorator 名称、
+AST/source text、message 或本地 underlying table 重建规则，也不得补发平行
+`compiler_error`。
 
 ## Semantic And Type Visibility
 
