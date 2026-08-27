@@ -986,12 +986,14 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *invalidDecorator;
     const SZrDiagnosticDescriptor *useAfterMove;
     const SZrDiagnosticDescriptor *reservedOwnershipIntrinsicName;
+    const SZrDiagnosticDescriptor *ownershipIntrinsicCallRequired;
+    const SZrDiagnosticDescriptor *ownershipIntrinsicArityMismatch;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(67, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(69, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1025,6 +1027,30 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     TEST_ASSERT_EQUAL_INT(
             ZR_LINT_CATEGORY_OWNERSHIP,
             reservedOwnershipIntrinsicName->category);
+
+    ownershipIntrinsicCallRequired =
+            ZrParser_DiagnosticRegistry_FindByCode(
+                    "ownership_intrinsic_call_required");
+    TEST_ASSERT_NOT_NULL(ownershipIntrinsicCallRequired);
+    TEST_ASSERT_EQUAL_UINT32(4009, ownershipIntrinsicCallRequired->id);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            ownershipIntrinsicCallRequired->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LINT_CATEGORY_OWNERSHIP,
+            ownershipIntrinsicCallRequired->category);
+
+    ownershipIntrinsicArityMismatch =
+            ZrParser_DiagnosticRegistry_FindByCode(
+                    "ownership_intrinsic_arity_mismatch");
+    TEST_ASSERT_NOT_NULL(ownershipIntrinsicArityMismatch);
+    TEST_ASSERT_EQUAL_UINT32(4010, ownershipIntrinsicArityMismatch->id);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            ownershipIntrinsicArityMismatch->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LINT_CATEGORY_OWNERSHIP,
+            ownershipIntrinsicArityMismatch->category);
 
     typeMismatch = ZrParser_DiagnosticRegistry_FindByCode("type_mismatch");
     TEST_ASSERT_NOT_NULL(typeMismatch);

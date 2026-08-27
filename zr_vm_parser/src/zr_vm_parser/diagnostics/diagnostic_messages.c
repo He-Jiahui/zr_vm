@@ -275,6 +275,14 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "reserved_ownership_intrinsic_name",
             "Reserved ownership intrinsic name",
             "Ownership intrinsic name is reserved in lexical namespaces"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "ownership_intrinsic_call_required",
+            "Ownership intrinsic call required",
+            "Ownership intrinsic must be called with one positional argument"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "ownership_intrinsic_arity_mismatch",
+            "Ownership intrinsic arity mismatch",
+            "Ownership intrinsic requires exactly one positional argument"),
 };
 
 TZrSize ZrParser_DiagnosticMessages_Count(void) {

@@ -23,6 +23,43 @@ static EZrOwnershipIntrinsicOperation intrinsic_operation(EZrToken token) {
     }
 }
 
+static void report_ownership_intrinsic_syntax_error(
+        SZrParserState *ps,
+        SZrFileRange location,
+        EZrToken token,
+        const TZrChar *code,
+        const TZrChar *message,
+        const TZrChar *cause,
+        const TZrChar *suggestion) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+    if (!ZrParser_DiagnosticBuilder_Build(
+                ps->state,
+                &diagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                code,
+                message,
+                cause,
+                suggestion)) {
+        report_error_with_token(ps, message, token);
+        return;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+        report_error_with_token(ps, message, token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
 SZrAstNode *parse_member_identifier(SZrParserState *ps) {
     SZrFileRange location;
     const TZrChar *name;
@@ -65,20 +102,41 @@ SZrAstNode *parse_ownership_intrinsic_expression(SZrParserState *ps) {
     nameRange = get_current_token_location(ps);
     ZrParser_Lexer_Next(ps->lexer);
     if (ps->lexer->t.token != ZR_TK_LPAREN) {
-        report_error(ps, "Ownership intrinsic must be called with exactly one positional argument");
+        report_ownership_intrinsic_syntax_error(
+                ps,
+                nameRange,
+                token,
+                "ownership_intrinsic_call_required",
+                "Ownership intrinsic must be called with exactly one positional argument",
+                "Reserved ownership intrinsic names are operations and cannot be referenced as values.",
+                "Call the intrinsic with exactly one positional owner expression.");
         return ZR_NULL;
     }
 
     callOpenRange = get_current_token_location(ps);
     consume_token(ps, ZR_TK_LPAREN);
     if (ps->lexer->t.token == ZR_TK_RPAREN) {
-        report_error(ps, "Ownership intrinsic requires exactly one positional argument");
+        report_ownership_intrinsic_syntax_error(
+                ps,
+                get_current_token_location(ps),
+                ps->lexer->t.token,
+                "ownership_intrinsic_arity_mismatch",
+                "Ownership intrinsic requires exactly one positional argument",
+                "The ownership operation has no owner operand.",
+                "Pass exactly one positional owner expression.");
         ZrParser_Lexer_Next(ps->lexer);
         return ZR_NULL;
     }
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
         peek_token(ps) == ZR_TK_COLON) {
-        report_error(ps, "Ownership intrinsic accepts exactly one positional argument");
+        report_ownership_intrinsic_syntax_error(
+                ps,
+                get_current_token_location(ps),
+                ps->lexer->t.token,
+                "ownership_intrinsic_arity_mismatch",
+                "Ownership intrinsic accepts exactly one positional argument",
+                "Ownership operations do not accept named arguments.",
+                "Pass exactly one positional owner expression.");
         do {
             ZrParser_Lexer_Next(ps->lexer);
         } while (ps->lexer->t.token != ZR_TK_RPAREN &&
@@ -94,7 +152,14 @@ SZrAstNode *parse_ownership_intrinsic_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
     if (ps->lexer->t.token == ZR_TK_COMMA) {
-        report_error(ps, "Ownership intrinsic accepts exactly one positional argument");
+        report_ownership_intrinsic_syntax_error(
+                ps,
+                get_current_token_location(ps),
+                ps->lexer->t.token,
+                "ownership_intrinsic_arity_mismatch",
+                "Ownership intrinsic accepts exactly one positional argument",
+                "The ownership operation has more than one operand.",
+                "Pass exactly one positional owner expression.");
         do {
             ZrParser_Lexer_Next(ps->lexer);
         } while (ps->lexer->t.token != ZR_TK_RPAREN &&

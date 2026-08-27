@@ -1033,6 +1033,35 @@ All six direct test processes returned zero. This closes the stable diagnostic
 contract for intrinsic rebinding without promoting the overall milestone ahead
 of the final post-L8 full graph, artifact, inventory, and exact-diff gates.
 
+### 2026-08-27 intrinsic value-reference and arity diagnostics
+
+The remaining parser-only intrinsic syntax errors still used unstructured
+messages. The controlled RED required `share;` to publish a stable diagnostic
+and required the diagnostic registry to contain 69 entries. The ownership
+runner reported `43 Tests / 1 Failure` because no structured callback fired;
+the semantic-query runner reported `30 Tests / 1 Failure` with
+`Expected 69 Was 67`. Both processes returned 1.
+
+Bare references to any of `share`, `degrade`, `wake`, `intoGc`, or `drop` now
+publish `ownership_intrinsic_call_required`, descriptor 4009, on the exact name
+range. Empty, named, and multiple-argument calls publish
+`ownership_intrinsic_arity_mismatch`, descriptor 4010, on the closing `)`,
+named-argument identifier, or comma that proves the mismatch. Both diagnostics
+are ownership errors and carry `REQUIRES_USER_DECISION`; no parser or LSP layer
+guesses a replacement expression.
+
+The fixed evidence baseline is committed main `c6b5767` plus the exact five
+code/test overlays. Direct results were:
+
+| Suite | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| ownership intrinsic/member separation | 43/43 | 43/43 | 43/43 |
+| semantic query diagnostic registry | 30/30 | 30/30 | 30/30 |
+
+All six direct test processes returned zero. This closes the two remaining
+parser-level intrinsic syntax categories without promoting the overall
+milestone before the final post-L8 graph, artifact, inventory, and runner gates.
+
 ## Pending final acceptance
 
 The frozen syntax-leaf prerequisite is now checked by the executable

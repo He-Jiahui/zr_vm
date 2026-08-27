@@ -157,6 +157,13 @@ Member declarations and member access use a separate identifier path, so the
 same five spellings remain valid after `.` and `?.` and never select ownership
 lowering by text.
 
+Bare intrinsic names are operations rather than first-class values. Referencing
+one without `(...)` reports `ownership_intrinsic_call_required` (descriptor
+4009) on the name. Empty, named, or multiple-argument calls report
+`ownership_intrinsic_arity_mismatch` (descriptor 4010) on the token that proves
+the mismatch. Both are ownership errors with `REQUIRES_USER_DECISION`; neither
+guesses an operand or rewrites an argument list.
+
 ## Validation Status
 
 The breaking switch is directly covered by `percent_syntax_cutover`,
@@ -202,3 +209,10 @@ no structured diagnostic. The parser now reports descriptor 4008 for all five
 intrinsic tokens in lexical declaration positions. The focused ownership suite
 passes 43/43 and the diagnostic registry/message parity suite passes 30/30 on
 GCC 11.4, Clang 14, and MSVC 19.44; all six direct processes exit zero.
+
+The same-day intrinsic-call diagnostic follow-up reproduced two additional
+unstable paths: bare `share;` had no structured diagnostic, and the registry
+still contained only 67 descriptors. Descriptors 4009 and 4010 now cover bare
+value references and invalid arity with exact token ranges. The registry count
+is 69, message-table parity remains complete, and the same ownership 43/43 plus
+semantic-query 30/30 pair passes directly on all three toolchains.

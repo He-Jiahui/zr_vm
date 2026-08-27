@@ -382,6 +382,53 @@ static void assert_parse_error(const TZrChar *source, const TZrChar *expectedFra
     ZrParser_State_Free(&parserState);
 }
 
+static void assert_intrinsic_syntax_error(
+        const TZrChar *source,
+        const TZrChar *expectedFragment,
+        const TZrChar *expectedCode,
+        TZrUInt32 expectedDescriptorId,
+        EZrToken expectedToken,
+        TZrUInt32 expectedStart,
+        TZrUInt32 expectedEnd) {
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "ownership_intrinsic_error.zr");
+    SZrCapturedParserDiagnostic diagnostic;
+    SZrParserState parserState;
+    SZrAstNode *script;
+
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    ZrParser_State_Init(&parserState, g_state, source, strlen(source), sourceName);
+    parserState.errorCallback = capture_parser_error;
+    parserState.structuredErrorCallback = capture_structured_parser_error;
+    parserState.errorUserData = &diagnostic;
+    parserState.suppressErrorOutput = ZR_TRUE;
+
+    script = ZrParser_ParseWithState(&parserState);
+    TEST_ASSERT_TRUE(diagnostic.reported || parserState.hasError || script == ZR_NULL);
+    TEST_ASSERT_TRUE(diagnostic.reported);
+    TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, expectedFragment));
+    TEST_ASSERT_TRUE_MESSAGE(diagnostic.structuredReported, source);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(
+            expectedCode, diagnostic.structuredCode, source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            expectedDescriptorId, diagnostic.structuredDescriptorId, source);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+            expectedToken, diagnostic.structuredToken, source);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic.noFixReason,
+            source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            expectedStart, diagnostic.structuredLocation.start.offset, source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            expectedEnd, diagnostic.structuredLocation.end.offset, source);
+
+    if (script != ZR_NULL) {
+        ZrParser_Ast_Free(g_state, script);
+    }
+    ZrParser_State_Free(&parserState);
+}
+
 static void assert_reserved_intrinsic_binding_error(
         const TZrChar *source,
         const TZrChar *name,
@@ -611,18 +658,54 @@ static void test_direct_and_optional_callable_syntax_are_distinct(void) {
 }
 
 static void test_intrinsic_syntax_reports_precise_errors(void) {
-    assert_parse_error(
-            "share;",
-            "Ownership intrinsic must be called with exactly one positional argument");
-    assert_parse_error(
+    static const struct {
+        const TZrChar *source;
+        EZrToken token;
+        TZrUInt32 nameLength;
+    } valueCases[] = {
+            {"share;", ZR_TK_SHARE, 5u},
+            {"degrade;", ZR_TK_DEGRADE, 7u},
+            {"wake;", ZR_TK_WAKE, 4u},
+            {"intoGc;", ZR_TK_INTO_GC, 6u},
+            {"drop;", ZR_TK_DROP, 4u},
+    };
+
+    for (TZrSize index = 0u;
+         index < sizeof(valueCases) / sizeof(valueCases[0]);
+         index++) {
+        assert_intrinsic_syntax_error(
+                valueCases[index].source,
+                "Ownership intrinsic must be called with exactly one positional argument",
+                "ownership_intrinsic_call_required",
+                4009u,
+                valueCases[index].token,
+                0u,
+                valueCases[index].nameLength);
+    }
+    assert_intrinsic_syntax_error(
             "share();",
-            "Ownership intrinsic requires exactly one positional argument");
-    assert_parse_error(
+            "Ownership intrinsic requires exactly one positional argument",
+            "ownership_intrinsic_arity_mismatch",
+            4010u,
+            ZR_TK_RPAREN,
+            6u,
+            7u);
+    assert_intrinsic_syntax_error(
             "share(first, second);",
-            "Ownership intrinsic accepts exactly one positional argument");
-    assert_parse_error(
+            "Ownership intrinsic accepts exactly one positional argument",
+            "ownership_intrinsic_arity_mismatch",
+            4010u,
+            ZR_TK_COMMA,
+            11u,
+            12u);
+    assert_intrinsic_syntax_error(
             "share(value: owner);",
-            "Ownership intrinsic accepts exactly one positional argument");
+            "Ownership intrinsic accepts exactly one positional argument",
+            "ownership_intrinsic_arity_mismatch",
+            4010u,
+            ZR_TK_IDENTIFIER,
+            6u,
+            11u);
 }
 
 static void test_reserved_intrinsic_lexical_bindings_report_structured_errors(void) {

@@ -154,6 +154,10 @@ static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
     ZR_DIAGNOSTIC_DESCRIPTOR(4008, "reserved_ownership_intrinsic_name",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
+    ZR_DIAGNOSTIC_DESCRIPTOR(4009, "ownership_intrinsic_call_required",
+                             ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
+    ZR_DIAGNOSTIC_DESCRIPTOR(4010, "ownership_intrinsic_arity_mismatch",
+                             ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
 };
 
 TZrSize ZrParser_DiagnosticRegistry_Count(void) {
