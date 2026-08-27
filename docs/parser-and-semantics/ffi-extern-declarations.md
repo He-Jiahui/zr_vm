@@ -8,9 +8,13 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_callable_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_messages.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -41,9 +45,13 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_callable_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_messages.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
@@ -79,7 +87,11 @@ tests:
   - tests/ffi/test_ffi_module.c
   - tests/ffi/ffi_fixture.c
   - tests/module/test_module_system.c
+  - tests/parser/test_compiler_semantic_query_diagnostics.c
+  - tests/parser/test_semantic_query.c
   - tests/language_server/test_semantic_analyzer.c
+  - tests/language_server/test_lsp_source_contracts.c
+  - tests/language_server/stdio_diagnostic_fix_smoke.js
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
 doc_type: module-detail
@@ -171,6 +183,29 @@ decorator 不再通过“运行一段 compile-time expression”取值。`compil
 - int 参数走 `extern_compiler_decorators_get_int_arg(...)`
 
 这条路径的目的很明确：extern 元数据是 declaration metadata，不是 compile-time executable program。
+
+### Callable Decorator Validation And Diagnostics
+
+extern function / delegate 的 callable decorator 由 parser/compiler 的
+`ZrParser_Compiler_ValidateExternCallableDecorators(...)` 单一校验。实现位于
+`compiler_extern_callable_decorators.c`，按 decorator AST identity、call shape 和结构化
+argument value 校验，不把名称列表或参数解析复制到 LSP。
+
+callable ABI 值域接受 `c`、`cdecl`、`stdcall` 和 `system`；`c` 与 `cdecl` 都投影为
+canonical C ABI。charset、error/cleanup policy、callback lifetime/thread/exception、platform
+和 required capability 也由同一 validator 校验。delegate 只接受其声明面允许的 ABI 与
+charset 子集。
+
+非法 callable decorator 发布稳定 descriptor `2019` / code `invalid_decorator`：
+
+- primary range 精确覆盖 opening `#` 到 closing `#`；
+- severity 为 error，category 为 semantic；
+- suggestion/cause 由 parser diagnostic builder 生成；
+- fixes 为空，no-fix reason 为 `REQUIRES_USER_DECISION`。
+
+normal compiler 和 LSP analyzer 都调用同一公共 validator。LSP 只消费 compiler 发布的
+persistent semantic diagnostic fact，再投影 protocol range/code/message/cause/suggestion/
+disposition；不得按 decorator 名、AST 文本或本地 allowed-value table 重建规则。
 
 ## Semantic And Type Visibility
 

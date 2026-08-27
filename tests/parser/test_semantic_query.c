@@ -983,13 +983,14 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *memberNotFound;
     const SZrDiagnosticDescriptor *initializerRequiresAnnotation;
     const SZrDiagnosticDescriptor *returnTypeNotProvable;
+    const SZrDiagnosticDescriptor *invalidDecorator;
     const SZrDiagnosticDescriptor *useAfterMove;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(65, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(66, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1081,6 +1082,15 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
                           returnTypeNotProvable->defaultSeverity);
     TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE,
                           returnTypeNotProvable->category);
+
+    invalidDecorator =
+            ZrParser_DiagnosticRegistry_FindByCode("invalid_decorator");
+    TEST_ASSERT_NOT_NULL(invalidDecorator);
+    TEST_ASSERT_EQUAL_UINT32(2019, invalidDecorator->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                          invalidDecorator->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_SEMANTIC,
+                          invalidDecorator->category);
 
     for (index = 0; index < descriptorCount; index++) {
         const SZrDiagnosticDescriptor *descriptor =

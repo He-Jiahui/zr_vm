@@ -83,26 +83,6 @@ static void compiler_enum_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
 }
 
-static const SZrExternStaticDecoratorRule kExternFunctionDecoratorRules[] = {
-        {"entry", ZR_TRUE},
-        {"callingConvention", ZR_TRUE},
-        {"callconv", ZR_TRUE},
-        {"charset", ZR_TRUE},
-        {"errorPolicy", ZR_TRUE},
-        {"cleanup", ZR_TRUE},
-        {"callbackLifetime", ZR_TRUE},
-        {"callbackThread", ZR_TRUE},
-        {"callbackException", ZR_TRUE},
-        {"platform", ZR_TRUE},
-        {"requiredCapabilities", ZR_TRUE},
-};
-
-static const SZrExternStaticDecoratorRule kExternDelegateDecoratorRules[] = {
-        {"callingConvention", ZR_TRUE},
-        {"callconv", ZR_TRUE},
-        {"charset", ZR_TRUE},
-};
-
 static const SZrExternStaticDecoratorRule kExternStructDecoratorRules[] = {
         {"kind", ZR_TRUE},
         {"pack", ZR_TRUE},
@@ -169,22 +149,16 @@ static TZrBool compiler_extern_validate_declaration_decorators(
         case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
             SZrExternFunctionDeclaration *function =
                     &declaration->data.externFunctionDeclaration;
-            return compiler_decorators_validate_static_rules(
-                           cs,
-                           function->decorators,
-                           kExternFunctionDecoratorRules,
-                           ZR_ARRAY_COUNT(kExternFunctionDecoratorRules)) &&
+            return ZrParser_Compiler_ValidateExternCallableDecorators(
+                           cs, declaration) &&
                    compiler_extern_validate_parameter_decorators(
                            cs, function->params, function->args);
         }
         case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
             SZrExternDelegateDeclaration *delegate =
                     &declaration->data.externDelegateDeclaration;
-            return compiler_decorators_validate_static_rules(
-                           cs,
-                           delegate->decorators,
-                           kExternDelegateDecoratorRules,
-                           ZR_ARRAY_COUNT(kExternDelegateDecoratorRules)) &&
+            return ZrParser_Compiler_ValidateExternCallableDecorators(
+                           cs, declaration) &&
                    compiler_extern_validate_parameter_decorators(
                            cs, delegate->params, delegate->args);
         }

@@ -668,54 +668,6 @@ static void semantic_add_invalid_decorator(SZrState *state,
                                                     "invalid_decorator");
 }
 
-static void semantic_validate_extern_callable_decorators(SZrState *state,
-                                                         SZrSemanticAnalyzer *analyzer,
-                                                         SZrAstNodeArray *decorators,
-                                                         const TZrChar *targetName) {
-    static const TZrChar *const allowedCallconvs[] = {"cdecl", "stdcall", "system"};
-    static const TZrChar *const allowedCharsets[] = {"utf8", "utf16", "ansi"};
-    TZrSize index;
-
-    if (decorators == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < decorators->count; index++) {
-        const TZrChar *leafName = ZR_NULL;
-        TZrBool hasCall = ZR_FALSE;
-        SZrFunctionCall *call = ZR_NULL;
-        const TZrChar *stringArg = ZR_NULL;
-        SZrAstNode *decoratorNode = decorators->nodes[index];
-
-        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) || leafName == ZR_NULL) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "entry")) {
-            if (!hasCall || !semantic_call_has_single_string_arg(call, ZR_NULL)) {
-                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                               "zr.ffi.entry requires a single string argument");
-            }
-        } else if (semantic_text_equals(leafName, "callconv")) {
-            if (!hasCall || !semantic_call_has_single_string_arg(call, &stringArg) ||
-                !semantic_text_in_set(stringArg, allowedCallconvs, 3)) {
-                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                               "zr.ffi.callconv requires one of: cdecl, stdcall, system");
-            }
-        } else if (semantic_text_equals(leafName, "charset")) {
-            if (!hasCall || !semantic_call_has_single_string_arg(call, &stringArg) ||
-                !semantic_text_in_set(stringArg, allowedCharsets, 3)) {
-                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                               "zr.ffi.charset requires one of: utf8, utf16, ansi");
-            }
-        } else {
-            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-            snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on %s", leafName, targetName);
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
-        }
-    }
-}
-
 static void semantic_validate_extern_struct_decorators(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrAstNodeArray *decorators) {
@@ -1837,17 +1789,12 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         }
 
         case ZR_AST_EXTERN_FUNCTION_DECLARATION:
-            semantic_validate_extern_callable_decorators(state,
-                                                         analyzer,
-                                                         node->data.externFunctionDeclaration.decorators,
-                                                         "extern functions");
-            break;
-
         case ZR_AST_EXTERN_DELEGATE_DECLARATION:
-            semantic_validate_extern_callable_decorators(state,
-                                                         analyzer,
-                                                         node->data.externDelegateDeclaration.decorators,
-                                                         "extern delegates");
+            if (!ZrParser_Compiler_ValidateExternCallableDecorators(
+                        analyzer->compilerState, node)) {
+                ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                        state, analyzer, node->location);
+            }
             break;
 
         case ZR_AST_CLASS_DECLARATION:

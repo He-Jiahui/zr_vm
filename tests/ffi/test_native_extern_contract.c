@@ -969,6 +969,36 @@ static void test_native_extern_rejects_managed_types_and_invalid_abi(void) {
     native_extern_destroy_state(state);
 }
 
+static void test_native_extern_accepts_cdecl_callconv_alias(void) {
+    static const TZrChar *source =
+            "native extern(\"fixture\") {\n"
+            "  #zr.ffi.callconv(\"cdecl\")#\n"
+            "  fn Call(value: i32): i32;\n"
+            "}\n";
+    SZrState *state = native_extern_create_state();
+    SZrNativeImportContract contract;
+    SZrFfiContractDiagnostic diagnostic;
+    SZrAstNode *script;
+    SZrAstNode *block;
+
+    TEST_ASSERT_NOT_NULL(state);
+    script = parse_source(state, source, "native_extern_cdecl_alias.zr");
+    TEST_ASSERT_NOT_NULL(script);
+    block = script->data.script.statements->nodes[0];
+    TEST_ASSERT_EQUAL_INT(
+            ZR_FFI_CONTRACT_STATUS_OK,
+            native_extern_build_contract(
+                    state,
+                    &block->data.externBlock,
+                    find_extern_function(script, "Call"),
+                    &contract,
+                    &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_FFI_CONTRACT_ABI_C, contract.signature.abi);
+
+    ZrParser_Ast_Free(state, script);
+    native_extern_destroy_state(state);
+}
+
 static void test_native_extern_accepts_blittable_local_type_regardless_of_name(void) {
     static const TZrChar *source =
             "native extern(\"fixture\") {\n"
@@ -2360,6 +2390,7 @@ int main(void) {
     RUN_TEST(test_native_extern_requires_explicit_callback_policy);
     RUN_TEST(test_native_extern_policy_contract_admission);
     RUN_TEST(test_native_extern_rejects_managed_types_and_invalid_abi);
+    RUN_TEST(test_native_extern_accepts_cdecl_callconv_alias);
     RUN_TEST(test_native_extern_accepts_blittable_local_type_regardless_of_name);
     RUN_TEST(test_native_extern_callable_hash_preserves_passing_semantics);
     RUN_TEST(test_native_extern_current_syntax_executes_static_symbol);

@@ -72,6 +72,8 @@ const functionCallMismatchDocumentUri =
     'file:///zr-diagnostic-function-call-mismatch-smoke.zr';
 const methodCallMismatchDocumentUri =
     'file:///zr-diagnostic-method-call-mismatch-smoke.zr';
+const invalidCallableDecoratorDocumentUri =
+    'file:///zr-diagnostic-invalid-callable-decorator-smoke.zr';
 const documentText = [
     'fn choose(flag: bool): int {',
     '    var seed: int;',
@@ -118,6 +120,13 @@ const methodCallMismatchDocumentText = [
     'fn main(meter: Meter): int {',
     '    meter.write(2.5);',
     '    return 0;',
+    '}',
+    '',
+].join('\n');
+const invalidCallableDecoratorDocumentText = [
+    'native extern("fixture") {',
+    '    #zr.ffi.callconv(123)#',
+    '    fn Bad(): void;',
     '}',
     '',
 ].join('\n');
@@ -679,7 +688,25 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: methodCallMismatchDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 35, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: invalidCallableDecoratorDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: invalidCallableDecoratorDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 35,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: invalidCallableDecoratorDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 36, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -1432,3 +1459,33 @@ assert(methodCallMismatchFix.applicability === 2 &&
     methodCallMismatchFix.edit &&
     methodCallMismatchFix.edit.newText === '<int> <expression>',
     'Expected the method-call typed placeholder from the parser query fact');
+
+const invalidCallableDecoratorPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === invalidCallableDecoratorDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics));
+assert(invalidCallableDecoratorPublication,
+    'Expected invalid callable decorator publication');
+const invalidCallableDecoratorDiagnostics =
+    invalidCallableDecoratorPublication.params.diagnostics.filter((entry) =>
+        entry.code === 'invalid_decorator');
+assert(invalidCallableDecoratorDiagnostics.length === 1,
+    'Expected exactly one canonical invalid callable decorator diagnostic');
+const invalidCallableDecoratorDiagnostic = invalidCallableDecoratorDiagnostics[0];
+assert(invalidCallableDecoratorDiagnostic.range.start.line === 1 &&
+    invalidCallableDecoratorDiagnostic.range.start.character === 4 &&
+    invalidCallableDecoratorDiagnostic.range.end.line === 1 &&
+    invalidCallableDecoratorDiagnostic.range.end.character === 26,
+    `Expected the invalid callable decorator range on the exact decorator, got ${JSON.stringify(invalidCallableDecoratorDiagnostic.range)}`);
+assert(invalidCallableDecoratorDiagnostic.data &&
+    invalidCallableDecoratorDiagnostic.data.descriptorId === 2019 &&
+    invalidCallableDecoratorDiagnostic.data.noFixReason === 'requires_user_decision' &&
+    (!Array.isArray(invalidCallableDecoratorDiagnostic.data.fixes) ||
+        invalidCallableDecoratorDiagnostic.data.fixes.length === 0),
+    'Expected the parser-owned invalid decorator disposition without a fix');
+assert(invalidCallableDecoratorDiagnostic.codeDescription &&
+    invalidCallableDecoratorDiagnostic.codeDescription.href ===
+        'https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md',
+    'Expected the registered invalid decorator code description');

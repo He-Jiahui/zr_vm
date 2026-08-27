@@ -216,6 +216,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Return type not provable",
             "Callable return expressions do not establish one exact common type"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "invalid_decorator",
+            "Invalid decorator",
+            "Decorator is not valid for this declaration"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),

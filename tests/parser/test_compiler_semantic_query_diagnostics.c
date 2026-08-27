@@ -3244,6 +3244,107 @@ static void test_missing_conditional_branch_expression_builders_publish_no_fix(v
     ZrParser_StructuredDiagnostic_Free(g_state, &diagnostic);
 }
 
+static void test_invalid_extern_callable_decorator_publishes_structured_query_diagnostic(void) {
+    const TZrChar *source =
+            "native extern(\"fixture\") {\n"
+            "    #zr.ffi.callconv(123)#\n"
+            "    fn Bad(): void;\n"
+            "}\n";
+    const SZrStructuredDiagnostic *published;
+    SZrAstNode *externBlockNode;
+    SZrAstNode *functionNode;
+    SZrAstNode *decoratorNode;
+    SZrParserSemanticQueryScope scope;
+    const TZrChar *decoratorText;
+    TZrSize decoratorStart;
+    TZrSize decoratorEnd;
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_invalid_extern_callable_decorator_test.zr",
+            strlen("compiler_invalid_extern_callable_decorator_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT64(1U, ast->data.script.statements->count);
+
+    externBlockNode = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(externBlockNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_BLOCK, externBlockNode->type);
+    TEST_ASSERT_NOT_NULL(externBlockNode->data.externBlock.declarations);
+    TEST_ASSERT_EQUAL_UINT64(
+            1U, externBlockNode->data.externBlock.declarations->count);
+    functionNode = externBlockNode->data.externBlock.declarations->nodes[0];
+    TEST_ASSERT_NOT_NULL(functionNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_FUNCTION_DECLARATION, functionNode->type);
+    TEST_ASSERT_NOT_NULL(functionNode->data.externFunctionDeclaration.decorators);
+    TEST_ASSERT_EQUAL_UINT64(
+            1U, functionNode->data.externFunctionDeclaration.decorators->count);
+    decoratorNode = functionNode->data.externFunctionDeclaration.decorators->nodes[0];
+    TEST_ASSERT_NOT_NULL(decoratorNode);
+    decoratorText = "#zr.ffi.callconv(123)#";
+    decoratorStart = (TZrSize)(strstr(source, decoratorText) - source);
+    decoratorEnd = decoratorStart + strlen(decoratorText);
+    TEST_ASSERT_EQUAL_UINT64(
+            decoratorStart, decoratorNode->location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            decoratorEnd, decoratorNode->location.end.offset);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2019U, cs.structuredError.descriptorId);
+    TEST_ASSERT_NOT_NULL(cs.structuredError.code);
+    TEST_ASSERT_EQUAL_STRING(
+            "invalid_decorator",
+            ZrCore_String_GetNativeString(cs.structuredError.code));
+    TEST_ASSERT_EQUAL_UINT64(
+            decoratorNode->location.start.offset,
+            cs.structuredError.location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            decoratorNode->location.end.offset,
+            cs.structuredError.location.end.offset);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            cs.structuredError.noFixReason);
+    TEST_ASSERT_FALSE(cs.structuredError.fixes.isValid);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    cs.hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(&cs);
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+
+    published = find_query_diagnostic_by_code(
+            cs.semanticContext, "invalid_decorator");
+    TEST_ASSERT_NOT_NULL(published);
+    TEST_ASSERT_EQUAL_UINT32(2019U, published->descriptorId);
+    TEST_ASSERT_EQUAL_UINT64(
+            decoratorNode->location.start.offset,
+            published->location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            decoratorNode->location.end.offset,
+            published->location.end.offset);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            published->noFixReason);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compile_script_publishes_semantic_query_diagnostics_without_error);
@@ -3308,5 +3409,6 @@ int main(void) {
     RUN_TEST(test_missing_object_property_separator_builder_publishes_machine_fix);
     RUN_TEST(test_missing_conditional_colon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_conditional_branch_expression_builders_publish_no_fix);
+    RUN_TEST(test_invalid_extern_callable_decorator_publishes_structured_query_diagnostic);
     return UNITY_END();
 }

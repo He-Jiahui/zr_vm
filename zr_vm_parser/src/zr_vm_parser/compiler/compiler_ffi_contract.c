@@ -261,7 +261,8 @@ static EZrFfiContractStatus ffi_contract_abi_from_decorators(
     abiText = ZrCore_String_GetNativeString(abiName);
     if (ffi_contract_text_equals(abiText, "system")) {
         *outAbi = ZR_FFI_CONTRACT_ABI_SYSTEM;
-    } else if (ffi_contract_text_equals(abiText, "c")) {
+    } else if (ffi_contract_text_equals(abiText, "c") ||
+               ffi_contract_text_equals(abiText, "cdecl")) {
         *outAbi = ZR_FFI_CONTRACT_ABI_C;
     } else if (ffi_contract_text_equals(abiText, "stdcall")) {
         *outAbi = ZR_FFI_CONTRACT_ABI_STDCALL;

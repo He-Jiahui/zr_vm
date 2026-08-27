@@ -1238,7 +1238,8 @@ SZrAstNode *parse_meta_identifier(SZrParserState *ps) {
 // 解析装饰器表达式
 
 SZrAstNode *parse_decorator_expression(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange startLoc = get_current_token_location(ps);
+    SZrFileRange endLoc;
     expect_token(ps, ZR_TK_SHARP);
     ZrParser_Lexer_Next(ps->lexer);
 
@@ -1248,9 +1249,9 @@ SZrAstNode *parse_decorator_expression(SZrParserState *ps) {
     }
 
     expect_token(ps, ZR_TK_SHARP);
+    endLoc = get_current_token_location(ps);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange decoratorLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_DECORATOR_EXPRESSION, decoratorLoc);

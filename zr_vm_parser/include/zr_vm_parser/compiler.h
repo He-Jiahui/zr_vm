@@ -567,6 +567,9 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_QueryPropertyRequirements(
 ZR_PARSER_API void ZrParser_Compiler_CompileUnionDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
 ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
+ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternCallableDecorators(
+        SZrCompilerState *cs,
+        SZrAstNode *declaration);
 
 ZR_PARSER_API TZrBool ZrParser_Quickening_CollectLoadTypedArithmeticProbeStats(
         const SZrFunction *function,

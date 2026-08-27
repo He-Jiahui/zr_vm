@@ -5139,6 +5139,9 @@ int main(void) {
     test_semantic_analyzer_preserves_return_type_not_provable_golden_parity(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_preserves_invalid_callable_decorator_golden_parity(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);
     TEST_DIVIDER();
 

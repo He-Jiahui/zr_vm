@@ -1323,6 +1323,30 @@ static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
     free(typecheck);
 }
 
+static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+
+    if (typecheck == NULL) {
+        printf("FAIL: could not read semantic analyzer typecheck source\n");
+        g_failures++;
+        return;
+    }
+
+    assert_text_contains(
+        typecheck,
+        "ZrParser_Compiler_ValidateExternCallableDecorators");
+    assert_text_contains(
+        typecheck,
+        "ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic");
+    assert_text_contains_none(
+        typecheck,
+        "semantic_validate_extern_callable_decorators");
+    assert_text_contains_none(typecheck, "allowedCallconvs");
+
+    free(typecheck);
+}
+
 #include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
 #include "test_lsp_source_contract_initializer_annotation_cases.h"
 #include "test_lsp_source_contract_return_type_cases.h"
@@ -1379,6 +1403,7 @@ int main(void) {
     test_unresolved_reference_diagnostics_use_parser_query_projection();
     test_named_call_compatibility_uses_parser_inference_projection();
     test_assignment_ownership_uses_parser_diagnostic_projection();
+    test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_duplicate_type_uses_parser_diagnostic_projection();
     test_initializer_annotation_uses_parser_diagnostic_projection();
     test_return_type_inference_uses_parser_diagnostic_projection();
@@ -1434,6 +1459,7 @@ int main(void) {
     printf("PASS: Unresolved-reference diagnostics use parser query projection\n");
     printf("PASS: Named-call compatibility uses parser inference projection\n");
     printf("PASS: Assignment ownership uses parser diagnostic projection\n");
+    printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");
     printf("\nPASSED: LSP source contract tests\n");
