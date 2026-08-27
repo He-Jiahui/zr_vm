@@ -263,8 +263,7 @@ static void test_ownership_guard_binary_roundtrip_preserves_execution_projection
             "    return 0;\n"
             "}\n"
             "return live() + expired();\n";
-    static const TZrChar artifactPath[] =
-            "ownership_guard_execution_projection.zro";
+    TZrChar artifactBaseName[96];
     SZrString *sourceName;
     SZrFunction *sourceFunction;
     SZrFunction *runtimeFunction;
@@ -275,6 +274,24 @@ static void test_ownership_guard_binary_roundtrip_preserves_execution_projection
     TZrSize artifactLength = 0u;
     TZrInt64 sourceResult = 0;
     TZrInt64 runtimeResult = 0;
+    int artifactBaseNameLength;
+
+    g_ownership_artifact_path[0] = '\0';
+    artifactBaseNameLength = snprintf(
+            artifactBaseName,
+            sizeof(artifactBaseName),
+            "ownership_guard_execution_projection_%u",
+            ownership_test_process_id());
+    TEST_ASSERT_TRUE(artifactBaseNameLength > 0);
+    TEST_ASSERT_TRUE(
+            (TZrSize)artifactBaseNameLength < sizeof(artifactBaseName));
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "ownership_intrinsic_member_separation",
+            "roundtrip",
+            artifactBaseName,
+            ".zro",
+            g_ownership_artifact_path,
+            sizeof(g_ownership_artifact_path)));
 
     ZrParser_ToGlobalState_Register(g_state);
     TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
@@ -297,10 +314,10 @@ static void test_ownership_guard_binary_roundtrip_preserves_execution_projection
             g_state, sourceFunction, &sourceResult));
     TEST_ASSERT_EQUAL_INT64(2, sourceResult);
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(
-            g_state, sourceFunction, artifactPath));
+            g_state, sourceFunction, g_ownership_artifact_path));
 
     artifactBytes = ownership_artifact_read_file(
-            artifactPath, &artifactLength);
+            g_ownership_artifact_path, &artifactLength);
     TEST_ASSERT_NOT_NULL(artifactBytes);
     reader.bytes = artifactBytes;
     reader.length = artifactLength;
@@ -329,7 +346,8 @@ static void test_ownership_guard_binary_roundtrip_preserves_execution_projection
     ZrCore_Function_Free(g_state, runtimeFunction);
     ZrCore_Io_Free(g_state->global, io);
     free(artifactBytes);
-    remove(artifactPath);
+    TEST_ASSERT_EQUAL_INT(0, remove(g_ownership_artifact_path));
+    g_ownership_artifact_path[0] = '\0';
     ZrCore_Function_Free(g_state, sourceFunction);
 }
 

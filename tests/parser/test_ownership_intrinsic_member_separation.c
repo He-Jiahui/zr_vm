@@ -4,6 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
@@ -22,6 +28,15 @@
 #include "zr_vm_parser/writer.h"
 
 static SZrState *g_state;
+static TZrChar g_ownership_artifact_path[ZR_TESTS_PATH_MAX];
+
+static unsigned int ownership_test_process_id(void) {
+#if defined(_WIN32)
+    return (unsigned int)_getpid();
+#else
+    return (unsigned int)getpid();
+#endif
+}
 
 static void test_ownership_operation_ids_remain_stable(void) {
     TEST_ASSERT_EQUAL_INT(125, ZR_INSTRUCTION_ENUM(OWN_UNIQUE));
@@ -114,6 +129,10 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    if (g_ownership_artifact_path[0] != '\0') {
+        (void)remove(g_ownership_artifact_path);
+        g_ownership_artifact_path[0] = '\0';
+    }
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
@@ -1872,6 +1891,7 @@ int main(void) {
     RUN_TEST(test_named_function_optional_call_is_rejected);
     RUN_TEST(test_nullable_callable_variable_shadows_named_function);
     RUN_TEST(test_weak_optional_intrinsic_named_members_use_normal_dispatch);
+    RUN_TEST(test_weak_direct_wake_named_member_uses_normal_dispatch);
     RUN_TEST(test_ownership_guard_binary_roundtrip_preserves_execution_projection);
     return UNITY_END();
 }

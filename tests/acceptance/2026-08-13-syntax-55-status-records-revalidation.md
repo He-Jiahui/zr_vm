@@ -312,6 +312,18 @@ This removes the manual recount as a future source of false confidence. It does
 not replace the pending stable-HEAD compiler, artifact, migration-inventory, or
 three-toolchain gates below.
 
+The ownership/member review also closed the direct Weak same-name gap without
+changing production syntax. A target method named `wake` is dispatched through
+live `weak.wake()` as an ordinary member, while the same direct access after
+expiry raises `NullReferenceError`. Exact instruction assertions prove the two
+calls add only their receiver-guard wakes, not a name-selected ownership
+intrinsic. The accompanying roundtrip fixture no longer uses a shared relative
+`.zro` path: its generated path contains the runner process id, asserts normal
+deletion, and remains available to `tearDown` for failure-path cleanup. On fixed
+`e897a19` snapshots, GCC and Clang pass the 44-case runner concurrently and
+MSVC passes 44/44 directly, all with exit zero. This strengthens the syntax
+surface evidence but leaves the final integrated gates below open.
+
 ## Pending completion gates
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate

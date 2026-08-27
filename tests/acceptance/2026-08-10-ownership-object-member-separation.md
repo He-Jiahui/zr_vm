@@ -1114,6 +1114,58 @@ for its 12-test registered set. This closes SemIR failure propagation without
 promoting the overall milestone before the stable post-L8 full graph, artifact,
 inventory, remaining frozen runners, and exact-diff gates pass.
 
+### 2026-08-28 direct Weak member collision and artifact isolation
+
+The remaining same-name cross-case now executes `weak.wake()` where `wake` is
+an ordinary method declared by the resource target. A live call returns the
+method value. After `drop(shared)`, the same direct member access is caught as
+`NullReferenceError`; the generic `RuntimeError` branch is not taken. The
+compiled `run` body contains one `OWN_SHARE`, one `OWN_DEGRADE`, and two hidden
+receiver-guard `OWN_WAKE` operations, with zero `OWN_INTO_GC_BOX`. No member-name
+classifier or ownership-member lowering is involved.
+
+The first concurrent GCC/Clang replay found a separate stale-fixture problem:
+both processes wrote `ownership_guard_execution_projection.zro` in the same
+working directory. One process removed the file before the other read it, so
+the latter failed the `artifactBytes` non-null assertion; both serial reruns
+passed 44/44. The fixture now obtains its path from
+`ZrTests_Path_GetGeneratedArtifact` and includes the process id in the basename.
+This keeps generated products under the build tree and makes concurrent runner
+instances independent. Review then found that the fixture still ignored the
+normal `remove` result and could not clean an artifact after an earlier Unity
+assertion. The accepted test asserts normal deletion, retains the path in
+runner-private state, and lets `tearDown` retry cleanup before destroying the
+VM state. A failed removal can no longer produce a green result.
+
+Final fixed snapshots used main `e897a19` plus the exact three-test-file overlay.
+Workspace, WSL, and Windows copies of all three files matched by SHA-256 before
+the rebuild. Direct results were:
+
+| Gate | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| ownership separation runner | 44/44, exit 0 | 44/44, exit 0 | 44/44, exit 0 |
+| GCC/Clang concurrent replay | 44/44, exit 0 | 44/44, exit 0 | n/a |
+
+The concurrent Unix processes both passed the binary roundtrip case. The
+Windows build tree and workspace contained zero matching `.zro` files after
+execution. This focused test-only correction does not promote final acceptance
+before the L8-frozen runner, stable full graph, artifact, inventory, and exact
+review gates pass.
+
+After the first evidence capture, Windows roots `E:\zrs\odw` and `E:\zrb\odwm`
+plus the nine `E:\zrb\odw-*.tar` source, overlay, and dependency archives were
+sent to the recycle bin and verified absent from their original paths. The
+matching WSL source root and GCC/Clang build roots named
+`ownership-direct-wake-94c` were removed and verified absent.
+
+The reviewer-strengthened replay was cleaned the same way. Windows
+`E:\zrs\odw2`, `E:\zrb\odw2m`, and all nine explicit `E:\zrb\odw2-*.tar`
+archives are absent from their original paths. The WSL
+`ownership-direct-wake-e897` source, GCC, and Clang roots are also absent. Its
+command-local `/tmp` logs and ignored runner script were deleted before this
+record update. Neither replay created a persistent test log or touched shared
+`.codex/logs` evidence.
+
 ## Pending final acceptance
 
 The frozen syntax-leaf prerequisite is now checked by the executable

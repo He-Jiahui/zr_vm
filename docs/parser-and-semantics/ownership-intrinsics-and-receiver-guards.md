@@ -394,6 +394,24 @@ On the fixed main `a66f001` plus two-test-file overlay, GCC 11.4, Clang 14, and
 MSVC 19.44 each directly pass the resulting ownership runner 42/42 with process
 exit zero.
 
+The direct same-name follow-up covers the remaining `weak.wake()` collision.
+While the target is live, `weak.wake()` dispatches the ordinary `Service.wake`
+method and returns its declared value. After the final Shared owner is dropped,
+the same direct access raises catchable `NullReferenceError`. The containing
+`run` function has one source `OWN_SHARE`, one source `OWN_DEGRADE`, and exactly
+two receiver-guard `OWN_WAKE` instructions; the member spelling adds no
+ownership intrinsic and no `OWN_INTO_GC_BOX`.
+
+That replay also exposed a test-fixture race rather than a language defect. The
+binary roundtrip case wrote a fixed relative `.zro` name, so concurrent GCC and
+Clang runners could remove each other's artifact. It now uses the generated
+test-artifact directory and a process-qualified name. Normal completion asserts
+that removal succeeds, while runner `tearDown` retries cleanup after an earlier
+assertion exit. On fixed main `e897a19`
+plus the exact three-test-file overlay, concurrent GCC 11.4 and Clang 14 runs
+each pass 44/44, and MSVC 19.44 directly passes 44/44. Successful runs leave no
+roundtrip artifact behind.
+
 The generated-product follow-up runs the same five intrinsic-named methods
 through both AOT C and AOT LLVM. The first LLVM run reached the real backend and
 failed on unsupported opcode 120, `JUMP_IF_NOT_EQUAL_SIGNED_CONST`, while the C

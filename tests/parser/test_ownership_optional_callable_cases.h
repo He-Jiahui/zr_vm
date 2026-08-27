@@ -316,4 +316,61 @@ static void test_weak_optional_intrinsic_named_members_use_normal_dispatch(void)
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_weak_direct_wake_named_member_uses_normal_dispatch(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn wake(): int { return 4; }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    var live = weak.wake();\n"
+            "    var mask = 0;\n"
+            "    if (live == 4) { mask = mask + 1; }\n"
+            "    drop(shared);\n"
+            "    try { weak.wake(); }\n"
+            "    catch (error: NullReferenceError) { mask = mask + 2; }\n"
+            "    catch (error: RuntimeError) { mask = mask + 8; }\n"
+            "    return mask;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    SZrFunction *runFunction;
+    TZrInt64 result = 0;
+
+    ZrParser_ToGlobalState_Register(g_state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "weak_direct_wake_named_member.zr");
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(function);
+    runFunction = ownership_optional_find_child_function(function, "run");
+    TEST_ASSERT_NOT_NULL(runFunction);
+    TEST_ASSERT_EQUAL_UINT32(
+            1u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+    TEST_ASSERT_EQUAL_UINT32(
+            1u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_DEGRADE)));
+    TEST_ASSERT_EQUAL_UINT32(
+            2u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_WAKE)));
+    TEST_ASSERT_EQUAL_UINT32(
+            0u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(3, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 #endif

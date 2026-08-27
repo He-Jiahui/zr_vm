@@ -1042,6 +1042,24 @@ plus the explicit `drop(shared)`. On fixed main `a66f001` plus the exact two-fil
 test overlay, GCC 11.4, Clang 14, and MSVC 19.44 each pass 42/42 with exit zero.
 No production or L8-owned path changes in this slice.
 
+The next review leaf covers direct access on the same intrinsic-looking member
+name. `weak.wake()` now has a dedicated live/expired regression: the live call
+dispatches `Service.wake`, the expired call is caught specifically as
+`NullReferenceError`, and the `run` instruction stream contains one
+`OWN_SHARE`, one `OWN_DEGRADE`, two receiver-guard `OWN_WAKE`, and no
+`OWN_INTO_GC_BOX`. The member spelling never selects an ownership operation.
+
+Its first parallel GCC/Clang run exposed a fixed-filename fixture race:
+`ownership_guard_execution_projection.zro` could be removed by the peer process
+before it was read. Serial 44/44 reruns isolated the issue from production. The
+fixture now uses the generated test-artifact directory and a process-qualified
+basename. Review additionally required the normal path to assert successful
+removal and runner `tearDown` to retain a failure-path cleanup handle. On fixed
+main `e897a19` plus the exact three-test-file overlay, GCC
+11.4 and Clang 14 each pass 44/44 while running concurrently, and MSVC 19.44
+passes 44/44 directly. This is test-only and does not close Step 5 before the
+L8-frozen runners and final integrated graph are accepted.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -1090,6 +1108,21 @@ The optional intrinsic-name member collision replay removed and verified absent
 `E:\zrb\ownership-optional-member-a66f001.tar`, its Windows source snapshot and
 MSVC build root, plus the matching WSL source snapshot and GCC/Clang build roots.
 The replay created no persistent log and left shared `.codex/logs` untouched.
+
+The direct `weak.wake()` and artifact-isolation replay also cleaned its complete
+task scope. Windows `E:\zrs\odw`, `E:\zrb\odwm`, and the nine explicit
+`E:\zrb\odw-*.tar` archives were sent to the recycle bin and verified absent
+from their original paths. WSL source, GCC, and Clang roots named
+`ownership-direct-wake-94c` were removed and verified absent. No persistent log
+was created, and unrelated shared build or log paths were not changed.
+
+After the review-driven cleanup assertion was added, the final replay used a
+fresh second scope and removed it as well. Windows `E:\zrs\odw2`,
+`E:\zrb\odw2m`, and nine explicit `E:\zrb\odw2-*.tar` archives are verified
+absent from their original paths. WSL roots named
+`ownership-direct-wake-e897` are also absent. The ignored concurrent-runner
+script and its command-local `/tmp` outputs were deleted; no shared cache or log
+was changed.
 
 - [ ] **Step 7: Commit final acceptance status**
 
