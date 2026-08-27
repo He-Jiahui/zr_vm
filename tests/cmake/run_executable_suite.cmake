@@ -1,3 +1,10 @@
+if (DEFINED SUITE_MANIFEST AND NOT SUITE_MANIFEST STREQUAL "")
+    if (NOT EXISTS "${SUITE_MANIFEST}")
+        message(FATAL_ERROR "Executable suite manifest does not exist: ${SUITE_MANIFEST}")
+    endif ()
+    include("${SUITE_MANIFEST}")
+endif ()
+
 if (NOT DEFINED SUITE_NAME OR SUITE_NAME STREQUAL "")
     set(SUITE_NAME "unnamed_suite")
 endif ()

@@ -1166,6 +1166,43 @@ command-local `/tmp` logs and ignored runner script were deleted before this
 record update. Neither replay created a persistent test log or touched shared
 `.codex/logs` evidence.
 
+## Windows aggregate CTest launch evidence
+
+The fixed `39ceace` full MSVC graph registered `language_pipeline`, but CTest
+reported it as `BAD_COMMAND` before the suite runner started. Read-only tracing
+found that one generated command embedded the full default executable list
+three times (`EXECUTABLES`, `EXECUTABLES_CORE`, and `EXECUTABLES_STRESS`) plus
+the smoke list. This was a test-infrastructure failure, not a passing or failing
+language-pipeline result.
+
+`language_pipeline` now registers through a per-configuration generated
+manifest. The CTest command passes only the manifest path, host binary
+directory, working directory, and runner path; tier membership remains in the
+manifest. Focused configure evidence on the exact CMake overlay is:
+
+| Check | Result |
+| --- | --- |
+| MSVC 19.44 Debug configure | exit 0 |
+| generated MSVC CTest command | 377 characters; runner process starts |
+| generated Debug manifest | 5 lines; no escaped list separators |
+| default/core/stress membership | 126 each; core and stress exactly equal default |
+| smoke membership | 41 |
+| MSVC default/smoke launch probes | correct first child; CTest exit 8; no `BAD_COMMAND` |
+| missing-manifest negative probe | runner exit 1 with explicit missing-manifest error |
+| GCC 11.4 Debug Ninja configure/launch | configure exit 0; CTest exit 8 at first missing child |
+| Clang 14 Debug Ninja configure/launch | configure exit 0; CTest exit 8 at first missing child |
+
+The configure-only MSVC CTest probe intentionally ran before child targets were
+built. It entered `run_executable_suite.cmake`, printed the suite header and
+first child name, then failed normally because `zr_vm_parser_test.exe` did not
+exist. This proves the `BAD_COMMAND` boundary is removed and missing children
+still fail closed; it is not evidence that the 126-child suite passed.
+
+The aggregate launch transport is accepted. Full `language_pipeline` execution
+remains part of the stable post-L8 three-toolchain graph below. The generated
+MSVC and WSL configure caches are temporary task products and must be removed
+after the exact CMake commit is recorded.
+
 ## Pending final acceptance
 
 The frozen syntax-leaf prerequisite is now checked by the executable

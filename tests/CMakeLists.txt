@@ -37,6 +37,7 @@ set(ZR_VM_TESTS_REFERENCE_HARNESS_SOURCES
 )
 
 set(ZR_VM_SUITE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_executable_suite.cmake)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/zr_vm_register_executable_suite.cmake")
 set(ZR_VM_PROJECTS_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_projects_suite.cmake)
 set(ZR_VM_PERFORMANCE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_performance_suite.cmake)
 find_program(ZR_VM_NODE_EXECUTABLE node)
@@ -6570,17 +6571,15 @@ if (TARGET zr_vm_parser_test AND
             "$<TARGET_FILE:zr_vm_aot_c_dynamic_deopt_bridge_smoke_test>")
     set(language_pipeline_core_executables "${language_pipeline_executables}")
     set(language_pipeline_stress_executables "${language_pipeline_executables}")
-    add_test(
+    zr_vm_add_manifest_executable_suite(
             NAME language_pipeline
-            COMMAND ${CMAKE_COMMAND}
-            "-DSUITE_NAME=language_pipeline"
-            "-DEXECUTABLES=${language_pipeline_executables}"
-            "-DEXECUTABLES_SMOKE=${language_pipeline_smoke_executables}"
-            "-DEXECUTABLES_CORE=${language_pipeline_core_executables}"
-            "-DEXECUTABLES_STRESS=${language_pipeline_stress_executables}"
-            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
-            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
-            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+            RUNNER_SCRIPT "${ZR_VM_SUITE_RUNNER_SCRIPT}"
+            EXECUTABLES "${language_pipeline_executables}"
+            EXECUTABLES_SMOKE "${language_pipeline_smoke_executables}"
+            EXECUTABLES_CORE "${language_pipeline_core_executables}"
+            EXECUTABLES_STRESS "${language_pipeline_stress_executables}"
+            HOST_BINARY_DIR "${CMAKE_BINARY_DIR}"
+            RUN_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
 endif ()
 
