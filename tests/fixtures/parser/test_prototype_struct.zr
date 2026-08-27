@@ -1,5 +1,4 @@
 // 测试 struct prototype 生成
-module test_struct;
 
 // 基本 struct 声明
 struct Vector3 {
@@ -31,7 +30,7 @@ struct Counter {
     pub var count: int;
     
     pub fn increment(): void {
-        count = count + 1;
+        this.count = this.count + 1;
     }
 }
 
@@ -40,8 +39,8 @@ struct TestStruct {
     pub var value: int;
 
     pub @constructor(v: int) {
-        value = v;
+        this.value = v;
     }
 }
 
-var v = init Vector3(1,2,3);
+var v = init Vector3(1.0, 2.0, 3.0);

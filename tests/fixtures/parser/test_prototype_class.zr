@@ -1,18 +1,17 @@
 // 测试 class prototype 生成
-module test_class;
 
 // 基本 class 声明
 class Animal {
     pub var name: string;
     
-    pub fn speak(): string {
+    pub virtual fn speak(): string {
         return "Some sound";
     }
 }
 
 // 带继承的 class
 class Dog : Animal {
-    pub fn speak(): string {
+    pub override fn speak(): string {
         return "Woof";
     }
 }
@@ -33,11 +32,11 @@ class TestClass {
     
 
     pub @constructor(v: int) {
-        value = v;
+        this.value = v;
     }
 
     pub @destructor() {
-        value = 0;
+        this.value = 0;
     }
 }
 
