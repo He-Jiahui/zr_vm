@@ -214,6 +214,7 @@ opcode选择helper。
   - `OWN_VIEW_SHARED/OWN_VIEW_MUT/OWN_INTO_GC_BOX`在Semantic IR、ExecBC、AOT C与AOT LLVM保持一致
   - legacy `OWN_RETURN_TO_GC`只验证旧artifact reader/runtime/AOT兼容路径，不作为当前source产物
   - 新source function tree明确不包含legacy `OWN_BORROW/OWN_LOAN/OWN_DETACH`
+  - active focused runner与临时artifact使用`ownership_intrinsics_reference_views`身份；legacy detach只出现在负向发射断言或旧artifact兼容测试中
   - canonical `using` statement 继续走 `MARK_TO_BE_CLOSED`
   - LLVM lowering覆盖quickening可发出的四种signed fused branch：`JUMP_IF_GREATER_SIGNED`、`JUMP_IF_LESS_EQUAL_SIGNED`、`JUMP_IF_NOT_EQUAL_SIGNED`和`JUMP_IF_NOT_EQUAL_SIGNED_CONST`
 - runtime lifecycle

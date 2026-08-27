@@ -6831,7 +6831,7 @@ static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *s
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
-static SZrFunction *compile_ownership_wake_drop_fixture(SZrState *state) {
+static SZrFunction *compile_ownership_intrinsics_reference_views_fixture(SZrState *state) {
     const char *source =
             "resource class Box {}\n"
             "fn run(): int {\n"
@@ -6869,7 +6869,7 @@ static SZrFunction *compile_ownership_wake_drop_fixture(SZrState *state) {
         return ZR_NULL;
     }
 
-        sourceName = ZR_STRING_LITERAL(state, "ownership_wake_drop_pipeline_test.zr");
+        sourceName = ZR_STRING_LITERAL(state, "ownership_intrinsics_reference_views_pipeline_test.zr");
     if (sourceName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -8649,20 +8649,21 @@ static void test_execbc_quickens_array_int_fill_loops_to_bulk_dispatch_opcode(vo
     ZR_TEST_DIVIDER();
 }
 
-static void test_ownership_wake_drop_semir_and_true_aot_c_preserve_dedicated_opcodes(void) {
+static void test_ownership_intrinsics_reference_views_semir_and_true_aot_preserve_dedicated_opcodes(void) {
     SZrExecBcAotTestTimer timer;
-    const char *testSummary = "Ownership Borrow Loan IntoGc Wake Drop SemIR And True AOT Preserve Dedicated Opcodes";
+    const char *testSummary =
+            "Ownership Intrinsics Reference Views SemIR And True AOT Preserve Dedicated Opcodes";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
-    ZR_TEST_INFO("ownership borrow/loan/detach semantic pipeline",
-                 "Testing that share/degrade/borrow/loan/intoGc/wake/drop keep dedicated ExecBC and SemIR ownership opcodes, and that true AOT C plus AOT LLVM lower them to explicit runtime helpers without shim fallback");
+    ZR_TEST_INFO("ownership intrinsics, reference views, and GC bridge semantic pipeline",
+                 "Testing that share/degrade/ref/ref readonly/intoGc/wake/drop keep dedicated ExecBC and SemIR ownership opcodes, reject legacy borrow/loan/detach emission, and lower through explicit runtime helpers without shim fallback");
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
-        const char *intermediatePath = "ownership_wake_drop_pipeline_test.zri";
-        const char *cPath = "ownership_wake_drop_pipeline_test.c";
-        const char *llvmPath = "ownership_wake_drop_pipeline_test.ll";
+        const char *intermediatePath = "ownership_intrinsics_reference_views_pipeline_test.zri";
+        const char *cPath = "ownership_intrinsics_reference_views_pipeline_test.c";
+        const char *llvmPath = "ownership_intrinsics_reference_views_pipeline_test.ll";
         SZrFunction *function;
         char *intermediateText;
         char *cText;
@@ -8671,7 +8672,7 @@ static void test_ownership_wake_drop_semir_and_true_aot_c_preserve_dedicated_opc
 
         TEST_ASSERT_NOT_NULL(state);
 
-        function = compile_ownership_wake_drop_fixture(state);
+        function = compile_ownership_intrinsics_reference_views_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
         TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(OWN_DEGRADE)));
@@ -9512,7 +9513,7 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     if (getenv("ZR_VM_OWNERSHIP_OPCODE_FOCUSED") != ZR_NULL) {
-        RUN_TEST(test_ownership_wake_drop_semir_and_true_aot_c_preserve_dedicated_opcodes);
+        RUN_TEST(test_ownership_intrinsics_reference_views_semir_and_true_aot_preserve_dedicated_opcodes);
         return UNITY_END();
     }
     if (getenv("ZR_VM_RESOURCE_UNIQUE_DROP_FOCUSED") != ZR_NULL) {
@@ -9611,7 +9612,7 @@ int main(void) {
     RUN_TEST(test_reference_property_fixture_preserves_meta_access_artifacts_with_true_aot_c_lowering);
     RUN_TEST(test_reference_member_index_fixture_preserves_split_access_artifacts);
     RUN_TEST(test_reference_foreach_fixture_preserves_iter_contract_artifacts);
-    RUN_TEST(test_ownership_wake_drop_semir_and_true_aot_c_preserve_dedicated_opcodes);
+    RUN_TEST(test_ownership_intrinsics_reference_views_semir_and_true_aot_preserve_dedicated_opcodes);
     RUN_TEST(test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_true_aot);
     RUN_TEST(test_resource_unique_drop_vm_and_aot_preserve_cleanup_order_contract);
     RUN_TEST(test_aot_backends_lower_manual_extended_numeric_opcode_fixture);

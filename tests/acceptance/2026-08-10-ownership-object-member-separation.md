@@ -1203,6 +1203,28 @@ remains part of the stable post-L8 three-toolchain graph below. The generated
 MSVC and WSL configure caches are temporary task products and must be removed
 after the exact CMake commit is recorded.
 
+## 2026-08-28 AOT ownership test identity convergence
+
+The active focused AOT pipeline case now identifies the language contract it
+actually validates: `ownership_intrinsics_reference_views`. The runner covers
+all five ownership intrinsics, canonical `ref` / `ref readonly` views, the GC
+bridge, dedicated ExecBC and SemIR opcodes, and explicit AOT runtime helpers.
+Legacy borrow, loan, and detach spellings remain only in negative assertions;
+they no longer name the active fixture, generated files, or test title.
+
+Fresh direct runs built only `zr_vm_execbc_aot_pipeline_test` from the current
+main worktree and selected the case with
+`ZR_VM_OWNERSHIP_OPCODE_FOCUSED=1`:
+
+| Toolchain | Direct result |
+| --- | --- |
+| GCC 11.4 Debug shared | 1 test / 0 failures / exit 0 |
+| Clang 14 Debug shared | 1 test / 0 failures / exit 0 |
+| MSVC 19.44 Debug shared | 1 test / 0 failures / exit 0 |
+
+This is test-identity and documentation convergence, not final graph
+acceptance. The stable post-L8 full matrix remains required below.
+
 ## Pending final acceptance
 
 The frozen syntax-leaf prerequisite is now checked by the executable

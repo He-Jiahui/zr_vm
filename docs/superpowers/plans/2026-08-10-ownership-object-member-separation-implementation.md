@@ -1074,6 +1074,15 @@ configure-only launch probes fail at the first unbuilt child with CTest exit 8
 and never report `BAD_COMMAND`. Read-only review found no P0-P2 issue. Full
 126-child execution remains part of the stable post-L8 Step 5 replay.
 
+The focused AOT pipeline test identity was also modernized after a source audit
+showed that its legacy `ownership_wake_drop` / borrow-loan-detach title no
+longer described the case. The active fixture, generated-file basename, test
+function, and Unity title now use `ownership_intrinsics_reference_views`, while
+legacy borrow, loan, and detach names remain only in negative opcode checks.
+Fresh GCC 11.4, Clang 14, and MSVC 19.44 Debug shared builds each directly ran
+the focused case as 1/1 with exit 0. This closes the stale active-test naming
+gap without claiming the final post-L8 full graph.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
