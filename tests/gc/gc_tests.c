@@ -72,12 +72,6 @@ typedef struct {
 #ifdef TEST_FAIL
 #undef TEST_FAIL
 #endif
-#define TEST_FAIL(timer, summary, reason) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
-    printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
-    fflush(stdout); \
-} while(0)
-
 #define TEST_DIVIDER() do { \
     printf("----------\n"); \
     fflush(stdout); \
