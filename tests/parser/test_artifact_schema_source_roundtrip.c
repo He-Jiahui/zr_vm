@@ -29,7 +29,6 @@ void test_real_source_scheduler_call_publishes_canonical_source_fact(void);
 void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void);
 void test_source_without_scheduler_call_publishes_no_scheduler_fact(void);
 void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void);
-void test_source_without_scheduler_provider_rejects_artifact_write(void);
 
 void test_real_source_compile_and_binary_signature_import_are_identical(void) {
     static const TZrChar source[] = "fn identity(value: int): int { return value; }";
