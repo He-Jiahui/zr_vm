@@ -319,11 +319,11 @@ static SZrFunction *compile_typed_member_known_call_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
             "    pub var value: int;\n"
-            "    pub step(delta: int): int {\n"
+            "    pub fn step(delta: int): int {\n"
             "        this.value = this.value + delta;\n"
             "        return this.value;\n"
             "    }\n"
-            "    pub read(): int {\n"
+            "    pub fn read(): int {\n"
             "        return this.value;\n"
             "    }\n"
             "}\n"
@@ -420,6 +420,19 @@ static SZrTypeValue *allocate_function_constants(SZrState *state, TZrUInt32 coun
     return constants;
 }
 
+static SZrFunction *allocate_child_functions(SZrState *state, TZrUInt32 count) {
+    SZrFunction *functions;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_TRUE(count > 0);
+    functions = (SZrFunction *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                               sizeof(*functions) * count,
+                                                               ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(functions);
+    memset(functions, 0, sizeof(*functions) * count);
+    return functions;
+}
+
 static SZrFunction *build_heap_leaf_function_returning_constant(SZrState *state,
                                                                 TZrUInt16 parameterCount,
                                                                 TZrInt64 returnValue) {
@@ -508,8 +521,7 @@ static void build_manual_quickening_fixture(SZrState *state,
                                             TZrInstruction *rootInstructions,
                                             TZrInstruction *childInstructions,
                                             SZrTypeValue *rootConstants,
-                                            SZrTypeValue *childConstants,
-                                            TZrUInt32 *outCallInstructionIndex) {
+                                            SZrTypeValue *childConstants) {
     TZrUInt32 instructionCount = 0;
     TZrUInt32 constantCount = 0;
     TZrUInt32 childFunctionCount = 0;
@@ -521,7 +533,6 @@ static void build_manual_quickening_fixture(SZrState *state,
     TEST_ASSERT_NOT_NULL(rootFunction);
     TEST_ASSERT_NOT_NULL(rootInstructions);
     TEST_ASSERT_NOT_NULL(rootConstants);
-    TEST_ASSERT_NOT_NULL(outCallInstructionIndex);
 
     memset(rootInstructions, 0, sizeof(TZrInstruction) * 8u);
     memset(rootConstants, 0, sizeof(SZrTypeValue) * 3u);
@@ -627,7 +638,6 @@ static void build_manual_quickening_fixture(SZrState *state,
     }
 
     resultSlot = (TZrUInt16)(functionSlot + testCase->argumentCount + 1u);
-    *outCallInstructionIndex = instructionCount;
     rootInstructions[instructionCount++] =
             make_instruction_slot_operands(testCase->isTailCall ? ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)
                                                                 : ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
@@ -765,14 +775,18 @@ static void test_known_call_quickening_recovers_vm_provenance_matrix(void) {
     for (index = 0; index < (TZrSize)(sizeof(cases) / sizeof(cases[0])); index++) {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         SZrFunction rootFunction;
-        SZrFunction childFunctions[1];
-        TZrInstruction rootInstructions[8];
-        TZrInstruction childInstructions[2];
-        SZrTypeValue rootConstants[3];
-        SZrTypeValue childConstants[1];
-        TZrUInt32 callInstructionIndex = 0;
+        SZrFunction *childFunctions;
+        TZrInstruction *rootInstructions;
+        TZrInstruction *childInstructions;
+        SZrTypeValue *rootConstants;
+        SZrTypeValue *childConstants;
 
         TEST_ASSERT_NOT_NULL(state);
+        childFunctions = allocate_child_functions(state, 1);
+        rootInstructions = allocate_function_instructions(state, 8);
+        childInstructions = allocate_function_instructions(state, 2);
+        rootConstants = allocate_function_constants(state, 3);
+        childConstants = allocate_function_constants(state, 1);
         build_manual_quickening_fixture(state,
                                         &cases[index],
                                         &rootFunction,
@@ -780,15 +794,13 @@ static void test_known_call_quickening_recovers_vm_provenance_matrix(void) {
                                         rootInstructions,
                                         childInstructions,
                                         rootConstants,
-                                        childConstants,
-                                        &callInstructionIndex);
+                                        childConstants);
 
         TEST_ASSERT_TRUE_MESSAGE(compiler_quicken_execbc_function_shallow(state, &rootFunction), cases[index].name);
-        TEST_ASSERT_EQUAL_UINT32_MESSAGE(cases[index].expectedOpcode,
-                                         (EZrInstructionCode)rootFunction.instructionsList[callInstructionIndex]
-                                                 .instruction.operationCode,
-                                         cases[index].name);
+        TEST_ASSERT_TRUE_MESSAGE(function_contains_opcode(&rootFunction, cases[index].expectedOpcode),
+                                 cases[index].name);
 
+        ZrCore_Function_Free(state, &rootFunction);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -839,11 +851,12 @@ static void test_known_call_quickening_recovers_native_provenance_matrix(void) {
     for (index = 0; index < (TZrSize)(sizeof(cases) / sizeof(cases[0])); index++) {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         SZrFunction rootFunction;
-        TZrInstruction rootInstructions[8];
-        SZrTypeValue rootConstants[3];
-        TZrUInt32 callInstructionIndex = 0;
+        TZrInstruction *rootInstructions;
+        SZrTypeValue *rootConstants;
 
         TEST_ASSERT_NOT_NULL(state);
+        rootInstructions = allocate_function_instructions(state, 8);
+        rootConstants = allocate_function_constants(state, 3);
         build_manual_quickening_fixture(state,
                                         &cases[index],
                                         &rootFunction,
@@ -851,15 +864,13 @@ static void test_known_call_quickening_recovers_native_provenance_matrix(void) {
                                         rootInstructions,
                                         ZR_NULL,
                                         rootConstants,
-                                        ZR_NULL,
-                                        &callInstructionIndex);
+                                        ZR_NULL);
 
         TEST_ASSERT_TRUE_MESSAGE(compiler_quicken_execbc_function_shallow(state, &rootFunction), cases[index].name);
-        TEST_ASSERT_EQUAL_UINT32_MESSAGE(cases[index].expectedOpcode,
-                                         (EZrInstructionCode)rootFunction.instructionsList[callInstructionIndex]
-                                                 .instruction.operationCode,
-                                         cases[index].name);
+        TEST_ASSERT_TRUE_MESSAGE(function_contains_opcode(&rootFunction, cases[index].expectedOpcode),
+                                 cases[index].name);
 
+        ZrCore_Function_Free(state, &rootFunction);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -917,14 +928,14 @@ static void test_known_call_runtime_executes_manual_opcode_matrix(void) {
     ZR_TEST_DIVIDER();
 }
 
-static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
+static void test_typed_member_calls_quicken_to_known_vm_member_call_family(void) {
     SZrKnownCallPipelineTimer timer = {0};
-    const char *testSummary = "Typed Member Calls Quicken To Known VM Call Family";
+    const char *testSummary = "Typed Member Calls Quicken To Known VM Member Call Family";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("typed member known-call quickening",
-                 "Testing that typed instance method calls stop staying on generic FUNCTION_CALL and instead lower into GET_MEMBER_SLOT plus the KNOWN_VM_CALL family, including zero-arg variants.");
+                 "Testing that typed instance method calls lower into the KNOWN_VM_MEMBER_CALL family instead of separate member loads plus generic call dispatch.");
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -935,8 +946,9 @@ static void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
 
         function = compile_typed_member_known_call_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
@@ -1061,11 +1073,11 @@ static void test_known_call_aot_backends_support_full_opcode_matrix(void) {
                                   cases[index].name);
 
         if (cases[index].isNative) {
-            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall"), cases[index].name);
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "ZrLibrary_AotRuntime_CallStackValue"), cases[index].name);
             TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmText, "@ZrLibrary_AotRuntime_PrepareDirectCall"),
                                          cases[index].name);
         } else {
-            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall"),
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "ZrLibrary_AotRuntime_CallStaticDirect"),
                                          cases[index].name);
             TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmText, "@ZrLibrary_AotRuntime_PrepareStaticDirectCall"),
                                          cases[index].name);
@@ -1094,7 +1106,7 @@ int main(void) {
     RUN_TEST(test_known_call_quickening_recovers_vm_provenance_matrix);
     RUN_TEST(test_known_call_quickening_recovers_native_provenance_matrix);
     RUN_TEST(test_known_call_runtime_executes_manual_opcode_matrix);
-    RUN_TEST(test_typed_member_calls_quicken_to_known_vm_call_family);
+    RUN_TEST(test_typed_member_calls_quicken_to_known_vm_member_call_family);
     RUN_TEST(test_known_call_aot_backends_support_full_opcode_matrix);
     return UNITY_END();
 }

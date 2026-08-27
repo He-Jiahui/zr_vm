@@ -8802,6 +8802,8 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
         TZrInt64 result = 0;
 
         TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+        TEST_ASSERT_TRUE(ZrVmLibSystem_Register(state->global));
         sourceName = ZR_STRING_LITERAL(state, "receiver_guard_aot_parity_test.zr");
         TEST_ASSERT_NOT_NULL(sourceName);
         function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);

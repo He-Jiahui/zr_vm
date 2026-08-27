@@ -98,7 +98,7 @@ static char *read_text_file_owned(const TZrChar *path) {
 
 static SZrFunction *compile_dynamic_foreach_fixture(SZrState *state) {
     const char *source =
-            "makeValues() {\n"
+            "fn makeValues() {\n"
             "    return [1, 2, 3];\n"
             "}\n"
             "var values = makeValues();\n"
