@@ -2807,6 +2807,9 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         ZrParser_Compiler_Error(cs, "Variable declaration pattern is null", node->location);
         return;
     }
+    if (!ZrParser_Compiler_ValidateVariableDeclaration(cs, node)) {
+        return;
+    }
     
     // 处理单个变量声明（标识符 pattern）
     if (decl->pattern->type == ZR_AST_IDENTIFIER_LITERAL) {

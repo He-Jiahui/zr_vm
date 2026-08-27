@@ -208,6 +208,49 @@ TZrBool ZrParser_Compiler_ReportDuplicateTypeDeclaration(
             cs, name, location, previousLocationPtr);
 }
 
+TZrBool ZrParser_Compiler_ValidateVariableDeclaration(
+        SZrCompilerState *cs,
+        const SZrAstNode *declaration) {
+    const SZrVariableDeclaration *variable;
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location;
+    const TZrChar *message = "initializer requires annotation";
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || declaration == ZR_NULL ||
+        declaration->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_FALSE;
+    }
+
+    variable = &declaration->data.variableDeclaration;
+    if (variable->typeInfo != ZR_NULL || variable->value != ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    location = variable->pattern != ZR_NULL
+                       ? variable->pattern->location
+                       : declaration->location;
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                cs->state,
+                &diagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "initializer_requires_annotation",
+                message,
+                "The declaration has neither an explicit type nor an initializer from which an exact type can be inferred.",
+                "Add a type annotation or initialize the variable with an expression of the intended type.") ||
+        !ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
+        ZrParser_Compiler_Error(cs, message, location);
+        return ZR_FALSE;
+    }
+
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    return ZR_FALSE;
+}
+
 TZrBool ZrParser_Compiler_RegisterTypeBinding(
         SZrCompilerState *cs,
         SZrString *name,

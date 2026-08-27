@@ -581,6 +581,9 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_ReportDuplicateTypeDeclaration(
         SZrCompilerState *cs,
         SZrAstNode *declaration,
         SZrAstNode *previousDeclaration);
+ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateVariableDeclaration(
+        SZrCompilerState *cs,
+        const SZrAstNode *declaration);
 ZR_PARSER_API TZrBool ZrParser_Compiler_RegisterTypeBinding(
         SZrCompilerState *cs,
         SZrString *name,

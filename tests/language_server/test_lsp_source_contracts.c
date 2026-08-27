@@ -1315,6 +1315,7 @@ static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
 }
 
 #include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
+#include "test_lsp_source_contract_initializer_annotation_cases.h"
 
 int main(void) {
     printf("==========\n");
@@ -1369,6 +1370,7 @@ int main(void) {
     test_named_call_compatibility_uses_parser_inference_projection();
     test_assignment_ownership_uses_parser_diagnostic_projection();
     test_duplicate_type_uses_parser_diagnostic_projection();
+    test_initializer_annotation_uses_parser_diagnostic_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);

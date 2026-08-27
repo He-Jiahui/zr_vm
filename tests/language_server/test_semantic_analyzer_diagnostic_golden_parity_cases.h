@@ -331,4 +331,95 @@ static void test_semantic_analyzer_preserves_duplicate_type_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+static void test_semantic_analyzer_preserves_initializer_annotation_golden_parity(
+        SZrState *state) {
+    const TZrChar *summary =
+            "Semantic Analyzer Preserves Initializer Annotation Golden Parity";
+    const TZrChar *testCode =
+            "fn probe() {\n"
+            "    var missing;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics queryDiagnostics;
+    TZrSize queryCount = 0U;
+    TZrSize index;
+
+    TEST_START(summary);
+    TEST_INFO("Compiler query to LSP projection",
+              "Untyped uninitialized variables must preserve the parser-owned descriptor, exact name range, and no-fix disposition");
+
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    sourceName = ZrCore_String_Create(
+            state,
+            "initializer_annotation_golden_parity_test.zr",
+            strlen("initializer_annotation_golden_parity_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (analyzer == ZR_NULL || ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer, summary, "Failed to analyze initializer annotation parity fixture");
+        return;
+    }
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    if (!ZrParser_SemanticQuery_MaterializeDiagnostics(
+                analyzer->semanticContext,
+                &scope) ||
+        !ZrParser_SemanticQuery_Diagnostics(
+                analyzer->semanticContext,
+                &scope,
+                &queryDiagnostics)) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer, summary, "Failed to query initializer annotation diagnostics");
+        return;
+    }
+
+    for (index = 0U; index < queryDiagnostics.count; index++) {
+        const SZrStructuredDiagnostic *structured = &queryDiagnostics.items[index];
+        const TZrChar *code = structured->code != ZR_NULL
+                                      ? ZrCore_String_GetNativeString(structured->code)
+                                      : ZR_NULL;
+        const SZrDiagnostic *projected;
+
+        if (code == ZR_NULL ||
+            strcmp(code, "initializer_requires_annotation") != 0) {
+            continue;
+        }
+        queryCount++;
+        projected = find_projected_query_diagnostic(analyzer, structured);
+        if (!diagnostic_projection_matches_query(projected, structured)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      summary,
+                      "The projected initializer annotation diagnostic diverged from the compiler query fact");
+            return;
+        }
+    }
+
+    if (queryCount != 1U ||
+        count_diagnostics_with_code(
+                analyzer, "initializer_requires_annotation") != 1U ||
+        count_diagnostics_with_code(analyzer, "compiler_error") != 0U) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  summary,
+                  "Expected one compiler annotation fact and one canonical LSP projection");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, summary);
+}
+
 #endif

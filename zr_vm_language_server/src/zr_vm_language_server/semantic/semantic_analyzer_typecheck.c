@@ -55,17 +55,6 @@ static void semantic_add_cannot_infer_exact_type_diagnostic(SZrState *state,
                                                     "cannot_infer_exact_type");
 }
 
-static void semantic_add_initializer_requires_annotation_diagnostic(SZrState *state,
-                                                                    SZrSemanticAnalyzer *analyzer,
-                                                                    SZrFileRange location) {
-    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                    analyzer,
-                                                    ZR_DIAGNOSTIC_ERROR,
-                                                    location,
-                                                    "initializer requires annotation",
-                                                    "initializer_requires_annotation");
-}
-
 static TZrBool semantic_text_equals(const TZrChar *value, const TZrChar *expected) {
     return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
 }
@@ -360,8 +349,10 @@ static void semantic_typecheck_register_variable_binding(SZrState *state,
         if (!semantic_infer_node_type(state, analyzer, valueNode, &bindingType)) {
             if (analyzer->compilerState != ZR_NULL && analyzer->compilerState->hasError) {
                 ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state, analyzer, valueNode->location);
+            } else {
+                semantic_add_cannot_infer_exact_type_diagnostic(
+                        state, analyzer, valueNode->location);
             }
-            semantic_add_initializer_requires_annotation_diagnostic(state, analyzer, valueNode->location);
             ZrParser_InferredType_Free(state, &bindingType);
             return;
         }

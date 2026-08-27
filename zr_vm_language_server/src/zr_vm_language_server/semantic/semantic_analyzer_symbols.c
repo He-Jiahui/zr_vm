@@ -214,17 +214,6 @@ static void copy_inferred_type_into(SZrState *state,
     ZrParser_InferredType_Copy(state, dest, src);
 }
 
-static void semantic_add_initializer_requires_annotation_diagnostic(SZrState *state,
-                                                                    SZrSemanticAnalyzer *analyzer,
-                                                                    SZrFileRange location) {
-    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                    analyzer,
-                                                    ZR_DIAGNOSTIC_ERROR,
-                                                    location,
-                                                    "initializer requires annotation",
-                                                    "initializer_requires_annotation");
-}
-
 static void semantic_add_cannot_infer_exact_type_diagnostic(SZrState *state,
                                                             SZrSemanticAnalyzer *analyzer,
                                                             SZrFileRange location) {
@@ -358,23 +347,15 @@ static SZrInferredType *create_type_info_for_variable(SZrState *state,
                 ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state,
                                                                                  analyzer,
                                                                                  varDecl->value->location);
+            } else {
+                semantic_add_cannot_infer_exact_type_diagnostic(
+                        state, analyzer, varDecl->value->location);
             }
-            semantic_add_initializer_requires_annotation_diagnostic(state,
-                                                                    analyzer,
-                                                                    varDecl->value->location);
         }
         ZrParser_InferredType_Free(state, &inferredType);
         return typeInfo;
     }
 
-    semantic_add_initializer_requires_annotation_diagnostic(state,
-                                                            analyzer,
-                                                            varDecl->pattern != ZR_NULL
-                                                                ? varDecl->pattern->location
-                                                                : ZrParser_FileRange_Create(
-                                                                      ZrParser_FilePosition_Create(0, 0, 0),
-                                                                      ZrParser_FilePosition_Create(0, 0, 0),
-                                                                      ZR_NULL));
     return ZR_NULL;
 }
 
@@ -2079,6 +2060,13 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrSymbol *symbol = ZR_NULL;
             // pattern 可能是 Identifier, DestructuringPattern, 或 DestructuringArrayPattern
             register_imported_destructured_type_aliases(state, analyzer, varDecl);
+            if (analyzer->compilerState != ZR_NULL &&
+                !ZrParser_Compiler_ValidateVariableDeclaration(
+                        analyzer->compilerState, node) &&
+                analyzer->compilerState->hasError) {
+                ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                        state, analyzer, node->location);
+            }
             SZrString *name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, varDecl->pattern);
             if (name != ZR_NULL) {
                 SZrInferredType *typeInfo = create_type_info_for_variable(state, analyzer, varDecl);
@@ -2197,6 +2185,13 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                 SZrString *name =
                     ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state,
                                                                             wrappedNode->data.variableDeclaration.pattern);
+                if (analyzer->compilerState != ZR_NULL &&
+                    !ZrParser_Compiler_ValidateVariableDeclaration(
+                            analyzer->compilerState, wrappedNode) &&
+                    analyzer->compilerState->hasError) {
+                    ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                            state, analyzer, wrappedNode->location);
+                }
                 SZrInferredType *typeInfo = create_type_info_for_variable(state,
                                                                           analyzer,
                                                                           &wrappedNode->data.variableDeclaration);

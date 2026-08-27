@@ -1016,7 +1016,14 @@ static void test_semantic_analyzer_reports_initializer_requires_annotation(SZrSt
         }
 
         diagnostic = find_diagnostic_by_code_and_line(analyzer, "initializer_requires_annotation", 2);
-        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+        if (diagnostic == ZR_NULL ||
+            diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+            diagnostic->descriptorId != 2017U ||
+            diagnostic->noFixReason !=
+                    ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+            diagnostic->location.start.column != 9 ||
+            diagnostic->location.end.column != 16 ||
+            diagnostic->fixes.isValid) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -5121,6 +5128,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_duplicate_type_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_initializer_annotation_golden_parity(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);

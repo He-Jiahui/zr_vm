@@ -3468,3 +3468,19 @@ the emitted rows before it permits consumption; source/import schedule hash
 equality and ABI, policy, requirement, transport, scheduler-contract, and
 provider-token rejection are therefore all evaluated against the same
 structured contract.
+
+## Plan 03 Task 6.22 Initializer Annotation Diagnostic
+
+`ZrParser_Compiler_ValidateVariableDeclaration` is the canonical declaration
+validator for an untyped variable without an initializer. It publishes stable
+code `initializer_requires_annotation`, descriptor `2017`, error severity, the
+exact declaration-pattern range, canonical message/cause/suggestion fields,
+and `REQUIRES_USER_DECISION` without a machine fix. Normal statement
+compilation and language-server symbol collection call the same validator.
+
+The language server consumes the compiler diagnostic and projects the
+persistent semantic-query fact. It no longer owns this diagnostic code or
+reconstructs the rule from AST shape, source text, or symbol names. A variable
+that has an initializer but whose exact type cannot be inferred remains a
+separate `cannot_infer_exact_type` case; Task 6.22 does not merge that rule into
+the annotation requirement.

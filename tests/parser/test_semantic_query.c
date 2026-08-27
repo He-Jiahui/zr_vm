@@ -981,13 +981,14 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *constInterfaceMismatch;
     const SZrDiagnosticDescriptor *unresolvedReference;
     const SZrDiagnosticDescriptor *memberNotFound;
+    const SZrDiagnosticDescriptor *initializerRequiresAnnotation;
     const SZrDiagnosticDescriptor *useAfterMove;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(63, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(64, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1059,6 +1060,16 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
                           memberNotFound->defaultSeverity);
     TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE,
                           memberNotFound->category);
+
+    initializerRequiresAnnotation =
+            ZrParser_DiagnosticRegistry_FindByCode(
+                    "initializer_requires_annotation");
+    TEST_ASSERT_NOT_NULL(initializerRequiresAnnotation);
+    TEST_ASSERT_EQUAL_UINT32(2017, initializerRequiresAnnotation->id);
+    TEST_ASSERT_EQUAL_INT(ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                          initializerRequiresAnnotation->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_TYPE,
+                          initializerRequiresAnnotation->category);
 
     for (index = 0; index < descriptorCount; index++) {
         const SZrDiagnosticDescriptor *descriptor =

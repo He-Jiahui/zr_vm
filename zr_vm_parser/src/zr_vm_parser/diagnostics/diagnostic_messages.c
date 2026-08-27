@@ -208,6 +208,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Member not found",
             "Member could not be resolved on the receiver type"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "initializer_requires_annotation",
+            "Initializer requires annotation",
+            "Variable declaration requires a type annotation or initializer"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),
