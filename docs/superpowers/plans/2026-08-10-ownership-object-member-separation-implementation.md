@@ -1003,6 +1003,19 @@ frame, and call contracts pass 26/26, 1/1, and 9/9 on all three toolchains.
 Keep Step 5 open only for the stable post-L8 registered full graph, artifact,
 inventory, and final exact-diff review.
 
+The custom-runner audit then reached the independent SemIR pipeline runner. Its
+private failure macro had no production call sites, so normal green summaries
+could not prove failure propagation. A controlled `3ec5748` snapshot injected
+the macro and an early return inside the first test; the old runner printed the
+failure, reported 13/0, and exited zero. The runner now aliases the already
+probed shared harness without changing test bodies, production code, or CMake.
+GCC 11.4 and Clang 14 pass normal 13/13 and intentional-probe 13/1 with exit 1;
+MSVC 19.44 passes its portable normal 12/12 and probe 12/1 with exit 1. Source
+SHA-256 equality and the injection boundary were checked for every snapshot.
+Step 5 remains open for the L8-frozen type-inference and project-feature
+runners, followed by the stable full graph, artifact, inventory, and exact
+final review.
+
 The performance-criterion review then found that the fifth receiver-guard
 benchmark explicitly evaluated `wake(weak)` before its loop and repeatedly ran
 `guarded?.child.value`. That measured a nullable Shared suffix rather than the

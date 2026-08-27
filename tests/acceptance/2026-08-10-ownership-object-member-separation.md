@@ -913,10 +913,11 @@ failure state and flush through the normal harness path. Serial direct execution
 on GCC, Clang, and MSVC passes exceptions 8/8, named arguments 10/10,
 instructions 95/95, meta 41/41, and module system 78/78, with every process
 returning zero and no `Fail -` marker. The module runner remains serial because
-its binary-roundtrip cases use fixed fixture paths. The parser runner is now
-truthful as recorded below. Two parser runners and the L8 project-feature runner
-remain frozen until the external callable-value exact test paths are released;
-final acceptance does not treat their current green summaries as sufficient.
+its binary-roundtrip cases use fixed fixture paths. The parser and SemIR runners
+are now truthful as recorded below. The type-inference runner and the L8
+project-feature runner remain frozen until the external callable-value exact
+test paths are released; final acceptance does not treat their current green
+summaries as sufficient.
 
 The common `ZR_TEST_FAIL` contract now has permanent regression coverage.
 `test_log_failure_contract` launches an unregistered intentional-failure probe
@@ -1085,8 +1086,33 @@ following direct gates on GCC 11.4, Clang 14, and MSVC 19.44:
 
 The source overlay matched both WSL and Windows snapshots by SHA-256 before
 execution, and the injected line was verified inside the target test boundary.
-This closes the root parser runner only. The type-inference, SemIR, and LSP
+This closes the root parser runner only. The type-inference and LSP
 project-feature runners remain pending their active L8 path release.
+
+### 2026-08-27 SemIR runner failure propagation
+
+The SemIR pipeline runner also retained private reporting macros. Its production
+test bodies had no reachable `TEST_FAIL_CUSTOM` call, so the normal 13/13 Unix
+and 12/12 Windows summaries could not prove that a future failure would affect
+Unity or the process status. A controlled `3ec5748` snapshot injected the macro
+and an early return into the first test. The process printed the intentional
+failure, then falsely reported `13 Tests / 0 Failures / 0 Ignored` and returned
+zero.
+
+The local names now alias the shared `zr_test_log_macros.h` contract. No test
+body, production source, or CMake target changed. Fixed snapshots used the exact
+workspace source by SHA-256, and the probe injection was asserted to remain
+inside the first test boundary before each build:
+
+| Gate | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| normal SemIR runner | 13/13, exit 0 | 13/13, exit 0 | 12/12, exit 0 |
+| intentional failure probe | 13/1, exit 1 | 13/1, exit 1 | 12/1, exit 1 |
+
+MSVC omits the Unix-only binary roundtrip body at compile time, which accounts
+for its 12-test registered set. This closes SemIR failure propagation without
+promoting the overall milestone before the stable post-L8 full graph, artifact,
+inventory, remaining frozen runners, and exact-diff gates pass.
 
 ## Pending final acceptance
 

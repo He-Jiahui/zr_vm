@@ -268,11 +268,20 @@ delegates to the probed shared harness without changing its 31 call sites.
 GCC, Clang, and MSVC each directly pass the normal runner at 74/74, while the
 same bounded intentional probe reports 74/1 and exits 1 on all three.
 
+The SemIR runner has now joined the truthful set. Its private failure macro had
+no production call sites, so a bounded probe was injected into the first test:
+the old macro printed the intentional failure but still reported 13/0 and
+returned zero. The runner now aliases the shared harness without changing any
+test body. GCC and Clang each pass the normal 13/13 runner and report 13/1 with
+exit 1 for the probe; MSVC passes its compile-time-portable 12/12 set and reports
+12/1 with exit 1 for the same probe. Exact source SHA-256 equality and the probe
+function boundary were checked in all three snapshots.
+
 The remaining non-truthful custom runner set is intentionally not declared
-clean yet. `test_semir_pipeline.c` and `test_type_inference.c` remain frozen by
-the concurrent L8 parser exact-test window, while the already recorded LSP
-project-feature runner is frozen by the same callable-value work. They must be
-repaired and directly replayed after release before final graph acceptance.
+clean yet. `test_type_inference.c` remains frozen by the concurrent L8 parser
+exact-test window, while the already recorded LSP project-feature runner is
+frozen by the same callable-value work. They must be repaired and directly
+replayed after release before final graph acceptance.
 
 The production-language scan independently returns zero occurrences for all 12
 removed percent spellings and zero ownership-member lowering classifier

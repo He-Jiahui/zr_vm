@@ -5,6 +5,7 @@
 
 #include "unity.h"
 #include "runtime_support.h"
+#include "zr_test_log_macros.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
@@ -23,37 +24,11 @@ typedef struct SZrBinaryFixtureReader {
     TZrBool consumed;
 } SZrBinaryFixtureReader;
 
-#define TEST_START(summary)                                                                                            \
-    do {                                                                                                               \
-        printf("Unit Test - %s\n", summary);                                                                           \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_INFO(summary, details)                                                                                    \
-    do {                                                                                                               \
-        printf("Testing %s:\n %s\n", summary, details);                                                                \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_PASS_CUSTOM(timer, summary)                                                                               \
-    do {                                                                                                               \
-        double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                      \
-        printf("Pass - Cost Time:%.3fms - %s\n", elapsed, summary);                                                    \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_FAIL_CUSTOM(timer, summary, reason)                                                                       \
-    do {                                                                                                               \
-        double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                      \
-        printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason);                                      \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_DIVIDER()                                                                                                 \
-    do {                                                                                                               \
-        printf("----------\n");                                                                                        \
-        fflush(stdout);                                                                                                \
-    } while (0)
+#define TEST_START ZR_TEST_START
+#define TEST_INFO ZR_TEST_INFO
+#define TEST_PASS_CUSTOM ZR_TEST_PASS
+#define TEST_FAIL_CUSTOM ZR_TEST_FAIL
+#define TEST_DIVIDER ZR_TEST_DIVIDER
 
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
