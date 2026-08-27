@@ -176,3 +176,13 @@ the current language specification and reports zero findings, zero unknown,
 current call/new candidates. The canonical status selector remains
 `TOTAL=55 MISSING=0`; 06B and 07B have independent root-promotion acceptance
 records rather than being inferred from those leaf statuses.
+
+The 2026-08-27 follow-up makes that status selector executable instead of
+leaving it as a copied shell transcript. Run
+`python scripts/syntax_status_records.py --repository <repo>` to select only
+numbered syntax milestone directories, exclude implementation plans and the
+independent property-import support record, and require the frozen 55-record
+directory distribution. Every selected record must have an explicit completed
+status and completion time. The companion unit test covers English, Chinese,
+qualified-completion, exclusion, and drift-failure cases; the current repository
+reports `TOTAL=55`, `COMPLETE=55`, and zero missing/non-complete fields.

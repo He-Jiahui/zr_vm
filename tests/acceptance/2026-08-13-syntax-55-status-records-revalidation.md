@@ -276,6 +276,27 @@ Thus compatibility text for `upgrade`, `weak`, or an old member call is not an
 executable second language. Fixed pre-L8 GCC, Clang, and MSVC CLI smokes each
 printed `hello world` and exited zero; the final stable-HEAD replay remains open.
 
+The canonical count now has an executable verifier at
+`scripts/syntax_status_records.py`, with focused tests in
+`tests/scripts/test_syntax_status_records.py`. The TDD RED was the missing
+verifier module. GREEN directly passed four tests covering the exact numbered
+directory selector, both exclusions, English/Chinese/qualified completion
+markers, required completion times, the real repository, and a negative drift
+case. Direct CLI execution returned zero with:
+
+```text
+TOTAL=55
+COMPLETE=55
+MISSING_STATUS=0
+NON_COMPLETE=0
+MISSING_TIME=0
+01=5 02=6 03=5 04=7 05=6 06=2 07=1 10=5 12=15 13=3
+```
+
+This removes the manual recount as a future source of false confidence. It does
+not replace the pending stable-HEAD compiler, artifact, migration-inventory, or
+three-toolchain gates below.
+
 ## Pending completion gates
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate

@@ -1005,6 +1005,14 @@ gates pass.
 
 ## Pending final acceptance
 
+The frozen syntax-leaf prerequisite is now checked by the executable
+`scripts/syntax_status_records.py` verifier rather than only by repeated manual
+enumeration in this record. Its focused unit suite passes 4/4, including a
+negative drift case, and the direct repository command reports 55/55 complete,
+zero missing status/time fields, and the accepted directory distribution. This
+strengthens the status-record evidence but does not promote this ownership
+milestone before the remaining stable post-L8 full-graph gates pass.
+
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
   baseline `0a46151` each passed all 133 registered CTests with zero failures.
   The three CLI smokes printed `hello world` and exited zero. This closes the
