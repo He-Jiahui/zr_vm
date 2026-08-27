@@ -584,6 +584,10 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_ReportDuplicateTypeDeclaration(
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateVariableDeclaration(
         SZrCompilerState *cs,
         const SZrAstNode *declaration);
+ZR_PARSER_API TZrBool ZrParser_Compiler_InferCallableReturnType(
+        SZrCompilerState *cs,
+        const SZrAstNode *declaration,
+        SZrInferredType *result);
 ZR_PARSER_API TZrBool ZrParser_Compiler_RegisterTypeBinding(
         SZrCompilerState *cs,
         SZrString *name,

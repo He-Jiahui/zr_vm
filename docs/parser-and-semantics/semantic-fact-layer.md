@@ -3484,3 +3484,26 @@ reconstructs the rule from AST shape, source text, or symbol names. A variable
 that has an initializer but whose exact type cannot be inferred remains a
 separate `cannot_infer_exact_type` case; Task 6.22 does not merge that rule into
 the annotation requirement.
+
+## Plan 03 Task 6.23 Return Type Diagnostic
+
+`ZrParser_Compiler_InferCallableReturnType` is the canonical exact-return query
+for function, method, meta-function, and lambda declarations. Its implementation
+lives in `compiler_callable_return_inference.c`, alongside the shared return
+collector and structured diagnostic producer. The binding module only
+orchestrates internal metadata registration.
+
+When two exact return expressions cannot form one exact common type, the
+compiler publishes code `return_type_not_provable`, descriptor `2018`, error
+severity, the callable-name primary range, both return-expression related
+ranges, canonical message/cause/suggestion fields, and
+`REQUIRES_USER_DECISION` without a machine fix. A single weak or unavailable
+return is not an exact contradiction: internal metadata may preserve it for
+later refinement, while the public exact query returns unavailable.
+
+The language server registers the callable parameter scope, calls the public
+query, consumes the compiler diagnostic, and projects the persistent semantic
+fact. It has no local return walker, common-type merge, or diagnostic producer.
+Consumers must not reconstruct this rule from AST shape, member names, source
+text, or display strings. `cannot_infer_exact_type` remains the separate
+surface for unavailable exact type information.

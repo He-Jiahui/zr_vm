@@ -212,6 +212,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Initializer requires annotation",
             "Variable declaration requires a type annotation or initializer"),
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "return_type_not_provable",
+            "Return type not provable",
+            "Callable return expressions do not establish one exact common type"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "unreachable_code",
             "Unreachable code",
             "Unreachable code"),

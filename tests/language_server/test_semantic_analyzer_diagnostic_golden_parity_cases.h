@@ -422,4 +422,101 @@ static void test_semantic_analyzer_preserves_initializer_annotation_golden_parit
     TEST_PASS(timer, summary);
 }
 
+static void test_semantic_analyzer_preserves_return_type_not_provable_golden_parity(
+        SZrState *state) {
+    const TZrChar *summary =
+            "Semantic Analyzer Preserves Return Type Not Provable Golden Parity";
+    const TZrChar *testCode =
+            "fn probe(flag: bool) {\n"
+            "    if (flag) {\n"
+            "        return 1;\n"
+            "    }\n"
+            "    return \"text\";\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics queryDiagnostics;
+    TZrSize queryCount = 0U;
+    TZrSize index;
+
+    TEST_START(summary);
+    TEST_INFO("Compiler query to LSP projection",
+              "Incompatible unannotated returns must preserve the parser-owned callable range, related returns, and no-fix disposition");
+
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    sourceName = ZrCore_String_Create(
+            state,
+            "return_type_not_provable_golden_parity_test.zr",
+            strlen("return_type_not_provable_golden_parity_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (analyzer == ZR_NULL || ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer, summary, "Failed to analyze return inference parity fixture");
+        return;
+    }
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    if (!ZrParser_SemanticQuery_MaterializeDiagnostics(
+                analyzer->semanticContext,
+                &scope) ||
+        !ZrParser_SemanticQuery_Diagnostics(
+                analyzer->semanticContext,
+                &scope,
+                &queryDiagnostics)) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer, summary, "Failed to query return inference diagnostics");
+        return;
+    }
+
+    for (index = 0U; index < queryDiagnostics.count; index++) {
+        const SZrStructuredDiagnostic *structured = &queryDiagnostics.items[index];
+        const TZrChar *code = structured->code != ZR_NULL
+                                      ? ZrCore_String_GetNativeString(structured->code)
+                                      : ZR_NULL;
+        const SZrDiagnostic *projected;
+
+        if (code == ZR_NULL || strcmp(code, "return_type_not_provable") != 0) {
+            continue;
+        }
+        queryCount++;
+        projected = find_projected_query_diagnostic(analyzer, structured);
+        if (!diagnostic_projection_matches_query(projected, structured) ||
+            structured->descriptorId != 2018U ||
+            structured->noFixReason !=
+                    ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+            diagnostic_array_length(&structured->relatedInformation) != 2U ||
+            diagnostic_array_length(&structured->fixes) != 0U) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      summary,
+                      "The projected return inference diagnostic diverged from the compiler query fact");
+            return;
+        }
+    }
+
+    if (queryCount != 1U ||
+        count_diagnostics_with_code(analyzer, "return_type_not_provable") != 1U ||
+        count_diagnostics_with_code(analyzer, "compiler_error") != 0U) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  summary,
+                  "Expected one compiler return inference fact and one canonical LSP projection");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, summary);
+}
+
 #endif
