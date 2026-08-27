@@ -354,6 +354,7 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
 #include "test_semantic_analyzer_diagnostic_golden_parity_cases.h"
 #include "test_semantic_analyzer_extern_enum_decorator_cases.h"
 #include "test_semantic_analyzer_extern_struct_decorator_cases.h"
+#include "test_semantic_analyzer_ffi_wrapper_decorator_cases.h"
 
 static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment) {
     const char *text;
@@ -4539,7 +4540,7 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
 
         invalidUnderlyingDiagnostic = find_diagnostic_by_code_and_line(analyzer, "invalid_decorator", 22);
         invalidViewTypeDiagnostic = find_diagnostic_by_code_and_line(analyzer, "invalid_decorator", 30);
-        if (count_diagnostics_with_code(analyzer, "invalid_decorator") != 8 ||
+        if (count_diagnostics_with_code(analyzer, "invalid_decorator") != 7 ||
             invalidUnderlyingDiagnostic == ZR_NULL ||
             !diagnostic_message_contains(invalidUnderlyingDiagnostic, "supported integer type") ||
             invalidViewTypeDiagnostic == ZR_NULL ||
@@ -4548,7 +4549,7 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Invalid FFI Decorators",
-                      "Expected eight invalid_decorator diagnostics including invalid wrapper lowering, invalid wrapper underlying arguments, invalid handle_id underlying type names, and non-extern viewType references");
+                      "Expected seven canonical declaration diagnostics, including one fail-fast wrapper error per invalid class declaration");
             return;
         }
 
@@ -5154,6 +5155,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_invalid_extern_enum_member_decorator_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_invalid_ffi_wrapper_lowering_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_invalid_ffi_wrapper_view_type_golden_parity(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);

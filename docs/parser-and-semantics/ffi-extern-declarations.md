@@ -10,6 +10,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_callable_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_enum_decorators.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_wrapper_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
@@ -48,6 +49,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_callable_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_enum_decorators.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_wrapper_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_contract.c
@@ -91,9 +93,11 @@ tests:
   - tests/module/test_module_system.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_extern_enum_decorator_query_diagnostics.c
+  - tests/parser/test_ffi_wrapper_decorator_query_diagnostics.c
   - tests/parser/test_semantic_query.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_lsp_source_contracts.c
+  - tests/language_server/stdio_ffi_wrapper_decorator_diagnostic_smoke.js
   - tests/language_server/stdio_diagnostic_fix_smoke.js
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
@@ -334,8 +338,9 @@ class ModeHandle {
 实现约束：
 
 - parser 现在允许顶层声明前连续出现多条 decorator，再统一绑定到后续 class / struct / function
-- `compiler_class.c` 会把这些 `zr.ffi.*` wrapper decorators 直接编译成 type decorator metadata，而不是走普通 runtime decorator expression 执行路径
-- LSP semantic analyzer 会在 class declaration 上校验这些 decorator 的参数和值域
+- `compiler_ffi_wrapper_decorators.c` 是 wrapper decorator 形状、值域和组合约束的单一生产者；`compiler_class.c` 只消费同一结构化 contract 并投影 type decorator metadata，不走普通 runtime decorator expression 执行路径
+- normal compiler 与 LSP semantic analyzer 都调用 `ZrParser_Compiler_ValidateFfiWrapperDecorators(...)`；LSP 只投影 persistent semantic-query diagnostic，不维护 decorator 名称表、参数形状、值域或 AST/source-text fallback
+- invalid wrapper declaration 按 source order fail-fast，发布 descriptor `2019`、code `invalid_decorator`、完整 decorator range、canonical message/cause/suggestion、零 fixes 与 `REQUIRES_USER_DECISION`
 - `zr.ffi.viewType(...)` 当前要求名字解析到同一 source file 里的 extern struct
 
 `zr.ffi.underlying(...)` 当前只在 `lowering("handle_id")` 下有语义。它描述 wrapper 过 FFI 边界时应该降到哪种整数 ABI 类型；source-level decorator 目前只接受固定宽度整数名 `i8/u8/i16/u16/i32/u32/i64/u64`，与 runtime ABI lowering 支持集保持一致。

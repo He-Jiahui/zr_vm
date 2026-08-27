@@ -1350,6 +1350,7 @@ static void test_extern_callable_decorators_use_parser_diagnostic_projection(voi
 #include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
 #include "test_lsp_source_contract_extern_enum_decorator_cases.h"
 #include "test_lsp_source_contract_extern_struct_decorator_cases.h"
+#include "test_lsp_source_contract_ffi_wrapper_decorator_cases.h"
 #include "test_lsp_source_contract_initializer_annotation_cases.h"
 #include "test_lsp_source_contract_return_type_cases.h"
 
@@ -1408,6 +1409,7 @@ int main(void) {
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
+    test_ffi_wrapper_decorators_use_parser_diagnostic_projection();
     test_duplicate_type_uses_parser_diagnostic_projection();
     test_initializer_annotation_uses_parser_diagnostic_projection();
     test_return_type_inference_uses_parser_diagnostic_projection();
