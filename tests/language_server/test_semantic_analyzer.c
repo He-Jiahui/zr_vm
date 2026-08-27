@@ -355,6 +355,7 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
 #include "test_semantic_analyzer_extern_enum_decorator_cases.h"
 #include "test_semantic_analyzer_extern_struct_decorator_cases.h"
 #include "test_semantic_analyzer_ffi_wrapper_decorator_cases.h"
+#include "test_semantic_analyzer_extern_parameter_decorator_cases.h"
 
 static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment) {
     const char *text;
@@ -5161,6 +5162,18 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_invalid_ffi_wrapper_view_type_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_accepts_valid_extern_parameter_charset(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_ignores_non_extern_parameter_decorators(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_invalid_extern_parameter_charset_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_conflicting_extern_parameter_direction_golden_parity(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);

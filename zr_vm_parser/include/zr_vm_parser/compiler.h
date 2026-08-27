@@ -576,6 +576,9 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternStructDecorators(
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternEnumDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration);
+ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternParameterDecorators(
+        SZrCompilerState *cs,
+        SZrAstNode *parameter);
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateFfiWrapperDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration);

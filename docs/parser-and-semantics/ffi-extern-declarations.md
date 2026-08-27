@@ -10,6 +10,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_callable_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_enum_decorators.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_parameter_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_wrapper_decorators.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_ffi_callable_contract.c
@@ -93,11 +94,13 @@ tests:
   - tests/module/test_module_system.c
   - tests/parser/test_compiler_semantic_query_diagnostics.c
   - tests/parser/test_extern_enum_decorator_query_diagnostics.c
+  - tests/parser/test_extern_parameter_decorator_query_diagnostics.c
   - tests/parser/test_ffi_wrapper_decorator_query_diagnostics.c
   - tests/parser/test_semantic_query.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_lsp_source_contracts.c
   - tests/language_server/stdio_ffi_wrapper_decorator_diagnostic_smoke.js
+  - tests/language_server/stdio_extern_parameter_decorator_diagnostic_smoke.js
   - tests/language_server/stdio_diagnostic_fix_smoke.js
   - tests/parser/test_aot_c_code_stripping.c
   - tests/acceptance/2026-07-30-aot-11-12-native-import-contract-reachability.md
@@ -214,6 +217,28 @@ charset 子集。
 normal compiler 和 LSP analyzer 都调用同一公共 validator。LSP 只消费 compiler 发布的
 persistent semantic diagnostic fact，再投影 protocol range/code/message/cause/suggestion/
 disposition；不得按 decorator 名、AST 文本或本地 allowed-value table 重建规则。
+
+### Parameter Decorator Validation And Diagnostics
+
+extern function / delegate 的普通参数 decorator 由 parser/compiler 的
+`ZrParser_Compiler_ValidateExternParameterDecorators(...)` 单一校验。实现位于
+cohesive `compiler_extern_parameter_decorators.c` 模块；normal compiler 和 LSP analyzer
+都调用该公共 API，LSP 不再保留 decorator path walker、方向计数器、charset 参数解析或
+本地错误生产器。
+
+canonical 参数规则为：
+
+- `zr.ffi.in`、`zr.ffi.out`、`zr.ffi.inout` 不接受参数，且一个参数最多声明其中一个；
+- `zr.ffi.charset(...)` 必须接受一个 string literal，值域为 `utf8`、`utf16`、`ansi`；
+- bare `zr.ffi.charset`、错误 call shape、非法值和未知参数 decorator 均 fail closed；
+- 方向冲突的 primary range 精确指向 source order 中第二个冲突 decorator。
+
+非法参数 decorator 发布 descriptor `2019` / code `invalid_decorator`、error severity、
+semantic category、完整 decorator range、canonical message/cause/suggestion、零 fixes 与
+`REQUIRES_USER_DECISION`。normal compiler 继续对 variadic `args` 的 decorator array 使用同一
+内部规则；LSP 只为 parser 暴露的普通参数节点消费公共 validator 和 persistent semantic query
+fact，不按名称、AST/source text 或 message 重建规则。非 extern function 参数不会进入该
+validator。
 
 ### Struct And Field Decorator Validation And Diagnostics
 

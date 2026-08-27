@@ -4,59 +4,12 @@
 
 #include "compiler_internal.h"
 #include "compiler_attribute_binding.h"
+#include "compiler_extern_parameter_decorators.h"
 
 #include "zr_vm_parser/ffi_contract.h"
 
 static const TZrChar *kCompilerEnumRuntimeValueTypeFieldName = "__zr_enumValueTypeName";
 static const TZrChar *kCompilerEnumRuntimeMembersFieldName = "__zr_enumMembers";
-
-typedef struct SZrExternStaticDecoratorRule {
-    const TZrChar *leafName;
-    TZrBool requireCall;
-} SZrExternStaticDecoratorRule;
-
-static TZrBool compiler_decorators_validate_static_rules(
-        SZrCompilerState *cs,
-        SZrAstNodeArray *decorators,
-        const SZrExternStaticDecoratorRule *rules,
-        TZrSize ruleCount) {
-    if (cs == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (decorators == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    for (TZrSize decoratorIndex = 0;
-         decoratorIndex < decorators->count;
-         decoratorIndex++) {
-        SZrAstNode *decoratorNode = decorators->nodes[decoratorIndex];
-        TZrBool matched = ZR_FALSE;
-
-        if (decoratorNode == ZR_NULL) {
-            continue;
-        }
-        for (TZrSize ruleIndex = 0; ruleIndex < ruleCount; ruleIndex++) {
-            if (extern_compiler_match_decorator_path(
-                        decoratorNode,
-                        rules[ruleIndex].leafName,
-                        rules[ruleIndex].requireCall,
-                        ZR_NULL)) {
-                matched = ZR_TRUE;
-                break;
-            }
-        }
-        if (!matched) {
-            ZrParser_Compiler_Error(
-                    cs,
-                    "decorator.runtime_removed: native extern accepts only canonical zr.ffi static directives",
-                    decoratorNode->location);
-            return ZR_FALSE;
-        }
-    }
-
-    return ZR_TRUE;
-}
 
 static void compiler_enum_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     if (memberInfo == ZR_NULL) {
@@ -83,13 +36,6 @@ static void compiler_enum_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
 }
 
-static const SZrExternStaticDecoratorRule kExternParameterDecoratorRules[] = {
-        {"in", ZR_FALSE},
-        {"out", ZR_FALSE},
-        {"inout", ZR_FALSE},
-        {"charset", ZR_TRUE},
-};
-
 static TZrBool compiler_extern_validate_parameter_decorators(
         SZrCompilerState *cs,
         SZrAstNodeArray *params,
@@ -101,22 +47,16 @@ static TZrBool compiler_extern_validate_parameter_decorators(
             if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
                 continue;
             }
-            if (!compiler_decorators_validate_static_rules(
-                        cs,
-                        parameterNode->data.parameter.decorators,
-                        kExternParameterDecoratorRules,
-                        ZR_ARRAY_COUNT(kExternParameterDecoratorRules))) {
+            if (!ZrParser_Compiler_ValidateExternParameterDecorators(
+                        cs, parameterNode)) {
                 return ZR_FALSE;
             }
         }
     }
 
     return args == ZR_NULL ||
-           compiler_decorators_validate_static_rules(
-                   cs,
-                   args->decorators,
-                   kExternParameterDecoratorRules,
-                   ZR_ARRAY_COUNT(kExternParameterDecoratorRules));
+           compiler_extern_validate_parameter_decorator_array(
+                   cs, args->decorators);
 }
 
 static TZrBool compiler_extern_validate_declaration_decorators(

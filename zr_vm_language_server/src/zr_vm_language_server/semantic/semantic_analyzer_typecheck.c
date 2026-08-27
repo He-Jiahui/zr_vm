@@ -546,137 +546,6 @@ static void semantic_typecheck_callable_body(SZrState *state,
     semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
 }
 
-static TZrBool semantic_extract_ffi_decorator(SZrAstNode *decoratorNode,
-                                              const TZrChar **outLeafName,
-                                              TZrBool *outHasCall,
-                                              SZrFunctionCall **outCall) {
-    SZrAstNode *expr;
-    SZrPrimaryExpression *primary;
-    SZrAstNode *ffiMember;
-    SZrAstNode *leafMember;
-
-    if (outLeafName != ZR_NULL) {
-        *outLeafName = ZR_NULL;
-    }
-    if (outHasCall != ZR_NULL) {
-        *outHasCall = ZR_FALSE;
-    }
-    if (outCall != ZR_NULL) {
-        *outCall = ZR_NULL;
-    }
-
-    if (decoratorNode == ZR_NULL || decoratorNode->type != ZR_AST_DECORATOR_EXPRESSION) {
-        return ZR_FALSE;
-    }
-
-    expr = decoratorNode->data.decoratorExpression.expr;
-    if (expr == ZR_NULL || expr->type != ZR_AST_PRIMARY_EXPRESSION) {
-        return ZR_FALSE;
-    }
-
-    primary = &expr->data.primaryExpression;
-    if (!semantic_text_equals(semantic_identifier_node_text(primary->property), "zr") ||
-        primary->members == ZR_NULL || primary->members->count < 2 || primary->members->count > 3) {
-        return ZR_FALSE;
-    }
-
-    ffiMember = primary->members->nodes[0];
-    leafMember = primary->members->nodes[1];
-    if (!semantic_text_equals(semantic_member_property_text(ffiMember), "ffi")) {
-        return ZR_FALSE;
-    }
-
-    if (outLeafName != ZR_NULL) {
-        *outLeafName = semantic_member_property_text(leafMember);
-    }
-    if (outLeafName != ZR_NULL && *outLeafName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (primary->members->count == 3) {
-        SZrAstNode *callNode = primary->members->nodes[2];
-        if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
-            return ZR_FALSE;
-        }
-        if (outHasCall != ZR_NULL) {
-            *outHasCall = ZR_TRUE;
-        }
-        if (outCall != ZR_NULL) {
-            *outCall = &callNode->data.functionCall;
-        }
-    }
-
-    return ZR_TRUE;
-}
-
-static void semantic_add_invalid_decorator(SZrState *state,
-                                           SZrSemanticAnalyzer *analyzer,
-                                           SZrAstNode *decoratorNode,
-                                           const TZrChar *message) {
-    if (state == ZR_NULL || analyzer == ZR_NULL || decoratorNode == ZR_NULL) {
-        return;
-    }
-
-    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                    analyzer,
-                                                    ZR_DIAGNOSTIC_ERROR,
-                                                    decoratorNode->location,
-                                                    message,
-                                                    "invalid_decorator");
-}
-
-static void semantic_validate_extern_parameter_decorators(SZrState *state,
-                                                          SZrSemanticAnalyzer *analyzer,
-                                                          SZrAstNode *parameterNode) {
-    SZrAstNodeArray *decorators;
-    TZrSize index;
-    TZrSize directionCount = 0;
-
-    if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
-        return;
-    }
-
-    decorators = parameterNode->data.parameter.decorators;
-    if (decorators == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < decorators->count; index++) {
-        const TZrChar *leafName = ZR_NULL;
-        TZrBool hasCall = ZR_FALSE;
-        SZrFunctionCall *call = ZR_NULL;
-        SZrAstNode *decoratorNode = decorators->nodes[index];
-
-        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) || leafName == ZR_NULL) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "in") ||
-            semantic_text_equals(leafName, "out") ||
-            semantic_text_equals(leafName, "inout")) {
-            if (hasCall || call != ZR_NULL) {
-                semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                               "FFI direction decorators do not take arguments");
-            } else {
-                directionCount++;
-            }
-        } else {
-            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-            snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern parameters", leafName);
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
-        }
-    }
-
-    if (directionCount > 1) {
-        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                                        analyzer,
-                                                        ZR_DIAGNOSTIC_ERROR,
-                                                        parameterNode->location,
-                                                        "Extern parameters may specify only one of zr.ffi.in/out/inout",
-                                                        "invalid_decorator");
-    }
-}
-
 typedef enum EZrSemanticOwnershipDiagnosticKind {
     ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE = 0,
     ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_MISMATCH,
@@ -1460,9 +1329,21 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             }
             break;
 
-        case ZR_AST_PARAMETER:
-            semantic_validate_extern_parameter_decorators(state, analyzer, node);
+        case ZR_AST_PARAMETER: {
+            SZrAstNode *callable =
+                    analyzer->compilerState != ZR_NULL
+                            ? analyzer->compilerState->currentFunctionNode
+                            : ZR_NULL;
+            if (callable != ZR_NULL &&
+                (callable->type == ZR_AST_EXTERN_FUNCTION_DECLARATION ||
+                 callable->type == ZR_AST_EXTERN_DELEGATE_DECLARATION) &&
+                !ZrParser_Compiler_ValidateExternParameterDecorators(
+                        analyzer->compilerState, node)) {
+                ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                        state, analyzer, node->location);
+            }
             break;
+        }
 
         case ZR_AST_INTERFACE_DECLARATION:
             ZrLanguageServer_SemanticAnalyzer_ValidateInterfaceVarianceRules(state, analyzer, node);
@@ -1702,6 +1583,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
 
         case ZR_AST_EXTERN_DELEGATE_DECLARATION: {
             SZrExternDelegateDeclaration *delegateDecl = &node->data.externDelegateDeclaration;
+            SZrSemanticTypecheckContextSnapshot contextSnapshot;
+
+            semantic_typecheck_push_compiler_context(
+                    analyzer, ZR_NULL, node, &contextSnapshot);
             if (delegateDecl->params != ZR_NULL && delegateDecl->params->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < delegateDecl->params->count; i++) {
                     if (delegateDecl->params->nodes[i] != ZR_NULL) {
@@ -1709,6 +1594,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     }
                 }
             }
+            semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
             break;
         }
 
