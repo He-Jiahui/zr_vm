@@ -93,8 +93,8 @@ tokens and typed contracts:
 - static imports use `import("path")`;
 - native declarations use `native extern("library") ...`;
 - build-time execution uses `comptime` and `zr.compile` typed descriptors;
-- ownership uses `Unique<T>`, `Shared<T>`, `Weak<T>`, `ref`, direct owner
-  operations, and statement/block `using`;
+- ownership uses `Unique<T>`, `Shared<T>`, `Weak<T>`, `ref`, the five reserved
+  intrinsic calls, and statement/block `using`;
 - definitions use `fn(args): ReturnType`, while callable types use
   `fn(Args) -> ReturnType`.
 
@@ -148,6 +148,15 @@ artifact consumers are covered by their dedicated lower-layer suites. Future
 work must extend those typed contracts; it must not restore a second source
 spelling.
 
+The ownership intrinsic namespace is also closed. `share`, `degrade`, `wake`,
+`intoGc`, and `drop` cannot be declared or shadowed as lexical names. Such a
+binding reports the stable ownership diagnostic
+`reserved_ownership_intrinsic_name` (descriptor 4008) at the exact keyword
+range and carries `REQUIRES_USER_DECISION` rather than a speculative rename.
+Member declarations and member access use a separate identifier path, so the
+same five spellings remain valid after `.` and `?.` and never select ownership
+lowering by text.
+
 ## Validation Status
 
 The breaking switch is directly covered by `percent_syntax_cutover`,
@@ -186,3 +195,10 @@ directory distribution. Every selected record must have an explicit completed
 status and completion time. The companion unit test covers English, Chinese,
 qualified-completion, exclusion, and drift-failure cases; the current repository
 reports `TOTAL=55`, `COMPLETE=55`, and zero missing/non-complete fields.
+
+The 2026-08-27 reserved-intrinsic binding follow-up first reproduced a focused
+failure where `let share = owner;` produced only a generic identifier error and
+no structured diagnostic. The parser now reports descriptor 4008 for all five
+intrinsic tokens in lexical declaration positions. The focused ownership suite
+passes 43/43 and the diagnostic registry/message parity suite passes 30/30 on
+GCC 11.4, Clang 14, and MSVC 19.44; all six direct processes exit zero.

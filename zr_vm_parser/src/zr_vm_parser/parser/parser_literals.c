@@ -463,6 +463,14 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
 SZrAstNode *parse_identifier(SZrParserState *ps) {
     SZrFileRange identifierLoc;
     SZrString *name;
+    if (is_ownership_intrinsic_token(ps->lexer->t.token)) {
+        if (!report_reserved_ownership_intrinsic_name(ps)) {
+            report_error(
+                    ps,
+                    "Ownership intrinsic name is reserved in lexical namespaces");
+        }
+        return ZR_NULL;
+    }
     // 允许 test 关键字作为标识符（用于方法名等）
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER && ps->lexer->t.token != ZR_TK_TEST) {
         report_error(ps, "Expected identifier");

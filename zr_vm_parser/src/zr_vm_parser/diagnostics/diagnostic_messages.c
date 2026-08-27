@@ -271,6 +271,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "removed_ownership_member_syntax",
             "Removed ownership member syntax",
             "Ownership operations use reserved intrinsic calls"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "reserved_ownership_intrinsic_name",
+            "Reserved ownership intrinsic name",
+            "Ownership intrinsic name is reserved in lexical namespaces"),
 };
 
 TZrSize ZrParser_DiagnosticMessages_Count(void) {

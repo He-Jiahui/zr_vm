@@ -65,7 +65,8 @@ static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool r
 
     // 解析模式（标识符或解构）
     SZrAstNode *pattern = ZR_NULL;
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER ||
+        is_ownership_intrinsic_token(ps->lexer->t.token)) {
         pattern = parse_identifier(ps);
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         // 对象解构模式 {key1, key2, ...}

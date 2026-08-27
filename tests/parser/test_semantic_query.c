@@ -985,12 +985,13 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *returnTypeNotProvable;
     const SZrDiagnosticDescriptor *invalidDecorator;
     const SZrDiagnosticDescriptor *useAfterMove;
+    const SZrDiagnosticDescriptor *reservedOwnershipIntrinsicName;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(66, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(67, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1012,6 +1013,18 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     TEST_ASSERT_EQUAL_UINT32(4001, useAfterMove->id);
     TEST_ASSERT_EQUAL_INT(ZR_LINT_CATEGORY_OWNERSHIP,
                           useAfterMove->category);
+
+    reservedOwnershipIntrinsicName =
+            ZrParser_DiagnosticRegistry_FindByCode(
+                    "reserved_ownership_intrinsic_name");
+    TEST_ASSERT_NOT_NULL(reservedOwnershipIntrinsicName);
+    TEST_ASSERT_EQUAL_UINT32(4008, reservedOwnershipIntrinsicName->id);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            reservedOwnershipIntrinsicName->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LINT_CATEGORY_OWNERSHIP,
+            reservedOwnershipIntrinsicName->category);
 
     typeMismatch = ZrParser_DiagnosticRegistry_FindByCode("type_mismatch");
     TEST_ASSERT_NOT_NULL(typeMismatch);

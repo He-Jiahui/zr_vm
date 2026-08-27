@@ -152,6 +152,8 @@ static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
                              ZR_STRUCTURED_DIAGNOSTIC_WARNING, ZR_LINT_CATEGORY_OWNERSHIP),
     ZR_DIAGNOSTIC_DESCRIPTOR(4007, "removed_ownership_member_syntax",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
+    ZR_DIAGNOSTIC_DESCRIPTOR(4008, "reserved_ownership_intrinsic_name",
+                             ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
 };
 
 TZrSize ZrParser_DiagnosticRegistry_Count(void) {

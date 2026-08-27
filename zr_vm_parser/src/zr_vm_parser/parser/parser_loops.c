@@ -118,7 +118,8 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     }
     ZrParser_Lexer_Next(ps->lexer);
 
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER ||
+        is_ownership_intrinsic_token(ps->lexer->t.token)) {
         pattern = parse_identifier(ps);
     } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         pattern = parse_destructuring_object(ps);

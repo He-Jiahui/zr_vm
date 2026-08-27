@@ -1003,6 +1003,36 @@ This closes the focused backend gap but does not promote the acceptance status
 before the final stable post-L8 full graph, artifact, inventory, and exact-diff
 gates pass.
 
+### 2026-08-27 reserved intrinsic lexical bindings
+
+The design reserves the five ownership intrinsic spellings as language-level
+operations while keeping them legal in the member namespace. The focused RED
+used `let share = owner;`: production rejected the token, but only through the
+generic `Expected identifier` path and without a stable ownership diagnostic.
+
+The parser now publishes `reserved_ownership_intrinsic_name`, descriptor 4008,
+with ownership category, exact token range, and
+`REQUIRES_USER_DECISION`. The token-based check covers all five names plus
+function names, parameters, class names, foreach bindings, and destructuring
+bindings. It does not inspect diagnostic message text. Member declarations and
+member calls continue through `parse_member_identifier`, so `.share()` and
+`?.share()` remain ordinary target access.
+
+An intermediate registry GREEN intentionally exposed a second RED: adding the
+descriptor changed the registry count from 66 to 67. The semantic-query suite
+now locks the new id, severity, category, and message-table parity. Fixed
+snapshot evidence based on committed main `7736d12` plus the exact nine-path
+overlay is:
+
+| Suite | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| ownership intrinsic/member separation | 43/43 | 43/43 | 43/43 |
+| semantic query diagnostic registry | 30/30 | 30/30 | 30/30 |
+
+All six direct test processes returned zero. This closes the stable diagnostic
+contract for intrinsic rebinding without promoting the overall milestone ahead
+of the final post-L8 full graph, artifact, inventory, and exact-diff gates.
+
 ## Pending final acceptance
 
 The frozen syntax-leaf prerequisite is now checked by the executable

@@ -886,6 +886,37 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
 
 // 报告解析错误
 
+TZrBool report_reserved_ownership_intrinsic_name(SZrParserState *ps) {
+    SZrStructuredDiagnostic diagnostic;
+    SZrFileRange location;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    location = get_current_token_location(ps);
+    if (!ZrParser_DiagnosticBuilder_Build(
+                ps->state,
+                &diagnostic,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "reserved_ownership_intrinsic_name",
+                "Ownership intrinsic name is reserved in lexical namespaces",
+                "share, degrade, wake, intoGc, and drop are language-level ownership operations and cannot be rebound.",
+                "Choose a different lexical binding name. These spellings remain legal as object member names.")) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                &diagnostic,
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+        return ZR_FALSE;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+    return ZR_TRUE;
+}
+
 void report_error(SZrParserState *ps, const TZrChar *msg) {
     ps->hasError = ZR_TRUE;
     ps->errorMessage = msg;

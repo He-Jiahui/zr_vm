@@ -12,6 +12,7 @@
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/diagnostic_registry.h"
 #include "zr_vm_parser/lexer.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_facts.h"
@@ -50,6 +51,12 @@ static void test_ownership_operation_ids_remain_stable(void) {
 typedef struct SZrCapturedParserDiagnostic {
     TZrBool reported;
     TZrChar message[256];
+    TZrBool structuredReported;
+    TZrChar structuredCode[96];
+    SZrFileRange structuredLocation;
+    EZrToken structuredToken;
+    TZrUInt32 structuredDescriptorId;
+    EZrDiagnosticNoFixReason noFixReason;
 } SZrCapturedParserDiagnostic;
 
 static void capture_parser_error(TZrPtr userData,
@@ -69,6 +76,36 @@ static void capture_parser_error(TZrPtr userData,
     if (message != ZR_NULL) {
         snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", message);
     }
+}
+
+static void capture_structured_parser_error(
+        TZrPtr userData,
+        const SZrStructuredDiagnostic *diagnostic,
+        EZrToken token) {
+    SZrCapturedParserDiagnostic *capture =
+            (SZrCapturedParserDiagnostic *)userData;
+    const TZrChar *code;
+
+    if (capture == ZR_NULL || diagnostic == ZR_NULL ||
+        capture->structuredReported) {
+        return;
+    }
+    code = diagnostic->code != ZR_NULL
+                   ? ZrCore_String_GetNativeString(diagnostic->code)
+                   : ZR_NULL;
+    capture->structuredReported = ZR_TRUE;
+    capture->structuredCode[0] = '\0';
+    if (code != ZR_NULL) {
+        snprintf(
+                capture->structuredCode,
+                sizeof(capture->structuredCode),
+                "%s",
+                code);
+    }
+    capture->structuredLocation = diagnostic->location;
+    capture->structuredToken = token;
+    capture->structuredDescriptorId = diagnostic->descriptorId;
+    capture->noFixReason = diagnostic->noFixReason;
 }
 
 void setUp(void) {
@@ -345,6 +382,68 @@ static void assert_parse_error(const TZrChar *source, const TZrChar *expectedFra
     ZrParser_State_Free(&parserState);
 }
 
+static void assert_reserved_intrinsic_binding_error(
+        const TZrChar *source,
+        const TZrChar *name,
+        EZrToken expectedToken,
+        TZrUInt32 expectedStart) {
+    SZrString *sourceName;
+    SZrParserState parserState;
+    SZrCapturedParserDiagnostic diagnostic;
+    const SZrDiagnosticDescriptor *descriptor;
+    SZrAstNode *script;
+
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "reserved_ownership_intrinsic_binding.zr");
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    ZrParser_State_Init(&parserState, g_state, source, strlen(source), sourceName);
+    parserState.errorCallback = capture_parser_error;
+    parserState.structuredErrorCallback = capture_structured_parser_error;
+    parserState.errorUserData = &diagnostic;
+    parserState.suppressErrorOutput = ZR_TRUE;
+
+    script = ZrParser_ParseWithState(&parserState);
+
+    TEST_ASSERT_TRUE_MESSAGE(diagnostic.reported, source);
+    TEST_ASSERT_TRUE_MESSAGE(diagnostic.structuredReported, source);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(
+            "reserved_ownership_intrinsic_name",
+            diagnostic.structuredCode,
+            source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            4008u, diagnostic.structuredDescriptorId, source);
+    descriptor = ZrParser_DiagnosticRegistry_FindByCode(
+            "reserved_ownership_intrinsic_name");
+    TEST_ASSERT_NOT_NULL_MESSAGE(descriptor, source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(4008u, descriptor->id, source);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+            ZR_LINT_CATEGORY_OWNERSHIP, descriptor->category, source);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(expectedToken, diagnostic.structuredToken, source);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            diagnostic.noFixReason,
+            source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            expectedStart,
+            diagnostic.structuredLocation.start.offset,
+            source);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            expectedStart + (TZrUInt32)strlen(name),
+            diagnostic.structuredLocation.end.offset,
+            source);
+    if (script != ZR_NULL) {
+        ZrParser_Ast_Free(g_state, script);
+    }
+    ZrParser_State_Free(&parserState);
+
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "reserved_ownership_intrinsic_compile.zr");
+    TEST_ASSERT_NULL_MESSAGE(
+            ZrParser_Source_Compile(
+                    g_state, source, strlen(source), sourceName),
+            source);
+}
+
 static void test_question_dot_is_one_token(void) {
     const TZrChar *source = "?.";
     SZrString *sourceName = ZrCore_String_CreateFromNative(g_state, "question_dot.zr");
@@ -524,7 +623,47 @@ static void test_intrinsic_syntax_reports_precise_errors(void) {
     assert_parse_error(
             "share(value: owner);",
             "Ownership intrinsic accepts exactly one positional argument");
-    assert_parse_error("let share = owner;", "Expected identifier");
+}
+
+static void test_reserved_intrinsic_lexical_bindings_report_structured_errors(void) {
+    static const struct {
+        const TZrChar *name;
+        EZrToken token;
+    } cases[] = {
+            {"share", ZR_TK_SHARE},
+            {"degrade", ZR_TK_DEGRADE},
+            {"wake", ZR_TK_WAKE},
+            {"intoGc", ZR_TK_INTO_GC},
+            {"drop", ZR_TK_DROP},
+    };
+    static const struct {
+        const TZrChar *source;
+        const TZrChar *name;
+        EZrToken token;
+        TZrUInt32 start;
+    } lexicalCases[] = {
+            {"fn share(): int { return 0; }", "share", ZR_TK_SHARE, 3u},
+            {"fn consume(drop: int): int { return 0; }", "drop", ZR_TK_DROP, 11u},
+            {"class wake {}", "wake", ZR_TK_WAKE, 6u},
+            {"for (var intoGc in items) {}", "intoGc", ZR_TK_INTO_GC, 9u},
+            {"let [degrade] = values;", "degrade", ZR_TK_DEGRADE, 5u},
+    };
+    TZrChar source[96];
+
+    for (TZrSize index = 0u; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        snprintf(source, sizeof(source), "let %s = owner;", cases[index].name);
+        assert_reserved_intrinsic_binding_error(
+                source, cases[index].name, cases[index].token, 4u);
+    }
+    for (TZrSize index = 0u;
+         index < sizeof(lexicalCases) / sizeof(lexicalCases[0]);
+         index++) {
+        assert_reserved_intrinsic_binding_error(
+                lexicalCases[index].source,
+                lexicalCases[index].name,
+                lexicalCases[index].token,
+                lexicalCases[index].start);
+    }
 }
 
 static void test_invalid_optional_postfix_forms_report_distinct_errors(void) {
@@ -1616,6 +1755,7 @@ int main(void) {
     RUN_TEST(test_intrinsic_spellings_remain_legal_member_names);
     RUN_TEST(test_direct_and_optional_callable_syntax_are_distinct);
     RUN_TEST(test_intrinsic_syntax_reports_precise_errors);
+    RUN_TEST(test_reserved_intrinsic_lexical_bindings_report_structured_errors);
     RUN_TEST(test_invalid_optional_postfix_forms_report_distinct_errors);
     RUN_TEST(test_syntax_writer_preserves_intrinsic_and_access_modes);
     RUN_TEST(test_intrinsic_type_contracts_publish_canonical_facts);

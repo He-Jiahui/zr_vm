@@ -105,6 +105,8 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
 
 void report_error(SZrParserState *ps, const TZrChar *msg);
 
+TZrBool report_reserved_ownership_intrinsic_name(SZrParserState *ps);
+
 void report_structured_parser_error(SZrParserState *ps,
                                     const SZrStructuredDiagnostic *diagnostic,
                                     EZrToken token);
