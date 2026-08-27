@@ -1004,6 +1004,21 @@ checksum 344064. A separate GCC 11.4 Release build passes twice and supplies the
 recorded five-way comparison. This focused correction still does not close Step
 5 before the post-L8 full graph, artifact, inventory, and exact final review.
 
+The member-collision completion review then found that the focused runner proved
+intrinsic spellings as ordinary members after `.`, but did not execute them
+after `?.`. A new resource fixture calls methods named `share`, `degrade`,
+`wake`, `intoGc`, and `drop` through a Weak optional receiver, verifies their
+five live return values, drops the last Shared owner, and verifies a later
+optional call returns `null`. The initial RED exposed a test-helper defect:
+constant-pool recursion counted shared function graph nodes repeatedly. Direct
+GDB inspection of `run` proved the production instruction stream was already
+correct. The accepted test locates `run` by name and counts only that instruction
+stream: one `OWN_SHARE`, one `OWN_DEGRADE`, six guard `OWN_WAKE`, zero
+`OWN_INTO_GC_BOX`, and seven `OWN_DROP` operations for six hidden-owner cleanups
+plus the explicit `drop(shared)`. On fixed main `a66f001` plus the exact two-file
+test overlay, GCC 11.4, Clang 14, and MSVC 19.44 each pass 42/42 with exit zero.
+No production or L8-owned path changes in this slice.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -1047,6 +1062,11 @@ source snapshot `E:\zrs\ownership-perf-d6ee3fe`, MSVC cache
 `E:\zrb\ownership-perf-d6ee3fe.tar`. The matching WSL source snapshot, GCC and
 Clang Debug caches, and GCC Release cache were also removed. The replay created
 no persistent log and did not change shared `.codex/logs` evidence.
+
+The optional intrinsic-name member collision replay removed and verified absent
+`E:\zrb\ownership-optional-member-a66f001.tar`, its Windows source snapshot and
+MSVC build root, plus the matching WSL source snapshot and GCC/Clang build roots.
+The replay created no persistent log and left shared `.codex/logs` untouched.
 
 - [ ] **Step 7: Commit final acceptance status**
 

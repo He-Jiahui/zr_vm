@@ -380,3 +380,16 @@ shadows either function environment. GCC 11.4, Clang 14, and MSVC 19.44 each
 pass the resulting ownership runner 41/41. On the same exact source overlay,
 type inference passes 123/123, expression facts 28/28, and compiler integration
 127/127 on all three toolchains.
+
+The optional-member collision follow-up proves that reserved intrinsic tokens
+remain legal ordinary member names after `?.`, not only after `.`. A resource
+class declares methods named `share`, `degrade`, `wake`, `intoGc`, and `drop`;
+all five `weak?.name()` calls dispatch to those methods while the target is
+live, and `weak?.share()` produces `null` after the last explicit Shared owner
+is dropped. The `run` function contains one source `OWN_SHARE`, one source
+`OWN_DEGRADE`, six guard `OWN_WAKE` operations, no `OWN_INTO_GC_BOX`, and seven
+`OWN_DROP` operations: six close the hidden guard owners and one implements the
+explicit `drop(shared)`. The member named `drop` adds no ownership operation.
+On the fixed main `a66f001` plus two-test-file overlay, GCC 11.4, Clang 14, and
+MSVC 19.44 each directly pass the resulting ownership runner 42/42 with process
+exit zero.

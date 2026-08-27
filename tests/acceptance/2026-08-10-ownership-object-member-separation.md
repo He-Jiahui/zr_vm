@@ -943,6 +943,36 @@ and the system exception registry materializes named `NullReferenceError` under
 the `hello_world` project, printed `hello world`, and exited zero. These are
 additional pre-final checks, not substitutes for the post-L8 stable-HEAD graph.
 
+### 2026-08-27 optional intrinsic-name member collision
+
+The design requires intrinsic spellings to remain legal member names after both
+`.` and `?.`. Direct member calls were already covered, but no executable test
+called all five names through a Weak optional receiver. The new focused case
+defines resource methods named `share`, `degrade`, `wake`, `intoGc`, and `drop`,
+then checks all five live `weak?.name()` results and an expired
+`weak?.share()` null result.
+
+The first controlled run reported `42 Tests / 1 Failure / 0 Ignored`: the old
+test helper recursively followed function constants without a graph-wide
+visited set and counted the same source `OWN_SHARE` seven times. GDB inspection
+of the actual `run` instruction stream showed `share=1`, `degrade=1`, `wake=6`,
+`intoGc=0`, and `drop=7`. The regression now locates `run` by function name and
+counts its direct instruction stream. Six wakes and six drops belong to the six
+Weak receiver guards; the seventh drop is the explicit `drop(shared)`. Therefore
+the method named `drop` contributes no ownership intrinsic operation.
+
+The fixed evidence baseline is committed main `a66f001` plus exact overlays for
+`test_ownership_intrinsic_member_separation.c` and
+`test_ownership_optional_callable_cases.h`. Direct results were:
+
+| Suite | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| ownership intrinsic/member separation | 42/42 | 42/42 | 42/42 |
+
+All build and test processes returned zero. This closes the optional-member-name
+collision gap without changing production code. It does not replace the pending
+stable post-L8 full graph, artifact, inventory, and final exact-diff gates.
+
 ## Pending final acceptance
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
@@ -992,6 +1022,11 @@ additional pre-final checks, not substitutes for the post-L8 stable-HEAD graph.
   `/home/hejiahui/.codex-snapshots/ownership-d146109` source snapshot, and its
   GCC/Clang build roots. It created no persistent log; unrelated shared logs
   remain untouched.
+- The optional intrinsic-name member collision replay removed and verified
+  absent `E:\zrb\ownership-optional-member-a66f001.tar`, the Windows source
+  snapshot and MSVC build root named `ownership-optional-member-*`, the WSL
+  source snapshot, and its GCC/Clang build roots. It created no persistent log
+  and did not touch shared `.codex/logs` evidence.
 
 `type_inference.c` is 4,182 lines, but this exact correction changes the
 ordering of one existing primary-expression/first-call resolution decision.

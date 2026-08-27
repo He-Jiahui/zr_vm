@@ -210,4 +210,110 @@ static void test_nullable_callable_variable_shadows_named_function(void) {
     }
 }
 
+static SZrFunction *ownership_optional_find_child_function(
+        SZrFunction *function,
+        const TZrChar *name) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (function->functionName != ZR_NULL) {
+        const TZrChar *functionName =
+                ZrCore_String_GetNativeString(function->functionName);
+        if (functionName != ZR_NULL && strcmp(functionName, name) == 0) {
+            return function;
+        }
+    }
+    for (index = 0u; index < function->childFunctionLength; index++) {
+        SZrFunction *match = ownership_optional_find_child_function(
+                &function->childFunctionList[index], name);
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+    return ZR_NULL;
+}
+
+static TZrUInt32 ownership_optional_count_direct_opcode(
+        const SZrFunction *function,
+        EZrInstructionCode opcode) {
+    TZrUInt32 count = 0u;
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return 0u;
+    }
+    for (index = 0u; index < function->instructionsLength; index++) {
+        if (function->instructionsList[index].instruction.operationCode == opcode) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void test_weak_optional_intrinsic_named_members_use_normal_dispatch(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn share(): int { return 1; }\n"
+            "    pub const fn degrade(): int { return 2; }\n"
+            "    pub const fn wake(): int { return 4; }\n"
+            "    pub const fn intoGc(): int { return 8; }\n"
+            "    pub const fn drop(): int { return 16; }\n"
+            "}\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    var shareValue = weak?.share();\n"
+            "    var degradeValue = weak?.degrade();\n"
+            "    var wakeValue = weak?.wake();\n"
+            "    var intoGcValue = weak?.intoGc();\n"
+            "    var dropValue = weak?.drop();\n"
+            "    var mask = 0;\n"
+            "    if (shareValue == 1 && degradeValue == 2 && wakeValue == 4 &&\n"
+            "        intoGcValue == 8 && dropValue == 16) { mask = mask + 1; }\n"
+            "    drop(shared);\n"
+            "    var expired = weak?.share();\n"
+            "    if (expired == null) { mask = mask + 2; }\n"
+            "    return mask;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "weak_optional_intrinsic_named_members.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    SZrFunction *runFunction;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    runFunction = ownership_optional_find_child_function(function, "run");
+    TEST_ASSERT_NOT_NULL(runFunction);
+    TEST_ASSERT_EQUAL_UINT32(
+            1u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+    TEST_ASSERT_EQUAL_UINT32(
+            1u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_DEGRADE)));
+    TEST_ASSERT_EQUAL_UINT32(
+            6u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_WAKE)));
+    TEST_ASSERT_EQUAL_UINT32(
+            0u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)));
+    TEST_ASSERT_EQUAL_UINT32(
+            7u,
+            ownership_optional_count_direct_opcode(
+                    runFunction, ZR_INSTRUCTION_ENUM(OWN_DROP)));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(3, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 #endif

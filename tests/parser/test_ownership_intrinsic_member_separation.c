@@ -1648,6 +1648,7 @@ int main(void) {
     RUN_TEST(test_weak_callable_optional_and_direct_call_contracts);
     RUN_TEST(test_named_function_optional_call_is_rejected);
     RUN_TEST(test_nullable_callable_variable_shadows_named_function);
+    RUN_TEST(test_weak_optional_intrinsic_named_members_use_normal_dispatch);
     RUN_TEST(test_ownership_guard_binary_roundtrip_preserves_execution_projection);
     return UNITY_END();
 }
