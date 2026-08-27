@@ -811,6 +811,33 @@ or construct type/ownership messages itself. Receiver method calls remain a
 separate migration boundary because their detailed producer path is still
 owned by the active Syntax L8 milestone.
 
+## Assignment Compatibility Diagnostic Ownership
+
+Ordinary assignment, explicit typed initialization, and return-value
+compatibility are parser-owned. After canonical compatibility rejects a
+source/target pair, type inference classifies the structured ownership shells
+before falling back to the generic type-mismatch diagnostic. Ownership
+qualifier mismatches use descriptor `2008` and `ownership_mismatch`; existing
+borrowed and loaned escape classifications retain their dedicated descriptors
+and messages. Legal owner reborrow paths remain accepted before diagnostic
+classification.
+
+Each ownership rejection appends an `SZrSemanticOwnershipFact` at the exact
+source-expression range. `ZrParser_SemanticFacts_FindOwnershipAtPosition`
+selects the narrowest containing fact. When two candidates have equal width,
+a violation fact wins over a non-violation fact; otherwise original append
+order is stable. This keeps a broad declaration or container fact from hiding
+the precise assignment failure without changing unrelated ownership query
+ordering.
+
+The LSP analyzer now delegates assignment, explicit initializer, and return
+compatibility to parser inference, publishes the current compiler diagnostic,
+and projects `ZrParser_SemanticQuery_Diagnostics`. It does not reconstruct
+ownership compatibility, messages, causes, suggestions, ranges, help, or
+fixes. Receiver method-call compatibility remains a separate producer
+boundary, and the existing borrow/loan return related-range enrichment remains
+a consumer of canonical escape facts rather than part of this migration.
+
 - Private bitwise zero-minus shift supported-nonnegative count bitwise-not OR counterpart deep-chain inference is now modularized without changing the accepted semantic fact surface or local LSP query behavior. The behavior-preserving split moves the zero-minus / unary-minus zero-minus bitwise-not OR counterpart deep helper chain into internal `type_inference_bitwise_identity_bitwise_not_or_counterpart_deep.c/.h`, while `type_inference_bitwise_identity_bitwise_not_or_counterpart.c` keeps safe negation, unary-minus direct leaf, zero-wrapper skipper, and the public dispatcher. No parser or LSP cases were added or removed: the private parser target remains 260 cases and the private-mask LSP target remains 224 queries. WSL gcc and WSL clang isolated focused validation passed private parser 260 tests / 0 failures plus private-mask LSP PASS; Windows MSVC validation passed the same focused pair under `build-msvc-lsp-bitwise-zero` with `VSCMD_VER=17.14.34`. Public headers, ordinary supported-count files, private mask count-side readers, wrapped supported-count readers, global zero-wrapper stripping, semantic facts, arbitrary normalization, fixed point, and CFG-wide loop dataflow remain unchanged. Full repository GREEN is not claimed.
 
 `SZrSemanticContext` 是编译期语义事实的唯一共享容器。parser、type inference、semantic analyzer 负责把表达式类型、引用、数值、可达性、逻辑和所有权事实写入这里；LSP 已开始查询这些事实，Debug 和 REPL 已开始接入同一诊断/表达式方向，完整事实复用仍在后续推进，避免各自复制一套局部推断规则。

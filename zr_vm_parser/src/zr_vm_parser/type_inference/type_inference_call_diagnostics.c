@@ -58,12 +58,10 @@ static EZrCallOwnershipDiagnosticKind call_diagnostic_classify_ownership(
          passingMode == ZR_PARAMETER_PASSING_MODE_REF)) {
         return ZR_CALL_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_WAKE;
     }
-    if (parameterType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
-        argumentType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
+    if (argumentType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
         return ZR_CALL_OWNERSHIP_DIAGNOSTIC_BORROW_ESCAPE;
     }
-    if (parameterType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
-        argumentType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
+    if (argumentType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
         return ZR_CALL_OWNERSHIP_DIAGNOSTIC_LOAN_ESCAPE;
     }
     if (parameterType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
@@ -189,6 +187,79 @@ static EZrParameterPassingMode call_diagnostic_passing_mode_at(
     return mode != ZR_NULL ? *mode : ZR_PARAMETER_PASSING_MODE_VALUE;
 }
 
+TZrBool type_inference_diagnostic_report_ownership_mismatch(
+        SZrCompilerState *cs,
+        EZrParameterPassingMode passingMode,
+        SZrAstNode *node,
+        SZrFileRange location,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType) {
+    EZrCallOwnershipDiagnosticKind kind;
+    SZrStructuredDiagnostic diagnostic;
+    SZrSemanticOwnershipFact fact;
+    TZrChar expectedBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    TZrChar actualBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    const TZrChar *expectedText;
+    const TZrChar *actualText;
+    TZrBool built = ZR_FALSE;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL ||
+        expectedType == ZR_NULL || actualType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    kind = call_diagnostic_classify_ownership(
+            passingMode, expectedType, actualType);
+    if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_NONE) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_WAKE) {
+        built = ZrParser_DiagnosticBuilder_BuildWeakWake(
+                cs->state, &diagnostic, location);
+    } else if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_BORROW_ESCAPE) {
+        built = ZrParser_DiagnosticBuilder_BuildBorrowEscape(
+                cs->state, &diagnostic, location);
+    } else if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_LOAN_ESCAPE) {
+        built = ZrParser_DiagnosticBuilder_BuildLoanEscape(
+                cs->state, &diagnostic, location);
+    } else if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_OWNER_TO_PLAIN) {
+        built = ZrParser_DiagnosticBuilder_BuildOwnerToPlainEscape(
+                cs->state, &diagnostic, location);
+    } else {
+        expectedText = ZrParser_TypeNameString_Get(
+                cs->state, expectedType, expectedBuffer, sizeof(expectedBuffer));
+        actualText = ZrParser_TypeNameString_Get(
+                cs->state, actualType, actualBuffer, sizeof(actualBuffer));
+        built = ZrParser_DiagnosticBuilder_BuildOwnershipMismatch(
+                cs->state,
+                &diagnostic,
+                location,
+                expectedText != ZR_NULL ? expectedText : "unknown",
+                actualText != ZR_NULL ? actualText : "unknown");
+    }
+    if (!built) {
+        return ZR_FALSE;
+    }
+
+    if (cs->semanticContext != ZR_NULL) {
+        memset(&fact, 0, sizeof(fact));
+        fact.node = node;
+        fact.range = location;
+        fact.kind = ZR_SEMANTIC_OWNERSHIP_FACT_ERROR;
+        fact.qualifier = actualType->ownershipQualifier;
+        fact.symbolId = ZR_SEMANTIC_ID_INVALID;
+        fact.lifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
+        fact.ownerLifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
+        fact.isViolation = ZR_TRUE;
+        fact.diagnosticMessage = diagnostic.message;
+        (void)ZrParser_SemanticFacts_AppendOwnership(
+                cs->semanticContext, &fact);
+    }
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+    return ZR_TRUE;
+}
+
 TZrBool type_inference_call_diagnostic_report_ownership_mismatch(
         SZrCompilerState *cs,
         const SZrFunctionTypeInfo *funcType,
@@ -199,17 +270,9 @@ TZrBool type_inference_call_diagnostic_report_ownership_mismatch(
     SZrAstNodeArray *parameters = call_diagnostic_parameter_list(funcType);
     const SZrInferredType *parameterType;
     SZrAstNode *argumentNode;
-    EZrCallOwnershipDiagnosticKind kind;
     EZrParameterPassingMode passingMode;
-    SZrStructuredDiagnostic diagnostic;
-    SZrSemanticOwnershipFact fact;
-    TZrChar expectedBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
-    TZrChar actualBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
-    const TZrChar *expectedText;
-    const TZrChar *actualText;
-    TZrBool built = ZR_FALSE;
 
-    if (cs == ZR_NULL || cs->state == ZR_NULL || resolvedSignature == ZR_NULL ||
+    if (cs == ZR_NULL || resolvedSignature == ZR_NULL ||
         argumentType == ZR_NULL || parameters == ZR_NULL ||
         parameterIndex >= parameters->count ||
         parameterIndex >= resolvedSignature->parameterTypes.length) {
@@ -222,58 +285,16 @@ TZrBool type_inference_call_diagnostic_report_ownership_mismatch(
             call, parameters, parameterIndex);
     passingMode = call_diagnostic_passing_mode_at(
             resolvedSignature, parameterIndex);
-    kind = call_diagnostic_classify_ownership(
-            passingMode, parameterType, argumentType);
-    if (parameterType == ZR_NULL || argumentNode == ZR_NULL ||
-        kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_NONE) {
+    if (parameterType == ZR_NULL || argumentNode == ZR_NULL) {
         return ZR_FALSE;
     }
-
-    ZrParser_StructuredDiagnostic_Init(&diagnostic);
-    if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_WAKE) {
-        built = ZrParser_DiagnosticBuilder_BuildWeakWake(
-                cs->state, &diagnostic, argumentNode->location);
-    } else if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_BORROW_ESCAPE) {
-        built = ZrParser_DiagnosticBuilder_BuildBorrowEscape(
-                cs->state, &diagnostic, argumentNode->location);
-    } else if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_LOAN_ESCAPE) {
-        built = ZrParser_DiagnosticBuilder_BuildLoanEscape(
-                cs->state, &diagnostic, argumentNode->location);
-    } else if (kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_OWNER_TO_PLAIN) {
-        built = ZrParser_DiagnosticBuilder_BuildOwnerToPlainEscape(
-                cs->state, &diagnostic, argumentNode->location);
-    } else {
-        expectedText = ZrParser_TypeNameString_Get(
-                cs->state, parameterType, expectedBuffer, sizeof(expectedBuffer));
-        actualText = ZrParser_TypeNameString_Get(
-                cs->state, argumentType, actualBuffer, sizeof(actualBuffer));
-        built = ZrParser_DiagnosticBuilder_BuildOwnershipMismatch(
-                cs->state,
-                &diagnostic,
-                argumentNode->location,
-                expectedText != ZR_NULL ? expectedText : "unknown",
-                actualText != ZR_NULL ? actualText : "unknown");
-    }
-    if (!built) {
-        return ZR_FALSE;
-    }
-
-    if (cs->semanticContext != ZR_NULL) {
-        memset(&fact, 0, sizeof(fact));
-        fact.node = argumentNode;
-        fact.range = argumentNode->location;
-        fact.kind = ZR_SEMANTIC_OWNERSHIP_FACT_ERROR;
-        fact.qualifier = argumentType->ownershipQualifier;
-        fact.symbolId = ZR_SEMANTIC_ID_INVALID;
-        fact.lifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
-        fact.ownerLifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
-        fact.isViolation = ZR_TRUE;
-        fact.diagnosticMessage = diagnostic.message;
-        (void)ZrParser_SemanticFacts_AppendOwnership(
-                cs->semanticContext, &fact);
-    }
-    ZrParser_Compiler_StructuredError(cs, &diagnostic);
-    return ZR_TRUE;
+    return type_inference_diagnostic_report_ownership_mismatch(
+            cs,
+            passingMode,
+            argumentNode,
+            argumentNode->location,
+            parameterType,
+            argumentType);
 }
 
 TZrBool type_inference_call_diagnostic_report_argument_mismatch(

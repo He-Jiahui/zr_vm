@@ -3713,6 +3713,77 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
     TEST_PASS(timer, "Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
 }
 
+static void test_semantic_analyzer_reports_assignment_ownership_mismatch(SZrState *state) {
+    const TZrChar *summary =
+            "Semantic Analyzer Reports Assignment Ownership Mismatch";
+    const TZrChar *testCode =
+            "resource class Resource {}\n"
+            "fn assign(target: Unique<Resource>, source: Shared<Resource>) {\n"
+            "    target = source;\n"
+            "}\n";
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFileRange sourceRange;
+    SZrDiagnostic *diagnostic;
+    const SZrSemanticOwnershipFact *fact;
+
+    TEST_START(summary);
+    TEST_INFO("Ownership compatibility in assignment expressions",
+              "Assigning Shared<T> to Unique<T> should project the parser diagnostic and exact ownership fact");
+
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    sourceName = ZrCore_String_Create(
+            state,
+            "ownership_assignment_mismatch_test.zr",
+            strlen("ownership_assignment_mismatch_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (analyzer == ZR_NULL || ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer, summary, "Failed to analyze assignment fixture");
+        return;
+    }
+
+    sourceRange = file_range_for_nth_substring(
+            testCode, "source;", 0U, ZR_FALSE);
+    diagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "ownership_mismatch", sourceRange.start.line);
+    fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+            analyzer->semanticContext, sourceRange);
+    if (diagnostic == ZR_NULL ||
+        diagnostic->descriptorId != 2008U ||
+        diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+        diagnostic->location.start.offset != sourceRange.start.offset ||
+        diagnostic->location.end.offset !=
+                sourceRange.start.offset + strlen("source") ||
+        diagnostic->noFixReason !=
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION ||
+        (diagnostic->fixes.isValid && diagnostic->fixes.length != 0U) ||
+        fact == ZR_NULL ||
+        fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+        fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
+        !fact->isViolation ||
+        fact->range.start.offset != sourceRange.start.offset ||
+        fact->range.end.offset !=
+                sourceRange.start.offset + strlen("source")) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  summary,
+                  "Expected descriptor 2008 and an exact Shared ownership fact at the assignment source");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, summary);
+}
+
 static void test_semantic_analyzer_reports_owner_to_plain_initializer_escape(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Owner To Plain Initializer Escape");
@@ -5037,6 +5108,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_declared_ownership_initializer_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_assignment_ownership_mismatch(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);

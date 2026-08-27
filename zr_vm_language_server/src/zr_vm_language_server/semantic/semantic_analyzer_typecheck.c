@@ -1431,29 +1431,6 @@ static TZrBool semantic_emit_ownership_diagnostic(
     return diagnostic != ZR_NULL;
 }
 
-static TZrBool semantic_emit_ownership_compatibility_diagnostic(
-        SZrState *state,
-        SZrSemanticAnalyzer *analyzer,
-        SZrAstNode *node,
-        SZrFileRange location,
-        const SZrInferredType *expectedType,
-        const SZrInferredType *actualType) {
-    SZrSemanticOwnershipDiagnosticMatch match;
-
-    semantic_ownership_diagnostic_match_init(&match);
-    if (!semantic_prepare_ownership_mismatch_diagnostic(state,
-                                                       node,
-                                                       location,
-                                                       expectedType,
-                                                       actualType,
-                                                       &match)) {
-        return ZR_FALSE;
-    }
-
-    return semantic_emit_ownership_diagnostic(state, analyzer, &match);
-}
-
-
 static TZrBool semantic_type_from_ast(SZrState *state,
                                       SZrSemanticAnalyzer *analyzer,
                                       const SZrType *typeNode,
@@ -1907,17 +1884,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                 &rightType,
                                 assignExpr->right->location,
                                 &expectedLocation)) {
-                        if (!semantic_emit_ownership_compatibility_diagnostic(state,
-                                                                              analyzer,
-                                                                              assignExpr->right,
-                                                                              assignExpr->right->location,
-                                                                              &leftType,
-                                                                              &rightType)) {
-                            (void)semantic_publish_current_compiler_diagnostic(
-                                    state,
-                                    analyzer,
-                                    assignExpr->right->location);
-                        }
+                        (void)semantic_publish_current_compiler_diagnostic(
+                                state,
+                                analyzer,
+                                assignExpr->right->location);
                     }
                 }
                 if (hasRightType) {
@@ -1975,17 +1945,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                          &expectedLocation);
                 }
                 if (hasValueType && !compatible) {
-                    if (!semantic_emit_ownership_compatibility_diagnostic(state,
-                                                                          analyzer,
-                                                                          varDecl->value,
-                                                                          varDecl->value->location,
-                                                                          &expectedType,
-                                                                          &valueType)) {
-                        (void)semantic_publish_current_compiler_diagnostic(
-                                state,
-                                analyzer,
-                                varDecl->value->location);
-                    }
+                    (void)semantic_publish_current_compiler_diagnostic(
+                            state,
+                            analyzer,
+                            varDecl->value->location);
                 }
                 ZrParser_InferredType_Free(state, &valueType);
                 ZrParser_InferredType_Free(state, &expectedType);
@@ -2075,15 +2038,6 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                         semantic_add_cannot_infer_exact_type_diagnostic(state,
                                                                         analyzer,
                                                                         returnStmt->expr->location);
-                    }
-                    if (hasActualType && !compatible && !emittedOwnershipDiagnostic) {
-                        emittedOwnershipDiagnostic =
-                                semantic_emit_ownership_compatibility_diagnostic(state,
-                                                                                 analyzer,
-                                                                                 returnStmt->expr,
-                                                                                 node->location,
-                                                                                 &expectedType,
-                                                                                 &actualType);
                     }
                     if (hasActualType && !compatible && !emittedOwnershipDiagnostic) {
                         (void)semantic_publish_current_compiler_diagnostic(

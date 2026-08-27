@@ -1348,10 +1348,11 @@ static void test_function_call_compatibility_publishes_detailed_type_mismatch_fa
     ZrParser_Ast_Free(g_state, ast);
 }
 
-static void assert_function_call_ownership_diagnostic(
+static void assert_compiler_ownership_diagnostic(
         const TZrChar *source,
         const TZrChar *sourceNameText,
-        const TZrChar *argumentNeedle,
+        const TZrChar *locationNeedle,
+        TZrSize locationOffset,
         const TZrChar *diagnosticCode,
         TZrUInt32 descriptorId,
         EZrOwnershipQualifier qualifier) {
@@ -1370,7 +1371,12 @@ static void assert_function_call_ownership_diagnostic(
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
     TEST_ASSERT_TRUE(find_position_for_substring(
-            source, sourceName, argumentNeedle, 0U, 0U, &argumentPosition));
+            source,
+            sourceName,
+            locationNeedle,
+            0U,
+            locationOffset,
+            &argumentPosition));
 
     memset(&cs, 0, sizeof(cs));
     ZrParser_CompilerState_Init(&cs, g_state);
@@ -1438,20 +1444,123 @@ static void test_function_call_compatibility_publishes_ownership_diagnostics(voi
             "    return 0;\n"
             "}\n";
 
-    assert_function_call_ownership_diagnostic(
+    assert_compiler_ownership_diagnostic(
             mismatchSource,
             "compiler_function_call_ownership_mismatch_test.zr",
             "resource);",
+            0U,
             "ownership_mismatch",
             2008U,
             ZR_OWNERSHIP_QUALIFIER_SHARED);
-    assert_function_call_ownership_diagnostic(
+    assert_compiler_ownership_diagnostic(
             weakSource,
             "compiler_function_call_weak_wake_test.zr",
             "watcher);",
+            0U,
             "weak_value_requires_wake",
             4004U,
             ZR_OWNERSHIP_QUALIFIER_WEAK);
+}
+
+static void test_initializer_compatibility_publishes_ownership_diagnostic(void) {
+    const TZrChar *initializerSource =
+            "resource class Resource {}\n"
+            "fn run(source: Shared<Resource>) {\n"
+            "    var owner: Unique<Resource> = source;\n"
+            "}\n";
+
+    assert_compiler_ownership_diagnostic(
+            initializerSource,
+            "compiler_initializer_ownership_mismatch_test.zr",
+            "= source;",
+            2U,
+            "ownership_mismatch",
+            2008U,
+            ZR_OWNERSHIP_QUALIFIER_SHARED);
+}
+
+static void test_return_compatibility_api_publishes_ownership_diagnostic(void) {
+    SZrCompilerState cs;
+    SZrInferredType expectedType;
+    SZrInferredType actualType;
+    SZrFileRange actualLocation;
+    SZrString *sourceName;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrSemanticOwnershipFact *ownershipFact;
+    const SZrStructuredDiagnostic *published;
+
+    memset(&cs, 0, sizeof(cs));
+    memset(&actualLocation, 0, sizeof(actualLocation));
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_return_ownership_mismatch_test.zr",
+            strlen("compiler_return_ownership_mismatch_test.zr"));
+    actualLocation.source = sourceName;
+    actualLocation.start.offset = 91U;
+    actualLocation.start.line = 3;
+    actualLocation.start.column = 12;
+    actualLocation.end.offset = 97U;
+    actualLocation.end.line = 3;
+    actualLocation.end.column = 18;
+
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    ZrParser_InferredType_Init(g_state, &expectedType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(g_state, &actualType, ZR_VALUE_TYPE_OBJECT);
+    expectedType.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+    actualType.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+
+    TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_CheckDetailed(
+            &cs,
+            &expectedType,
+            &actualType,
+            actualLocation,
+            ZR_NULL));
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2008U, cs.structuredError.descriptorId);
+    TEST_ASSERT_EQUAL_STRING(
+            "ownership_mismatch",
+            ZrCore_String_GetNativeString(cs.structuredError.code));
+    TEST_ASSERT_EQUAL_UINT64(
+            actualLocation.start.offset,
+            cs.structuredError.location.start.offset);
+
+    ownershipFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+            cs.semanticContext, actualLocation);
+    TEST_ASSERT_NOT_NULL(ownershipFact);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_SEMANTIC_OWNERSHIP_FACT_ERROR, ownershipFact->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_QUALIFIER_SHARED, ownershipFact->qualifier);
+    TEST_ASSERT_TRUE(ownershipFact->isViolation);
+
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    cs.hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(&cs);
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+    published = find_query_diagnostic_by_code(
+            cs.semanticContext, "ownership_mismatch");
+    TEST_ASSERT_NOT_NULL(published);
+    TEST_ASSERT_EQUAL_UINT32(2008U, published->descriptorId);
+    TEST_ASSERT_EQUAL_UINT64(
+            actualLocation.start.offset,
+            published->location.start.offset);
+    TEST_ASSERT_FALSE(published->fixes.isValid);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+            published->noFixReason);
+
+    ZrParser_InferredType_Free(g_state, &actualType);
+    ZrParser_InferredType_Free(g_state, &expectedType);
+    ZrParser_CompilerState_Free(&cs);
 }
 
 static void test_const_assignment_publishes_structured_semantic_diagnostic(void) {
@@ -2809,6 +2918,8 @@ int main(void) {
     RUN_TEST(test_assignment_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_function_call_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_function_call_compatibility_publishes_ownership_diagnostics);
+    RUN_TEST(test_initializer_compatibility_publishes_ownership_diagnostic);
+    RUN_TEST(test_return_compatibility_api_publishes_ownership_diagnostic);
     RUN_TEST(test_const_assignment_publishes_structured_semantic_diagnostic);
     RUN_TEST(test_const_field_assignment_matches_constructor_context_contract);
     RUN_TEST(test_invalid_interface_variance_publishes_structured_semantic_diagnostic);

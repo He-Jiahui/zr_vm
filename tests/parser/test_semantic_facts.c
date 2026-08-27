@@ -419,6 +419,52 @@ static void test_semantic_reachability_position_preserves_first_equal_priority_f
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_semantic_ownership_position_prefers_narrowest_violation(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrSemanticOwnershipFact broadViolation;
+    SZrSemanticOwnershipFact narrowFact;
+    SZrSemanticOwnershipFact narrowViolation;
+    const SZrSemanticOwnershipFact *found;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&broadViolation, 0, sizeof(broadViolation));
+    broadViolation.range = test_range(10, 40);
+    broadViolation.kind = ZR_SEMANTIC_OWNERSHIP_FACT_ERROR;
+    broadViolation.qualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+    broadViolation.isViolation = ZR_TRUE;
+
+    memset(&narrowFact, 0, sizeof(narrowFact));
+    narrowFact.range = test_range(20, 24);
+    narrowFact.kind = ZR_SEMANTIC_OWNERSHIP_FACT_COPY;
+    narrowFact.qualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+
+    memset(&narrowViolation, 0, sizeof(narrowViolation));
+    narrowViolation.range = narrowFact.range;
+    narrowViolation.kind = ZR_SEMANTIC_OWNERSHIP_FACT_ERROR;
+    narrowViolation.qualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+    narrowViolation.isViolation = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendOwnership(
+            context, &broadViolation));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendOwnership(
+            context, &narrowFact));
+    found = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+            context, test_range(22, 22));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_OWNERSHIP_FACT_COPY, found->kind);
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendOwnership(
+            context, &narrowViolation));
+    found = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+            context, test_range(22, 22));
+    TEST_ASSERT_NOT_NULL(found);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_OWNERSHIP_FACT_ERROR, found->kind);
+    TEST_ASSERT_TRUE(found->isViolation);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_SHARED, found->qualifier);
+
+    ZrParser_SemanticContext_Free(context);
+}
+
 static void test_semantic_context_reset_clears_facts(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrSemanticReachabilityFact fact;
@@ -892,6 +938,7 @@ int main(void) {
     RUN_TEST(test_semantic_numeric_fact_by_node_prefers_segmented_range);
     RUN_TEST(test_semantic_reachability_position_prefers_direct_exit_cause);
     RUN_TEST(test_semantic_reachability_position_preserves_first_equal_priority_fact);
+    RUN_TEST(test_semantic_ownership_position_prefers_narrowest_violation);
     RUN_TEST(test_semantic_context_reset_clears_facts);
     RUN_TEST(test_semantic_facts_resolve_linear_definite_assignment_from_reference_order);
     RUN_TEST(test_cfg_definite_assignment_marks_self_initializer_read_uninit);

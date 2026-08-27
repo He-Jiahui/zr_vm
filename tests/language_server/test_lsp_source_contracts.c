@@ -1294,6 +1294,26 @@ static void test_named_call_compatibility_uses_parser_inference_projection(void)
     free(typecheck);
 }
 
+static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+
+    if (typecheck == NULL) {
+        printf("FAIL: could not read semantic analyzer typecheck source\n");
+        g_failures++;
+        return;
+    }
+
+    assert_text_contains(
+        typecheck,
+        "semantic_publish_current_compiler_diagnostic");
+    assert_text_contains_none(
+        typecheck,
+        "semantic_emit_ownership_compatibility_diagnostic");
+
+    free(typecheck);
+}
+
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");
@@ -1345,6 +1365,7 @@ int main(void) {
     test_interface_const_field_diagnostics_use_parser_query_projection();
     test_unresolved_reference_diagnostics_use_parser_query_projection();
     test_named_call_compatibility_uses_parser_inference_projection();
+    test_assignment_ownership_uses_parser_diagnostic_projection();
 
     if (g_failures != 0) {
         printf("\nFAILED: %d LSP source contract test failure(s)\n", g_failures);
@@ -1396,6 +1417,7 @@ int main(void) {
     printf("PASS: Interface const-field diagnostics use parser query projection\n");
     printf("PASS: Unresolved-reference diagnostics use parser query projection\n");
     printf("PASS: Named-call compatibility uses parser inference projection\n");
+    printf("PASS: Assignment ownership uses parser diagnostic projection\n");
     printf("\nPASSED: LSP source contract tests\n");
     return 0;
 }

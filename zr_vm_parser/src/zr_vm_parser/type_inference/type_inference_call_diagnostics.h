@@ -7,6 +7,13 @@ const TZrChar *type_inference_call_diagnostic_ownership_message(
         EZrParameterPassingMode passingMode,
         const SZrInferredType *parameterType,
         const SZrInferredType *argumentType);
+TZrBool type_inference_diagnostic_report_ownership_mismatch(
+        SZrCompilerState *cs,
+        EZrParameterPassingMode passingMode,
+        SZrAstNode *node,
+        SZrFileRange location,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType);
 TZrBool type_inference_call_diagnostic_report_ownership_mismatch(
         SZrCompilerState *cs,
         const SZrFunctionTypeInfo *funcType,

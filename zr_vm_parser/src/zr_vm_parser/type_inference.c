@@ -8,6 +8,7 @@
 #include "type_inference_internal.h"
 #include "type_inference/type_inference_semantic_facts.h"
 #include "type_inference/type_inference_reflection_surface.h"
+#include "type_inference/type_inference_call_diagnostics.h"
 #include "zr_vm_parser/ast.h"
 #include "type_inference/type_inference_constant_eval.h"
 #include "compiler/compile_tool_binding.h"
@@ -317,6 +318,16 @@ static TZrBool type_inference_report_ownership_flow_escape(SZrCompilerState *cs,
     const TZrChar *diagnosticMessage;
 
     if (cs == ZR_NULL || targetType == ZR_NULL || sourceType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (type_inference_diagnostic_report_ownership_mismatch(
+            cs,
+            ZR_PARAMETER_PASSING_MODE_VALUE,
+            ZR_NULL,
+            location,
+            targetType,
+            sourceType)) {
         return ZR_FALSE;
     }
 
