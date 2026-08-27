@@ -570,6 +570,9 @@ ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZ
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternCallableDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration);
+ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternStructDecorators(
+        SZrCompilerState *cs,
+        SZrAstNode *declaration);
 
 ZR_PARSER_API TZrBool ZrParser_Quickening_CollectLoadTypedArithmeticProbeStats(
         const SZrFunction *function,

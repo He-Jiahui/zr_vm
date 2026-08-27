@@ -158,6 +158,7 @@ v1 允许的 decorator 面：
 - `#zr.ffi.entry("Symbol")#`
 - `#zr.ffi.callconv("cdecl"|"stdcall"|"system")#`
 - `#zr.ffi.charset("utf8"|"utf16"|"ansi")#`
+- `#zr.ffi.kind("struct"|"union")#`
 - `#zr.ffi.pack(n)#`
 - `#zr.ffi.align(n)#`
 - `#zr.ffi.offset(n)#`
@@ -206,6 +207,26 @@ charset 子集。
 normal compiler 和 LSP analyzer 都调用同一公共 validator。LSP 只消费 compiler 发布的
 persistent semantic diagnostic fact，再投影 protocol range/code/message/cause/suggestion/
 disposition；不得按 decorator 名、AST 文本或本地 allowed-value table 重建规则。
+
+### Struct And Field Decorator Validation And Diagnostics
+
+extern struct 及其字段由 parser/compiler 的
+`ZrParser_Compiler_ValidateExternStructDecorators(...)` 单一校验。声明级规则为：
+
+- `kind` 只接受 `"struct"` 或 `"union"`；
+- `pack` 和 `align` 只接受正的、`uint32` 范围内的二次幂；
+- 字段 `offset` 只接受 `uint32` 范围内的非负整数；
+- 字段 `charset` 只接受 `"utf8"`、`"utf16"` 或 `"ansi"`。
+
+这些规则消费 decorator path、call shape 和 literal value，不按类型名、字段名或源码文本
+猜测。normal compiler 与 LSP analyzer 都调用同一个公共 validator；LSP 原有的 struct/field
+decorator walker 和参数形状检查已删除。非法值复用 descriptor `2019` / code
+`invalid_decorator`，保留 error severity、semantic category、canonical message/cause/suggestion、
+零 fixes 和 `REQUIRES_USER_DECISION`。
+
+struct member lookahead 使用完整 parser cursor 快照，因此字段 decorator 的 primary range 精确
+覆盖 opening `#` 到 closing `#`。LSP 和 stdio 只投影该 persistent semantic diagnostic fact，
+不得恢复本地 allowed-name/value table 或 `compiler_error` 并行兜底。
 
 ## Semantic And Type Visibility
 

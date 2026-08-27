@@ -668,75 +668,6 @@ static void semantic_add_invalid_decorator(SZrState *state,
                                                     "invalid_decorator");
 }
 
-static void semantic_validate_extern_struct_decorators(SZrState *state,
-                                                       SZrSemanticAnalyzer *analyzer,
-                                                       SZrAstNodeArray *decorators) {
-    TZrSize index;
-
-    if (decorators == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < decorators->count; index++) {
-        const TZrChar *leafName = ZR_NULL;
-        TZrBool hasCall = ZR_FALSE;
-        SZrFunctionCall *call = ZR_NULL;
-        SZrAstNode *decoratorNode = decorators->nodes[index];
-
-        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) || leafName == ZR_NULL) {
-            continue;
-        }
-
-        if ((semantic_text_equals(leafName, "pack") || semantic_text_equals(leafName, "align")) &&
-            hasCall && semantic_call_has_single_integer_arg(call)) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "pack") || semantic_text_equals(leafName, "align")) {
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                           "zr.ffi.pack/align require a single integer argument");
-        } else {
-            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-            snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern struct declarations", leafName);
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
-        }
-    }
-}
-
-static void semantic_validate_extern_struct_field_decorators(SZrState *state,
-                                                             SZrSemanticAnalyzer *analyzer,
-                                                             SZrAstNodeArray *decorators) {
-    TZrSize index;
-
-    if (decorators == ZR_NULL) {
-        return;
-    }
-
-    for (index = 0; index < decorators->count; index++) {
-        const TZrChar *leafName = ZR_NULL;
-        TZrBool hasCall = ZR_FALSE;
-        SZrFunctionCall *call = ZR_NULL;
-        SZrAstNode *decoratorNode = decorators->nodes[index];
-
-        if (!semantic_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) || leafName == ZR_NULL) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "offset") && hasCall && semantic_call_has_single_integer_arg(call)) {
-            continue;
-        }
-
-        if (semantic_text_equals(leafName, "offset")) {
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode,
-                                           "zr.ffi.offset requires a single integer argument");
-        } else {
-            TZrChar buffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-            snprintf(buffer, sizeof(buffer), "zr.ffi.%s is not valid on extern struct fields", leafName);
-            semantic_add_invalid_decorator(state, analyzer, decoratorNode, buffer);
-        }
-    }
-}
-
 static void semantic_validate_extern_enum_decorators(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      SZrAstNodeArray *decorators) {
@@ -1803,18 +1734,6 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                        node->data.classDeclaration.decorators);
             break;
 
-        case ZR_AST_STRUCT_DECLARATION:
-            semantic_validate_extern_struct_decorators(state,
-                                                       analyzer,
-                                                       node->data.structDeclaration.decorators);
-            break;
-
-        case ZR_AST_STRUCT_FIELD:
-            semantic_validate_extern_struct_field_decorators(state,
-                                                             analyzer,
-                                                             node->data.structField.decorators);
-            break;
-
         case ZR_AST_ENUM_DECLARATION:
             semantic_validate_extern_enum_decorators(state,
                                                      analyzer,
@@ -1858,9 +1777,19 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             if (externBlock->declarations != ZR_NULL && externBlock->declarations->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < externBlock->declarations->count; i++) {
                     if (externBlock->declarations->nodes[i] != ZR_NULL) {
+                        SZrAstNode *declaration = externBlock->declarations->nodes[i];
+                        if (declaration->type == ZR_AST_STRUCT_DECLARATION &&
+                            !ZrParser_Compiler_ValidateExternStructDecorators(
+                                    analyzer->compilerState,
+                                    declaration)) {
+                            ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                                    state,
+                                    analyzer,
+                                    declaration->location);
+                        }
                         ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state,
                                                                               analyzer,
-                                                                              externBlock->declarations->nodes[i]);
+                                                                              declaration);
                     }
                 }
             }

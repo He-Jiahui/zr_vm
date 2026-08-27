@@ -1,4 +1,5 @@
 #include "compiler_internal.h"
+#include "compiler_extern_decorator_diagnostics.h"
 
 typedef struct SZrExternCallableDecoratorRule {
     const TZrChar *leafName;
@@ -135,37 +136,6 @@ static TZrBool compiler_extern_callable_arguments_valid(
     return ZR_FALSE;
 }
 
-static TZrBool compiler_extern_report_invalid_callable_decorator(
-        SZrCompilerState *cs,
-        SZrAstNode *decoratorNode,
-        const TZrChar *message) {
-    SZrStructuredDiagnostic diagnostic;
-
-    if (cs == ZR_NULL || cs->state == ZR_NULL || decoratorNode == ZR_NULL ||
-        message == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    ZrParser_StructuredDiagnostic_Init(&diagnostic);
-    if (!ZrParser_DiagnosticBuilder_Build(
-                cs->state,
-                &diagnostic,
-                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
-                decoratorNode->location,
-                "invalid_decorator",
-                message,
-                "The decorator is not a valid canonical zr.ffi directive for this extern callable declaration.",
-                "Use a supported zr.ffi callable decorator with the required argument shape and value.") ||
-        !ZrParser_StructuredDiagnostic_SetNoFixReason(
-                &diagnostic,
-                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
-        ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
-        ZrParser_Compiler_Error(cs, message, decoratorNode->location);
-        return ZR_FALSE;
-    }
-    ZrParser_Compiler_StructuredError(cs, &diagnostic);
-    return ZR_FALSE;
-}
-
 static TZrBool compiler_extern_validate_callable_rules(
         SZrCompilerState *cs,
         SZrAstNodeArray *decorators,
@@ -203,10 +173,12 @@ static TZrBool compiler_extern_validate_callable_rules(
             }
         }
         if (matchedRule == ZR_NULL) {
-            return compiler_extern_report_invalid_callable_decorator(
+            return compiler_extern_report_invalid_decorator(
                     cs,
                     decoratorNode,
-                    "Decorator is not valid on extern callable declarations");
+                    "Decorator is not valid on extern callable declarations",
+                    "The decorator is not a valid canonical zr.ffi directive for this extern callable declaration.",
+                    "Use a supported zr.ffi callable decorator with the required argument shape and value.");
         }
         if (!compiler_extern_callable_arguments_valid(
                     matchedRule->leafName, call)) {
@@ -214,8 +186,12 @@ static TZrBool compiler_extern_validate_callable_rules(
                      sizeof(message),
                      "zr.ffi.%s has invalid arguments for this extern callable declaration",
                      matchedRule->leafName);
-            return compiler_extern_report_invalid_callable_decorator(
-                    cs, decoratorNode, message);
+            return compiler_extern_report_invalid_decorator(
+                    cs,
+                    decoratorNode,
+                    message,
+                    "The decorator is not a valid canonical zr.ffi directive for this extern callable declaration.",
+                    "Use a supported zr.ffi callable decorator with the required argument shape and value.");
         }
     }
     return ZR_TRUE;

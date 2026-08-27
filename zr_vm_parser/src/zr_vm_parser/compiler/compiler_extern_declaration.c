@@ -83,17 +83,6 @@ static void compiler_enum_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
 }
 
-static const SZrExternStaticDecoratorRule kExternStructDecoratorRules[] = {
-        {"kind", ZR_TRUE},
-        {"pack", ZR_TRUE},
-        {"align", ZR_TRUE},
-};
-
-static const SZrExternStaticDecoratorRule kExternStructFieldDecoratorRules[] = {
-        {"offset", ZR_TRUE},
-        {"charset", ZR_TRUE},
-};
-
 static const SZrExternStaticDecoratorRule kExternEnumDecoratorRules[] = {
         {"underlying", ZR_TRUE},
 };
@@ -163,30 +152,8 @@ static TZrBool compiler_extern_validate_declaration_decorators(
                            cs, delegate->params, delegate->args);
         }
         case ZR_AST_STRUCT_DECLARATION: {
-            SZrStructDeclaration *structDecl = &declaration->data.structDeclaration;
-
-            if (!compiler_decorators_validate_static_rules(
-                        cs,
-                        structDecl->decorators,
-                        kExternStructDecoratorRules,
-                        ZR_ARRAY_COUNT(kExternStructDecoratorRules))) {
-                return ZR_FALSE;
-            }
-            if (structDecl->members != ZR_NULL) {
-                for (TZrSize index = 0; index < structDecl->members->count; index++) {
-                    SZrAstNode *member = structDecl->members->nodes[index];
-
-                    if (member != ZR_NULL && member->type == ZR_AST_STRUCT_FIELD &&
-                        !compiler_decorators_validate_static_rules(
-                                cs,
-                                member->data.structField.decorators,
-                                kExternStructFieldDecoratorRules,
-                                ZR_ARRAY_COUNT(kExternStructFieldDecoratorRules))) {
-                        return ZR_FALSE;
-                    }
-                }
-            }
-            return ZR_TRUE;
+            return ZrParser_Compiler_ValidateExternStructDecorators(
+                    cs, declaration);
         }
         case ZR_AST_ENUM_DECLARATION: {
             SZrEnumDeclaration *enumDecl = &declaration->data.enumDeclaration;

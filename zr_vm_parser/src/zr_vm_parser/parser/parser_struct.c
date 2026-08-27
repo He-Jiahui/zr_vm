@@ -471,16 +471,8 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             token == ZR_TK_VAR || token == ZR_TK_LET) {
             // 可能是字段，尝试解析
             // 需要向前看一个 token 来确定
-            TZrSize savedPos = ps->lexer->currentPos;
-            TZrInt32 savedChar = ps->lexer->currentChar;
-            TZrInt32 savedLine = ps->lexer->lineNumber;
-            TZrInt32 savedLastLine = ps->lexer->lastLine;
-            SZrToken savedToken = ps->lexer->t;
-            SZrToken savedLookahead = ps->lexer->lookahead;
-            TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-            TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-            TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-            TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
+            SZrParserCursor cursor;
+            save_parser_cursor(ps, &cursor);
             while (ps->lexer->t.token == ZR_TK_SHARP) {
                 SZrAstNode *decorator = parse_decorator_expression(ps);
                 if (decorator == ZR_NULL) {
@@ -506,42 +498,15 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_LET ||
                 nextToken == ZR_TK_CONST || nextToken == ZR_TK_USING) {
                 // 恢复状态并解析字段
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                restore_parser_cursor(ps, &cursor);
                 member = parse_struct_field(ps);
             } else if (nextToken == ZR_TK_AT) {
                 // 恢复状态并解析元函数
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                restore_parser_cursor(ps, &cursor);
                 member = parse_struct_meta_function(ps);
             } else {
                 // 恢复状态并解析方法
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                restore_parser_cursor(ps, &cursor);
                 member = parse_struct_method(ps);
             }
         } else if (token == ZR_TK_AT) {

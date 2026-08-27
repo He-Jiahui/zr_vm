@@ -352,6 +352,7 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
 }
 
 #include "test_semantic_analyzer_diagnostic_golden_parity_cases.h"
+#include "test_semantic_analyzer_extern_struct_decorator_cases.h"
 
 static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment) {
     const char *text;
@@ -5140,6 +5141,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_preserves_invalid_callable_decorator_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_invalid_extern_struct_decorator_golden_parity(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_invalid_extern_field_decorator_golden_parity(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);
