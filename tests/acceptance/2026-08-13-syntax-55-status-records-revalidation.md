@@ -257,6 +257,9 @@ optimized, and nested-function contracts. GCC, Clang, and MSVC now directly
 pass 31/31 and 14/14. Five additional clean legacy runners now propagate custom
 failures into Unity and pass on all three toolchains: exceptions 8/8, named
 arguments 10/10, instructions 95/95, meta 41/41, and module system 78/78.
+The permanent `test_log_failure_contract` CTest also passes 1/1 on all three: it
+requires an intentional probe to return exactly one Unity failure while still
+printing `cleanup_reached=1` after the failure macro.
 
 The remaining non-truthful custom runner set is intentionally not declared
 clean yet. `test_parser.c`, `test_semir_pipeline.c`, and `test_type_inference.c`

@@ -908,6 +908,13 @@ L8 project-feature runner remain frozen until the external callable-value exact
 test paths are released; final acceptance does not treat their current green
 summaries as sufficient.
 
+The common `ZR_TEST_FAIL` contract now has permanent regression coverage.
+`test_log_failure_contract` launches an unregistered intentional-failure probe
+and requires exit code 1, `1 Tests / 1 Failure / 0 Ignored`, and a cleanup marker
+reached after the macro call. The outer CMake verifier passes 1/1 on GCC, Clang,
+and MSVC, so the intentional child failure does not appear as a false failing
+CTest while both failure counting and cleanup control flow remain locked.
+
 The production source audit was rerun against the current tree. Literal searches
 for `%module`, `%compileTime`, `%extern`, `%test`, `%owned`, `%import`, `%borrow`,
 `%loan`, `%unique`, `%shared`, `%weak`, and `%func` under `zr_vm_parser` each
