@@ -878,6 +878,54 @@ current direct-call/failure coordinator because an isolated helper extraction
 would split prepare, invoke, resume, post-call refresh, and error ownership.
 Extracting that complete coordinator is the smallest coherent future split.
 
+### 2026-08-27 legacy-runner truthfulness and source-surface audit
+
+The pre-final test-quality pass found two additional runners whose internal
+failure text did not reach Unity. The instruction-execution runner first printed
+three failures for obsolete exact opcode names while still reporting
+`31 Tests / 0 Failures / 0 Ignored`. After its custom failure macro was made
+truthful, the controlled RED was `31 Tests / 3 Failures / 0 Ignored` with exit
+code 3. The assertions now require the current lowering contracts:
+`JUMP_IF_BOOL_FALSE`, `DIV_SIGNED_LOAD_CONST`, and `LOGICAL_NOT_BOOL`. GCC 11.4,
+Clang 14, and MSVC 19.44 each directly pass 31/31 with no failure marker.
+
+The lexer/parser/compiler execution runner had the same reporting defect. Its
+struct, class, and complete type-cast cases searched only the entry function,
+although the current fixtures place conversion instructions in declared child
+functions. Enabling Unity failure propagation produced the expected RED at
+`14 Tests / 3 Failures / 0 Ignored`, exit code 3. A bounded recursive function-
+tree query now retains the exact `TO_STRUCT`, `TO_OBJECT`, and primitive
+conversion contracts. All three toolchains directly pass 14/14.
+
+Five other legacy custom runners were already behaviorally green but could have
+hidden a future early-return failure. Their failure macros now set Unity's
+failure state and flush through the normal harness path. Serial direct execution
+on GCC, Clang, and MSVC passes exceptions 8/8, named arguments 10/10,
+instructions 95/95, meta 41/41, and module system 78/78, with every process
+returning zero and no `Fail -` marker. The module runner remains serial because
+its binary-roundtrip cases use fixed fixture paths. Three parser runners and the
+L8 project-feature runner remain frozen until the external callable-value exact
+test paths are released; final acceptance does not treat their current green
+summaries as sufficient.
+
+The production source audit was rerun against the current tree. Literal searches
+for `%module`, `%compileTime`, `%extern`, `%test`, `%owned`, `%import`, `%borrow`,
+`%loan`, `%unique`, `%shared`, `%weak`, and `%func` under `zr_vm_parser` each
+return zero. The removed ownership-member lowering classifier also has zero
+references. The lexer table reserves exactly `share`, `degrade`, `wake`,
+`intoGc`, and `drop`; the intrinsic parser accepts one positional argument and
+constructs `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION`. Member positions convert
+those same tokens back into ordinary identifiers. Type inference performs real
+member/call lookup, retries imported runtime metadata, and only then publishes a
+structured migration diagnostic when lookup still fails. The diagnostic cannot
+select ownership lowering.
+
+VM, AOT C, and LLVM source paths all consume `REQUIRE_NON_NULL` and `OWN_WAKE`,
+and the system exception registry materializes named `NullReferenceError` under
+`RuntimeError`. The fixed pre-L8 GCC, Clang, and MSVC CLI executables each ran
+the `hello_world` project, printed `hello world`, and exited zero. These are
+additional pre-final checks, not substitutes for the post-L8 stable-HEAD graph.
+
 ## Pending final acceptance
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate

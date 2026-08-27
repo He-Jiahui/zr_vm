@@ -237,6 +237,42 @@ Direct execution returned zero with debug diagnostics `56 Tests / 0 Failures /
 reported linker failures on the current shared-library configuration; it does
 not replace the final static three-toolchain CTest gate.
 
+## 2026-08-27 stale-runner and language-surface follow-up
+
+The canonical selector was executed again and remains exactly:
+
+```text
+TOTAL=55
+COMPLETE=55
+MISSING_STATUS=0
+MISSING_TIME=0
+01=5 02=6 03=5 04=7 05=6 06=2 07=1 10=5 12=15 13=3
+```
+
+Two previously restored parser runners were still capable of printing failures
+while returning a green Unity result. Controlled failure propagation exposed
+instruction execution at 31/3 and lexer/parser/compiler execution at 14/3.
+Their stale top-level opcode assumptions were corrected to the current typed,
+optimized, and nested-function contracts. GCC, Clang, and MSVC now directly
+pass 31/31 and 14/14. Five additional clean legacy runners now propagate custom
+failures into Unity and pass on all three toolchains: exceptions 8/8, named
+arguments 10/10, instructions 95/95, meta 41/41, and module system 78/78.
+
+The remaining non-truthful custom runner set is intentionally not declared
+clean yet. `test_parser.c`, `test_semir_pipeline.c`, and `test_type_inference.c`
+are frozen by the concurrent L8 parser exact-test window, while the already
+recorded LSP project-feature runner is frozen by the same callable-value work.
+They must be repaired and directly replayed after release before final graph
+acceptance.
+
+The production-language scan independently returns zero occurrences for all 12
+removed percent spellings and zero ownership-member lowering classifier
+references. The lexer reserves exactly the five ownership intrinsic names, and
+ordinary member lookup has priority over the post-failure migration diagnostic.
+Thus compatibility text for `upgrade`, `weak`, or an old member call is not an
+executable second language. Fixed pre-L8 GCC, Clang, and MSVC CLI smokes each
+printed `hello world` and exited zero; the final stable-HEAD replay remains open.
+
 ## Pending completion gates
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
