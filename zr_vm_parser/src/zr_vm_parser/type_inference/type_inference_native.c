@@ -13,6 +13,7 @@
 #include "type_inference_constant_eval.h"
 #include "type_inference_reflection_surface.h"
 #include "type_inference_semantic_facts.h"
+#include "type_inference_call_diagnostics.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -2674,11 +2675,31 @@ static TZrBool validate_member_call_arguments(SZrCompilerState *cs,
 
         if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
             !inferred_type_can_use_named_constraint_fallback(cs, argType, paramType)) {
-            ZrParser_TypeError_Report(cs,
-                                      "Argument type mismatch",
-                                      paramType,
-                                      argType,
-                                      argNode != ZR_NULL ? argNode->location : location);
+            SZrFileRange argumentLocation = argNode != ZR_NULL
+                    ? type_inference_call_diagnostic_argument_location(argNode)
+                    : location;
+
+            if (!type_inference_diagnostic_report_ownership_mismatch(
+                        cs,
+                        passingMode,
+                        argNode,
+                        argumentLocation,
+                        paramType,
+                        argType) &&
+                !type_inference_member_call_diagnostic_report_argument_mismatch(
+                        cs,
+                        memberInfo,
+                        call,
+                        argNode,
+                        index,
+                        paramType,
+                        argType)) {
+                ZrParser_TypeError_Report(cs,
+                                          "Argument type mismatch",
+                                          paramType,
+                                          argType,
+                                          argumentLocation);
+            }
             goto cleanup_error_with_types;
         }
     }

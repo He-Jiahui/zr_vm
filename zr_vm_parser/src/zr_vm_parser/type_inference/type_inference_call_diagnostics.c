@@ -98,12 +98,8 @@ const TZrChar *type_inference_call_diagnostic_ownership_message(
     }
 }
 
-static SZrAstNodeArray *call_diagnostic_parameter_list(
-        const SZrFunctionTypeInfo *funcType) {
-    SZrAstNode *declaration = funcType != ZR_NULL
-                                      ? funcType->declarationNode
-                                      : ZR_NULL;
-
+static SZrAstNodeArray *call_diagnostic_declaration_parameter_list(
+        const SZrAstNode *declaration) {
     if (declaration == ZR_NULL) {
         return ZR_NULL;
     }
@@ -112,9 +108,34 @@ static SZrAstNodeArray *call_diagnostic_parameter_list(
             return declaration->data.functionDeclaration.params;
         case ZR_AST_EXTERN_FUNCTION_DECLARATION:
             return declaration->data.externFunctionDeclaration.params;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.params;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.params;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return declaration->data.interfaceMethodSignature.params;
         default:
             return ZR_NULL;
     }
+}
+
+static SZrAstNodeArray *call_diagnostic_parameter_list(
+        const SZrFunctionTypeInfo *funcType) {
+    return call_diagnostic_declaration_parameter_list(
+            funcType != ZR_NULL ? funcType->declarationNode : ZR_NULL);
+}
+
+SZrFileRange type_inference_call_diagnostic_argument_location(
+        const SZrAstNode *argumentNode) {
+    if (argumentNode != ZR_NULL &&
+        argumentNode->type == ZR_AST_PRIMARY_EXPRESSION &&
+        argumentNode->data.primaryExpression.property != ZR_NULL &&
+        (argumentNode->data.primaryExpression.members == ZR_NULL ||
+         argumentNode->data.primaryExpression.members->count == 0U)) {
+        return argumentNode->data.primaryExpression.property->location;
+    }
+    return argumentNode != ZR_NULL ? argumentNode->location
+                                   : (SZrFileRange){0};
 }
 
 static SZrAstNode *call_diagnostic_argument_for_parameter(
@@ -292,9 +313,45 @@ TZrBool type_inference_call_diagnostic_report_ownership_mismatch(
             cs,
             passingMode,
             argumentNode,
-            argumentNode->location,
+            type_inference_call_diagnostic_argument_location(argumentNode),
             parameterType,
             argumentType);
+}
+
+static TZrBool call_diagnostic_report_argument_mismatch(
+        SZrCompilerState *cs,
+        const SZrAstNodeArray *parameters,
+        SZrAstNode *argumentNode,
+        TZrSize parameterIndex,
+        const SZrInferredType *parameterType,
+        const SZrInferredType *argumentType) {
+    SZrAstNode *parameterNode;
+    SZrFileRange expectedTypeLocation;
+    const SZrFileRange *expectedTypeLocationPtr = ZR_NULL;
+
+    if (cs == ZR_NULL || parameters == ZR_NULL ||
+        argumentNode == ZR_NULL || parameterType == ZR_NULL ||
+        argumentType == ZR_NULL || parameterIndex >= parameters->count) {
+        return ZR_FALSE;
+    }
+    parameterNode = parameters->nodes[parameterIndex];
+
+    if (parameterNode != ZR_NULL &&
+        parameterNode->type == ZR_AST_PARAMETER &&
+        parameterNode->data.parameter.typeInfo != ZR_NULL &&
+        parameterNode->data.parameter.typeInfo->name != ZR_NULL) {
+        expectedTypeLocation =
+                parameterNode->data.parameter.typeInfo->name->location;
+        expectedTypeLocationPtr = &expectedTypeLocation;
+    }
+    ZrParser_TypeError_ReportDetailed(
+            cs,
+            "Argument type mismatch",
+            parameterType,
+            argumentType,
+            type_inference_call_diagnostic_argument_location(argumentNode),
+            expectedTypeLocationPtr);
+    return ZR_TRUE;
 }
 
 TZrBool type_inference_call_diagnostic_report_argument_mismatch(
@@ -307,9 +364,6 @@ TZrBool type_inference_call_diagnostic_report_argument_mismatch(
     SZrAstNodeArray *parameters = call_diagnostic_parameter_list(funcType);
     const SZrInferredType *parameterType;
     SZrAstNode *argumentNode;
-    SZrAstNode *parameterNode;
-    SZrFileRange expectedTypeLocation;
-    const SZrFileRange *expectedTypeLocationPtr = ZR_NULL;
 
     if (cs == ZR_NULL || resolvedSignature == ZR_NULL ||
         argumentType == ZR_NULL || parameters == ZR_NULL ||
@@ -317,31 +371,91 @@ TZrBool type_inference_call_diagnostic_report_argument_mismatch(
         parameterIndex >= resolvedSignature->parameterTypes.length) {
         return ZR_FALSE;
     }
-    parameterType = (const SZrInferredType *)ZrCore_Array_Get(
-            (SZrArray *)&resolvedSignature->parameterTypes,
-            parameterIndex);
     argumentNode = call_diagnostic_argument_for_parameter(
             call,
             parameters,
             parameterIndex);
-    parameterNode = parameters->nodes[parameterIndex];
-    if (parameterType == ZR_NULL || argumentNode == ZR_NULL) {
+    parameterType = (const SZrInferredType *)ZrCore_Array_Get(
+            (SZrArray *)&resolvedSignature->parameterTypes,
+            parameterIndex);
+    if (argumentNode == ZR_NULL || parameterType == ZR_NULL) {
         return ZR_FALSE;
     }
-
-    if (parameterNode != ZR_NULL &&
-        parameterNode->type == ZR_AST_PARAMETER &&
-        parameterNode->data.parameter.typeInfo != ZR_NULL &&
-        parameterNode->data.parameter.typeInfo->name != ZR_NULL) {
-        expectedTypeLocation = parameterNode->data.parameter.typeInfo->name->location;
-        expectedTypeLocationPtr = &expectedTypeLocation;
-    }
-    ZrParser_TypeError_ReportDetailed(
+    return call_diagnostic_report_argument_mismatch(
             cs,
-            "Argument type mismatch",
+            parameters,
+            argumentNode,
+            parameterIndex,
             parameterType,
-            argumentType,
-            argumentNode->location,
-            expectedTypeLocationPtr);
-    return ZR_TRUE;
+            argumentType);
+}
+
+TZrBool type_inference_member_call_diagnostic_report_argument_mismatch(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrFunctionCall *call,
+        SZrAstNode *argumentNode,
+        TZrSize parameterIndex,
+        const SZrInferredType *parameterType,
+        const SZrInferredType *argumentType) {
+    SZrAstNodeArray *parameters;
+
+    if (memberInfo == ZR_NULL || parameterType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    parameters = call_diagnostic_declaration_parameter_list(
+            memberInfo->declarationNode);
+    if (argumentNode == ZR_NULL) {
+        argumentNode = call_diagnostic_argument_for_parameter(
+                call, parameters, parameterIndex);
+    }
+    return call_diagnostic_report_argument_mismatch(
+            cs,
+            parameters,
+            argumentNode,
+            parameterIndex,
+            parameterType,
+            argumentType);
+}
+
+TZrBool type_inference_member_call_diagnostic_report_ownership_mismatch(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo,
+        const SZrFunctionCall *call,
+        SZrAstNode *argumentNode,
+        TZrSize parameterIndex,
+        const SZrInferredType *parameterType,
+        const SZrInferredType *argumentType) {
+    SZrAstNodeArray *parameters;
+    EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+
+    if (cs == ZR_NULL || memberInfo == ZR_NULL || parameterType == ZR_NULL ||
+        argumentType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    parameters = call_diagnostic_declaration_parameter_list(
+            memberInfo->declarationNode);
+    if (argumentNode == ZR_NULL) {
+        argumentNode = call_diagnostic_argument_for_parameter(
+                call, parameters, parameterIndex);
+    }
+    if (argumentNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (parameterIndex < memberInfo->parameterPassingModes.length) {
+        const EZrParameterPassingMode *mode =
+                (const EZrParameterPassingMode *)ZrCore_Array_Get(
+                        (SZrArray *)&memberInfo->parameterPassingModes,
+                        parameterIndex);
+        if (mode != ZR_NULL) {
+            passingMode = *mode;
+        }
+    }
+    return type_inference_diagnostic_report_ownership_mismatch(
+            cs,
+            passingMode,
+            argumentNode,
+            type_inference_call_diagnostic_argument_location(argumentNode),
+            parameterType,
+            argumentType);
 }

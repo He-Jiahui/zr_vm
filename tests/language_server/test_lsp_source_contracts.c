@@ -1075,6 +1075,15 @@ static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
     assert_text_contains_none(
         typecheck,
         "semantic_analyzer_type_mismatch_diagnostics.h");
+    assert_text_contains_none(
+        typecheck,
+        "semantic_check_method_call(");
+    assert_text_contains_none(
+        typecheck,
+        "semantic_call_matches_parameters(");
+    assert_text_contains_none(
+        typecheck,
+        "Type mismatch in method call");
 
     consumerStart = strstr(
         support,

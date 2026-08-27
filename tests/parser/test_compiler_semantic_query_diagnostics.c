@@ -1348,6 +1348,92 @@ static void test_function_call_compatibility_publishes_detailed_type_mismatch_fa
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_method_call_compatibility_publishes_detailed_type_mismatch_fact(void) {
+    const TZrChar *source =
+            "class Meter {\n"
+            "    pub fn write(value: int): int { return value; }\n"
+            "}\n"
+            "fn main(meter: Meter): int {\n"
+            "    meter.write(2.5);\n"
+            "    return 0;\n"
+            "}\n";
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticQueryDiagnostics diagnostics;
+    const SZrStructuredDiagnostic *published;
+    const SZrStructuredDiagnosticRelatedInformation *related;
+    const SZrStructuredDiagnosticFix *fix;
+
+    sourceName = ZrCore_String_Create(
+            g_state,
+            "compiler_method_call_type_mismatch_test.zr",
+            strlen("compiler_method_call_type_mismatch_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_UINT32(2011U, cs.structuredError.descriptorId);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_PublishCurrentDiagnostic(&cs));
+    cs.hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(&cs);
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_MaterializeDiagnostics(
+            cs.semanticContext, &scope));
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_Diagnostics(
+            cs.semanticContext, &scope, &diagnostics));
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)diagnostics.count);
+    published = find_query_diagnostic_by_code(cs.semanticContext, "type_mismatch");
+    TEST_ASSERT_NOT_NULL(published);
+    TEST_ASSERT_EQUAL_UINT32(2011U, published->descriptorId);
+    TEST_ASSERT_EQUAL_INT(5, published->location.start.line);
+    TEST_ASSERT_EQUAL_INT(17, published->location.start.column);
+    TEST_ASSERT_EQUAL_INT(5, published->location.end.line);
+    TEST_ASSERT_EQUAL_INT(20, published->location.end.column);
+    TEST_ASSERT_TRUE(published->relatedInformation.isValid);
+    TEST_ASSERT_EQUAL_UINT32(
+            1U,
+            (TZrUInt32)published->relatedInformation.length);
+    TEST_ASSERT_TRUE(published->fixes.isValid);
+    TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)published->fixes.length);
+
+    related = (const SZrStructuredDiagnosticRelatedInformation *)ZrCore_Array_Get(
+            (SZrArray *)&published->relatedInformation,
+            0U);
+    fix = (const SZrStructuredDiagnosticFix *)ZrCore_Array_Get(
+            (SZrArray *)&published->fixes,
+            0U);
+    TEST_ASSERT_NOT_NULL(related);
+    TEST_ASSERT_EQUAL_INT(2, related->location.start.line);
+    TEST_ASSERT_EQUAL_INT(25, related->location.start.column);
+    TEST_ASSERT_EQUAL_INT(2, related->location.end.line);
+    TEST_ASSERT_EQUAL_INT(28, related->location.end.column);
+    TEST_ASSERT_NOT_NULL(fix);
+    TEST_ASSERT_EQUAL_STRING(
+            "<int> <expression>",
+            ZrCore_String_GetNativeString(fix->editText));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS,
+            fix->applicability);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void assert_compiler_ownership_diagnostic(
         const TZrChar *source,
         const TZrChar *sourceNameText,
@@ -3180,6 +3266,7 @@ int main(void) {
     RUN_TEST(test_compiler_structured_error_publisher_deep_copies_diagnostic);
     RUN_TEST(test_assignment_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_function_call_compatibility_publishes_detailed_type_mismatch_fact);
+    RUN_TEST(test_method_call_compatibility_publishes_detailed_type_mismatch_fact);
     RUN_TEST(test_function_call_compatibility_publishes_ownership_diagnostics);
     RUN_TEST(test_initializer_compatibility_publishes_ownership_diagnostic);
     RUN_TEST(test_return_compatibility_api_publishes_ownership_diagnostic);

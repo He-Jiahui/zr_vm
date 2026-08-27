@@ -352,6 +352,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - active ref 对 drop/share/move 的 canonical Place/LoanId 冲突门禁
   - receiver-tied ref return provenance 与 direct source TypeDef 保守边界
   - `intoGc(owner)` / `INTO_GC_BOX` 对同一 Place/LoanId exclusive-consumption facts 的复用
+- `canonical-receiver-call-diagnostics.md`
+  - receiver method overload 与参数失配只由 parser/type inference 解析和发布
+  - descriptor 2011、argument/parameter ranges、related information 与 typed fix 共用 canonical producer
+  - LSP 删除 method-name/parameter/type-text 重建，仅投影 semantic query fact
 - `semantic-fact-layer.md`
   - `SZrSemanticContext` 统一持有表达式、引用、数值、可达性、逻辑和所有权事实
   - 事实层提供 append-by-copy、reset/free 和按节点/位置查询契约

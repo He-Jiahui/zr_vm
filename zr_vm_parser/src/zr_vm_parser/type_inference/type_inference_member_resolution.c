@@ -1,4 +1,5 @@
 #include "type_inference_internal.h"
+#include "type_inference_call_diagnostics.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -349,18 +350,22 @@ static TZrBool member_resolution_member_is_callable(const SZrTypeMemberInfo *mem
 }
 
 static void member_resolution_capture_first_mismatch(SZrCompilerState *cs,
-                                                     const SZrTypeMemberInfo *memberInfo,
-                                                     const SZrArray *parameterTypes,
-                                                     const SZrArray *orderedArgTypes,
-                                                     SZrInferredType *outExpectedType,
-                                                     SZrInferredType *outActualType,
-                                                     TZrBool *ioHasMismatch) {
+                                                      const SZrTypeMemberInfo *memberInfo,
+                                                      const SZrArray *parameterTypes,
+                                                      const SZrArray *orderedArgTypes,
+                                                      SZrInferredType *outExpectedType,
+                                                      SZrInferredType *outActualType,
+                                                      TZrBool *ioHasMismatch,
+                                                      const SZrTypeMemberInfo **outMismatchMember,
+                                                      TZrSize *outMismatchParameterIndex) {
     if (cs == ZR_NULL ||
         parameterTypes == ZR_NULL ||
         orderedArgTypes == ZR_NULL ||
         outExpectedType == ZR_NULL ||
         outActualType == ZR_NULL ||
         ioHasMismatch == ZR_NULL ||
+        outMismatchMember == ZR_NULL ||
+        outMismatchParameterIndex == ZR_NULL ||
         *ioHasMismatch ||
         parameterTypes->length != orderedArgTypes->length) {
         return;
@@ -386,6 +391,8 @@ static void member_resolution_capture_first_mismatch(SZrCompilerState *cs,
 
         ZrParser_InferredType_Copy(cs->state, outExpectedType, paramType);
         ZrParser_InferredType_Copy(cs->state, outActualType, argType);
+        *outMismatchMember = memberInfo;
+        *outMismatchParameterIndex = index;
         *ioHasMismatch = ZR_TRUE;
         return;
     }
@@ -402,10 +409,12 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
                                                      TZrBool *ioHasTie,
                                                      TZrBool *ioSawCandidate,
                                                      TZrBool *ioSawTypedCandidate,
-                                                     TZrBool *ioHasFirstMismatch,
-                                                     SZrInferredType *ioFirstExpectedType,
-                                                     SZrInferredType *ioFirstActualType,
-                                                     TZrBool *ioHasGenericDiagnostic,
+                                                      TZrBool *ioHasFirstMismatch,
+                                                      SZrInferredType *ioFirstExpectedType,
+                                                      SZrInferredType *ioFirstActualType,
+                                                      const SZrTypeMemberInfo **ioFirstMismatchMember,
+                                                      TZrSize *ioFirstMismatchParameterIndex,
+                                                      TZrBool *ioHasGenericDiagnostic,
                                                      TZrChar *ioGenericDiagnostic,
                                                      TZrSize genericDiagnosticSize) {
     SZrTypePrototypeInfo *info;
@@ -417,6 +426,8 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
         ioBestScore == ZR_NULL || ioHasTie == ZR_NULL || ioSawCandidate == ZR_NULL ||
         ioSawTypedCandidate == ZR_NULL || ioHasFirstMismatch == ZR_NULL ||
         ioFirstExpectedType == ZR_NULL || ioFirstActualType == ZR_NULL ||
+        ioFirstMismatchMember == ZR_NULL ||
+        ioFirstMismatchParameterIndex == ZR_NULL ||
         ioHasGenericDiagnostic == ZR_NULL || ioGenericDiagnostic == ZR_NULL ||
         depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_FALSE;
@@ -498,7 +509,9 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
                                                          &orderedArgTypes,
                                                          ioFirstExpectedType,
                                                          ioFirstActualType,
-                                                         ioHasFirstMismatch);
+                                                         ioHasFirstMismatch,
+                                                         ioFirstMismatchMember,
+                                                         ioFirstMismatchParameterIndex);
             }
         }
         free_resolved_call_signature(cs->state, &resolvedSignature);
@@ -540,6 +553,8 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
                                                    ioHasFirstMismatch,
                                                    ioFirstExpectedType,
                                                    ioFirstActualType,
+                                                   ioFirstMismatchMember,
+                                                   ioFirstMismatchParameterIndex,
                                                    ioHasGenericDiagnostic,
                                                    ioGenericDiagnostic,
                                                    genericDiagnosticSize)) {
@@ -570,6 +585,8 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
                                                    ioHasFirstMismatch,
                                                    ioFirstExpectedType,
                                                    ioFirstActualType,
+                                                   ioFirstMismatchMember,
+                                                   ioFirstMismatchParameterIndex,
                                                    ioHasGenericDiagnostic,
                                                    ioGenericDiagnostic,
                                                    genericDiagnosticSize)) {
@@ -597,6 +614,8 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
     TZrBool sawTypedCandidate = ZR_FALSE;
     TZrBool hasFirstMismatch = ZR_FALSE;
     TZrBool hasGenericDiagnostic = ZR_FALSE;
+    const SZrTypeMemberInfo *firstMismatchMember = ZR_NULL;
+    TZrSize firstMismatchParameterIndex = 0U;
     TZrChar genericDiagnostic[ZR_PARSER_DETAIL_BUFFER_LENGTH];
     SZrInferredType firstExpectedType;
     SZrInferredType firstActualType;
@@ -631,6 +650,8 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
                                                &hasFirstMismatch,
                                                &firstExpectedType,
                                                &firstActualType,
+                                               &firstMismatchMember,
+                                               &firstMismatchParameterIndex,
                                                &hasGenericDiagnostic,
                                                genericDiagnostic,
                                                sizeof(genericDiagnostic))) {
@@ -646,11 +667,28 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
             if (hasGenericDiagnostic) {
                 ZrParser_Compiler_Error(cs, genericDiagnostic, location);
             } else if (hasFirstMismatch) {
-                ZrParser_TypeError_Report(cs,
-                                          "Argument type mismatch",
-                                          &firstExpectedType,
-                                          &firstActualType,
-                                          location);
+                if (!type_inference_member_call_diagnostic_report_ownership_mismatch(
+                            cs,
+                            firstMismatchMember,
+                            call,
+                            ZR_NULL,
+                            firstMismatchParameterIndex,
+                            &firstExpectedType,
+                            &firstActualType) &&
+                    !type_inference_member_call_diagnostic_report_argument_mismatch(
+                            cs,
+                            firstMismatchMember,
+                            call,
+                            ZR_NULL,
+                            firstMismatchParameterIndex,
+                            &firstExpectedType,
+                            &firstActualType)) {
+                    ZrParser_TypeError_Report(cs,
+                                              "Argument type mismatch",
+                                              &firstExpectedType,
+                                              &firstActualType,
+                                              location);
+                }
             }
             ZrParser_InferredType_Free(cs->state, &firstExpectedType);
             ZrParser_InferredType_Free(cs->state, &firstActualType);

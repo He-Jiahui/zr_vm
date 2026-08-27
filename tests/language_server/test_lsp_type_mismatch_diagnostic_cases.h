@@ -353,4 +353,56 @@ static void test_lsp_diagnostics_publish_detailed_function_call_argument_type_mi
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_diagnostics_publish_detailed_method_call_argument_type_mismatch(
+        SZrState *state) {
+    const TZrChar *summary = "LSP Diagnostics Publish Detailed Method Call Argument Type Mismatch";
+    TZrChar uriText[] = "file:///method_call_argument_type_mismatch.zr";
+    const TZrChar *content =
+            "class Meter {\n"
+            "    pub fn write(value: int): int { return value; }\n"
+            "}\n"
+            "fn main(meter: Meter): int {\n"
+            "    meter.write(2.5);\n"
+            "    return 0;\n"
+            "}\n";
+    const SZrLspDiagnostic *methodDiagnostic;
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrArray diagnostics;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Failed to prepare method call mismatch fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Diagnostics request failed");
+        return;
+    }
+
+    methodDiagnostic = type_mismatch_diagnostic_find_at_line(&diagnostics, 4);
+    if (diagnostic_array_count_code(&diagnostics, "type_mismatch") != 1 ||
+        !type_mismatch_diagnostic_has_expected_relation_and_fix(
+                methodDiagnostic, 16, 19, 1, 24, 27)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Expected canonical method-call mismatch projection");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 #endif // ZR_VM_TESTS_LANGUAGE_SERVER_LSP_TYPE_MISMATCH_DIAGNOSTIC_CASES_H

@@ -937,6 +937,7 @@ int main(void) {
     test_lsp_diagnostics_publish_detailed_initializer_type_mismatch(state);
     test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mismatch(state);
     test_lsp_diagnostics_publish_detailed_function_call_argument_type_mismatch(state);
+    test_lsp_diagnostics_publish_detailed_method_call_argument_type_mismatch(state);
 
     ZrCore_GlobalState_Free(global);
 

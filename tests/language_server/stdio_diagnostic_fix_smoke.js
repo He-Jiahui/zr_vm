@@ -70,6 +70,8 @@ const arrayElementAssignmentDocumentUri =
     'file:///zr-diagnostic-array-element-assignment-fix-smoke.zr';
 const functionCallMismatchDocumentUri =
     'file:///zr-diagnostic-function-call-mismatch-smoke.zr';
+const methodCallMismatchDocumentUri =
+    'file:///zr-diagnostic-method-call-mismatch-smoke.zr';
 const documentText = [
     'fn choose(flag: bool): int {',
     '    var seed: int;',
@@ -105,6 +107,16 @@ const functionCallMismatchDocumentText = [
     'fn pick(value: int): int { return value; }',
     'fn main(): int {',
     '    pick(2.5);',
+    '    return 0;',
+    '}',
+    '',
+].join('\n');
+const methodCallMismatchDocumentText = [
+    'class Meter {',
+    '    pub fn write(value: int): int { return value; }',
+    '}',
+    'fn main(meter: Meter): int {',
+    '    meter.write(2.5);',
     '    return 0;',
     '}',
     '',
@@ -649,7 +661,25 @@ const payload = Buffer.concat([
         method: 'textDocument/documentSymbol',
         params: { textDocument: { uri: functionCallMismatchDocumentUri } },
     }),
-    createMessage({ jsonrpc: '2.0', id: 34, method: 'shutdown', params: {} }),
+    createMessage({
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+            textDocument: {
+                uri: methodCallMismatchDocumentUri,
+                languageId: 'zr',
+                version: 1,
+                text: methodCallMismatchDocumentText,
+            },
+        },
+    }),
+    createMessage({
+        jsonrpc: '2.0',
+        id: 34,
+        method: 'textDocument/documentSymbol',
+        params: { textDocument: { uri: methodCallMismatchDocumentUri } },
+    }),
+    createMessage({ jsonrpc: '2.0', id: 35, method: 'shutdown', params: {} }),
     createMessage({ jsonrpc: '2.0', method: 'exit', params: {} }),
 ]);
 
@@ -1364,3 +1394,41 @@ assert(functionCallMismatchFix.applicability === 2 &&
     functionCallMismatchFix.edit &&
     functionCallMismatchFix.edit.newText === '<int> <expression>',
     'Expected the typed placeholder fix from the parser diagnostic fact');
+
+const methodCallMismatchPublication = messages.find((message) =>
+    message.method === 'textDocument/publishDiagnostics' &&
+    message.params &&
+    message.params.uri === methodCallMismatchDocumentUri &&
+    message.params.version === 1 &&
+    Array.isArray(message.params.diagnostics));
+assert(methodCallMismatchPublication,
+    'Expected method-call mismatch publication');
+const methodCallMismatchDiagnostics =
+    methodCallMismatchPublication.params.diagnostics.filter((entry) =>
+        entry.code === 'type_mismatch');
+assert(methodCallMismatchDiagnostics.length === 1,
+    'Expected exactly one canonical method-call type mismatch');
+const methodCallMismatchDiagnostic = methodCallMismatchDiagnostics[0];
+assert(methodCallMismatchDiagnostic.range.start.line === 4 &&
+    methodCallMismatchDiagnostic.range.start.character === 16 &&
+    methodCallMismatchDiagnostic.range.end.line === 4 &&
+    methodCallMismatchDiagnostic.range.end.character === 19,
+    'Expected the method-call mismatch primary range on the argument');
+assert(Array.isArray(methodCallMismatchDiagnostic.relatedInformation) &&
+    methodCallMismatchDiagnostic.relatedInformation.length === 1 &&
+    methodCallMismatchDiagnostic.relatedInformation[0].location &&
+    methodCallMismatchDiagnostic.relatedInformation[0].location.range.start.line === 1 &&
+    methodCallMismatchDiagnostic.relatedInformation[0].location.range.start.character === 24 &&
+    methodCallMismatchDiagnostic.relatedInformation[0].location.range.end.line === 1 &&
+    methodCallMismatchDiagnostic.relatedInformation[0].location.range.end.character === 27,
+    'Expected the method-call mismatch relation on the parameter type');
+assert(methodCallMismatchDiagnostic.data &&
+    methodCallMismatchDiagnostic.data.descriptorId === 2011 &&
+    Array.isArray(methodCallMismatchDiagnostic.data.fixes) &&
+    methodCallMismatchDiagnostic.data.fixes.length === 1,
+    'Expected one registered method-call mismatch fix');
+const methodCallMismatchFix = methodCallMismatchDiagnostic.data.fixes[0];
+assert(methodCallMismatchFix.applicability === 2 &&
+    methodCallMismatchFix.edit &&
+    methodCallMismatchFix.edit.newText === '<int> <expression>',
+    'Expected the method-call typed placeholder from the parser query fact');
