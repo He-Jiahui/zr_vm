@@ -72,6 +72,8 @@
     double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
     fflush(stdout); \
+    Unity.CurrentTestFailed = 1; \
+    UNITY_OUTPUT_FLUSH(); \
 } while(0)
 
 #define TEST_DIVIDER() do { \
@@ -94,6 +96,29 @@ static char* test_realpath(const char* path, char* resolved_path) {
 
 void setUp(void) {}
 void tearDown(void) {}
+
+static TZrBool function_contains_opcode_recursive(
+        const SZrFunction *function,
+        EZrInstructionCode opcode,
+        TZrUInt32 depth) {
+    if (function == ZR_NULL || depth >= 64u) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode) function->instructionsList[index].instruction.operationCode == opcode) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+        if (function_contains_opcode_recursive(&function->childFunctionList[index], opcode, depth + 1u)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
 
 // 简单的测试分配器
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
@@ -644,19 +669,8 @@ static void test_compiler_struct_type_cast(void) {
     ZrParser_Ast_Free(state, ast);
     free(source);
     
-    TZrBool hasToStructInstruction = ZR_FALSE;
-    
-    if (func != ZR_NULL && func->instructionsList != ZR_NULL && func->instructionsLength > 0) {
-        // 查找 TO_STRUCT 指令
-        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
-            TZrInstruction *inst = &func->instructionsList[i];
-            EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(TO_STRUCT)) {
-                hasToStructInstruction = ZR_TRUE;
-                break;
-            }
-        }
-    }
+    TZrBool hasToStructInstruction =
+            function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_STRUCT), 0u);
     
     ZrCore_GlobalState_Free(global);
     
@@ -717,19 +731,8 @@ static void test_compiler_class_type_cast(void) {
     ZrParser_Ast_Free(state, ast);
     free(source);
     
-    TZrBool hasToObjectInstruction = ZR_FALSE;
-    
-    if (func != ZR_NULL && func->instructionsList != ZR_NULL && func->instructionsLength > 0) {
-        // 查找 TO_OBJECT 指令
-        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
-            TZrInstruction *inst = &func->instructionsList[i];
-            EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(TO_OBJECT)) {
-                hasToObjectInstruction = ZR_TRUE;
-                break;
-            }
-        }
-    }
+    TZrBool hasToObjectInstruction =
+            function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_OBJECT), 0u);
     
     ZrCore_GlobalState_Free(global);
     
@@ -946,24 +949,17 @@ static void test_type_cast_full_pipeline(void) {
     TZrBool hasConversionInstructions = ZR_FALSE;
     
     if (hasInstructions) {
-        // 检查是否有转换指令
-        for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
-            TZrInstruction *inst = &func->instructionsList[i];
-            EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(TO_INT) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_INT_FLOAT) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_STRING) ||
-                opcode == ZR_INSTRUCTION_ENUM(TO_BOOL)) {
-                hasConversionInstructions = ZR_TRUE;
-                break;
-            }
-        }
+        hasConversionInstructions =
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_INT), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_INT_FLOAT), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_FLOAT), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_STRING), 0u) ||
+                function_contains_opcode_recursive(func, ZR_INSTRUCTION_ENUM(TO_BOOL), 0u);
     }
     
     free(source);
