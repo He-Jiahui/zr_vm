@@ -53,15 +53,25 @@ all variants produced checksum 344064:
 
 | Variant | ns/op | Ratio to direct |
 | --- | ---: | ---: |
-| direct non-null | 3326.579 | 1.000 |
-| weak direct | 5333.008 | 1.603 |
-| weak optional success | 5587.931 | 1.680 |
-| weak optional failure | 1417.745 | 0.426 |
-| deep nullable guard | 2059.835 | 0.619 |
+| direct non-null | 2611.186 | 1.000 |
+| weak direct | 5439.209 | 2.083 |
+| weak optional success | 5232.564 | 2.004 |
+| weak optional failure | 2274.841 | 0.871 |
+| deep Weak guard | 2045.003 | 0.783 |
 
 The ratios are recorded evidence, not arbitrary pass thresholds. The live weak
 path performs one wake for the complete suffix; the optional failure path skips
-the suffix and argument evaluation.
+the suffix and argument evaluation. The deep case now evaluates
+`weak?.child.value` directly. The prior benchmark explicitly evaluated
+`wake(weak)` before the loop and therefore measured a nullable Shared suffix,
+not the design's hidden Weak wake contract.
+
+The corrected exact test overlay on committed `d6ee3fe` directly passed static
+Debug GCC 11.4, Clang 14, and MSVC 19.44 at 1/1 with checksum 344064 for every
+variant. MSVC repeated the runner three times with zero failures. The Release
+GCC table above is the second of two consecutive zero-exit executions. This
+focused correction does not promote final acceptance: the complete registered
+GCC/Clang/MSVC graph still requires one stable post-L8 integrated HEAD.
 
 ## Test modernization
 

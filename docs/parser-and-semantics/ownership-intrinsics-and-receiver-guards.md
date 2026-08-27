@@ -317,10 +317,12 @@ does not allocate an object wrapper for chaining.
 
 `zr_vm_ownership_receiver_guard_performance_test` compiles and repeatedly runs
 equal-checksum workloads for direct non-null access, weak direct access,
-optional weak success, optional weak expiry, and a deep guarded field chain. It
-prints iterations, samples, nanoseconds per operation, ratio to direct, and
-checksum. Ratios are evidence for review, not pass/fail thresholds; semantic
-checksums are mandatory.
+optional weak success, optional weak expiry, and a deep Weak field chain written
+as `weak?.child.value`. The deep case deliberately starts from the Weak handle;
+it therefore measures the hidden wake retained for the complete suffix rather
+than an explicitly awakened nullable Shared value. The runner prints iterations,
+samples, nanoseconds per operation, ratio to direct, and checksum. Ratios are
+evidence for review, not pass/fail thresholds; semantic checksums are mandatory.
 
 ## Intentional boundaries
 

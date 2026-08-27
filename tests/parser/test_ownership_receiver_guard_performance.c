@@ -85,7 +85,7 @@ static const TZrChar *const CZrWeakOptionalFailureSource =
         "}\n"
         "return checksum;\n";
 
-static const TZrChar *const CZrDeepNullableGuardSource =
+static const TZrChar *const CZrDeepWeakGuardSource =
         "resource class Child {\n"
         "    pub var value: int;\n"
         "    pub @constructor(value: int) { this.value = value; }\n"
@@ -97,11 +97,10 @@ static const TZrChar *const CZrDeepNullableGuardSource =
         "var seed = own Root();\n"
         "var shared = share(seed);\n"
         "var weak = degrade(shared);\n"
-        "var guarded = wake(weak);\n"
         "var index = 0;\n"
         "var checksum = 0;\n"
         "while (index < 16384) {\n"
-        "    var value = guarded?.child.value;\n"
+        "    var value = weak?.child.value;\n"
         "    if (value == 7) { checksum = checksum + 7; }\n"
         "    index = index + 1;\n"
         "}\n"
@@ -185,7 +184,7 @@ static void test_receiver_guard_benchmark_reports_costs(void) {
             {"weak_direct", CZrWeakDirectSource, ZR_NULL, 0.0, 0},
             {"weak_optional_success", CZrWeakOptionalSuccessSource, ZR_NULL, 0.0, 0},
             {"weak_optional_failure", CZrWeakOptionalFailureSource, ZR_NULL, 0.0, 0},
-            {"deep_nullable_guard", CZrDeepNullableGuardSource, ZR_NULL, 0.0, 0},
+            {"deep_weak_guard", CZrDeepWeakGuardSource, ZR_NULL, 0.0, 0},
     };
     const TZrSize caseCount = sizeof(cases) / sizeof(cases[0]);
     double directNanoseconds;
