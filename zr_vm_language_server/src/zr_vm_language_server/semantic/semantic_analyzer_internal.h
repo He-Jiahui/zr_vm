@@ -41,11 +41,6 @@ ZR_FORCE_INLINE TZrBool ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(
 void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node);
-TZrBool ZrLanguageServer_SemanticAnalyzer_ProjectConstAssignment(
-        SZrState *state,
-        SZrSemanticAnalyzer *analyzer,
-        SZrAstNode *assignment);
-
 SZrString *ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(SZrState *state, SZrAstNode *node);
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_IsImplicitRuntimeIdentifier(SZrString *name);

@@ -746,6 +746,23 @@ Primary use ranges, related generic-parameter declaration ranges, descriptor
 identity, help metadata, and no-fix disposition therefore originate in one
 parser query contract.
 
+Const-assignment fact publication is parser-owned as well.
+`ZrParser_ConstAssignment_PublishDiagnostic` extracts the exact assignment
+target range, resolves `SymbolAt`, and maps its stable SymbolId directly to the
+semantic symbol record's declaration AST identity. A resolved reference whose
+record or declaration node is absent fails closed. Only when no resolved
+reference fact exists may the existing current-prototype context evaluator
+consider an explicit `this.field` or current-type static field, and that path
+still requires one unique structured member declaration.
+
+The publisher evaluates constructor context, builds descriptor `2012`, and
+appends one persistent diagnostic fact without setting the compiler's current
+error. LSP typecheck supplies the compiler state, module root, and assignment
+node only. It no longer scans its SymbolTable for a matching semantic id,
+extracts target ranges, invokes the evaluator or builder, or appends facts.
+This preserves exact identity in the presence of same-name records and rejects
+broken resolved identities instead of falling back to spelling.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

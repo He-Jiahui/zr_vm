@@ -5,6 +5,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 #include "semantic/semantic_analyzer_expected_type.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
+#include "zr_vm_parser/const_assignment.h"
 #include "zr_vm_parser/variance.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
@@ -844,8 +845,8 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     ZrParser_InferredType_Free(state, &leftType);
                 }
                 
-                (void)ZrLanguageServer_SemanticAnalyzer_ProjectConstAssignment(
-                        state, analyzer, node);
+                (void)ZrParser_ConstAssignment_PublishDiagnostic(
+                        analyzer->compilerState, analyzer->ast, node);
             }
             break;
         }

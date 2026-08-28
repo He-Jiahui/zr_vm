@@ -41,5 +41,9 @@ ZR_PARSER_API TZrBool ZrParser_ConstAssignment_BuildDiagnostic(
         SZrState *state,
         const SZrConstAssignmentResult *result,
         SZrStructuredDiagnostic *outDiagnostic);
+ZR_PARSER_API TZrBool ZrParser_ConstAssignment_PublishDiagnostic(
+        SZrCompilerState *compilerState,
+        const SZrAstNode *moduleRoot,
+        SZrAstNode *assignment);
 
 #endif

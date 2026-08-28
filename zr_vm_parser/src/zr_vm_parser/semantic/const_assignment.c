@@ -1,4 +1,5 @@
 #include "zr_vm_parser/const_assignment.h"
+#include "zr_vm_parser/semantic_query.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -188,6 +189,37 @@ static SZrString *const_assignment_target_name(const SZrAstNode *assignment) {
     return property != ZR_NULL && property->type == ZR_AST_IDENTIFIER_LITERAL
                    ? property->data.identifier.name
                    : ZR_NULL;
+}
+
+static TZrBool const_assignment_target_range(
+        const SZrAstNode *assignment,
+        SZrFileRange *outRange) {
+    const SZrAstNode *left;
+
+    if (assignment == ZR_NULL || outRange == ZR_NULL ||
+        assignment->type != ZR_AST_ASSIGNMENT_EXPRESSION ||
+        assignment->data.assignmentExpression.left == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    left = assignment->data.assignmentExpression.left;
+    if (left->type == ZR_AST_IDENTIFIER_LITERAL) {
+        *outRange = left->location;
+        return ZR_TRUE;
+    }
+    if (left->type == ZR_AST_PRIMARY_EXPRESSION &&
+        left->data.primaryExpression.members != ZR_NULL &&
+        left->data.primaryExpression.members->count > 0U) {
+        const SZrAstNode *lastMember =
+                left->data.primaryExpression.members->nodes[
+                        left->data.primaryExpression.members->count - 1U];
+        if (lastMember != ZR_NULL &&
+            lastMember->type == ZR_AST_MEMBER_EXPRESSION &&
+            lastMember->data.memberExpression.property != ZR_NULL) {
+            *outRange = lastMember->data.memberExpression.property->location;
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
 }
 
 static TZrBool const_assignment_context_receiver_kind(
@@ -468,4 +500,62 @@ TZrBool ZrParser_ConstAssignment_BuildDiagnostic(
         return ZR_FALSE;
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_ConstAssignment_PublishDiagnostic(
+        SZrCompilerState *compilerState,
+        const SZrAstNode *moduleRoot,
+        SZrAstNode *assignment) {
+    SZrFileRange targetRange;
+    SZrParserSemanticQueryScope scope;
+    SZrParserSemanticSymbolQuery query;
+    const SZrSemanticSymbolRecord *symbol = ZR_NULL;
+    const SZrAstNode *targetDeclaration = ZR_NULL;
+    SZrConstAssignmentResult result;
+    SZrStructuredDiagnostic diagnostic;
+    SZrSemanticDiagnosticFact fact;
+    TZrBool appended;
+
+    if (compilerState == ZR_NULL || compilerState->state == ZR_NULL ||
+        compilerState->semanticContext == ZR_NULL || moduleRoot == ZR_NULL ||
+        !const_assignment_target_range(assignment, &targetRange)) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_SemanticQueryScope_Module(&scope);
+    memset(&query, 0, sizeof(query));
+    if (ZrParser_SemanticQuery_SymbolAt(
+                compilerState->semanticContext,
+                targetRange,
+                &scope,
+                &query)) {
+        symbol = ZrParser_Semantic_FindSymbolById(
+                compilerState->semanticContext, query.symbolId);
+        if (symbol == ZR_NULL || symbol->astNode == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        targetDeclaration = symbol->astNode;
+    }
+    if (!ZrParser_ConstAssignment_EvaluateContext(
+                compilerState,
+                moduleRoot,
+                assignment,
+                targetDeclaration,
+                &result) ||
+        !result.isConstTarget || !result.isViolation) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_ConstAssignment_BuildDiagnostic(
+                compilerState->state, &result, &diagnostic)) {
+        return ZR_FALSE;
+    }
+    memset(&fact, 0, sizeof(fact));
+    fact.node = assignment;
+    fact.diagnostic = diagnostic;
+    appended = ZrParser_SemanticFacts_AppendDiagnostic(
+            compilerState->semanticContext, &fact);
+    ZrParser_StructuredDiagnostic_Free(compilerState->state, &diagnostic);
+    return appended;
 }
