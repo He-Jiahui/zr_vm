@@ -20,11 +20,11 @@ static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
     TZrSize leftLength;
     TZrSize rightLength;
 
-    if (left == right) {
-        return ZR_TRUE;
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
     }
 
-    if (left == ZR_NULL || right == ZR_NULL) {
+    if (left == right) {
         return ZR_TRUE;
     }
 

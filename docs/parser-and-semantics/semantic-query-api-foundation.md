@@ -777,6 +777,14 @@ it still invokes the lower-level enumerator and append path. Once that exact
 path is released, the consumer must call the publisher and delete its local
 loop; no AST/name fallback is permitted during the transition.
 
+Reference lookup at a source position requires an exact source identity before
+range comparison. `SZrReferenceTracker` accepts equal URI text from distinct
+`SZrString` instances, but a missing URI on either the stored reference or the
+query position fails closed. Two missing URIs are not evidence that two ranges
+belong to the same source. This prevents identical line/column or offset ranges
+from crossing documents before relation-query consumers replace the legacy
+tracker completely.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

@@ -264,6 +264,142 @@ static void test_reference_tracker_get_locations(SZrState *state) {
     TEST_PASS(timer, "Reference Tracker Get Locations");
 }
 
+static void test_reference_tracker_requires_exact_source_identity(
+        SZrState *state) {
+    SZrTestTimer timer;
+    SZrSymbolTable *symbolTable;
+    SZrReferenceTracker *tracker;
+    SZrString *name;
+    SZrString *sourceA;
+    SZrString *sourceACopy;
+    SZrFileRange location;
+    SZrFileRange position;
+    SZrSymbol *symbol;
+
+    TEST_START("Reference Tracker Exact Source Identity");
+    TEST_INFO(
+            "Source Identity",
+            "Rejecting missing source URIs while preserving exact URI text equality");
+
+    symbolTable = ZrLanguageServer_SymbolTable_New(state);
+    tracker = ZrLanguageServer_ReferenceTracker_New(state, symbolTable);
+    if (symbolTable == ZR_NULL || tracker == ZR_NULL) {
+        if (tracker != ZR_NULL) {
+            ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        }
+        if (symbolTable != ZR_NULL) {
+            ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+        }
+        TEST_FAIL(
+                timer,
+                "Reference Tracker Exact Source Identity",
+                "Failed to create tracker");
+        return;
+    }
+
+    name = ZrCore_String_Create(state, "sourceBound", 11);
+    sourceA = ZrCore_String_Create(
+            state, "file:///workspace/a.zr", strlen("file:///workspace/a.zr"));
+    sourceACopy = ZrCore_String_Create(
+            state, "file:///workspace/a.zr", strlen("file:///workspace/a.zr"));
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(0, 1, 0),
+            ZrParser_FilePosition_Create(11, 1, 11),
+            sourceA);
+    ZrLanguageServer_SymbolTable_AddSymbol(
+            state,
+            symbolTable,
+            ZR_SYMBOL_VARIABLE,
+            name,
+            location,
+            ZR_NULL,
+            ZR_ACCESS_PUBLIC,
+            ZR_NULL);
+    symbol = ZrLanguageServer_SymbolTable_Lookup(symbolTable, name, ZR_NULL);
+    if (symbol == ZR_NULL) {
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+        TEST_FAIL(
+                timer,
+                "Reference Tracker Exact Source Identity",
+                "Failed to create source-bound symbol");
+        return;
+    }
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(20, 2, 0),
+            ZrParser_FilePosition_Create(31, 2, 11),
+            sourceA);
+    ZrLanguageServer_ReferenceTracker_AddReference(
+            state, tracker, symbol, location, ZR_REFERENCE_READ);
+    position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(24, 2, 4),
+            ZrParser_FilePosition_Create(24, 2, 4),
+            ZR_NULL);
+    if (ZrLanguageServer_ReferenceTracker_FindReferenceAt(
+                tracker, position) != ZR_NULL) {
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+        TEST_FAIL(
+                timer,
+                "Reference Tracker Exact Source Identity",
+                "A source-less query matched a source-bound reference");
+        return;
+    }
+
+    location = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(40, 3, 0),
+            ZrParser_FilePosition_Create(51, 3, 11),
+            ZR_NULL);
+    ZrLanguageServer_ReferenceTracker_AddReference(
+            state, tracker, symbol, location, ZR_REFERENCE_READ);
+    position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(44, 3, 4),
+            ZrParser_FilePosition_Create(44, 3, 4),
+            sourceA);
+    if (ZrLanguageServer_ReferenceTracker_FindReferenceAt(
+                tracker, position) != ZR_NULL) {
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+        TEST_FAIL(
+                timer,
+                "Reference Tracker Exact Source Identity",
+                "A source-less reference matched a source-bound query");
+        return;
+    }
+
+    position.source = ZR_NULL;
+    if (ZrLanguageServer_ReferenceTracker_FindReferenceAt(
+                tracker, position) != ZR_NULL) {
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+        TEST_FAIL(
+                timer,
+                "Reference Tracker Exact Source Identity",
+                "Two missing source URIs were treated as one source");
+        return;
+    }
+
+    position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(24, 2, 4),
+            ZrParser_FilePosition_Create(24, 2, 4),
+            sourceACopy);
+    if (ZrLanguageServer_ReferenceTracker_FindReferenceAt(
+                tracker, position) == ZR_NULL) {
+        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+        TEST_FAIL(
+                timer,
+                "Reference Tracker Exact Source Identity",
+                "Equal URI text from distinct strings did not match");
+        return;
+    }
+
+    ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+    ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+    TEST_PASS(timer, "Reference Tracker Exact Source Identity");
+}
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -297,6 +433,9 @@ int main(void) {
     TEST_DIVIDER();
     
     test_reference_tracker_get_locations(state);
+    TEST_DIVIDER();
+
+    test_reference_tracker_requires_exact_source_identity(state);
     TEST_DIVIDER();
     
     // 清理
