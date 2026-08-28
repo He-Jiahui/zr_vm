@@ -1255,6 +1255,40 @@ stable post-L8 full graph required below.
 
 ## Pending final acceptance
 
+### AOT Weak callable lifetime and meta-call convergence
+
+The final focused AOT review reproduced a shared lifetime defect with one Weak
+callable: a successful `weak?.(args)` wrote its result back into the slot holding
+the guard's hidden Shared owner. The later scope close could no longer release
+that owner, so dropping the last explicit Shared owner did not expire the Weak
+and a supposedly skipped optional-call argument executed.
+
+The compiler now keeps the guard-owned wake cleanup slot distinct from a fresh
+callable view/result slot. The AOT C backend lowers meta calls through the
+prepared-or-generic runtime path, keeps stack copies that immediately feed an
+ownership operation in runtime storage, and narrows post-copy scalar sync to a
+source with proven or possible primitive provenance. The focused fixture covers
+live and expired `.member`, `?.member`, `?.(args)`, and direct Weak callable
+execution, argument skipping, catchable `NullReferenceError`, and final wake
+expiry. The artifact roundtrip also requires `OWN_INTO_GC_BOX` and equal VM
+results before and after reload.
+
+| Toolchain | Source contracts | Call contracts | Ownership | ExecBC AOT | General shared | Logical shared | Receiver C/LLVM |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| GCC 11.4 Debug static | 26/26 | 9/9 | 44/44 | 98/98 | 14/14 | 6/6 | 6/6 |
+| Clang 14 Debug static | 26/26 | 9/9 | 44/44 | 98/98 | 14/14 | 6/6 | 6/6 |
+| MSVC 19.44 Debug static | 26/26 | 9/9 | 44/44 | 98/98 | 14 ignored | 6 ignored | 6 ignored |
+
+Every direct process exited zero. MSVC configured from an empty Ninja cache and
+compiled and linked all seven targets; the ignored cases are the suites'
+existing Unix shared-library execution guards, not build omissions. The broad
+destination-only scalar-sync experiment was rejected because it regressed the
+general shared-library suite by treating closure/object copies as primitive
+copies; the final provenance-gated implementation restores that 14/14 negative
+guardrail while retaining the receiver 6/6 positive case. This focused matrix
+does not promote final acceptance before the stable integrated full graph,
+artifact, inventory, and exact review gates below pass.
+
 The frozen syntax-leaf prerequisite is now checked by the executable
 `scripts/syntax_status_records.py` verifier rather than only by repeated manual
 enumeration in this record. Its focused unit suite passes 4/4, including a

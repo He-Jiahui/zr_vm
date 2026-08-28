@@ -5,6 +5,7 @@
 typedef struct SZrReceiverGuardLoweringFrame {
     TZrUInt32 mergeSlot;
     TZrUInt32 guardedSlot;
+    TZrUInt32 wakeCleanupSlot;
     TZrSize nullLabelId;
     TZrSize endLabelId;
     TZrSize chainSegmentEnd;
@@ -337,6 +338,29 @@ static TZrBool receiver_guard_emit_working_value(
             cs, destinationSlot, &fact->guardedType);
 }
 
+static TZrUInt32 receiver_guard_emit_callable_view(
+        SZrCompilerState *cs,
+        const SZrReceiverGuardFact *fact,
+        TZrUInt32 ownerSlot) {
+    TZrUInt32 viewSlot = allocate_fresh_stack_slot_after(cs, ownerSlot);
+
+    if (viewSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+    emit_instruction(
+            cs,
+            create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED),
+                    (TZrUInt16)viewSlot,
+                    (TZrUInt16)ownerSlot,
+                    0u));
+    if (!compiler_register_stack_slot_type_hint(
+                cs, viewSlot, &fact->guardedType)) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+    return viewSlot;
+}
+
 TZrBool compiler_receiver_guard_begin_segment(
         SZrCompilerState *cs,
         SZrAstNode *segment,
@@ -394,6 +418,7 @@ TZrBool compiler_receiver_guard_begin_segment(
 
         frame.mergeSlot = allocate_fresh_stack_slot_after(cs, sourceSlot);
         frame.guardedSlot = allocate_fresh_stack_slot_after(cs, frame.mergeSlot);
+        frame.wakeCleanupSlot = frame.guardedSlot;
         frame.nullLabelId = create_label(cs);
         frame.endLabelId = create_label(cs);
         frame.chainSegmentEnd = fact->chainSegmentEnd;
@@ -423,6 +448,19 @@ TZrBool compiler_receiver_guard_begin_segment(
                         0u));
         add_pending_jump(
                 cs, cs->instructionCount - 1u, frame.nullLabelId);
+        if (frame.hasWakeCleanup &&
+            segment->type == ZR_AST_FUNCTION_CALL) {
+            frame.guardedSlot = receiver_guard_emit_callable_view(
+                    cs, fact, frame.wakeCleanupSlot);
+            if (frame.guardedSlot == ZR_PARSER_SLOT_NONE) {
+                ZrParser_Compiler_Error(
+                        cs,
+                        "Failed to prepare callable weak receiver view",
+                        fact->range);
+                return ZR_FALSE;
+            }
+            guardedSlot = frame.guardedSlot;
+        }
         ZrCore_Array_Push(cs->state, &context->frames, &frame);
     } else {
         if (fact->kind == ZR_RECEIVER_GUARD_WEAK_WAKE) {
@@ -438,6 +476,7 @@ TZrBool compiler_receiver_guard_begin_segment(
             }
             frame.mergeSlot = ZR_PARSER_SLOT_NONE;
             frame.guardedSlot = guardedSlot;
+            frame.wakeCleanupSlot = guardedSlot;
             frame.nullLabelId = ZR_PARSER_LABEL_ID_NONE;
             frame.endLabelId = ZR_PARSER_LABEL_ID_NONE;
             frame.chainSegmentEnd = fact->chainSegmentEnd;
@@ -445,6 +484,18 @@ TZrBool compiler_receiver_guard_begin_segment(
             frame.range = fact->range;
             frame.hasOptionalBranch = ZR_FALSE;
             frame.hasWakeCleanup = ZR_TRUE;
+            if (segment->type == ZR_AST_FUNCTION_CALL) {
+                frame.guardedSlot = receiver_guard_emit_callable_view(
+                        cs, fact, frame.wakeCleanupSlot);
+                if (frame.guardedSlot == ZR_PARSER_SLOT_NONE) {
+                    ZrParser_Compiler_Error(
+                            cs,
+                            "Failed to prepare callable weak receiver view",
+                            fact->range);
+                    return ZR_FALSE;
+                }
+                guardedSlot = frame.guardedSlot;
+            }
             ZrCore_Array_Push(cs->state, &context->frames, &frame);
         }
         emit_instruction(
@@ -480,12 +531,12 @@ static void receiver_guard_emit_wake_cleanup(
     if (frame == ZR_NULL || !frame->hasWakeCleanup) {
         return;
     }
-    if (frame->guardedSlot != preservedSlot) {
+    if (frame->wakeCleanupSlot != preservedSlot) {
         emit_instruction(
                 cs,
                 create_instruction_0(
                         ZR_INSTRUCTION_ENUM(RESET_STACK_NULL),
-                        (TZrUInt16)frame->guardedSlot));
+                        (TZrUInt16)frame->wakeCleanupSlot));
     }
     emit_instruction(
             cs,

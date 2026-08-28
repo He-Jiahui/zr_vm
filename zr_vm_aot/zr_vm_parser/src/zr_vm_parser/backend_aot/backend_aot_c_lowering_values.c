@@ -1085,26 +1085,15 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
         return;
     }
     if (!backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
+                functionIr, sourceSlot, execInstructionIndex) &&
+        !backend_aot_c_scalar_stack_copy_source_may_have_runtime_scalar_before(
                 functionIr, sourceSlot, execInstructionIndex)) {
         return;
     }
-
-    syncBool = (TZrBool)(backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot) &&
-                         backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&
-                         backend_aot_c_scalar_locals_bool_written_before(
-                                 functionIr, sourceSlot, execInstructionIndex));
-    syncI64 = (TZrBool)(backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot) &&
-                        backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot) &&
-                        backend_aot_c_scalar_locals_i64_written_before(
-                                functionIr, sourceSlot, execInstructionIndex));
-    syncU64 = (TZrBool)(backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot) &&
-                        backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot) &&
-                        backend_aot_c_scalar_locals_u64_written_before(
-                                functionIr, sourceSlot, execInstructionIndex));
-    syncF64 = (TZrBool)(backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot) &&
-                        backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot) &&
-                        backend_aot_c_scalar_locals_f64_written_before(
-                                functionIr, sourceSlot, execInstructionIndex));
+    syncBool = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
+    syncI64 = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
+    syncU64 = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
+    syncF64 = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
     if (!syncBool && !syncI64 && !syncU64 && !syncF64) {
         return;
     }

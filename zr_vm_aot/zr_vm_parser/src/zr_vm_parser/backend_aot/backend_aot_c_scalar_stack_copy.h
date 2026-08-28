@@ -24,5 +24,13 @@ TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 slot,
         TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_stack_copy_source_may_have_runtime_scalar_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 execInstructionIndex);
+TZrBool backend_aot_c_scalar_stack_copy_destination_is_next_ownership_source(
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot);
 
 #endif

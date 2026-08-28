@@ -568,6 +568,20 @@ and Clang 14 execute 6/6; MSVC 19.44 compiles and links the affected production
 paths and reports 6 explicit Unix capability ignores. Final Task 10 graph and
 artifact gates remain pending the stable post-L8 baseline.
 
+The 2026-08-28 Weak callable follow-up fixes a separate C-backend lifetime and
+meta-call boundary. Receiver-guard lowering retains the `OWN_WAKE` result in a
+dedicated cleanup slot and derives a callable view into a fresh result slot, so
+`META_CALL` cannot overwrite the hidden Shared owner before scope close. AOT C
+routes meta calls through the prepared-or-generic runtime path. Stack-copy
+lowering preserves runtime ownership sources and uses primitive provenance to
+limit scalar-local resynchronization. On the exact isolated overlay, GCC 11.4
+and Clang 14 pass source contracts 26/26, call contracts 9/9, ownership 44/44,
+ExecBC AOT 98/98, general shared 14/14, logical shared 6/6, and receiver C/LLVM
+6/6. MSVC 19.44 builds all seven targets, passes the portable suites at the same
+counts, and reports 14/6/6 Unix-only ignores with zero failures. This closes the
+focused AOT callable defect; the Task 10 stable integrated full graph remains
+open.
+
 - [x] **Step 4: Commit AOT parity**
 
 ```powershell

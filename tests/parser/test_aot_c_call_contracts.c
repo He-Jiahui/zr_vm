@@ -451,68 +451,71 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
 
 static void test_aot_c_source_makes_meta_calls_explicit_boundary(void) {
     static const char *const emitterHeaderNeedles[] = {
-            "backend_aot_write_c_unsupported_meta_call(FILE *file,",
+            "backend_aot_write_c_meta_call(FILE *file,",
+            "const SZrAotExecIrFunction *functionIr,",
     };
     static const char *const runtimeHeaderNeedles[] = {
-            "ZrLibrary_AotRuntime_UnsupportedMetaCall(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_PrepareMetaCall(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_CallPreparedOrGeneric(struct SZrState *state,",
     };
-    static const char *const callLoweringNeedles[] = {
-            "backend_aot_write_c_unsupported_meta_call(FILE *file,",
-            "zr_aot_unsupported_meta_call",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedMetaCall(state,",
-            "unsupported AOT meta call",
+    static const char *const metaLoweringNeedles[] = {
+            "backend_aot_write_c_meta_call(FILE *file,",
+            "ZrAotGeneratedDirectCall zr_aot_meta_direct_call = {0};",
+            "zr_aot_meta_call_prepare_and_dispatch",
+            "ZrLibrary_AotRuntime_PrepareMetaCall(state,",
+            "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,",
+            "(unsigned)(argumentCount + 1u)",
+            "zr_aot_meta_call_sync_i64_local_boundary",
+            "zr_aot_meta_call_sync_bool_local_boundary",
+            "zr_aot_meta_call_sync_u64_local_boundary",
+            "zr_aot_meta_call_sync_f64_local_boundary",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):",
-            "backend_aot_write_c_unsupported_meta_call(file, destinationSlot, operandA1, 0);",
+            "backend_aot_write_c_meta_call(file, functionIr, destinationSlot, operandA1, 0);",
             "case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):",
             "ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL",
             "case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):",
             "case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):",
             "case ZR_INSTRUCTION_ENUM(META_CALL):",
             "case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):",
-            "backend_aot_write_c_unsupported_meta_call(file, destinationSlot, operandA1, operandB1);",
+            "backend_aot_write_c_meta_call(file, functionIr, destinationSlot, operandA1, operandB1);",
     };
-    static const char *const forbiddenCallLoweringNeedles[] = {
-            "const TZrUInt32 zr_aot_destination_slot = %u;",
-            "const TZrUInt32 zr_aot_receiver_slot = %u;",
-            "const TZrUInt32 zr_aot_argument_count = %u;",
-            "SZrTypeValue *zr_aot_receiver = ZrCore_Stack_GetValue(frame.slotBase + %u);",
-            "SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);",
-            "ZrCore_Debug_RunError(state,",
-            "backend_aot_write_c_direct_meta_call",
-            "ZrAotGeneratedDirectCall zr_aot_direct_call",
-            "ZrLibrary_AotRuntime_PrepareMetaCall",
-            "ZrLibrary_AotRuntime_CallPreparedOrGeneric",
+    static const char *const forbiddenMetaLoweringNeedles[] = {
+            "backend_aot_write_c_unsupported_meta_call",
+            "ZrLibrary_AotRuntime_UnsupportedMetaCall",
+            "unsupported AOT meta call",
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
-            "backend_aot_write_c_direct_meta_call",
+            "backend_aot_write_c_unsupported_meta_call",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *callLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+    char *metaLoweringText = read_repo_text_file_owned(
+            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_meta_calls.c");
     char *functionBodyText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
-    TEST_ASSERT_NOT_NULL(callLoweringText);
+    TEST_ASSERT_NOT_NULL(metaLoweringText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
 
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));
     assert_text_contains_all(runtimeHeaderText, runtimeHeaderNeedles, ARRAY_COUNT(runtimeHeaderNeedles));
-    assert_text_contains_all(callLoweringText, callLoweringNeedles, ARRAY_COUNT(callLoweringNeedles));
+    assert_text_contains_all(metaLoweringText, metaLoweringNeedles, ARRAY_COUNT(metaLoweringNeedles));
     assert_text_contains_all(functionBodyText, functionBodyNeedles, ARRAY_COUNT(functionBodyNeedles));
-    assert_text_contains_none(callLoweringText, forbiddenCallLoweringNeedles, ARRAY_COUNT(forbiddenCallLoweringNeedles));
+    assert_text_contains_none(metaLoweringText,
+                              forbiddenMetaLoweringNeedles,
+                              ARRAY_COUNT(forbiddenMetaLoweringNeedles));
     assert_text_contains_none(functionBodyText,
                               forbiddenFunctionBodyNeedles,
                               ARRAY_COUNT(forbiddenFunctionBodyNeedles));
 
     free(emitterHeaderText);
     free(runtimeHeaderText);
-    free(callLoweringText);
+    free(metaLoweringText);
     free(functionBodyText);
 }
 

@@ -2401,10 +2401,10 @@ static void test_aot_c_backend_lowers_cached_meta_calls_with_direct_call_frames(
 
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
-        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_unsupported_meta_call */"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareMetaCall"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_meta_call_prepare_and_dispatch */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareMetaCall(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NULL(strstr(cText, "ZR_AOT_C_GUARD(zr_aot_direct_call.nativeFunction(state));"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &zr_aot_direct_call, 1)"));
@@ -8779,6 +8779,7 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
         const char *source =
                 "resource class Service {\n"
                 "    pub const fn add(value: int): int { return value + 10; }\n"
+                "    pub const @call(value: int): int { return value + 20; }\n"
                 "}\n"
                 "fn failIfEvaluated(): int { throw \"receiver guard evaluated arguments\"; }\n"
                 "fn run(): int {\n"
@@ -8786,14 +8787,23 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
                 "    var shared = share(seed);\n"
                 "    var weak = degrade(shared);\n"
                 "    var live = weak?.add(1);\n"
+                "    var liveCallable = weak?.(1);\n"
                 "    var observed = 0;\n"
                 "    if (live != null) { observed = 10; }\n"
+                "    if (liveCallable == 21) { observed = observed + 100; }\n"
                 "    drop(shared);\n"
                 "    var expired = weak?.add(failIfEvaluated());\n"
+                "    var expiredCallable = weak?.(failIfEvaluated());\n"
                 "    var caught = 0;\n"
                 "    try { weak.add(failIfEvaluated()); }\n"
                 "    catch (error: NullReferenceError) { caught = 1; }\n"
-                "    return observed + caught;\n"
+                "    var callableCaught = 0;\n"
+                "    try { weak(failIfEvaluated()); }\n"
+                "    catch (error: NullReferenceError) { callableCaught = 1; }\n"
+                "    if (expired == null && expiredCallable == null) {\n"
+                "        return observed + caught + callableCaught;\n"
+                "    }\n"
+                "    return 0;\n"
                 "}\n"
                 "return run();\n";
         const char *intermediatePath = "receiver_guard_aot_parity_test.zri";
@@ -8833,11 +8843,39 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
         TEST_ASSERT_NOT_NULL(intermediateText);
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "REQUIRE_NON_NULL"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_jump_if_null */"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_RequireNonNull(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_IsNull("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_RequireNonNull("));
+        TEST_ASSERT_TRUE_MESSAGE(
+                count_substring_occurrences(
+                        intermediateText, "JUMP_IF_NULL") >= 2u,
+                "method and callable optional guards must reach ExecBC");
+        TEST_ASSERT_TRUE_MESSAGE(
+                count_substring_occurrences(
+                        intermediateText, "REQUIRE_NON_NULL") >= 2u,
+                "method and callable direct guards must reach ExecBC");
+        TEST_ASSERT_TRUE_MESSAGE(
+                count_substring_occurrences(
+                        cText, "/* zr_aot_jump_if_null */") >= 2u,
+                "method and callable optional guards must reach AOT C");
+        TEST_ASSERT_TRUE_MESSAGE(
+                count_substring_occurrences(
+                        cText,
+                        "ZrLibrary_AotRuntime_RequireNonNull(state, &frame,") >= 2u,
+                "method and callable direct guards must reach AOT C");
+        TEST_ASSERT_NOT_NULL(strstr(cText,
+                                    "ZrLibrary_AotRuntime_PrepareMetaCall(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText,
+                                    "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,"));
+        TEST_ASSERT_NULL(strstr(cText,
+                                "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
+        TEST_ASSERT_TRUE_MESSAGE(
+                count_substring_occurrences(
+                        llvmText,
+                        "call i1 @ZrLibrary_AotRuntime_IsNull(") >= 2u,
+                "method and callable optional guards must reach AOT LLVM");
+        TEST_ASSERT_TRUE_MESSAGE(
+                count_substring_occurrences(
+                        llvmText,
+                        "call i1 @ZrLibrary_AotRuntime_RequireNonNull(") >= 2u,
+                "method and callable direct guards must reach AOT LLVM");
         TEST_ASSERT_FALSE(aot_c_text_contains_unsupported_opcode(cText,
                                                                  ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)));
         TEST_ASSERT_FALSE(aot_c_text_contains_unsupported_opcode(cText,
@@ -8848,7 +8886,7 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
                                                                     ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL)));
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
-        TEST_ASSERT_EQUAL_INT64(11, result);
+        TEST_ASSERT_EQUAL_INT64(112, result);
 
         free(intermediateText);
         free(cText);

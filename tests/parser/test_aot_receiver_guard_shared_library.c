@@ -42,6 +42,7 @@ void tearDown(void) {}
 static const char *receiver_guard_source(void) {
     return "resource class Service {\n"
            "    pub const fn add(value: int): int { return value + 10; }\n"
+           "    pub const @call(value: int): int { return value + 20; }\n"
            "    pub const fn explode(): int { throw \"receiver guard suffix failure\"; }\n"
            "}\n"
            "fn failIfEvaluated(): int { throw \"receiver guard evaluated arguments\"; }\n"
@@ -50,8 +51,10 @@ static const char *receiver_guard_source(void) {
            "    var shared = share(seed);\n"
            "    var weak = degrade(shared);\n"
            "    var live = weak?.add(1);\n"
+           "    var liveCallable = weak?.(2);\n"
            "    var observed = 0;\n"
            "    if (live != null) { observed = 10; }\n"
+           "    if (liveCallable == 22) { observed = observed + 100; }\n"
            "    var suffixCaught = false;\n"
            "    try { weak.explode(); }\n"
            "    catch (error) { suffixCaught = true; }\n"
@@ -59,10 +62,17 @@ static const char *receiver_guard_source(void) {
            "    var afterSuffixThrow = wake(weak);\n"
            "    var suffixWakeReleased = afterSuffixThrow == null;\n"
            "    var expired = weak?.add(failIfEvaluated());\n"
+           "    var expiredCallable = weak?.(failIfEvaluated());\n"
            "    var caught = 0;\n"
            "    try { weak.add(failIfEvaluated()); }\n"
            "    catch (error: NullReferenceError) { caught = 1; }\n"
-           "    if (suffixCaught && suffixWakeReleased) { return observed + caught + 100; }\n"
+           "    var callableCaught = 0;\n"
+           "    try { weak(failIfEvaluated()); }\n"
+           "    catch (error: NullReferenceError) { callableCaught = 1; }\n"
+           "    if (suffixCaught && suffixWakeReleased &&\n"
+           "        expired == null && expiredCallable == null) {\n"
+           "        return observed + caught + callableCaught + 999;\n"
+           "    }\n"
            "    return 0;\n"
            "}\n"
            "return run();\n";
@@ -345,7 +355,7 @@ static void test_aot_c_receiver_guards_execute_optional_and_direct_contracts(voi
     TEST_IGNORE_MESSAGE("AOT receiver-guard shared-library smoke validates the Unix toolchain path");
 #else
     execute_source_backend(receiver_guard_source(),
-                           111,
+                           1111,
                            ZR_AOT_BACKEND_KIND_C,
                            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
                            ZR_LIBRARY_EXECUTED_VIA_AOT_C,
@@ -359,7 +369,7 @@ static void test_aot_llvm_receiver_guards_execute_optional_and_direct_contracts(
     TEST_IGNORE_MESSAGE("AOT receiver-guard shared-library smoke validates the Unix toolchain path");
 #else
     execute_source_backend(receiver_guard_source(),
-                           111,
+                           1111,
                            ZR_AOT_BACKEND_KIND_LLVM,
                            ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
                            ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,

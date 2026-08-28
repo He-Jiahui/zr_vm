@@ -184,6 +184,57 @@ TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
                      functionIr, slot, execInstructionIndex)));
 }
 
+TZrBool backend_aot_c_scalar_stack_copy_source_may_have_runtime_scalar_before(
+        const SZrAotExecIrFunction *functionIr,
+        TZrUInt32 sourceSlot,
+        TZrUInt32 execInstructionIndex) {
+    const SZrFunction *function;
+    TZrUInt32 scanIndex;
+
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL ||
+        functionIr->function->instructionsList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = functionIr->function;
+    if (execInstructionIndex > function->instructionsLength) {
+        execInstructionIndex = function->instructionsLength;
+    }
+    for (scanIndex = 0u; scanIndex < execInstructionIndex; scanIndex++) {
+        const TZrInstruction *instruction = &function->instructionsList[scanIndex];
+
+        if (instruction->instruction.operandExtra != sourceSlot) {
+            continue;
+        }
+        if (backend_aot_c_scalar_locals_instruction_writes_primitive(
+                    functionIr, scanIndex, sourceSlot)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool backend_aot_c_scalar_stack_copy_destination_is_next_ownership_source(
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 destinationSlot) {
+    const TZrInstruction *nextInstruction;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL ||
+        instructionIndex + 1u >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    nextInstruction = &function->instructionsList[instructionIndex + 1u];
+    if (!backend_aot_c_scalar_stack_copy_instruction_writes_ownership(
+                (EZrInstructionCode)nextInstruction->instruction.operationCode)) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(nextInstruction->instruction.operand.operand1[0] == destinationSlot);
+}
+
 static TZrBool backend_aot_c_scalar_stack_copy_instruction_is_call_result_write(
         EZrInstructionCode opcode);
 

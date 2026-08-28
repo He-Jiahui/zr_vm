@@ -1,28 +1,6 @@
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_internal.h"
-
-void backend_aot_write_c_unsupported_meta_call(FILE *file,
-                                               TZrUInt32 destinationSlot,
-                                               TZrUInt32 receiverSlot,
-                                               TZrUInt32 argumentCount) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    {\n"
-            "        /* zr_aot_unsupported_meta_call */\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_UnsupportedMetaCall(state,\n"
-            "                                                                    &frame,\n"
-            "                                                                    %u,\n"
-            "                                                                    %u,\n"
-            "                                                                    %u,\n"
-            "                                                                    \"unsupported AOT meta call\"));\n"
-            "    }\n",
-            (unsigned)destinationSlot,
-            (unsigned)receiverSlot,
-            (unsigned)argumentCount);
-}
 
 static void backend_aot_write_c_static_direct_i64_deopt_fallback(FILE *file,
                                                                  TZrUInt32 destinationSlot,

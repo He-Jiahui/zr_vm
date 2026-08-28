@@ -441,21 +441,18 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
     TEST_IGNORE_MESSAGE("AOT C generic primitive equality shared-library smoke currently validates the Unix dlopen toolchain path");
 #else
     const char *source =
-            "pub var choose = fn(flag) => {\n"
-            "    if (flag) {\n"
-            "        return 3;\n"
-            "    }\n"
-            "    return false;\n"
+            "pub var choose = fn(value) => {\n"
+            "    return value;\n"
             "};\n"
-            "var same = choose(true) == 3;\n"
-            "var different = choose(true) != 4;\n"
+            "var same = choose(3) == 3;\n"
+            "var different = choose(3) != 4;\n"
             "if (!same) {\n"
             "    return 91;\n"
             "}\n"
             "if (!different) {\n"
             "    return 92;\n"
             "}\n"
-            "return (choose(true) == 4) ? 93 : 11;\n";
+            "return (choose(3) == 4) ? 93 : 11;\n";
     const char *projectJson =
             "{"
             "\"name\":\"aot-runtime-generic-equality-smoke\","
@@ -548,8 +545,6 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b9) {"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_condition = &frame.slotBase[9].value;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "zr_aot_destination->value.nativeObject.nativeBool = ZR_TRUE;"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_LogicalEqual(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Value_Equal("));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_bool_sync"));

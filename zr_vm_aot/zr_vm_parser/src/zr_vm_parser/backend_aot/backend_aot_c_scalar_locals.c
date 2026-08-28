@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_common/zr_meta_conf.h"
 
 typedef enum EZrAotScalarLocalKind {
     ZR_AOT_SCALAR_LOCAL_KIND_NONE = 0,
@@ -344,12 +345,18 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_call_with_stack_argume
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
+        case ZR_INSTRUCTION_ENUM(META_CALL):
+        case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
         case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -380,6 +387,13 @@ static TZrBool backend_aot_c_scalar_locals_instruction_reads_call_argument_slot(
     if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL)) {
         functionSlot = instruction->instruction.operandExtra;
         argumentCount = instruction->instruction.operand.operand1[1];
+    } else if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS) ||
+               instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)) {
+        return ZR_FALSE;
+    } else if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED) ||
+               instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED)) {
+        functionSlot = instruction->instruction.operand.operand1[0];
+        argumentCount = ZR_META_CALL_MAX_ARGUMENTS;
     } else {
         functionSlot = instruction->instruction.operand.operand1[0];
         argumentCount = instruction->instruction.operand.operand1[1];

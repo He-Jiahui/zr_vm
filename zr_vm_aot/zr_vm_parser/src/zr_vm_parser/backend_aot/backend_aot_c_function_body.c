@@ -824,6 +824,7 @@ void backend_aot_write_c_function_body(FILE *file,
             case ZR_INSTRUCTION_ENUM(SET_STACK):
             {
                 TZrBool destinationIsNextCallCallable;
+                TZrBool destinationIsNextOwnershipSource;
                 TZrUInt32 sourceSlot;
 
                 if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
@@ -843,6 +844,11 @@ void backend_aot_write_c_function_body(FILE *file,
                         entry->function,
                         instructionIndex,
                         destinationSlot);
+                destinationIsNextOwnershipSource =
+                        backend_aot_c_scalar_stack_copy_destination_is_next_ownership_source(
+                                entry->function,
+                                instructionIndex,
+                                destinationSlot);
                 if (backend_aot_c_reset_null_stack_copy_consumed_by_local_logical_not(
                             functionIr, destinationSlot, instructionIndex)) {
                     backend_aot_write_c_reset_null_stack_copy_local_logical_not_skip(
@@ -903,7 +909,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                  ZR_AOT_INVALID_FUNCTION_INDEX);
                     break;
                 }
-                if (!destinationIsNextCallCallable &&
+                if (!destinationIsNextCallCallable && !destinationIsNextOwnershipSource &&
                     backend_aot_try_write_c_scalar_stack_copy(file,
                                                               functionIr,
                                                               destinationSlot,
@@ -933,7 +939,8 @@ void backend_aot_write_c_function_body(FILE *file,
                                                       instructionIndex,
                                                       (TZrBool)(instruction->instruction.operationCode ==
                                                                 ZR_INSTRUCTION_ENUM(GET_STACK)),
-                                                      destinationIsNextCallCallable);
+                                                      (TZrBool)(destinationIsNextCallCallable ||
+                                                                destinationIsNextOwnershipSource));
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1796,27 +1803,28 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
-                backend_aot_write_c_unsupported_meta_call(file, destinationSlot, operandA1, 0);
+                backend_aot_write_c_meta_call(file, functionIr, destinationSlot, operandA1, 0);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
-                backend_aot_write_c_unsupported_meta_call(file,
-                                                          destinationSlot,
-                                                          operandA1,
-                                                          backend_aot_get_callsite_cache_argument_count(
-                                                                  entry->function,
-                                                                  operandB1,
-                                                                  ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL));
+                backend_aot_write_c_meta_call(file,
+                                              functionIr,
+                                              destinationSlot,
+                                              operandA1,
+                                              backend_aot_get_callsite_cache_argument_count(
+                                                      entry->function,
+                                                      operandB1,
+                                                      ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL));
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):
-                backend_aot_write_c_unsupported_meta_call(file, destinationSlot, operandA1, 0);
+                backend_aot_write_c_meta_call(file, functionIr, destinationSlot, operandA1, 0);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1824,13 +1832,14 @@ void backend_aot_write_c_function_body(FILE *file,
                 backend_aot_write_c_tail_return(file, destinationSlot, publishExports);
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
-                backend_aot_write_c_unsupported_meta_call(file,
-                                                          destinationSlot,
-                                                          operandA1,
-                                                          backend_aot_get_callsite_cache_argument_count(
-                                                                  entry->function,
-                                                                  operandB1,
-                                                                  ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL));
+                backend_aot_write_c_meta_call(file,
+                                              functionIr,
+                                              destinationSlot,
+                                              operandA1,
+                                              backend_aot_get_callsite_cache_argument_count(
+                                                      entry->function,
+                                                      operandB1,
+                                                      ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL));
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1839,7 +1848,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(META_CALL):
             case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
-                backend_aot_write_c_unsupported_meta_call(file, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_meta_call(file, functionIr, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,

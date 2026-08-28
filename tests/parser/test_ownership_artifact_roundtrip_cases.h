@@ -234,7 +234,7 @@ static void assert_ownership_artifact_function_projection_equal(
     }
 }
 
-static void test_ownership_guard_binary_roundtrip_preserves_execution_projection(
+static void test_ownership_binary_roundtrip_preserves_guard_and_bridge_projection(
         void) {
     static const TZrChar source[] =
             "resource class Box {\n"
@@ -262,7 +262,13 @@ static void test_ownership_guard_binary_roundtrip_preserves_execution_projection
             "    if (optional == null && caught == 1) { return 1; }\n"
             "    return 0;\n"
             "}\n"
-            "return live() + expired();\n";
+            "fn bridge(): int {\n"
+            "    var seed = own Box(11);\n"
+            "    var gcBox = intoGc(seed);\n"
+            "    if (gcBox != null) { return 1; }\n"
+            "    return 0;\n"
+            "}\n"
+            "return live() + expired() + bridge();\n";
     TZrChar artifactBaseName[96];
     SZrString *sourceName;
     SZrFunction *sourceFunction;
@@ -307,12 +313,14 @@ static void test_ownership_guard_binary_roundtrip_preserves_execution_projection
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
             sourceFunction, ZR_INSTRUCTION_ENUM(OWN_WAKE), 0u));
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
+            sourceFunction, ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX), 0u));
+    TEST_ASSERT_TRUE(function_contains_opcode_recursive(
             sourceFunction, ZR_INSTRUCTION_ENUM(JUMP_IF_NULL), 0u));
     TEST_ASSERT_TRUE(function_contains_opcode_recursive(
             sourceFunction, ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL), 0u));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, sourceFunction, &sourceResult));
-    TEST_ASSERT_EQUAL_INT64(2, sourceResult);
+    TEST_ASSERT_EQUAL_INT64(3, sourceResult);
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(
             g_state, sourceFunction, g_ownership_artifact_path));
 
@@ -341,7 +349,7 @@ static void test_ownership_guard_binary_roundtrip_preserves_execution_projection
             sourceFunction, runtimeFunction);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, runtimeFunction, &runtimeResult));
-    TEST_ASSERT_EQUAL_INT64(2, runtimeResult);
+    TEST_ASSERT_EQUAL_INT64(3, runtimeResult);
 
     ZrCore_Function_Free(g_state, runtimeFunction);
     ZrCore_Io_Free(g_state->global, io);

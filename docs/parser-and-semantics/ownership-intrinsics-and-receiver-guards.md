@@ -431,3 +431,27 @@ a right constant-table index. On a fixed `515c4eb` snapshot with the exact
 seven-file overlay, GCC 11.4 and Clang 14 each execute 6/6 receiver/intrinsic
 shared-library cases with exit zero. MSVC 19.44 compiles and links the same
 backend and reports 6/6 explicit Unix capability ignores with exit zero.
+
+The 2026-08-28 callable-lifetime follow-up separates a Weak guard's hidden
+Shared owner slot from the callable view/result slot. `OWN_WAKE` writes the
+cleanup slot, `OWN_VIEW_SHARED` derives the callable receiver into a fresh slot,
+and `META_CALL` may overwrite only that view slot. Scope cleanup therefore still
+releases the hidden owner after `weak?.(args)` or `weak(args)`, including when a
+call succeeds before the last explicit Shared owner is dropped. AOT C now lowers
+meta calls through `ZrLibrary_AotRuntime_PrepareMetaCall` and
+`ZrLibrary_AotRuntime_CallPreparedOrGeneric`; it no longer emits the unsupported
+meta-call boundary for this executable shape. Stack-copy lowering also keeps a
+copy feeding the next ownership instruction in runtime value storage, and only
+synchronizes a scalar destination after a runtime copy when the source has
+proven or possible primitive provenance. This preserves ownership object
+identity without reintroducing unnecessary scalar synchronization for closure
+and object copies.
+
+On one exact isolated source snapshot, GCC 11.4 and Clang 14 directly pass AOT C
+source contracts 26/26, call contracts 9/9, ownership separation 44/44, ExecBC
+AOT pipeline 98/98, general AOT C shared-library smoke 14/14, logical smoke 6/6,
+and receiver-guard C/LLVM smoke 6/6. MSVC 19.44 builds and links all seven
+targets, passes the four portable suites 26/26, 9/9, 44/44, and 98/98, and
+reports the three Unix-only executable suites as 14, 6, and 6 explicit ignores
+with zero failures. This is focused backend evidence; it does not replace the
+final stable integrated full-graph acceptance.

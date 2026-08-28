@@ -1892,6 +1892,6 @@ int main(void) {
     RUN_TEST(test_nullable_callable_variable_shadows_named_function);
     RUN_TEST(test_weak_optional_intrinsic_named_members_use_normal_dispatch);
     RUN_TEST(test_weak_direct_wake_named_member_uses_normal_dispatch);
-    RUN_TEST(test_ownership_guard_binary_roundtrip_preserves_execution_projection);
+    RUN_TEST(test_ownership_binary_roundtrip_preserves_guard_and_bridge_projection);
     return UNITY_END();
 }

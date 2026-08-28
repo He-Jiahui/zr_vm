@@ -881,10 +881,11 @@ void backend_aot_write_c_direct_iter_move_next_jump_if_false(FILE *file,
                                                              TZrUInt32 targetInstructionIndex,
                                                              TZrBool isBackEdge);
 void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
-void backend_aot_write_c_unsupported_meta_call(FILE *file,
-                                               TZrUInt32 destinationSlot,
-                                               TZrUInt32 receiverSlot,
-                                               TZrUInt32 argumentCount);
+void backend_aot_write_c_meta_call(FILE *file,
+                                   const SZrAotExecIrFunction *functionIr,
+                                   TZrUInt32 destinationSlot,
+                                   TZrUInt32 receiverSlot,
+                                   TZrUInt32 argumentCount);
 void backend_aot_write_c_unsupported_instruction(FILE *file,
                                                  TZrUInt32 functionFlatIndex,
                                                  TZrUInt32 instructionIndex,
