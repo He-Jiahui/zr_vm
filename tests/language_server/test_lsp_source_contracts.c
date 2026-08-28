@@ -1614,6 +1614,7 @@ static void test_extern_callable_decorators_use_parser_diagnostic_projection(voi
 #include "test_lsp_source_contract_return_type_cases.h"
 #include "test_lsp_source_contract_exact_type_diagnostic_cases.h"
 #include "test_lsp_source_contract_no_local_diagnostic_api_cases.h"
+#include "test_lsp_source_contract_inlay_declaration_cases.h"
 
 int main(void) {
     printf("==========\n");
@@ -1673,6 +1674,7 @@ int main(void) {
     test_local_implementation_consumer_uses_parser_relations();
     test_local_type_hierarchy_uses_parser_relations();
     test_local_call_hierarchy_uses_parser_edges();
+    test_inlay_uses_canonical_declaration_query();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
@@ -1741,6 +1743,7 @@ int main(void) {
     printf("PASS: Local implementation uses parser relation queries\n");
     printf("PASS: Local type hierarchy uses parser relation queries\n");
     printf("PASS: Local call hierarchy uses parser call-edge queries\n");
+    printf("PASS: Inlay hints use canonical declaration queries\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");

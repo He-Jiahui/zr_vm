@@ -975,6 +975,8 @@ static void test_completion_and_signature_use_ownership_intrinsic_fact(SZrState 
     TEST_PASS(timer, summary);
 }
 
+#include "test_lsp_inlay_canonical_declaration_cases.h"
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -1008,6 +1010,7 @@ int main(void) {
     test_completion_detail_uses_initializer_ownership_fact(state);
     test_signature_help_parameter_docs_use_argument_semantic_facts(state);
     test_completion_and_signature_use_ownership_intrinsic_fact(state);
+    test_inlay_hint_enumerates_canonical_declarations_without_symbol_table(state);
 
     ZrCore_GlobalState_Free(global);
 

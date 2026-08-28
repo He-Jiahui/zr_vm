@@ -1862,6 +1862,8 @@ static void test_visible_symbols_projects_source_struct_and_interface_members(vo
     ZrParser_Ast_Free(g_state, ast);
 }
 
+#include "test_semantic_query_declared_symbol_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_symbol_at_projects_resolved_reference_identity);
@@ -1883,5 +1885,6 @@ int main(void) {
     RUN_TEST(test_visible_symbols_projects_destructured_import_and_type_value_aliases);
     RUN_TEST(test_visible_symbols_projects_source_type_members);
     RUN_TEST(test_visible_symbols_projects_source_struct_and_interface_members);
+    RUN_TEST(test_declared_symbols_projects_exact_snapshot_declarations);
     return UNITY_END();
 }

@@ -3507,3 +3507,18 @@ fact. It has no local return walker, common-type merge, or diagnostic producer.
 Consumers must not reconstruct this rule from AST shape, member names, source
 text, or display strings. `cannot_infer_exact_type` remains the separate
 surface for unavailable exact type information.
+
+## Plan 03 Task 7.10 Canonical Declaration Enumeration
+
+`ZrParser_SemanticQuery_DeclaredSymbols` projects resolved declaration facts
+from one immutable semantic snapshot. Every projected row requires an exact
+SymbolId, TypeId, declaration node, and matching symbol record. The query
+deduplicates by SymbolId and returns stable declaration-range order; unresolved
+or mismatched facts remain unavailable.
+
+The declaration AST pointer is borrowed snapshot data for syntax-specific
+presentation only. LSP inlay hints use it to decide whether an annotation is
+implicit and where to place the hint, while canonical type text comes only from
+the declaration SymbolId/TypeId and `DeclarationOf`. They do not enumerate the
+LSP symbol table, infer a type during a request, or look up a declaration by
+name.

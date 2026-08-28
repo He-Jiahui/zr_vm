@@ -237,6 +237,81 @@ static TZrBool semantic_query_symbols_prepare_output(
     return ZR_TRUE;
 }
 
+static TZrBool semantic_query_symbols_scope_allows_declaration(
+        const SZrParserSemanticQueryScope *scope,
+        const SZrSemanticReferenceFact *declaration) {
+    if (declaration == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (scope == ZR_NULL || scope->kind == ZR_PARSER_SEMANTIC_QUERY_SCOPE_MODULE) {
+        return ZR_TRUE;
+    }
+    return scope->kind == ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE &&
+           scope->root != ZR_NULL &&
+           semantic_query_symbols_range_contains(
+                   &scope->root->location, &declaration->range);
+}
+
+static TZrBool semantic_query_symbols_contains_id(
+        const SZrArray *symbols,
+        TZrSymbolId symbolId) {
+    TZrSize index;
+
+    if (symbols == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < symbols->length; index++) {
+        const SZrParserSemanticSymbolQuery *symbol =
+                (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+                        (SZrArray *)symbols, index);
+        if (symbol != ZR_NULL && symbol->symbolId == symbolId) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool semantic_query_symbols_declaration_precedes(
+        const SZrParserSemanticSymbolQuery *left,
+        const SZrParserSemanticSymbolQuery *right) {
+    if (left->declarationRange.start.offset != right->declarationRange.start.offset) {
+        return left->declarationRange.start.offset < right->declarationRange.start.offset;
+    }
+    if (left->declarationRange.end.offset != right->declarationRange.end.offset) {
+        return left->declarationRange.end.offset < right->declarationRange.end.offset;
+    }
+    return left->symbolId < right->symbolId;
+}
+
+static void semantic_query_symbols_sort_declarations(SZrArray *symbols) {
+    TZrSize index;
+
+    if (symbols == ZR_NULL) {
+        return;
+    }
+    for (index = 1U; index < symbols->length; index++) {
+        TZrSize current = index;
+        while (current > 0U) {
+            SZrParserSemanticSymbolQuery *before =
+                    (SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+                            symbols, current - 1U);
+            SZrParserSemanticSymbolQuery *after =
+                    (SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+                            symbols, current);
+            SZrParserSemanticSymbolQuery swap;
+
+            if (before == ZR_NULL || after == ZR_NULL ||
+                semantic_query_symbols_declaration_precedes(before, after)) {
+                break;
+            }
+            swap = *before;
+            *before = *after;
+            *after = swap;
+            current--;
+        }
+    }
+}
+
 TZrBool ZrParser_SemanticQuery_SymbolAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -267,6 +342,13 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     outSymbol->declarationRange = reference->declarationRange;
     outSymbol->displayName = reference->name;
     outSymbol->signatureDisplay = reference->signatureDisplay;
+    {
+        const SZrSemanticSymbolRecord *record =
+                ZrParser_Semantic_FindSymbolById(context, reference->symbolId);
+        if (record != ZR_NULL && record->typeId == reference->typeId) {
+            outSymbol->declarationNode = record->astNode;
+        }
+    }
     if (reference->hasDefinitionRange) {
         outSymbol->definitionRange = reference->definitionRange;
         return ZR_TRUE;
@@ -276,6 +358,61 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     if (definition != ZR_NULL) {
         outSymbol->definitionRange = definition->range;
     }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
+        const SZrSemanticContext *context,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outSymbols) {
+    TZrSize index;
+
+    if (!semantic_query_symbols_prepare_output(context, outSymbols) ||
+        !context->referenceFacts.isValid) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0U; index < context->referenceFacts.length; index++) {
+        const SZrSemanticReferenceFact *declaration =
+                (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->referenceFacts, index);
+        const SZrSemanticSymbolRecord *record;
+        SZrParserSemanticSymbolQuery symbol;
+
+        if (declaration == ZR_NULL ||
+            declaration->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+            !declaration->isResolved ||
+            declaration->symbolId == ZR_SEMANTIC_ID_INVALID ||
+            declaration->typeId == ZR_SEMANTIC_ID_INVALID ||
+            declaration->node == ZR_NULL ||
+            !semantic_query_symbols_scope_allows_declaration(scope, declaration) ||
+            semantic_query_symbols_contains_id(outSymbols, declaration->symbolId)) {
+            continue;
+        }
+
+        record = ZrParser_Semantic_FindSymbolById(context, declaration->symbolId);
+        if (record == ZR_NULL || record->id != declaration->symbolId ||
+            record->typeId != declaration->typeId ||
+            record->astNode != declaration->node) {
+            continue;
+        }
+
+        memset(&symbol, 0, sizeof(symbol));
+        symbol.symbolId = declaration->symbolId;
+        symbol.typeId = declaration->typeId;
+        symbol.ownerSymbolId = ZR_SEMANTIC_ID_INVALID;
+        symbol.role = ZR_SEMANTIC_REFERENCE_DECLARATION;
+        symbol.declarationRange = declaration->declarationRange;
+        symbol.definitionRange = declaration->hasDefinitionRange
+                ? declaration->definitionRange
+                : declaration->declarationRange;
+        symbol.declarationNode = declaration->node;
+        symbol.displayName = record->name;
+        symbol.signatureDisplay = declaration->signatureDisplay;
+        ZrCore_Array_Push(context->state, outSymbols, &symbol);
+    }
+
+    semantic_query_symbols_sort_declarations(outSymbols);
     return ZR_TRUE;
 }
 
@@ -335,6 +472,7 @@ TZrBool ZrParser_SemanticQuery_VisibleSymbols(
                     : fact->declarationRange;
             candidate.symbol.displayName = record->name;
             candidate.symbol.signatureDisplay = fact->signatureDisplay;
+            candidate.symbol.declarationNode = record->astNode;
             candidate.record = record;
             candidate.scopeDistance = distance;
             candidate.declarationOrder = fact->declarationOrder;

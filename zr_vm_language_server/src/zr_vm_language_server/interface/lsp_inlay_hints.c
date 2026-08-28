@@ -52,9 +52,9 @@ static TZrBool lsp_inlay_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
-static TZrBool lsp_inlay_symbol_has_exact_canonical_type_text(
+static TZrBool lsp_inlay_declaration_has_exact_canonical_type_text(
         SZrSemanticAnalyzer *analyzer,
-        SZrSymbol *symbol,
+        const SZrParserSemanticSymbolQuery *declaration,
         TZrChar *buffer,
         TZrSize bufferSize,
         const TZrChar **outTypeText) {
@@ -63,19 +63,17 @@ static TZrBool lsp_inlay_symbol_has_exact_canonical_type_text(
     }
     if (analyzer == ZR_NULL ||
         analyzer->semanticContext == ZR_NULL ||
-        symbol == ZR_NULL ||
+        declaration == ZR_NULL ||
         buffer == ZR_NULL ||
         bufferSize == 0 ||
         outTypeText == ZR_NULL ||
-        symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
-        symbol->semanticTypeId == ZR_SEMANTIC_ID_INVALID ||
-        symbol->typeInfo == ZR_NULL ||
-        !ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
+        declaration->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        declaration->typeId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
 
-    if (!ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
-                analyzer, symbol, buffer, bufferSize)) {
+    if (!ZrLanguageServer_Lsp_FormatCanonicalDeclarationType(
+                analyzer, declaration, buffer, bufferSize)) {
         return ZR_FALSE;
     }
 
@@ -188,30 +186,9 @@ static TZrBool lsp_inlay_append_logical_fact_detail(TZrChar *buffer,
     return ZR_TRUE;
 }
 
-static void lsp_inlay_materialize_initializer_facts(SZrState *state,
-                                                    SZrSemanticAnalyzer *analyzer,
-                                                    SZrAstNode *initializer) {
-    SZrInferredType inferredType;
-
-    if (state == ZR_NULL ||
-        analyzer == ZR_NULL ||
-        initializer == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL) {
-        return;
-    }
-
-    if (ZrParser_SemanticFacts_FindExpressionByNode(analyzer->semanticContext, initializer) != ZR_NULL) {
-        return;
-    }
-
-    ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    (void)ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state, analyzer, initializer, &inferredType);
-    ZrParser_InferredType_Free(state, &inferredType);
-}
-
 static TZrBool lsp_inlay_build_label_text(SZrState *state,
                                           SZrSemanticAnalyzer *analyzer,
-                                          SZrSymbol *symbol,
+                                          const SZrParserSemanticSymbolQuery *declaration,
                                           const TZrChar *typeText,
                                           TZrChar *buffer,
                                           TZrSize bufferSize) {
@@ -222,7 +199,7 @@ static TZrBool lsp_inlay_build_label_text(SZrState *state,
     TZrSize used = 0;
 
     if (state == ZR_NULL ||
-        symbol == ZR_NULL ||
+        declaration == ZR_NULL ||
         typeText == ZR_NULL ||
         buffer == ZR_NULL ||
         bufferSize == 0) {
@@ -233,7 +210,7 @@ static TZrBool lsp_inlay_build_label_text(SZrState *state,
         return ZR_FALSE;
     }
 
-    astNode = symbol->astNode;
+    astNode = (SZrAstNode *)declaration->declarationNode;
     initializer = astNode != ZR_NULL && astNode->type == ZR_AST_VARIABLE_DECLARATION
                       ? astNode->data.variableDeclaration.value
                       : ZR_NULL;
@@ -241,7 +218,6 @@ static TZrBool lsp_inlay_build_label_text(SZrState *state,
         return ZR_TRUE;
     }
 
-    lsp_inlay_materialize_initializer_facts(state, analyzer, initializer);
     numericFact = ZrParser_SemanticFacts_FindNumericByNode(analyzer->semanticContext, initializer);
     logicalFact = ZrParser_SemanticFacts_FindLogicalByNode(analyzer->semanticContext, initializer);
 
@@ -249,11 +225,11 @@ static TZrBool lsp_inlay_build_label_text(SZrState *state,
            lsp_inlay_append_logical_fact_detail(buffer, bufferSize, &used, logicalFact);
 }
 
-static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
+static TZrBool lsp_inlay_try_append_declaration_hint(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrString *uri,
                                                 SZrSemanticAnalyzer *analyzer,
-                                                SZrSymbol *symbol,
+                                                const SZrParserSemanticSymbolQuery *declaration,
                                                 SZrLspRange range,
                                                 SZrArray *result) {
     TZrChar typeBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
@@ -262,12 +238,14 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
     SZrLspPosition position;
     SZrAstNode *astNode;
 
-    if (!lsp_inlay_symbol_has_exact_canonical_type_text(
-                analyzer, symbol, typeBuffer, sizeof(typeBuffer), &typeText)) {
+    if (!lsp_inlay_declaration_has_exact_canonical_type_text(
+                analyzer, declaration, typeBuffer, sizeof(typeBuffer), &typeText)) {
         return ZR_TRUE;
     }
 
-    astNode = symbol != ZR_NULL ? symbol->astNode : ZR_NULL;
+    astNode = declaration != ZR_NULL
+            ? (SZrAstNode *)declaration->declarationNode
+            : ZR_NULL;
     if (astNode == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -279,21 +257,24 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                 astNode->data.variableDeclaration.pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
                 return ZR_TRUE;
             }
-            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(context, uri, symbol->selectionRange.end);
+            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                    context, uri, declaration->declarationRange.end);
             break;
 
         case ZR_AST_CLASS_FIELD:
             if (astNode->data.classField.typeInfo != ZR_NULL) {
                 return ZR_TRUE;
             }
-            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(context, uri, symbol->selectionRange.end);
+            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                    context, uri, declaration->declarationRange.end);
             break;
 
         case ZR_AST_STRUCT_FIELD:
             if (astNode->data.structField.typeInfo != ZR_NULL) {
                 return ZR_TRUE;
             }
-            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(context, uri, symbol->selectionRange.end);
+            position = ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
+                    context, uri, declaration->declarationRange.end);
             break;
 
         case ZR_AST_FUNCTION_DECLARATION:
@@ -308,7 +289,7 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                            : ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
                                  context,
                                  uri,
-                                 symbol->selectionRange.end);
+                                 declaration->declarationRange.end);
             break;
 
         case ZR_AST_CLASS_METHOD:
@@ -323,7 +304,7 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                            : ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
                                  context,
                                  uri,
-                                 symbol->selectionRange.end);
+                                 declaration->declarationRange.end);
             break;
 
         case ZR_AST_STRUCT_METHOD:
@@ -338,7 +319,7 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
                            : ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(
                                  context,
                                  uri,
-                                 symbol->selectionRange.end);
+                                 declaration->declarationRange.end);
             break;
 
         default:
@@ -349,7 +330,8 @@ static TZrBool lsp_inlay_try_append_symbol_hint(SZrState *state,
         return ZR_TRUE;
     }
 
-    if (!lsp_inlay_build_label_text(state, analyzer, symbol, typeText, labelBuffer, sizeof(labelBuffer))) {
+    if (!lsp_inlay_build_label_text(
+                state, analyzer, declaration, typeText, labelBuffer, sizeof(labelBuffer))) {
         return ZR_FALSE;
     }
 
@@ -362,6 +344,8 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
                                            SZrLspRange range,
                                            SZrArray *result) {
     SZrSemanticAnalyzer *analyzer;
+    SZrParserSemanticQueryScope scope;
+    SZrArray declarations;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -372,34 +356,39 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
     }
 
     analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || analyzer->ast == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    for (TZrSize scopeIndex = 0; scopeIndex < analyzer->symbolTable->allScopes.length; scopeIndex++) {
-        SZrSymbolScope **scopePtr =
-            (SZrSymbolScope **)ZrCore_Array_Get(&analyzer->symbolTable->allScopes, scopeIndex);
-        if (scopePtr == ZR_NULL || *scopePtr == ZR_NULL) {
+    memset(&scope, 0, sizeof(scope));
+    scope.kind = ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE;
+    scope.root = analyzer->ast;
+    ZrCore_Array_Construct(&declarations);
+    if (!ZrParser_SemanticQuery_DeclaredSymbols(
+                analyzer->semanticContext, &scope, &declarations)) {
+        ZrCore_Array_Free(state, &declarations);
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0U; index < declarations.length; index++) {
+        const SZrParserSemanticSymbolQuery *declaration =
+                (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+                        &declarations, index);
+        if (declaration == ZR_NULL || declaration->declarationRange.source == ZR_NULL ||
+            (!ZrLanguageServer_Lsp_StringsEqual(declaration->declarationRange.source, uri) &&
+             !ZrLanguageServer_Lsp_UrisResolveToSameNativePath(
+                     declaration->declarationRange.source, uri))) {
             continue;
         }
 
-        for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
-            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
-            if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL || (*symbolPtr)->location.source == ZR_NULL) {
-                continue;
-            }
-
-            if (!ZrLanguageServer_Lsp_StringsEqual((*symbolPtr)->location.source, uri) &&
-                !ZrLanguageServer_Lsp_UrisResolveToSameNativePath((*symbolPtr)->location.source, uri)) {
-                continue;
-            }
-
-            if (!lsp_inlay_try_append_symbol_hint(state, context, uri, analyzer, *symbolPtr, range, result)) {
-                ZrLanguageServer_Lsp_FreeInlayHints(state, result);
-                return ZR_FALSE;
-            }
+        if (!lsp_inlay_try_append_declaration_hint(
+                    state, context, uri, analyzer, declaration, range, result)) {
+            ZrCore_Array_Free(state, &declarations);
+            ZrLanguageServer_Lsp_FreeInlayHints(state, result);
+            return ZR_FALSE;
         }
     }
+    ZrCore_Array_Free(state, &declarations);
 
     return ZR_TRUE;
 }

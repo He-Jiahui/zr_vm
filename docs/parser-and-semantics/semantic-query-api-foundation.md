@@ -882,6 +882,21 @@ SymbolId, callable TypeId, URI, declaration ranges, lambda AST kind, and
 document version. Names and AST pointers are not protocol identity. External
 cross-project/binary/native call graphs remain separate producer boundaries.
 
+Declaration enumeration for snapshot-local consumers uses
+`ZrParser_SemanticQuery_DeclaredSymbols`. The query returns only resolved
+declaration facts whose SymbolId, TypeId, declaration AST identity, and
+registered symbol record agree. Results are deduplicated by SymbolId and sorted
+by exact declaration range, then SymbolId. `declarationNode` is a borrowed
+pointer into the immutable semantic snapshot and must never survive a snapshot
+generation change.
+
+Inlay hints consume this declaration query and format the exact canonical
+TypeId through `ZrLanguageServer_Lsp_FormatCanonicalDeclarationType`. The LSP
+symbol table is not a declaration enumerator, and request handling does not
+run expression inference to manufacture missing facts. An unresolved or
+inconsistent declaration therefore produces no hint instead of a name, AST,
+or display-text fallback.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

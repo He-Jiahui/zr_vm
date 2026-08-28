@@ -89,6 +89,8 @@ typedef struct SZrParserSemanticSymbolQuery {
     EZrSemanticReferenceKind role;
     SZrFileRange declarationRange;
     SZrFileRange definitionRange;
+    /* Borrowed from the semantic snapshot; never retain across generations. */
+    const SZrAstNode *declarationNode;
     SZrString *displayName;
     SZrString *signatureDisplay;
 } SZrParserSemanticSymbolQuery;
@@ -203,6 +205,15 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_SymbolAt(
         SZrFileRange position,
         const SZrParserSemanticQueryScope *scope,
         SZrParserSemanticSymbolQuery *outSymbol);
+/*
+ * Projects exact resolved declarations in stable source-order. outSymbols
+ * contains SZrParserSemanticSymbolQuery values and is cleared before reuse.
+ * declarationNode and display strings remain borrowed from the snapshot.
+ */
+ZR_PARSER_API TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
+        const SZrSemanticContext *context,
+        const SZrParserSemanticQueryScope *scope,
+        SZrArray *outSymbols);
 /*
  * outSymbols contains SZrParserSemanticSymbolQuery values, not fact pointers.
  * displayName and signatureDisplay within each value remain borrowed from the

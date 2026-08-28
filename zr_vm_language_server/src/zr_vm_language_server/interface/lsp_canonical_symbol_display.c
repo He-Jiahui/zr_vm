@@ -5,6 +5,35 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
+TZrBool ZrLanguageServer_Lsp_FormatCanonicalDeclarationType(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrParserSemanticSymbolQuery *declaration,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    const SZrSemanticReferenceFact *resolved;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        declaration == ZR_NULL || buffer == ZR_NULL || bufferSize == 0U ||
+        declaration->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        declaration->typeId == ZR_SEMANTIC_ID_INVALID ||
+        declaration->role != ZR_SEMANTIC_REFERENCE_DECLARATION) {
+        return ZR_FALSE;
+    }
+
+    resolved = ZrParser_SemanticQuery_DeclarationOf(
+            analyzer->semanticContext, declaration->symbolId, ZR_NULL);
+    return resolved != ZR_NULL && resolved->isResolved &&
+           resolved->kind == ZR_SEMANTIC_REFERENCE_DECLARATION &&
+           resolved->symbolId == declaration->symbolId &&
+           resolved->typeId == declaration->typeId &&
+           resolved->node == declaration->declarationNode &&
+           ZrParser_CanonicalType_Format(
+                   analyzer->semanticContext,
+                   declaration->typeId,
+                   buffer,
+                   bufferSize);
+}
+
 TZrBool ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
         SZrSemanticAnalyzer *analyzer,
         SZrSymbol *symbol,
