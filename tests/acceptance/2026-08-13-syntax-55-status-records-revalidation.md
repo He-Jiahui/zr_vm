@@ -2,7 +2,7 @@
 
 ## Status
 
-- Review date: 2026-08-26 (UTC+08:00)
+- Review date: 2026-08-28 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
 - Scope: the historical 55 milestone records under `docs/plans/syntax`
 - Relationship to the current tree: `docs/plans/syntax` now contains 91 Markdown
@@ -325,6 +325,52 @@ MSVC passes 44/44 directly, all with exit zero. This strengthens the syntax
 surface evidence but leaves the final integrated gates below open.
 
 ## Pending completion gates
+
+### 2026-08-28 frozen-record and destructive-cutover replay
+
+The executable status verifier was rerun against the current repository and
+again reports the exact frozen set:
+
+```text
+TOTAL=55
+COMPLETE=55
+MISSING_STATUS=0
+NON_COMPLETE=0
+MISSING_TIME=0
+01=5 02=6 03=5 04=7 05=6 06=2 07=1 10=5 12=15 13=3
+```
+
+Its focused Python suite passes 4/4, including the negative count/status/time
+drift case. This confirms that all 55 selected records carry a completed status
+and completion time; it does not silently count the top-level designs,
+implementation plans, or the independent Syntax 05 support record.
+
+The production parser scan returns zero literal occurrences of
+`%module`, `%import`, `%extern`, `%compileTime`, `%test`, `%owned`, `%borrow`,
+`%loan`, `%unique`, `%shared`, and `%func`. The parser still recognizes
+`Unique<T>`, `Shared<T>`, and `Weak<T>` as the current nominal ownership types;
+that is not a second ownership-control surface. `Borrow<T>`, `Loan<T>`, their
+lowercase generic forms, and the old percent forms enter rejection/structured
+migration diagnostics only and do not construct executable legacy ASTs.
+
+The five relevant parser/test files were normalized for line endings and
+compared byte-for-byte between the current main worktree and one isolated
+snapshot before execution. GCC 11.4, Clang 14, and MSVC 19.44 each rebuilt and
+directly ran `zr_vm_percent_syntax_cutover_test` as 7 tests, 0 failures, 0
+ignored, exit 0. The cases prove all known percent directives are diagnostics
+only, non-percent legacy forms are diagnostics only, unknown percent identifiers
+do not masquerade as migration rules, current syntax and modulo remain
+parseable, ownership-like member names use ordinary object dispatch, removed
+`using(ref owner)` does not lower, and canonical `ref` bindings compile.
+
+The migration-inventory protocol was also rerun from the shared repository and
+remains 9/10. Classification, embedded source scanning, UTF-8/LF CLI output,
+current syntax-reference coverage, and the absence of machine-applicable LSP
+legacy fixtures all pass. The only failure is the deterministic repository
+golden comparison. That golden is already modified by a concurrent task while
+the parser/LSP callable-value overlay is still moving, so this review preserves
+it and keeps regeneration as a final stable-HEAD gate instead of recording an
+intermediate inventory.
 
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
   baseline `0a46151` each passed 133/133 registered CTests, and all three CLI
