@@ -25,6 +25,7 @@ typedef enum EZrReferenceType EZrReferenceType;
 // 引用信息
 typedef struct SZrReference {
     SZrSymbol *symbol;                // 引用的符号
+    TZrSymbolId symbolId;             // canonical symbol identity; invalid for syntax-only recovery
     SZrFileRange location;            // 引用位置
     EZrReferenceType type;            // 引用类型
 } SZrReference;
@@ -34,7 +35,7 @@ typedef struct SZrReferenceTracker {
     SZrState *state;
     SZrSymbolTable *symbolTable;
     SZrArray allReferences;           // 所有引用（SZrReference*）
-    SZrHashSet symbolToReferencesMap; // TODO: 符号到引用的映射（简化实现，暂时不使用）
+    SZrHashSet symbolToReferencesMap; // legacy field name; keyed by canonical SymbolId
 } SZrReferenceTracker;
 
 // 引用追踪器管理函数

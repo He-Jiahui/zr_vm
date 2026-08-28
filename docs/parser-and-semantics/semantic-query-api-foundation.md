@@ -785,6 +785,18 @@ belong to the same source. This prevents identical line/column or offset ranges
 from crossing documents before relation-query consumers replace the legacy
 tracker completely.
 
+The legacy tracker index is now keyed by the copied canonical `SymbolId`, not
+by symbol name or wrapper address. Different symbol wrappers with one valid id
+share the same reference set, while same-name symbols with different ids remain
+isolated. Syntax-only symbols without an id retain pointer-local recovery and
+are never inserted into the canonical index.
+
+`SZrSemanticAnalyzer` binds a source-less query position to its own immutable
+AST snapshot source before entering the tracker. This is a narrow ownership
+boundary: one analyzer represents one source snapshot, so it may supply that
+known identity. The tracker itself remains fail-closed for missing source
+identity and cannot infer a document from coordinates, names, or path text.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

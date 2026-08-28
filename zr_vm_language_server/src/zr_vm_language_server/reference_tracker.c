@@ -111,6 +111,28 @@ static TZrBool reference_is_better_match(SZrReference *candidate, SZrReference *
     return ZR_FALSE;
 }
 
+static SZrArray *reference_tracker_find_by_symbol_id(
+        SZrState *state,
+        SZrReferenceTracker *tracker,
+        TZrSymbolId symbolId) {
+    SZrTypeValue key;
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || tracker == ZR_NULL ||
+        symbolId == ZR_SEMANTIC_ID_INVALID ||
+        !tracker->symbolToReferencesMap.isValid) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsUInt(state, &key, (TZrUInt64)symbolId);
+    pair = ZrCore_HashSet_Find(
+            state, &tracker->symbolToReferencesMap, &key);
+    return pair != ZR_NULL &&
+                   pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER
+            ? (SZrArray *)pair->value.value.nativeObject.nativePointer
+            : ZR_NULL;
+}
+
 // 创建引用追踪器
 SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrSymbolTable *symbolTable) {
     if (state == ZR_NULL || symbolTable == ZR_NULL) {
@@ -129,7 +151,7 @@ SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrS
                       sizeof(SZrReference *),
                       ZR_LSP_LARGE_ARRAY_INITIAL_CAPACITY);
     
-    // 初始化哈希表（使用符号名称作为键）
+    // Initialize the canonical SymbolId index.
     ZrCore_HashSet_Construct(&tracker->symbolToReferencesMap);
     ZrCore_HashSet_Init(state, &tracker->symbolToReferencesMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     
@@ -197,17 +219,19 @@ TZrBool ZrLanguageServer_ReferenceTracker_AddReference(SZrState *state,
     }
     
     reference->symbol = symbol;
+    reference->symbolId = symbol->semanticId;
     reference->location = location;
     reference->type = type;
     
     // 添加到所有引用数组
     ZrCore_Array_Push(state, &tracker->allReferences, &reference);
     
-    // 实现哈希表映射用于快速查找
-    if (tracker->symbolToReferencesMap.isValid) {
-        // 使用符号名称作为键
+    // Canonical symbols share one index even when represented by different wrappers.
+    if (tracker->symbolToReferencesMap.isValid &&
+        reference->symbolId != ZR_SEMANTIC_ID_INVALID) {
         SZrTypeValue key;
-        ZrCore_Value_InitAsRawObject(state, &key, &symbol->name->super);
+        ZrCore_Value_InitAsUInt(
+                state, &key, (TZrUInt64)reference->symbolId);
         
         // 查找或创建引用数组
         SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &tracker->symbolToReferencesMap, &key);
@@ -261,29 +285,20 @@ TZrBool ZrLanguageServer_ReferenceTracker_FindReferences(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrReference *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
     
-    // 使用哈希表快速查找
-    if (tracker->symbolToReferencesMap.isValid) {
-        SZrTypeValue key;
-        ZrCore_Value_InitAsRawObject(state, &key, &symbol->name->super);
-        
-        SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &tracker->symbolToReferencesMap, &key);
-        if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-            SZrArray *refArray = (SZrArray *)pair->value.value.nativeObject.nativePointer;
-            if (refArray != ZR_NULL && refArray->isValid) {
-                // 从数组中获取所有引用
-                for (TZrSize i = 0; i < refArray->length; i++) {
-                    SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(refArray, i);
-                    if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
-                        SZrReference *ref = *refPtr;
-                        // 验证符号匹配（因为可能有同名符号）
-                        if (ref->symbol == symbol) {
-                            ZrCore_Array_Push(state, result, refPtr);
-                        }
-                    }
+    if (symbol->semanticId != ZR_SEMANTIC_ID_INVALID) {
+        SZrArray *refArray = reference_tracker_find_by_symbol_id(
+                state, tracker, symbol->semanticId);
+        if (refArray != ZR_NULL && refArray->isValid) {
+            for (TZrSize i = 0; i < refArray->length; i++) {
+                SZrReference **refPtr =
+                        (SZrReference **)ZrCore_Array_Get(refArray, i);
+                if (refPtr != ZR_NULL && *refPtr != ZR_NULL &&
+                    (*refPtr)->symbolId == symbol->semanticId) {
+                    ZrCore_Array_Push(state, result, refPtr);
                 }
-                return ZR_TRUE;
             }
         }
+        return ZR_TRUE;
     }
     
     // 回退到线性查找
@@ -306,7 +321,13 @@ TZrSize ZrLanguageServer_ReferenceTracker_GetReferenceCount(SZrReferenceTracker 
     if (tracker == ZR_NULL || symbol == ZR_NULL) {
         return 0;
     }
-    
+
+    if (symbol->semanticId != ZR_SEMANTIC_ID_INVALID) {
+        SZrArray *references = reference_tracker_find_by_symbol_id(
+                tracker->state, tracker, symbol->semanticId);
+        return references != ZR_NULL ? references->length : 0U;
+    }
+
     return ZrLanguageServer_Symbol_GetReferenceCount(symbol);
 }
 
@@ -347,30 +368,21 @@ TZrBool ZrLanguageServer_ReferenceTracker_GetReferenceLocations(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrFileRange), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
     
-    // 使用哈希表快速查找
-    if (tracker->symbolToReferencesMap.isValid) {
-        SZrTypeValue key;
-        ZrCore_Value_InitAsRawObject(state, &key, &symbol->name->super);
-        
-        SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &tracker->symbolToReferencesMap, &key);
-        if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-            SZrArray *refArray = (SZrArray *)pair->value.value.nativeObject.nativePointer;
-            if (refArray != ZR_NULL && refArray->isValid) {
-                // 从数组中获取所有引用的位置
-                for (TZrSize i = 0; i < refArray->length; i++) {
-                    SZrReference **refPtr = (SZrReference **)ZrCore_Array_Get(refArray, i);
-                    if (refPtr != ZR_NULL && *refPtr != ZR_NULL) {
-                        SZrReference *ref = *refPtr;
-                        // 验证符号匹配（因为可能有同名符号）
-                        if (ref->symbol == symbol) {
-                            SZrFileRange range = ref->location;
-                            ZrCore_Array_Push(state, result, &range);
-                        }
-                    }
+    if (symbol->semanticId != ZR_SEMANTIC_ID_INVALID) {
+        SZrArray *refArray = reference_tracker_find_by_symbol_id(
+                state, tracker, symbol->semanticId);
+        if (refArray != ZR_NULL && refArray->isValid) {
+            for (TZrSize i = 0; i < refArray->length; i++) {
+                SZrReference **refPtr =
+                        (SZrReference **)ZrCore_Array_Get(refArray, i);
+                if (refPtr != ZR_NULL && *refPtr != ZR_NULL &&
+                    (*refPtr)->symbolId == symbol->semanticId) {
+                    SZrFileRange range = (*refPtr)->location;
+                    ZrCore_Array_Push(state, result, &range);
                 }
-                return ZR_TRUE;
             }
         }
+        return ZR_TRUE;
     }
     
     // 回退到线性查找

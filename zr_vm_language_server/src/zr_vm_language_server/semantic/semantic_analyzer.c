@@ -3,6 +3,7 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "semantic/semantic_analyzer_query_source.h"
 #include "module/lsp_module_metadata.h"
 #include "semantic/lsp_stable_slot_contract.h"
 
@@ -2297,6 +2298,9 @@ SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *an
     if (analyzer == ZR_NULL) {
         return ZR_NULL;
     }
+
+    position = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
+            analyzer, position);
 
     hoverTypeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
     if (hoverTypeInfo != ZR_NULL) {

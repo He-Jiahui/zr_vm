@@ -1322,6 +1322,37 @@ static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
     free(typecheck);
 }
 
+static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(void) {
+    char *tracker = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c");
+    char *analyzer = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
+    char *querySource = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_source.c");
+
+    if (tracker == NULL || analyzer == NULL || querySource == NULL) {
+        printf("FAIL: could not read reference identity sources\n");
+        g_failures++;
+        free(tracker);
+        free(analyzer);
+        free(querySource);
+        return;
+    }
+
+    assert_text_contains(tracker, "reference->symbolId = symbol->semanticId");
+    assert_text_contains(tracker, "ZrCore_Value_InitAsUInt");
+    assert_text_contains_none(tracker, "symbol->name");
+    assert_text_contains_none(tracker, "ZrCore_Value_InitAsRawObject");
+    assert_text_contains(
+        analyzer,
+        "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
+    assert_text_contains(querySource, "analyzer->ast->location.source");
+
+    free(tracker);
+    free(analyzer);
+    free(querySource);
+}
+
 static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1408,6 +1439,7 @@ int main(void) {
     test_unresolved_reference_diagnostics_use_parser_query_projection();
     test_named_call_compatibility_uses_parser_inference_projection();
     test_assignment_ownership_uses_parser_diagnostic_projection();
+    test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
@@ -1470,6 +1502,7 @@ int main(void) {
     printf("PASS: Unresolved-reference diagnostics use parser query projection\n");
     printf("PASS: Named-call compatibility uses parser inference projection\n");
     printf("PASS: Assignment ownership uses parser diagnostic projection\n");
+    printf("PASS: Reference tracker uses SymbolId and snapshot source identity\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");
