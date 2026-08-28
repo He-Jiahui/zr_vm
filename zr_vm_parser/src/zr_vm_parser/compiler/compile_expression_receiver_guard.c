@@ -233,8 +233,23 @@ static TZrBool receiver_guard_segment_requires_fact(
                  ZR_OWNERSHIP_QUALIFIER_WEAK)) {
         return ZR_TRUE;
     }
-    return (TZrBool)(segment->type == ZR_AST_MEMBER_EXPRESSION &&
-            receiver_guard_segment_is_optional(segment));
+    if (receiver_guard_segment_is_optional(segment)) {
+        return ZR_TRUE;
+    }
+    if (receiverFact == ZR_NULL && context != ZR_NULL &&
+        context->segments != ZR_NULL) {
+        for (TZrSize index = 0u; index < context->segments->count; index++) {
+            const SZrReceiverGuardFact *chainFact =
+                    ZrParser_SemanticFacts_FindReceiverGuardByNode(
+                            cs != ZR_NULL ? cs->semanticContext : ZR_NULL,
+                            context->segments->nodes[index]);
+            if (chainFact != ZR_NULL &&
+                chainFact->chainSegmentStart > segmentIndex) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    return ZR_FALSE;
 }
 
 void compiler_receiver_guard_lowering_free(

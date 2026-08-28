@@ -1083,6 +1083,18 @@ Fresh GCC 11.4, Clang 14, and MSVC 19.44 Debug shared builds each directly ran
 the focused case as 1/1 with exit 0. This closes the stale active-test naming
 gap without claiming the final post-L8 full graph.
 
+A subsequent lowering review found that optional calls could fail open when
+both their `ReceiverGuardFact` and canonical receiver expression fact were
+missing, and that a later chain fact could hide the same omission on an earlier
+direct segment. TDD reproduced both cases as the only two failures in the
+21-case Shared/Weak runner. The compiler now requires facts uniformly for
+optional member/call segments and treats only a later guard start as evidence
+of an incomplete earlier fact boundary; an earlier dominating guard remains
+valid. GCC 11.4, Clang 14, and MSVC 19.44 each pass Shared/Weak 21/21,
+ownership member separation 44/44, and semantic facts 15/15. The final
+regressions use public inference/compiler APIs and contain no ignored case or
+private DLL symbol dependency.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before

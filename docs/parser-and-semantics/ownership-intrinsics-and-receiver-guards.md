@@ -271,6 +271,14 @@ normal finalization, the VM exception handler closes registrations above its
 saved scope boundary. This prevents an outer live Weak guard from retaining its
 target after a caught inner `NullReferenceError`.
 
+Lowering treats receiver-guard facts as a complete canonical contract, not a
+best-effort hint. Optional member and optional call segments both require their
+own fact unless an earlier guard already dominates that suffix. If a later
+segment has a guard fact but an earlier segment has neither its required guard
+nor its canonical receiver expression fact, lowering fails closed with the
+missing-guard diagnostic. It does not infer that the earlier segment is safe
+from a partial fact set or reconstruct guard kind from syntax at runtime.
+
 `degrade(shared)` and `wake(weak)` read an identifier from its original local
 slot instead of first value-copying the ownership wrapper into a compiler
 temporary. Compound and projected operands may still require a temporary, but
@@ -350,7 +358,9 @@ collision names, direct/optional behavior, and backend-facing integration.
 `test_resource_shared_weak.c` includes the modular receiver-guard contract cases:
 fact drift must fail closed, canonical receiver drift and guarded-type drift are
 independent failures, nullable/Weak callable segments cannot omit their guard
-facts, every emitted guard wake must have an adjacent scope-close marker, mixed
+facts even when their receiver fact is also absent, partial chains cannot use a
+later fact to hide an earlier missing receiver fact, every emitted guard wake
+must have an adjacent scope-close marker, mixed
 `weak?.a.b` and `weak?.a?.b` chains must release in normal and caught-exception
 paths, direct and nested mixed chains must preserve ownership-valued `Shared<T>`
 results, and 32 live/expire/wake iterations must remain stable.

@@ -300,9 +300,11 @@ static void assert_missing_nullable_callable_guard_is_rejected(void) {
 
     TEST_ASSERT_TRUE(compiler.hasError);
     TEST_ASSERT_NOT_NULL(compiler.errorMessage);
-    TEST_ASSERT_NOT_NULL(strstr(
-            compiler.errorMessage,
-            "Receiver guard fact is missing for guarded chain segment"));
+    TEST_ASSERT_NOT_NULL_MESSAGE(
+            strstr(
+                    compiler.errorMessage,
+                    "Receiver guard fact is missing for guarded chain segment"),
+            compiler.errorMessage);
 
     ZrCore_Function_Free(g_state, compiler.currentFunction);
     compiler.currentFunction = ZR_NULL;
@@ -417,6 +419,226 @@ static void test_receiver_guard_lowering_rejects_guarded_type_drift(void) {
 
 static void test_receiver_guard_lowering_rejects_missing_nullable_callable_fact(void) {
     assert_missing_nullable_callable_guard_is_rejected();
+}
+
+static void receiver_guard_contract_register_nullable_callback(
+        SZrCompilerState *compiler) {
+    SZrTypePrototypeInfo prototype;
+    SZrTypeMemberInfo valueField;
+    SZrFunctionLocalVariable localVariable;
+    SZrInferredType callableType;
+    SZrInferredType returnType;
+    SZrArray parameterTypes;
+    SZrString *callbackName;
+
+    memset(&prototype, 0, sizeof(prototype));
+    prototype.name = ZrCore_String_CreateFromNative(g_state, "Resource");
+    prototype.type = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
+    prototype.accessModifier = ZR_ACCESS_PUBLIC;
+    prototype.allowBoxedConstruction = ZR_TRUE;
+    ZrCore_Array_Init(g_state, &prototype.inherits, sizeof(SZrString *), 1u);
+    ZrCore_Array_Init(g_state, &prototype.implements, sizeof(SZrString *), 1u);
+    ZrCore_Array_Init(
+            g_state,
+            &prototype.genericParameters,
+            sizeof(SZrTypeGenericParameterInfo),
+            1u);
+    ZrCore_Array_Init(g_state, &prototype.members, sizeof(SZrTypeMemberInfo), 1u);
+    ZrCore_Array_Init(
+            g_state, &prototype.decorators, sizeof(SZrTypeDecoratorInfo), 1u);
+
+    memset(&valueField, 0, sizeof(valueField));
+    valueField.memberType = ZR_AST_CLASS_FIELD;
+    valueField.name = ZrCore_String_CreateFromNative(g_state, "value");
+    valueField.fieldTypeName = ZrCore_String_CreateFromNative(g_state, "int");
+    valueField.accessModifier = ZR_ACCESS_PUBLIC;
+    valueField.fieldSize = sizeof(TZrInt64);
+    ZrCore_Array_Push(g_state, &prototype.members, &valueField);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+            g_state, compiler->typeEnv, prototype.name));
+    ZrCore_Array_Push(g_state, &compiler->typePrototypes, &prototype);
+
+    ZrParser_InferredType_Init(
+            g_state, &callableType, ZR_VALUE_TYPE_FUNCTION);
+    callableType.isNullable = ZR_TRUE;
+    callbackName = ZrCore_String_CreateFromNative(g_state, "callback");
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+            g_state,
+            compiler->typeEnv,
+            callbackName,
+            &callableType));
+    memset(&localVariable, 0, sizeof(localVariable));
+    localVariable.name = callbackName;
+    localVariable.stackSlot = 0u;
+    ZrCore_Array_Push(g_state, &compiler->localVars, &localVariable);
+    compiler->localVarCount = compiler->localVars.length;
+    compiler->stackSlotCount = 1u;
+    compiler->maxStackSlotCount = 1u;
+
+    ZrParser_InferredType_InitFull(
+            g_state,
+            &returnType,
+            ZR_VALUE_TYPE_OBJECT,
+            ZR_TRUE,
+            ZrCore_String_CreateFromNative(g_state, "Resource"));
+    ZrCore_Array_Init(
+            g_state, &parameterTypes, sizeof(SZrInferredType), 1u);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterFunction(
+            g_state,
+            compiler->typeEnv,
+            callbackName,
+            &returnType,
+            &parameterTypes));
+
+    ZrCore_Array_Free(g_state, &parameterTypes);
+    ZrParser_InferredType_Free(g_state, &returnType);
+    ZrParser_InferredType_Free(g_state, &callableType);
+}
+
+static TZrBool receiver_guard_contract_remove_guard_fact(
+        SZrSemanticContext *context,
+        const SZrAstNode *node) {
+    for (TZrSize index = 0u; index < context->receiverGuardFacts.length; index++) {
+        SZrReceiverGuardFact *fact =
+                (SZrReceiverGuardFact *)ZrCore_Array_Get(
+                        &context->receiverGuardFacts, index);
+
+        if (fact == ZR_NULL || fact->node != node) {
+            continue;
+        }
+        ZrParser_InferredType_Free(g_state, &fact->receiverType);
+        ZrParser_InferredType_Free(g_state, &fact->guardedType);
+        if (index + 1u < context->receiverGuardFacts.length) {
+            memmove(
+                    fact,
+                    fact + 1,
+                    (context->receiverGuardFacts.length - index - 1u) *
+                            sizeof(*fact));
+        }
+        context->receiverGuardFacts.length--;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool receiver_guard_contract_remove_expression_fact(
+        SZrSemanticContext *context,
+        const SZrAstNode *node) {
+    for (TZrSize index = 0u; index < context->expressionFacts.length; index++) {
+        SZrSemanticExpressionFact *fact =
+                (SZrSemanticExpressionFact *)ZrCore_Array_Get(
+                        &context->expressionFacts, index);
+
+        if (fact == ZR_NULL || fact->node != node) {
+            continue;
+        }
+        ZrParser_InferredType_Free(g_state, &fact->inferredType);
+        if (index + 1u < context->expressionFacts.length) {
+            memmove(
+                    fact,
+                    fact + 1,
+                    (context->expressionFacts.length - index - 1u) *
+                            sizeof(*fact));
+        }
+        context->expressionFacts.length--;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static void assert_receiver_guard_partial_facts_are_rejected(
+        const TZrChar *source,
+        EZrPostfixAccessMode expectedFirstMode) {
+    SZrCompilerState compiler;
+    SZrAstNode *script = receiver_guard_contract_parse_source(source);
+    SZrAstNode *expression =
+            receiver_guard_contract_statement_expression(script);
+    SZrAstNode *firstSegment = receiver_guard_contract_segment(expression, 0u);
+    SZrAstNode *secondSegment = receiver_guard_contract_segment(expression, 1u);
+    SZrAstNode *receiver = expression->data.primaryExpression.property;
+    SZrReceiverGuardFact laterFact;
+    SZrInferredType result;
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_CALL, firstSegment->type);
+    TEST_ASSERT_EQUAL_INT(
+            expectedFirstMode, firstSegment->data.functionCall.accessMode);
+    memset(&compiler, 0, sizeof(compiler));
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    TEST_ASSERT_NOT_NULL(compiler.semanticContext);
+    receiver_guard_contract_register_nullable_callback(&compiler);
+
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+            &compiler, expression, &result));
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_NOT_NULL(ZrParser_SemanticFacts_FindReceiverGuardByNode(
+            compiler.semanticContext, firstSegment));
+    TEST_ASSERT_NULL(ZrParser_SemanticFacts_FindReceiverGuardByNode(
+            compiler.semanticContext, secondSegment));
+
+    memset(&laterFact, 0, sizeof(laterFact));
+    laterFact.node = secondSegment;
+    laterFact.receiver = firstSegment;
+    laterFact.firstSegment = secondSegment;
+    laterFact.range = secondSegment->location;
+    laterFact.kind = ZR_RECEIVER_GUARD_NULL;
+    laterFact.mode = ZR_RECEIVER_GUARD_OPTIONAL;
+    laterFact.resultLift = ZR_RECEIVER_GUARD_RESULT_NULLABLE;
+    laterFact.chainSegmentStart = 1u;
+    laterFact.chainSegmentEnd = 2u;
+    ZrParser_InferredType_InitFull(
+            g_state,
+            &laterFact.receiverType,
+            ZR_VALUE_TYPE_OBJECT,
+            ZR_TRUE,
+            ZrCore_String_CreateFromNative(g_state, "Resource"));
+    ZrParser_InferredType_InitFull(
+            g_state,
+            &laterFact.guardedType,
+            ZR_VALUE_TYPE_OBJECT,
+            ZR_FALSE,
+            ZrCore_String_CreateFromNative(g_state, "Resource"));
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReceiverGuard(
+            compiler.semanticContext, &laterFact));
+    ZrParser_InferredType_Free(g_state, &laterFact.receiverType);
+    ZrParser_InferredType_Free(g_state, &laterFact.guardedType);
+
+    TEST_ASSERT_TRUE(receiver_guard_contract_remove_guard_fact(
+            compiler.semanticContext, firstSegment));
+    TEST_ASSERT_TRUE(receiver_guard_contract_remove_expression_fact(
+            compiler.semanticContext, receiver));
+    TEST_ASSERT_NULL(ZrParser_SemanticFacts_FindReceiverGuardByNode(
+            compiler.semanticContext, firstSegment));
+    TEST_ASSERT_NOT_NULL(ZrParser_SemanticFacts_FindReceiverGuardByNode(
+            compiler.semanticContext, secondSegment));
+
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    ZrParser_Expression_Compile(&compiler, expression);
+    TEST_ASSERT_TRUE(compiler.hasError);
+    TEST_ASSERT_NOT_NULL(compiler.errorMessage);
+    TEST_ASSERT_NOT_NULL_MESSAGE(
+            strstr(
+                    compiler.errorMessage,
+                    "Receiver guard fact is missing for guarded chain segment"),
+            compiler.errorMessage);
+
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_InferredType_Free(g_state, &result);
+    ZrParser_Ast_Free(g_state, script);
+    ZrParser_CompilerState_Free(&compiler);
+}
+
+static void test_receiver_guard_lowering_rejects_missing_nullable_callable_and_receiver_facts(void) {
+    assert_receiver_guard_partial_facts_are_rejected(
+            "callback?.()?.value;", ZR_POSTFIX_ACCESS_OPTIONAL);
+}
+
+static void test_receiver_guard_lowering_rejects_partial_chain_without_receiver_fact(void) {
+    assert_receiver_guard_partial_facts_are_rejected(
+            "callback()?.value;", ZR_POSTFIX_ACCESS_DIRECT);
 }
 
 static void test_direct_weak_guard_preserves_shared_result(void) {

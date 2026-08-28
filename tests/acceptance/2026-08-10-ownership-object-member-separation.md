@@ -1225,6 +1225,34 @@ main worktree and selected the case with
 This is test-identity and documentation convergence, not final graph
 acceptance. The stable post-L8 full matrix remains required below.
 
+## 2026-08-28 receiver-guard fact completeness
+
+Support-first review found two lowering fail-open paths. An optional call
+segment required a guard only when a receiver expression fact happened to be
+present, unlike an optional member. Separately, a later guard fact could leave
+an earlier direct segment unguarded when that segment's receiver expression
+fact was missing. The lowering predicate now treats optional member and call
+syntax uniformly and uses only later guard starts as evidence that an earlier
+missing receiver fact belongs to an incomplete fact-owned chain. A guard that
+already starts before the current suffix remains valid and is not duplicated.
+
+The regression first failed exactly two new cases while the original 19 passed.
+The final tests infer the canonical facts through the public type-inference API,
+remove the target guard and receiver fact from the test-owned semantic context,
+retain a later fact, and invoke the public expression compiler. They do not
+link private compiler symbols, and no case is ignored.
+
+| Toolchain | Shared/Weak | Ownership separation | Semantic facts |
+| --- | --- | --- | --- |
+| GCC 11.4 | 21/21 | 44/44 | 15/15 |
+| Clang 14 | 21/21 | 44/44 | 15/15 |
+| MSVC 19.44 | 21/21 | 44/44 | 15/15 |
+
+All nine direct executions returned exit 0.
+
+This closes the focused compiler-support defect. It does not replace the final
+stable post-L8 full graph required below.
+
 ## Pending final acceptance
 
 The frozen syntax-leaf prerequisite is now checked by the executable

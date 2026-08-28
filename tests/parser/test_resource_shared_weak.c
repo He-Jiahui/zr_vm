@@ -492,6 +492,8 @@ int main(void) {
     RUN_TEST(test_receiver_guard_lowering_rejects_canonical_receiver_type_drift);
     RUN_TEST(test_receiver_guard_lowering_rejects_guarded_type_drift);
     RUN_TEST(test_receiver_guard_lowering_rejects_missing_nullable_callable_fact);
+    RUN_TEST(test_receiver_guard_lowering_rejects_missing_nullable_callable_and_receiver_facts);
+    RUN_TEST(test_receiver_guard_lowering_rejects_partial_chain_without_receiver_fact);
     RUN_TEST(test_direct_weak_guard_preserves_shared_result);
     RUN_TEST(test_mixed_weak_guards_preserve_shared_result);
     RUN_TEST(test_mixed_weak_optional_chain_boundaries);
