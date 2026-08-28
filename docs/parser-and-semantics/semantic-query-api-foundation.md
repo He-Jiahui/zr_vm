@@ -870,9 +870,17 @@ TypeId, and document version. Incoming and outgoing follow-up requests
 re-resolve the item in the current snapshot, require identity and version
 equality, and query `IncomingCalls`, `OutgoingCalls`, and `DeclarationOf`.
 Repeated edges to one related SymbolId are grouped while preserving every
-exact call-site range. No AST pointer crosses a snapshot boundary. Methods,
-lambdas, and external cross-project/binary/native call graphs remain separate
-producer boundaries.
+exact call-site range. No AST pointer crosses a snapshot boundary. External
+cross-project/binary/native call graphs remain separate producer boundaries.
+
+Resolved receiver methods and variable-bound lambdas now use this same query
+surface. Methods retain their parser SymbolId even when unrelated owners expose
+the same spelling. A lambda caller may lack an LSP display symbol; in that case
+the consumer constructs the item only from a valid parser function record and
+its exact resolved `DeclarationOf` fact. Follow-up requests require the same
+SymbolId, callable TypeId, URI, declaration ranges, lambda AST kind, and
+document version. Names and AST pointers are not protocol identity. External
+cross-project/binary/native call graphs remain separate producer boundaries.
 
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;

@@ -1153,3 +1153,23 @@ parity `7/7`, source contracts `60/60`, advanced editor features `73/73`, and
 the combined type/call hierarchy stdio smoke with real exits. The full
 interface runner keeps the same `109 Pass / 4` pre-existing markers; inlay
 hints remain PASS and the runner is not counted as GREEN.
+
+## 2026-08-28 Method And Lambda Call Hierarchy
+
+Source-local call hierarchy now projects resolved receiver methods and
+variable-bound lambda callers through the same parser call-edge surface. Method
+display symbols are optional presentation metadata: endpoint selection remains
+the parser SymbolId and callable TypeId. Anonymous lambda callers do not need a
+synthetic LSP symbol-table entry.
+
+A lambda hierarchy item carries SymbolId, TypeId, URI, exact declaration
+ranges, and document version. Follow-up requests re-read `DeclarationOf` and
+require all identity and range fields to match the current snapshot. Display
+name mutation is harmless; range mutation, stale version, missing declaration,
+or a non-lambda semantic record returns no calls. The consumer does not recover
+the lambda from a variable name, source text, or AST pairing.
+
+GCC, Clang, and MSVC each pass call queries `11/11`, semantic-query parity
+`9/9`, source contracts `60/60`, advanced editor features `73/73`, and the
+combined hierarchy stdio smoke. The full interface result remains the same
+`109 Pass / 4` pre-existing markers and is not counted as GREEN.

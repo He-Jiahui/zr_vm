@@ -1218,6 +1218,8 @@ static void test_native_semantic_query_snapshot_parity(SZrState *state) {
     }
 }
 
+#include "test_lsp_semantic_call_hierarchy_cases.h"
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -1236,6 +1238,8 @@ int main(void) {
     test_local_implementation_consumer_uses_canonical_relations(state);
     test_local_type_hierarchy_uses_canonical_relations(state);
     test_local_call_hierarchy_uses_canonical_edges(state);
+    test_local_method_call_hierarchy_uses_canonical_edges(state);
+    test_local_lambda_call_hierarchy_uses_canonical_edges(state);
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
     ZrCore_GlobalState_Free(global);

@@ -189,6 +189,13 @@ async function main() {
         '    return first + helper(value);',
         '}',
         '',
+        'fn lambdaCallee(): int { return 1; }',
+        '',
+        'fn lambdaOuter(): int {',
+        '    var callback = fn(): int => { return lambdaCallee(); };',
+        '    return callback();',
+        '}',
+        '',
     ].join('\n');
     const client = new LspClient(serverPath);
 
@@ -297,6 +304,36 @@ async function main() {
             incoming[0].from.data.symbolId === runItems[0].data.symbolId &&
             Array.isArray(incoming[0].fromRanges) && incoming[0].fromRanges.length === 2,
             'incoming calls must group canonical run edges and ignore the item display name');
+
+        const lambdaCalleePosition = findPosition(text, 'fn lambdaCallee', 0, 3);
+        const lambdaCalleeItems = await client.request('textDocument/prepareCallHierarchy', {
+            textDocument: { uri: documentUri },
+            position: lambdaCalleePosition,
+        });
+        assert(Array.isArray(lambdaCalleeItems) && lambdaCalleeItems.length === 1 &&
+            lambdaCalleeItems[0].data && Number.isInteger(lambdaCalleeItems[0].data.symbolId) &&
+            lambdaCalleeItems[0].data.symbolId > 0,
+            'prepareCallHierarchy must return canonical lambda callee identity');
+        const lambdaIncoming = await client.request('callHierarchy/incomingCalls', {
+            item: { ...lambdaCalleeItems[0], name: 'not_lambda_callee' },
+        });
+        assert(Array.isArray(lambdaIncoming) && lambdaIncoming.length === 1 &&
+            lambdaIncoming[0].from && lambdaIncoming[0].from.data &&
+            Number.isInteger(lambdaIncoming[0].from.data.symbolId) &&
+            lambdaIncoming[0].from.data.symbolId > 0 &&
+            lambdaIncoming[0].from.data.symbolId !== lambdaCalleeItems[0].data.symbolId &&
+            Array.isArray(lambdaIncoming[0].fromRanges) &&
+            lambdaIncoming[0].fromRanges.length === 1,
+            'incoming calls must serialize the canonical lambda caller identity');
+        const lambdaOutgoing = await client.request('callHierarchy/outgoingCalls', {
+            item: { ...lambdaIncoming[0].from, name: 'not_callback' },
+        });
+        assert(Array.isArray(lambdaOutgoing) && lambdaOutgoing.length === 1 &&
+            lambdaOutgoing[0].to && lambdaOutgoing[0].to.data &&
+            lambdaOutgoing[0].to.data.symbolId === lambdaCalleeItems[0].data.symbolId &&
+            Array.isArray(lambdaOutgoing[0].fromRanges) &&
+            lambdaOutgoing[0].fromRanges.length === 1,
+            'returned lambda hierarchy item must re-resolve by canonical identity');
 
         client.notify('textDocument/didChange', {
             textDocument: { uri: documentUri, version: 2 },
