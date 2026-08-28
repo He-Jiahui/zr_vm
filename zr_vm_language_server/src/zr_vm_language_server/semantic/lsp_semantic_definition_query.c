@@ -1,4 +1,5 @@
 #include "semantic/lsp_semantic_definition_query.h"
+#include "semantic/semantic_analyzer_query_source.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/memory.h"
@@ -38,10 +39,10 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
     SZrArray *result) {
     SZrParserSemanticQueryScope scope;
     SZrArray definitions;
+    const SZrSemanticReferenceFact *declaration;
     TZrSize index;
     TZrBool appended = ZR_FALSE;
     SZrFileRange definitionRange;
-    SZrString *definitionUri;
 
     if (state == ZR_NULL ||
         context == ZR_NULL ||
@@ -69,7 +70,29 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
         if (definitions.isValid) {
             ZrCore_Array_Free(query->analyzer->semanticContext->state, &definitions);
         }
-        return ZR_FALSE;
+        if (query->symbol == ZR_NULL ||
+            query->symbol->semanticId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        declaration = ZrParser_SemanticQuery_DeclarationOf(
+                query->analyzer->semanticContext,
+                query->symbol->semanticId,
+                &scope);
+        if (declaration == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        definitionRange = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
+                query->analyzer,
+                declaration->hasDefinitionRange
+                        ? declaration->definitionRange
+                        : declaration->range);
+        return definitionRange.source != ZR_NULL &&
+               semantic_definition_query_append_location(
+                       state,
+                       context,
+                       result,
+                       definitionRange.source,
+                       definitionRange);
     }
 
     for (index = 0; index < definitions.length; index++) {
@@ -81,16 +104,19 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
             continue;
         }
 
-        definitionRange = definition->hasDefinitionRange ? definition->definitionRange : definition->range;
-        definitionUri = definitionRange.source != ZR_NULL ? definitionRange.source : query->uri;
-        if (definitionUri == ZR_NULL && query->symbol != ZR_NULL) {
-            definitionUri = query->symbol->location.source;
+        definitionRange = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
+                query->analyzer,
+                definition->hasDefinitionRange
+                        ? definition->definitionRange
+                        : definition->range);
+        if (definitionRange.source == ZR_NULL) {
+            continue;
         }
 
         appended = semantic_definition_query_append_location(state,
                                                              context,
                                                              result,
-                                                             definitionUri,
+                                                             definitionRange.source,
                                                              definitionRange) || appended;
     }
 

@@ -1391,6 +1391,40 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
     free(projectNavigation);
 }
 
+static void test_local_definition_consumer_uses_snapshot_source(void) {
+    char *definitionQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.c");
+    char *semanticQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+
+    if (definitionQuery == NULL || semanticQuery == NULL) {
+        printf("FAIL: could not read local definition consumer source\n");
+        g_failures++;
+        free(definitionQuery);
+        free(semanticQuery);
+        return;
+    }
+
+    assert_text_contains(
+        definitionQuery, "ZrParser_SemanticQuery_DefinitionsOf");
+    assert_text_contains(
+        definitionQuery, "ZrParser_SemanticQuery_DeclarationOf");
+    assert_text_contains(
+        definitionQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
+    assert_text_contains_none(
+        definitionQuery,
+        "definitionRange.source != ZR_NULL ? definitionRange.source : query->uri");
+    assert_text_contains_none(
+        definitionQuery, "query->symbol->location.source");
+    assert_text_contains_none(
+        semanticQuery, "semantic_query_symbol_lookup_range");
+    assert_text_contains_none(
+        semanticQuery, "semantic_query_try_enum_member_name_range");
+
+    free(definitionQuery);
+    free(semanticQuery);
+}
+
 static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1479,6 +1513,7 @@ int main(void) {
     test_assignment_ownership_uses_parser_diagnostic_projection();
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
+    test_local_definition_consumer_uses_snapshot_source();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
@@ -1543,6 +1578,7 @@ int main(void) {
     printf("PASS: Assignment ownership uses parser diagnostic projection\n");
     printf("PASS: Reference tracker uses SymbolId and snapshot source identity\n");
     printf("PASS: Local references and highlights use parser relation queries\n");
+    printf("PASS: Local definition uses analyzer snapshot source identity\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");

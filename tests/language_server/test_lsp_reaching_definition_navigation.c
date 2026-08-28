@@ -13,6 +13,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
+#include "semantic/lsp_semantic_query.h"
 
 typedef struct SZrTestTimer {
     clock_t startTime;
@@ -244,6 +245,102 @@ static void test_lsp_definition_returns_branch_writes_for_divergent_branch_write
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_definition_fails_closed_without_snapshot_source(SZrState *state) {
+    const TZrChar *summary = "LSP Definition Fails Closed Without Snapshot Source";
+    const TZrChar *uriText = "file:///reaching_definition_missing_source.zr";
+    const TZrChar *content =
+        "fn choose(): int {\n"
+        "    var seed = 1;\n"
+        "    seed = 3;\n"
+        "    return seed;\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrAstNode *snapshotAst = ZR_NULL;
+    SZrLspPosition readPosition;
+    SZrLspSemanticQuery query;
+    SZrArray definitions = {0};
+    TZrSize matchingFacts = 0U;
+    TZrBool valid = ZR_FALSE;
+    const TZrChar *failure = "Failed to prepare missing-source definition fixture";
+
+    TEST_START(summary);
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "return seed", 0, 7, &readPosition) ||
+        !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, readPosition, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
+        query.symbol == ZR_NULL ||
+        query.symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        query.analyzer == ZR_NULL || query.analyzer->ast == ZR_NULL ||
+        query.analyzer->semanticContext == ZR_NULL) {
+        goto cleanup;
+    }
+
+    for (TZrSize index = 0U;
+         index < query.analyzer->semanticContext->referenceFacts.length;
+         index++) {
+        SZrSemanticReferenceFact *fact =
+                (SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                        &query.analyzer->semanticContext->referenceFacts, index);
+        if (fact == ZR_NULL || fact->symbolId != query.symbol->semanticId) {
+            continue;
+        }
+        fact->range.source = ZR_NULL;
+        fact->declarationRange.source = ZR_NULL;
+        fact->definitionRange.source = ZR_NULL;
+        for (TZrSize definitionIndex = 0U;
+             fact->definitionRanges.isValid &&
+             definitionIndex < fact->definitionRanges.length;
+             definitionIndex++) {
+            SZrFileRange *range = (SZrFileRange *)ZrCore_Array_Get(
+                    &fact->definitionRanges, definitionIndex);
+            if (range != ZR_NULL) {
+                range->source = ZR_NULL;
+            }
+        }
+        matchingFacts++;
+    }
+    if (matchingFacts == 0U) {
+        failure = "Resolved SymbolId had no reference facts";
+        goto cleanup;
+    }
+
+    snapshotAst = query.analyzer->ast;
+    query.analyzer->ast = ZR_NULL;
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
+    if (ZrLanguageServer_LspSemanticQuery_AppendDefinitions(
+                state, context, &query, &definitions) ||
+        definitions.length != 0U) {
+        failure = "Definition consumer reconstructed a source outside the analyzer snapshot";
+        goto cleanup;
+    }
+    valid = ZR_TRUE;
+
+cleanup:
+    if (query.analyzer != ZR_NULL && snapshotAst != ZR_NULL) {
+        query.analyzer->ast = snapshotAst;
+    }
+    if (definitions.isValid) {
+        ZrCore_Array_Free(state, &definitions);
+    }
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (valid) {
+        TEST_PASS(timer, summary);
+    } else {
+        TEST_FAIL(timer, summary, failure);
+    }
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -269,6 +366,7 @@ int main(void) {
 
     test_lsp_definition_prefers_reaching_write_for_read(state);
     test_lsp_definition_returns_branch_writes_for_divergent_branch_writes(state);
+    test_lsp_definition_fails_closed_without_snapshot_source(state);
 
     ZrCore_GlobalState_Free(global);
 

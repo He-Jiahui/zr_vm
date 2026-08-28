@@ -361,126 +361,6 @@ static TZrBool semantic_query_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
-static SZrFilePosition semantic_query_file_position_from_offset(const TZrChar *content,
-                                                                TZrSize contentLength,
-                                                                TZrSize offset) {
-    TZrInt32 line = 1;
-    TZrInt32 column = 1;
-
-    if (content == ZR_NULL) {
-        return ZrParser_FilePosition_Create(offset, 1, 1);
-    }
-
-    if (offset > contentLength) {
-        offset = contentLength;
-    }
-
-    for (TZrSize index = 0; index < offset; index++) {
-        if (content[index] == '\n') {
-            line++;
-            column = 1;
-        } else {
-            column++;
-        }
-    }
-
-    return ZrParser_FilePosition_Create(offset, line, column);
-}
-
-static TZrBool semantic_query_identifier_boundary(const TZrChar *content, TZrSize contentLength, TZrSize offset) {
-    if (content == ZR_NULL || offset >= contentLength) {
-        return ZR_TRUE;
-    }
-
-    return !(isalnum((unsigned char)content[offset]) || content[offset] == '_');
-}
-
-static TZrBool semantic_query_try_enum_member_name_range(SZrLspContext *context,
-                                                         SZrSymbol *symbol,
-                                                         SZrFileRange *outRange) {
-    SZrFileVersion *fileVersion;
-    SZrFileVersionContentSnapshot snapshot = {0};
-    const TZrChar *content;
-    TZrSize contentLength;
-    const TZrChar *nameText;
-    TZrSize nameLength;
-    TZrSize anchorOffset;
-    TZrSize rangeEndOffset;
-    TZrSize searchStart;
-    TZrSize searchEnd;
-    TZrBool found = ZR_FALSE;
-
-    if (context == ZR_NULL || context->state == ZR_NULL || symbol == ZR_NULL || outRange == ZR_NULL ||
-        symbol->type != ZR_SYMBOL_ENUM_MEMBER || symbol->name == ZR_NULL || symbol->location.source == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, symbol->location.source);
-    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(context->state, fileVersion, &snapshot)) {
-        return ZR_FALSE;
-    }
-
-    content = snapshot.content;
-    contentLength = snapshot.contentLength;
-    nameText = symbol->name->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                   ? ZrCore_String_GetNativeStringShort(symbol->name)
-                   : ZrCore_String_GetNativeString(symbol->name);
-    if (nameText == ZR_NULL || nameText[0] == '\0') {
-        goto cleanup;
-    }
-
-    nameLength = strlen(nameText);
-    anchorOffset = symbol->location.start.offset <= contentLength
-                       ? symbol->location.start.offset
-                       : contentLength;
-    rangeEndOffset = symbol->location.end.offset > anchorOffset && symbol->location.end.offset <= contentLength
-                         ? symbol->location.end.offset
-                         : anchorOffset;
-    searchStart = anchorOffset;
-    while (searchStart > 0 && content[searchStart - 1] != '\n' && content[searchStart - 1] != '\r') {
-        searchStart--;
-    }
-
-    searchEnd = rangeEndOffset;
-    while (searchEnd < contentLength && content[searchEnd] != '\n' && content[searchEnd] != '\r') {
-        searchEnd++;
-    }
-
-    for (TZrSize index = searchStart; index + nameLength <= searchEnd; index++) {
-        if (memcmp(content + index, nameText, nameLength) != 0) {
-            continue;
-        }
-
-        if (!semantic_query_identifier_boundary(content, contentLength, index == 0 ? contentLength : index - 1) ||
-            !semantic_query_identifier_boundary(content, contentLength, index + nameLength)) {
-            continue;
-        }
-
-        *outRange = ZrParser_FileRange_Create(semantic_query_file_position_from_offset(content, contentLength, index),
-                                              semantic_query_file_position_from_offset(content,
-                                                                                       contentLength,
-                                                                                       index + nameLength),
-                                              symbol->location.source);
-        found = ZR_TRUE;
-        break;
-    }
-
-cleanup:
-    ZrLanguageServer_FileVersionContentSnapshot_Free(context->state, &snapshot);
-    return found;
-}
-
-static SZrFileRange semantic_query_symbol_lookup_range(SZrLspContext *context, SZrSymbol *symbol) {
-    SZrFileRange range;
-
-    range = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
-    if (semantic_query_try_enum_member_name_range(context, symbol, &range)) {
-        return range;
-    }
-
-    return range;
-}
-
 static TZrBool semantic_query_append_document_highlight(SZrState *state,
                                                         SZrLspContext *context,
                                                         SZrString *uri,
@@ -3075,20 +2955,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
-        if (ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(state,
-                                                                                 context,
-                                                                                 query,
-                                                                                 result)) {
-            return ZR_TRUE;
-        }
-
-        return query->symbol != ZR_NULL &&
-               semantic_query_append_location(state,
-                                              context,
-                                              result,
-                                              query->symbol->location.source,
-                                              semantic_query_symbol_lookup_range(context, query->symbol),
-                                              ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED);
+        return ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
+                state, context, query, result);
     }
 
     return ZR_FALSE;

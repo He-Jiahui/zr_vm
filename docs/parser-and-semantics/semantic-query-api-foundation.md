@@ -822,6 +822,16 @@ aggregation across project records remains a separate name-keyed migration
 boundary and must not be described as canonical until it consumes stable
 module and symbol identities.
 
+Source-local definition projection follows the same source-ownership rule.
+It first queries `DefinitionsOf` at the exact request position. When that
+position has no reference fact but the LSP query already carries one valid
+canonical SymbolId, it may query `DeclarationOf` for that id in the same
+semantic snapshot. Every returned range keeps its fact source or binds a
+missing source only through the owning analyzer AST snapshot. If neither source
+exists, projection fails closed. The consumer does not fall back to the request
+URI, an LSP symbol location, or a token/name scan; the old enum-member range
+scanner and symbol-location fallback have been deleted.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot
