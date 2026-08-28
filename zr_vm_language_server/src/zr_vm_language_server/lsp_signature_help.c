@@ -4051,7 +4051,7 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     *result = ZR_NULL;
     analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
-    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL || analyzer->compilerState == ZR_NULL || fileVersion == ZR_NULL) {
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL || fileVersion == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -4127,6 +4127,10 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     }
 
     if (signature_context_requires_canonical_source_call(analyzer, &callContext)) {
+        return ZR_FALSE;
+    }
+
+    if (analyzer->compilerState == ZR_NULL) {
         return ZR_FALSE;
     }
 

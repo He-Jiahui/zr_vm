@@ -453,6 +453,8 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     SZrFilePosition filePosition;
     SZrFileRange fileRange;
     SZrParserSemanticCallQuery query;
+    SZrCompilerState *detachedCompilerState;
+    SZrSymbolTable *detachedSymbolTable;
     SZrSemanticExpressionFact *callFact;
     SZrLspSignatureHelp *help = ZR_NULL;
     const TZrChar *label;
@@ -462,7 +464,8 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     TEST_INFO(
             "Canonical direct-call signature consumer",
             "A resolved source call must not recover signature help from a local overload "
-            "or callee-name fallback after its canonical call fact is unavailable");
+            "or callee-name fallback after its canonical call fact is unavailable; "
+            "canonical facts remain usable without analyzer compiler or symbol state");
 
     context = ZrLanguageServer_LspContext_New(state);
     uri = ZrCore_String_Create(
@@ -493,8 +496,22 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
                 &query,
                 formattedCall,
                 sizeof(formattedCall)) ||
-        strcmp(formattedCall, expectedLabel) != 0 ||
-        !ZrLanguageServer_Lsp_GetSignatureHelp(
+        strcmp(formattedCall, expectedLabel) != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Canonical direct-call fact was unavailable");
+        return;
+    }
+    if (analyzer->compilerState == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Analyzer state was unavailable for detachment");
+        return;
+    }
+
+    detachedCompilerState = analyzer->compilerState;
+    detachedSymbolTable = analyzer->symbolTable;
+    analyzer->compilerState = ZR_NULL;
+    analyzer->symbolTable = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(
                 state, context, uri, callPosition, &help) ||
         help == ZR_NULL ||
         (label = signature_help_first_label(help)) == ZR_NULL ||
@@ -502,6 +519,8 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
         if (help != ZR_NULL) {
             ZrLanguageServer_LspSignatureHelp_Free(state, help);
         }
+        analyzer->compilerState = detachedCompilerState;
+        analyzer->symbolTable = detachedSymbolTable;
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, "Valid direct-call canonical signature was unavailable");
         return;
@@ -517,6 +536,8 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
         if (help != ZR_NULL) {
             ZrLanguageServer_LspSignatureHelp_Free(state, help);
         }
+        analyzer->compilerState = detachedCompilerState;
+        analyzer->symbolTable = detachedSymbolTable;
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   summary,
@@ -524,6 +545,8 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
         return;
     }
 
+    analyzer->compilerState = detachedCompilerState;
+    analyzer->symbolTable = detachedSymbolTable;
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, summary);
 }

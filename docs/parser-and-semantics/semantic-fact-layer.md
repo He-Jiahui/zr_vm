@@ -3613,3 +3613,16 @@ The analyzer symbol table may be absent before prepare. Callable duplicate rows
 are normalized by exact declaration AST identity; type rows are selected by the
 exact SymbolAt identity. The consumer does not resolve a token/name through the
 LSP semantic resolver, inspect symbol scopes, or reconstruct a missing row.
+
+## Plan 03 Task 7.18 Snapshot-Only Canonical Signature Help
+
+Canonical source-call signature help now runs before any analyzer compiler-state
+guard. `CallAt`, `FormatCall`, and the canonical function TypeId are sufficient
+to build the signature and ordered parameter information from the immutable
+snapshot; the LSP symbol table is not consulted.
+
+The compiler-state guard remains only for legacy constructor, super, method,
+and function fallback paths. A source call whose canonical payload is missing
+still fails closed before those paths. Runtime coverage detaches both compiler
+and symbol state, then proves exact signature projection and missing-fact
+unavailability in the same fixture.

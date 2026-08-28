@@ -1010,3 +1010,15 @@ name-based module/member fallback is involved. Binary metadata and native
 descriptor aliases remain separate producers.
 
 The API does not yet expose local re-analysis, compiler frontend binary/external serialization of query diagnostics, or CFG loop reaching-definition fixed points. `VisibleSymbols` now consumes compiler-published source module/function/block facts for functions, parameters, locals, top-level types, source type/free-function generic parameters including const parameters, struct/class/interface method type-generic parameters, source type members, receiver members, direct imports, object-destructured imports, and type-value aliases. Binary `.zro` metadata still needs to carry canonical open generic callable declaration rows and publish equivalent symbol/visible facts; native descriptor call identity is now covered separately from native visibility. Documentation facts now have an exact SymbolId-keyed parser query surface, while source/binary/native documentation producers and LSP consumer migration remain pending. No LSP consumer has migrated in this slice. `DefinitionsOf` exposes the first multi-definition surface and deterministic same-source source-order ranking, but ranking remains local-symbol oriented rather than overload/member aware. LSP definition navigation and compiler-side semantic contexts now consume both linear and first-slice CFG-backed reaching definitions for local symbols. Definite-assignment diagnostics can consume explicit read states, the straight-line semantic-facts resolver, or the CFG-backed resolver for source reads across branch joins, declaration initializers, and cloned `finally` paths. Structured diagnostics now preserve an explicit typed no-fix reason as an alternative to machine edits, but existing producers have not all classified their no-fix cases and LSP golden parity remains pending. Current diagnostic related information is limited to declaration locations for definite-assignment read diagnostics; complete descriptor/registry coverage, ownership related locations, and type-mismatch related locations remain pending. Array index diagnostics still keep truly unknown and no-inferable-range indexes silent. Loop precision, remaining finally edge cases, local re-analysis, richer source mapping, and non-cache compiler diagnostic channels remain pending.
+
+## Snapshot-Only Canonical Signature Dispatch
+
+A resolved source call can be rendered from the semantic snapshot after the
+analyzer compiler state and LSP symbol table are detached. Signature help first
+uses `CallAt`, `FormatCall`, and the canonical function TypeId; only legacy
+construct/super/member/function fallbacks retain a compiler-state requirement.
+
+If the canonical call payload is removed, the source call remains unavailable.
+The consumer does not recover a signature from local overloads, callee names,
+or declaration AST text. Callable-value and lambda fixtures that lack producer
+facts remain producer gaps rather than permission to re-enable reconstruction.

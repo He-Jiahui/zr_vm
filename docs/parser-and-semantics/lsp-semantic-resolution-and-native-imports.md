@@ -865,3 +865,17 @@ invariant。这个规则与 compiler generic semantics 共用同一 AST/accessor
 M5.1 follow-up 在 GCC、Clang 和 MSVC 上通过 semantic-analyzer regression、
 18-target LSP matrix 和三类 stdio/CLI smoke；仍有的 native constructor、
 receiver completion、foreach/container Unity marker 被记录为独立后续工作。
+
+## Snapshot-Only Canonical Signature Dispatch
+
+Source direct-call signature help no longer requires an attached analyzer
+compiler state or LSP symbol table. Once the current AST locates the call syntax,
+the semantic result is supplied only by parser `CallAt/FormatCall` and its
+canonical function TypeId. Parameter labels and optional argument facts are
+read from that snapshot.
+
+Legacy compiler-based constructor, super, member, and function resolution is
+guarded only after both local and external canonical paths have been attempted.
+If a resolved source call loses its canonical call payload, signature help
+returns unavailable instead of re-entering overload, callee-name, or AST
+signature reconstruction.
