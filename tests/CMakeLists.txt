@@ -1103,6 +1103,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_compiler_const_assignment_query_producer_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_compiler_interface_const_query_producer_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_interface_const_query_producer.c
+    )
+    target_include_directories(zr_vm_compiler_interface_const_query_producer_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_compiler_interface_const_query_producer_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_extern_struct_decorator_query_diagnostics_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_extern_struct_decorator_query_diagnostics.c
     )

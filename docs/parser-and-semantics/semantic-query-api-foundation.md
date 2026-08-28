@@ -763,6 +763,20 @@ extracts target ranges, invokes the evaluator or builder, or appends facts.
 This preserves exact identity in the presence of same-name records and rejects
 broken resolved identities instead of falling back to spelling.
 
+Interface const-field diagnostics now have a parser-owned persistent-fact
+publisher. `ZrParser_InterfaceContract_PublishConstFieldDiagnostics`
+enumerates the canonical class/interface prototype relation through
+`ConstFieldViolationAt`, builds descriptor `2014`, and appends every violation
+without changing the compiler's current error state. The publisher does not
+inspect interface or member spelling beyond the canonical prototype/member
+identity already retained by the compiler contract.
+
+This API intentionally establishes producer support before the LSP consumer
+migration. While the language-server symbols module remains externally owned,
+it still invokes the lower-level enumerator and append path. Once that exact
+path is released, the consumer must call the publisher and delete its local
+loop; no AST/name fallback is permitted during the transition.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

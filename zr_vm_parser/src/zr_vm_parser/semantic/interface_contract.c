@@ -237,3 +237,43 @@ TZrBool ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
     }
     return ZR_TRUE;
 }
+
+TZrBool ZrParser_InterfaceContract_PublishConstFieldDiagnostics(
+        SZrCompilerState *compilerState,
+        const SZrAstNode *classNode) {
+    TZrSize violationIndex = 0U;
+    SZrInterfaceConstFieldViolation violation;
+
+    if (compilerState == ZR_NULL || compilerState->state == ZR_NULL ||
+        compilerState->semanticContext == ZR_NULL || classNode == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (ZrParser_InterfaceContract_ConstFieldViolationAt(
+            compilerState,
+            classNode,
+            violationIndex,
+            &violation)) {
+        SZrStructuredDiagnostic diagnostic;
+        SZrSemanticDiagnosticFact fact;
+
+        ZrParser_StructuredDiagnostic_Init(&diagnostic);
+        if (!ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
+                    compilerState->state, &violation, &diagnostic)) {
+            return ZR_FALSE;
+        }
+        memset(&fact, 0, sizeof(fact));
+        fact.node = violation.node;
+        fact.diagnostic = diagnostic;
+        if (!ZrParser_SemanticFacts_AppendDiagnostic(
+                    compilerState->semanticContext, &fact)) {
+            ZrParser_StructuredDiagnostic_Free(
+                    compilerState->state, &diagnostic);
+            return ZR_FALSE;
+        }
+        ZrParser_StructuredDiagnostic_Free(compilerState->state, &diagnostic);
+        violationIndex++;
+    }
+
+    return ZR_TRUE;
+}

@@ -28,5 +28,8 @@ ZR_PARSER_API TZrBool ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
         SZrState *state,
         const SZrInterfaceConstFieldViolation *violation,
         SZrStructuredDiagnostic *outDiagnostic);
+ZR_PARSER_API TZrBool ZrParser_InterfaceContract_PublishConstFieldDiagnostics(
+        SZrCompilerState *compilerState,
+        const SZrAstNode *classNode);
 
 #endif
