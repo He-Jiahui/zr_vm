@@ -1353,6 +1353,35 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
     free(querySource);
 }
 
+static void test_local_reference_consumers_use_parser_relation_queries(void) {
+    char *referenceQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c");
+    char *semanticQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+
+    if (referenceQuery == NULL || semanticQuery == NULL) {
+        printf("FAIL: could not read local reference consumer sources\n");
+        g_failures++;
+        free(referenceQuery);
+        free(semanticQuery);
+        return;
+    }
+
+    assert_text_contains(
+        referenceQuery, "ZrParser_SemanticQuery_ReferencesOf");
+    assert_text_contains(
+        referenceQuery, "ZrParser_SemanticQuery_DeclarationOf");
+    assert_text_contains(
+        referenceQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
+    assert_text_contains_none(referenceQuery, "referenceTracker");
+    assert_text_contains_none(referenceQuery, "symbol->name");
+    assert_text_contains_none(
+        semanticQuery, "semantic_query_normalize_symbol_reference_range");
+
+    free(referenceQuery);
+    free(semanticQuery);
+}
+
 static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1440,6 +1469,7 @@ int main(void) {
     test_named_call_compatibility_uses_parser_inference_projection();
     test_assignment_ownership_uses_parser_diagnostic_projection();
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
+    test_local_reference_consumers_use_parser_relation_queries();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
@@ -1503,6 +1533,7 @@ int main(void) {
     printf("PASS: Named-call compatibility uses parser inference projection\n");
     printf("PASS: Assignment ownership uses parser diagnostic projection\n");
     printf("PASS: Reference tracker uses SymbolId and snapshot source identity\n");
+    printf("PASS: Local references and highlights use parser relation queries\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");

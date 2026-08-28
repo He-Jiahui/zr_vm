@@ -1,6 +1,7 @@
 #include "semantic/lsp_semantic_query.h"
 #include "semantic/lsp_semantic_definition_query.h"
 #include "semantic/lsp_semantic_import_chain.h"
+#include "semantic/lsp_semantic_reference_query.h"
 #include "semantic/semantic_analyzer_internal.h"
 #include "interface/lsp_semantic_cache_lru.h"
 #include "project/lsp_project_internal.h"
@@ -532,37 +533,6 @@ static TZrBool semantic_query_append_lsp_document_highlight(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool semantic_query_range_is_zero_width(SZrFileRange range) {
-    return range.start.offset == range.end.offset &&
-           range.start.line == range.end.line &&
-           range.start.column == range.end.column;
-}
-
-static SZrFileRange semantic_query_normalize_symbol_reference_range(SZrSymbol *symbol,
-                                                                    SZrFileRange range) {
-    const TZrChar *nameText;
-    TZrSize nameLength;
-
-    if (symbol == ZR_NULL || !semantic_query_range_is_zero_width(range)) {
-        return range;
-    }
-
-    nameText = semantic_query_string_text(symbol->name);
-    if (nameText == ZR_NULL || nameText[0] == '\0') {
-        return range;
-    }
-
-    nameLength = strlen(nameText);
-    if (range.start.offset >= nameLength) {
-        range.start.offset -= nameLength;
-    }
-    if (range.start.line == range.end.line && range.start.column > (TZrInt32)nameLength) {
-        range.start.column -= (TZrInt32)nameLength;
-    }
-
-    return range;
-}
-
 static SZrString *semantic_query_append_markdown_section(SZrState *state, SZrString *base, SZrString *appendix) {
     TZrNativeString baseText;
     TZrNativeString appendixText;
@@ -653,122 +623,6 @@ static SZrFileRange semantic_query_local_hover_range(
         return ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol);
     }
     return query != ZR_NULL ? query->queryRange : (SZrFileRange){0};
-}
-
-static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
-                                                             SZrLspContext *context,
-                                                             SZrLspSemanticQuery *query,
-                                                             TZrBool includeDeclaration,
-                                                             SZrArray *result) {
-    SZrArray references;
-
-    if (state == ZR_NULL || query == ZR_NULL || query->analyzer == ZR_NULL || query->symbol == ZR_NULL ||
-        query->analyzer->referenceTracker == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
-        return ZR_FALSE;
-    }
-
-    if (includeDeclaration &&
-        !semantic_query_append_location(state,
-                                        context,
-                                        result,
-                                        query->symbol->location.source,
-                                        semantic_query_symbol_lookup_range(ZR_NULL, query->symbol),
-                                        ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED)) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_ReferenceTracker_FindReferences(state,
-                                                          query->analyzer->referenceTracker,
-                                                          query->symbol,
-                                                          &references)) {
-        ZrCore_Array_Free(state, &references);
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < references.length; index++) {
-        SZrReference **referencePtr = (SZrReference **)ZrCore_Array_Get(&references, index);
-        SZrFileRange referenceRange;
-        if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
-            ZrCore_Array_Free(state, &references);
-            return ZR_FALSE;
-        }
-        if (referencePtr == ZR_NULL || *referencePtr == ZR_NULL ||
-            ((*referencePtr)->type == ZR_REFERENCE_DEFINITION && !includeDeclaration)) {
-            continue;
-        }
-
-        referenceRange = semantic_query_normalize_symbol_reference_range(query->symbol, (*referencePtr)->location);
-        if (!semantic_query_append_location(state,
-                                            context,
-                                            result,
-                                            referenceRange.source,
-                                            referenceRange,
-                                            ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED)) {
-            ZrCore_Array_Free(state, &references);
-            return ZR_FALSE;
-        }
-    }
-
-    ZrCore_Array_Free(state, &references);
-    return ZR_TRUE;
-}
-
-static TZrBool semantic_query_append_local_symbol_highlights(SZrState *state,
-                                                             SZrLspContext *context,
-                                                             SZrLspSemanticQuery *query,
-                                                             SZrArray *result) {
-    SZrArray references;
-
-    if (state == ZR_NULL || query == ZR_NULL || query->analyzer == ZR_NULL || query->symbol == ZR_NULL ||
-        query->uri == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (ZrLanguageServer_Lsp_StringsEqual(query->symbol->location.source, query->uri) &&
-        !semantic_query_append_document_highlight(state,
-                                                  context,
-                                                  query->uri,
-                                                  result,
-                                                  semantic_query_symbol_lookup_range(ZR_NULL, query->symbol),
-                                                  3)) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_ReferenceTracker_FindReferences(state,
-                                                          query->analyzer->referenceTracker,
-                                                          query->symbol,
-                                                          &references)) {
-        ZrCore_Array_Free(state, &references);
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < references.length; index++) {
-        SZrReference **referencePtr = (SZrReference **)ZrCore_Array_Get(&references, index);
-        SZrFileRange referenceRange;
-        if (referencePtr == ZR_NULL || *referencePtr == ZR_NULL ||
-            !ZrLanguageServer_Lsp_StringsEqual((*referencePtr)->location.source, query->uri)) {
-            continue;
-        }
-
-        referenceRange = semantic_query_normalize_symbol_reference_range(query->symbol, (*referencePtr)->location);
-        if (!semantic_query_append_document_highlight(state,
-                                                      context,
-                                                      query->uri,
-                                                      result,
-                                                      referenceRange,
-                                                      (*referencePtr)->type == ZR_REFERENCE_WRITE ? 3 : 2)) {
-            ZrCore_Array_Free(state, &references);
-            return ZR_FALSE;
-        }
-    }
-
-    ZrCore_Array_Free(state, &references);
-    return ZR_TRUE;
 }
 
 static TZrBool semantic_query_uri_to_native_path(SZrString *uri, TZrChar *buffer, TZrSize bufferSize) {
@@ -3361,11 +3215,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
-        TZrBool appended = semantic_query_append_local_symbol_references(state,
-                                                                         context,
-                                                                         query,
-                                                                         includeDeclaration,
-                                                                         result);
+        TZrBool appended =
+            ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
+                    state,
+                    context,
+                    query,
+                    includeDeclaration,
+                    result);
 
         if (!appended || query->projectIndex == ZR_NULL || query->symbol == ZR_NULL ||
             query->symbol->accessModifier != ZR_ACCESS_PUBLIC) {
@@ -3427,7 +3283,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDocumentH
     }
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
-        return semantic_query_append_local_symbol_highlights(state, context, query, result);
+        return ZrLanguageServer_LspSemanticReferenceQuery_AppendHighlights(
+                state, context, query, result);
     }
 
     return ZR_FALSE;

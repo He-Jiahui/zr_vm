@@ -797,6 +797,20 @@ boundary: one analyzer represents one source snapshot, so it may supply that
 known identity. The tracker itself remains fail-closed for missing source
 identity and cannot infer a document from coordinates, names, or path text.
 
+Source-local references and document highlights no longer read the tracker.
+`lsp_semantic_reference_query` projects `DeclarationOf` and `ReferencesOf`
+through the selected symbol's canonical `SymbolId`, consumes each fact's exact
+range and reference kind, and de-duplicates equal locations. Declaration,
+write, and member-write facts become write highlights; other resolved uses
+become read highlights. A later write fact upgrades an equal read range.
+
+Some LSP-created reference facts predate source ownership and carry a null
+source. The projection binds only those copied ranges through the analyzer's
+single AST snapshot helper; it never substitutes the request URI. Invalid
+SymbolIds, unavailable snapshot source, unresolved use facts, and cancelled
+requests fail closed. A document update requires a fresh semantic-query
+resolution before projection; borrowed query objects do not cross updates.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

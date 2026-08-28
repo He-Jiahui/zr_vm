@@ -16,6 +16,7 @@
 #include "path_support.h"
 
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 
 typedef struct SZrParityTimer {
     clock_t startTime;
@@ -496,6 +497,238 @@ static void test_source_semantic_query_snapshot_parity(SZrState *state) {
     }
 }
 
+static void free_local_reference_projection_results(
+        SZrState *state,
+        SZrArray *locations,
+        SZrArray *highlights) {
+    TZrSize index;
+
+    if (state == ZR_NULL) {
+        return;
+    }
+    if (locations != ZR_NULL && locations->isValid) {
+        for (index = 0U; index < locations->length; index++) {
+            SZrLspLocation **slot =
+                    (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+            if (slot != ZR_NULL && *slot != ZR_NULL) {
+                ZrCore_Memory_RawFree(
+                        state->global, *slot, sizeof(SZrLspLocation));
+            }
+        }
+        ZrCore_Array_Free(state, locations);
+    }
+    if (highlights != ZR_NULL && highlights->isValid) {
+        for (index = 0U; index < highlights->length; index++) {
+            SZrLspDocumentHighlight **slot =
+                    (SZrLspDocumentHighlight **)ZrCore_Array_Get(
+                            highlights, index);
+            if (slot != ZR_NULL && *slot != ZR_NULL) {
+                ZrCore_Memory_RawFree(
+                        state->global,
+                        *slot,
+                        sizeof(SZrLspDocumentHighlight));
+            }
+        }
+        ZrCore_Array_Free(state, highlights);
+    }
+}
+
+static void test_local_reference_consumers_use_canonical_facts(
+        SZrState *state) {
+    static const TZrChar *content =
+            "fn read(): int {\n"
+            "    var value = 1;\n"
+            "    value = 2;\n"
+            "    return value;\n"
+            "}\n";
+    static const TZrChar *updatedContent =
+            "fn read(): int {\n"
+            "    var value = 1;\n"
+            "    value = 2;\n"
+            "    value = 3;\n"
+            "    return value;\n"
+            "}\n";
+    SZrParityTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrLspPosition position;
+    SZrLspSemanticQuery query;
+    SZrReferenceTracker *tracker = ZR_NULL;
+    TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
+    SZrArray locations = {0};
+    SZrArray highlights = {0};
+    TZrSize readHighlightCount = 0U;
+    TZrSize writeHighlightCount = 0U;
+    TZrChar failureBuffer[192] = {0};
+    const TZrChar *failure = "initial resolution";
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START("LSP Local Reference Consumers Use Canonical Facts");
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///semantic_query_local_references.zr",
+            strlen("file:///semantic_query_local_references.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !find_position(content, "return value", 0U, 7, &position) ||
+        !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, position, &query) ||
+        query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
+        query.symbol == ZR_NULL ||
+        query.symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        query.analyzer == ZR_NULL ||
+        query.analyzer->referenceTracker == ZR_NULL) {
+        goto cleanup;
+    }
+
+    tracker = query.analyzer->referenceTracker;
+    query.analyzer->referenceTracker = ZR_NULL;
+    failure = "canonical reference projection";
+    {
+        TZrBool referencesAppended =
+                ZrLanguageServer_LspSemanticQuery_AppendReferences(
+                        state, context, &query, ZR_TRUE, &locations);
+        TZrBool highlightsAppended =
+                ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
+                        state, context, &query, &highlights);
+        if (!referencesAppended || locations.length != 3U ||
+            !highlightsAppended || highlights.length != 3U) {
+            TZrSize matchingFactCount = 0U;
+            TZrSize resolvedUseCount = 0U;
+            for (TZrSize index = 0U;
+                 index < query.analyzer->semanticContext->referenceFacts.length;
+                 index++) {
+                const SZrSemanticReferenceFact *fact =
+                        (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
+                                &query.analyzer->semanticContext->referenceFacts,
+                                index);
+                if (fact != ZR_NULL &&
+                    fact->symbolId == query.symbol->semanticId) {
+                    matchingFactCount++;
+                    if (fact->isResolved &&
+                        fact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION) {
+                        resolvedUseCount++;
+                    }
+                }
+            }
+            snprintf(
+                    failureBuffer,
+                    sizeof(failureBuffer),
+                    "canonical projection references=%d/%zu highlights=%d/%zu facts=%zu uses=%zu id=%llu",
+                    referencesAppended,
+                    (size_t)locations.length,
+                    highlightsAppended,
+                    (size_t)highlights.length,
+                    (size_t)matchingFactCount,
+                    (size_t)resolvedUseCount,
+                    (unsigned long long)query.symbol->semanticId);
+            failure = failureBuffer;
+            goto cleanup;
+        }
+    }
+    for (TZrSize index = 0U; index < highlights.length; index++) {
+        SZrLspDocumentHighlight **slot =
+                (SZrLspDocumentHighlight **)ZrCore_Array_Get(
+                        &highlights, index);
+        if (slot == ZR_NULL || *slot == ZR_NULL) {
+            goto cleanup;
+        }
+        if ((*slot)->kind == 2) {
+            readHighlightCount++;
+        } else if ((*slot)->kind == 3) {
+            writeHighlightCount++;
+        }
+    }
+    if (readHighlightCount != 1U || writeHighlightCount != 2U) {
+        goto cleanup;
+    }
+
+    free_local_reference_projection_results(state, &locations, &highlights);
+    query.analyzer->referenceTracker = tracker;
+    tracker = ZR_NULL;
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    failure = "updated snapshot re-resolution";
+    {
+        TZrBool updated = ZrLanguageServer_Lsp_UpdateDocument(
+                state,
+                context,
+                uri,
+                updatedContent,
+                strlen(updatedContent),
+                2U);
+        TZrBool positioned =
+                find_position(updatedContent, "return value", 0U, 7, &position);
+        TZrBool resolved = updated && positioned &&
+                ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                        state, context, uri, position, &query);
+        if (!resolved ||
+            query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
+            query.symbol == ZR_NULL || query.analyzer == ZR_NULL ||
+            query.analyzer->referenceTracker == ZR_NULL) {
+            snprintf(
+                    failureBuffer,
+                    sizeof(failureBuffer),
+                    "updated=%d positioned=%d resolved=%d kind=%d analyzer=%p symbol=%p tracker=%p",
+                    updated,
+                    positioned,
+                    resolved,
+                    query.kind,
+                    (void *)query.analyzer,
+                    (void *)query.symbol,
+                    query.analyzer != ZR_NULL
+                            ? (void *)query.analyzer->referenceTracker
+                            : ZR_NULL);
+            failure = failureBuffer;
+            goto cleanup;
+        }
+    }
+    tracker = query.analyzer->referenceTracker;
+    query.analyzer->referenceTracker = ZR_NULL;
+    if (!ZrLanguageServer_LspSemanticQuery_AppendReferences(
+                state, context, &query, ZR_TRUE, &locations) ||
+        locations.length != 4U ||
+        !ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
+                state, context, &query, &highlights) ||
+        highlights.length != 4U) {
+        goto cleanup;
+    }
+
+    free_local_reference_projection_results(state, &locations, &highlights);
+    failure = "unresolved SymbolId fail-closed";
+    symbolId = query.symbol->semanticId;
+    query.symbol->semanticId = ZR_SEMANTIC_ID_INVALID;
+    if (ZrLanguageServer_LspSemanticQuery_AppendReferences(
+                state, context, &query, ZR_TRUE, &locations) ||
+        locations.length != 0U) {
+        query.symbol->semanticId = symbolId;
+        goto cleanup;
+    }
+    query.symbol->semanticId = symbolId;
+    valid = ZR_TRUE;
+
+cleanup:
+    if (query.analyzer != ZR_NULL && tracker != ZR_NULL) {
+        query.analyzer->referenceTracker = tracker;
+    }
+    free_local_reference_projection_results(state, &locations, &highlights);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (valid) {
+        TEST_PASS(timer, "LSP Local Reference Consumers Use Canonical Facts");
+    } else {
+        TEST_FAIL(
+                timer,
+                "LSP Local Reference Consumers Use Canonical Facts",
+                failure);
+    }
+}
+
 static void test_binary_semantic_query_snapshot_parity(SZrState *state) {
     SZrParityTimer timer;
     SZrParityBinaryFixture fixture = {0};
@@ -599,6 +832,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
     test_source_semantic_query_snapshot_parity(state);
+    test_local_reference_consumers_use_canonical_facts(state);
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
     ZrCore_GlobalState_Free(global);
