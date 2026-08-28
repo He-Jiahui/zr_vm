@@ -709,6 +709,26 @@ range and migration guidance, but not one exact replacement expression or
 declaration. Related reference-origin ranges and all existing stable codes,
 severity, and messages remain unchanged.
 
+Ownership return escapes use the same compiler reference-escape pass in normal
+compilation and semantic analysis. The pass classifies an owner-backed return
+only from the binding's structured `ownershipQualifier`, the callable's
+`referenceAccess`, and the canonical reference provenance escape bound. A
+`Unique` or `Shared` source whose reference cannot reach the caller publishes
+`loan_escape` for writable returns or `borrow_escape` for readonly returns.
+An input reference already bounded to the caller remains legal. The rule never
+matches a parameter name, return text, diagnostic message, or LSP symbol.
+
+The persistent diagnostic contains descriptor 4003 or 4002, the exact returned
+expression range, two related ranges for the source use and callable-body
+lifetime end, and `REQUIRES_USER_DECISION`. The same pass also publishes the
+corresponding ownership violation fact. Semantic analysis invokes the public
+compiler validation entry on its module or function analysis root, consumes
+the current structured error, and then materializes the query snapshot. The
+LSP diagnostic store merges that immediate projection with the same canonical
+query row by code and exact range, so one rule produces one diagnostic. The
+language server does not rebuild owner qualifiers, line-wide ranges, or
+related information from the AST.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

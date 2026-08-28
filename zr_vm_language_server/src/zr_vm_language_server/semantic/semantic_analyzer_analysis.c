@@ -187,6 +187,15 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
             analyzer,
             scopeRoot);
     if (analyzer->compilerState != ZR_NULL) {
+        if (!ZrParser_Compiler_ValidateReferenceEscapes(
+                    analyzer->compilerState,
+                    scopeRoot) &&
+            analyzer->compilerState->hasError) {
+            ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                    state,
+                    analyzer,
+                    scopeRoot->location);
+        }
         ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(
                 state,
                 analyzer,

@@ -613,6 +613,9 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_RegisterTypeBinding(
         SZrAstNode *declaration);
 ZR_PARSER_API TZrBool ZrParser_Compiler_PublishCurrentDiagnostic(
         SZrCompilerState *cs);
+ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateReferenceEscapes(
+        SZrCompilerState *cs,
+        SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_PatternShapeMismatch(SZrCompilerState *cs,
                                                           SZrFileRange location,
                                                           const TZrChar *message,

@@ -93,10 +93,133 @@ static TZrBool reference_escape_analyze_variable(
     return ZR_TRUE;
 }
 
+static TZrBool reference_escape_owner_return_qualifier(
+        SZrReferenceEscapeContext *context,
+        const SZrReferenceEscapeProvenance *provenance,
+        EZrOwnershipQualifier *outQualifier) {
+    SZrReferenceEscapeBinding *binding;
+    EZrOwnershipQualifier sourceQualifier;
+
+    if (context == ZR_NULL || provenance == ZR_NULL ||
+        provenance->bindingName == ZR_NULL || outQualifier == ZR_NULL ||
+        context->returnType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    binding = reference_escape_find_binding(context, provenance->bindingName);
+    if (binding == ZR_NULL || binding->declaredType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    sourceQualifier = binding->declaredType->ownershipQualifier;
+    if (sourceQualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE &&
+        sourceQualifier != ZR_OWNERSHIP_QUALIFIER_SHARED) {
+        return ZR_FALSE;
+    }
+    if (context->returnType->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) {
+        *outQualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        return ZR_TRUE;
+    }
+    if (context->returnType->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE) {
+        *outQualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static TZrBool reference_escape_report_owner_return(
+        SZrReferenceEscapeContext *context,
+        SZrAstNode *returnNode,
+        const SZrReferenceEscapeProvenance *provenance,
+        TZrBool *outHandled) {
+    SZrAstNode *expression;
+    SZrStructuredDiagnostic diagnostic;
+    SZrSemanticOwnershipFact fact;
+    SZrFileRange lifetimeEnd;
+    EZrOwnershipQualifier qualifier;
+    const TZrChar *sourceMessage;
+    TZrBool built;
+
+    if (outHandled != ZR_NULL) {
+        *outHandled = ZR_FALSE;
+    }
+    if (context == ZR_NULL || returnNode == ZR_NULL ||
+        returnNode->type != ZR_AST_RETURN_STATEMENT || outHandled == ZR_NULL ||
+        provenance == ZR_NULL || context->bodyRoot == ZR_NULL ||
+        !reference_escape_owner_return_qualifier(
+                context, provenance, &qualifier)) {
+        return ZR_TRUE;
+    }
+    expression = returnNode->data.returnStatement.expr;
+    if (expression == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    *outHandled = ZR_TRUE;
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    built = qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED
+                    ? ZrParser_DiagnosticBuilder_BuildBorrowEscape(
+                              context->compiler->state,
+                              &diagnostic,
+                              expression->location)
+                    : ZrParser_DiagnosticBuilder_BuildLoanEscape(
+                              context->compiler->state,
+                              &diagnostic,
+                              expression->location);
+    sourceMessage = qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED
+                            ? "Borrow source is here"
+                            : "Loan source is here";
+    lifetimeEnd = context->bodyRoot->location;
+    lifetimeEnd.start = lifetimeEnd.end;
+    if (!built ||
+        !ZrParser_StructuredDiagnostic_AddRelatedInformation(
+                context->compiler->state,
+                &diagnostic,
+                expression->location,
+                sourceMessage) ||
+        !ZrParser_StructuredDiagnostic_AddRelatedInformation(
+                context->compiler->state,
+                &diagnostic,
+                lifetimeEnd,
+                "Source lifetime ends here")) {
+        ZrParser_StructuredDiagnostic_Free(
+                context->compiler->state, &diagnostic);
+        ZrParser_Compiler_Error(
+                context->compiler,
+                "Failed to construct ownership return escape diagnostic",
+                expression->location);
+        return ZR_FALSE;
+    }
+
+    if (context->compiler->semanticContext != ZR_NULL) {
+        memset(&fact, 0, sizeof(fact));
+        fact.node = returnNode;
+        fact.range = expression->location;
+        fact.kind = ZR_SEMANTIC_OWNERSHIP_FACT_ERROR;
+        fact.qualifier = qualifier;
+        fact.symbolId = ZR_SEMANTIC_ID_INVALID;
+        fact.lifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
+        fact.ownerLifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
+        fact.relatedNode = expression;
+        fact.isViolation = ZR_TRUE;
+        fact.diagnosticMessage = diagnostic.message;
+        if (!ZrParser_SemanticFacts_AppendOwnership(
+                    context->compiler->semanticContext, &fact)) {
+            ZrParser_StructuredDiagnostic_Free(
+                    context->compiler->state, &diagnostic);
+            ZrParser_Compiler_Error(
+                    context->compiler,
+                    "Failed to publish ownership return escape fact",
+                    expression->location);
+            return ZR_FALSE;
+        }
+    }
+    ZrParser_Compiler_StructuredError(context->compiler, &diagnostic);
+    return ZR_FALSE;
+}
+
 static TZrBool reference_escape_analyze_return(
         SZrReferenceEscapeContext *context,
         SZrAstNode *node) {
     SZrReferenceEscapeProvenance provenance;
+    TZrBool handledOwnershipEscape;
     TZrBool returnsReference = (TZrBool)(
             reference_escape_type_is_reference(context->returnType) ||
             reference_escape_type_is_ref_like(
@@ -110,13 +233,24 @@ static TZrBool reference_escape_analyze_return(
         return ZR_FALSE;
     }
     if (returnsReference &&
-        !reference_escape_validate_target(
-                context,
-                &provenance,
-                ZR_SEMANTIC_ESCAPE_CALLER,
-                node->location,
-                "return")) {
-        return ZR_FALSE;
+        provenance.isReference &&
+        provenance.escapeBound < ZR_SEMANTIC_ESCAPE_CALLER) {
+        if (!reference_escape_report_owner_return(
+                    context,
+                    node,
+                    &provenance,
+                    &handledOwnershipEscape)) {
+            return ZR_FALSE;
+        }
+        if (!handledOwnershipEscape &&
+            !reference_escape_validate_target(
+                    context,
+                    &provenance,
+                    ZR_SEMANTIC_ESCAPE_CALLER,
+                    node->location,
+                    "return")) {
+            return ZR_FALSE;
+        }
     }
     if (provenance.isClosure &&
         provenance.closureEscapeBound < ZR_SEMANTIC_ESCAPE_CALLER) {
@@ -536,4 +670,10 @@ TZrBool compiler_validate_reference_escapes(
     context.refStructTypes = ZR_NULL;
     reference_escape_context_free(&context);
     return (TZrBool)(success && !compiler->hasError);
+}
+
+TZrBool ZrParser_Compiler_ValidateReferenceEscapes(
+        SZrCompilerState *compiler,
+        SZrAstNode *node) {
+    return compiler_validate_reference_escapes(compiler, node);
 }

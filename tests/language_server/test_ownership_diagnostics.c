@@ -171,6 +171,28 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
     return ZR_NULL;
 }
 
+static TZrSize count_diagnostics_by_code_and_line(
+        SZrSemanticAnalyzer *analyzer,
+        const TZrChar *code,
+        TZrInt32 line) {
+    TZrSize count = 0;
+
+    if (analyzer == ZR_NULL || code == ZR_NULL) {
+        return 0;
+    }
+    for (TZrSize index = 0; index < analyzer->diagnostics.length; index++) {
+        SZrDiagnostic **diagnosticPtr =
+                (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, index);
+        if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL &&
+            (*diagnosticPtr)->code != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeStringShort((*diagnosticPtr)->code), code) == 0 &&
+            (*diagnosticPtr)->location.start.line == line) {
+            count++;
+        }
+    }
+    return count;
+}
+
 static const SZrLspDiagnostic *find_lsp_diagnostic_by_code(SZrArray *diagnostics,
                                                            const TZrChar *code) {
     TZrSize index;
@@ -232,7 +254,11 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
         }
 
         diagnostic = find_diagnostic_by_code_and_line(analyzer, "loan_escape", 4);
-        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+        if (diagnostic == ZR_NULL ||
+            count_diagnostics_by_code_and_line(analyzer, "loan_escape", 4) != 1 ||
+            diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+            diagnostic->location.start.column != 16 ||
+            diagnostic->location.end.column != 24) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
@@ -285,7 +311,7 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
 
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "ref resource", 0));
+            file_range_for_nth_substring(testCode, "resource;", 0));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_LOANED ||
@@ -349,6 +375,9 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
 
     diagnostic = find_diagnostic_by_code_and_line(analyzer, "borrow_escape", 4);
     if (diagnostic == ZR_NULL ||
+        count_diagnostics_by_code_and_line(analyzer, "borrow_escape", 4) != 1 ||
+        diagnostic->location.start.column != 16 ||
+        diagnostic->location.end.column != 24 ||
         !diagnostic->relatedInformation.isValid ||
         diagnostic->relatedInformation.length != 2) {
         ZrParser_Ast_Free(state, ast);
@@ -754,6 +783,60 @@ static void test_semantic_analyzer_does_not_move_unique_ref_argument(SZrState *s
     TEST_PASS(timer, summary);
 }
 
+static void test_semantic_analyzer_allows_caller_reference_passthrough(
+        SZrState *state) {
+    const TZrChar *summary = "Semantic Analyzer Allows Caller Reference Passthrough";
+    const TZrChar *testCode =
+        "resource class Resource {\n"
+        "}\n"
+        "fn passthrough(resource: ref Resource): ref Resource {\n"
+        "    return ref resource;\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrDiagnostic *borrowDiagnostic;
+    SZrDiagnostic *loanDiagnostic;
+
+    TEST_START(summary);
+    TEST_INFO("Canonical caller reference escape bound",
+              "A ref parameter already tied to the caller may be returned without an ownership escape diagnostic");
+
+    analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    sourceName = ZrCore_String_Create(
+            state,
+            "ownership_reference_passthrough_test.zr",
+            strlen("ownership_reference_passthrough_test.zr"));
+    ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+    if (analyzer == ZR_NULL || ast == ZR_NULL ||
+        !ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        if (analyzer != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare caller reference fixture");
+        return;
+    }
+
+    borrowDiagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "borrow_escape", 4);
+    loanDiagnostic = find_diagnostic_by_code_and_line(
+            analyzer, "loan_escape", 4);
+    if (borrowDiagnostic != ZR_NULL || loanDiagnostic != ZR_NULL) {
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer, summary, "Caller reference passthrough was treated as an owner escape");
+        return;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    TEST_PASS(timer, summary);
+}
+
 #include "test_ownership_diagnostics_region_cases.h"
 #include "test_ownership_diagnostics_owner_set_cases.h"
 #include "test_ownership_diagnostics_using_body_cases.h"
@@ -788,6 +871,8 @@ int main(void) {
     test_semantic_analyzer_reports_loaned_return_escape(state);
     TEST_DIVIDER();
     test_semantic_analyzer_reports_borrowed_return_escape(state);
+    TEST_DIVIDER();
+    test_semantic_analyzer_allows_caller_reference_passthrough(state);
     TEST_DIVIDER();
     test_lsp_translates_loan_escape_related_information(state);
     TEST_DIVIDER();
