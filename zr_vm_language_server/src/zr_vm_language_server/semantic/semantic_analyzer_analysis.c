@@ -1,5 +1,6 @@
 #include "semantic/semantic_analyzer_internal.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic_calls.h"
 #include "zr_vm_parser/semantic_relations.h"
 
 #include <string.h>
@@ -205,6 +206,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
                 state,
                 analyzer,
                 scopeRoot);
+    }
+    if (!ZrParser_SemanticCalls_PublishSource(
+                analyzer->semanticContext, ast)) {
+        return ZR_FALSE;
     }
     ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics(state, analyzer);
 

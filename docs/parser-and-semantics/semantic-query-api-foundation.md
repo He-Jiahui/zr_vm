@@ -857,6 +857,23 @@ names, document-symbol lists, and inheritance-header text do not participate.
 Cross-project, binary, and native hierarchy expansion remains a separate
 producer boundary.
 
+Source-local call hierarchy consumes the canonical call-edge surface.
+`ZrParser_SemanticCalls_PublishSource` publishes lexical function ownership
+before deriving edges from resolved call references. If one AST function
+declaration has both a compiler callable record and an LSP display record, the
+publisher normalizes the target to the first valid parser function record for
+that exact declaration identity. It never selects a same-name symbol.
+
+Call hierarchy prepare maps the LSP display symbol to that parser declaration
+inside one immutable analyzer snapshot, then stores only SymbolId, callable
+TypeId, and document version. Incoming and outgoing follow-up requests
+re-resolve the item in the current snapshot, require identity and version
+equality, and query `IncomingCalls`, `OutgoingCalls`, and `DeclarationOf`.
+Repeated edges to one related SymbolId are grouped while preserving every
+exact call-site range. No AST pointer crosses a snapshot boundary. Methods,
+lambdas, and external cross-project/binary/native call graphs remain separate
+producer boundaries.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

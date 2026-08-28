@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "semantic/semantic_scope_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
 static TZrBool semantic_calls_same_source(SZrString *left, SZrString *right) {
@@ -113,6 +114,31 @@ static const SZrSemanticExpressionFact *semantic_calls_find_expression(
     return best;
 }
 
+static const SZrSemanticSymbolRecord *semantic_calls_canonical_function(
+        const SZrSemanticContext *context,
+        const SZrSemanticSymbolRecord *symbol) {
+    TZrSize index;
+
+    if (context == ZR_NULL || symbol == ZR_NULL || symbol->astNode == ZR_NULL ||
+        !context->symbols.isValid) {
+        return symbol;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *candidate =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+
+        if (candidate != ZR_NULL &&
+            candidate->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION &&
+            candidate->astNode == symbol->astNode &&
+            candidate->id != ZR_SEMANTIC_ID_INVALID &&
+            candidate->typeId != ZR_SEMANTIC_ID_INVALID) {
+            return candidate;
+        }
+    }
+    return symbol;
+}
+
 static TZrBool semantic_calls_has_edge(
         const SZrSemanticContext *context,
         const SZrSemanticCallEdgeFact *candidate) {
@@ -128,7 +154,6 @@ static TZrBool semantic_calls_has_edge(
         if (edge != ZR_NULL &&
             edge->callerSymbolId == candidate->callerSymbolId &&
             edge->targetSymbolId == candidate->targetSymbolId &&
-            edge->callableTypeId == candidate->callableTypeId &&
             edge->resolution == candidate->resolution &&
             edge->callSiteRange.start.offset == candidate->callSiteRange.start.offset &&
             edge->callSiteRange.end.offset == candidate->callSiteRange.end.offset &&
@@ -203,6 +228,8 @@ TZrBool ZrParser_SemanticCalls_Publish(SZrSemanticContext *context) {
                 edge.targetSymbolId = ZR_SEMANTIC_ID_INVALID;
                 edge.resolution = ZR_SEMANTIC_CALL_EDGE_RESOLUTION_TARGET_UNRESOLVED;
             } else {
+                target = semantic_calls_canonical_function(context, target);
+                edge.targetSymbolId = target->id;
                 edge.targetDeclarationRange = semantic_calls_range_is_known(
                         &reference->declarationRange)
                         ? reference->declarationRange
@@ -223,6 +250,16 @@ TZrBool ZrParser_SemanticCalls_Publish(SZrSemanticContext *context) {
         }
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_SemanticCalls_PublishSource(
+        SZrSemanticContext *context,
+        SZrAstNode *root) {
+    if (context == ZR_NULL || root == ZR_NULL ||
+        !ZrParser_Semantic_BuildSourceScopeFacts(context, root)) {
+        return ZR_FALSE;
+    }
+    return ZrParser_SemanticCalls_Publish(context);
 }
 
 static TZrBool semantic_calls_scope_allows(

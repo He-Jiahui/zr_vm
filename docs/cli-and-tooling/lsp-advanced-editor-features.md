@@ -1133,3 +1133,23 @@ GCC, Clang, and MSVC each pass parser relations `19/19`, semantic-query parity
 stdio type-hierarchy smoke with real exits. The full interface runner keeps the
 same `109 Pass / 4` pre-existing markers on all three toolchains; it is not
 counted as GREEN.
+
+## 2026-08-28 Canonical Local Call Hierarchy
+
+Source-local `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls` now
+consume parser-owned call edges. Prepared items carry canonical SymbolId,
+callable TypeId, and document version. Follow-up requests re-resolve the
+current snapshot before querying `IncomingCalls` or `OutgoingCalls`; stale or
+malformed identity returns no result.
+
+The language server no longer scans source lines for a callable name or finds
+callers through document symbols. Display names are output only. Calls to one
+target are grouped by SymbolId and retain each exact call-site `fromRange`.
+Same-AST duplicate display records are normalized by the parser before the
+edge crosses the query boundary, without a name or type-text fallback.
+
+GCC, Clang, and MSVC each pass parser call queries `11/11`, semantic-query
+parity `7/7`, source contracts `60/60`, advanced editor features `73/73`, and
+the combined type/call hierarchy stdio smoke with real exits. The full
+interface runner keeps the same `109 Pass / 4` pre-existing markers; inlay
+hints remain PASS and the runner is not counted as GREEN.

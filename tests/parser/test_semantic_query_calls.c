@@ -128,7 +128,10 @@ static void test_compiled_call_edges_publish_stable_incoming_and_outgoing(void) 
     caller = call_find_symbol_by_node(cs.semanticContext, callerNode);
     TEST_ASSERT_NOT_NULL(callee);
     TEST_ASSERT_NOT_NULL(caller);
-    TEST_ASSERT_TRUE(ZrParser_SemanticCalls_Publish(cs.semanticContext));
+    ZrParser_SemanticCalls_Reset(cs.semanticContext);
+    cs.semanticContext->scopeFacts.length = 0U;
+    TEST_ASSERT_TRUE(ZrParser_SemanticCalls_PublishSource(
+            cs.semanticContext, ast));
     ZrCore_Array_Construct(&edges);
     TEST_ASSERT_TRUE(ZrParser_SemanticQuery_OutgoingCalls(
             cs.semanticContext, caller->id, ZR_NULL, &edges));
@@ -240,6 +243,88 @@ static void test_unresolved_call_edge_never_selects_same_name_target(void) {
     TEST_ASSERT_EQUAL_UINT(0U, candidates.length);
 
     ZrCore_Array_Free(g_state, &candidates);
+    ZrCore_Array_Free(g_state, &edges);
+    ZrParser_SemanticContext_Free(context);
+}
+
+static void test_duplicate_function_records_canonicalize_by_ast_identity(void) {
+    const TZrChar *source = "target()";
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrAstNode callerNode;
+    SZrAstNode targetNode;
+    SZrSemanticScopeFact scope;
+    SZrSemanticReferenceFact callReference;
+    TZrSymbolId callerId;
+    TZrSymbolId canonicalTargetId;
+    TZrSymbolId duplicateTargetId;
+    SZrArray edges;
+    const SZrParserSemanticCallEdgeQuery *edge;
+
+    TEST_ASSERT_NOT_NULL(context);
+    memset(&callerNode, 0, sizeof(callerNode));
+    memset(&targetNode, 0, sizeof(targetNode));
+    callerId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "caller"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            11U,
+            ZR_SEMANTIC_ID_INVALID,
+            &callerNode,
+            call_source_position("caller", ZR_NULL, "caller", 0U));
+    canonicalTargetId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "target"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            12U,
+            ZR_SEMANTIC_ID_INVALID,
+            &targetNode,
+            call_source_position(source, ZR_NULL, "target", 0U));
+    duplicateTargetId = ZrParser_Semantic_RegisterSymbol(
+            context,
+            ZrCore_String_CreateFromNative(g_state, "displayAlias"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+            13U,
+            ZR_SEMANTIC_ID_INVALID,
+            &targetNode,
+            call_source_position(source, ZR_NULL, "target", 0U));
+    TEST_ASSERT_NOT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, callerId);
+    TEST_ASSERT_NOT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, canonicalTargetId);
+    TEST_ASSERT_NOT_EQUAL_UINT(ZR_SEMANTIC_ID_INVALID, duplicateTargetId);
+
+    memset(&scope, 0, sizeof(scope));
+    scope.kind = ZR_SEMANTIC_SCOPE_KIND_FUNCTION;
+    scope.ownerSymbolId = callerId;
+    scope.range = call_source_position(source, ZR_NULL, "target", 0U);
+    scope.range.end.offset = strlen(source);
+    TEST_ASSERT_NOT_EQUAL_UINT(
+            ZR_SEMANTIC_ID_INVALID,
+            ZrParser_Semantic_PublishScopeFact(context, &scope));
+
+    memset(&callReference, 0, sizeof(callReference));
+    callReference.kind = ZR_SEMANTIC_REFERENCE_CALL;
+    callReference.range = call_source_position(source, ZR_NULL, "target", 0U);
+    callReference.declarationRange = callReference.range;
+    callReference.typeId = 12U;
+    callReference.symbolId = canonicalTargetId;
+    callReference.isResolved = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &callReference));
+    callReference.typeId = 13U;
+    callReference.symbolId = duplicateTargetId;
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendReference(context, &callReference));
+    TEST_ASSERT_TRUE(ZrParser_SemanticCalls_Publish(context));
+
+    ZrCore_Array_Construct(&edges);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_OutgoingCalls(
+            context, callerId, ZR_NULL, &edges));
+    TEST_ASSERT_EQUAL_UINT(1U, edges.length);
+    edge = (const SZrParserSemanticCallEdgeQuery *)ZrCore_Array_Get(&edges, 0U);
+    TEST_ASSERT_NOT_NULL(edge);
+    TEST_ASSERT_EQUAL_UINT(canonicalTargetId, edge->targetSymbolId);
+    TEST_ASSERT_NOT_EQUAL_UINT(duplicateTargetId, edge->targetSymbolId);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_IncomingCalls(
+            context, duplicateTargetId, ZR_NULL, &edges));
+    TEST_ASSERT_EQUAL_UINT(0U, edges.length);
+
     ZrCore_Array_Free(g_state, &edges);
     ZrParser_SemanticContext_Free(context);
 }
@@ -789,6 +874,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compiled_call_edges_publish_stable_incoming_and_outgoing);
     RUN_TEST(test_unresolved_call_edge_never_selects_same_name_target);
+    RUN_TEST(test_duplicate_function_records_canonicalize_by_ast_identity);
     RUN_TEST(test_approximate_call_expression_never_publishes_call_edge);
     RUN_TEST(test_nested_function_scope_without_owner_fails_closed);
     RUN_TEST(test_lambda_call_edge_uses_lambda_caller_identity);

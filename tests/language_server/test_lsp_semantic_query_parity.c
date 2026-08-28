@@ -961,6 +961,174 @@ cleanup:
     }
 }
 
+static void test_local_call_hierarchy_uses_canonical_edges(
+        SZrState *state) {
+    static const TZrChar *content =
+            "fn helper(value: int): int { return value; }\n"
+            "fn decoy(value: int): int { return value; }\n"
+            "fn run(value: int): int {\n"
+            "    var first = helper(value);\n"
+            "    return first + helper(value);\n"
+            "}\n";
+    SZrParityTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrString *tamperedRunName = ZR_NULL;
+    SZrString *tamperedHelperName = ZR_NULL;
+    SZrLspPosition runPosition;
+    SZrLspPosition helperPosition;
+    SZrArray runItems = {0};
+    SZrArray helperItems = {0};
+    SZrArray outgoing = {0};
+    SZrArray incoming = {0};
+    SZrArray stale = {0};
+    SZrArray outgoingEdges = {0};
+    SZrArray incomingEdges = {0};
+    SZrLspSemanticQuery runQuery;
+    SZrLspSemanticQuery helperQuery;
+    SZrLspHierarchyItem *runItem = ZR_NULL;
+    SZrLspHierarchyItem *helperItem = ZR_NULL;
+    SZrLspHierarchyCall *outgoingCall = ZR_NULL;
+    SZrLspHierarchyCall *incomingCall = ZR_NULL;
+    const TZrChar *failure = "call hierarchy preparation";
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START("LSP Local Call Hierarchy Uses Canonical Edges");
+    ZrLanguageServer_LspSemanticQuery_Init(&runQuery);
+    ZrLanguageServer_LspSemanticQuery_Init(&helperQuery);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///semantic_query_local_call_hierarchy.zr",
+            strlen("file:///semantic_query_local_call_hierarchy.zr"));
+    tamperedRunName = ZrCore_String_Create(
+            state, "helper", strlen("helper"));
+    tamperedHelperName = ZrCore_String_Create(
+            state, "decoy", strlen("decoy"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        tamperedRunName == ZR_NULL || tamperedHelperName == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !find_position(content, "fn run", 0U, 3, &runPosition) ||
+        !find_position(content, "fn helper", 0U, 3, &helperPosition) ||
+        !ZrLanguageServer_Lsp_PrepareCallHierarchy(
+                state, context, uri, runPosition, &runItems) ||
+        runItems.length != 1U ||
+        !ZrLanguageServer_Lsp_PrepareCallHierarchy(
+                state, context, uri, helperPosition, &helperItems) ||
+        helperItems.length != 1U) {
+        goto cleanup;
+    }
+    runItem = *(SZrLspHierarchyItem **)ZrCore_Array_Get(&runItems, 0U);
+    helperItem = *(SZrLspHierarchyItem **)ZrCore_Array_Get(&helperItems, 0U);
+    if (runItem == ZR_NULL || helperItem == ZR_NULL ||
+        !runItem->hasSemanticIdentity || !helperItem->hasSemanticIdentity ||
+        runItem->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        runItem->semanticTypeId == ZR_SEMANTIC_ID_INVALID ||
+        runItem->semanticVersion != 1U ||
+        helperItem->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        helperItem->semanticTypeId == ZR_SEMANTIC_ID_INVALID ||
+        helperItem->semanticVersion != 1U) {
+        failure = "stable callable hierarchy identity";
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, runPosition, &runQuery) ||
+        !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, helperPosition, &helperQuery) ||
+        runQuery.analyzer == ZR_NULL ||
+        runQuery.analyzer->semanticContext == ZR_NULL ||
+        helperQuery.analyzer != runQuery.analyzer) {
+        failure = "canonical callable query snapshot";
+        goto cleanup;
+    }
+    if (!ZrParser_SemanticQuery_OutgoingCalls(
+                runQuery.analyzer->semanticContext,
+                runItem->semanticId,
+                ZR_NULL,
+                &outgoingEdges)) {
+        failure = "canonical parser outgoing call-edge availability";
+        goto cleanup;
+    }
+    if (outgoingEdges.length != 2U) {
+        failure = "canonical parser outgoing call-edge availability";
+        goto cleanup;
+    }
+    if (!ZrParser_SemanticQuery_IncomingCalls(
+                runQuery.analyzer->semanticContext,
+                helperItem->semanticId,
+                ZR_NULL,
+                &incomingEdges) ||
+        incomingEdges.length != 2U) {
+        failure = "canonical parser incoming call-edge availability";
+        goto cleanup;
+    }
+
+    runItem->name = tamperedRunName;
+    helperItem->name = tamperedHelperName;
+    if (!ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(
+                state, context, runItem, &outgoing) ||
+        outgoing.length != 1U ||
+        !ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(
+                state, context, helperItem, &incoming) ||
+        incoming.length != 1U) {
+        failure = "canonical outgoing/incoming call edge projection";
+        goto cleanup;
+    }
+    outgoingCall = *(SZrLspHierarchyCall **)ZrCore_Array_Get(&outgoing, 0U);
+    incomingCall = *(SZrLspHierarchyCall **)ZrCore_Array_Get(&incoming, 0U);
+    if (outgoingCall == ZR_NULL || incomingCall == ZR_NULL ||
+        outgoingCall->item == ZR_NULL || incomingCall->item == ZR_NULL ||
+        !hierarchy_item_name_equals(outgoingCall->item, "helper") ||
+        !hierarchy_item_name_equals(incomingCall->item, "run") ||
+        outgoingCall->item->semanticId != helperItem->semanticId ||
+        incomingCall->item->semanticId != runItem->semanticId ||
+        outgoingCall->fromRanges.length != 2U ||
+        incomingCall->fromRanges.length != 2U) {
+        failure = "exact grouped call hierarchy targets and callsites";
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 2U)) {
+        failure = "version update";
+        goto cleanup;
+    }
+    (void)ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(
+            state, context, runItem, &stale);
+    if (stale.length != 0U) {
+        failure = "stale call hierarchy item did not fail closed";
+        goto cleanup;
+    }
+    valid = ZR_TRUE;
+
+cleanup:
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &runItems);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &helperItems);
+    ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &outgoing);
+    ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &incoming);
+    ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &stale);
+    if (outgoingEdges.isValid) {
+        ZrCore_Array_Free(state, &outgoingEdges);
+    }
+    if (incomingEdges.isValid) {
+        ZrCore_Array_Free(state, &incomingEdges);
+    }
+    ZrLanguageServer_LspSemanticQuery_Free(state, &runQuery);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &helperQuery);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (valid) {
+        TEST_PASS(timer, "LSP Local Call Hierarchy Uses Canonical Edges");
+    } else {
+        TEST_FAIL(
+                timer,
+                "LSP Local Call Hierarchy Uses Canonical Edges",
+                failure);
+    }
+}
+
 static void test_binary_semantic_query_snapshot_parity(SZrState *state) {
     SZrParityTimer timer;
     SZrParityBinaryFixture fixture = {0};
@@ -1067,6 +1235,7 @@ int main(void) {
     test_local_reference_consumers_use_canonical_facts(state);
     test_local_implementation_consumer_uses_canonical_relations(state);
     test_local_type_hierarchy_uses_canonical_relations(state);
+    test_local_call_hierarchy_uses_canonical_edges(state);
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
     ZrCore_GlobalState_Free(global);

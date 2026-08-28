@@ -182,6 +182,13 @@ async function main() {
         'class Derived : Base {',
         '}',
         '',
+        'fn helper(value: int): int { return value; }',
+        '',
+        'fn run(value: int): int {',
+        '    var first = helper(value);',
+        '    return first + helper(value);',
+        '}',
+        '',
     ].join('\n');
     const client = new LspClient(serverPath);
 
@@ -196,6 +203,8 @@ async function main() {
         });
         assert(initializeResult.capabilities.typeHierarchyProvider === true,
             'typeHierarchyProvider must be enabled');
+        assert(initializeResult.capabilities.callHierarchyProvider === true,
+            'callHierarchyProvider must be enabled');
 
         client.notify('initialized', {});
         client.notify('textDocument/didOpen', {
@@ -245,6 +254,60 @@ async function main() {
         });
         assert(Array.isArray(subtypes) && subtypes.some((item) => item && item.name === 'Derived'),
             'typeHierarchy/subtypes must use semantic identity instead of the display name');
+
+        const runPosition = findPosition(text, 'fn run', 0, 3);
+        const helperPosition = findPosition(text, 'fn helper', 0, 3);
+        const runItems = await client.request('textDocument/prepareCallHierarchy', {
+            textDocument: { uri: documentUri },
+            position: runPosition,
+        });
+        const helperItems = await client.request('textDocument/prepareCallHierarchy', {
+            textDocument: { uri: documentUri },
+            position: helperPosition,
+        });
+        assert(Array.isArray(runItems) && runItems.length === 1,
+            'prepareCallHierarchy must return run');
+        assert(Array.isArray(helperItems) && helperItems.length === 1,
+            'prepareCallHierarchy must return helper');
+        assert(runItems[0].data && Number.isInteger(runItems[0].data.symbolId) &&
+            runItems[0].data.symbolId > 0 &&
+            Number.isInteger(runItems[0].data.typeId) && runItems[0].data.typeId > 0 &&
+            runItems[0].data.version === 1,
+            'run call hierarchy item must publish stable semantic identity and document version');
+        assert(helperItems[0].data && Number.isInteger(helperItems[0].data.symbolId) &&
+            helperItems[0].data.symbolId > 0 &&
+            Number.isInteger(helperItems[0].data.typeId) && helperItems[0].data.typeId > 0 &&
+            helperItems[0].data.version === 1,
+            'helper call hierarchy item must publish stable semantic identity and document version');
+
+        const outgoing = await client.request('callHierarchy/outgoingCalls', {
+            item: { ...runItems[0], name: 'helper' },
+        });
+        assert(Array.isArray(outgoing) && outgoing.length === 1 &&
+            outgoing[0].to && outgoing[0].to.name === 'helper' &&
+            outgoing[0].to.data.symbolId === helperItems[0].data.symbolId &&
+            Array.isArray(outgoing[0].fromRanges) && outgoing[0].fromRanges.length === 2,
+            'outgoing calls must group canonical helper edges and ignore the item display name');
+
+        const incoming = await client.request('callHierarchy/incomingCalls', {
+            item: { ...helperItems[0], name: 'run' },
+        });
+        assert(Array.isArray(incoming) && incoming.length === 1 &&
+            incoming[0].from && incoming[0].from.name === 'run' &&
+            incoming[0].from.data.symbolId === runItems[0].data.symbolId &&
+            Array.isArray(incoming[0].fromRanges) && incoming[0].fromRanges.length === 2,
+            'incoming calls must group canonical run edges and ignore the item display name');
+
+        client.notify('textDocument/didChange', {
+            textDocument: { uri: documentUri, version: 2 },
+            contentChanges: [{ text }],
+        });
+        await client.waitForNotification('textDocument/publishDiagnostics');
+        const staleOutgoing = await client.request('callHierarchy/outgoingCalls', {
+            item: runItems[0],
+        });
+        assert(Array.isArray(staleOutgoing) && staleOutgoing.length === 0,
+            'call hierarchy follow-up must fail closed for a stale document version');
 
         const shutdown = await client.request('shutdown', undefined);
         assert(shutdown === null, 'shutdown must return null');
