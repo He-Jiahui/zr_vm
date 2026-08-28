@@ -3572,3 +3572,18 @@ reference re-entry, and name lookup. Current file-version AST identity gates the
 projection. References are scoped to that AST and duplicate producer
 rows are counted once by exact source/range; duplicate symbol rows for one
 declaration AST yield one lens without consulting a spelling.
+
+## Plan 03 Task 7.15 Symbol-Table-Free Call Hierarchy Follow-Up
+
+Prepared source-local call hierarchy items are immutable semantic identities,
+not handles into the LSP symbol table. Follow-up requests re-acquire the current
+analyzer snapshot, require the captured document version, and validate the
+item's SymbolId, callable TypeId, URI, semantic declaration range, and exact
+`DeclarationOf` selection range before querying call edges.
+
+Related call items obtain display name and protocol kind from the validated
+semantic symbol declaration. The consumer does not walk `allScopes`, recover an
+LSP symbol, or resolve the item's position again. Missing or unresolved
+declaration facts remain unavailable. Cross-project, binary, and native call
+hierarchy still needs ModuleIdentity-aware relation facts and is not inferred
+from imported names.

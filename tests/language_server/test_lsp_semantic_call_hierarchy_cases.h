@@ -28,11 +28,15 @@ static void test_local_method_call_hierarchy_uses_canonical_edges(
     SZrArray outgoing = {0};
     SZrArray incoming = {0};
     SZrArray unrelatedIncoming = {0};
+    SZrArray unresolvedOutgoing = {0};
     SZrLspHierarchyItem *runItem = ZR_NULL;
     SZrLspHierarchyItem *leftReadItem = ZR_NULL;
     SZrLspHierarchyItem *rightReadItem = ZR_NULL;
     SZrLspHierarchyCall *outgoingCall = ZR_NULL;
     SZrLspHierarchyCall *incomingCall = ZR_NULL;
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
+    SZrSymbolTable *detachedSymbolTable = ZR_NULL;
+    SZrSemanticReferenceFact *runDeclaration = ZR_NULL;
     const TZrChar *failure = "method call hierarchy preparation";
     TZrBool valid = ZR_FALSE;
 
@@ -81,6 +85,24 @@ static void test_local_method_call_hierarchy_uses_canonical_edges(
         goto cleanup;
     }
 
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
+            state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+        failure = "semantic snapshot for symbol-table detachment";
+        goto cleanup;
+    }
+    detachedSymbolTable = analyzer->symbolTable;
+    analyzer->symbolTable = ZR_NULL;
+    runDeclaration = (SZrSemanticReferenceFact *)
+            ZrParser_SemanticQuery_DeclarationOf(
+                    analyzer->semanticContext,
+                    runItem->semanticId,
+                    ZR_NULL);
+    if (runDeclaration == ZR_NULL || !runDeclaration->isResolved) {
+        failure = "resolved declaration for exactness check";
+        goto cleanup;
+    }
+
     runItem->name = tamperedRunName;
     leftReadItem->name = tamperedMethodName;
     if (!ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(
@@ -107,15 +129,30 @@ static void test_local_method_call_hierarchy_uses_canonical_edges(
         failure = "exact grouped method targets and callsites";
         goto cleanup;
     }
+    runDeclaration->isResolved = ZR_FALSE;
+    (void)ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(
+            state, context, runItem, &unresolvedOutgoing);
+    runDeclaration->isResolved = ZR_TRUE;
+    if (unresolvedOutgoing.length != 0U) {
+        failure = "unresolved declaration did not fail closed";
+        goto cleanup;
+    }
     valid = ZR_TRUE;
 
 cleanup:
+    if (runDeclaration != ZR_NULL) {
+        runDeclaration->isResolved = ZR_TRUE;
+    }
+    if (analyzer != ZR_NULL && detachedSymbolTable != ZR_NULL) {
+        analyzer->symbolTable = detachedSymbolTable;
+    }
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &runItems);
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &leftReadItems);
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &rightReadItems);
     ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &outgoing);
     ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &incoming);
     ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &unrelatedIncoming);
+    ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &unresolvedOutgoing);
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
     }

@@ -1173,3 +1173,19 @@ GCC, Clang, and MSVC each pass call queries `11/11`, semantic-query parity
 `9/9`, source contracts `60/60`, advanced editor features `73/73`, and the
 combined hierarchy stdio smoke. The full interface result remains the same
 `109 Pass / 4` pre-existing markers and is not counted as GREEN.
+
+## 2026-08-29 Symbol-Table-Free Call Hierarchy Follow-Up
+
+Incoming and outgoing follow-up requests no longer recover display symbols by
+walking `symbolTable->allScopes`. A prepared item is re-resolved from its URI,
+document version, SymbolId, callable TypeId, semantic declaration range, and
+exact `DeclarationOf` selection range. Related item names and kinds are
+presentation projected from that validated semantic declaration; call targets
+and call sites continue to come only from parser call-edge queries.
+
+Removing the analyzer symbol table after prepare therefore does not affect
+method or lambda follow-up. Stale versions, unresolved declarations, changed
+ranges, and mismatched identity return no calls. GCC, Clang, and MSVC each pass
+semantic-query parity `9/9`, source contracts `65/65`, advanced editor features
+`73/73`, and the combined hierarchy stdio smoke. Full interface and project
+feature runners retain their exact pre-existing marker sets.

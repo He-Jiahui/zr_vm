@@ -930,6 +930,21 @@ Unresolved declarations and zero-reference symbols are omitted. The borrowed
 declaration node is inspected only during the request and is never retained
 across a snapshot generation.
 
+Call hierarchy follow-up is also independent of the LSP symbol table. A
+prepared item is re-resolved from its URI, document version, SymbolId, callable
+TypeId, semantic symbol declaration range, and exact `DeclarationOf` selection
+range. Related items use the same semantic symbol/reference snapshot before
+`IncomingCalls` or `OutgoingCalls` are projected. An unavailable declaration,
+changed range, stale version, or mismatched AST identity returns no calls.
+
+The LSP consumer does not traverse `symbolTable->allScopes`, look up a display
+symbol, or resolve the item's selection position again during follow-up.
+Callable AST kind is used only to classify protocol presentation from the
+already resolved declaration identity. The prepare boundary still normalizes
+duplicate semantic rows by exact declaration AST identity; spelling never
+selects the row. Cross-project, binary, and native call hierarchy requires a
+ModuleIdentity relation producer and remains unavailable here.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

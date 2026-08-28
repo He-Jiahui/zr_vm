@@ -13,8 +13,32 @@ static TZrBool semantic_call_hierarchy_symbol_is_callable(
             symbol->type == ZR_SYMBOL_METHOD);
 }
 
-static TZrInt32 semantic_call_hierarchy_symbol_kind(const SZrSymbol *symbol) {
-    return symbol != ZR_NULL && symbol->type == ZR_SYMBOL_METHOD
+static TZrBool semantic_call_hierarchy_node_is_callable(
+        const SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    switch (node->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+        case ZR_AST_CLASS_METHOD:
+        case ZR_AST_STRUCT_METHOD:
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+        case ZR_AST_CLASS_META_FUNCTION:
+        case ZR_AST_STRUCT_META_FUNCTION:
+        case ZR_AST_INTERFACE_META_SIGNATURE:
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrInt32 semantic_call_hierarchy_node_kind(const SZrAstNode *node) {
+    return node != ZR_NULL &&
+                   (node->type == ZR_AST_CLASS_METHOD ||
+                    node->type == ZR_AST_STRUCT_METHOD ||
+                    node->type == ZR_AST_INTERFACE_METHOD_SIGNATURE)
                    ? ZR_LSP_SYMBOL_KIND_METHOD
                    : ZR_LSP_SYMBOL_KIND_FUNCTION;
 }
@@ -47,51 +71,12 @@ semantic_call_hierarchy_find_semantic_symbol(
     return ZR_NULL;
 }
 
-static SZrSymbol *semantic_call_hierarchy_find_symbol(
-        SZrSemanticAnalyzer *analyzer,
-        const SZrSemanticSymbolRecord *semanticSymbol) {
-    TZrSize scopeIndex;
-
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL ||
-        semanticSymbol == ZR_NULL ||
-        semanticSymbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
-        semanticSymbol->astNode == ZR_NULL) {
-        return ZR_NULL;
-    }
-    for (scopeIndex = 0U;
-         scopeIndex < analyzer->symbolTable->allScopes.length;
-         scopeIndex++) {
-        SZrSymbolScope **scopeSlot =
-                (SZrSymbolScope **)ZrCore_Array_Get(
-                        &analyzer->symbolTable->allScopes, scopeIndex);
-        SZrSymbolScope *scope =
-                scopeSlot != ZR_NULL ? *scopeSlot : ZR_NULL;
-        TZrSize symbolIndex;
-
-        for (symbolIndex = 0U;
-             scope != ZR_NULL && symbolIndex < scope->symbols.length;
-             symbolIndex++) {
-            SZrSymbol **symbolSlot =
-                    (SZrSymbol **)ZrCore_Array_Get(
-                            &scope->symbols, symbolIndex);
-            if (symbolSlot != ZR_NULL &&
-                semantic_call_hierarchy_symbol_is_callable(*symbolSlot) &&
-                (*symbolSlot)->astNode == semanticSymbol->astNode) {
-                return *symbolSlot;
-            }
-        }
-    }
-    return ZR_NULL;
-}
-
 static TZrBool semantic_call_hierarchy_create_item(
         SZrState *state,
         SZrLspContext *context,
         SZrSemanticAnalyzer *analyzer,
         const SZrSemanticSymbolRecord *semanticSymbol,
-        SZrSymbol *symbol,
-        SZrFileRange declarationRange,
+        SZrFileRange selectionRange,
         SZrLspHierarchyItem **outItem) {
     SZrFileRange boundDeclaration;
     SZrFileRange boundSelection;
@@ -104,22 +89,16 @@ static TZrBool semantic_call_hierarchy_create_item(
     if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
         semanticSymbol == ZR_NULL || semanticSymbol->name == ZR_NULL ||
         semanticSymbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
-        semanticSymbol->astNode == ZR_NULL ||
+        !semantic_call_hierarchy_node_is_callable(semanticSymbol->astNode) ||
         semanticSymbol->id == ZR_SEMANTIC_ID_INVALID ||
         semanticSymbol->typeId == ZR_SEMANTIC_ID_INVALID ||
-        (symbol != ZR_NULL &&
-         (!semantic_call_hierarchy_symbol_is_callable(symbol) ||
-          symbol->astNode != semanticSymbol->astNode)) ||
-        (symbol == ZR_NULL &&
-         semanticSymbol->astNode->type != ZR_AST_LAMBDA_EXPRESSION) ||
         outItem == ZR_NULL) {
         return ZR_FALSE;
     }
     boundDeclaration = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
-            analyzer, declarationRange);
+            analyzer, semanticSymbol->location);
     boundSelection = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
-            analyzer,
-            symbol != ZR_NULL ? symbol->selectionRange : declarationRange);
+            analyzer, selectionRange);
     if (boundDeclaration.source == ZR_NULL || boundSelection.source == ZR_NULL ||
         !ZrLanguageServer_Lsp_StringsEqual(
                 boundDeclaration.source, boundSelection.source)) {
@@ -136,10 +115,8 @@ static TZrBool semantic_call_hierarchy_create_item(
         return ZR_FALSE;
     }
     memset(item, 0, sizeof(SZrLspHierarchyItem));
-    item->name = symbol != ZR_NULL ? symbol->name : semanticSymbol->name;
-    item->kind = symbol != ZR_NULL
-                         ? semantic_call_hierarchy_symbol_kind(symbol)
-                         : ZR_LSP_SYMBOL_KIND_FUNCTION;
+    item->name = semanticSymbol->name;
+    item->kind = semantic_call_hierarchy_node_kind(semanticSymbol->astNode);
     item->uri = boundDeclaration.source;
     item->range = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
             context, item->uri, boundDeclaration);
@@ -162,65 +139,19 @@ static TZrBool semantic_call_hierarchy_ranges_equal(
            left.end.character == right.end.character;
 }
 
-static TZrBool semantic_call_hierarchy_resolve_lambda_item(
-        SZrState *state,
-        SZrLspContext *context,
-        const SZrLspHierarchyItem *item,
-        SZrLspSemanticQuery *query) {
-    SZrSemanticAnalyzer *analyzer;
-    const SZrSemanticSymbolRecord *semanticSymbol;
-    const SZrSemanticReferenceFact *declaration;
-    SZrFileRange boundDeclaration;
-    SZrLspRange declarationRange;
-
-    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
-            state, context, item->uri);
-    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    semanticSymbol = ZrParser_Semantic_FindSymbolById(
-            analyzer->semanticContext, item->semanticId);
-    if (semanticSymbol == ZR_NULL ||
-        semanticSymbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
-        semanticSymbol->astNode == ZR_NULL ||
-        semanticSymbol->astNode->type != ZR_AST_LAMBDA_EXPRESSION ||
-        semanticSymbol->typeId != item->semanticTypeId) {
-        return ZR_FALSE;
-    }
-    declaration = ZrParser_SemanticQuery_DeclarationOf(
-            analyzer->semanticContext, item->semanticId, ZR_NULL);
-    if (declaration == ZR_NULL || !declaration->isResolved ||
-        declaration->symbolId != item->semanticId ||
-        declaration->typeId != item->semanticTypeId) {
-        return ZR_FALSE;
-    }
-    boundDeclaration = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
-            analyzer, declaration->range);
-    if (boundDeclaration.source == ZR_NULL ||
-        !ZrLanguageServer_Lsp_StringsEqual(
-                boundDeclaration.source, item->uri)) {
-        return ZR_FALSE;
-    }
-    declarationRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
-            context, item->uri, boundDeclaration);
-    if (!semantic_call_hierarchy_ranges_equal(item->range, declarationRange) ||
-        !semantic_call_hierarchy_ranges_equal(
-                item->selectionRange, declarationRange)) {
-        return ZR_FALSE;
-    }
-    ZrLanguageServer_LspSemanticQuery_Init(query);
-    query->uri = item->uri;
-    query->analyzer = analyzer;
-    return ZR_TRUE;
-}
-
 static TZrBool semantic_call_hierarchy_resolve_item(
         SZrState *state,
         SZrLspContext *context,
         const SZrLspHierarchyItem *item,
         SZrLspSemanticQuery *query) {
     const SZrSemanticSymbolRecord *semanticSymbol;
+    const SZrSemanticReferenceFact *declaration;
     SZrFileVersion *fileVersion;
+    SZrSemanticAnalyzer *analyzer;
+    SZrFileRange boundDeclaration;
+    SZrFileRange boundSelection;
+    SZrLspRange declarationRange;
+    SZrLspRange selectionRange;
 
     if (state == ZR_NULL || context == ZR_NULL || item == ZR_NULL ||
         query == ZR_NULL || item->uri == ZR_NULL ||
@@ -234,33 +165,52 @@ static TZrBool semantic_call_hierarchy_resolve_item(
     if (fileVersion == ZR_NULL || fileVersion->version != item->semanticVersion) {
         return ZR_FALSE;
     }
-    ZrLanguageServer_LspSemanticQuery_Init(query);
-    if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
-                state,
-                context,
-                item->uri,
-                item->selectionRange.start,
-                query) ||
-        query->kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
-        query->analyzer == ZR_NULL ||
-        query->analyzer->semanticContext == ZR_NULL ||
-        query->symbol == ZR_NULL ||
-        !semantic_call_hierarchy_symbol_is_callable(query->symbol) ||
-        query->symbol->astNode == ZR_NULL) {
-        ZrLanguageServer_LspSemanticQuery_Free(state, query);
-        return semantic_call_hierarchy_resolve_lambda_item(
-                state, context, item, query);
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
+            state, context, item->uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
+        return ZR_FALSE;
     }
-    semanticSymbol = semantic_call_hierarchy_find_semantic_symbol(
-            query->analyzer, query->symbol->astNode);
+    semanticSymbol = ZrParser_Semantic_FindSymbolById(
+            analyzer->semanticContext, item->semanticId);
     if (semanticSymbol == ZR_NULL ||
         semanticSymbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
+        !semantic_call_hierarchy_node_is_callable(semanticSymbol->astNode) ||
         semanticSymbol->id != item->semanticId ||
         semanticSymbol->typeId != item->semanticTypeId) {
-        ZrLanguageServer_LspSemanticQuery_Free(state, query);
-        return semantic_call_hierarchy_resolve_lambda_item(
-                state, context, item, query);
+        return ZR_FALSE;
     }
+    declaration = ZrParser_SemanticQuery_DeclarationOf(
+            analyzer->semanticContext, item->semanticId, ZR_NULL);
+    if (declaration == ZR_NULL || !declaration->isResolved ||
+        declaration->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+        declaration->symbolId != item->semanticId ||
+        declaration->typeId != item->semanticTypeId ||
+        declaration->node != semanticSymbol->astNode) {
+        return ZR_FALSE;
+    }
+    boundDeclaration = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
+            analyzer, semanticSymbol->location);
+    boundSelection = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
+            analyzer, declaration->range);
+    if (boundDeclaration.source == ZR_NULL || boundSelection.source == ZR_NULL ||
+        !ZrLanguageServer_Lsp_StringsEqual(
+                boundDeclaration.source, item->uri) ||
+        !ZrLanguageServer_Lsp_StringsEqual(
+                boundSelection.source, item->uri)) {
+        return ZR_FALSE;
+    }
+    declarationRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+            context, item->uri, boundDeclaration);
+    selectionRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
+            context, item->uri, boundSelection);
+    if (!semantic_call_hierarchy_ranges_equal(item->range, declarationRange) ||
+        !semantic_call_hierarchy_ranges_equal(
+                item->selectionRange, selectionRange)) {
+        return ZR_FALSE;
+    }
+    ZrLanguageServer_LspSemanticQuery_Init(query);
+    query->uri = item->uri;
+    query->analyzer = analyzer;
     return ZR_TRUE;
 }
 
@@ -313,7 +263,6 @@ static TZrBool semantic_call_hierarchy_append_call(
         SZrLspContext *context,
         SZrSemanticAnalyzer *analyzer,
         const SZrSemanticSymbolRecord *semanticSymbol,
-        SZrSymbol *symbol,
         SZrFileRange declarationRange,
         SZrFileRange callSiteRange,
         SZrArray *result) {
@@ -339,7 +288,6 @@ static TZrBool semantic_call_hierarchy_append_call(
                     context,
                     analyzer,
                     semanticSymbol,
-                    symbol,
                     declarationRange,
                     &item) ||
             !ZrLanguageServer_Lsp_StringsEqual(
@@ -406,18 +354,30 @@ TZrBool ZrLanguageServer_LspSemanticCallHierarchy_Prepare(
         query.analyzer != ZR_NULL && query.symbol != ZR_NULL &&
         semantic_call_hierarchy_symbol_is_callable(query.symbol)) {
         SZrLspHierarchyItem *item;
+        const SZrSemanticReferenceFact *declaration;
         const SZrSemanticSymbolRecord *semanticSymbol =
                 semantic_call_hierarchy_find_semantic_symbol(
                         query.analyzer, query.symbol->astNode);
 
-        ok = semantic_call_hierarchy_create_item(
-                state,
-                context,
-                query.analyzer,
-                semanticSymbol,
-                query.symbol,
-                query.symbol->location,
-                &item);
+        declaration = semanticSymbol != ZR_NULL
+                ? ZrParser_SemanticQuery_DeclarationOf(
+                          query.analyzer->semanticContext,
+                          semanticSymbol->id,
+                          ZR_NULL)
+                : ZR_NULL;
+        ok = declaration != ZR_NULL && declaration->isResolved &&
+             declaration->kind == ZR_SEMANTIC_REFERENCE_DECLARATION &&
+             declaration->symbolId == semanticSymbol->id &&
+             declaration->typeId == semanticSymbol->typeId &&
+             declaration->node == semanticSymbol->astNode &&
+             query.symbol->astNode == semanticSymbol->astNode &&
+             semantic_call_hierarchy_create_item(
+                     state,
+                     context,
+                     query.analyzer,
+                     semanticSymbol,
+                     declaration->range,
+                     &item);
         if (ok) {
             ZrCore_Array_Push(state, result, &item);
         }
@@ -473,7 +433,6 @@ static TZrBool semantic_call_hierarchy_append_edges(
             TZrSymbolId relatedId;
             SZrFileRange declarationRange;
             const SZrSemanticSymbolRecord *relatedSemanticSymbol;
-            SZrSymbol *relatedSymbol;
 
             if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(
                         context)) {
@@ -492,15 +451,9 @@ static TZrBool semantic_call_hierarchy_append_edges(
             if (relatedSemanticSymbol == ZR_NULL ||
                 relatedSemanticSymbol->kind !=
                         ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
-                relatedSemanticSymbol->astNode == ZR_NULL ||
+                !semantic_call_hierarchy_node_is_callable(
+                        relatedSemanticSymbol->astNode) ||
                 relatedSemanticSymbol->typeId == ZR_SEMANTIC_ID_INVALID) {
-                continue;
-            }
-            relatedSymbol = semantic_call_hierarchy_find_symbol(
-                    query.analyzer, relatedSemanticSymbol);
-            if (!semantic_call_hierarchy_symbol_is_callable(relatedSymbol) &&
-                relatedSemanticSymbol->astNode->type !=
-                        ZR_AST_LAMBDA_EXPRESSION) {
                 continue;
             }
             if (incoming) {
@@ -524,7 +477,6 @@ static TZrBool semantic_call_hierarchy_append_edges(
                         context,
                         query.analyzer,
                         relatedSemanticSymbol,
-                        relatedSymbol,
                         declarationRange,
                         edge->callSiteRange,
                         result)) {

@@ -1554,6 +1554,7 @@ static void test_local_call_hierarchy_uses_parser_edges(void) {
         hierarchyQuery, "ZrParser_SemanticQuery_DeclarationOf");
     assert_text_contains(
         hierarchyQuery, "ZrParser_Semantic_FindSymbolById");
+    assert_text_contains(hierarchyQuery, "item->semanticId");
     assert_text_contains(hierarchyQuery, "ZR_AST_LAMBDA_EXPRESSION");
     assert_text_contains(
         hierarchyQuery, "ZrLanguageServer_LspSemanticQuery_ResolveAtPosition");
@@ -1561,6 +1562,10 @@ static void test_local_call_hierarchy_uses_parser_edges(void) {
         hierarchyQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
     assert_text_contains_none(hierarchyQuery, "GetDocumentSymbols");
     assert_text_contains_none(hierarchyQuery, "referenceTracker");
+    assert_text_contains_none(hierarchyQuery, "symbolTable");
+    assert_text_contains_none(hierarchyQuery, "allScopes");
+    assert_text_contains_none(
+        hierarchyQuery, "semantic_call_hierarchy_find_symbol");
     assert_text_contains_none(
         hierarchyQuery, "ZrParser_Semantic_FindSymbolByNameAndKind");
     assert_text_contains_none(hierarchyQuery, "strcmp");
