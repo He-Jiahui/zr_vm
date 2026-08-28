@@ -34,5 +34,8 @@ ZR_PARSER_API TZrBool ZrParser_Variance_BuildDiagnostic(
         SZrState *state,
         const SZrVarianceViolation *violation,
         SZrStructuredDiagnostic *outDiagnostic);
+ZR_PARSER_API TZrBool ZrParser_Variance_PublishInterfaceDiagnostics(
+        SZrCompilerState *compilerState,
+        const SZrAstNode *interfaceNode);
 
 #endif

@@ -5,6 +5,7 @@
 #include "semantic/semantic_analyzer_internal.h"
 #include "semantic/semantic_analyzer_expected_type.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
+#include "zr_vm_parser/variance.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
@@ -1069,7 +1070,8 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         }
 
         case ZR_AST_INTERFACE_DECLARATION:
-            ZrLanguageServer_SemanticAnalyzer_ValidateInterfaceVarianceRules(state, analyzer, node);
+            (void)ZrParser_Variance_PublishInterfaceDiagnostics(
+                    analyzer->compilerState, node);
             break;
         
         default:

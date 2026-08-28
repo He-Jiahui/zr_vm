@@ -729,6 +729,23 @@ query row by code and exact range, so one rule produces one diagnostic. The
 language server does not rebuild owner qualifiers, line-wide ranges, or
 related information from the AST.
 
+Interface variance diagnostics also have a parser-owned publication boundary.
+`ZrParser_Variance_PublishInterfaceDiagnostics` enumerates every violation for
+one canonical interface declaration, builds descriptor `2013` through the
+shared variance diagnostic builder, and appends each result to the semantic
+context as a persistent diagnostic fact. The API deliberately does not set the
+compiler's current error: normal compilation retains its first-error gate,
+while semantic consumers can materialize all independent violations from one
+snapshot.
+
+The LSP typecheck pass calls only this publication API. It does not enumerate
+variance positions, invoke the diagnostic builder, append semantic facts, or
+reconstruct code `invalid_variance`. The removed analyzer-local producer is
+not replaced by a symbol-table, type-name, message, or source-text fallback.
+Primary use ranges, related generic-parameter declaration ranges, descriptor
+identity, help metadata, and no-fix disposition therefore originate in one
+parser query contract.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

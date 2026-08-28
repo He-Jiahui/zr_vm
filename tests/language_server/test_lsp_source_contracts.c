@@ -1182,36 +1182,39 @@ static void test_const_assignment_diagnostics_use_semantic_query_projection(void
 }
 
 static void test_variance_diagnostics_use_parser_query_projection(void) {
-    char *variance = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_variance.c");
+    char *typecheck = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
 
-    if (variance == NULL) {
-        printf("FAIL: could not read semantic analyzer variance source\n");
+    if (typecheck == NULL) {
+        printf("FAIL: could not read semantic analyzer typecheck source\n");
         g_failures++;
         return;
     }
 
     assert_text_contains(
-        variance,
+        typecheck,
+        "ZrParser_Variance_PublishInterfaceDiagnostics");
+    assert_text_contains_none(
+        typecheck,
         "ZrParser_Variance_InterfaceViolationAt");
-    assert_text_contains(
-        variance,
+    assert_text_contains_none(
+        typecheck,
         "ZrParser_Variance_BuildDiagnostic");
-    assert_text_contains(
-        variance,
+    assert_text_contains_none(
+        typecheck,
         "ZrParser_SemanticFacts_AppendDiagnostic");
     assert_text_contains_none(
-        variance,
+        typecheck,
+        "ZrLanguageServer_SemanticAnalyzer_ValidateInterfaceVarianceRules");
+    assert_text_contains_none(
+        typecheck,
         "ZrLanguageServer_SemanticAnalyzer_AddDiagnostic");
     assert_text_contains_none(
-        variance,
-        "ZrLanguageServer_SymbolTable_Lookup");
-    assert_text_contains_none(
-        variance,
+        typecheck,
         "semantic_validate_interface_type_variance");
-    assert_text_contains_none(variance, "\"invalid_variance\"");
+    assert_text_contains_none(typecheck, "\"invalid_variance\"");
 
-    free(variance);
+    free(typecheck);
 }
 
 static void test_interface_const_field_diagnostics_use_parser_query_projection(void) {
