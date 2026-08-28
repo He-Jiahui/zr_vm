@@ -910,6 +910,13 @@ expression fact does not trigger analyzer inference. Canonical signature and
 parameter identity remain available independently from optional semantic-fact
 documentation.
 
+The local expression/hover query is a read-only projection as well. It collects
+reference, expression, numeric, logical, reachability, ownership, and intrinsic
+facts from the acquired snapshot exactly once. It does not register inferred
+types, consult the LSP symbol table to synthesize an identity, or resolve a
+missing type during the request. Missing facts remain unavailable and identify
+a producer boundary rather than a consumer fallback opportunity.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

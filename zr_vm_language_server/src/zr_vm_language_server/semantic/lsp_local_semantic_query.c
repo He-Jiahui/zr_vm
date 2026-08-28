@@ -444,80 +444,6 @@ static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
                 analyzer->semanticContext, result->queryRange);
 }
 
-static void local_query_materialize_expression_fact(SZrState *state,
-                                                    SZrSemanticAnalyzer *analyzer,
-                                                    SZrFileRange queryRange,
-                                                    const SZrSemanticReferenceFact *referenceFact) {
-    SZrInferredType inferredType;
-    SZrAstNode *expressionNode;
-    SZrSymbol *symbol;
-
-    if (state == ZR_NULL ||
-        analyzer == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL ||
-        analyzer->compilerState == ZR_NULL) {
-        return;
-    }
-
-    if (local_query_reference_is_member_payload(referenceFact) && referenceFact->node != ZR_NULL) {
-        ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-        (void)ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state,
-                                                                         analyzer,
-                                                                         referenceFact->node,
-                                                                         &inferredType);
-        ZrParser_InferredType_Free(state, &inferredType);
-        return;
-    }
-
-    if (referenceFact != ZR_NULL && referenceFact->node != ZR_NULL) {
-        symbol = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, referenceFact->range);
-        if (symbol != ZR_NULL && symbol->typeInfo != ZR_NULL &&
-            ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
-            ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
-                                                   symbol->typeInfo,
-                                                   ZR_SEMANTIC_TYPE_KIND_REFERENCE,
-                                                   symbol->typeInfo->typeName,
-                                                   referenceFact->node);
-            return;
-        }
-    }
-
-    expressionNode =
-        ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(analyzer->ast, queryRange);
-    if (expressionNode != ZR_NULL) {
-        if (expressionNode->type == ZR_AST_IDENTIFIER_LITERAL &&
-            expressionNode->data.identifier.name != ZR_NULL) {
-            symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(
-                    analyzer->symbolTable,
-                    expressionNode->data.identifier.name,
-                    expressionNode->location);
-            if (symbol != ZR_NULL && symbol->typeInfo != ZR_NULL &&
-                ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
-                ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
-                                                       symbol->typeInfo,
-                                                       ZR_SEMANTIC_TYPE_KIND_REFERENCE,
-                                                       symbol->typeInfo->typeName,
-                                                       expressionNode);
-                return;
-            }
-        }
-        ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-        (void)ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state,
-                                                                         analyzer,
-                                                                         expressionNode,
-                                                                         &inferredType);
-        ZrParser_InferredType_Free(state, &inferredType);
-        return;
-    }
-
-    ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    (void)ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(state,
-                                                                  analyzer,
-                                                                  queryRange,
-                                                                  &inferredType);
-    ZrParser_InferredType_Free(state, &inferredType);
-}
-
 static void local_query_set_fact_status_if_any(SZrLspLocalSemanticQueryResult *result) {
     if (result == ZR_NULL) {
         return;
@@ -532,21 +458,6 @@ static void local_query_set_fact_status_if_any(SZrLspLocalSemanticQueryResult *r
         result->ownershipIntrinsicFact != ZR_NULL) {
         result->status = ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT;
     }
-}
-
-static TZrBool local_query_should_materialize_expression_fact(const SZrLspLocalSemanticQueryResult *result) {
-    if (result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (local_query_reference_is_member_payload(result->referenceFact) &&
-        (result->expressionFact == ZR_NULL || !result->expressionFact->hasMemberInfo)) {
-        return ZR_TRUE;
-    }
-
-    return result->expressionFact == ZR_NULL ||
-           (result->expressionFact->inferredType.baseType == ZR_VALUE_TYPE_BOOL &&
-            result->logicalFact == ZR_NULL);
 }
 
 void ZrLanguageServer_LspLocalSemanticQuery_Init(SZrLspLocalSemanticQueryResult *result) {
@@ -604,10 +515,6 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
     }
 
     local_query_collect_facts(analyzer, result);
-    if (local_query_should_materialize_expression_fact(result)) {
-        local_query_materialize_expression_fact(state, analyzer, result->queryRange, result->referenceFact);
-        local_query_collect_facts(analyzer, result);
-    }
     local_query_set_fact_status_if_any(result);
 
     return ZR_TRUE;

@@ -1617,6 +1617,7 @@ static void test_extern_callable_decorators_use_parser_diagnostic_projection(voi
 #include "test_lsp_source_contract_inlay_declaration_cases.h"
 #include "test_lsp_source_contract_completion_snapshot_cases.h"
 #include "test_lsp_source_contract_signature_snapshot_cases.h"
+#include "test_lsp_source_contract_local_query_snapshot_cases.h"
 
 int main(void) {
     printf("==========\n");
@@ -1679,6 +1680,7 @@ int main(void) {
     test_inlay_uses_canonical_declaration_query();
     test_completion_semantic_facts_are_snapshot_read_only();
     test_signature_semantic_facts_are_snapshot_read_only();
+    test_local_semantic_query_is_snapshot_read_only();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
@@ -1750,6 +1752,7 @@ int main(void) {
     printf("PASS: Inlay hints use canonical declaration queries\n");
     printf("PASS: Completion semantic facts are snapshot read-only\n");
     printf("PASS: Signature semantic facts are snapshot read-only\n");
+    printf("PASS: Local semantic query is snapshot read-only\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");

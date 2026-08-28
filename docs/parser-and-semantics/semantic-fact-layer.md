@@ -3542,3 +3542,15 @@ numeric, logical, ownership, and ownership-intrinsic facts. A missing argument
 fact yields no optional documentation; request handling must not infer the
 argument again or append a fact. Callable and parameter identity continue to
 come from the canonical call query rather than this display-only enrichment.
+
+## Plan 03 Task 7.13 Read-Only Local Semantic Query
+
+`ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt` performs one fact
+collection pass over the acquired parser snapshot. It no longer invokes local
+type inference, registers a symbol-table-derived inferred type, or runs a
+position-based type resolver before collecting again. Optional hover sections
+are emitted only when their canonical facts already exist.
+
+The remaining short-circuit, member-write, and ownership-range focused markers
+are producer/query-selection gaps. They are not repaired by restoring request
+mutation and must be closed support-first in their canonical layers.

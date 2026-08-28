@@ -1634,6 +1634,7 @@ static void test_local_expression_query_returns_ownership_violation_fact(SZrStat
 #include "test_lsp_local_semantic_scope_cases.h"
 #include "test_lsp_local_semantic_dependency_cases.h"
 #include "test_lsp_local_semantic_receiver_dependency_cases.h"
+#include "test_lsp_local_semantic_snapshot_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1721,6 +1722,8 @@ int main(void) {
     test_completion_fallback_reuses_scoped_query_analyzer_cache(state);
     TEST_DIVIDER();
     test_analysis_root_resolver_rejects_non_callable_wrappers(state);
+    TEST_DIVIDER();
+    test_local_expression_query_does_not_materialize_snapshot_facts(state);
     TEST_DIVIDER();
 
     ZrCore_GlobalState_Free(global);
