@@ -1463,6 +1463,61 @@ static void test_local_implementation_consumer_uses_parser_relations(void) {
     free(analysis);
 }
 
+static void test_local_type_hierarchy_uses_parser_relations(void) {
+    char *hierarchyQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_type_hierarchy.c");
+    char *hierarchy = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/lsp_hierarchy.c");
+    char *stdioParser = read_repo_text_file_owned(
+        "zr_vm_language_server/stdio/stdio_hierarchy.c");
+    char *stdioJson = read_repo_text_file_owned(
+        "zr_vm_language_server/stdio/stdio_editor_features_json.c");
+
+    if (hierarchyQuery == NULL || hierarchy == NULL ||
+        stdioParser == NULL || stdioJson == NULL) {
+        printf("FAIL: could not read canonical type hierarchy sources\n");
+        g_failures++;
+        free(hierarchyQuery);
+        free(hierarchy);
+        free(stdioParser);
+        free(stdioJson);
+        return;
+    }
+
+    assert_text_contains(
+        hierarchyQuery, "ZrParser_SemanticQuery_BaseTypesOf");
+    assert_text_contains(
+        hierarchyQuery, "ZrParser_SemanticQuery_DerivedTypesOf");
+    assert_text_contains(
+        hierarchyQuery, "ZrLanguageServer_LspSemanticQuery_ResolveAtPosition");
+    assert_text_contains(
+        hierarchyQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
+    assert_text_contains_none(hierarchyQuery, "GetDocumentSymbols");
+    assert_text_contains_none(hierarchyQuery, "referenceTracker");
+    assert_text_contains_none(
+        hierarchyQuery, "lsp_hierarchy_string_text");
+    assert_text_contains_none(
+        hierarchyQuery, "symbol_name_matches");
+    assert_text_contains_none(hierarchyQuery, "strcmp");
+    assert_text_contains_none(hierarchyQuery, "memcmp");
+    assert_text_contains(
+        hierarchy, "ZrLanguageServer_LspSemanticTypeHierarchy_Prepare");
+    assert_text_contains(
+        hierarchy, "ZrLanguageServer_LspSemanticTypeHierarchy_AppendSupertypes");
+    assert_text_contains(
+        hierarchy, "ZrLanguageServer_LspSemanticTypeHierarchy_AppendSubtypes");
+    assert_text_contains_none(hierarchy, "lsp_hierarchy_type_header_contains_base");
+    assert_text_contains(stdioParser, "hasSemanticIdentity");
+    assert_text_contains(stdioParser, "semanticVersion");
+    assert_text_contains(stdioJson, "hasSemanticIdentity");
+    assert_text_contains(stdioJson, "semanticTypeId");
+
+    free(hierarchyQuery);
+    free(hierarchy);
+    free(stdioParser);
+    free(stdioJson);
+}
+
 static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1553,6 +1608,7 @@ int main(void) {
     test_local_reference_consumers_use_parser_relation_queries();
     test_local_definition_consumer_uses_snapshot_source();
     test_local_implementation_consumer_uses_parser_relations();
+    test_local_type_hierarchy_uses_parser_relations();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
@@ -1619,6 +1675,7 @@ int main(void) {
     printf("PASS: Local references and highlights use parser relation queries\n");
     printf("PASS: Local definition uses analyzer snapshot source identity\n");
     printf("PASS: Local implementation uses parser relation queries\n");
+    printf("PASS: Local type hierarchy uses parser relation queries\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");

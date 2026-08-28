@@ -1,4 +1,5 @@
 #include "lsp_editor_features_internal.h"
+#include "semantic/lsp_semantic_type_hierarchy.h"
 
 #include <string.h>
 
@@ -57,13 +58,6 @@ static TZrBool lsp_hierarchy_symbol_is_callable(TZrInt32 kind) {
     return kind == ZR_LSP_SYMBOL_KIND_FUNCTION || kind == ZR_LSP_SYMBOL_KIND_METHOD;
 }
 
-static TZrBool lsp_hierarchy_symbol_is_type(TZrInt32 kind) {
-    return kind == ZR_LSP_SYMBOL_KIND_CLASS ||
-           kind == ZR_LSP_SYMBOL_KIND_STRUCT ||
-           kind == ZR_LSP_SYMBOL_KIND_INTERFACE ||
-           kind == ZR_LSP_SYMBOL_KIND_ENUM;
-}
-
 static TZrBool lsp_hierarchy_item_from_symbol(SZrState *state,
                                               const SZrLspSymbolInformation *symbol,
                                               SZrLspHierarchyItem **outItem) {
@@ -80,6 +74,7 @@ static TZrBool lsp_hierarchy_item_from_symbol(SZrState *state,
     if (item == ZR_NULL) {
         return ZR_FALSE;
     }
+    memset(item, 0, sizeof(SZrLspHierarchyItem));
     item->name = symbol->name;
     item->detail = symbol->containerName;
     item->kind = symbol->kind;
@@ -112,7 +107,6 @@ static TZrBool lsp_hierarchy_prepare(SZrState *state,
                                      SZrLspContext *context,
                                      SZrString *uri,
                                      SZrLspPosition position,
-                                     TZrBool wantTypes,
                                      SZrArray *result) {
     SZrArray symbols = {0};
     SZrLspSymbolInformation *best = ZR_NULL;
@@ -133,7 +127,6 @@ static TZrBool lsp_hierarchy_prepare(SZrState *state,
 
     for (TZrSize index = 0; index < symbols.length; index++) {
         SZrLspSymbolInformation **symbolPtr = (SZrLspSymbolInformation **)ZrCore_Array_Get(&symbols, index);
-        TZrBool matchesKind;
         TZrInt32 score;
 
         if (lsp_hierarchy_is_cancelled(context)) {
@@ -144,9 +137,9 @@ static TZrBool lsp_hierarchy_prepare(SZrState *state,
         if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL) {
             continue;
         }
-        matchesKind = wantTypes ? lsp_hierarchy_symbol_is_type((*symbolPtr)->kind)
-                                : lsp_hierarchy_symbol_is_callable((*symbolPtr)->kind);
-        if (!matchesKind || !lsp_hierarchy_range_contains_position((*symbolPtr)->location.range, position)) {
+        if (!lsp_hierarchy_symbol_is_callable((*symbolPtr)->kind) ||
+            !lsp_hierarchy_range_contains_position(
+                    (*symbolPtr)->location.range, position)) {
             continue;
         }
 
@@ -321,271 +314,12 @@ static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrSize lsp_hierarchy_symbol_start_offset(const TZrChar *content,
-                                                 TZrSize contentLength,
-                                                 const SZrLspSymbolInformation *symbol) {
-    if (content == ZR_NULL || symbol == ZR_NULL) {
-        return 0;
-    }
-    return ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
-                                                              contentLength,
-                                                              symbol->location.range.start.line,
-                                                              symbol->location.range.start.character);
-}
-
-static TZrSize lsp_hierarchy_symbol_end_offset(const TZrChar *content,
-                                               TZrSize contentLength,
-                                               const SZrLspSymbolInformation *symbol) {
-    if (content == ZR_NULL || symbol == ZR_NULL) {
-        return 0;
-    }
-    return ZrLanguageServer_Lsp_CalculateOffsetFromLineColumn(content,
-                                                              contentLength,
-                                                              symbol->location.range.end.line,
-                                                              symbol->location.range.end.character);
-}
-
-static TZrSize lsp_hierarchy_type_header_end(const TZrChar *content,
-                                             TZrSize contentLength,
-                                             const SZrLspSymbolInformation *symbol) {
-    TZrSize cursor;
-    TZrSize endOffset;
-
-    if (content == ZR_NULL || symbol == ZR_NULL) {
-        return 0;
-    }
-
-    cursor = lsp_hierarchy_symbol_start_offset(content, contentLength, symbol);
-    endOffset = lsp_hierarchy_symbol_end_offset(content, contentLength, symbol);
-    while (cursor < endOffset && cursor < contentLength) {
-        if (content[cursor] == '{' || content[cursor] == '\n') {
-            return cursor;
-        }
-        cursor++;
-    }
-    return cursor;
-}
-
-static const SZrLspSymbolInformation *lsp_hierarchy_find_type_symbol(SZrArray *symbols,
-                                                                     const TZrChar *name,
-                                                                     TZrSize nameLength) {
-    if (symbols == ZR_NULL || name == ZR_NULL || nameLength == 0) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < symbols->length; index++) {
-        SZrLspSymbolInformation **symbolPtr = (SZrLspSymbolInformation **)ZrCore_Array_Get(symbols, index);
-
-        if (symbolPtr != ZR_NULL &&
-            *symbolPtr != ZR_NULL &&
-            lsp_hierarchy_symbol_is_type((*symbolPtr)->kind) &&
-            lsp_hierarchy_symbol_name_matches(*symbolPtr, name, nameLength)) {
-            return *symbolPtr;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-static TZrSize lsp_hierarchy_find_inheritance_colon(const TZrChar *content,
-                                                    TZrSize contentLength,
-                                                    const SZrLspSymbolInformation *symbol,
-                                                    TZrSize headerEnd) {
-    TZrSize cursor;
-    TZrSize angleDepth = 0;
-
-    if (content == ZR_NULL || symbol == ZR_NULL) {
-        return headerEnd;
-    }
-
-    cursor = lsp_hierarchy_symbol_start_offset(content, contentLength, symbol);
-    while (cursor < headerEnd && cursor < contentLength) {
-        if (content[cursor] == '<') {
-            angleDepth++;
-            cursor++;
-            continue;
-        }
-        if (content[cursor] == '>' && angleDepth > 0) {
-            angleDepth--;
-            cursor++;
-            continue;
-        }
-        if (angleDepth == 0 &&
-            cursor + 5 <= headerEnd &&
-            memcmp(content + cursor, "where", 5) == 0 &&
-            (cursor == 0 || !lsp_hierarchy_identifier_part(content[cursor - 1])) &&
-            (cursor + 5 == headerEnd || !lsp_hierarchy_identifier_part(content[cursor + 5]))) {
-            return headerEnd;
-        }
-        if (angleDepth == 0 && content[cursor] == ':') {
-            return cursor;
-        }
-        cursor++;
-    }
-
-    return headerEnd;
-}
-
-static TZrBool lsp_hierarchy_type_header_contains_base(const TZrChar *content,
-                                                       TZrSize contentLength,
-                                                       const SZrLspSymbolInformation *symbol,
-                                                       const TZrChar *baseName,
-                                                       TZrSize baseNameLength) {
-    TZrSize cursor;
-    TZrSize headerEnd;
-
-    if (content == ZR_NULL ||
-        symbol == ZR_NULL ||
-        baseName == ZR_NULL ||
-        baseNameLength == 0) {
-        return ZR_FALSE;
-    }
-
-    headerEnd = lsp_hierarchy_type_header_end(content, contentLength, symbol);
-    cursor = lsp_hierarchy_find_inheritance_colon(content, contentLength, symbol, headerEnd);
-    if (cursor >= headerEnd) {
-        return ZR_FALSE;
-    }
-    cursor++;
-    while (cursor < headerEnd && cursor < contentLength) {
-        TZrSize nameStart;
-        TZrSize nameEnd;
-
-        if (!lsp_hierarchy_identifier_start(content[cursor])) {
-            cursor++;
-            continue;
-        }
-
-        nameStart = cursor;
-        nameEnd = cursor + 1;
-        while (nameEnd < headerEnd &&
-               nameEnd < contentLength &&
-               lsp_hierarchy_identifier_part(content[nameEnd])) {
-            nameEnd++;
-        }
-
-        if (nameEnd - nameStart == baseNameLength &&
-            memcmp(content + nameStart, baseName, baseNameLength) == 0) {
-            return ZR_TRUE;
-        }
-        cursor = nameEnd;
-    }
-
-    return ZR_FALSE;
-}
-
-static TZrBool lsp_hierarchy_append_direct_supertypes(SZrState *state,
-                                                      SZrLspContext *context,
-                                                      const TZrChar *content,
-                                                      TZrSize contentLength,
-                                                      SZrArray *symbols,
-                                                      const SZrLspHierarchyItem *item,
-                                                      SZrArray *result) {
-    const TZrChar *itemName = lsp_hierarchy_string_text(item != ZR_NULL ? item->name : ZR_NULL);
-    const SZrLspSymbolInformation *itemSymbol;
-    TZrSize cursor;
-    TZrSize headerEnd;
-
-    if (state == ZR_NULL || context == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL ||
-        result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    itemSymbol = itemName != ZR_NULL ? lsp_hierarchy_find_type_symbol(symbols, itemName, strlen(itemName)) : ZR_NULL;
-    if (itemSymbol == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    headerEnd = lsp_hierarchy_type_header_end(content, contentLength, itemSymbol);
-    cursor = lsp_hierarchy_find_inheritance_colon(content, contentLength, itemSymbol, headerEnd);
-    if (cursor >= headerEnd) {
-        return ZR_TRUE;
-    }
-    cursor++;
-    while (cursor < headerEnd && cursor < contentLength) {
-        TZrSize nameStart;
-        TZrSize nameEnd;
-        const SZrLspSymbolInformation *baseSymbol;
-
-        if (lsp_hierarchy_is_cancelled(context)) {
-            return ZR_FALSE;
-        }
-
-        if (!lsp_hierarchy_identifier_start(content[cursor])) {
-            cursor++;
-            continue;
-        }
-
-        nameStart = cursor;
-        nameEnd = cursor + 1;
-        while (nameEnd < headerEnd &&
-               nameEnd < contentLength &&
-               lsp_hierarchy_identifier_part(content[nameEnd])) {
-            nameEnd++;
-        }
-
-        baseSymbol = lsp_hierarchy_find_type_symbol(symbols,
-                                                    content + nameStart,
-                                                    nameEnd - nameStart);
-        if (baseSymbol != ZR_NULL && !lsp_hierarchy_append_item_from_symbol(state, result, baseSymbol)) {
-            return ZR_FALSE;
-        }
-        cursor = nameEnd;
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool lsp_hierarchy_append_direct_subtypes(SZrState *state,
-                                                    SZrLspContext *context,
-                                                    const TZrChar *content,
-                                                    TZrSize contentLength,
-                                                    SZrArray *symbols,
-                                                    const SZrLspHierarchyItem *item,
-                                                    SZrArray *result) {
-    const TZrChar *itemName;
-    TZrSize itemNameLength;
-
-    if (state == ZR_NULL || context == ZR_NULL || content == ZR_NULL || symbols == ZR_NULL || item == ZR_NULL ||
-        result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    itemName = lsp_hierarchy_string_text(item->name);
-    if (itemName == ZR_NULL) {
-        return ZR_TRUE;
-    }
-    itemNameLength = strlen(itemName);
-
-    for (TZrSize index = 0; index < symbols->length; index++) {
-        SZrLspSymbolInformation **symbolPtr = (SZrLspSymbolInformation **)ZrCore_Array_Get(symbols, index);
-
-        if (lsp_hierarchy_is_cancelled(context)) {
-            return ZR_FALSE;
-        }
-
-        if (symbolPtr == ZR_NULL ||
-            *symbolPtr == ZR_NULL ||
-            !lsp_hierarchy_symbol_is_type((*symbolPtr)->kind) ||
-            lsp_hierarchy_symbol_name_matches(*symbolPtr, itemName, itemNameLength)) {
-            continue;
-        }
-
-        if (lsp_hierarchy_type_header_contains_base(content, contentLength, *symbolPtr, itemName, itemNameLength) &&
-            !lsp_hierarchy_append_item_from_symbol(state, result, *symbolPtr)) {
-            return ZR_FALSE;
-        }
-    }
-
-    return ZR_TRUE;
-}
-
 TZrBool ZrLanguageServer_Lsp_PrepareCallHierarchy(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrString *uri,
                                                   SZrLspPosition position,
                                                   SZrArray *result) {
-    return lsp_hierarchy_prepare(state, context, uri, position, ZR_FALSE, result);
+    return lsp_hierarchy_prepare(state, context, uri, position, result);
 }
 
 TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
@@ -766,85 +500,22 @@ TZrBool ZrLanguageServer_Lsp_PrepareTypeHierarchy(SZrState *state,
                                                   SZrString *uri,
                                                   SZrLspPosition position,
                                                   SZrArray *result) {
-    return lsp_hierarchy_prepare(state, context, uri, position, ZR_TRUE, result);
+    return ZrLanguageServer_LspSemanticTypeHierarchy_Prepare(
+            state, context, uri, position, result);
 }
 
 TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(SZrState *state,
                                                         SZrLspContext *context,
                                                         const SZrLspHierarchyItem *item,
                                                         SZrArray *result) {
-    SZrFileVersion *fileVersion;
-    SZrFileVersionContentSnapshot snapshot = {0};
-    SZrArray symbols = {0};
-    TZrBool ok;
-
-    if (state == ZR_NULL || context == ZR_NULL || item == ZR_NULL || item->uri == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspHierarchyItem *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    }
-
-    fileVersion = lsp_editor_get_file_version(context, item->uri);
-    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
-        return ZR_TRUE;
-    }
-
-    ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, item->uri, &symbols)) {
-        lsp_hierarchy_free_symbols(state, &symbols);
-        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-        return ZR_FALSE;
-    }
-
-    ok = lsp_hierarchy_append_direct_supertypes(state,
-                                               context,
-                                               snapshot.content,
-                                               snapshot.contentLength,
-                                               &symbols,
-                                               item,
-                                               result);
-    lsp_hierarchy_free_symbols(state, &symbols);
-    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-    return ok;
+    return ZrLanguageServer_LspSemanticTypeHierarchy_AppendSupertypes(
+            state, context, item, result);
 }
 
 TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(SZrState *state,
                                                       SZrLspContext *context,
                                                       const SZrLspHierarchyItem *item,
                                                       SZrArray *result) {
-    SZrFileVersion *fileVersion;
-    SZrFileVersionContentSnapshot snapshot = {0};
-    SZrArray symbols = {0};
-    TZrBool ok;
-
-    if (state == ZR_NULL || context == ZR_NULL || item == ZR_NULL || item->uri == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspHierarchyItem *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
-    }
-
-    fileVersion = lsp_editor_get_file_version(context, item->uri);
-    if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
-        return ZR_TRUE;
-    }
-
-    ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, item->uri, &symbols)) {
-        lsp_hierarchy_free_symbols(state, &symbols);
-        ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-        return ZR_FALSE;
-    }
-
-    ok = lsp_hierarchy_append_direct_subtypes(state,
-                                             context,
-                                             snapshot.content,
-                                             snapshot.contentLength,
-                                             &symbols,
-                                             item,
-                                             result);
-    lsp_hierarchy_free_symbols(state, &symbols);
-    ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-    return ok;
+    return ZrLanguageServer_LspSemanticTypeHierarchy_AppendSubtypes(
+            state, context, item, result);
 }

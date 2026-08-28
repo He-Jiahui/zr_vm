@@ -229,6 +229,7 @@ cJSON *serialize_code_lens_array(SZrArray *lenses) {
 
 static cJSON *serialize_hierarchy_item(const SZrLspHierarchyItem *item) {
     cJSON *json;
+    cJSON *data;
     char *nameText;
     char *detailText;
     char *uriText;
@@ -252,6 +253,18 @@ static cJSON *serialize_hierarchy_item(const SZrLspHierarchyItem *item) {
     cJSON_AddItemToObject(json, ZR_LSP_FIELD_SELECTION_RANGE, serialize_range(item->selectionRange));
     if (detailText != NULL) {
         cJSON_AddStringToObject(json, ZR_LSP_FIELD_DETAIL, detailText);
+    }
+    if (item->hasSemanticIdentity) {
+        data = cJSON_CreateObject();
+        if (data != NULL) {
+            cJSON_AddNumberToObject(
+                    data, ZR_LSP_FIELD_SYMBOL_ID, item->semanticId);
+            cJSON_AddNumberToObject(
+                    data, ZR_LSP_FIELD_TYPE_ID, item->semanticTypeId);
+            cJSON_AddNumberToObject(
+                    data, ZR_LSP_FIELD_VERSION, item->semanticVersion);
+            cJSON_AddItemToObject(json, ZR_LSP_FIELD_DATA, data);
+        }
     }
 
     free(nameText);

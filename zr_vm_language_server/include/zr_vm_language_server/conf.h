@@ -116,6 +116,8 @@
 #define ZR_LSP_FIELD_CONTENT_LENGTH "contentLength"
 #define ZR_LSP_FIELD_CONTENT_GENERATION "contentGeneration"
 #define ZR_LSP_FIELD_SEMANTIC_IDENTITY "semanticIdentity"
+#define ZR_LSP_FIELD_SYMBOL_ID "symbolId"
+#define ZR_LSP_FIELD_TYPE_ID "typeId"
 #define ZR_LSP_FIELD_DOCUMENT_GENERATION "documentGeneration"
 #define ZR_LSP_FIELD_PROJECT_GENERATION "projectGeneration"
 #define ZR_LSP_FIELD_PROVIDER_GENERATION "providerGeneration"

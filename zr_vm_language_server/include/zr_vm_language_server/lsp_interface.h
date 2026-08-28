@@ -183,6 +183,10 @@ typedef struct SZrLspHierarchyItem {
     SZrString *uri;
     SZrLspRange range;
     SZrLspRange selectionRange;
+    TZrBool hasSemanticIdentity;
+    TZrSymbolId semanticId;
+    TZrTypeId semanticTypeId;
+    TZrSize semanticVersion;
 } SZrLspHierarchyItem;
 
 typedef struct SZrLspHierarchyCall {

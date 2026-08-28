@@ -1113,3 +1113,23 @@ local reachability query, source contracts, union-pattern diagnostics, and a
 dedicated stdio reachability smoke. The full stdio suite reached the later
 known native receiver hover assertion in the frozen L8 boundary and is not
 counted as a complete pass for this slice.
+
+## 2026-08-28 Canonical Local Type Hierarchy
+
+Source-local `prepareTypeHierarchy`, `supertypes`, and `subtypes` now project
+parser-owned `BaseTypesOf` and `DerivedTypesOf` relations. Prepared items carry
+their canonical SymbolId, TypeId, and document version in protocol `data`.
+Follow-up requests re-resolve the current snapshot and fail closed when that
+identity is missing, malformed, or stale.
+
+The previous inheritance-header scanner and name-based document-symbol lookup
+were removed. Display names are output only: changing one does not change the
+selected relation. The stdio boundary validates integral identity values and
+round-trips them without inferring from URI, range, or name. Call hierarchy is
+unchanged and remains a separate migration.
+
+GCC, Clang, and MSVC each pass parser relations `19/19`, semantic-query parity
+`6/6`, source contracts `59/59`, advanced editor features `73/73`, and the
+stdio type-hierarchy smoke with real exits. The full interface runner keeps the
+same `109 Pass / 4` pre-existing markers on all three toolchains; it is not
+counted as GREEN.

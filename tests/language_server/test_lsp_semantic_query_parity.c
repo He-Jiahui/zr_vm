@@ -840,6 +840,127 @@ cleanup:
     }
 }
 
+static TZrBool hierarchy_item_name_equals(
+        const SZrLspHierarchyItem *item,
+        const TZrChar *expected) {
+    return item != ZR_NULL && item->name != ZR_NULL && expected != ZR_NULL &&
+           strcmp(ZrCore_String_GetNativeString(item->name), expected) == 0;
+}
+
+static void test_local_type_hierarchy_uses_canonical_relations(
+        SZrState *state) {
+    static const TZrChar *content =
+            "class Base {}\n"
+            "class SameName {}\n"
+            "class Derived : Base {}\n"
+            "class Other : SameName {}\n";
+    SZrParityTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrString *tamperedName = ZR_NULL;
+    SZrLspPosition derivedPosition;
+    SZrLspPosition basePosition;
+    SZrArray derivedItems = {0};
+    SZrArray baseItems = {0};
+    SZrArray supertypes = {0};
+    SZrArray subtypes = {0};
+    SZrArray stale = {0};
+    SZrLspHierarchyItem *derivedItem = ZR_NULL;
+    SZrLspHierarchyItem *baseItem = ZR_NULL;
+    SZrLspHierarchyItem *superItem = ZR_NULL;
+    SZrLspHierarchyItem *subItem = ZR_NULL;
+    const TZrChar *failure = "type hierarchy preparation";
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START("LSP Local Type Hierarchy Uses Canonical Relations");
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///semantic_query_local_type_hierarchy.zr",
+            strlen("file:///semantic_query_local_type_hierarchy.zr"));
+    tamperedName = ZrCore_String_Create(
+            state, "SameName", strlen("SameName"));
+    if (context == ZR_NULL || uri == ZR_NULL || tamperedName == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !find_position(content, "class Derived", 0U, 6, &derivedPosition) ||
+        !find_position(content, "class Base", 0U, 6, &basePosition) ||
+        !ZrLanguageServer_Lsp_PrepareTypeHierarchy(
+                state, context, uri, derivedPosition, &derivedItems) ||
+        derivedItems.length != 1U ||
+        !ZrLanguageServer_Lsp_PrepareTypeHierarchy(
+                state, context, uri, basePosition, &baseItems) ||
+        baseItems.length != 1U) {
+        goto cleanup;
+    }
+    derivedItem = *(SZrLspHierarchyItem **)ZrCore_Array_Get(&derivedItems, 0U);
+    baseItem = *(SZrLspHierarchyItem **)ZrCore_Array_Get(&baseItems, 0U);
+    if (derivedItem == ZR_NULL || baseItem == ZR_NULL ||
+        !derivedItem->hasSemanticIdentity ||
+        !baseItem->hasSemanticIdentity ||
+        derivedItem->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        derivedItem->semanticTypeId == ZR_SEMANTIC_ID_INVALID ||
+        derivedItem->semanticVersion != 1U ||
+        baseItem->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        baseItem->semanticTypeId == ZR_SEMANTIC_ID_INVALID ||
+        baseItem->semanticVersion != 1U) {
+        failure = "stable hierarchy identity";
+        goto cleanup;
+    }
+
+    derivedItem->name = tamperedName;
+    baseItem->name = tamperedName;
+    if (!ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(
+                state, context, derivedItem, &supertypes) ||
+        supertypes.length != 1U ||
+        !ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(
+                state, context, baseItem, &subtypes) ||
+        subtypes.length != 1U) {
+        failure = "canonical BaseTypesOf/DerivedTypesOf projection";
+        goto cleanup;
+    }
+    superItem = *(SZrLspHierarchyItem **)ZrCore_Array_Get(&supertypes, 0U);
+    subItem = *(SZrLspHierarchyItem **)ZrCore_Array_Get(&subtypes, 0U);
+    if (!hierarchy_item_name_equals(superItem, "Base") ||
+        !hierarchy_item_name_equals(subItem, "Derived") ||
+        superItem->semanticId != baseItem->semanticId ||
+        subItem->semanticId != derivedItem->semanticId) {
+        failure = "exact canonical hierarchy targets";
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 2U)) {
+        failure = "version update";
+        goto cleanup;
+    }
+    (void)ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(
+            state, context, derivedItem, &stale);
+    if (stale.length != 0U) {
+        failure = "stale hierarchy item did not fail closed";
+        goto cleanup;
+    }
+    valid = ZR_TRUE;
+
+cleanup:
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &derivedItems);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &baseItems);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &supertypes);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &subtypes);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &stale);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (valid) {
+        TEST_PASS(timer, "LSP Local Type Hierarchy Uses Canonical Relations");
+    } else {
+        TEST_FAIL(
+                timer,
+                "LSP Local Type Hierarchy Uses Canonical Relations",
+                failure);
+    }
+}
+
 static void test_binary_semantic_query_snapshot_parity(SZrState *state) {
     SZrParityTimer timer;
     SZrParityBinaryFixture fixture = {0};
@@ -945,6 +1066,7 @@ int main(void) {
     test_source_semantic_query_snapshot_parity(state);
     test_local_reference_consumers_use_canonical_facts(state);
     test_local_implementation_consumer_uses_canonical_relations(state);
+    test_local_type_hierarchy_uses_canonical_relations(state);
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
     ZrCore_GlobalState_Free(global);

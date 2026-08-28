@@ -7,6 +7,13 @@ static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZr
     const cJSON *kindJson;
     const cJSON *uriJson;
     const cJSON *selectionRangeJson;
+    const cJSON *dataJson;
+    const cJSON *symbolIdJson;
+    const cJSON *typeIdJson;
+    const cJSON *versionJson;
+    TZrSize symbolIdValue;
+    TZrSize typeIdValue;
+    TZrSize versionValue;
 
     if (server == ZR_NULL || outItem == ZR_NULL) {
         return 0;
@@ -19,6 +26,10 @@ static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZr
     kindJson = get_object_item(itemJson, ZR_LSP_FIELD_KIND);
     uriJson = get_object_item(itemJson, ZR_LSP_FIELD_URI);
     selectionRangeJson = get_object_item(itemJson, ZR_LSP_FIELD_SELECTION_RANGE);
+    dataJson = get_object_item(itemJson, ZR_LSP_FIELD_DATA);
+    symbolIdJson = get_object_item(dataJson, ZR_LSP_FIELD_SYMBOL_ID);
+    typeIdJson = get_object_item(dataJson, ZR_LSP_FIELD_TYPE_ID);
+    versionJson = get_object_item(dataJson, ZR_LSP_FIELD_VERSION);
 
     if (!cJSON_IsString(nameJson) ||
         !cJSON_IsString(uriJson) ||
@@ -43,6 +54,17 @@ static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZr
                                                  strlen(detailJson->valuestring))
                           : ZR_NULL;
     outItem->kind = (TZrInt32)kindJson->valuedouble;
+    if (parse_size_value_strict(symbolIdJson, &symbolIdValue) &&
+        parse_size_value_strict(typeIdJson, &typeIdValue) &&
+        parse_size_value_strict(versionJson, &versionValue) &&
+        symbolIdValue > 0U && typeIdValue > 0U &&
+        (TZrSize)(TZrSymbolId)symbolIdValue == symbolIdValue &&
+        (TZrSize)(TZrTypeId)typeIdValue == typeIdValue) {
+        outItem->hasSemanticIdentity = ZR_TRUE;
+        outItem->semanticId = (TZrSymbolId)symbolIdValue;
+        outItem->semanticTypeId = (TZrTypeId)typeIdValue;
+        outItem->semanticVersion = versionValue;
+    }
     if (selectionRangeJson != NULL &&
         parse_range_for_uri(server, outItem->uri, selectionRangeJson, &outItem->selectionRange)) {
         return outItem->name != ZR_NULL && outItem->uri != ZR_NULL;

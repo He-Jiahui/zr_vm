@@ -216,12 +216,17 @@ async function main() {
         });
         assert(Array.isArray(derivedItems) && derivedItems.length > 0,
             'prepareTypeHierarchy must return Derived');
+        assert(derivedItems[0].data && Number.isInteger(derivedItems[0].data.symbolId) &&
+            derivedItems[0].data.symbolId > 0 &&
+            Number.isInteger(derivedItems[0].data.typeId) && derivedItems[0].data.typeId > 0 &&
+            derivedItems[0].data.version === 1,
+            'prepareTypeHierarchy must publish stable semantic identity and document version');
 
         const supertypes = await client.request('typeHierarchy/supertypes', {
-            item: derivedItems[0],
+            item: { ...derivedItems[0], name: 'Unrelated' },
         });
         assert(Array.isArray(supertypes) && supertypes.some((item) => item && item.name === 'Base'),
-            'typeHierarchy/supertypes must return direct Base');
+            'typeHierarchy/supertypes must use semantic identity instead of the display name');
 
         const baseItems = await client.request('textDocument/prepareTypeHierarchy', {
             textDocument: { uri: documentUri },
@@ -229,12 +234,17 @@ async function main() {
         });
         assert(Array.isArray(baseItems) && baseItems.length > 0,
             'prepareTypeHierarchy must return Base');
+        assert(baseItems[0].data && Number.isInteger(baseItems[0].data.symbolId) &&
+            baseItems[0].data.symbolId > 0 &&
+            Number.isInteger(baseItems[0].data.typeId) && baseItems[0].data.typeId > 0 &&
+            baseItems[0].data.version === 1,
+            'base hierarchy item must preserve stable semantic identity and document version');
 
         const subtypes = await client.request('typeHierarchy/subtypes', {
-            item: baseItems[0],
+            item: { ...baseItems[0], name: 'Unrelated' },
         });
         assert(Array.isArray(subtypes) && subtypes.some((item) => item && item.name === 'Derived'),
-            'typeHierarchy/subtypes must return direct Derived');
+            'typeHierarchy/subtypes must use semantic identity instead of the display name');
 
         const shutdown = await client.request('shutdown', undefined);
         assert(shutdown === null, 'shutdown must return null');

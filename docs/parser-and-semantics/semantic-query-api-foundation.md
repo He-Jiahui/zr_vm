@@ -847,6 +847,16 @@ It does not inspect member names, source text, LSP symbol locations, or the
 legacy reference tracker. Cross-project, binary, and native external
 implementation origins remain separate producer boundaries.
 
+Source-local type hierarchy consumes the canonical type relation surface.
+Prepare resolves one local type and stores its SymbolId, TypeId, and document
+version in the hierarchy item. Supertype and subtype requests re-resolve that
+selection in the current analyzer snapshot, require the identity and version
+to match, then query `BaseTypesOf` or `DerivedTypesOf`. Relation targets bind
+only through the same analyzer snapshot and resolve by exact SymbolId. Display
+names, document-symbol lists, and inheritance-header text do not participate.
+Cross-project, binary, and native hierarchy expansion remains a separate
+producer boundary.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot
