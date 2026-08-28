@@ -15,6 +15,7 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/diagnostic_registry.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
@@ -1837,6 +1838,8 @@ static void test_semantic_analyzer_records_owned_field_cleanup_metadata(SZrState
 // 测试获取诊断信息
 static void test_semantic_analyzer_get_diagnostics(SZrState *state) {
     SZrTestTimer timer;
+    SZrStructuredDiagnostic structured;
+    SZrDiagnostic *diagnostic;
     TEST_START("Semantic Analyzer Get Diagnostics");
     
     TEST_INFO("Get Diagnostics", "Getting diagnostic information from analyzer");
@@ -1847,21 +1850,41 @@ static void test_semantic_analyzer_get_diagnostics(SZrState *state) {
         return;
     }
     
-    // 添加一个测试诊断
     SZrFileRange location = ZrParser_FileRange_Create(
         ZrParser_FilePosition_Create(0, 1, 0),
         ZrParser_FilePosition_Create(10, 1, 10),
         ZR_NULL
     );
-    
-    TZrBool success = ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer, ZR_DIAGNOSTIC_ERROR,
-                                                     location, "Test error", "test_error");
-    if (!success) {
+
+    ZrParser_StructuredDiagnostic_Init(&structured);
+    TZrBool success = ZrParser_DiagnosticBuilder_Build(
+            state,
+            &structured,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "compiler_error",
+            "Test error",
+            "Test structured diagnostic",
+            "No automatic edit is available") &&
+        ZrParser_StructuredDiagnostic_SetNoFixReason(
+            &structured,
+            ZR_DIAGNOSTIC_NO_FIX_REASON_INSUFFICIENT_CONTEXT);
+    diagnostic = success
+                         ? ZrLanguageServer_Diagnostic_FromStructured(
+                                   state,
+                                   &structured)
+                         : ZR_NULL;
+    ZrParser_StructuredDiagnostic_Free(state, &structured);
+    if (diagnostic == ZR_NULL) {
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-        TEST_FAIL(timer, "Semantic Analyzer Get Diagnostics", "Failed to add diagnostic");
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Get Diagnostics",
+                  "Failed to project structured diagnostic");
         return;
     }
-    
+
+    ZrCore_Array_Push(state, &analyzer->diagnostics, &diagnostic);
+
     // 获取诊断信息
     SZrArray diagnostics;
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrDiagnostic *), 4);

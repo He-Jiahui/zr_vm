@@ -689,6 +689,16 @@ reporter and consumes the resulting persistent query fact. It must not create
 the code locally, compare diagnostic text, or delete a same-range inference
 diagnostic after another producer runs.
 
+The semantic analyzer no longer exposes
+`ZrLanguageServer_SemanticAnalyzer_AddDiagnostic`. That API accepted raw
+severity, message, and code values and could bypass descriptor lookup, fix
+disposition, and persistent query identity even after its production callers
+were migrated. Semantic analysis tests now inject only a parser structured
+diagnostic projected through `ZrLanguageServer_Diagnostic_FromStructured`.
+The lower-level diagnostic allocator remains available to protocol and syntax
+recovery layers; it is not a semantic fact producer. Remaining analyzer-side
+structured builders are tracked as separate producer-migration work.
+
 Compiler and parser rule producers follow the same boundary. Ref-struct
 storage violations, reference escapes, resource strong-cycle warnings, and
 type mismatches without a typed conversion contract publish

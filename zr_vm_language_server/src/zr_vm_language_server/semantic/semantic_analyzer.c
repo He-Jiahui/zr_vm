@@ -2562,27 +2562,6 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(SZrState *state,
     return ZR_TRUE;
 }
 
-// 添加诊断
-TZrBool ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(SZrState *state,
-                                     SZrSemanticAnalyzer *analyzer,
-                                     EZrDiagnosticSeverity severity,
-                                     SZrFileRange location,
-                                     const TZrChar *message,
-                                     const TZrChar *code) {
-    if (state == ZR_NULL || analyzer == ZR_NULL || message == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    
-    SZrDiagnostic *diagnostic = ZrLanguageServer_Diagnostic_New(state, severity, location, message, code);
-    if (diagnostic == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    
-    ZrCore_Array_Push(state, &analyzer->diagnostics, &diagnostic);
-    
-    return ZR_TRUE;
-}
-
 SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
                                 EZrDiagnosticSeverity severity,
                                 SZrFileRange location,

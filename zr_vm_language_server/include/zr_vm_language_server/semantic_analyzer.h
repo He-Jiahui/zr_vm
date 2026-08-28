@@ -208,14 +208,6 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_GetCompletions(
                                                                SZrFileRange position,
                                                                SZrArray *result);
 
-// 添加诊断
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(SZrState *state,
-                                                             SZrSemanticAnalyzer *analyzer,
-                                                             EZrDiagnosticSeverity severity,
-                                                             SZrFileRange location,
-                                                             const TZrChar *message,
-                                                             const TZrChar *code);
-
 // 诊断管理函数
 
 // 创建诊断
