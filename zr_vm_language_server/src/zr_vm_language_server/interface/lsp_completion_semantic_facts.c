@@ -1,6 +1,5 @@
 #include "interface/lsp_interface_internal.h"
 #include "semantic/lsp_numeric_range_text.h"
-#include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_parser/semantic_facts.h"
 
@@ -429,27 +428,6 @@ static TZrBool completion_fact_append_ownership_intrinsic_detail(
             fact->consuming ? "consuming" : "non-consuming");
 }
 
-static void completion_fact_materialize_initializer(SZrState *state,
-                                                    SZrSemanticAnalyzer *analyzer,
-                                                    SZrAstNode *initializer) {
-    SZrInferredType inferredType;
-
-    if (state == ZR_NULL ||
-        analyzer == ZR_NULL ||
-        initializer == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL) {
-        return;
-    }
-
-    if (ZrParser_SemanticFacts_FindExpressionByNode(analyzer->semanticContext, initializer) != ZR_NULL) {
-        return;
-    }
-
-    ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    (void)ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state, analyzer, initializer, &inferredType);
-    ZrParser_InferredType_Free(state, &inferredType);
-}
-
 static SZrString *completion_fact_append_detail(SZrState *state,
                                                 SZrString *detail,
                                                 const TZrChar *factDetail) {
@@ -515,7 +493,6 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(SZrState *state,
         return;
     }
 
-    completion_fact_materialize_initializer(state, analyzer, initializer);
     expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(analyzer->semanticContext, initializer);
     numericFact = ZrParser_SemanticFacts_FindNumericByNode(analyzer->semanticContext, initializer);
     logicalFact = ZrParser_SemanticFacts_FindLogicalByNode(analyzer->semanticContext, initializer);

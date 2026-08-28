@@ -3522,3 +3522,15 @@ implicit and where to place the hint, while canonical type text comes only from
 the declaration SymbolId/TypeId and `DeclarationOf`. They do not enumerate the
 LSP symbol table, infer a type during a request, or look up a declaration by
 name.
+
+## Plan 03 Task 7.11 Read-Only Completion Facts
+
+Completion detail consumes semantic facts already retained by the analyzer's
+immutable parser snapshot. Expression, numeric, logical, ownership, and
+ownership-intrinsic facts may enrich display text, but an absent expression
+fact remains absent. Request handling must not call analyzer type inference,
+append replacement facts, or otherwise change fact-array length.
+
+This boundary separates producer completeness from protocol projection. A
+missing optional detail is not permission for LSP to reconstruct semantic
+state; producer gaps must be repaired before snapshot publication.

@@ -897,6 +897,13 @@ run expression inference to manufacture missing facts. An unresolved or
 inconsistent declaration therefore produces no hint instead of a name, AST,
 or display-text fallback.
 
+Completion semantic-fact enrichment is also snapshot read-only. It may append
+presentation text from compiler-published expression, numeric, logical,
+ownership, and ownership-intrinsic facts, but it cannot invoke type inference
+or mutate the semantic context when a fact is absent. Missing enrichment data
+is omitted; the completion item itself remains available from its existing
+canonical declaration identity.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot
