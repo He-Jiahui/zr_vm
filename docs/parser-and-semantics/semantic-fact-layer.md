@@ -3554,3 +3554,21 @@ are emitted only when their canonical facts already exist.
 The remaining short-circuit, member-write, and ownership-range focused markers
 are producer/query-selection gaps. They are not repaired by restoring request
 mutation and must be closed support-first in their canonical layers.
+
+## Plan 03 Task 7.14 Canonical CodeLens Declarations
+
+CodeLens reference counts now enumerate exact parser declaration rows and query
+resolved references by SymbolId. The consumer does not walk
+`symbolTable->allScopes`, convert a symbol-table range back into a position, or
+re-enter `FindReferences`. This keeps declaration identity, reference identity,
+and range projection within one immutable semantic snapshot.
+
+The cohesive CodeLens implementation moved from the 1192-line editor feature
+file into `lsp_code_lens.c`; the original file is now 918 lines. Test-manifest
+run/debug lenses retain their existing compiler-owned manifest path. Runtime
+coverage removes the analyzer symbol table before requesting reference-count
+lenses, and source contracts reject symbol-table enumeration, position-based
+reference re-entry, and name lookup. Current file-version AST identity gates the
+projection. References are scoped to that AST and duplicate producer
+rows are counted once by exact source/range; duplicate symbol rows for one
+declaration AST yield one lens without consulting a spelling.

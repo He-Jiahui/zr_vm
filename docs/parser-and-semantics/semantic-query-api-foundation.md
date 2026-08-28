@@ -917,6 +917,19 @@ types, consult the LSP symbol table to synthesize an identity, or resolve a
 missing type during the request. Missing facts remain unavailable and identify
 a producer boundary rather than a consumer fallback opportunity.
 
+CodeLens reference counts enumerate the same exact declaration rows through
+`ZrParser_SemanticQuery_DeclaredSymbols` and count resolved uses through
+`ZrParser_SemanticQuery_ReferencesOf(SymbolId)`. Declaration kind and range are
+read only from the borrowed snapshot row; the consumer never traverses LSP
+symbol scopes or turns a declaration position back into a reference query.
+The consumer requires the analyzer AST to match the current file version,
+scopes references to that AST, counts duplicate producer rows once by exact
+source/range, and projects duplicate symbol rows for one exact declaration AST
+only once. No spelling participates in these guards.
+Unresolved declarations and zero-reference symbols are omitted. The borrowed
+declaration node is inspected only during the request and is never retained
+across a snapshot generation.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot
