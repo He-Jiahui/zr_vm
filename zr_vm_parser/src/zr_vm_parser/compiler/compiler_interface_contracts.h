@@ -3,6 +3,9 @@
 
 #include "compiler_internal.h"
 
+TZrBool compiler_interface_contracts_member_signatures_match(
+        const SZrTypeMemberInfo *requiredMember,
+        const SZrTypeMemberInfo *implementation);
 TZrBool compiler_interface_contracts_validate_value_type(
         SZrCompilerState *cs,
         SZrTypePrototypeInfo *valueTypeInfo,

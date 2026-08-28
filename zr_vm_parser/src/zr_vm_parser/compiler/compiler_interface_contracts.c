@@ -53,7 +53,7 @@ static TZrBool interface_contract_parameter_types_match(
     return ZR_TRUE;
 }
 
-static TZrBool interface_contract_member_signatures_match(
+TZrBool compiler_interface_contracts_member_signatures_match(
         const SZrTypeMemberInfo *requiredMember,
         const SZrTypeMemberInfo *implementation) {
     if (requiredMember == ZR_NULL || implementation == ZR_NULL ||
@@ -113,7 +113,7 @@ static SZrTypeMemberInfo *interface_contract_find_implementation(
         SZrTypeMemberInfo *candidate =
                 (SZrTypeMemberInfo *)ZrCore_Array_Get(
                         &valueTypeInfo->members, index);
-        if (interface_contract_member_signatures_match(
+        if (compiler_interface_contracts_member_signatures_match(
                     requiredMember, candidate)) {
             return candidate;
         }

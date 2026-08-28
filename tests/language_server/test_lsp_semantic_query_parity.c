@@ -729,6 +729,117 @@ cleanup:
     }
 }
 
+static void test_local_implementation_consumer_uses_canonical_relations(
+        SZrState *state) {
+    static const TZrChar *content =
+            "interface Readable { fn read(): int; }\n"
+            "class Device : Readable {\n"
+            "    pub fn read(): int { return 1; }\n"
+            "}\n"
+            "class Other {\n"
+            "    pub fn read(): int { return 2; }\n"
+            "}\n";
+    SZrParityTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrLspPosition position;
+    SZrLspSemanticQuery query;
+    SZrArray locations = {0};
+    SZrLspLocation *location = ZR_NULL;
+    TZrChar failureBuffer[256] = {0};
+    const TZrChar *failure = "implementation resolution";
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START("LSP Local Implementation Consumer Uses Canonical Relations");
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///semantic_query_local_implementation.zr",
+            strlen("file:///semantic_query_local_implementation.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !find_position(content, "interface Readable", 0U, 11, &position) ||
+        !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                state, context, uri, position, &query)) {
+        goto cleanup;
+    }
+    if (!ZrLanguageServer_Lsp_GetImplementation(
+                state, context, uri, position, &locations)) {
+        TZrSize matchingRelations = 0U;
+        if (query.analyzer != ZR_NULL &&
+            query.analyzer->semanticContext != ZR_NULL &&
+            query.symbol != ZR_NULL) {
+            for (TZrSize index = 0U;
+                 index < query.analyzer->semanticContext->relationFacts.length;
+                 index++) {
+                const SZrSemanticRelationFact *relation =
+                        (const SZrSemanticRelationFact *)ZrCore_Array_Get(
+                                &query.analyzer->semanticContext->relationFacts,
+                                index);
+                if (relation != ZR_NULL &&
+                    relation->targetSymbolId == query.symbol->semanticId &&
+                    (relation->kind == ZR_SEMANTIC_RELATION_IMPLEMENTATION ||
+                     relation->kind == ZR_SEMANTIC_RELATION_OVERRIDE)) {
+                    matchingRelations++;
+                }
+            }
+        }
+        snprintf(
+                failureBuffer,
+                sizeof(failureBuffer),
+                "implementation query kind=%d symbol=%p id=%llu relations=%zu matching=%zu",
+                query.kind,
+                (void *)query.symbol,
+                (unsigned long long)(query.symbol != ZR_NULL
+                        ? query.symbol->semanticId
+                        : ZR_SEMANTIC_ID_INVALID),
+                (size_t)(query.analyzer != ZR_NULL &&
+                                 query.analyzer->semanticContext != ZR_NULL
+                        ? query.analyzer->semanticContext->relationFacts.length
+                        : 0U),
+                (size_t)matchingRelations);
+        failure = failureBuffer;
+        goto cleanup;
+    }
+    failure = "exact implementation relation";
+    if (locations.length != 1U) {
+        goto cleanup;
+    }
+    {
+        SZrLspLocation **slot =
+                (SZrLspLocation **)ZrCore_Array_Get(&locations, 0U);
+        location = slot != ZR_NULL ? *slot : ZR_NULL;
+    }
+    if (location == ZR_NULL ||
+        !ZrLanguageServer_Lsp_StringsEqual(location->uri, uri) ||
+        location->range.start.line != 1 ||
+        location->range.start.character != 0 ||
+        location->range.end.line != 3 ||
+        location->range.end.character != 1) {
+        goto cleanup;
+    }
+    valid = ZR_TRUE;
+
+cleanup:
+    free_local_reference_projection_results(state, &locations, ZR_NULL);
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (valid) {
+        TEST_PASS(
+                timer,
+                "LSP Local Implementation Consumer Uses Canonical Relations");
+    } else {
+        TEST_FAIL(
+                timer,
+                "LSP Local Implementation Consumer Uses Canonical Relations",
+                failure);
+    }
+}
+
 static void test_binary_semantic_query_snapshot_parity(SZrState *state) {
     SZrParityTimer timer;
     SZrParityBinaryFixture fixture = {0};
@@ -833,6 +944,7 @@ int main(void) {
     ZrCore_GlobalState_InitRegistry(state, global);
     test_source_semantic_query_snapshot_parity(state);
     test_local_reference_consumers_use_canonical_facts(state);
+    test_local_implementation_consumer_uses_canonical_relations(state);
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
     ZrCore_GlobalState_Free(global);

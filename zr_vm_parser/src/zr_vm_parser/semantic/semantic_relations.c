@@ -646,6 +646,34 @@ static const SZrSemanticSymbolRecord *semantic_relations_find_type_declaration(
     return ZR_NULL;
 }
 
+static const SZrSemanticSymbolRecord *semantic_relations_find_symbol_declaration(
+        const SZrSemanticContext *context,
+        const SZrAstNode *declaration) {
+    const SZrSemanticSymbolRecord *matched = ZR_NULL;
+    TZrSize index;
+
+    if (context == ZR_NULL || declaration == ZR_NULL ||
+        !context->symbols.isValid) {
+        return ZR_NULL;
+    }
+    for (index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(
+                        (SZrArray *)&context->symbols, index);
+        if (symbol == ZR_NULL || symbol->astNode != declaration ||
+            symbol->id == ZR_SEMANTIC_ID_INVALID ||
+            symbol->typeId == ZR_SEMANTIC_ID_INVALID ||
+            !semantic_relations_range_is_known(&symbol->location)) {
+            continue;
+        }
+        if (matched != ZR_NULL && matched->id != symbol->id) {
+            return ZR_NULL;
+        }
+        matched = symbol;
+    }
+    return matched;
+}
+
 static TZrBool semantic_relations_has_symbol_relation(
         const SZrSemanticContext *context,
         EZrSemanticRelationKind kind,
@@ -712,6 +740,29 @@ TZrBool ZrParser_SemanticRelations_PublishSymbolRelation(
     fact.hasSourceRange = ZR_TRUE;
     fact.hasTargetRange = ZR_TRUE;
     return ZrParser_SemanticRelations_Append(context, &fact);
+}
+
+TZrBool ZrParser_SemanticRelations_PublishSymbolDeclarationRelation(
+        SZrSemanticContext *context,
+        EZrSemanticRelationKind kind,
+        const SZrAstNode *sourceDeclaration,
+        const SZrAstNode *targetDeclaration) {
+    const SZrSemanticSymbolRecord *source;
+    const SZrSemanticSymbolRecord *target;
+
+    if (context == ZR_NULL || sourceDeclaration == ZR_NULL ||
+        targetDeclaration == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    source = semantic_relations_find_symbol_declaration(
+            context, sourceDeclaration);
+    target = semantic_relations_find_symbol_declaration(
+            context, targetDeclaration);
+    if (source == ZR_NULL || target == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    return ZrParser_SemanticRelations_PublishSymbolRelation(
+            context, kind, source->id, target->id);
 }
 
 TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(

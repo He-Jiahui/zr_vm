@@ -1,5 +1,6 @@
 #include "semantic/semantic_analyzer_internal.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/semantic_relations.h"
 
 #include <string.h>
 
@@ -182,6 +183,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AnalyzeScope(
     }
 
     ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, ast);
+    if (analyzer->compilerState != ZR_NULL) {
+        (void)ZrParser_SemanticRelations_PublishCompilerContracts(
+                analyzer->compilerState);
+    }
     ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(
             state,
             analyzer,

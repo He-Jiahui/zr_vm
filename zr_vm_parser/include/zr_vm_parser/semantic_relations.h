@@ -32,6 +32,8 @@ typedef struct SZrSemanticRelationFact {
 
 struct SZrSemanticContext;
 typedef struct SZrSemanticContext SZrSemanticContext;
+struct SZrCompilerState;
+typedef struct SZrCompilerState SZrCompilerState;
 
 ZR_PARSER_API void ZrParser_SemanticRelations_Init(SZrSemanticContext *context);
 ZR_PARSER_API void ZrParser_SemanticRelations_Reset(SZrSemanticContext *context);
@@ -57,6 +59,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishSymbolRelation(
         EZrSemanticRelationKind kind,
         TZrSymbolId sourceSymbolId,
         TZrSymbolId targetSymbolId);
+/* Publishes a resolved source relation from exact declaration identities only. */
+ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishSymbolDeclarationRelation(
+        SZrSemanticContext *context,
+        EZrSemanticRelationKind kind,
+        const SZrAstNode *sourceDeclaration,
+        const SZrAstNode *targetDeclaration);
 /* Publishes a resolved type relation from compiler declaration identities only. */
 ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
         SZrSemanticContext *context,
@@ -68,5 +76,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishConstructorRelation(
         SZrSemanticContext *context,
         const SZrAstNode *sourceTypeDeclaration,
         TZrSymbolId constructorSymbolId);
+/* Publishes hierarchy/member relations from canonical compiler prototypes. */
+ZR_PARSER_API TZrBool ZrParser_SemanticRelations_PublishCompilerContracts(
+        SZrCompilerState *compilerState);
 
 #endif // ZR_VM_PARSER_SEMANTIC_RELATIONS_H

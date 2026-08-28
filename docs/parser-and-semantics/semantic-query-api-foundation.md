@@ -832,6 +832,21 @@ exists, projection fails closed. The consumer does not fall back to the request
 URI, an LSP symbol location, or a token/name scan; the old enum-member range
 scanner and symbol-location fallback have been deleted.
 
+Source-local implementation projection is relation-backed as well. After the
+analyzer registers semantic symbols, the compiler publishes source class/
+struct base and interface edges, exact interface-member implementation edges,
+and explicit override edges. Member matching reuses the canonical parser
+signature and receiver-effect contract. Declaration-backed relations resolve
+exact AST symbol identities; a source type placeholder may bind only to one
+unique compiler-registered type symbol. Ambiguity produces no relation.
+
+The LSP implementation consumer resolves one valid local SymbolId and queries
+`ImplementationsOf`. It preserves relation ranges, binds a missing range source
+only through the owning analyzer snapshot, and de-duplicates exact locations.
+It does not inspect member names, source text, LSP symbol locations, or the
+legacy reference tracker. Cross-project, binary, and native external
+implementation origins remain separate producer boundaries.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

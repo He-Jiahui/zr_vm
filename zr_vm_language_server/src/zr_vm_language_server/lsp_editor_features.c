@@ -1,4 +1,5 @@
 #include "lsp_editor_features_internal.h"
+#include "semantic/lsp_semantic_implementation_query.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/legacy_migration.h"
 #include "zr_vm_parser/test_contract.h"
@@ -1052,7 +1053,8 @@ TZrBool ZrLanguageServer_Lsp_GetImplementation(SZrState *state,
                                                SZrString *uri,
                                                SZrLspPosition position,
                                                SZrArray *result) {
-    return ZrLanguageServer_Lsp_GetDefinition(state, context, uri, position, result);
+    return ZrLanguageServer_LspSemanticImplementationQuery_Append(
+            state, context, uri, position, result);
 }
 
 void ZrLanguageServer_Lsp_FreeTextEdits(SZrState *state, SZrArray *result) {

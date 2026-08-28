@@ -1425,6 +1425,44 @@ static void test_local_definition_consumer_uses_snapshot_source(void) {
     free(semanticQuery);
 }
 
+static void test_local_implementation_consumer_uses_parser_relations(void) {
+    char *implementationQuery = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_implementation_query.c");
+    char *editorFeatures = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/lsp_editor_features.c");
+    char *analysis = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c");
+
+    if (implementationQuery == NULL || editorFeatures == NULL ||
+        analysis == NULL) {
+        printf("FAIL: could not read local implementation consumer sources\n");
+        g_failures++;
+        free(implementationQuery);
+        free(editorFeatures);
+        free(analysis);
+        return;
+    }
+
+    assert_text_contains(
+        implementationQuery, "ZrParser_SemanticQuery_ImplementationsOf");
+    assert_text_contains(
+        implementationQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
+    assert_text_contains_none(implementationQuery, "symbol->name");
+    assert_text_contains_none(implementationQuery, "memberName");
+    assert_text_contains_none(implementationQuery, "referenceTracker");
+    assert_text_contains_none(implementationQuery, "strstr");
+    assert_text_contains(
+        editorFeatures,
+        "ZrLanguageServer_LspSemanticImplementationQuery_Append");
+    assert_text_contains(
+        analysis,
+        "ZrParser_SemanticRelations_PublishCompilerContracts");
+
+    free(implementationQuery);
+    free(editorFeatures);
+    free(analysis);
+}
+
 static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1514,6 +1552,7 @@ int main(void) {
     test_reference_tracker_uses_canonical_identity_and_snapshot_source();
     test_local_reference_consumers_use_parser_relation_queries();
     test_local_definition_consumer_uses_snapshot_source();
+    test_local_implementation_consumer_uses_parser_relations();
     test_extern_callable_decorators_use_parser_diagnostic_projection();
     test_extern_enum_decorators_use_parser_diagnostic_projection();
     test_extern_struct_decorators_use_parser_diagnostic_projection();
@@ -1579,6 +1618,7 @@ int main(void) {
     printf("PASS: Reference tracker uses SymbolId and snapshot source identity\n");
     printf("PASS: Local references and highlights use parser relation queries\n");
     printf("PASS: Local definition uses analyzer snapshot source identity\n");
+    printf("PASS: Local implementation uses parser relation queries\n");
     printf("PASS: Extern callable decorators use parser diagnostic projection\n");
     printf("PASS: Duplicate type uses parser diagnostic projection\n");
     printf("PASS: Return type inference uses parser diagnostic projection\n");
