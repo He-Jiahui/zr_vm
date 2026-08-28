@@ -283,22 +283,31 @@ static void test_aot_c_source_prepares_known_member_calls_with_argument_source(v
             "aot_runtime_try_prepare_direct_call(SZrState *state,",
             "ZrCore_Closure_GetMetadataFunctionFromValue(state, functionValue)",
             "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(SZrState *state,",
-            "state->callInfoList == directCall->callerCallInfo",
+            "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(",
+            "TZrBool invocationSucceeded",
+            "state->callInfoList != directCall->calleeCallInfo",
+            "state->callInfoList != directCall->callerCallInfo",
             "aot_runtime_frame_resume_index(frame, state->callInfoList, outResumeInstructionIndex)",
             "state->hasCurrentException &&",
             "state->callInfoList != frame->callInfo",
+            "captureCount = metadataFunction->closureValueLength;",
+            "ZrCore_ClosureNative_New(state, captureCount);",
+            "aot_runtime_bind_native_closure_captures_from_source(",
     };
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(",
             "TZrUInt32 *outResumeInstructionIndex",
     };
     static const char *const llvmLoweringNeedles[] = {
             "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume",
+            "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume",
             "i32 1, ptr %%resume_instruction",
             "backend_aot_llvm_write_resume_dispatch(context->file,",
     };
     static const char *const llvmPreludeNeedles[] = {
             "declare i1 @ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(ptr, ptr, ptr, i32, i32, i32, i32, ptr)",
+            "declare i1 @ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(ptr, ptr, ptr, i1, i32, ptr)",
     };
     static const char *const forbiddenRuntimeNeedles[] = {
             "aot_runtime_try_prepare_direct_native_call",
@@ -338,8 +347,13 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
             "backend_aot_write_c_static_direct_function_call(FILE *file,",
             "const SZrAotExecIrFunction *functionIr",
             "zr_aot_direct_static_function_call",
+            "ZrAotGeneratedDirectCall zr_aot_static_direct_call = {0};",
             "zr_aot_call_result_sync_compact",
-            "ZrLibrary_AotRuntime_CallStaticDirect(state,",
+            "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,",
+            "zr_aot_static_direct_succeeded = (TZrBool)(zr_aot_fn_%u(state) != 0);",
+            "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(",
+            "&zr_aot_next_instruction",
+            "goto zr_aot_fn_%u_dispatch;",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
@@ -414,6 +428,7 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
             "ZrLibrary_AotRuntime_FinishDirectCall",
     };
     static const char *const forbiddenCallBoundaryNeedles[] = {
+            "ZrLibrary_AotRuntime_CallStaticDirect(state,",
             "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u));",
             "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u));",
             "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u));",
@@ -456,14 +471,16 @@ static void test_aot_c_source_makes_meta_calls_explicit_boundary(void) {
     };
     static const char *const runtimeHeaderNeedles[] = {
             "ZrLibrary_AotRuntime_PrepareMetaCall(struct SZrState *state,",
-            "ZrLibrary_AotRuntime_CallPreparedOrGeneric(struct SZrState *state,",
+            "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(struct SZrState *state,",
     };
     static const char *const metaLoweringNeedles[] = {
             "backend_aot_write_c_meta_call(FILE *file,",
             "ZrAotGeneratedDirectCall zr_aot_meta_direct_call = {0};",
             "zr_aot_meta_call_prepare_and_dispatch",
             "ZrLibrary_AotRuntime_PrepareMetaCall(state,",
-            "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,",
+            "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(state,",
+            "&zr_aot_next_instruction",
+            "goto zr_aot_fn_%u_dispatch;",
             "(unsigned)(argumentCount + 1u)",
             "zr_aot_meta_call_sync_i64_local_boundary",
             "zr_aot_meta_call_sync_bool_local_boundary",

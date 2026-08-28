@@ -272,7 +272,9 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStackValue(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume("));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=1"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "zr_aot_s_value = zr_aot_source->value.nativeObject.nativeInt64;"));
@@ -288,7 +290,7 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Function_PostCall(state, zr_aot_call_info, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Function_CallAndRestoreAnchor(state, &zr_aot_call_anchor, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Function_StackAnchorRestore(state, &zr_aot_destination_anchor)"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_FinishDirectCall"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_Call(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText,
@@ -620,7 +622,8 @@ static void test_aot_c_generated_shared_library_executes_stack_value_call_local_
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_call_result_sync_compact */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume("));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call_sync_i64_local_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame,"));
@@ -892,9 +895,11 @@ static void test_aot_c_generated_shared_library_compiles_meta_call_boundary(void
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &options));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_unsupported_meta_call"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "unsupported AOT meta call"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_meta_call_prepare_and_dispatch"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrAotGeneratedDirectCall zr_aot_meta_direct_call = {0};"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareMetaCall(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_0_dispatch;"));
     TEST_ASSERT_NULL(strstr(generatedCText, "const TZrUInt32 zr_aot_argument_count = 1;"));
     TEST_ASSERT_NULL(strstr(generatedCText,
                             "SZrTypeValue *zr_aot_receiver = ZrCore_Stack_GetValue(frame.slotBase + 1);"));
@@ -902,9 +907,9 @@ static void test_aot_c_generated_shared_library_compiles_meta_call_boundary(void
                             "SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + 0);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Debug_RunError(state, \"unsupported AOT meta call\")"));
     TEST_ASSERT_NULL(strstr(generatedCText, "backend_aot_write_c_direct_meta_call"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrAotGeneratedDirectCall zr_aot_direct_call"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareMetaCall"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_unsupported_meta_call"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "unsupported AOT meta call"));
     free(generatedCText);
 
     snprintf(command,

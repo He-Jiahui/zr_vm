@@ -1132,6 +1132,14 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(
         TZrUInt32 resultCount,
         TZrUInt32 *outResumeInstructionIndex);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(
+        struct SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        ZrAotGeneratedDirectCall *directCall,
+        TZrBool invocationSucceeded,
+        TZrUInt32 resultCount,
+        TZrUInt32 *outResumeInstructionIndex);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CallStackValue(struct SZrState *state,
                                                            ZrAotGeneratedFrame *frame,
                                                            TZrUInt32 destinationSlot,

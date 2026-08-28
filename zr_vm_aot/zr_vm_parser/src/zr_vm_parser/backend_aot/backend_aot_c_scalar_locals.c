@@ -1,6 +1,7 @@
 #include "backend_aot_c_scalar_locals.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_stack_copy.h"
@@ -3002,17 +3003,21 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_write(EZrAotScal
         sourceKind = slotKinds[sourceSlot];
         if (sourceKind == ZR_AOT_SCALAR_LOCAL_KIND_NONE &&
             declaredSlotKinds != ZR_NULL &&
-            sourceSlot < slotCount) {
-            sourceKind = declaredSlotKinds[sourceSlot];
-        }
-        if (sourceKind == ZR_AOT_SCALAR_LOCAL_KIND_NONE &&
-            declaredSlotKinds != ZR_NULL &&
             ((functionIr != ZR_NULL && sourceSlot < functionIr->frameLayout.parameterCount) ||
              sourceSlot < function->parameterCount)) {
-            sourceKind = declaredSlotKinds[destinationSlot];
+            sourceKind = declaredSlotKinds[sourceSlot];
         }
         backend_aot_c_scalar_locals_set_slot(
                 slotKinds, slotCount, destinationSlot, sourceKind);
+        return;
+    }
+
+    if (instruction->instruction.operandExtra < slotCount) {
+        backend_aot_c_scalar_locals_set_slot(
+                slotKinds,
+                slotCount,
+                instruction->instruction.operandExtra,
+                ZR_AOT_SCALAR_LOCAL_KIND_NONE);
     }
 }
 
@@ -3152,125 +3157,61 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_bool_value_write
         }
 
         backend_aot_c_scalar_locals_set_slot(slotKinds, slotCount, destinationSlot, slotKinds[sourceSlot]);
+        return;
+    }
+
+    if (destinationSlot < slotCount) {
+        backend_aot_c_scalar_locals_set_slot(
+                slotKinds, slotCount, destinationSlot, ZR_AOT_SCALAR_LOCAL_KIND_NONE);
     }
 }
 
-static EZrAotScalarLocalKind backend_aot_c_scalar_locals_range_latest_kind(
+static void backend_aot_c_scalar_locals_record_range_state(
+        EZrAotScalarLocalKind *slotKinds,
+        const EZrAotScalarLocalKind *declaredKinds,
         const SZrFunction *function,
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 slotCount,
-        TZrUInt32 slot,
         TZrUInt32 firstExecInstructionIndex,
         TZrUInt32 endExecInstructionIndex,
-        TZrBool *outObservedWrite) {
-    EZrAotScalarLocalKind *writtenKinds;
-    EZrAotScalarLocalKind *declaredKinds;
+        TZrBool boolValueOnly) {
     TZrUInt32 instructionIndex;
-    EZrAotScalarLocalKind result;
 
-    if (outObservedWrite != ZR_NULL) {
-        *outObservedWrite = ZR_FALSE;
-    }
-    if (function == ZR_NULL ||
-        slot >= slotCount ||
+    if (slotKinds == ZR_NULL ||
+        function == ZR_NULL ||
+        function->instructionsList == ZR_NULL ||
         firstExecInstructionIndex > endExecInstructionIndex) {
-        return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
+        return;
+    }
+    if (endExecInstructionIndex > function->instructionsLength) {
+        endExecInstructionIndex = (TZrUInt32)function->instructionsLength;
     }
 
-    writtenKinds = (EZrAotScalarLocalKind *)calloc((size_t)slotCount, sizeof(EZrAotScalarLocalKind));
-    declaredKinds = (EZrAotScalarLocalKind *)calloc((size_t)slotCount, sizeof(EZrAotScalarLocalKind));
-    if (writtenKinds == ZR_NULL || declaredKinds == ZR_NULL) {
-        free(writtenKinds);
-        free(declaredKinds);
-        return ZR_AOT_SCALAR_LOCAL_KIND_NONE;
-    }
+    for (instructionIndex = firstExecInstructionIndex;
+         instructionIndex < endExecInstructionIndex;
+         instructionIndex++) {
+        TZrUInt32 observedSlot = function->instructionsList[instructionIndex].instruction.operandExtra;
 
-    backend_aot_c_scalar_locals_record_all(declaredKinds, slotCount, function);
-    for (instructionIndex = firstExecInstructionIndex; instructionIndex < endExecInstructionIndex; instructionIndex++) {
-        if (outObservedWrite != ZR_NULL &&
-            function->instructionsList != ZR_NULL &&
-            backend_aot_c_scalar_locals_instruction_overwrites_slot_as_any_scalar(
-                    functionIr, &function->instructionsList[instructionIndex], slot)) {
-            *outObservedWrite = ZR_TRUE;
+        if (boolValueOnly) {
+            backend_aot_c_scalar_locals_record_exec_instruction_bool_value_write(
+                    slotKinds,
+                    slotCount,
+                    declaredKinds,
+                    functionIr,
+                    function,
+                    instructionIndex,
+                    observedSlot);
+        } else {
+            backend_aot_c_scalar_locals_record_exec_instruction_write(
+                    slotKinds,
+                    slotCount,
+                    declaredKinds,
+                    functionIr,
+                    function,
+                    instructionIndex,
+                    observedSlot);
         }
-        backend_aot_c_scalar_locals_record_exec_instruction_write(
-                writtenKinds, slotCount, declaredKinds, functionIr, function, instructionIndex, slot);
     }
-
-    result = writtenKinds[slot];
-    free(writtenKinds);
-    free(declaredKinds);
-    return result;
-}
-
-static TZrBool backend_aot_c_scalar_locals_range_writes_kind(const SZrFunction *function,
-                                                             const SZrAotExecIrFunction *functionIr,
-                                                             TZrUInt32 slotCount,
-                                                             TZrUInt32 slot,
-                                                             TZrUInt32 firstExecInstructionIndex,
-                                                             TZrUInt32 endExecInstructionIndex,
-                                                             EZrAotScalarLocalKind expectedKind) {
-    EZrAotScalarLocalKind latestKind;
-
-    if (expectedKind == ZR_AOT_SCALAR_LOCAL_KIND_NONE) {
-        return ZR_FALSE;
-    }
-
-    latestKind = backend_aot_c_scalar_locals_range_latest_kind(function,
-                                                               functionIr,
-                                                               slotCount,
-                                                               slot,
-                                                               firstExecInstructionIndex,
-                                                               endExecInstructionIndex,
-                                                               ZR_NULL);
-    return (TZrBool)((latestKind & expectedKind) == expectedKind);
-}
-
-static TZrBool backend_aot_c_scalar_locals_range_writes_bool_value(const SZrFunction *function,
-                                                                   const SZrAotExecIrFunction *functionIr,
-                                                                   TZrUInt32 slotCount,
-                                                                   TZrUInt32 slot,
-                                                                   TZrUInt32 firstExecInstructionIndex,
-                                                                   TZrUInt32 endExecInstructionIndex,
-                                                                   TZrBool *outObservedWrite) {
-    EZrAotScalarLocalKind *writtenKinds;
-    EZrAotScalarLocalKind *declaredKinds;
-    TZrUInt32 instructionIndex;
-    TZrBool result;
-
-    if (outObservedWrite != ZR_NULL) {
-        *outObservedWrite = ZR_FALSE;
-    }
-    if (function == ZR_NULL ||
-        slot >= slotCount ||
-        firstExecInstructionIndex > endExecInstructionIndex) {
-        return ZR_FALSE;
-    }
-
-    writtenKinds = (EZrAotScalarLocalKind *)calloc((size_t)slotCount, sizeof(EZrAotScalarLocalKind));
-    declaredKinds = (EZrAotScalarLocalKind *)calloc((size_t)slotCount, sizeof(EZrAotScalarLocalKind));
-    if (writtenKinds == ZR_NULL || declaredKinds == ZR_NULL) {
-        free(writtenKinds);
-        free(declaredKinds);
-        return ZR_FALSE;
-    }
-
-    backend_aot_c_scalar_locals_record_all(declaredKinds, slotCount, function);
-    for (instructionIndex = firstExecInstructionIndex; instructionIndex < endExecInstructionIndex; instructionIndex++) {
-        if (outObservedWrite != ZR_NULL &&
-            function->instructionsList != ZR_NULL &&
-            backend_aot_c_scalar_locals_instruction_overwrites_slot_as_any_scalar(
-                    functionIr, &function->instructionsList[instructionIndex], slot)) {
-            *outObservedWrite = ZR_TRUE;
-        }
-        backend_aot_c_scalar_locals_record_exec_instruction_bool_value_write(
-                writtenKinds, slotCount, declaredKinds, functionIr, function, instructionIndex, slot);
-    }
-
-    result = (TZrBool)((writtenKinds[slot] & ZR_AOT_SCALAR_LOCAL_KIND_BOOL) != 0);
-    free(writtenKinds);
-    free(declaredKinds);
-    return result;
 }
 
 static void backend_aot_c_scalar_locals_mark_reachable_blocks(const SZrAotExecIrFunction *functionIr,
@@ -3309,190 +3250,162 @@ static void backend_aot_c_scalar_locals_mark_reachable_blocks(const SZrAotExecIr
     } while (changed);
 }
 
-static TZrBool backend_aot_c_scalar_locals_block_entry_has_kind(const SZrAotExecIrFunction *functionIr,
-                                                                const TZrBool *reachableBlocks,
-                                                                const TZrBool *blockOut,
-                                                                TZrUInt32 blockIndex) {
-    TZrUInt32 predecessorIndex;
-    TZrBool hasReachablePredecessor = ZR_FALSE;
-    TZrBool result = ZR_TRUE;
-
-    if (functionIr == ZR_NULL ||
-        functionIr->basicBlocks == ZR_NULL ||
-        reachableBlocks == ZR_NULL ||
-        blockOut == ZR_NULL ||
-        blockIndex >= functionIr->basicBlockCount ||
-        blockIndex == 0u ||
-        !reachableBlocks[blockIndex]) {
-        return ZR_FALSE;
-    }
-
-    for (predecessorIndex = 0u; predecessorIndex < functionIr->basicBlockCount; predecessorIndex++) {
-        const SZrAotExecIrBasicBlock *predecessor = &functionIr->basicBlocks[predecessorIndex];
-        TZrUInt32 successorIndex;
-
-        if (!reachableBlocks[predecessorIndex]) {
-            continue;
-        }
-
-        for (successorIndex = 0u; successorIndex < predecessor->successorCount; successorIndex++) {
-            if (predecessor->successorBlockIndices[successorIndex] != blockIndex) {
-                continue;
-            }
-
-            hasReachablePredecessor = ZR_TRUE;
-            if (!blockOut[predecessorIndex]) {
-                result = ZR_FALSE;
-            }
-            break;
-        }
-    }
-
-    return (TZrBool)(hasReachablePredecessor && result);
-}
-
-static TZrBool backend_aot_c_scalar_locals_kind_written_at_block_entry(
+static TZrBool backend_aot_c_scalar_locals_compute_block_entry_state(
         const SZrAotExecIrFunction *functionIr,
         const SZrFunction *function,
         TZrUInt32 slotCount,
-        TZrUInt32 slot,
         TZrUInt32 targetBlockIndex,
-        EZrAotScalarLocalKind expectedKind) {
-    TZrBool *blockWrites;
-    TZrBool *blockIn;
-    TZrBool *blockOut;
+        TZrBool boolValueOnly,
+        EZrAotScalarLocalKind *outEntryKinds) {
+    EZrAotScalarLocalKind *declaredKinds;
+    EZrAotScalarLocalKind *blockInKinds;
+    EZrAotScalarLocalKind *blockOutKinds;
+    EZrAotScalarLocalKind *mergedKinds;
+    EZrAotScalarLocalKind *transferredKinds;
     TZrBool *reachableBlocks;
+    size_t stateCount;
     TZrUInt32 blockIndex;
     TZrBool changed;
-    TZrBool result;
 
     if (functionIr == ZR_NULL ||
         function == ZR_NULL ||
         functionIr->basicBlocks == ZR_NULL ||
         functionIr->basicBlockCount == 0u ||
         targetBlockIndex >= functionIr->basicBlockCount ||
-        slot >= slotCount) {
+        slotCount == 0u ||
+        outEntryKinds == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((size_t)functionIr->basicBlockCount > ((size_t)-1) / (size_t)slotCount) {
         return ZR_FALSE;
     }
 
-    blockWrites = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
-    blockIn = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
-    blockOut = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
+    stateCount = (size_t)functionIr->basicBlockCount * (size_t)slotCount;
+    declaredKinds = (EZrAotScalarLocalKind *)calloc((size_t)slotCount, sizeof(EZrAotScalarLocalKind));
+    blockInKinds = (EZrAotScalarLocalKind *)calloc(stateCount, sizeof(EZrAotScalarLocalKind));
+    blockOutKinds = (EZrAotScalarLocalKind *)calloc(stateCount, sizeof(EZrAotScalarLocalKind));
+    mergedKinds = (EZrAotScalarLocalKind *)calloc((size_t)slotCount, sizeof(EZrAotScalarLocalKind));
+    transferredKinds = (EZrAotScalarLocalKind *)calloc((size_t)slotCount, sizeof(EZrAotScalarLocalKind));
     reachableBlocks = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
-    if (blockWrites == ZR_NULL || blockIn == ZR_NULL || blockOut == ZR_NULL || reachableBlocks == ZR_NULL) {
-        free(blockWrites);
-        free(blockIn);
-        free(blockOut);
+    if (declaredKinds == ZR_NULL || blockInKinds == ZR_NULL || blockOutKinds == ZR_NULL ||
+        mergedKinds == ZR_NULL || transferredKinds == ZR_NULL || reachableBlocks == ZR_NULL) {
+        free(declaredKinds);
+        free(blockInKinds);
+        free(blockOutKinds);
+        free(mergedKinds);
+        free(transferredKinds);
         free(reachableBlocks);
         return ZR_FALSE;
     }
 
+    backend_aot_c_scalar_locals_record_all(declaredKinds, slotCount, function);
     backend_aot_c_scalar_locals_mark_reachable_blocks(functionIr, reachableBlocks);
-    for (blockIndex = 0u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
-        const SZrAotExecIrBasicBlock *block = &functionIr->basicBlocks[blockIndex];
-        TZrUInt32 blockEnd = block->firstExecInstructionIndex + block->instructionCount;
-        blockWrites[blockIndex] = backend_aot_c_scalar_locals_range_writes_kind(function,
-                                                                                functionIr,
-                                                                                slotCount,
-                                                                                slot,
-                                                                                block->firstExecInstructionIndex,
-                                                                                blockEnd,
-                                                                                expectedKind);
-    }
+    for (blockIndex = 1u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
+        if (reachableBlocks[blockIndex]) {
+            TZrUInt32 slotIndex;
+            EZrAotScalarLocalKind topKind = (EZrAotScalarLocalKind)(
+                    ZR_AOT_SCALAR_LOCAL_KIND_BOOL |
+                    ZR_AOT_SCALAR_LOCAL_KIND_I64 |
+                    ZR_AOT_SCALAR_LOCAL_KIND_U64 |
+                    ZR_AOT_SCALAR_LOCAL_KIND_F64);
 
+            for (slotIndex = 0u; slotIndex < slotCount; slotIndex++) {
+                blockInKinds[(size_t)blockIndex * slotCount + slotIndex] = topKind;
+                blockOutKinds[(size_t)blockIndex * slotCount + slotIndex] = topKind;
+            }
+        }
+    }
     do {
         changed = ZR_FALSE;
         for (blockIndex = 0u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
-            TZrBool newIn = backend_aot_c_scalar_locals_block_entry_has_kind(
-                    functionIr, reachableBlocks, blockOut, blockIndex);
-            TZrBool newOut = (TZrBool)(newIn || blockWrites[blockIndex]);
+            const SZrAotExecIrBasicBlock *block = &functionIr->basicBlocks[blockIndex];
+            EZrAotScalarLocalKind *blockIn = blockInKinds + (size_t)blockIndex * slotCount;
+            EZrAotScalarLocalKind *blockOut = blockOutKinds + (size_t)blockIndex * slotCount;
+            TZrBool hasReachablePredecessor = ZR_FALSE;
+            TZrUInt32 predecessorIndex;
 
-            if (blockIn[blockIndex] != newIn || blockOut[blockIndex] != newOut) {
-                blockIn[blockIndex] = newIn;
-                blockOut[blockIndex] = newOut;
+            memset(mergedKinds, 0, (size_t)slotCount * sizeof(EZrAotScalarLocalKind));
+            if (blockIndex != 0u && reachableBlocks[blockIndex]) {
+                for (predecessorIndex = 0u;
+                     predecessorIndex < functionIr->basicBlockCount;
+                     predecessorIndex++) {
+                    const SZrAotExecIrBasicBlock *predecessor =
+                            &functionIr->basicBlocks[predecessorIndex];
+                    TZrUInt32 successorIndex;
+
+                    if (!reachableBlocks[predecessorIndex]) {
+                        continue;
+                    }
+                    for (successorIndex = 0u;
+                         successorIndex < predecessor->successorCount;
+                         successorIndex++) {
+                        TZrUInt32 slotIndex;
+                        const EZrAotScalarLocalKind *predecessorOut;
+
+                        if (predecessor->successorBlockIndices[successorIndex] != blockIndex) {
+                            continue;
+                        }
+                        predecessorOut = blockOutKinds + (size_t)predecessorIndex * slotCount;
+                        if (!hasReachablePredecessor) {
+                            memcpy(mergedKinds,
+                                   predecessorOut,
+                                   (size_t)slotCount * sizeof(EZrAotScalarLocalKind));
+                            hasReachablePredecessor = ZR_TRUE;
+                        } else {
+                            for (slotIndex = 0u; slotIndex < slotCount; slotIndex++) {
+                                mergedKinds[slotIndex] = (EZrAotScalarLocalKind)(
+                                        mergedKinds[slotIndex] & predecessorOut[slotIndex]);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (memcmp(blockIn,
+                       mergedKinds,
+                       (size_t)slotCount * sizeof(EZrAotScalarLocalKind)) != 0) {
+                memcpy(blockIn,
+                       mergedKinds,
+                       (size_t)slotCount * sizeof(EZrAotScalarLocalKind));
+                changed = ZR_TRUE;
+            }
+
+            memcpy(transferredKinds,
+                   mergedKinds,
+                   (size_t)slotCount * sizeof(EZrAotScalarLocalKind));
+            if (reachableBlocks[blockIndex]) {
+                backend_aot_c_scalar_locals_record_range_state(
+                        transferredKinds,
+                        declaredKinds,
+                        function,
+                        functionIr,
+                        slotCount,
+                        block->firstExecInstructionIndex,
+                        block->firstExecInstructionIndex + block->instructionCount,
+                        boolValueOnly);
+            }
+            if (memcmp(blockOut,
+                       transferredKinds,
+                       (size_t)slotCount * sizeof(EZrAotScalarLocalKind)) != 0) {
+                memcpy(blockOut,
+                       transferredKinds,
+                       (size_t)slotCount * sizeof(EZrAotScalarLocalKind));
                 changed = ZR_TRUE;
             }
         }
     } while (changed);
 
-    result = blockIn[targetBlockIndex];
-    free(blockWrites);
-    free(blockIn);
-    free(blockOut);
+    memcpy(outEntryKinds,
+           blockInKinds + (size_t)targetBlockIndex * slotCount,
+           (size_t)slotCount * sizeof(EZrAotScalarLocalKind));
+    free(declaredKinds);
+    free(blockInKinds);
+    free(blockOutKinds);
+    free(mergedKinds);
+    free(transferredKinds);
     free(reachableBlocks);
-    return result;
-}
-
-static TZrBool backend_aot_c_scalar_locals_bool_value_written_at_block_entry(
-        const SZrAotExecIrFunction *functionIr,
-        const SZrFunction *function,
-        TZrUInt32 slotCount,
-        TZrUInt32 slot,
-        TZrUInt32 targetBlockIndex) {
-    TZrBool *blockWrites;
-    TZrBool *blockIn;
-    TZrBool *blockOut;
-    TZrBool *reachableBlocks;
-    TZrUInt32 blockIndex;
-    TZrBool changed;
-    TZrBool result;
-
-    if (functionIr == ZR_NULL ||
-        function == ZR_NULL ||
-        functionIr->basicBlocks == ZR_NULL ||
-        functionIr->basicBlockCount == 0u ||
-        targetBlockIndex >= functionIr->basicBlockCount ||
-        slot >= slotCount) {
-        return ZR_FALSE;
-    }
-
-    blockWrites = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
-    blockIn = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
-    blockOut = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
-    reachableBlocks = (TZrBool *)calloc((size_t)functionIr->basicBlockCount, sizeof(TZrBool));
-    if (blockWrites == ZR_NULL || blockIn == ZR_NULL || blockOut == ZR_NULL || reachableBlocks == ZR_NULL) {
-        free(blockWrites);
-        free(blockIn);
-        free(blockOut);
-        free(reachableBlocks);
-        return ZR_FALSE;
-    }
-
-    backend_aot_c_scalar_locals_mark_reachable_blocks(functionIr, reachableBlocks);
-    for (blockIndex = 0u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
-        const SZrAotExecIrBasicBlock *block = &functionIr->basicBlocks[blockIndex];
-        TZrUInt32 blockEnd = block->firstExecInstructionIndex + block->instructionCount;
-        blockWrites[blockIndex] = backend_aot_c_scalar_locals_range_writes_bool_value(
-                function,
-                functionIr,
-                slotCount,
-                slot,
-                block->firstExecInstructionIndex,
-                blockEnd,
-                ZR_NULL);
-    }
-
-    do {
-        changed = ZR_FALSE;
-        for (blockIndex = 0u; blockIndex < functionIr->basicBlockCount; blockIndex++) {
-            TZrBool newIn = backend_aot_c_scalar_locals_block_entry_has_kind(
-                    functionIr, reachableBlocks, blockOut, blockIndex);
-            TZrBool newOut = (TZrBool)(newIn || blockWrites[blockIndex]);
-
-            if (blockIn[blockIndex] != newIn || blockOut[blockIndex] != newOut) {
-                blockIn[blockIndex] = newIn;
-                blockOut[blockIndex] = newOut;
-                changed = ZR_TRUE;
-            }
-        }
-    } while (changed);
-
-    result = blockIn[targetBlockIndex];
-    free(blockWrites);
-    free(blockIn);
-    free(blockOut);
-    free(reachableBlocks);
-    return result;
+    return ZR_TRUE;
 }
 
 static TZrUInt32 backend_aot_c_scalar_locals_slot_count(const SZrAotExecIrFunction *functionIr) {
@@ -3947,12 +3860,13 @@ static TZrBool backend_aot_c_scalar_locals_kind_written_before(const SZrAotExecI
                                                                TZrUInt32 execInstructionIndex,
                                                                EZrAotScalarLocalKind expectedKind) {
     const SZrFunction *function;
+    EZrAotScalarLocalKind *declaredKinds;
+    EZrAotScalarLocalKind *reachingKinds;
     TZrUInt32 slotCount;
     TZrUInt32 blockIndex;
     TZrUInt32 blockStart;
     TZrUInt32 blockEnd;
-    EZrAotScalarLocalKind latestKind;
-    TZrBool observedWrite;
+    TZrBool result;
 
     if (functionIr == ZR_NULL ||
         functionIr->function == ZR_NULL ||
@@ -3969,18 +3883,40 @@ static TZrBool backend_aot_c_scalar_locals_kind_written_before(const SZrAotExecI
     }
 
     (void)blockEnd;
-    latestKind = backend_aot_c_scalar_locals_range_latest_kind(function,
-                                                              functionIr,
-                                                              slotCount,
-                                                              slot,
-                                                              blockStart,
-                                                              execInstructionIndex,
-                                                              &observedWrite);
-    if (observedWrite || latestKind != ZR_AOT_SCALAR_LOCAL_KIND_NONE) {
-        return (TZrBool)((latestKind & expectedKind) == expectedKind);
+    declaredKinds = (EZrAotScalarLocalKind *)calloc(
+            (size_t)slotCount, sizeof(EZrAotScalarLocalKind));
+    reachingKinds = (EZrAotScalarLocalKind *)calloc(
+            (size_t)slotCount, sizeof(EZrAotScalarLocalKind));
+    if (declaredKinds == ZR_NULL || reachingKinds == ZR_NULL) {
+        free(declaredKinds);
+        free(reachingKinds);
+        return ZR_FALSE;
     }
-    return backend_aot_c_scalar_locals_kind_written_at_block_entry(
-            functionIr, function, slotCount, slot, blockIndex, expectedKind);
+
+    backend_aot_c_scalar_locals_record_all(declaredKinds, slotCount, function);
+    result = backend_aot_c_scalar_locals_compute_block_entry_state(
+            functionIr,
+            function,
+            slotCount,
+            blockIndex,
+            ZR_FALSE,
+            reachingKinds);
+    if (result) {
+        backend_aot_c_scalar_locals_record_range_state(
+                reachingKinds,
+                declaredKinds,
+                function,
+                functionIr,
+                slotCount,
+                blockStart,
+                execInstructionIndex,
+                ZR_FALSE);
+        result = (TZrBool)((reachingKinds[slot] & expectedKind) == expectedKind);
+    }
+
+    free(declaredKinds);
+    free(reachingKinds);
+    return result;
 }
 
 TZrBool backend_aot_c_scalar_locals_bool_written_before(const SZrAotExecIrFunction *functionIr,
@@ -3994,12 +3930,13 @@ TZrBool backend_aot_c_scalar_locals_bool_value_written_before(const SZrAotExecIr
                                                               TZrUInt32 slot,
                                                               TZrUInt32 execInstructionIndex) {
     const SZrFunction *function;
+    EZrAotScalarLocalKind *declaredKinds;
+    EZrAotScalarLocalKind *reachingKinds;
     TZrUInt32 slotCount;
     TZrUInt32 blockIndex;
     TZrUInt32 blockStart;
     TZrUInt32 blockEnd;
     TZrBool result;
-    TZrBool observedWrite;
 
     if (functionIr == ZR_NULL ||
         functionIr->function == ZR_NULL ||
@@ -4020,13 +3957,40 @@ TZrBool backend_aot_c_scalar_locals_bool_value_written_before(const SZrAotExecIr
     }
 
     (void)blockEnd;
-    result = backend_aot_c_scalar_locals_range_writes_bool_value(
-            function, functionIr, slotCount, slot, blockStart, execInstructionIndex, &observedWrite);
-    if (observedWrite) {
-        return result;
+    declaredKinds = (EZrAotScalarLocalKind *)calloc(
+            (size_t)slotCount, sizeof(EZrAotScalarLocalKind));
+    reachingKinds = (EZrAotScalarLocalKind *)calloc(
+            (size_t)slotCount, sizeof(EZrAotScalarLocalKind));
+    if (declaredKinds == ZR_NULL || reachingKinds == ZR_NULL) {
+        free(declaredKinds);
+        free(reachingKinds);
+        return ZR_FALSE;
     }
-    return backend_aot_c_scalar_locals_bool_value_written_at_block_entry(
-            functionIr, function, slotCount, slot, blockIndex);
+
+    backend_aot_c_scalar_locals_record_all(declaredKinds, slotCount, function);
+    result = backend_aot_c_scalar_locals_compute_block_entry_state(
+            functionIr,
+            function,
+            slotCount,
+            blockIndex,
+            ZR_TRUE,
+            reachingKinds);
+    if (result) {
+        backend_aot_c_scalar_locals_record_range_state(
+                reachingKinds,
+                declaredKinds,
+                function,
+                functionIr,
+                slotCount,
+                blockStart,
+                execInstructionIndex,
+                ZR_TRUE);
+        result = (TZrBool)((reachingKinds[slot] & ZR_AOT_SCALAR_LOCAL_KIND_BOOL) != 0);
+    }
+
+    free(declaredKinds);
+    free(reachingKinds);
+    return result;
 }
 
 TZrBool backend_aot_c_scalar_locals_f64_written_before(const SZrAotExecIrFunction *functionIr,

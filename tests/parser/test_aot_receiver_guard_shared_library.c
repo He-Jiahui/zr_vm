@@ -42,10 +42,14 @@ void tearDown(void) {}
 static const char *receiver_guard_source(void) {
     return "resource class Service {\n"
            "    pub const fn add(value: int): int { return value + 10; }\n"
-           "    pub const @call(value: int): int { return value + 20; }\n"
+           "    pub const @call(value: int): int {\n"
+           "        if (value == 99) { throw \"receiver guard callable failure\"; }\n"
+           "        return value + 20;\n"
+           "    }\n"
            "    pub const fn explode(): int { throw \"receiver guard suffix failure\"; }\n"
            "}\n"
            "fn failIfEvaluated(): int { throw \"receiver guard evaluated arguments\"; }\n"
+           "fn tailCall(target: Weak<Service>, value: int): int { return target(value); }\n"
            "fn run(): int {\n"
            "    var seed = own Service();\n"
            "    var shared = share(seed);\n"
@@ -58,6 +62,12 @@ static const char *receiver_guard_source(void) {
            "    var suffixCaught = false;\n"
            "    try { weak.explode(); }\n"
            "    catch (error) { suffixCaught = true; }\n"
+           "    var callableSuffixCaught = false;\n"
+           "    try { weak(99); }\n"
+           "    catch (error) { callableSuffixCaught = true; }\n"
+           "    var tailCallableCaught = false;\n"
+           "    try { tailCall(weak, 99); }\n"
+           "    catch (error) { tailCallableCaught = true; }\n"
            "    drop(shared);\n"
            "    var afterSuffixThrow = wake(weak);\n"
            "    var suffixWakeReleased = afterSuffixThrow == null;\n"
@@ -69,7 +79,7 @@ static const char *receiver_guard_source(void) {
            "    var callableCaught = 0;\n"
            "    try { weak(failIfEvaluated()); }\n"
            "    catch (error: NullReferenceError) { callableCaught = 1; }\n"
-           "    if (suffixCaught && suffixWakeReleased &&\n"
+           "    if (suffixCaught && callableSuffixCaught && tailCallableCaught && suffixWakeReleased &&\n"
            "        expired == null && expiredCallable == null) {\n"
            "        return observed + caught + callableCaught + 999;\n"
            "    }\n"
@@ -122,6 +132,65 @@ static const char *intrinsic_named_members_source(void) {
            "return run();\n";
 }
 
+static const char *scalar_stack_copy_overwrite_source(void) {
+    return "class Box {\n"
+           "    pub var value: int;\n"
+           "    pub @constructor(value: int) { this.value = value; }\n"
+           "}\n"
+           "fn identity<T>(value: T): T { return value; }\n"
+           "fn overwriteScalar(): object {\n"
+           "    var value: object = 0;\n"
+           "    var copied: object = value;\n"
+           "    value = new Box(7);\n"
+           "    copied = value;\n"
+           "    return copied;\n"
+           "}\n"
+           "fn copyScalarAcrossJoin(flag: bool): int {\n"
+           "    var source: object = 1;\n"
+           "    if (flag) { source = 7; } else { source = 7; }\n"
+           "    var first: int = source;\n"
+           "    var second: int = first;\n"
+           "    if (second == 7) { return second; }\n"
+           "    return 94;\n"
+           "}\n"
+           "fn copyScalarParameter(value: int): int {\n"
+           "    var mixed: object = true;\n"
+           "    mixed = value;\n"
+           "    var copied: int = mixed;\n"
+           "    if (copied == value) { return copied; }\n"
+           "    return 95;\n"
+           "}\n"
+           "fn copyAcrossMixedJoin(flag: bool): object {\n"
+           "    var source: object = <object> 1;\n"
+           "    if (flag) { source = <object> 7; }\n"
+           "    else { source = <object> new Box(8); }\n"
+           "    var copied: object = source;\n"
+           "    return copied;\n"
+           "}\n"
+           "fn copyScalarLoop(limit: int): int {\n"
+           "    var source: object = 1;\n"
+           "    var index = 0;\n"
+           "    while (index < limit) {\n"
+           "        source = index + 2;\n"
+           "        index = index + 1;\n"
+           "    }\n"
+           "    var first: int = source;\n"
+           "    var second: int = first;\n"
+           "    return second;\n"
+           "}\n"
+           "var mixed = 0;\n"
+           "if (identity<bool>(true)) { mixed = identity<int>(3); }\n"
+           "if (!identity<bool>(false)) { mixed = mixed + 4; }\n"
+           "if (mixed != 7) { return 90; }\n"
+           "if (copyScalarAcrossJoin(true) != 7) { return 92; }\n"
+           "if (copyScalarAcrossJoin(false) != 7) { return 93; }\n"
+           "if (copyScalarParameter(8) != 8) { return 96; }\n"
+           "if (copyAcrossMixedJoin(false) == null) { return 97; }\n"
+           "if (copyScalarLoop(3) != 4) { return 98; }\n"
+           "if (overwriteScalar().value == 7) { return 7; }\n"
+           "return 91;\n";
+}
+
 static SZrFunction *compile_source(SZrState *state, const char *source) {
     SZrString *sourceName;
 
@@ -144,6 +213,70 @@ static void write_text_file_or_fail(const TZrChar *path, const char *text) {
     TEST_ASSERT_NOT_NULL(file);
     TEST_ASSERT_EQUAL_size_t(strlen(text), fwrite(text, 1, strlen(text), file));
     TEST_ASSERT_EQUAL_INT(0, fclose(file));
+}
+
+static char *read_text_file_or_fail(const TZrChar *path) {
+    FILE *file;
+    long fileSize;
+    char *text;
+
+    TEST_ASSERT_NOT_NULL(path);
+    file = fopen(path, "rb");
+    TEST_ASSERT_NOT_NULL(file);
+    TEST_ASSERT_EQUAL_INT(0, fseek(file, 0, SEEK_END));
+    fileSize = ftell(file);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT64(0, fileSize);
+    TEST_ASSERT_EQUAL_INT(0, fseek(file, 0, SEEK_SET));
+    text = (char *)malloc((size_t)fileSize + 1u);
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_EQUAL_size_t((size_t)fileSize, fread(text, 1u, (size_t)fileSize, file));
+    text[fileSize] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, fclose(file));
+    return text;
+}
+
+static void assert_text_file_contains(const TZrChar *path, const char *needle) {
+    char *text;
+
+    TEST_ASSERT_NOT_NULL(needle);
+    text = read_text_file_or_fail(path);
+    TEST_ASSERT_NOT_NULL(strstr(text, needle));
+    free(text);
+}
+
+static void assert_text_file_function_contract(const TZrChar *path,
+                                               const char *anchorNeedle,
+                                               const char *requiredNeedle,
+                                               const char *forbiddenNeedle) {
+    static const char functionNeedle[] = "static TZrInt64 zr_aot_fn_";
+    char *text = read_text_file_or_fail(path);
+    char *anchor;
+    char *functionStart = NULL;
+    char *functionEnd;
+    char *candidate;
+
+    TEST_ASSERT_NOT_NULL(anchorNeedle);
+    anchor = strstr(text, anchorNeedle);
+    TEST_ASSERT_NOT_NULL(anchor);
+    candidate = strstr(text, functionNeedle);
+    while (candidate != NULL && candidate <= anchor) {
+        functionStart = candidate;
+        candidate = strstr(candidate + strlen(functionNeedle), functionNeedle);
+    }
+    TEST_ASSERT_NOT_NULL(functionStart);
+    functionEnd = candidate;
+    if (functionEnd == NULL) {
+        functionEnd = strstr(anchor, "static const SZrAotCodeRegistration");
+    }
+    TEST_ASSERT_NOT_NULL(functionEnd);
+    *functionEnd = '\0';
+    if (requiredNeedle != NULL) {
+        TEST_ASSERT_NOT_NULL(strstr(functionStart, requiredNeedle));
+    }
+    if (forbiddenNeedle != NULL) {
+        TEST_ASSERT_NULL(strstr(functionStart, forbiddenNeedle));
+    }
+    free(text);
 }
 
 static void hash_file_or_fail(const TZrChar *path,
@@ -434,6 +567,56 @@ static void test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch(v
 #endif
 }
 
+static void test_aot_c_scalar_stack_copy_honors_nonprimitive_overwrite(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT scalar stack-copy smoke validates the Unix toolchain path");
+#else
+    TZrChar generatedPath[ZR_TESTS_PATH_MAX];
+
+    execute_source_backend(scalar_stack_copy_overwrite_source(),
+                           7,
+                           ZR_AOT_BACKEND_KIND_C,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                           "aot_c_scalar_stack_copy_overwrite",
+                           "aot_c");
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact(
+            "aot_c_scalar_stack_copy_overwrite",
+            "runtime_project/bin/aot_c/src",
+            "main",
+            ".c",
+            generatedPath,
+            sizeof(generatedPath)));
+    assert_text_file_contains(
+            generatedPath,
+            "/* zr_aot_scalar_stack_copy_i64 dstSlot=2 srcSlot=3 */");
+    assert_text_file_function_contract(
+            generatedPath,
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, 3, 4));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CopyStack(state, &frame, 3, 4));",
+            "/* zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=4 */");
+    assert_text_file_function_contract(
+            generatedPath,
+            "/* zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=4 */",
+            "/* zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=4 */",
+            NULL);
+#endif
+}
+
+static void test_aot_llvm_scalar_stack_copy_honors_nonprimitive_overwrite(void) {
+#if !defined(ZR_PLATFORM_UNIX)
+    TEST_IGNORE_MESSAGE("AOT scalar stack-copy smoke validates the Unix toolchain path");
+#else
+    execute_source_backend(scalar_stack_copy_overwrite_source(),
+                           7,
+                           ZR_AOT_BACKEND_KIND_LLVM,
+                           ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM,
+                           ZR_LIBRARY_EXECUTED_VIA_AOT_LLVM,
+                           "aot_llvm_scalar_stack_copy_overwrite",
+                           "aot_llvm");
+#endif
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_receiver_guards_execute_optional_and_direct_contracts);
@@ -442,5 +625,7 @@ int main(void) {
     RUN_TEST(test_aot_llvm_ownership_intrinsics_execute_all_operations);
     RUN_TEST(test_aot_c_optional_intrinsic_named_members_use_normal_dispatch);
     RUN_TEST(test_aot_llvm_optional_intrinsic_named_members_use_normal_dispatch);
+    RUN_TEST(test_aot_c_scalar_stack_copy_honors_nonprimitive_overwrite);
+    RUN_TEST(test_aot_llvm_scalar_stack_copy_honors_nonprimitive_overwrite);
     return UNITY_END();
 }

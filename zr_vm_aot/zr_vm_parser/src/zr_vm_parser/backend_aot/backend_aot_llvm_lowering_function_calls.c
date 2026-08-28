@@ -35,8 +35,8 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
     TZrUInt32 calleeFlatIndex;
     TZrBool isTailCall;
     TZrChar prepareOkLabel[96];
-    TZrChar invokeOkLabel[96];
     TZrChar finishOkLabel[96];
+    TZrChar tailReturnLabel[96];
     TZrChar calleeName[64];
     TZrChar argsBuffer[256];
 
@@ -232,18 +232,23 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
                                             context->entry->flatIndex,
                                             instruction->instructionIndex,
                                             "prepare_ok");
-    backend_aot_llvm_make_instruction_label(invokeOkLabel,
-                                            sizeof(invokeOkLabel),
-                                            context->entry->flatIndex,
-                                            instruction->instructionIndex,
-                                            "invoke_ok");
     backend_aot_llvm_make_instruction_label(finishOkLabel,
                                             sizeof(finishOkLabel),
                                             context->entry->flatIndex,
                                             instruction->instructionIndex,
                                             "finish_ok");
+    if (isTailCall) {
+        backend_aot_llvm_make_instruction_label(tailReturnLabel,
+                                                sizeof(tailReturnLabel),
+                                                context->entry->flatIndex,
+                                                instruction->instructionIndex,
+                                                "tail_return");
+    }
 
     if (calleeFlatIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
+        TZrUInt32 invocationTemp;
+        TZrUInt32 invocationSucceededTemp;
+
         snprintf(argsBuffer,
                  sizeof(argsBuffer),
                  "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u, i32 %u, ptr %%direct_call",
@@ -262,17 +267,24 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
                                                 sizeof(calleeName),
                                                 calleeFlatIndex,
                                                 context->stripGeneratedSymbols);
-        backend_aot_llvm_write_nonzero_call_text(context->file,
-                                                 context->tempCounter,
-                                                 calleeName,
-                                                 "ptr %state",
-                                                 invokeOkLabel,
-                                                 context->failLabel);
-        fprintf(context->file, "%s:\n", invokeOkLabel);
+        invocationTemp = backend_aot_llvm_next_temp(context->tempCounter);
+        invocationSucceededTemp = backend_aot_llvm_next_temp(context->tempCounter);
+        fprintf(context->file,
+                "  %%t%u = call i64 @%s(ptr %%state)\n",
+                (unsigned)invocationTemp,
+                calleeName);
+        fprintf(context->file,
+                "  %%t%u = icmp ne i64 %%t%u, 0\n",
+                (unsigned)invocationSucceededTemp,
+                (unsigned)invocationTemp);
+        snprintf(argsBuffer,
+                 sizeof(argsBuffer),
+                 "ptr %%state, ptr %%frame, ptr %%direct_call, i1 %%t%u, i32 1, ptr %%resume_instruction",
+                 (unsigned)invocationSucceededTemp);
         backend_aot_llvm_write_guarded_call_text(context->file,
                                                  context->tempCounter,
-                                                 "ZrLibrary_AotRuntime_FinishDirectCall",
-                                                 "ptr %state, ptr %frame, ptr %direct_call, i32 1",
+                                                 "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume",
+                                                 argsBuffer,
                                                  finishOkLabel,
                                                  context->failLabel);
     } else {
@@ -291,26 +303,32 @@ TZrBool backend_aot_llvm_lower_function_call_family(const SZrAotLlvmLoweringCont
         fprintf(context->file, "%s:\n", prepareOkLabel);
         snprintf(argsBuffer,
                  sizeof(argsBuffer),
-                 "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1",
+                 "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1, ptr %%resume_instruction",
                  (unsigned)instruction->destinationSlot,
                  (unsigned)functionSlot,
                  (unsigned)argumentCount);
         backend_aot_llvm_write_guarded_call_text(context->file,
                                                  context->tempCounter,
-                                                 "ZrLibrary_AotRuntime_CallPreparedOrGeneric",
+                                                 "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume",
                                                  argsBuffer,
                                                  finishOkLabel,
                                                  context->failLabel);
     }
 
     fprintf(context->file, "%s:\n", finishOkLabel);
+    backend_aot_llvm_write_resume_dispatch(context->file,
+                                           context->tempCounter,
+                                           context->entry->flatIndex,
+                                           instruction->instructionIndex,
+                                           context->instructionCount,
+                                           "%resume_instruction",
+                                           isTailCall ? tailReturnLabel : instruction->nextLabel);
     if (isTailCall) {
+        fprintf(context->file, "%s:\n", tailReturnLabel);
         backend_aot_llvm_write_return_call(context->file,
                                            context->tempCounter,
                                            instruction->destinationSlot,
                                            context->publishExports);
-    } else {
-        fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
     }
     return ZR_TRUE;
 }

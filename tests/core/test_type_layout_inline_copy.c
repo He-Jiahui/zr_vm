@@ -7,12 +7,15 @@
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/type_layout.h"
@@ -24,6 +27,314 @@ void tearDown(void) {}
 static TZrUInt32 test_align_up(TZrUInt32 offset, TZrUInt32 align) {
     TZrUInt32 remainder = align > 0u ? offset % align : 0u;
     return remainder == 0u ? offset : offset + (align - remainder);
+}
+
+static void test_prepare_distinct_value_frame_slot(
+        SZrState *state,
+        SZrFunction *function,
+        SZrFunctionFrameSlotLayout *layout,
+        TZrStackValuePointer *outFrameBase,
+        SZrTypeValue **outRegisteredValue,
+        SZrTypeValue **outPhysicalValue) {
+    const TZrUInt32 byteOffset = (TZrUInt32)(8u * sizeof(SZrTypeValueOnStack));
+    TZrStackValuePointer frameBase;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(layout);
+    TEST_ASSERT_NOT_NULL(outFrameBase);
+    TEST_ASSERT_NOT_NULL(outRegisteredValue);
+    TEST_ASSERT_NOT_NULL(outPhysicalValue);
+
+    memset(function, 0, sizeof(*function));
+    memset(layout, 0, sizeof(*layout));
+    frameBase = state->stackBase.valuePointer + 2u;
+    layout->stackSlot = 0u;
+    layout->byteOffset = byteOffset;
+    layout->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout->byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    layout->typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    layout->slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    function->stackSize = 1u;
+    function->frameSlotLayouts = layout;
+    function->frameSlotLayoutLength = 1u;
+    function->frameByteSize = byteOffset + (TZrUInt32)sizeof(SZrTypeValue);
+    function->frameByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+
+    state->baseCallInfo.functionBase.valuePointer = frameBase - 1u;
+    state->baseCallInfo.functionTop.valuePointer = frameBase + 1u;
+    state->baseCallInfo.metadataFunction = function;
+    state->baseCallInfo.previous = ZR_NULL;
+    state->baseCallInfo.next = ZR_NULL;
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = frameBase + 12u;
+
+    *outFrameBase = frameBase;
+    *outRegisteredValue = &frameBase->value;
+    *outPhysicalValue = (SZrTypeValue *)((TZrByte *)frameBase + byteOffset);
+    ZrCore_Value_ResetAsNull(*outRegisteredValue);
+    ZrCore_Value_ResetAsNull(*outPhysicalValue);
+}
+
+static void test_register_distinct_physical_owner(
+        SZrState *state,
+        TZrStackValuePointer frameBase,
+        SZrTypeValue *registeredValue,
+        SZrTypeValue *physicalValue) {
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(frameBase);
+    TEST_ASSERT_NOT_NULL(registeredValue);
+    TEST_ASSERT_NOT_NULL(physicalValue);
+
+    ZrCore_Value_Copy(state, registeredValue, physicalValue);
+    ZrCore_Closure_ToBeClosedValueClosureNew(state, frameBase);
+    TEST_ASSERT_EQUAL_UINT64(
+            1u,
+            ZrCore_Closure_CloseRegisteredValues(
+                    state, 1u, ZR_THREAD_STATUS_INVALID, ZR_FALSE));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(registeredValue->type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(physicalValue->type));
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, registeredValue->ownershipKind);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, physicalValue->ownershipKind);
+}
+
+static void test_distinct_frame_cleanup_releases_physical_and_registered_owners(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function;
+    SZrFunction nestedFunction;
+    SZrFunctionFrameSlotLayout layout;
+    SZrCallInfo nestedCallInfo;
+    TZrStackValuePointer frameBase;
+    SZrTypeValue *registeredValue;
+    SZrTypeValue *physicalValue;
+    SZrString *ordinaryName;
+    SZrObjectPrototype *ordinaryPrototype;
+    SZrObject *ordinaryObject;
+    SZrString *resourceName;
+    SZrObjectPrototype *resourcePrototype;
+    SZrObject *resourceObject;
+    SZrTypeValue loanSource;
+    SZrTypeValue shared;
+    SZrTypeValue weak;
+    TZrSize grownSize;
+
+    TEST_ASSERT_NOT_NULL(state);
+    test_prepare_distinct_value_frame_slot(
+            state,
+            &function,
+            &layout,
+            &frameBase,
+            &registeredValue,
+            &physicalValue);
+    memset(&nestedFunction, 0, sizeof(nestedFunction));
+    memset(&nestedCallInfo, 0, sizeof(nestedCallInfo));
+    nestedFunction.stackSize = 1u;
+    nestedCallInfo.functionBase.valuePointer = frameBase + 5u;
+    nestedCallInfo.functionTop.valuePointer = frameBase + 7u;
+    nestedCallInfo.metadataFunction = &nestedFunction;
+    nestedCallInfo.previous = &state->baseCallInfo;
+    state->baseCallInfo.next = &nestedCallInfo;
+    state->callInfoList = &nestedCallInfo;
+
+    ordinaryName = ZrCore_String_CreateFromNative(state, "FrameOwnedObject");
+    ordinaryPrototype = ZrCore_ObjectPrototype_New(
+            state, ordinaryName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    ordinaryObject = ZrCore_Object_New(state, ordinaryPrototype);
+    TEST_ASSERT_NOT_NULL(ordinaryObject);
+    ZrCore_Object_Init(state, ordinaryObject);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            state, physicalValue, ZR_CAST_RAW_OBJECT_AS_SUPER(ordinaryObject)));
+    TEST_ASSERT_NOT_NULL(physicalValue->ownershipControl);
+    test_register_distinct_physical_owner(
+            state, frameBase, registeredValue, physicalValue);
+    TEST_ASSERT_NULL(ordinaryObject->super.ownershipControl);
+
+    resourceName = ZrCore_String_CreateFromNative(state, "FrameOwnedResource");
+    resourcePrototype = ZrCore_ObjectPrototype_New(
+            state, resourceName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    TEST_ASSERT_NOT_NULL(resourcePrototype);
+    resourcePrototype->modifierFlags |= ZR_TYPE_MODIFIER_FLAG_RESOURCE;
+    resourceObject = ZrCore_Object_New(state, resourcePrototype);
+    TEST_ASSERT_NOT_NULL(resourceObject);
+    ZrCore_Object_Init(state, resourceObject);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            state, physicalValue, ZR_CAST_RAW_OBJECT_AS_SUPER(resourceObject)));
+    TEST_ASSERT_NULL(physicalValue->ownershipControl);
+    test_register_distinct_physical_owner(
+            state, frameBase, registeredValue, physicalValue);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_RESOURCE_LIFECYCLE_DROPPED,
+            resourceObject->super.resourceLifecycleState);
+
+    resourceObject = ZrCore_Object_New(state, resourcePrototype);
+    TEST_ASSERT_NOT_NULL(resourceObject);
+    ZrCore_Object_Init(state, resourceObject);
+    ZrCore_Value_ResetAsNull(&loanSource);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            state, &loanSource, ZR_CAST_RAW_OBJECT_AS_SUPER(resourceObject)));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_LoanValue(state, physicalValue, &loanSource));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(loanSource.type));
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_LOANED, physicalValue->ownershipKind);
+    test_register_distinct_physical_owner(
+            state, frameBase, registeredValue, physicalValue);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_RESOURCE_LIFECYCLE_DROPPED,
+            resourceObject->super.resourceLifecycleState);
+
+    ordinaryObject = ZrCore_Object_New(state, ordinaryPrototype);
+    TEST_ASSERT_NOT_NULL(ordinaryObject);
+    ZrCore_Object_Init(state, ordinaryObject);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            state, physicalValue, ZR_CAST_RAW_OBJECT_AS_SUPER(ordinaryObject)));
+    ZrCore_Value_Copy(state, registeredValue, physicalValue);
+    ZrCore_Closure_ToBeClosedValueClosureNew(state, frameBase);
+    ZrCore_Ownership_ReleaseValue(state, physicalValue);
+    ZrCore_Value_InitAsInt(state, physicalValue, 42);
+    TEST_ASSERT_EQUAL_UINT64(
+            1u,
+            ZrCore_Closure_CloseRegisteredValues(
+                    state, 1u, ZR_THREAD_STATUS_INVALID, ZR_FALSE));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(registeredValue->type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(physicalValue->type));
+    TEST_ASSERT_NULL(ordinaryObject->super.ownershipControl);
+
+    ordinaryObject = ZrCore_Object_New(state, ordinaryPrototype);
+    TEST_ASSERT_NOT_NULL(ordinaryObject);
+    ZrCore_Object_Init(state, ordinaryObject);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            state, physicalValue, ZR_CAST_RAW_OBJECT_AS_SUPER(ordinaryObject)));
+    ZrCore_Value_ResetAsNull(&shared);
+    ZrCore_Value_ResetAsNull(&weak);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(state, &shared, physicalValue));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(state, &weak, &shared));
+    ZrCore_Value_Copy(state, physicalValue, &shared);
+    ZrCore_Ownership_ReleaseValue(state, &shared);
+    ZrCore_Value_Copy(state, registeredValue, physicalValue);
+    ZrCore_Closure_ToBeClosedValueClosureNew(state, frameBase);
+
+    grownSize = (TZrSize)(state->stackTail.valuePointer - state->stackBase.valuePointer) + 32u;
+    TEST_ASSERT_TRUE(ZrCore_Stack_GrowTo(state, grownSize, ZR_TRUE));
+    frameBase = state->baseCallInfo.functionBase.valuePointer + 1u;
+    registeredValue = &frameBase->value;
+    physicalValue = (SZrTypeValue *)((TZrByte *)frameBase + layout.byteOffset);
+    TEST_ASSERT_EQUAL_UINT64(
+            1u,
+            ZrCore_Closure_CloseRegisteredValues(
+                    state, 1u, ZR_THREAD_STATUS_INVALID, ZR_FALSE));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(registeredValue->type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(physicalValue->type));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_WakeValue(state, &shared, &weak));
+    ZrCore_Ownership_ReleaseValue(state, &shared);
+    ZrCore_Ownership_ReleaseValue(state, &weak);
+
+    state->callInfoList = &state->baseCallInfo;
+    state->baseCallInfo.next = ZR_NULL;
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+typedef struct TestRelocatingResourceDropRecord {
+    TZrMemoryOffset registeredValueOffset;
+    TZrUInt32 callCount;
+    TZrBool observedClearedAlias;
+    TZrBool grewStack;
+} TestRelocatingResourceDropRecord;
+
+static TestRelocatingResourceDropRecord *g_relocating_resource_drop_record;
+
+static TZrInt64 test_relocating_resource_drop(SZrState *state) {
+    TestRelocatingResourceDropRecord *record = g_relocating_resource_drop_record;
+    TZrStackValuePointer registeredPointer;
+    TZrSize grownSize;
+
+    if (state == ZR_NULL || record == ZR_NULL) {
+        return 0;
+    }
+
+    registeredPointer = ZrCore_Stack_LoadOffsetToPointer(
+            state, record->registeredValueOffset);
+    record->callCount++;
+    record->observedClearedAlias =
+            (TZrBool)(registeredPointer != ZR_NULL &&
+                      ZR_VALUE_IS_TYPE_NULL(registeredPointer->value.type));
+    grownSize = (TZrSize)(state->stackTail.valuePointer -
+                          state->stackBase.valuePointer) +
+                32u;
+    record->grewStack = ZrCore_Stack_GrowTo(state, grownSize, ZR_TRUE);
+    return 0;
+}
+
+static void test_distinct_resource_cleanup_clears_alias_before_reentrant_stack_growth(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction function;
+    SZrFunctionFrameSlotLayout layout;
+    TZrStackValuePointer frameBase;
+    SZrTypeValue *registeredValue;
+    SZrTypeValue *physicalValue;
+    SZrString *resourceName;
+    SZrObjectPrototype *resourcePrototype;
+    SZrClosureNative *destructor;
+    SZrObject *resourceObject;
+    TestRelocatingResourceDropRecord record = {0};
+
+    TEST_ASSERT_NOT_NULL(state);
+    test_prepare_distinct_value_frame_slot(
+            state,
+            &function,
+            &layout,
+            &frameBase,
+            &registeredValue,
+            &physicalValue);
+
+    resourceName = ZrCore_String_CreateFromNative(
+            state, "RelocatingFrameOwnedResource");
+    resourcePrototype = ZrCore_ObjectPrototype_New(
+            state, resourceName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    destructor = ZrCore_ClosureNative_New(state, 0u);
+    TEST_ASSERT_NOT_NULL(resourcePrototype);
+    TEST_ASSERT_NOT_NULL(destructor);
+    resourcePrototype->modifierFlags |= ZR_TYPE_MODIFIER_FLAG_RESOURCE;
+    destructor->nativeFunction = test_relocating_resource_drop;
+    ZrCore_RawObject_MarkAsPermanent(
+            state, ZR_CAST_RAW_OBJECT_AS_SUPER(destructor));
+    ZrCore_ObjectPrototype_AddMeta(
+            state,
+            resourcePrototype,
+            ZR_META_DESTRUCTOR,
+            ZR_CAST(
+                    SZrFunction *,
+                    ZR_CAST_RAW_OBJECT_AS_SUPER(destructor)));
+
+    resourceObject = ZrCore_Object_New(state, resourcePrototype);
+    TEST_ASSERT_NOT_NULL(resourceObject);
+    ZrCore_Object_Init(state, resourceObject);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            state, physicalValue, ZR_CAST_RAW_OBJECT_AS_SUPER(resourceObject)));
+    TEST_ASSERT_NULL(physicalValue->ownershipControl);
+    ZrCore_Value_Copy(state, registeredValue, physicalValue);
+    record.registeredValueOffset = ZrCore_Stack_SavePointerAsOffset(
+            state, frameBase);
+    g_relocating_resource_drop_record = &record;
+    ZrCore_Closure_ToBeClosedValueClosureNew(state, frameBase);
+
+    TEST_ASSERT_EQUAL_UINT64(
+            1u,
+            ZrCore_Closure_CloseRegisteredValues(
+                    state, 1u, ZR_THREAD_STATUS_INVALID, ZR_FALSE));
+    g_relocating_resource_drop_record = ZR_NULL;
+
+    frameBase = state->baseCallInfo.functionBase.valuePointer + 1u;
+    registeredValue = &frameBase->value;
+    physicalValue = (SZrTypeValue *)((TZrByte *)frameBase + layout.byteOffset);
+    TEST_ASSERT_EQUAL_UINT32(1u, record.callCount);
+    TEST_ASSERT_TRUE(record.observedClearedAlias);
+    TEST_ASSERT_TRUE(record.grewStack);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(registeredValue->type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(physicalValue->type));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_RESOURCE_LIFECYCLE_DROPPED,
+            resourceObject->super.resourceLifecycleState);
+
+    ZrTests_Runtime_State_Destroy(state);
 }
 
 typedef struct TestCustomDropRecord {
@@ -2839,6 +3150,8 @@ int main(void) {
     RUN_TEST(test_function_post_call_copies_inline_return_payload_before_frame_drop);
     RUN_TEST(test_borrowed_frame_alias_survives_stack_relocation);
     RUN_TEST(test_borrowed_frame_alias_artifact_version_and_flags_are_validated);
+    RUN_TEST(test_distinct_frame_cleanup_releases_physical_and_registered_owners);
+    RUN_TEST(test_distinct_resource_cleanup_clears_alias_before_reentrant_stack_growth);
 
     return UNITY_END();
 }

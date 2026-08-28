@@ -1918,6 +1918,7 @@ static TZrBool aot_runtime_materialize_static_direct_call_base(
     SZrClosureNative *closure;
     SZrFunctionStackAnchor callBaseAnchor;
     SZrFunction *metadataFunction;
+    TZrUInt32 captureCount;
 
     if (nativeThunk == ZR_NULL) {
         return ZR_TRUE;
@@ -1928,15 +1929,25 @@ static TZrBool aot_runtime_materialize_static_direct_call_base(
         return ZR_FALSE;
     }
 
-    ZrCore_Function_StackAnchorInit(state, *callBase, &callBaseAnchor);
-    closure = ZrCore_ClosureNative_New(state, 0);
-    *callBase = ZrCore_Function_StackAnchorRestore(state, &callBaseAnchor);
     metadataFunction = record->functionTable[calleeFunctionIndex];
-    if (closure == ZR_NULL || *callBase == ZR_NULL || metadataFunction == ZR_NULL) {
+    if (metadataFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    captureCount = metadataFunction->closureValueLength;
+    ZrCore_Function_StackAnchorInit(state, *callBase, &callBaseAnchor);
+    closure = ZrCore_ClosureNative_New(state, captureCount);
+    *callBase = ZrCore_Function_StackAnchorRestore(state, &callBaseAnchor);
+    if (closure == ZR_NULL || *callBase == ZR_NULL) {
         return ZR_FALSE;
     }
     callValue = ZrCore_Stack_GetValue(*callBase);
     if (callValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (captureCount > 0 &&
+        !aot_runtime_bind_native_closure_captures_from_source(
+                state, closure, callValue, captureCount)) {
         return ZR_FALSE;
     }
     closure->nativeFunction = (FZrNativeFunction)nativeThunk;
@@ -8064,6 +8075,7 @@ TZrBool ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(
         TZrUInt32 resultCount,
         TZrUInt32 *outResumeInstructionIndex) {
     SZrLibraryAotRuntimeState *runtimeState;
+    TZrBool invocationSucceeded;
 
     if (outResumeInstructionIndex != ZR_NULL) {
         *outResumeInstructionIndex = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
@@ -8085,22 +8097,69 @@ TZrBool ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(
         return ZR_FALSE;
     }
 
-    if (!directCall->nativeFunction(state)) {
-        if (state->callInfoList == directCall->callerCallInfo &&
-            state->callInfoList != directCall->calleeCallInfo &&
-            state->threadStatus == ZR_THREAD_STATUS_FINE &&
-            state->hasCurrentException) {
-            if (!aot_runtime_refresh_frame_from_callinfo(state, frame, state->callInfoList) ||
-                !aot_runtime_frame_resume_index(frame, state->callInfoList, outResumeInstructionIndex)) {
-                return ZR_FALSE;
-            }
-            memset(directCall, 0, sizeof(*directCall));
-            return ZR_TRUE;
-        }
+    invocationSucceeded = (TZrBool)(directCall->nativeFunction(state) != 0);
+    return ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(
+            state,
+            frame,
+            directCall,
+            invocationSucceeded,
+            resultCount,
+            outResumeInstructionIndex);
+}
+
+TZrBool ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(
+        SZrState *state,
+        ZrAotGeneratedFrame *frame,
+        ZrAotGeneratedDirectCall *directCall,
+        TZrBool invocationSucceeded,
+        TZrUInt32 resultCount,
+        TZrUInt32 *outResumeInstructionIndex) {
+    SZrLibraryAotRuntimeState *runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL
+                    ? aot_runtime_get_state_from_global(state->global)
+                    : ZR_NULL;
+
+    if (outResumeInstructionIndex != ZR_NULL) {
+        *outResumeInstructionIndex = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;
+    }
+    if (state == ZR_NULL || frame == ZR_NULL || directCall == ZR_NULL ||
+        !directCall->prepared || outResumeInstructionIndex == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    return ZrLibrary_AotRuntime_FinishDirectCall(state, frame, directCall, resultCount);
+    if (invocationSucceeded) {
+        return ZrLibrary_AotRuntime_FinishDirectCall(
+                state, frame, directCall, resultCount);
+    }
+
+    if (state->callInfoList != directCall->calleeCallInfo &&
+        state->threadStatus == ZR_THREAD_STATUS_FINE &&
+        state->hasCurrentException) {
+        if (state->callInfoList != directCall->callerCallInfo) {
+            return ZR_FALSE;
+        }
+        if (!aot_runtime_refresh_frame_from_callinfo(
+                    state, frame, state->callInfoList) ||
+            !aot_runtime_frame_resume_index(
+                    frame, state->callInfoList, outResumeInstructionIndex)) {
+            return ZR_FALSE;
+        }
+        memset(directCall, 0, sizeof(*directCall));
+        return ZR_TRUE;
+    }
+
+    aot_runtime_fail(
+            state,
+            runtimeState,
+            "generated AOT prepared direct call did not finish or resume "
+            "(invoked=%u current=%p caller=%p callee=%p status=%u exception=%u)",
+            (unsigned)invocationSucceeded,
+            state != ZR_NULL ? (void *)state->callInfoList : ZR_NULL,
+            (void *)directCall->callerCallInfo,
+            (void *)directCall->calleeCallInfo,
+            state != ZR_NULL ? (unsigned)state->threadStatus : 0u,
+            state != ZR_NULL ? (unsigned)state->hasCurrentException : 0u);
+    return ZR_FALSE;
 }
 
 TZrBool ZrLibrary_AotRuntime_PrepareDirectCall(SZrState *state,
@@ -8203,7 +8262,22 @@ TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(SZrState *state,
         record->codeRegistration->functionPointers == ZR_NULL || calleeFunctionIndex >= record->functionCount ||
         calleeFunctionIndex >= record->codeRegistration->functionCount ||
         record->codeRegistration->functionPointers[calleeFunctionIndex] == ZR_NULL) {
-        aot_runtime_fail(state, runtimeState, "generated AOT static direct call is missing callee thunk metadata");
+        aot_runtime_fail(
+                state,
+                runtimeState,
+                "generated AOT static direct call is missing callee thunk metadata "
+                "(record=%p registration=%p table=%p thunks=%p callee=%u functions=%u thunks=%u)",
+                (void *)record,
+                record != ZR_NULL ? (void *)record->codeRegistration : ZR_NULL,
+                record != ZR_NULL ? (void *)record->functionTable : ZR_NULL,
+                record != ZR_NULL && record->codeRegistration != ZR_NULL
+                        ? (void *)record->codeRegistration->functionPointers
+                        : ZR_NULL,
+                (unsigned)calleeFunctionIndex,
+                record != ZR_NULL ? (unsigned)record->functionCount : 0u,
+                record != ZR_NULL && record->codeRegistration != ZR_NULL
+                        ? (unsigned)record->codeRegistration->functionCount
+                        : 0u);
         return ZR_FALSE;
     }
 

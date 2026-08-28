@@ -232,6 +232,8 @@ static int aot_c_guardrail_runtime_call_allowed(const char *callText) {
             "ZrLibrary_AotRuntime_SyncBoolLocal(",
             "ZrLibrary_AotRuntime_CallStackValue(",
             "ZrLibrary_AotRuntime_CallStaticDirect(",
+            "ZrLibrary_AotRuntime_PrepareStaticDirectCall(",
+            "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(",
             "ZrLibrary_AotRuntime_CallInlineStruct(",
             "ZrLibrary_AotRuntime_CallDynamicDeoptBridge(",
             "ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(",
@@ -433,6 +435,8 @@ static void test_aot_c_guardrail_classifies_allowed_runtime_boundary_calls(void)
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, slot, value);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallStackValue(state, &frame, callee, args);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallStaticDirect(state, &frame, functionIndex, args);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_PrepareStaticDirectCall(state, &frame, destination, function, args, index, call);"));
+    TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume(state, &frame, call, succeeded, 1, resume);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallInlineStruct(state, &frame, callee, args);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_CallDynamicDeoptBridge(state, &frame, deoptId, callee, args);"));
     TEST_ASSERT_TRUE(aot_c_guardrail_runtime_call_allowed("ZrLibrary_AotRuntime_ValidateDynamicDeoptBridge(state, &frame, deoptId, kind);"));

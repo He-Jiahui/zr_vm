@@ -2331,10 +2331,12 @@ static void test_aot_c_backend_statically_lowers_proven_local_aot_function_calls
 
         TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_static_function_call */"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_closure->nativeFunction = zr_aot_fn_1;"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_static_direct_succeeded = (TZrBool)(zr_aot_fn_1(state) != 0);"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume("));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "goto zr_aot_fn_0_dispatch;"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_gc_safepoint_call */"));
         TEST_ASSERT_NULL(strstr(cText, "ZR_AOT_GENERATED_STEP_FLAG_CALL"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
         TEST_ASSERT_NULL(strstr(cText, "zr_aot_direct_call.nativeFunction(state)"));
         TEST_ASSERT_NULL(strstr(cText, "if (!zr_aot_fn_1(state))"));
@@ -2403,7 +2405,8 @@ static void test_aot_c_backend_lowers_cached_meta_calls_with_direct_call_frames(
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_meta_call_prepare_and_dispatch */"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareMetaCall(state,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "goto zr_aot_fn_0_dispatch;"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NULL(strstr(cText, "ZR_AOT_C_GUARD(zr_aot_direct_call.nativeFunction(state));"));
@@ -2468,7 +2471,8 @@ static void test_aot_llvm_backend_lowers_cached_meta_calls_with_direct_call_fram
         llvmText = read_text_file_owned(llvmPath);
         TEST_ASSERT_NOT_NULL(llvmText);
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_PrepareMetaCall("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CallPreparedOrGeneric("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "%resume_instruction"));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
                                                                     ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED)));
         TEST_ASSERT_NULL(strstr(llvmText, "call i64 @ZrLibrary_AotRuntime_InvokeActiveShim("));
@@ -2575,7 +2579,8 @@ static void test_aot_llvm_backend_lowers_meta_tail_calls_with_direct_call_frames
         llvmText = read_text_file_owned(llvmPath);
         TEST_ASSERT_NOT_NULL(llvmText);
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_PrepareMetaCall("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CallPreparedOrGeneric("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "%resume_instruction"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i64 @ZrLibrary_AotRuntime_Return("));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
                                                                     ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)));
@@ -8779,9 +8784,13 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
         const char *source =
                 "resource class Service {\n"
                 "    pub const fn add(value: int): int { return value + 10; }\n"
-                "    pub const @call(value: int): int { return value + 20; }\n"
+                "    pub const @call(value: int): int {\n"
+                "        if (value == 99) { throw \"receiver guard callable failure\"; }\n"
+                "        return value + 20;\n"
+                "    }\n"
                 "}\n"
                 "fn failIfEvaluated(): int { throw \"receiver guard evaluated arguments\"; }\n"
+                "fn tailCall(target: Weak<Service>, value: int): int { return target(value); }\n"
                 "fn run(): int {\n"
                 "    var seed = own Service();\n"
                 "    var shared = share(seed);\n"
@@ -8791,6 +8800,12 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
                 "    var observed = 0;\n"
                 "    if (live != null) { observed = 10; }\n"
                 "    if (liveCallable == 21) { observed = observed + 100; }\n"
+                "    var callableSuffixCaught = false;\n"
+                "    try { weak(99); }\n"
+                "    catch (error) { callableSuffixCaught = true; }\n"
+                "    var tailCallableCaught = false;\n"
+                "    try { tailCall(weak, 99); }\n"
+                "    catch (error) { tailCallableCaught = true; }\n"
                 "    drop(shared);\n"
                 "    var expired = weak?.add(failIfEvaluated());\n"
                 "    var expiredCallable = weak?.(failIfEvaluated());\n"
@@ -8800,7 +8815,8 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
                 "    var callableCaught = 0;\n"
                 "    try { weak(failIfEvaluated()); }\n"
                 "    catch (error: NullReferenceError) { callableCaught = 1; }\n"
-                "    if (expired == null && expiredCallable == null) {\n"
+                "    if (callableSuffixCaught && tailCallableCaught &&\n"
+                "        expired == null && expiredCallable == null) {\n"
                 "        return observed + caught + callableCaught;\n"
                 "    }\n"
                 "    return 0;\n"
@@ -8863,7 +8879,9 @@ static void test_receiver_guards_preserve_optional_and_direct_weak_contracts_in_
         TEST_ASSERT_NOT_NULL(strstr(cText,
                                     "ZrLibrary_AotRuntime_PrepareMetaCall(state,"));
         TEST_ASSERT_NOT_NULL(strstr(cText,
-                                    "ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,"));
+                                    "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText,
+                                    "call i1 @ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume("));
         TEST_ASSERT_NULL(strstr(cText,
                                 "ZrLibrary_AotRuntime_UnsupportedMetaCall(state,"));
         TEST_ASSERT_TRUE_MESSAGE(
@@ -9392,7 +9410,9 @@ static void test_aot_backends_lower_manual_state_and_scope_opcode_fixture(void) 
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MarkToBeClosed(state, &frame,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_scope_close_scope"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CloseScope(state, &frame,"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallStaticDirect(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume("));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "goto zr_aot_fn_"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SetConstant("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_GetSubFunction("));
@@ -9400,6 +9420,8 @@ static void test_aot_backends_lower_manual_state_and_scope_opcode_fixture(void) 
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CloseScope("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_PrepareStaticDirectCall("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i64 @zr_aot_fn_1(ptr %state)"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "%resume_instruction"));
         assert_generated_aot_texts_do_not_report_unsupported_opcodes(cText,
                                                                       llvmText,
                                                                       coveredOpcodes,

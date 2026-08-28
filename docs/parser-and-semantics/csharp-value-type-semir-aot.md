@@ -3103,3 +3103,35 @@ write queries, and block-entry proof behind a private scalar-local analysis
 interface. The shared-library test file likewise remains one cohesive logical
 execution suite; this change strengthens an existing case and adds no new test
 responsibility.
+
+Focused 2026-08-29 ownership-call convergence replaces generated C/LLVM static
+direct and meta-call completion with resume-aware boundaries. Static direct
+calls use `PrepareStaticDirectCall`, invoke their generated thunk, and then use
+`CompletePreparedDirectCallWithResume`; generic/meta paths use
+`CallPreparedOrGenericWithResume`. A caught exception resumes only when the VM
+has returned to the same generated caller frame. A valid exception that already
+unwound beyond it remains pending for an outer handler instead of being
+converted into a generated-runtime failure.
+
+Generated frame setup now copies `recordHandle` and `codeRegistration` for all
+functions, not only exported entries. Runtime static-direct materialization
+uses the callee metadata capture count and copies the staged callable captures
+into the native closure before assigning the generated thunk. This preserves
+closure identity for captured Weak callables and supplies the module tables
+needed by nested direct calls.
+
+Scalar copy provenance is now a CFG must-dataflow analysis rather than a local
+backward scan plus per-kind block booleans. Entry parameter kinds seed the
+analysis; each instruction transfers the complete kind state; reachable
+predecessors intersect at joins; and loops iterate to a fixed point. A mixed
+primitive/object join and every nonprimitive overwrite clear the primitive
+proof, while same-kind joins, parameters, and loop-carried scalar values retain
+it. This prevents dense `SZrTypeValue` copies from being replaced by stale
+typed locals without disabling valid scalar stack-copy lowering.
+
+The focused three-toolchain evidence and the separate dense/physical ownership
+cleanup contract are recorded in
+`tests/acceptance/2026-08-29-aot-ownership-call-frame-resume.md`. The large
+scalar-local source remains a documented modularization follow-up: the coherent
+future extraction unit is the complete scalar kind transfer/fixed-point/query
+service, not one opcode predicate.

@@ -184,35 +184,38 @@ TZrBool backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
                      functionIr, slot, execInstructionIndex)));
 }
 
-TZrBool backend_aot_c_scalar_stack_copy_source_may_have_runtime_scalar_before(
+TZrUInt32 backend_aot_c_scalar_stack_copy_source_reaching_runtime_scalar_kind_mask_before(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
         TZrUInt32 execInstructionIndex) {
-    const SZrFunction *function;
-    TZrUInt32 scanIndex;
+    TZrUInt32 kindMask = ZR_AOT_RUNTIME_SCALAR_KIND_NONE;
 
-    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL ||
-        functionIr->function->instructionsList == ZR_NULL) {
-        return ZR_FALSE;
+    if (functionIr == ZR_NULL || functionIr->function == ZR_NULL) {
+        return kindMask;
     }
 
-    function = functionIr->function;
-    if (execInstructionIndex > function->instructionsLength) {
-        execInstructionIndex = function->instructionsLength;
+    if (backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot) &&
+        backend_aot_c_scalar_locals_bool_written_before(
+                functionIr, sourceSlot, execInstructionIndex)) {
+        kindMask |= ZR_AOT_RUNTIME_SCALAR_KIND_BOOL;
     }
-    for (scanIndex = 0u; scanIndex < execInstructionIndex; scanIndex++) {
-        const TZrInstruction *instruction = &function->instructionsList[scanIndex];
-
-        if (instruction->instruction.operandExtra != sourceSlot) {
-            continue;
-        }
-        if (backend_aot_c_scalar_locals_instruction_writes_primitive(
-                    functionIr, scanIndex, sourceSlot)) {
-            return ZR_TRUE;
-        }
+    if (backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot) &&
+        backend_aot_c_scalar_locals_i64_written_before(
+                functionIr, sourceSlot, execInstructionIndex)) {
+        kindMask |= ZR_AOT_RUNTIME_SCALAR_KIND_I64;
+    }
+    if (backend_aot_c_scalar_locals_has_u64_slot(functionIr, sourceSlot) &&
+        backend_aot_c_scalar_locals_u64_written_before(
+                functionIr, sourceSlot, execInstructionIndex)) {
+        kindMask |= ZR_AOT_RUNTIME_SCALAR_KIND_U64;
+    }
+    if (backend_aot_c_scalar_locals_has_f64_slot(functionIr, sourceSlot) &&
+        backend_aot_c_scalar_locals_f64_written_before(
+                functionIr, sourceSlot, execInstructionIndex)) {
+        kindMask |= ZR_AOT_RUNTIME_SCALAR_KIND_F64;
     }
 
-    return ZR_FALSE;
+    return kindMask;
 }
 
 TZrBool backend_aot_c_scalar_stack_copy_destination_is_next_ownership_source(

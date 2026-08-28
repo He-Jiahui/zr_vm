@@ -1077,9 +1077,17 @@ static void test_known_call_aot_backends_support_full_opcode_matrix(void) {
             TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmText, "@ZrLibrary_AotRuntime_PrepareDirectCall"),
                                          cases[index].name);
         } else {
-            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "ZrLibrary_AotRuntime_CallStaticDirect"),
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall"),
+                                         cases[index].name);
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "zr_aot_static_direct_succeeded = (TZrBool)(zr_aot_fn_"),
+                                         cases[index].name);
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume"),
+                                         cases[index].name);
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cText, "goto zr_aot_fn_"),
                                          cases[index].name);
             TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmText, "@ZrLibrary_AotRuntime_PrepareStaticDirectCall"),
+                                         cases[index].name);
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmText, "@ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume"),
                                          cases[index].name);
         }
 

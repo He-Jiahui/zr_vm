@@ -26,7 +26,16 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_completion_semantic_facts.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_signature_semantic_facts.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_call_boundaries.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_meta_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_function_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_meta_calls.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_ownership.c
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c
@@ -50,7 +59,15 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/ownership.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_call_boundaries.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_meta_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_function_calls.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_meta_calls.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_ownership.c
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
 plan_sources:
   - docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md
   - docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md
@@ -68,6 +85,12 @@ tests:
   - tests/parser/test_resource_owner_borrow_receiver.c
   - tests/parser/test_semir_pipeline.c
   - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
+  - zr_vm_aot/tests/parser/test_known_call_pipeline.c
+  - tests/parser/test_aot_c_call_contracts.c
+  - tests/parser/test_aot_c_call_shared_library_smoke.c
+  - tests/parser/test_aot_c_guardrail_contracts.c
+  - tests/parser/test_aot_c_source_contracts.c
+  - tests/parser/test_aot_receiver_guard_shared_library.c
   - tests/language_server/test_lsp_expression_fact_hover.c
   - tests/language_server/test_lsp_inlay_semantic_facts.c
   - tests/language_server/test_lsp_advanced_editor_features.c
@@ -455,3 +478,35 @@ targets, passes the four portable suites 26/26, 9/9, 44/44, and 98/98, and
 reports the three Unix-only executable suites as 14, 6, and 6 explicit ignores
 with zero failures. This is focused backend evidence; it does not replace the
 final stable integrated full-graph acceptance.
+
+The 2026-08-29 generated-call convergence closes the remaining nested-call
+failure modes behind that fixture. Static direct calls now prepare a runtime
+call frame, invoke the generated thunk, and complete through a resume-aware
+boundary. Meta calls use the matching prepared-or-generic resume boundary. Both
+C and LLVM dispatch the returned resume instruction when a catch continues in
+the current generated caller, while an exception that unwound past the caller
+continues outward unchanged.
+
+Every generated frame carries its loaded-module record and code registration,
+including non-export functions. Static direct materialization preserves the
+metadata closure capture count and binds the staged callable captures before
+installing the generated thunk. A captured Weak callable therefore retains the
+same receiver and ownership identity through direct dispatch instead of being
+recreated as a zero-capture closure.
+
+Generated-C scalar stack-copy selection now uses a forward must-dataflow state
+over the complete reachable CFG. Predecessor kinds are intersected at joins;
+parameter kinds seed entry; primitive writes replace prior kinds; and dynamic or
+nonprimitive overwrites kill primitive provenance. Backedges converge before a
+copy is classified. Runtime copies remain in place whenever no single primitive
+kind reaches the instruction, while proven bool/i64/u64/f64 copies may use the
+typed local and synchronize the dense cell after a direct call.
+
+The exact isolated GCC and Clang snapshots directly pass type-layout cleanup
+40/40, ExecBC AOT 98/98, known-call pipeline 5/5, source contracts 26/26,
+guardrails 6/6, call contracts 9/9, receiver C/LLVM shared execution 8/8, and C
+call shared execution 5/5. MSVC 19.44 builds and passes the portable 40/40,
+98/98, 5/5, 26/26, 6/6, and 9/9 suites; the two Unix shared-library runners
+compile and report their established 8 and 5 capability ignores with zero
+failures. The detailed focused evidence is in
+`tests/acceptance/2026-08-29-aot-ownership-call-frame-resume.md`.

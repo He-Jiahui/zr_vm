@@ -1289,6 +1289,37 @@ guardrail while retaining the receiver 6/6 positive case. This focused matrix
 does not promote final acceptance before the stable integrated full graph,
 artifact, inventory, and exact review gates below pass.
 
+### 2026-08-29 AOT call-frame and cleanup convergence
+
+The next support-first pass found that prepared meta calls alone were not a
+complete generated-call contract. Static direct and meta calls could return
+after a nested exception without dispatching the current caller's resume
+instruction; non-export generated frames omitted their loaded-module record and
+code registration; static-direct materialization recreated captured callables
+with zero captures; and dense cleanup mirrors could still point at a physical
+resource while its destructor re-entered and relocated the stack.
+
+The focused leaf now provides resume-aware C/LLVM call completion, complete
+generated frame context, capture-preserving direct-call materialization,
+fixed-point scalar-kind dataflow across joins/backedges, and alias-first
+physical ownership cleanup. The receiver generated-product suite also uses
+function-content anchors rather than generated `fn_N` numbering for its scalar
+copy source contracts.
+
+| Toolchain | Type layout | ExecBC AOT | Known call | Source | Guardrail | Call | Receiver C/LLVM | C call shared |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| GCC 11.4 Debug static | 40/40 | 98/98 | 5/5 | 26/26 | 6/6 | 9/9 | 8/8 | 5/5 |
+| Clang 14 Debug static | 40/40 | 98/98 | 5/5 | 26/26 | 6/6 | 9/9 | 8/8 | 5/5 |
+| MSVC 19.44 Debug static | 40/40 | 98/98 | 5/5 | 26/26 | 6/6 | 9/9 | 8 ignored | 5 ignored |
+
+All direct processes exited zero. GCC and Clang compiled and executed the C and
+LLVM generated products. MSVC compiled the same production and test paths; its
+shared-library bodies remain explicitly Unix-only. The focused record is
+`tests/acceptance/2026-08-29-aot-ownership-call-frame-resume.md`. This closes
+the AOT ownership leaf but does not promote the umbrella milestone while the
+external L8 parser/LSP overlay, stable full graph, and migration-inventory
+golden remain open.
+
 The frozen syntax-leaf prerequisite is now checked by the executable
 `scripts/syntax_status_records.py` verifier rather than only by repeated manual
 enumeration in this record. Its focused unit suite passes 4/4, including a

@@ -28,6 +28,7 @@ TZrBool backend_aot_llvm_lower_meta_call_family(const SZrAotLlvmLoweringContext 
     TZrBool isTailCall;
     TZrChar prepareOkLabel[96];
     TZrChar finishOkLabel[96];
+    TZrChar tailFallthroughLabel[96];
     TZrChar argsBuffer[256];
 
     if (context == ZR_NULL || instruction == ZR_NULL) {
@@ -55,6 +56,13 @@ TZrBool backend_aot_llvm_lower_meta_call_family(const SZrAotLlvmLoweringContext 
                                             context->entry->flatIndex,
                                             instruction->instructionIndex,
                                             "finish_ok");
+    if (isTailCall) {
+        backend_aot_llvm_make_instruction_label(tailFallthroughLabel,
+                                                sizeof(tailFallthroughLabel),
+                                                context->entry->flatIndex,
+                                                instruction->instructionIndex,
+                                                "tail_fallthrough");
+    }
 
     snprintf(argsBuffer,
              sizeof(argsBuffer),
@@ -71,25 +79,31 @@ TZrBool backend_aot_llvm_lower_meta_call_family(const SZrAotLlvmLoweringContext 
     fprintf(context->file, "%s:\n", prepareOkLabel);
     snprintf(argsBuffer,
              sizeof(argsBuffer),
-             "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1",
+             "ptr %%state, ptr %%frame, ptr %%direct_call, i32 %u, i32 %u, i32 %u, i32 1, ptr %%resume_instruction",
              (unsigned)instruction->destinationSlot,
              (unsigned)receiverSlot,
              (unsigned)callableArgumentCount);
     backend_aot_llvm_write_guarded_call_text(context->file,
                                              context->tempCounter,
-                                             "ZrLibrary_AotRuntime_CallPreparedOrGeneric",
+                                             "ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume",
                                              argsBuffer,
                                              finishOkLabel,
                                              context->failLabel);
 
     fprintf(context->file, "%s:\n", finishOkLabel);
+    backend_aot_llvm_write_resume_dispatch(context->file,
+                                           context->tempCounter,
+                                           context->entry->flatIndex,
+                                           instruction->instructionIndex,
+                                           context->instructionCount,
+                                           "%resume_instruction",
+                                           isTailCall ? tailFallthroughLabel : instruction->nextLabel);
     if (isTailCall) {
+        fprintf(context->file, "%s:\n", tailFallthroughLabel);
         backend_aot_llvm_write_return_call(context->file,
                                            context->tempCounter,
                                            instruction->destinationSlot,
                                            context->publishExports);
-    } else {
-        fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
     }
     return ZR_TRUE;
 }

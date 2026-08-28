@@ -1080,20 +1080,24 @@ static void backend_aot_write_c_direct_stack_copy_scalar_local_sync(
     TZrBool syncI64;
     TZrBool syncU64;
     TZrBool syncF64;
+    TZrUInt32 sourceKindMask;
 
     if (file == ZR_NULL || functionIr == ZR_NULL) {
         return;
     }
-    if (!backend_aot_c_scalar_stack_copy_has_scalar_provenance_before(
-                functionIr, sourceSlot, execInstructionIndex) &&
-        !backend_aot_c_scalar_stack_copy_source_may_have_runtime_scalar_before(
-                functionIr, sourceSlot, execInstructionIndex)) {
+    sourceKindMask = backend_aot_c_scalar_stack_copy_source_reaching_runtime_scalar_kind_mask_before(
+            functionIr, sourceSlot, execInstructionIndex);
+    if (sourceKindMask == ZR_AOT_RUNTIME_SCALAR_KIND_NONE) {
         return;
     }
-    syncBool = backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot);
-    syncI64 = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
-    syncU64 = backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot);
-    syncF64 = backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot);
+    syncBool = (TZrBool)((sourceKindMask & ZR_AOT_RUNTIME_SCALAR_KIND_BOOL) != 0u &&
+                         backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot));
+    syncI64 = (TZrBool)((sourceKindMask & ZR_AOT_RUNTIME_SCALAR_KIND_I64) != 0u &&
+                        backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot));
+    syncU64 = (TZrBool)((sourceKindMask & ZR_AOT_RUNTIME_SCALAR_KIND_U64) != 0u &&
+                        backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot));
+    syncF64 = (TZrBool)((sourceKindMask & ZR_AOT_RUNTIME_SCALAR_KIND_F64) != 0u &&
+                        backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot));
     if (!syncBool && !syncI64 && !syncU64 && !syncF64) {
         return;
     }

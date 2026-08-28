@@ -110,6 +110,66 @@ static TZrStackValuePointer closure_value_pointer_for_frame_slot(SZrState *state
     return base + stackSlot;
 }
 
+static SZrTypeValue *closure_registered_physical_frame_value(
+        SZrState *state,
+        TZrStackValuePointer registeredPointer) {
+    SZrCallInfo *callInfo;
+
+    if (state == ZR_NULL || registeredPointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (callInfo = state->callInfoList; callInfo != ZR_NULL; callInfo = callInfo->previous) {
+        SZrFunction *function;
+        TZrStackValuePointer frameBase;
+        TZrStackValuePointer physicalPointer;
+        TZrSize stackSlot;
+
+        if (callInfo->functionBase.valuePointer == ZR_NULL) {
+            continue;
+        }
+        function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+        if (function == ZR_NULL) {
+            continue;
+        }
+        frameBase = callInfo->functionBase.valuePointer + 1;
+        if (registeredPointer < frameBase ||
+            registeredPointer >= frameBase + function->stackSize) {
+            continue;
+        }
+
+        stackSlot = (TZrSize)(registeredPointer - frameBase);
+        if (stackSlot > UINT32_MAX) {
+            return ZR_NULL;
+        }
+        physicalPointer = closure_value_pointer_for_frame_slot(
+                state, function, frameBase, (TZrUInt32)stackSlot);
+        return physicalPointer != ZR_NULL
+                       ? ZrCore_Stack_GetValueNoProfile(physicalPointer)
+                       : ZR_NULL;
+    }
+
+    return ZR_NULL;
+}
+
+static ZR_FORCE_INLINE TZrBool closure_value_is_ownership_cleanup_value(
+        const SZrTypeValue *value) {
+    return (TZrBool)(value != ZR_NULL &&
+                     (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
+                      value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
+                      value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK ||
+                      value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED));
+}
+
+static ZR_FORCE_INLINE TZrBool closure_value_is_direct_owner_alias(
+        const SZrTypeValue *value) {
+    return (TZrBool)(value != ZR_NULL &&
+                     value->ownershipControl == ZR_NULL &&
+                     value->value.object != ZR_NULL &&
+                     (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
+                      value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED));
+}
+
 static void closure_value_apply_anchored_escape_to_closed_value(SZrState *state, SZrClosureValue *closureValue) {
     TZrUInt32 propagatedEscapeFlags;
 
@@ -380,13 +440,36 @@ static void closure_value_call_close_meta(SZrState *state,
     SZrCallInfo *callInfo = state->callInfoList;
     TZrMemoryOffset valueOffset = ZrCore_Stack_SavePointerAsOffset(
             state, stackPointer.valuePointer);
-    SZrTypeValue *value = ZrCore_Stack_GetValue(stackPointer.valuePointer);
-    if (value != ZR_NULL &&
-        (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
-         value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
-         value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK ||
-         value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED)) {
-        ZrCore_Ownership_ReleaseValue(state, value);
+    SZrTypeValue *registeredValue = &stackPointer.valuePointer->value;
+    SZrTypeValue *physicalValue = closure_registered_physical_frame_value(
+            state, stackPointer.valuePointer);
+    TZrBool hasDistinctPhysicalValue =
+            (TZrBool)(physicalValue != ZR_NULL &&
+                      physicalValue != registeredValue &&
+                      !ZrCore_Value_SlotsOverlapNoProfile(
+                              physicalValue, registeredValue));
+    SZrTypeValue *value = registeredValue;
+
+    if (closure_value_is_ownership_cleanup_value(registeredValue)) {
+        TZrBool sharesRetainedOwnershipControl =
+                (TZrBool)(hasDistinctPhysicalValue &&
+                          closure_value_is_ownership_cleanup_value(physicalValue) &&
+                          registeredValue->ownershipControl != ZR_NULL &&
+                          physicalValue->ownershipControl == registeredValue->ownershipControl);
+        TZrBool aliasesDirectOwner =
+                (TZrBool)(hasDistinctPhysicalValue &&
+                          closure_value_is_direct_owner_alias(registeredValue) &&
+                          closure_value_is_direct_owner_alias(physicalValue) &&
+                          physicalValue->value.object == registeredValue->value.object);
+
+        if (sharesRetainedOwnershipControl) {
+            ZrCore_Ownership_ReleaseValue(state, physicalValue);
+        } else if (aliasesDirectOwner) {
+            ZrCore_Value_ResetAsNullNoProfile(registeredValue);
+            ZrCore_Ownership_ReleaseValue(state, physicalValue);
+            return;
+        }
+        ZrCore_Ownership_ReleaseValue(state, registeredValue);
         return;
     }
     const SZrMeta *meta = ZrCore_Value_GetMeta(state, value, ZR_META_CLOSE);

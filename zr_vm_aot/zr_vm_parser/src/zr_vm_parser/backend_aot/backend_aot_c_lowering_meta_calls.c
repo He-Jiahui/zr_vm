@@ -23,61 +23,66 @@ void backend_aot_write_c_meta_call(FILE *file,
             "    {\n"
             "        ZrAotGeneratedDirectCall zr_aot_meta_direct_call = {0};\n"
             "        /* zr_aot_meta_call_prepare_and_dispatch */\n"
-            "%s"
             "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareMetaCall(state,\n"
             "                                                               &frame,\n"
             "                                                               %u,\n"
             "                                                               %u,\n"
             "                                                               %u,\n"
-            "                                                               &zr_aot_meta_direct_call) &&\n"
-            "                        ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,\n"
-            "                                                                    &frame,\n"
-            "                                                                    &zr_aot_meta_direct_call,\n"
-            "                                                                    %u,\n"
-            "                                                                    %u,\n"
-            "                                                                    %u,\n"
-            "                                                                    1)",
-            syncI64Local || syncBoolLocal || syncU64Local || syncF64Local
-                    ? "        /* zr_aot_call_result_sync_compact */\n"
-                    : "",
+            "                                                               &zr_aot_meta_direct_call));\n"
+            "        zr_aot_next_instruction = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGenericWithResume(state,\n"
+            "                                                                              &frame,\n"
+            "                                                                              &zr_aot_meta_direct_call,\n"
+            "                                                                              %u,\n"
+            "                                                                              %u,\n"
+            "                                                                              %u,\n"
+            "                                                                              1,\n"
+            "                                                                              &zr_aot_next_instruction));\n"
+            "        if (zr_aot_next_instruction != ZR_AOT_RUNTIME_RESUME_FALLTHROUGH) {\n"
+            "            goto zr_aot_fn_%u_dispatch;\n"
+            "        }\n"
+            "%s",
             (unsigned)destinationSlot,
             (unsigned)receiverSlot,
             (unsigned)argumentCount,
             (unsigned)destinationSlot,
             (unsigned)receiverSlot,
-            (unsigned)(argumentCount + 1u));
+            (unsigned)(argumentCount + 1u),
+            (unsigned)functionIr->flatIndex,
+            syncI64Local || syncBoolLocal || syncU64Local || syncF64Local
+                    ? "        /* zr_aot_call_result_sync_compact */\n"
+                      "        ZR_AOT_C_GUARD(\n"
+                    : "");
     if (syncI64Local) {
         fprintf(file,
-                " &&\n"
                 "                        /* zr_aot_meta_call_sync_i64_local_boundary */\n"
-                "                        ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u)",
+                "                        ZrLibrary_AotRuntime_SyncSignedIntLocal(state, &frame, %u, &zr_aot_s%u) &&\n",
                 (unsigned)destinationSlot,
                 (unsigned)destinationSlot);
     }
     if (syncBoolLocal) {
         fprintf(file,
-                " &&\n"
                 "                        /* zr_aot_meta_call_sync_bool_local_boundary */\n"
-                "                        ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u)",
+                "                        ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame, %u, &zr_aot_b%u) &&\n",
                 (unsigned)destinationSlot,
                 (unsigned)destinationSlot);
     }
     if (syncU64Local) {
         fprintf(file,
-                " &&\n"
                 "                        /* zr_aot_meta_call_sync_u64_local_boundary */\n"
-                "                        ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u)",
+                "                        ZrLibrary_AotRuntime_SyncUnsignedIntLocal(state, &frame, %u, &zr_aot_u%u) &&\n",
                 (unsigned)destinationSlot,
                 (unsigned)destinationSlot);
     }
     if (syncF64Local) {
         fprintf(file,
-                " &&\n"
                 "                        /* zr_aot_meta_call_sync_f64_local_boundary */\n"
-                "                        ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u)",
+                "                        ZrLibrary_AotRuntime_SyncFloatLocal(state, &frame, %u, &zr_aot_f%u) &&\n",
                 (unsigned)destinationSlot,
                 (unsigned)destinationSlot);
     }
-    fprintf(file, ");\n"
-                  "    }\n");
+    if (syncI64Local || syncBoolLocal || syncU64Local || syncF64Local) {
+        fprintf(file, "                        ZR_TRUE);\n");
+    }
+    fprintf(file, "    }\n");
 }
