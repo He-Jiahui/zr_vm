@@ -1204,3 +1204,17 @@ changed ranges return no items. GCC, Clang, and MSVC each pass semantic-query
 parity `9/9`, source contracts `65/65`, advanced editor features `73/73`, and
 the combined hierarchy stdio smoke. Full interface and project feature runners
 retain their exact pre-existing marker sets.
+
+## 2026-08-29 Canonical Hierarchy Prepare
+
+Call and type hierarchy prepare requests no longer use the LSP symbol table or
+the general position semantic resolver. They convert the request position to a
+source-bound parser range, query `SymbolAt`, validate the exact semantic record
+and `DeclarationOf` fact, and only then create the protocol item.
+
+Detaching the analyzer symbol table before prepare preserves local type and
+receiver-method hierarchy results. Missing SymbolId, TypeId, declaration node,
+or declaration fact returns no item; no name/token fallback is available.
+GCC, Clang, and MSVC each pass semantic-query parity `9/9`, source contracts
+`65/65`, advanced editor features `73/73`, and the combined hierarchy stdio
+smoke. Project and full-interface runners retain their exact fixed marker sets.

@@ -56,8 +56,18 @@ static void test_local_method_call_hierarchy_uses_canonical_edges(
                 state, context, uri, content, strlen(content), 1U) ||
         !find_position(content, "fn run", 0U, 3, &runPosition) ||
         !find_position(content, "pub fn read", 0U, 7, &leftReadPosition) ||
-        !find_position(content, "pub fn read", 1U, 7, &rightReadPosition) ||
-        !ZrLanguageServer_Lsp_PrepareCallHierarchy(
+        !find_position(content, "pub fn read", 1U, 7, &rightReadPosition)) {
+        goto cleanup;
+    }
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
+            state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+        failure = "semantic snapshot for symbol-table detachment";
+        goto cleanup;
+    }
+    detachedSymbolTable = analyzer->symbolTable;
+    analyzer->symbolTable = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_PrepareCallHierarchy(
                 state, context, uri, runPosition, &runItems) ||
         runItems.length != 1U ||
         !ZrLanguageServer_Lsp_PrepareCallHierarchy(
@@ -85,14 +95,6 @@ static void test_local_method_call_hierarchy_uses_canonical_edges(
         goto cleanup;
     }
 
-    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
-            state, context, uri);
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
-        failure = "semantic snapshot for symbol-table detachment";
-        goto cleanup;
-    }
-    detachedSymbolTable = analyzer->symbolTable;
-    analyzer->symbolTable = ZR_NULL;
     runDeclaration = (SZrSemanticReferenceFact *)
             ZrParser_SemanticQuery_DeclarationOf(
                     analyzer->semanticContext,

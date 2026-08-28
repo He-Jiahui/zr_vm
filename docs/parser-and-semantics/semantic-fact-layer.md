@@ -3601,3 +3601,15 @@ related display symbol, and follow-up does not re-run a position query. Name and
 protocol kind are presentation from the validated semantic declaration.
 Unavailable or stale identity returns no hierarchy item; external type
 hierarchy remains a ModuleIdentity relation-producer boundary.
+
+## Plan 03 Task 7.17 Canonical Hierarchy Prepare
+
+Call and type hierarchy prepare requests now query the immutable parser
+snapshot directly with `SymbolAt`. The query range carries the current document
+source identity, and the result is accepted only when its SymbolId, TypeId,
+borrowed declaration node, semantic record, and `DeclarationOf` fact agree.
+
+The analyzer symbol table may be absent before prepare. Callable duplicate rows
+are normalized by exact declaration AST identity; type rows are selected by the
+exact SymbolAt identity. The consumer does not resolve a token/name through the
+LSP semantic resolver, inspect symbol scopes, or reconstruct a missing row.

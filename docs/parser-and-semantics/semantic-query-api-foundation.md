@@ -958,6 +958,14 @@ versions, and mismatched ranges remain unavailable. Cross-project, binary, and
 native type hierarchy requires ModuleIdentity-aware relation producers rather
 than a type-name fallback.
 
+Hierarchy prepare now starts at the same parser snapshot boundary. The request
+position is converted to a source-bound zero-width file range and passed to
+`ZrParser_SemanticQuery_SymbolAt`; the returned SymbolId, TypeId, and borrowed
+declaration node must agree with the semantic record and `DeclarationOf` fact.
+Call prepare normalizes duplicate callable rows only by exact declaration AST
+identity. Neither call nor type prepare consults an LSP symbol table or enters
+the general position resolver. Missing exact identity yields no item.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

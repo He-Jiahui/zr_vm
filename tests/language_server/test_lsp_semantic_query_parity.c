@@ -888,8 +888,18 @@ static void test_local_type_hierarchy_uses_canonical_relations(
         !ZrLanguageServer_Lsp_UpdateDocument(
                 state, context, uri, content, strlen(content), 1U) ||
         !find_position(content, "class Derived", 0U, 6, &derivedPosition) ||
-        !find_position(content, "class Base", 0U, 6, &basePosition) ||
-        !ZrLanguageServer_Lsp_PrepareTypeHierarchy(
+        !find_position(content, "class Base", 0U, 6, &basePosition)) {
+        goto cleanup;
+    }
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
+            state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+        failure = "semantic snapshot for symbol-table detachment";
+        goto cleanup;
+    }
+    detachedSymbolTable = analyzer->symbolTable;
+    analyzer->symbolTable = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_PrepareTypeHierarchy(
                 state, context, uri, derivedPosition, &derivedItems) ||
         derivedItems.length != 1U ||
         !ZrLanguageServer_Lsp_PrepareTypeHierarchy(
@@ -912,14 +922,6 @@ static void test_local_type_hierarchy_uses_canonical_relations(
         goto cleanup;
     }
 
-    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
-            state, context, uri);
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
-        failure = "semantic snapshot for symbol-table detachment";
-        goto cleanup;
-    }
-    detachedSymbolTable = analyzer->symbolTable;
-    analyzer->symbolTable = ZR_NULL;
     derivedDeclaration = (SZrSemanticReferenceFact *)
             ZrParser_SemanticQuery_DeclarationOf(
                     analyzer->semanticContext,

@@ -6,15 +6,6 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_parser/semantic_query.h"
 
-static TZrBool semantic_type_hierarchy_symbol_is_type(
-        const SZrSymbol *symbol) {
-    return symbol != ZR_NULL &&
-           (symbol->type == ZR_SYMBOL_CLASS ||
-            symbol->type == ZR_SYMBOL_STRUCT ||
-            symbol->type == ZR_SYMBOL_INTERFACE ||
-            symbol->type == ZR_SYMBOL_ENUM);
-}
-
 static TZrBool semantic_type_hierarchy_node_is_type(const SZrAstNode *node) {
     return node != ZR_NULL &&
            (node->type == ZR_AST_CLASS_DECLARATION ||
@@ -213,7 +204,10 @@ TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_Prepare(
         SZrString *uri,
         SZrLspPosition position,
         SZrArray *result) {
-    SZrLspSemanticQuery query;
+    SZrSemanticAnalyzer *analyzer;
+    SZrFilePosition filePosition;
+    SZrFileRange queryRange;
+    SZrParserSemanticSymbolQuery symbolQuery;
     TZrBool ok = ZR_TRUE;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
@@ -228,28 +222,36 @@ TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_Prepare(
                 sizeof(SZrLspHierarchyItem *),
                 ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
-    ZrLanguageServer_LspSemanticQuery_Init(&query);
-    if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
-                state, context, uri, position, &query) &&
-        query.kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL &&
-        query.analyzer != ZR_NULL && query.symbol != ZR_NULL &&
-        semantic_type_hierarchy_symbol_is_type(query.symbol)) {
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
+            state, context, uri);
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, position);
+    queryRange = ZrLanguageServer_SemanticAnalyzer_BindQuerySource(
+            analyzer,
+            ZrParser_FileRange_Create(filePosition, filePosition, uri));
+    if (analyzer != ZR_NULL && analyzer->semanticContext != ZR_NULL &&
+        ZrParser_SemanticQuery_SymbolAt(
+                analyzer->semanticContext,
+                queryRange,
+                ZR_NULL,
+                &symbolQuery) &&
+        semantic_type_hierarchy_node_is_type(symbolQuery.declarationNode)) {
         const SZrSemanticSymbolRecord *semanticSymbol =
                 ZrParser_Semantic_FindSymbolById(
-                        query.analyzer->semanticContext,
-                        query.symbol->semanticId);
+                        analyzer->semanticContext,
+                        symbolQuery.symbolId);
         const SZrSemanticReferenceFact *declaration =
                 semanticSymbol != ZR_NULL
                         ? ZrParser_SemanticQuery_DeclarationOf(
-                                  query.analyzer->semanticContext,
+                                  analyzer->semanticContext,
                                   semanticSymbol->id,
                                   ZR_NULL)
                         : ZR_NULL;
 
         ok = semanticSymbol != ZR_NULL && declaration != ZR_NULL &&
              semanticSymbol->kind == ZR_SEMANTIC_SYMBOL_KIND_TYPE &&
-             semanticSymbol->astNode == query.symbol->astNode &&
-             semanticSymbol->typeId == query.symbol->semanticTypeId &&
+             semanticSymbol->astNode == symbolQuery.declarationNode &&
+             semanticSymbol->typeId == symbolQuery.typeId &&
              declaration->isResolved &&
              declaration->kind == ZR_SEMANTIC_REFERENCE_DECLARATION &&
              declaration->symbolId == semanticSymbol->id &&
@@ -258,13 +260,12 @@ TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_Prepare(
              semantic_type_hierarchy_append_item(
                      state,
                      context,
-                     query.analyzer,
+                     analyzer,
                      semanticSymbol,
                      semanticSymbol->location,
                      declaration->range,
                      result);
     }
-    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     return ok;
 }
 
