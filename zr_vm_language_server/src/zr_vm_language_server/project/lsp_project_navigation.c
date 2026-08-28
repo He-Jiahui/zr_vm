@@ -1,6 +1,7 @@
 #include "module/lsp_module_metadata.h"
 #include "project/lsp_project_internal.h"
 #include "semantic/lsp_semantic_import_chain.h"
+#include "semantic/lsp_semantic_reference_query.h"
 #include "lsp_virtual_documents.h"
 #include "zr_vm_language_server/lsp_uri.h"
 
@@ -287,45 +288,22 @@ typedef struct SZrLspProjectResolvedExternalImportedMember {
 
 typedef SZrLspExternalMetadataDeclaration SZrLspProjectResolvedExternalMetadataDeclaration;
 
-static TZrBool append_symbol_references_from_tracker(SZrState *state,
-                                                     SZrLspContext *context,
-                                                     SZrSemanticAnalyzer *analyzer,
-                                                     SZrSymbol *symbol,
-                                                     TZrBool includeDeclaration,
-                                                     SZrArray *result) {
-    SZrArray references;
+static TZrBool append_symbol_references_from_facts(SZrState *state,
+                                                   SZrLspContext *context,
+                                                   SZrSemanticAnalyzer *analyzer,
+                                                   SZrSymbol *symbol,
+                                                   TZrBool includeDeclaration,
+                                                   SZrArray *result) {
+    TZrBool appended = ZR_FALSE;
 
-    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->referenceTracker == ZR_NULL || symbol == ZR_NULL ||
-        result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_ReferenceTracker_FindReferences(state, analyzer->referenceTracker, symbol, &references)) {
-        ZrCore_Array_Free(state, &references);
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < references.length; index++) {
-        SZrReference **referencePtr = (SZrReference **)ZrCore_Array_Get(&references, index);
-        if (referencePtr == ZR_NULL || *referencePtr == ZR_NULL ||
-            ((*referencePtr)->type == ZR_REFERENCE_DEFINITION && !includeDeclaration)) {
-            continue;
-        }
-
-        if (!append_lsp_location(state,
-                                 context,
-                                 result,
-                                 (*referencePtr)->location.source,
-                                 (*referencePtr)->location,
-                                 ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED)) {
-            ZrCore_Array_Free(state, &references);
-            return ZR_FALSE;
-        }
-    }
-
-    ZrCore_Array_Free(state, &references);
-    return ZR_TRUE;
+    return ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
+            state,
+            context,
+            analyzer,
+            symbol,
+            includeDeclaration,
+            result,
+            &appended);
 }
 
 static TZrBool append_imported_member_locations_from_analyzer(SZrState *state,
@@ -2088,12 +2066,12 @@ TZrBool ZrLanguageServer_Lsp_ProjectTryFindReferences(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!append_symbol_references_from_tracker(state,
-                                               context,
-                                               resolved.analyzer,
-                                               resolved.symbol,
-                                               includeDeclaration,
-                                               result)) {
+    if (!append_symbol_references_from_facts(state,
+                                             context,
+                                             resolved.analyzer,
+                                             resolved.symbol,
+                                             includeDeclaration,
+                                             result)) {
         return ZR_FALSE;
     }
 

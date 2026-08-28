@@ -811,6 +811,17 @@ SymbolIds, unavailable snapshot source, unresolved use facts, and cancelled
 requests fail closed. A document update requires a fresh semantic-query
 resolution before projection; borrowed query objects do not cross updates.
 
+Project navigation uses the same relation projector for the source symbol it
+resolves. `AppendReferencesForSymbol` accepts the analyzer snapshot and one
+exact SymbolId-bearing symbol, then reports query success separately from
+whether any local location was appended. That distinction preserves a valid
+zero-local-reference result so later project aggregation can still run. The
+project fallback no longer reads `SZrReferenceTracker`; invalid ids, missing
+semantic contexts, and cancellation still fail closed. Imported-member
+aggregation across project records remains a separate name-keyed migration
+boundary and must not be described as canonical until it consumes stable
+module and symbol identities.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

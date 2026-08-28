@@ -1358,12 +1358,15 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c");
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+    char *projectNavigation = read_repo_text_file_owned(
+        "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
 
-    if (referenceQuery == NULL || semanticQuery == NULL) {
+    if (referenceQuery == NULL || semanticQuery == NULL || projectNavigation == NULL) {
         printf("FAIL: could not read local reference consumer sources\n");
         g_failures++;
         free(referenceQuery);
         free(semanticQuery);
+        free(projectNavigation);
         return;
     }
 
@@ -1377,9 +1380,15 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
     assert_text_contains_none(referenceQuery, "symbol->name");
     assert_text_contains_none(
         semanticQuery, "semantic_query_normalize_symbol_reference_range");
+    assert_text_contains(
+        projectNavigation,
+        "ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol");
+    assert_text_contains_none(
+        projectNavigation, "ReferenceTracker_FindReferences");
 
     free(referenceQuery);
     free(semanticQuery);
+    free(projectNavigation);
 }
 
 static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
