@@ -1,6 +1,5 @@
 #include "interface/lsp_interface_internal.h"
 #include "semantic/lsp_numeric_range_text.h"
-#include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_parser/semantic_facts.h"
 
@@ -415,31 +414,6 @@ static TZrBool signature_fact_append_ownership_intrinsic_detail(
             fact->consuming ? "consuming" : "non-consuming");
 }
 
-static void signature_fact_materialize_argument(SZrState *state,
-                                                SZrSemanticAnalyzer *analyzer,
-                                                SZrAstNode *argumentNode) {
-    SZrInferredType inferredType;
-
-    if (state == ZR_NULL ||
-        analyzer == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL ||
-        analyzer->compilerState == ZR_NULL ||
-        argumentNode == ZR_NULL) {
-        return;
-    }
-
-    if (ZrParser_SemanticFacts_FindExpressionByNode(analyzer->semanticContext, argumentNode) != ZR_NULL) {
-        return;
-    }
-
-    ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    (void)ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state,
-                                                                     analyzer,
-                                                                     argumentNode,
-                                                                     &inferredType);
-    ZrParser_InferredType_Free(state, &inferredType);
-}
-
 SZrString *ZrLanguageServer_Lsp_BuildSignatureArgumentSemanticFactDocumentation(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -460,8 +434,6 @@ SZrString *ZrLanguageServer_Lsp_BuildSignatureArgumentSemanticFactDocumentation(
         argumentNode == ZR_NULL) {
         return ZR_NULL;
     }
-
-    signature_fact_materialize_argument(state, analyzer, argumentNode);
 
     expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(analyzer->semanticContext, argumentNode);
     numericFact = ZrParser_SemanticFacts_FindNumericByNode(analyzer->semanticContext, argumentNode);

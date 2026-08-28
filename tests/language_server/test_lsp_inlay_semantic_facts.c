@@ -977,6 +977,7 @@ static void test_completion_and_signature_use_ownership_intrinsic_fact(SZrState 
 
 #include "test_lsp_inlay_canonical_declaration_cases.h"
 #include "test_lsp_completion_snapshot_fact_cases.h"
+#include "test_lsp_signature_snapshot_fact_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1013,6 +1014,7 @@ int main(void) {
     test_completion_and_signature_use_ownership_intrinsic_fact(state);
     test_inlay_hint_enumerates_canonical_declarations_without_symbol_table(state);
     test_completion_does_not_materialize_missing_snapshot_facts(state);
+    test_signature_does_not_materialize_missing_snapshot_facts(state);
 
     ZrCore_GlobalState_Free(global);
 

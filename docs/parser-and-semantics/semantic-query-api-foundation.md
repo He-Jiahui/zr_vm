@@ -904,6 +904,12 @@ or mutate the semantic context when a fact is absent. Missing enrichment data
 is omitted; the completion item itself remains available from its existing
 canonical declaration identity.
 
+Signature argument documentation follows the same rule. It reads the argument
+node only to locate facts already retained by the snapshot; an absent
+expression fact does not trigger analyzer inference. Canonical signature and
+parameter identity remain available independently from optional semantic-fact
+documentation.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

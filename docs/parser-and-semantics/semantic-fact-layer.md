@@ -3534,3 +3534,11 @@ append replacement facts, or otherwise change fact-array length.
 This boundary separates producer completeness from protocol projection. A
 missing optional detail is not permission for LSP to reconstruct semantic
 state; producer gaps must be repaired before snapshot publication.
+
+## Plan 03 Task 7.12 Read-Only Signature Facts
+
+Signature argument documentation consumes the same immutable expression,
+numeric, logical, ownership, and ownership-intrinsic facts. A missing argument
+fact yields no optional documentation; request handling must not infer the
+argument again or append a fact. Callable and parameter identity continue to
+come from the canonical call query rather than this display-only enrichment.
