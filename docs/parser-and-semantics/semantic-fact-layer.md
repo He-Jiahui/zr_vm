@@ -3587,3 +3587,17 @@ LSP symbol, or resolve the item's position again. Missing or unresolved
 declaration facts remain unavailable. Cross-project, binary, and native call
 hierarchy still needs ModuleIdentity-aware relation facts and is not inferred
 from imported names.
+
+## Plan 03 Task 7.16 Symbol-Table-Free Type Hierarchy Follow-Up
+
+Prepared source-local type hierarchy items are re-resolved from their captured
+URI, document version, SymbolId, TypeId, semantic declaration range, and exact
+`DeclarationOf` selection range. `BaseTypesOf` and `DerivedTypesOf` targets are
+accepted only when their relation ids, type ids, semantic type record, and
+declaration fact agree.
+
+The LSP consumer no longer traverses `symbolTable->allScopes` to recover the
+related display symbol, and follow-up does not re-run a position query. Name and
+protocol kind are presentation from the validated semantic declaration.
+Unavailable or stale identity returns no hierarchy item; external type
+hierarchy remains a ModuleIdentity relation-producer boundary.

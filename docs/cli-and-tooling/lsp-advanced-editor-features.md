@@ -1189,3 +1189,18 @@ ranges, and mismatched identity return no calls. GCC, Clang, and MSVC each pass
 semantic-query parity `9/9`, source contracts `65/65`, advanced editor features
 `73/73`, and the combined hierarchy stdio smoke. Full interface and project
 feature runners retain their exact pre-existing marker sets.
+
+## 2026-08-29 Symbol-Table-Free Type Hierarchy Follow-Up
+
+Supertype and subtype follow-up requests now validate the prepared item's URI,
+document version, SymbolId, TypeId, semantic declaration range, and exact
+`DeclarationOf` selection range directly in the current parser snapshot.
+`BaseTypesOf` and `DerivedTypesOf` target ids select the related semantic type
+declaration; the LSP symbol table no longer participates in item lookup.
+
+Removing the analyzer symbol table after prepare therefore preserves exact
+`Base` and `Derived` results. Stale versions, unresolved declarations, or
+changed ranges return no items. GCC, Clang, and MSVC each pass semantic-query
+parity `9/9`, source contracts `65/65`, advanced editor features `73/73`, and
+the combined hierarchy stdio smoke. Full interface and project feature runners
+retain their exact pre-existing marker sets.

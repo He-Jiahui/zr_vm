@@ -1503,11 +1503,20 @@ static void test_local_type_hierarchy_uses_parser_relations(void) {
     assert_text_contains(
         hierarchyQuery, "ZrParser_SemanticQuery_DerivedTypesOf");
     assert_text_contains(
+        hierarchyQuery, "ZrParser_Semantic_FindSymbolById");
+    assert_text_contains(
+        hierarchyQuery, "ZrParser_SemanticQuery_DeclarationOf");
+    assert_text_contains(hierarchyQuery, "item->semanticId");
+    assert_text_contains(
         hierarchyQuery, "ZrLanguageServer_LspSemanticQuery_ResolveAtPosition");
     assert_text_contains(
         hierarchyQuery, "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");
     assert_text_contains_none(hierarchyQuery, "GetDocumentSymbols");
     assert_text_contains_none(hierarchyQuery, "referenceTracker");
+    assert_text_contains_none(hierarchyQuery, "symbolTable");
+    assert_text_contains_none(hierarchyQuery, "allScopes");
+    assert_text_contains_none(
+        hierarchyQuery, "semantic_type_hierarchy_find_symbol");
     assert_text_contains_none(
         hierarchyQuery, "lsp_hierarchy_string_text");
     assert_text_contains_none(

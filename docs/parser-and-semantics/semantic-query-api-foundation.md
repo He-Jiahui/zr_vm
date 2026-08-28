@@ -945,6 +945,19 @@ duplicate semantic rows by exact declaration AST identity; spelling never
 selects the row. Cross-project, binary, and native call hierarchy requires a
 ModuleIdentity relation producer and remains unavailable here.
 
+Type hierarchy follow-up uses the same immutable-item discipline. A prepared
+type item is re-resolved by URI, document version, SymbolId, TypeId, semantic
+type declaration range, and exact `DeclarationOf` selection range. Relation
+targets from `BaseTypesOf` and `DerivedTypesOf` must resolve to a matching
+semantic type record and declaration fact before their name or protocol kind
+is projected.
+
+The follow-up path does not turn selection ranges back into positions or walk
+LSP symbol scopes to recover a target. Missing declaration identity, stale
+versions, and mismatched ranges remain unavailable. Cross-project, binary, and
+native type hierarchy requires ModuleIdentity-aware relation producers rather
+than a type-name fallback.
+
 Persistent semantic facts enforce disposition completeness. Append rejects a
 diagnostic that has neither at least one typed fix nor a nonzero no-fix reason;
 the producer must resolve that state before the fact crosses the snapshot

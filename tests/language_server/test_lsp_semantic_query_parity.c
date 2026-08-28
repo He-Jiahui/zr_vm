@@ -864,11 +864,15 @@ static void test_local_type_hierarchy_uses_canonical_relations(
     SZrArray baseItems = {0};
     SZrArray supertypes = {0};
     SZrArray subtypes = {0};
+    SZrArray unresolved = {0};
     SZrArray stale = {0};
     SZrLspHierarchyItem *derivedItem = ZR_NULL;
     SZrLspHierarchyItem *baseItem = ZR_NULL;
     SZrLspHierarchyItem *superItem = ZR_NULL;
     SZrLspHierarchyItem *subItem = ZR_NULL;
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
+    SZrSymbolTable *detachedSymbolTable = ZR_NULL;
+    SZrSemanticReferenceFact *derivedDeclaration = ZR_NULL;
     const TZrChar *failure = "type hierarchy preparation";
     TZrBool valid = ZR_FALSE;
 
@@ -908,6 +912,25 @@ static void test_local_type_hierarchy_uses_canonical_relations(
         goto cleanup;
     }
 
+    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(
+            state, context, uri);
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
+        failure = "semantic snapshot for symbol-table detachment";
+        goto cleanup;
+    }
+    detachedSymbolTable = analyzer->symbolTable;
+    analyzer->symbolTable = ZR_NULL;
+    derivedDeclaration = (SZrSemanticReferenceFact *)
+            ZrParser_SemanticQuery_DeclarationOf(
+                    analyzer->semanticContext,
+                    derivedItem->semanticId,
+                    ZR_NULL);
+    if (derivedDeclaration == ZR_NULL ||
+        !derivedDeclaration->isResolved) {
+        failure = "resolved declaration for exactness check";
+        goto cleanup;
+    }
+
     derivedItem->name = tamperedName;
     baseItem->name = tamperedName;
     if (!ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(
@@ -929,6 +952,15 @@ static void test_local_type_hierarchy_uses_canonical_relations(
         goto cleanup;
     }
 
+    derivedDeclaration->isResolved = ZR_FALSE;
+    (void)ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(
+            state, context, derivedItem, &unresolved);
+    derivedDeclaration->isResolved = ZR_TRUE;
+    if (unresolved.length != 0U) {
+        failure = "unresolved declaration did not fail closed";
+        goto cleanup;
+    }
+
     if (!ZrLanguageServer_Lsp_UpdateDocument(
                 state, context, uri, content, strlen(content), 2U)) {
         failure = "version update";
@@ -943,10 +975,17 @@ static void test_local_type_hierarchy_uses_canonical_relations(
     valid = ZR_TRUE;
 
 cleanup:
+    if (derivedDeclaration != ZR_NULL) {
+        derivedDeclaration->isResolved = ZR_TRUE;
+    }
+    if (analyzer != ZR_NULL && detachedSymbolTable != ZR_NULL) {
+        analyzer->symbolTable = detachedSymbolTable;
+    }
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &derivedItems);
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &baseItems);
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &supertypes);
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &subtypes);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &unresolved);
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &stale);
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
