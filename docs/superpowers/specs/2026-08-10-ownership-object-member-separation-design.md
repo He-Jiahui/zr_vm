@@ -1,7 +1,9 @@
 # Ownership Intrinsics And Object Member Separation Design
 
-**Status:** Implementation complete; final integrated acceptance is pending the
-stable three-toolchain replay, generated-artifact verification, and cleanup.
+**Status:** Implementation complete; final integrated acceptance remains pending
+the external L8/debug baseline. The 2026-08-30 clean `f00d4c5` replay completed
+all ownership-focused gates, artifact replay, migration inventory, and cleanup,
+but the registered graph still has explicitly isolated external failures.
 
 ## Scope
 

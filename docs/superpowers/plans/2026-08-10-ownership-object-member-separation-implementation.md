@@ -1145,6 +1145,34 @@ changing its executable body or any production symbol. Fixed baseline
 the active-test naming ambiguity while preserving the required artifact ABI;
 it does not close Step 5 before the final integrated gates.
 
+The 2026-08-30 fixed snapshot at `f00d4c5` completed the remaining evidence
+that is independent of the external L8 source overlay. GCC 11.4 and Clang 14
+each built the complete static Debug graph and passed 132/135 registered CTests;
+MSVC 19.44 built all targets (the serial incremental retry returned zero after
+the parallel cold-build contention) and passed 131/135. The only repeated WSL
+failures are `language_server`, `language_server_stdio_smoke`, and
+`debug_expression_diagnostics`; MSVC has those same three plus the existing
+`projects/gc_fragment_stress` access-violation case. The ownership, AOT, CLI,
+REPL, and debug-agent portions of every graph passed.
+
+The same snapshot directly passed the ownership core on all three toolchains:
+GCC/Clang/MSVC ownership separation 49/49, receiver performance 1/1,
+expression facts 28/28, Unique/Drop 20/20, Shared/Weak 21/21, type inference
+124/124 (GCC/Clang 123/123), semantic facts 15/15 (GCC/Clang 14/14), and
+compiler integration 127/127. The MSVC LSP inlay/project/advanced-editor
+targets returned zero, and the known owner-ref last-use suite remained the
+single pre-existing semantic failure.
+
+The migration inventory returned `findings=0` with no machine-applicable,
+maybe-incorrect, requires-review, or blocked entries. The checked-in LSP matrix
+was compiled twice by the WSL GCC CLI; the second run changed zero output
+hashes. GCC, Clang, and MSVC then consumed the same matrix artifact and each
+printed `matrix`, returned `64`, reported `executed_via=binary`, and exited
+zero. Syntax status verification remained `TOTAL=55 COMPLETE=55` with no
+missing status or timestamp fields. Step 5 therefore remains open only for a
+stable post-L8 full graph and final exact-diff review; no source fix is inferred
+from the isolated external failures.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before

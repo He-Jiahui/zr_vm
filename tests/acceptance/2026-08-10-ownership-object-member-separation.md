@@ -7,6 +7,50 @@
 - Review date: 2026-08-29 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
 
+## 2026-08-30 fixed-snapshot replay
+
+The fixed source snapshot at `f00d4c5` was configured with static libraries and
+all tests enabled (`BUILD_STATIC_LIB=ON`, `BUILD_SHARED_LIB=OFF`,
+`BUILD_LANGUAGE_SERVER_EXTENSION=OFF`). GCC 11.4 and Clang 14 each enumerated
+135 tests and passed 132/135. MSVC 19.44 configured and linked the complete
+135-target Debug graph; its serial incremental build returned zero after the
+parallel cold-build contention, and CTest passed 131/135. The repeated WSL
+failures are `language_server`, `language_server_stdio_smoke`, and
+`debug_expression_diagnostics`. MSVC has those same three plus the existing
+`projects`/`gc_fragment_stress` access violation. These failures are isolated
+to the concurrent L8/debug baseline and do not alter the ownership-focused
+results below; no external path was staged or changed.
+
+| Focused target | GCC 11.4 | Clang 14 | MSVC 19.44 |
+| --- | ---: | ---: | ---: |
+| ownership intrinsic/member separation | 49/49 | 49/49 | 49/49 |
+| receiver guard performance | 1/1 | 1/1 | 1/1 |
+| expression facts | 28/28 | 28/28 | 28/28 |
+| resource Unique/Drop | 20/20 | 20/20 | 20/20 |
+| resource Shared/Weak | 21/21 | 21/21 | 21/21 |
+| type inference | 123/123 | 123/123 | 124/124 |
+| semantic facts | 14/14 | 14/14 | 15/15 |
+| compiler integration | 127/127 | 127/127 | 127/127 |
+
+All listed focused processes returned zero except the known owner-ref
+last-use semantic regression in `resource_owner_borrow_receiver`; that suite
+is outside this source slice. MSVC LSP inlay/project/advanced-editor targets
+also returned zero, and the complete debug-agent/protocol family passed.
+
+The migration inventory command scanned 1,005 candidate files and reported
+`findings=0`, with zero machine-applicable, maybe-incorrect, requires-review,
+or blocked entries. The WSL GCC CLI compiled the tracked
+`lsp_language_feature_matrix` twice; the second run returned zero and changed
+zero SHA-256 hashes. The same WSL-produced artifact was consumed by GCC,
+Clang, and MSVC; each printed `matrix`, returned `64`, reported
+`executed_via=binary`, and exited zero. The syntax status verifier reported
+`TOTAL=55 COMPLETE=55 MISSING_STATUS=0 MISSING_TIME=0`.
+
+This replay is complete evidence for the implementation and cleanup gates,
+but it does not promote this record because the three external L8/debug full-
+graph failures remain. Final status still requires a stable integrated HEAD,
+the same 135-test replay, and a final exact-path diff review.
+
 ## Accepted source contract
 
 | Requirement | Implementation evidence | Focused evidence |
