@@ -1533,6 +1533,22 @@ milestone before the remaining stable post-L8 full-graph gates pass.
   aligning the duplicate test, `Semantic Analyzer Reports Borrowed Return
   Escape` passes; the runner's remaining failure is the separately owned L8
   closed-generic receiver contract.
+- After `4087b6f` and `2181cc2`, a clean Clang 14 Debug shared snapshot rebuilt
+  all 3,504 Ninja steps and passed the complete `language_pipeline` suite
+  (`1/1`, exit 0). Its remaining short graph was `131/134` passing, with only
+  the same L8 language-server, stdio short-circuit projection, and debug
+  callable-fact cases failing; all debug agent/protocol, AOT, CLI, REPL, and
+  ownership targets passed.
+- A clean MSVC 19.44 Debug shared snapshot configured successfully and built
+  the ownership/compile-time focus targets. `zr_vm_compile_time_test` passed
+  `69/69`, `zr_vm_ownership_intrinsic_member_separation_test` `47/47`,
+  `zr_vm_compiler_return_ownership_diagnostics_test` `3/3`, and the AOT
+  ownership contract/shared-smoke targets passed (`1/1` and `14/0/14`, with
+  Unix-only shared cases ignored). The full MSVC graph reached the language
+  server DLL and stopped only on three unresolved L8 super-constructor symbols;
+  this is an external integration blocker, not an ownership test failure.
+- All generated source/build snapshots, dependency archives, focused logs, and
+  temporary CTest output from these replays were removed and verified absent.
 
 `type_inference.c` is 4,182 lines, but this exact correction changes the
 ordering of one existing primary-expression/first-call resolution decision.
