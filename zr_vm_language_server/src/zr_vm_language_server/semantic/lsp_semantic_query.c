@@ -15,6 +15,42 @@
 #include <ctype.h>
 #include <string.h>
 
+static TZrBool semantic_query_capture_document_version(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrLspSemanticQuery *query) {
+    SZrFileVersion *fileVersion;
+
+    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL ||
+        query->uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, query->uri);
+    query->hasSemanticVersion = fileVersion != ZR_NULL;
+    query->semanticVersion = fileVersion != ZR_NULL ? fileVersion->version : 0U;
+    return ZR_TRUE;
+}
+
+static TZrBool semantic_query_document_version_is_current(
+        SZrState *state,
+        SZrLspContext *context,
+        const SZrLspSemanticQuery *query) {
+    SZrFileVersion *fileVersion;
+
+    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL ||
+        query->uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!query->hasSemanticVersion) {
+        return ZR_TRUE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, query->uri);
+    return fileVersion != ZR_NULL && fileVersion->version == query->semanticVersion;
+}
+
 static TZrBool semantic_query_type_id_is_available(
         const SZrSemanticContext *semanticContext,
         TZrTypeId typeId) {
@@ -2259,6 +2295,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     SZrLspSemanticImportChainHit importChainHit;
     SZrLspMetadataProvider provider;
     SZrLspResolvedImportedModuleEntry moduleEntry;
+    TZrBool resolved;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || query == ZR_NULL) {
         return ZR_FALSE;
@@ -2274,7 +2311,9 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         semantic_query_uri_is_native_plugin_metadata_uri(uri)) {
         query->projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
         query->analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
-        return semantic_query_resolve_external_metadata_target(state, context, uri, position, query);
+        resolved = semantic_query_resolve_external_metadata_target(
+                state, context, uri, position, query);
+        return resolved && semantic_query_capture_document_version(state, context, query);
     }
 
     projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
@@ -2290,7 +2329,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     if (analyzer->ast != ZR_NULL) {
         if (semantic_query_resolve_receiver_type_member_target(state, context, uri, analyzer, query)) {
             ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
-            return ZR_TRUE;
+            return semantic_query_capture_document_version(state, context, query);
         }
 
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
@@ -2342,7 +2381,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                 semantic_query_copy_resolved_member_type(state, &query->resolvedMember, &query->resolvedTypeInfo);
             }
             ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
-            return ZR_TRUE;
+            return semantic_query_capture_document_version(state, context, query);
         }
         if (semantic_query_resolve_import_binding_target(state,
                                                          context,
@@ -2352,23 +2391,23 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                                                          query->queryRange,
                                                          query)) {
             ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
-            return ZR_TRUE;
+            return semantic_query_capture_document_version(state, context, query);
         }
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
 
     if (analyzer->ast != ZR_NULL) {
         if (semantic_query_resolve_import_alias_token_target(state, context, projectIndex, analyzer, uri, query)) {
-            return ZR_TRUE;
+            return semantic_query_capture_document_version(state, context, query);
         }
     }
 
     if (semantic_query_resolve_external_metadata_type_member_declaration_target(state, context, uri, position, query)) {
-        return ZR_TRUE;
+        return semantic_query_capture_document_version(state, context, query);
     }
 
     if (semantic_query_resolve_external_metadata_target(state, context, uri, position, query)) {
-        return ZR_TRUE;
+        return semantic_query_capture_document_version(state, context, query);
     }
 
     {
@@ -2411,7 +2450,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                 query->symbol = ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(
                         analyzer, query->queryRange);
             }
-            return ZR_TRUE;
+            return semantic_query_capture_document_version(state, context, query);
         }
     }
 
@@ -2456,7 +2495,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                                                          query->symbol->location,
                                                          query)) {
             ZrLanguageServer_LspProject_FreeImportBindings(state, &symbolBindings);
-            return ZR_TRUE;
+            return semantic_query_capture_document_version(state, context, query);
         }
         ZrLanguageServer_LspProject_FreeImportBindings(state, &symbolBindings);
     }
@@ -2467,7 +2506,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                                                           analyzer,
                                                           query->symbol,
                                                           query)) {
-        return ZR_TRUE;
+        return semantic_query_capture_document_version(state, context, query);
     }
 
     query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL;
@@ -2479,7 +2518,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
          query->symbol->type == ZR_SYMBOL_INTERFACE || query->symbol->type == ZR_SYMBOL_ENUM)) {
         query->resolvedTypeInfo.valueKind = ZR_LSP_RESOLVED_VALUE_KIND_TYPE;
     }
-    return ZR_TRUE;
+    return semantic_query_capture_document_version(state, context, query);
 }
 
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrState *state,
@@ -2488,7 +2527,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
                                                                             SZrLspHover **result) {
     SZrLspMetadataProvider provider;
 
-    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL ||
+        !semantic_query_document_version_is_current(state, context, query)) {
         return ZR_FALSE;
     }
 
@@ -2765,7 +2805,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
     SZrLspContext *context,
     SZrLspSemanticQuery *query,
     SZrArray *result) {
-    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL ||
+        !semantic_query_document_version_is_current(state, context, query)) {
         return ZR_FALSE;
     }
 
@@ -2817,7 +2858,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
     SZrLspSemanticQuery *query,
     TZrBool includeDeclaration,
     SZrArray *result) {
-    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL ||
+        !semantic_query_document_version_is_current(state, context, query)) {
         return ZR_FALSE;
     }
 
@@ -2969,7 +3011,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDocumentH
     SZrLspContext *context,
     SZrLspSemanticQuery *query,
     SZrArray *result) {
-    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL || result == ZR_NULL ||
+        !semantic_query_document_version_is_current(state, context, query)) {
         return ZR_FALSE;
     }
 

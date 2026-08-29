@@ -1394,6 +1394,7 @@ int main(void) {
     test_canonical_visible_symbol_completion_survives_symbol_table_detachment(state);
     test_source_hover_consumes_canonical_symbol_fact_without_analyzer_state(state);
     test_external_member_references_reject_mismatched_declaration_identity(state);
+    test_external_member_query_rejects_stale_document_snapshot(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

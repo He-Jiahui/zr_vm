@@ -129,6 +129,13 @@ member name。只有双方都明确没有 writable declaration identity 的 nati
 边界，才保留结构化 module/type/member contract 匹配。`includeDeclaration` 只控制是否把 query
 自身声明投影到结果，不改变 usage candidate 的 identity 判定。
 
+`SZrLspSemanticQuery` 不能跨源文档版本复用。成功解析后，query 捕获当前 URI 对应的
+`SZrFileVersion.version`；hover、definition、references 与 document highlights 在消费前必须确认
+该版本仍是当前版本，不一致时统一 fail closed 且不产生部分结果。版本在全部 provider/project
+解析完成后捕获，避免把同一请求内的惰性 metadata 初始化误判为 stale。binary/plugin declaration
+URI 没有 source document version 时保持显式 unavailable，不从虚拟展示 AST、mtime 或 member name
+伪造版本身份；其 provider reload 精确性仍由既有 provider-generation consumer 合同负责。
+
 source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
 producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入
 prototype 时，parser 仍通过 source TypeDef resolver 与 prototype `declarationNode` 取得精确

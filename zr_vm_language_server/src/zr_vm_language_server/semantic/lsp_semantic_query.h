@@ -28,6 +28,8 @@ typedef enum EZrLspSemanticQueryTargetKind {
 typedef struct SZrLspSemanticQuery {
     EZrLspSemanticQueryTargetKind kind;
     SZrString *uri;
+    TZrSize semanticVersion;
+    TZrBool hasSemanticVersion;
     SZrLspPosition position;
     SZrFileRange queryRange;
     SZrLspProjectIndex *projectIndex;
