@@ -5,6 +5,7 @@
 
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_c_scalar_stack_copy.h"
+#include "backend_aot_internal.h"
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/string.h"
@@ -2841,6 +2842,35 @@ static void backend_aot_c_scalar_locals_record_generic_numeric_u64_neg_to_i64_ex
     backend_aot_c_scalar_locals_set_slot(slotKinds, slotCount, destinationSlot, ZR_AOT_SCALAR_LOCAL_KIND_I64);
 }
 
+static TZrBool backend_aot_c_scalar_locals_instruction_preserves_reaching_writes(
+        const SZrFunction *function,
+        const TZrInstruction *instruction) {
+    TZrUInt32 stepFlags = backend_aot_c_step_flags_for_instruction(function, instruction);
+
+    return (TZrBool)((stepFlags &
+                      (ZR_AOT_EMITTER_STEP_FLAG_CONTROL_FLOW |
+                       ZR_AOT_EMITTER_STEP_FLAG_RETURN)) != 0u);
+}
+
+static TZrBool backend_aot_c_scalar_locals_instruction_records_scalar_semir_write(
+        EZrInstructionCode opcode) {
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+        case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+        case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static void backend_aot_c_scalar_locals_record_exec_instruction_write(EZrAotScalarLocalKind *slotKinds,
                                                                       TZrUInt32 slotCount,
                                                                       const EZrAotScalarLocalKind *declaredSlotKinds,
@@ -3012,6 +3042,18 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_write(EZrAotScal
         return;
     }
 
+    if (backend_aot_c_scalar_locals_instruction_records_scalar_semir_write(opcode) &&
+        backend_aot_c_scalar_locals_semir_kind_for_exec_destination(
+                function,
+                execInstructionIndex,
+                instruction->instruction.operandExtra) != ZR_AOT_SCALAR_LOCAL_KIND_NONE) {
+        return;
+    }
+
+    if (backend_aot_c_scalar_locals_instruction_preserves_reaching_writes(function, instruction)) {
+        return;
+    }
+
     if (instruction->instruction.operandExtra < slotCount) {
         backend_aot_c_scalar_locals_set_slot(
                 slotKinds,
@@ -3157,6 +3199,10 @@ static void backend_aot_c_scalar_locals_record_exec_instruction_bool_value_write
         }
 
         backend_aot_c_scalar_locals_set_slot(slotKinds, slotCount, destinationSlot, slotKinds[sourceSlot]);
+        return;
+    }
+
+    if (backend_aot_c_scalar_locals_instruction_preserves_reaching_writes(function, instruction)) {
         return;
     }
 

@@ -604,6 +604,7 @@ tests:
   - tests/parser/test_semir_dynamic_index_deopt.c
   - tests/core/test_execution_unsigned_bitwise.c
   - tests/parser/test_aot_c_typed_scalar.c
+  - tests/acceptance/2026-08-29-aot-scalar-branch-semir-dataflow.md
   - tests/parser/test_typed_numeric_conversion.c
   - tests/parser/test_value_type_runtime.c
   - tests/core/test_value_construction_profile.c
@@ -3135,3 +3136,28 @@ cleanup contract are recorded in
 scalar-local source remains a documented modularization follow-up: the coherent
 future extraction unit is the complete scalar kind transfer/fixed-point/query
 service, not one opcode predicate.
+
+Focused 2026-08-29 full-graph follow-up closes two transfer gaps in that CFG
+must-dataflow service. Control-flow and return instructions do not write their
+`operandExtra` slot; their AOT step flags now preserve every reaching scalar
+kind instead of accidentally clearing slot zero at a branch edge. Primitive
+bitwise and shift instructions backed by scalar SemIR record their canonical
+destination kind before a following stack copy or scalar consumer queries
+local provenance. The SemIR rule is deliberately limited to the bitwise/shift
+opcode family whose generated-C scalar emitter synchronizes the local; unknown
+or dynamic instructions retain the conservative invalidation path.
+
+The regression is the existing typed-scalar generated product: constants are
+defined before two conditional regions, then reused by unsigned and signed
+bitwise/shift expressions after the joins. The repaired analysis emits those
+values as plain C locals, omits `/* zr_aot_generated_frame_setup */`, and keeps
+the interpreter/AOT result comparison. Value-construction, typed-opcode, and
+method-signature guardrails run beside it to protect frame-required and metadata
+paths. Detailed fixed-snapshot evidence is recorded in
+`tests/acceptance/2026-08-29-aot-scalar-branch-semir-dataflow.md`.
+
+`backend_aot_c_scalar_locals.c` remains above the module-size guideline, but
+this leaf adds no new responsibility: both changes correct the existing scalar
+kind transfer function. Extracting only two predicates would split them from
+the fixed-point engine they define. The existing coherent follow-up remains the
+complete transfer/fixed-point/query service.
