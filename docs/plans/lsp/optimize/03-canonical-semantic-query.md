@@ -323,6 +323,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    仍等待 producer/metadata ownership 收口，未计 consumer migration GREEN。semantic tokens 的
    source symbol-table/metadata-chain fallback 仍在 Syntax05 Task4 exact-owned
    `lsp_semantic_tokens.c`，本阶段不编辑、不增加兼容，也不声明迁移完成。
+   Task 7.34 完成最终门禁复核（2026-08-30 05:56 +08:00）：GCC/Clang/MSVC 的
+   canonical semantic-query parity 均为 `14/14`，source-contract、inlay 与 CLI
+   版本检查均真实 exit 0；interface 每套仍有 `111 Pass / 2 Fail`，GCC/Clang 的
+   analyzer 分别为 `68 Pass / 2 Fail`，project 每套为 `51 Pass / 9 Fail`。三套
+   stdio smoke 均在通用 generic fixture 缺少 `short_circuit_unreachable` warning
+   处 exit 1。该结果只记录门禁状态，不用 LSP 名称、类型文本或消息重建事实。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续

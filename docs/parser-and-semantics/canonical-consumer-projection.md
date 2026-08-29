@@ -233,6 +233,13 @@ signature fallback 都把 `query.reference->range` 转为 UTF-16 range；通用 
 只有在查询点确实落入 callee reference range 时才替换范围，避免把普通实参 hover 错误投影
 为 callee。
 
+Plan 03 最终门禁复核（2026-08-30 05:56 +08:00）确认三工具链 semantic-query parity
+均为 `14/14`，source contracts、inlay 和 CLI 版本检查通过；interface、project 与 GCC
+semantic analyzer 仍保留 producer/metadata 失败 marker，三套 stdio smoke 也在通用
+`short_circuit_unreachable` warning 缺失处停止。因此本 projection 的 diagnostics query
+与协议投影保持 canonical ownership，但 Plan 03 Task 7/8 不得据此标记完成；待 Syntax05
+producer 与跨项目 metadata identity 收口后，必须重跑同一矩阵和 smoke。
+
 ## Compatibility boundary
 
 M5 不把 legacy `SZrIo` 二进制解释成 `ZRAF`，也不允许 canonical API 回退到 legacy
