@@ -118,7 +118,8 @@ behavior.
 
 `zr_vm_resource_shared_weak_test` throws after creating Shared clones and a Weak observer, then
 asserts that unwind runs resource Drop once. It also covers value-parameter copies, nested
-Shared/Weak fields, final-strong behavior, and drop-time upgrade failure.
+Shared/Weak fields, final-strong behavior, and wake failure after the last
+strong owner is dropped.
 
 `zr_vm_type_layout_inline_copy_test` covers distinct dense/physical ownership
 cells, including a resource Drop callback that verifies the dense alias is

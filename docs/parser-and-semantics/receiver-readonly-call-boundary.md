@@ -116,7 +116,10 @@ dynamic and native dispatch:
   auto-deref capability;
 - `Unique<T>` can auto-deref to shared or mutable access;
 - `Shared<T>` can auto-deref only to shared access;
-- `Weak<T>` cannot auto-deref without an explicit upgrade.
+- `Weak<T>` does not provide an unguarded receiver auto-deref. Target access
+  through `.` or `?.` installs the chain-level Weak guard; code that needs to
+  retain an owner calls `wake(weak)` and explicitly handles the nullable
+  `Shared<T>?` result.
 
 Owner behavior is selected from the canonical owner node, not from the source
 spelling `Unique` or `Shared`. Copying, returning or inferring a readonly view

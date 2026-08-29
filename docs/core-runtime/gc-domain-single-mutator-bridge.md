@@ -82,9 +82,10 @@ clone, immutable handles, resource move envelopes, and domain shutdown races are
 
 `intoGc(owner)` is an explicit consuming bridge for `Unique<Resource>`. The compiler publishes
 `ZR_SEMANTIC_OWNERSHIP_INTO_GC_BOX` with the source Place, rejects Shared and active-borrow input,
-and lowers the operation through the existing `OWN_DETACH` execution slot. VM execution calls
-`ZrCore_Ownership_IntoGcBoxValue`; the AOT helper attempts the same operation before its legacy
-detach fallback.
+and lowers the operation through the canonical `OWN_INTO_GC_BOX` execution slot. VM execution
+calls `ZrCore_Ownership_IntoGcBoxValue`; AOT C and LLVM use the matching
+`ZrLibrary_AotRuntime_OwnIntoGcBox` boundary. `OWN_DETACH` remains only as an old-artifact reader
+identity and is not emitted for current source.
 
 The resulting GC-managed box owns the resource payload. Reaching the box delays Drop; collecting
 the box executes Drop exactly once, including when Drop allocates and reaches a safepoint. The

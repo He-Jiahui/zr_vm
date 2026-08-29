@@ -350,7 +350,7 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - VM/AOT cleanup 顺序、M4 explicit domain roots 与 `intoGc(owner)` bridge
 - `resource-shared-weak.md`
   - process-local non-atomic `Shared<T>` / stable `Weak<T>` control lifetime
-  - last-strong Drop、implicit weak、drop-time upgrade failure 与 cleanup mirror 同步
+  - last-strong Drop、implicit weak、last-strong-drop 后的 wake failure 与 cleanup mirror 同步
   - structured `resource_shared_strong_cycle` lint，以及 final Option surface 的明确边界
   - `Weak<T>` 通过 `wake(weak)` 显式留存，或用 `.` / `?.` 执行 direct/optional target access
   - cleanup plan 与 prototype metadata 的传播路径
