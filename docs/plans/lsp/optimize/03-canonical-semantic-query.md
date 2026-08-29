@@ -150,7 +150,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 04:54 +08:00。
+- 最近更新时间：2026-08-30 05:22 +08:00。
 - 总体状态：进行中。Task 6 的最后一个已知 LSP producer consumer loop 因
   Syntax05 exact ownership 等待释放；Task 7 已开始无重叠 consumer 边界迁移，
   Task 8 尚未完成，不声明 Plan 03 完成。
@@ -316,6 +316,13 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    `DocumentationOfSymbol(SymbolId)`：hover projector 在 canonical `SymbolAt` 后按 exact id 合并并复制
    documentation，脱离 analyzer symbol table/reference tracker/AST 后仍保留文档。GCC parity 为
    `14/14`、source contracts 真实 exit 0，未新增 marker。
+   Task 7.33 完成 diagnostics/semantic-token consumer audit：semantic analyzer 的 query
+   diagnostics 路径已由 `MaterializeDiagnostics`/`Diagnostics` 取得结构化 facts，并通过
+   `Diagnostic_FromStructured` 投影 severity、range、code、descriptor、related information 与
+   fixes；本次未发现新的 LSP 语义重建缺口。项目级跨模块 import/member unresolved diagnostics
+   仍等待 producer/metadata ownership 收口，未计 consumer migration GREEN。semantic tokens 的
+   source symbol-table/metadata-chain fallback 仍在 Syntax05 Task4 exact-owned
+   `lsp_semantic_tokens.c`，本阶段不编辑、不增加兼容，也不声明迁移完成。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续

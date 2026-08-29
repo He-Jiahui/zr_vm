@@ -19,6 +19,7 @@ plan_sources:
   - docs/plans/lsp/optimize/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
   - docs/plans/lsp/optimize/2026-08-30-plan03-task07-canonical-completion-documentation.md
   - docs/plans/lsp/optimize/2026-08-30-plan03-task07-canonical-hover-documentation.md
+  - docs/plans/lsp/optimize/2026-08-30-plan03-task07-diagnostics-token-consumer-audit.md
   - docs/plans/lsp/optimize/2026-08-30-plan03-task07-external-member-reference-identity.md
 tests:
   - tests/parser/test_semantic_query_symbols.c
@@ -28,6 +29,7 @@ tests:
   - tests/acceptance/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
   - tests/acceptance/2026-08-30-plan03-task07-canonical-completion-documentation.md
   - tests/acceptance/2026-08-30-plan03-task07-canonical-hover-documentation.md
+  - tests/acceptance/2026-08-30-plan03-task07-diagnostics-token-consumer-audit.md
   - tests/acceptance/2026-08-30-plan03-task07-external-member-reference-identity.md
 doc_type: module-detail
 ---
@@ -209,6 +211,18 @@ severity、range、code、message、cause、suggestion、descriptor、related in
 深拷贝成 persistent semantic diagnostic fact；普通 compiler error 使用原始 message 和
 `compiler_error` code。`ZrParser_SemanticQuery_Diagnostics()` 每次从 persistent fact 重建输出，
 所以重复查询不会丢失诊断，也不要求 LSP 按 message、signature 或 member name 重建事实。
+
+`ZrLanguageServer_SemanticAnalyzer_AppendSemanticQueryDiagnostics()` 在 analyzer 有 AST 时先
+解析控制流 definite-assignment/ownership facts，再通过 `MaterializeDiagnostics()` 和
+`Diagnostics()` 取得 parser-owned structured diagnostics。`Diagnostic_FromStructured()` 只做
+协议字段与拥有权投影；已有诊断的合并也只按 exact source/range/code 去重，不生成新的类型、符号
+或成员语义。该路径因此通过本阶段 audit。项目级 unresolved import/member diagnostics 仍是
+project graph/metadata provider 的恢复边界，跨项目 module/member 聚合的 canonical producer
+identity 尚未释放，不能在 LSP 内增加名称兜底。
+
+Semantic tokens 尚未通过本阶段迁移：当前 source token projector 仍由 Syntax05 Task4 持有，
+其 symbol-table parameter lookup 与 metadata-chain fallback 必须在 producer/ownership 释放后
+以 canonical query facts 替换。本阶段不把该现状计为 GREEN，也不复制或扩大 fallback。
 
 `ZrParser_SemanticQuery_PublicContract()` 同时把 persistent diagnostic facts 和现有 query
 diagnostics 视为 poisoned module。这样 compiler error 即使尚未经过 diagnostics query，也不会
