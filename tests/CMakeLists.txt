@@ -4297,29 +4297,32 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         endif ()
     endif ()
 
-    zr_vm_add_unity_test_target(
-            zr_vm_rust_binding_api_test
-            ${CMAKE_SOURCE_DIR}/tests/rust_binding/test_rust_binding_api.c
-    )
-    target_include_directories(zr_vm_rust_binding_api_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/include
-    )
-    if (BUILD_SHARED_LIB)
-        target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
-                zr_vm_parser_shared
-                zr_vm_core_shared
-                zr_vm_library_shared
-                zr_vm_rust_binding_shared
+    if ((BUILD_SHARED_LIB AND TARGET zr_vm_rust_binding_shared) OR
+            (NOT BUILD_SHARED_LIB AND TARGET zr_vm_rust_binding_static))
+        zr_vm_add_unity_test_target(
+                zr_vm_rust_binding_api_test
+                ${CMAKE_SOURCE_DIR}/tests/rust_binding/test_rust_binding_api.c
         )
-    else ()
-        target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
-                zr_vm_parser_static
-                zr_vm_core_static
-                zr_vm_library_static
-                zr_vm_rust_binding_static
+        target_include_directories(zr_vm_rust_binding_api_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/include
         )
+        if (BUILD_SHARED_LIB)
+            target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
+                    zr_vm_parser_shared
+                    zr_vm_core_shared
+                    zr_vm_library_shared
+                    zr_vm_rust_binding_shared
+            )
+        else ()
+            target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
+                    zr_vm_parser_static
+                    zr_vm_core_static
+                    zr_vm_library_static
+                    zr_vm_rust_binding_static
+            )
+        endif ()
     endif ()
 
     zr_vm_add_unity_test_target(
