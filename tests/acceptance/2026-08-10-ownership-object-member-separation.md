@@ -4,15 +4,15 @@
 
 - Design: `docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md`
 - Implementation plan: `docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md`
-- Review date: 2026-08-27 (UTC+08:00)
+- Review date: 2026-08-29 (UTC+08:00)
 - Status: `validated_pending_full_acceptance`
 
 ## Accepted source contract
 
 | Requirement | Implementation evidence | Focused evidence |
 | --- | --- | --- |
-| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | GCC/Clang/MSVC ownership 41/41 and Shared/Weak 19/19; final full-graph replay pending |
-| `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name object method and real-member tests |
+| Ownership uses only five reserved intrinsics | `ZR_AST_OWNERSHIP_INTRINSIC_EXPRESSION` and `EZrOwnershipIntrinsicOperation` | GCC/Clang/MSVC ownership 47/47 and Shared/Weak 21/21; final full-graph replay pending |
+| `.` and `?.` never classify ownership by member text | real member lookup precedes the structured migration diagnostic; compiler lowers only fact-owned intrinsic nodes | same-name methods, fields, and properties pass through direct and optional object access |
 | Weak direct access is guarded and throws `NullReferenceError` on expiry | `SZrReceiverGuardFact`, `REQUIRE_NON_NULL`, one hidden wake owner | direct-expiry test passes against the materialized named runtime prototype |
 | A live weak target keeps ordinary object-member failures | guard resolves before member dispatch; standard system registration materializes the exception hierarchy | missing member follows the ordinary member-error path, not `NullReferenceError` |
 | `?.member`, `?.method(args)`, and `?.(args)` skip the complete suffix | per-segment access mode and chain-level receiver-guard lowering | exact `Weak<Service>?.(args)` failure skips arguments; success runs once through readonly `const @call` |
