@@ -4068,13 +4068,13 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
         }
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
                 analyzer->semanticContext,
-                file_range_for_nth_substring(testCode, "ref resource", 0, ZR_FALSE));
+                file_range_for_nth_substring(testCode, "resource;", 0, ZR_FALSE));
         if (fact == ZR_NULL) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Borrowed Return Escape",
-                      "Expected borrow escape ownership fact to cover the ownership builtin");
+                      "Expected borrow escape ownership fact to cover the borrowed source");
             return;
         }
         if (fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||

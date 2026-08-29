@@ -1526,6 +1526,13 @@ milestone before the remaining stable post-L8 full-graph gates pass.
   in `test_compile_time_decorator_shape_retention_cases.h` restores the current
   range contract; the rebuilt `zr_vm_compile_time_test` exits 0 with `69 Tests
   0 Failures 0 Ignored`.
+- The same replay found an older duplicate LSP semantic-analyzer assertion that
+  still queried a borrow-escape fact at the `ref` token and described it as an
+  ownership builtin. The canonical fact covers the borrowed `resource` source;
+  the dedicated ownership-diagnostics suite already used that boundary. After
+  aligning the duplicate test, `Semantic Analyzer Reports Borrowed Return
+  Escape` passes; the runner's remaining failure is the separately owned L8
+  closed-generic receiver contract.
 
 `type_inference.c` is 4,182 lines, but this exact correction changes the
 ordering of one existing primary-expression/first-call resolution decision.
