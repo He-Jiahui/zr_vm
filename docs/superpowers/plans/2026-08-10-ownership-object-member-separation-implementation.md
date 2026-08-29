@@ -1265,6 +1265,16 @@ The matching Windows source root, MSVC build root, and source archive were sent
 to the recycle bin and verified absent from their original paths. It created no
 persistent log and did not modify shared caches.
 
+The 2026-08-30 post-L8 audit resolved the apparent `OWN_DETACH` contradiction.
+Current source lowering rejects the historical builtin id and emits only
+`OWN_INTO_GC_BOX` for `intoGc(owner)`; the remaining instruction, SemIR, runtime,
+writer, and AOT branches are retained for numeric artifact replay compatibility
+and are not selected by the source parser. The existing negative compiler and
+type-inference cases prove that boundary. A clean `96b55d2` snapshot was then
+prepared for final replay, but concurrent host I/O blocked CMake before any
+new full-graph result could be collected. Keep Step 5 and Step 7 open until
+that replay and the final exact-path review run on a stable integrated HEAD.
+
 - [ ] **Step 7: Commit final acceptance status**
 
 ```powershell

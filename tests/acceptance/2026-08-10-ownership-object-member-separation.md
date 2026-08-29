@@ -129,6 +129,28 @@ GCC table above is the second of two consecutive zero-exit executions. This
 focused correction does not promote final acceptance: the complete registered
 GCC/Clang/MSVC graph still requires one stable post-L8 integrated HEAD.
 
+## 2026-08-30 post-L8 source audit
+
+The integrated main HEAD is now `96b55d2`. A clean source snapshot was created
+from that commit and verified to exclude the shared worktree's unfinished L8
+type-inference edits. The final source audit confirms that the remaining
+`OWN_DETACH` and `OWN_RETURN_TO_GC` symbols are artifact-compatibility readers
+and stable numeric ABI entries only: current source lowering rejects the removed
+detach builtin id, while `intoGc(owner)` emits `OWN_INTO_GC_BOX`. The focused
+negative tests `test_removed_detach_builtin_id_cannot_lower` and
+`test_removed_detach_builtin_id_is_rejected_by_type_inference` cover both
+compiler and inference boundaries. No production `%` keyword or ownership
+member classifier is reachable from the current source parser; migration
+diagnostics remain the only intentional legacy spelling reader.
+
+The attempted post-L8 full-graph replay was stopped because concurrent host
+DrvFS/WSL I/O left snapshot copy and CMake configuration in uninterruptible
+I/O wait. No test result from that attempt is counted as evidence. The status
+therefore remains `validated_pending_full_acceptance`: the previously recorded
+GCC/Clang/MSVC focused matrices, artifact replay, migration inventory, and
+55/55 syntax records remain valid, but a fresh registered 135-test replay on a
+stable integrated baseline is still required.
+
 ## Test modernization
 
 - Executable fixtures use the five intrinsic calls and canonical opcode names.

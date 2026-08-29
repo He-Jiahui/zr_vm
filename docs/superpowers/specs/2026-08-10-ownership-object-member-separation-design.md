@@ -5,6 +5,10 @@ the external L8/debug baseline. The 2026-08-30 clean `f00d4c5` replay completed
 all ownership-focused gates, artifact replay, migration inventory, and cleanup,
 but the registered graph still has explicitly isolated external failures.
 
+The post-L8 `96b55d2` source audit confirms that legacy `OWN_DETACH` symbols are
+artifact-compatibility readers only; a fresh full-graph replay was attempted but
+could not complete because of host I/O contention, so this status is unchanged.
+
 ## Scope
 
 This design removes the semantic collision between ownership control operations
