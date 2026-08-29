@@ -1273,6 +1273,24 @@ record is
 This closes an execution-coverage gap but does not replace the final stable
 post-L8 full graph, artifact, inventory, and exact-review gates below.
 
+### Nullable callable direct-guard runtime boundary
+
+The ordinary nullable callable path previously had canonical guard facts but no
+direct runtime case. A new focused case now creates an expired Weak callable,
+obtains its absent nullable Shared value with `wake(weak)`, and exercises both
+`nullable?.(bump())` and `nullable(bump())`. The optional call returns null, the
+direct call is caught specifically as `NullReferenceError`, and `bump()` is not
+evaluated by either absent path. This proves the design requirement that a
+direct guard throws before call-argument evaluation without relying on Weak
+guard lowering as indirect evidence.
+
+GCC 11.4, Clang 14, and MSVC 19.44 each passed the expanded ownership runner at
+46/46 with real exit code zero. No production edit was required. The exact
+focused record is
+`tests/acceptance/2026-08-29-ownership-nullable-callable-direct-guard.md`.
+The umbrella status remains pending the stable full graph, artifact, inventory,
+and exact-review gates below.
+
 ### AOT Weak callable lifetime and meta-call convergence
 
 The final focused AOT review reproduced a shared lifetime defect with one Weak

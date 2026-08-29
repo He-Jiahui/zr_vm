@@ -100,6 +100,49 @@ static void test_weak_callable_optional_and_direct_call_contracts(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_absent_nullable_callable_guards_before_arguments(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const @call(value: int): int { return value + 10; }\n"
+            "}\n"
+            "var sideEffects = 0;\n"
+            "fn bump(): int { sideEffects = sideEffects + 1; return 1; }\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    drop(shared);\n"
+            "    var nullable = wake(weak);\n"
+            "    var optionalResult = nullable?.(bump());\n"
+            "    var caught = 0;\n"
+            "    try { nullable(bump()); }\n"
+            "    catch (error: NullReferenceError) { caught = 1; }\n"
+            "    catch (error: RuntimeError) { caught = 8; }\n"
+            "    if (optionalResult == null && sideEffects == 0 && caught == 1) {\n"
+            "        return 1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    ZrParser_ToGlobalState_Register(g_state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(g_state->global));
+    sourceName = ZrCore_String_CreateFromNative(
+            g_state, "absent_nullable_callable_guard.zr");
+    function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_named_function_optional_call_is_rejected(void) {
     for (TZrSize environmentIndex = 0u; environmentIndex < 2u;
          environmentIndex++) {
