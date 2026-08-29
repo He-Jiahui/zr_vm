@@ -112,6 +112,9 @@ Member names use a separate namespace. A type may declare members named
 `share`, `degrade`, `wake`, `intoGc`, or `drop`, and those members remain legal
 after `.` or `?.`. Therefore `object.wake()` is always an ordinary target method
 call, while `wake(weak)` is always the ownership intrinsic.
+Object-literal keys use the same member namespace: `{ share: value }` creates a
+normal property named `share`, and `object.share` performs ordinary member
+lookup.
 
 ### Direct and optional target access
 

@@ -1173,6 +1173,14 @@ missing status or timestamp fields. Step 5 therefore remains open only for a
 stable post-L8 full graph and final exact-diff review; no source fix is inferred
 from the isolated external failures.
 
+The follow-up review also covered the object-literal member namespace. Commit
+`d2fd290` routes the five reserved intrinsic tokens through the existing member
+identifier parser when they occur as object-literal keys, while lexical binding
+and standalone value positions remain reserved for intrinsic calls. The focused
+regression evaluates `{ share: 1, degrade: 2, wake: 4, intoGc: 8, drop: 16 }`
+through ordinary `.` lookup and returns `31`; the umbrella acceptance status
+remains pending the stable external L8/debug full graph.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before

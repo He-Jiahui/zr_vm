@@ -51,6 +51,18 @@ but it does not promote this record because the three external L8/debug full-
 graph failures remain. Final status still requires a stable integrated HEAD,
 the same 135-test replay, and a final exact-path diff review.
 
+## 2026-08-30 object-literal member namespace follow-up
+
+The final source audit found that class fields, properties, and methods already
+accepted intrinsic spellings as ordinary members, but object-literal keys still
+required a plain identifier token even though the lexer reserves those five
+spellings. Commit `d2fd290` closes that parser boundary by accepting the five
+tokens only through `parse_member_identifier`; declaration and standalone value
+contexts continue to reject them as lexical names. The new focused regression
+compiles and executes all five keys through normal `GET_MEMBER` dispatch and
+returns `31`. This is a source-contract correction and does not promote the
+umbrella status before the pending stable L8/debug full-graph replay.
+
 ## Accepted source contract
 
 | Requirement | Implementation evidence | Focused evidence |
