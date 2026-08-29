@@ -220,6 +220,12 @@ severity、range、code、message、cause、suggestion、descriptor、related in
 project graph/metadata provider 的恢复边界，跨项目 module/member 聚合的 canonical producer
 identity 尚未释放，不能在 LSP 内增加名称兜底。
 
+Typecheck 的 exact-expression inference 失败若已产生 parser/compiler structured diagnostic，
+analyzer bridge 会先发布并消费该 persistent fact，再跳过泛化的 `cannot infer exact type`
+补充错误。primary-call typecheck 对成功返回后残留的 current compiler diagnostic 也使用同一
+publisher。该路径只转发 canonical diagnostic fields，不按 message、类型文本或成员名选择
+事实；本次 Task 7.35 的 reference-call regression 在 GCC、Clang、MSVC 均通过。
+
 Semantic tokens 尚未通过本阶段迁移：当前 source token projector 仍由 Syntax05 Task4 持有，
 其 symbol-table parameter lookup 与 metadata-chain fallback 必须在 producer/ownership 释放后
 以 canonical query facts 替换。本阶段不把该现状计为 GREEN，也不复制或扩大 fallback。

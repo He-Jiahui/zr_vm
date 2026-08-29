@@ -22,10 +22,9 @@ Syntax05-owned parser producer、semantic-token producer 或 project metadata pr
   真实 exit 0。
 - 三套 source-contract 目标真实 exit 0；三套 inlay 目标为 `13/13`；三套 CLI
   `--version` 真实 exit 0。expression/symbol focused targets也真实 exit 0。
-- interface 三套均真实 exit 1，均保留 `111 Pass / 2 Fail`：class-member navigation
-  既有失败，以及 reference-call diagnostic query fact 缺失。该 diagnostic 失败在
-  `ZrParser_SemanticQuery_Diagnostics()` 中没有对应 persistent fact，不由 LSP 按消息或
-  signature 名称补建。
+- interface 三套均真实 exit 1；reference-call diagnostic 用例已通过，剩余为既有
+  class-member fixture 失败。该 diagnostic bridge 通过 analyzer 对 parser/compiler current
+  error 调用既有 structured publisher，未由 LSP 按消息、signature 名称或成员名补建事实。
 - project 三套测试进程真实 exit 0，但每套包含 `51 Pass / 9 Fail`；失败集中在
   imported/native/descriptor metadata、refresh generation 与 pooling guard contract，
   因而不能把 exit 0 单独解释成通过。
@@ -45,11 +44,12 @@ metadata 或 Syntax05 归属路径收口后重跑。本记录不以 LSP 兼容�
 
 ## 状态与产出记录
 
-- 完成时间：2026-08-30 05:56 +08:00。
-- 状态：最终门禁审计完成，但 Plan 03 Task 7/Task 8 仍未完成；不声明本阶段 GREEN
-  或完成。
-- 完成项目：三工具链 parity/source-contract/inlay/CLI 复核；interface/project/analyzer
+- 完成时间：2026-08-30 06:56 +08:00。
+- 状态：最终门禁审计已更新至 Task 7.35；Task 7/Task 8 仍未完成，不声明本阶段
+  GREEN 或完成。
+- 完成项目：三工具链 parity/source-contract/inlay/CLI 复核；Task 7.35 reference-call
+  structured diagnostic bridge 的 GCC/Clang/MSVC interface 回归；interface/project/analyzer
   失败 marker 复核；三套 stdio smoke 真实退出码复核；producer 与 LSP ownership 分层。
-- 阻塞项目：Syntax05 producer/metadata 路径释放；reference-call persistent diagnostic、
-  closed-generic/borrow-return facts、cross-project metadata identity 与 semantic-token
-  canonical migration；之后重跑同一 16-target 计划矩阵和三套 smoke。
+- 阻塞项目：Syntax05 producer/metadata 路径释放；closed-generic/borrow-return facts、
+  cross-project metadata identity、semantic-token canonical migration 与既有
+  `short_circuit_unreachable` producer fixture；之后重跑同一 16-target 矩阵和三套 smoke。

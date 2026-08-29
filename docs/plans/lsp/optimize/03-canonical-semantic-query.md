@@ -329,6 +329,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    analyzer 分别为 `68 Pass / 2 Fail`，project 每套为 `51 Pass / 9 Fail`。三套
    stdio smoke 均在通用 generic fixture 缺少 `short_circuit_unreachable` warning
    处 exit 1。该结果只记录门禁状态，不用 LSP 名称、类型文本或消息重建事实。
+   Task 7.35（2026-08-30 06:56 +08:00）收口 analyzer typecheck 的 parser diagnostic
+   bridge：exact expression inference 失败时，若 compiler 已发布 structured persistent
+   diagnostic，LSP 只消费该 fact 并抑制重复的 `cannot infer exact type`；primary-call
+   typecheck 也会排空同一 current compiler diagnostic。GCC/Clang/MSVC 的 interface
+   reference-call case 均通过，且完整 16-target 构建/运行保持三工具链一致。剩余
+   canonical graph、closed-generic/borrow-return analyzer、class-member/local/project
+   fixtures 仍失败；三套 stdio smoke 仍在 `short_circuit_unreachable` producer warning
+   缺失处 exit 1。该子里程碑已完成，但 Plan 03 Task 7/8 仍未完成。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续
