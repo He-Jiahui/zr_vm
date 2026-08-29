@@ -1109,6 +1109,28 @@ ownership member separation 44/44, and semantic facts 15/15. The final
 regressions use public inference/compiler APIs and contain no ignored case or
 private DLL symbol dependency.
 
+Three later fixed-baseline leaves close the remaining focused execution and
+declaration-kind evidence without changing production code. Exact commit
+`39735d4` proves that an absent nullable Shared `void` optional call skips its
+argument and completes as a no-op; GCC 11.4, Clang 14, and MSVC 19.44 each pass
+the expanded ownership runner at 45/45. Exact commit `5614e51` proves that an
+absent ordinary nullable callable returns null through `?.(args)` and throws
+catchable `NullReferenceError` through direct `(args)`, with both paths
+guarding before argument evaluation; all three toolchains pass 46/46.
+
+Exact commit `8851e9a` extends member-name separation beyond methods. Fields
+named `share` and `degrade` and properties named `wake`, `intoGc`, and `drop`
+execute as ordinary object members while the compiled function contains zero
+instructions for all five ownership operations. It also verifies the CFG
+throw profile: direct Weak and inferred nullable Shared member access keep a
+matching `NullReferenceError` catch reachable, while optional Weak access and
+the explicit `wake` intrinsic do not add that edge. GCC 11.4, Clang 14, and
+MSVC 19.44 each pass ownership 47/47 and CFG 6/6 with direct exit zero. The
+executable syntax-status verifier still reports 55/55 complete, and the
+production scan finds no removed percent-prefixed form. Step 5 remains open
+only for the stable post-L8 registered full graph, tracked artifact replay,
+migration-inventory regeneration, and final exact-diff review.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -1177,6 +1199,15 @@ The CTest manifest gate also removed its generated configuration products.
 `D:\CodexBuilds\ownership-ctest-red-00c9793` was sent to the recycle bin, and
 the WSL GCC/Clang roots named `ownership-ctest-manifest-*` were deleted by exact
 path. All three locations were verified absent. No persistent log was created.
+
+The three late focused leaves also removed their fixed-baseline products. WSL
+source and GCC/Clang roots named `ownership-nullable-fa2dc6c`,
+`ownership-nullable-callable-39735d4`, and
+`ownership-members-cfg-5614e51` are verified absent, including the discarded
+`ownership-nullable-void-gcc` cache. Their matching Windows source roots, MSVC
+build roots, and transfer archives were sent to the recycle bin and verified
+absent from the original paths. No persistent log was created and no unrelated
+shared cache or `.codex/logs` path was changed.
 
 - [ ] **Step 7: Commit final acceptance status**
 
