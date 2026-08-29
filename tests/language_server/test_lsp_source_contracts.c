@@ -1638,6 +1638,7 @@ static void test_extern_callable_decorators_use_parser_diagnostic_projection(voi
 #include "test_lsp_source_contract_no_local_diagnostic_api_cases.h"
 #include "test_lsp_source_contract_inlay_declaration_cases.h"
 #include "test_lsp_source_contract_completion_snapshot_cases.h"
+#include "test_lsp_source_contract_canonical_completion_cases.h"
 #include "test_lsp_source_contract_signature_snapshot_cases.h"
 #include "test_lsp_source_contract_local_query_snapshot_cases.h"
 #include "test_lsp_source_contract_code_lens_declaration_cases.h"
@@ -1702,6 +1703,7 @@ int main(void) {
     test_local_call_hierarchy_uses_parser_edges();
     test_inlay_uses_canonical_declaration_query();
     test_completion_semantic_facts_are_snapshot_read_only();
+    test_lexical_completion_uses_parser_visible_symbol_query();
     test_signature_semantic_facts_are_snapshot_read_only();
     test_local_semantic_query_is_snapshot_read_only();
     test_code_lens_uses_canonical_declaration_and_reference_queries();
@@ -1775,6 +1777,7 @@ int main(void) {
     printf("PASS: Local call hierarchy uses parser call-edge queries\n");
     printf("PASS: Inlay hints use canonical declaration queries\n");
     printf("PASS: Completion semantic facts are snapshot read-only\n");
+    printf("PASS: Lexical completion uses parser visible-symbol queries\n");
     printf("PASS: Signature semantic facts are snapshot read-only\n");
     printf("PASS: Local semantic query is snapshot read-only\n");
     printf("PASS: CodeLens uses canonical declaration and reference queries\n");

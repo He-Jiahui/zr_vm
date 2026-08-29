@@ -15,6 +15,7 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.h"
 
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
@@ -673,6 +674,14 @@ static void test_visible_symbols_uses_scope_facts_for_shadowing_and_options(void
     TEST_ASSERT_EQUAL_UINT32(250U, symbol_visible_at(&symbols, 1U)->symbolId);
     TEST_ASSERT_EQUAL_UINT32(300U, symbol_visible_at(&symbols, 2U)->symbolId);
     TEST_ASSERT_EQUAL_UINT32(301U, symbol_visible_at(&symbols, 3U)->symbolId);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                          symbol_visible_at(&symbols, 0U)->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                          symbol_visible_at(&symbols, 1U)->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                          symbol_visible_at(&symbols, 2U)->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                          symbol_visible_at(&symbols, 3U)->kind);
     TEST_ASSERT_EQUAL_STRING(
             "sum", ZrCore_String_GetNativeString(symbol_visible_at(&symbols, 2U)->displayName));
     TEST_ASSERT_EQUAL_STRING("fn sum(): int",
@@ -688,6 +697,12 @@ static void test_visible_symbols_uses_scope_facts_for_shadowing_and_options(void
     TEST_ASSERT_EQUAL_UINT32(400U, symbol_visible_at(&symbols, 4U)->symbolId);
     TEST_ASSERT_EQUAL_UINT32(500U, symbol_visible_at(&symbols, 5U)->symbolId);
     TEST_ASSERT_EQUAL_UINT32(600U, symbol_visible_at(&symbols, 6U)->symbolId);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                          symbol_visible_at(&symbols, 4U)->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                          symbol_visible_at(&symbols, 5U)->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                          symbol_visible_at(&symbols, 6U)->kind);
 
     ZrCore_Array_Free(g_state, &symbols);
     ZrParser_SemanticContext_Free(context);
@@ -775,6 +790,10 @@ static void test_visible_symbols_project_compiled_source_scope_facts(void) {
             "        var value: int = 1;\n"
             "        return value;\n"
             "    }\n"
+            "}\n"
+            "fn use(): int {\n"
+            "    var value: int = 1;\n"
+            "    return value;\n"
             "}\n";
     SZrCompilerState cs;
     SZrString *sourceName;
@@ -782,6 +801,7 @@ static void test_visible_symbols_project_compiled_source_scope_facts(void) {
     SZrArray symbols;
     SZrParserSemanticVisibleSymbolOptions options;
     SZrFileRange position;
+    const SZrParserSemanticSymbolQuery *choose;
 
     sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_source.zr");
     TEST_ASSERT_NOT_NULL(sourceName);
@@ -807,8 +827,232 @@ static void test_visible_symbols_project_compiled_source_scope_facts(void) {
     TEST_ASSERT_EQUAL_UINT32(1U, (TZrUInt32)symbol_count_visible_name(&symbols, "seed"));
 
     ZrCore_Array_Free(g_state, &symbols);
+    position = symbol_source_position(source, sourceName, "value", 4U);
+    ZrCore_Array_Construct(&symbols);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            cs.semanticContext, position, ZR_NULL, &options, &symbols));
+    choose = symbol_find_visible_name(&symbols, "choose");
+    TEST_ASSERT_NOT_NULL(choose);
+    TEST_ASSERT_NOT_NULL(choose->signatureDisplay);
+    TEST_ASSERT_EQUAL_STRING(
+            "choose(seed: int): int",
+            ZrCore_String_GetNativeString(choose->signatureDisplay));
+
+    ZrCore_Array_Free(g_state, &symbols);
     symbol_release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_visible_symbols_projects_extern_block_declarations(void) {
+    const TZrChar *source =
+            "native extern(\"fixture\") {\n"
+            "    fn NativeAdd(lhs: i32, rhs: i32): i32;\n"
+            "    delegate Callback(value: i32): void;\n"
+            "    struct NativePoint { var x: i32; }\n"
+            "    enum Mode { Off }\n"
+            "}\n"
+            "fn use(): i32 { return NativeAdd(1, 2); }\n";
+    SZrSemanticContext *context;
+    SZrString *sourceName;
+    SZrString *nativeAddName;
+    SZrString *callbackName;
+    SZrString *pointName;
+    SZrString *modeName;
+    SZrString *useName;
+    SZrString *nativeAddSignature;
+    SZrAstNode *ast;
+    SZrAstNode *externBlock;
+    SZrAstNode *useDeclaration;
+    SZrAstNode *nativeAddDeclaration;
+    SZrAstNode *callbackDeclaration;
+    SZrAstNode *pointDeclaration;
+    SZrAstNode *modeDeclaration;
+    SZrArray symbols;
+    SZrParserSemanticVisibleSymbolOptions options;
+    SZrFileRange position;
+    const SZrParserSemanticSymbolQuery *nativeAdd;
+    const SZrParserSemanticSymbolQuery *callback;
+    const SZrParserSemanticSymbolQuery *point;
+    const SZrParserSemanticSymbolQuery *mode;
+
+    sourceName = ZrCore_String_CreateFromNative(g_state, "visible_symbols_extern_block.zr");
+    nativeAddName = ZrCore_String_CreateFromNative(g_state, "NativeAdd");
+    callbackName = ZrCore_String_CreateFromNative(g_state, "Callback");
+    pointName = ZrCore_String_CreateFromNative(g_state, "NativePoint");
+    modeName = ZrCore_String_CreateFromNative(g_state, "Mode");
+    useName = ZrCore_String_CreateFromNative(g_state, "use");
+    nativeAddSignature = ZrCore_String_CreateFromNative(
+            g_state, "NativeAdd(lhs: i32, rhs: i32): i32");
+    TEST_ASSERT_NOT_NULL(sourceName);
+    TEST_ASSERT_NOT_NULL(nativeAddName);
+    TEST_ASSERT_NOT_NULL(callbackName);
+    TEST_ASSERT_NOT_NULL(pointName);
+    TEST_ASSERT_NOT_NULL(modeName);
+    TEST_ASSERT_NOT_NULL(useName);
+    TEST_ASSERT_NOT_NULL(nativeAddSignature);
+
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(2U, (TZrUInt32)ast->data.script.statements->count);
+    externBlock = ast->data.script.statements->nodes[0];
+    useDeclaration = ast->data.script.statements->nodes[1];
+    TEST_ASSERT_NOT_NULL(externBlock);
+    TEST_ASSERT_NOT_NULL(useDeclaration);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_BLOCK, externBlock->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, useDeclaration->type);
+    TEST_ASSERT_NOT_NULL(externBlock->data.externBlock.declarations);
+    TEST_ASSERT_EQUAL_UINT32(
+            4U, (TZrUInt32)externBlock->data.externBlock.declarations->count);
+    nativeAddDeclaration = externBlock->data.externBlock.declarations->nodes[0];
+    callbackDeclaration = externBlock->data.externBlock.declarations->nodes[1];
+    pointDeclaration = externBlock->data.externBlock.declarations->nodes[2];
+    modeDeclaration = externBlock->data.externBlock.declarations->nodes[3];
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_FUNCTION_DECLARATION, nativeAddDeclaration->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_DELEGATE_DECLARATION, callbackDeclaration->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, pointDeclaration->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_ENUM_DECLARATION, modeDeclaration->type);
+
+    context = ZrParser_SemanticContext_New(g_state);
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_EQUAL_UINT32(
+            1201U,
+            ZrParser_Semantic_RegisterSymbolWithId(
+                    context,
+                    1201U,
+                    nativeAddName,
+                    ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                    101U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    nativeAddDeclaration,
+                    nativeAddDeclaration->location));
+    TEST_ASSERT_EQUAL_UINT32(
+            1202U,
+            ZrParser_Semantic_RegisterSymbolWithId(
+                    context,
+                    1202U,
+                    callbackName,
+                    ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                    102U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    callbackDeclaration,
+                    callbackDeclaration->location));
+    TEST_ASSERT_EQUAL_UINT32(
+            1203U,
+            ZrParser_Semantic_RegisterSymbolWithId(
+                    context,
+                    1203U,
+                    pointName,
+                    ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                    103U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    pointDeclaration,
+                    pointDeclaration->location));
+    TEST_ASSERT_EQUAL_UINT32(
+            1204U,
+            ZrParser_Semantic_RegisterSymbolWithId(
+                    context,
+                    1204U,
+                    modeName,
+                    ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                    104U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    modeDeclaration,
+                    modeDeclaration->location));
+    TEST_ASSERT_EQUAL_UINT32(
+            1205U,
+            ZrParser_Semantic_RegisterSymbolWithId(
+                    context,
+                    1205U,
+                    useName,
+                    ZR_SEMANTIC_SYMBOL_KIND_FUNCTION,
+                    105U,
+                    ZR_SEMANTIC_ID_INVALID,
+                    useDeclaration,
+                    useDeclaration->location));
+    symbol_append_reference(context,
+                            nativeAddDeclaration,
+                            ZR_SEMANTIC_REFERENCE_DECLARATION,
+                            1201U,
+                            101U,
+                            nativeAddDeclaration->location,
+                            nativeAddDeclaration->location,
+                            ZR_TRUE,
+                            ZR_TRUE,
+                            nativeAddName,
+                            nativeAddSignature);
+    symbol_append_reference(context,
+                            callbackDeclaration,
+                            ZR_SEMANTIC_REFERENCE_DECLARATION,
+                            1202U,
+                            102U,
+                            callbackDeclaration->location,
+                            callbackDeclaration->location,
+                            ZR_TRUE,
+                            ZR_TRUE,
+                            callbackName,
+                            ZR_NULL);
+    symbol_append_reference(context,
+                            pointDeclaration,
+                            ZR_SEMANTIC_REFERENCE_DECLARATION,
+                            1203U,
+                            103U,
+                            pointDeclaration->location,
+                            pointDeclaration->location,
+                            ZR_TRUE,
+                            ZR_TRUE,
+                            pointName,
+                            ZR_NULL);
+    symbol_append_reference(context,
+                            modeDeclaration,
+                            ZR_SEMANTIC_REFERENCE_DECLARATION,
+                            1204U,
+                            104U,
+                            modeDeclaration->location,
+                            modeDeclaration->location,
+                            ZR_TRUE,
+                            ZR_TRUE,
+                            modeName,
+                            ZR_NULL);
+    symbol_append_reference(context,
+                            useDeclaration,
+                            ZR_SEMANTIC_REFERENCE_DECLARATION,
+                            1205U,
+                            105U,
+                            useDeclaration->location,
+                            useDeclaration->location,
+                            ZR_TRUE,
+                            ZR_TRUE,
+                            useName,
+                            ZR_NULL);
+    TEST_ASSERT_TRUE(ZrParser_Semantic_BuildSourceScopeFacts(context, ast));
+
+    position = symbol_source_position(source, sourceName, "return", 0U);
+    ZrCore_Array_Construct(&symbols);
+    memset(&options, 0, sizeof(options));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_VisibleSymbols(
+            context, position, ZR_NULL, &options, &symbols));
+    nativeAdd = symbol_find_visible_name(&symbols, "NativeAdd");
+    callback = symbol_find_visible_name(&symbols, "Callback");
+    point = symbol_find_visible_name(&symbols, "NativePoint");
+    mode = symbol_find_visible_name(&symbols, "Mode");
+    TEST_ASSERT_NOT_NULL(nativeAdd);
+    TEST_ASSERT_NOT_NULL(callback);
+    TEST_ASSERT_NOT_NULL(point);
+    TEST_ASSERT_NOT_NULL(mode);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, nativeAdd->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_TYPE, callback->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_TYPE, point->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_TYPE, mode->kind);
+    TEST_ASSERT_NOT_NULL(nativeAdd->signatureDisplay);
+    TEST_ASSERT_EQUAL_STRING(
+            "NativeAdd(lhs: i32, rhs: i32): i32",
+            ZrCore_String_GetNativeString(nativeAdd->signatureDisplay));
+
+    ZrCore_Array_Free(g_state, &symbols);
+    ZrParser_SemanticContext_Free(context);
     ZrParser_Ast_Free(g_state, ast);
 }
 
@@ -1433,6 +1677,7 @@ static void test_symbol_at_projects_native_module_function_identity(void) {
             &symbolAt));
     TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, symbolAt.symbolId);
     TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, symbolAt.typeId);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_FUNCTION, symbolAt.kind);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbolAt.declarationRange.start.offset);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)symbolAt.declarationRange.end.offset);
 
@@ -1871,6 +2116,7 @@ int main(void) {
     RUN_TEST(test_visible_symbols_uses_scope_facts_for_shadowing_and_options);
     RUN_TEST(test_visible_symbols_excludes_instance_members_from_static_scope);
     RUN_TEST(test_visible_symbols_project_compiled_source_scope_facts);
+    RUN_TEST(test_visible_symbols_projects_extern_block_declarations);
     RUN_TEST(test_visible_symbols_does_not_leak_for_initializer);
     RUN_TEST(test_visible_symbols_projects_source_type_declarations);
     RUN_TEST(test_visible_symbols_projects_source_type_generic_parameter);

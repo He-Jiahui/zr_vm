@@ -1,3 +1,30 @@
+---
+related_code:
+  - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/include/zr_vm_parser/semantic_display.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_completion.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_completion.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_completion.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c
+plan_sources:
+  - docs/plans/lsp/optimize/03-canonical-semantic-query.md
+  - docs/plans/lsp/optimize/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
+tests:
+  - tests/parser/test_semantic_query_symbols.c
+  - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/language_server/test_lsp_source_contracts.c
+  - tests/acceptance/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
+doc_type: module-detail
+---
+
 # Canonical consumer projection
 
 本文说明 syntax plan 01 M5 建立的规范消费边界。它以 M4 的 `ZRAF` version 1
@@ -59,6 +86,25 @@ symbol fact 与 compiler fact 时，优先选择带 compiler signature display �
 source free call 与 receiver member call 都发布该身份。member SymbolId 按精确 declaration
 AST node 注册/复用，declaration range 覆盖完整方法声明；imported/native member 没有 source
 declaration 时仍可提供 callable TypeId，但不会伪造 resolved source target。
+
+`ZrParser_SemanticQuery_VisibleSymbols()` 是 lexical completion 的唯一 source-symbol
+入口。query 结果借用当前 semantic snapshot 的 SymbolId、TypeId、declaration AST、range、
+display name 与 signature display；调用方只拥有输出 array storage，不能跨 snapshot 保存这些
+pointer。`SZrParserSemanticSymbolQuery.kind` 直接投影 symbol record kind，LSP 不再通过名称、
+声明文本或 symbol-table node 猜 completion kind。
+
+scope-fact producer 处理 lexical shadowing、generic parameters、imports/aliases、receiver/static
+边界以及 extern block 中的 function/delegate/struct/class/interface/enum declaration。结果按 scope
+distance、declaration order、SymbolId 稳定排序；同名内层声明遮蔽外层声明。source function 的
+`signatureDisplay` 由 `ZrParser_SemanticDisplay_CreateCallableSignature()` 从同一 SymbolId、closed
+function TypeId 和精确 declaration AST identity 生成，参数名来自声明，passing/type/return 来自
+canonical contract。缺少 SymbolId、declaration role/node 或 display name 的候选不会进入 LSP。
+
+`ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols()` 仅将上述 borrowed query view
+复制为 LSP-owned completion items。signatureDisplay 可用时直接作为 detail；否则只格式化 exact
+TypeId；TypeId unavailable 时显示明确的 `cannot infer exact type`，不得回退到 LSP symbol table、
+request-time inference 或 AST/name reconstruction。receiver/import completion 仍走各自 structured
+query，并保持原 fail-closed 边界。
 
 source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
 producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入

@@ -35,6 +35,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatSymbol(
         TZrSymbolId symbolId,
         TZrChar *buffer,
         TZrSize bufferSize);
+/* Creates a snapshot-owned callable label from exact SymbolId/TypeId/AST identity. */
+ZR_PARSER_API SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId);
 ZR_PARSER_API TZrBool ZrParser_SemanticDisplay_FormatProperty(
         const SZrSemanticContext *context,
         const SZrSemanticPropertyContract *property,

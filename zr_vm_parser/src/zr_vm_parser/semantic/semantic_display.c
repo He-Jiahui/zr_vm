@@ -70,6 +70,253 @@ static TZrBool semantic_display_is_function_symbol(
                      type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_FUNCTION);
 }
 
+static TZrBool semantic_display_append(
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrSize *offset,
+        const TZrChar *text) {
+    TZrSize length;
+
+    if (buffer == ZR_NULL || offset == ZR_NULL || text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    length = strlen(text);
+    if (*offset + length + 1U > bufferSize) {
+        return ZR_FALSE;
+    }
+    memcpy(buffer + *offset, text, length);
+    *offset += length;
+    buffer[*offset] = '\0';
+    return ZR_TRUE;
+}
+
+static const SZrAstNodeArray *semantic_display_callable_parameters(
+        const SZrAstNode *declaration) {
+    if (declaration == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declaration->data.functionDeclaration.params;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return declaration->data.externFunctionDeclaration.params;
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return declaration->data.externDelegateDeclaration.params;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.params;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.params;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return declaration->data.interfaceMethodSignature.params;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static const SZrGenericDeclaration *semantic_display_callable_generic(
+        const SZrAstNode *declaration) {
+    if (declaration == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declaration->data.functionDeclaration.generic;
+        case ZR_AST_CLASS_METHOD:
+            return declaration->data.classMethod.generic;
+        case ZR_AST_STRUCT_METHOD:
+            return declaration->data.structMethod.generic;
+        case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+            return declaration->data.interfaceMethodSignature.generic;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool semantic_display_append_generic_clause(
+        TZrChar *buffer,
+        TZrSize bufferSize,
+        TZrSize *offset,
+        const SZrGenericDeclaration *generic) {
+    TZrSize index;
+
+    if (generic == ZR_NULL || generic->params == ZR_NULL ||
+        generic->params->count == 0U) {
+        return ZR_TRUE;
+    }
+    if (!semantic_display_append(buffer, bufferSize, offset, "<")) {
+        return ZR_FALSE;
+    }
+    for (index = 0U; index < generic->params->count; index++) {
+        const SZrAstNode *node = generic->params->nodes[index];
+        const SZrParameter *parameter;
+        const TZrChar *name;
+
+        if (node == ZR_NULL || node->type != ZR_AST_PARAMETER) {
+            return ZR_FALSE;
+        }
+        parameter = &node->data.parameter;
+        if (parameter->name == ZR_NULL || parameter->name->name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        name = ZrCore_String_GetNativeString(parameter->name->name);
+        if (name == ZR_NULL || name[0] == '\0' ||
+            (index > 0U &&
+             !semantic_display_append(buffer, bufferSize, offset, ", "))) {
+            return ZR_FALSE;
+        }
+        if (parameter->genericKind == ZR_GENERIC_PARAMETER_CONST_INT) {
+            if (!semantic_display_append(buffer, bufferSize, offset, "const ") ||
+                !semantic_display_append(buffer, bufferSize, offset, name) ||
+                !semantic_display_append(buffer, bufferSize, offset, ": int")) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+        if (parameter->genericKind != ZR_GENERIC_PARAMETER_TYPE ||
+            (parameter->variance == ZR_GENERIC_VARIANCE_IN &&
+             !semantic_display_append(buffer, bufferSize, offset, "in ")) ||
+            (parameter->variance == ZR_GENERIC_VARIANCE_OUT &&
+             !semantic_display_append(buffer, bufferSize, offset, "out ")) ||
+            !semantic_display_append(buffer, bufferSize, offset, name)) {
+            return ZR_FALSE;
+        }
+    }
+    return semantic_display_append(buffer, bufferSize, offset, ">");
+}
+
+static const TZrChar *semantic_display_passing_prefix(
+        const SZrCanonicalParameterContract *contract) {
+    if (contract == ZR_NULL) {
+        return ZR_NULL;
+    }
+    switch (contract->passingForm) {
+        case ZR_CANONICAL_PASSING_IN:
+            return "in ";
+        case ZR_CANONICAL_PASSING_REF:
+            return contract->escapeUpperBound == ZR_CANONICAL_ESCAPE_FUNCTION
+                    ? "scoped ref "
+                    : "ref ";
+        case ZR_CANONICAL_PASSING_REF_READONLY:
+            return contract->escapeUpperBound == ZR_CANONICAL_ESCAPE_FUNCTION
+                    ? "scoped ref readonly "
+                    : "ref readonly ";
+        case ZR_CANONICAL_PASSING_OUT:
+            return "out ";
+        case ZR_CANONICAL_PASSING_VALUE:
+        default:
+            return "";
+    }
+}
+
+SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId) {
+    const SZrSemanticSymbolRecord *symbol;
+    const SZrCanonicalTypeNode *functionType;
+    const SZrAstNodeArray *parameters;
+    const SZrGenericDeclaration *generic;
+    const TZrChar *receiverPrefix = "";
+    TZrChar buffer[1024];
+    TZrChar typeBuffer[256];
+    TZrSize offset = 0U;
+    TZrSize index;
+
+    if (context == ZR_NULL || symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    symbol = ZrParser_Semantic_FindSymbolById(context, symbolId);
+    if (symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
+        symbol->name == ZR_NULL || symbol->astNode == ZR_NULL ||
+        symbol->typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    functionType = ZrParser_CanonicalType_Find(context, symbol->typeId);
+    if (functionType == ZR_NULL || functionType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
+        return ZR_NULL;
+    }
+    parameters = semantic_display_callable_parameters(symbol->astNode);
+    if ((parameters == ZR_NULL &&
+         functionType->data.function.parameterContracts.length != 0U) ||
+        (parameters != ZR_NULL &&
+         parameters->count != functionType->data.function.parameterContracts.length)) {
+        return ZR_NULL;
+    }
+    generic = semantic_display_callable_generic(symbol->astNode);
+    if (functionType->data.function.receiverEffect ==
+        ZR_CANONICAL_RECEIVER_READONLY) {
+        receiverPrefix = "const fn ";
+    } else if (functionType->data.function.receiverEffect ==
+               ZR_CANONICAL_RECEIVER_MUTABLE) {
+        receiverPrefix = "fn ";
+    }
+    buffer[0] = '\0';
+    if (!semantic_display_append(buffer, sizeof(buffer), &offset, receiverPrefix) ||
+        !semantic_display_append(buffer,
+                                 sizeof(buffer),
+                                 &offset,
+                                 ZrCore_String_GetNativeString(symbol->name)) ||
+        !semantic_display_append_generic_clause(
+                buffer, sizeof(buffer), &offset, generic) ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset, "(")) {
+        return ZR_NULL;
+    }
+    for (index = 0U;
+         index < functionType->data.function.parameterContracts.length;
+         index++) {
+        const SZrCanonicalParameterContract *contract =
+                (const SZrCanonicalParameterContract *)ZrCore_Array_Get(
+                        (SZrArray *)&functionType->data.function.parameterContracts,
+                        index);
+        const SZrCanonicalTypeNode *contractType;
+        const SZrAstNode *parameterNode = parameters->nodes[index];
+        const SZrParameter *parameter;
+        const TZrChar *name;
+        TZrTypeId displayTypeId;
+
+        if (contract == ZR_NULL || parameterNode == ZR_NULL ||
+            parameterNode->type != ZR_AST_PARAMETER) {
+            return ZR_NULL;
+        }
+        parameter = &parameterNode->data.parameter;
+        if (parameter->name == ZR_NULL || parameter->name->name == ZR_NULL) {
+            return ZR_NULL;
+        }
+        name = ZrCore_String_GetNativeString(parameter->name->name);
+        displayTypeId = contract->typeId;
+        if (contract->passingForm != ZR_CANONICAL_PASSING_VALUE) {
+            contractType = ZrParser_CanonicalType_Find(context, contract->typeId);
+            if (contractType == ZR_NULL || contractType->kind != ZR_CANONICAL_TYPE_REF) {
+                return ZR_NULL;
+            }
+            displayTypeId = contractType->data.refType.pointeeTypeId;
+        }
+        if (name == ZR_NULL || name[0] == '\0' ||
+            !ZrParser_CanonicalType_Format(
+                    context, displayTypeId, typeBuffer, sizeof(typeBuffer)) ||
+            (index > 0U &&
+             !semantic_display_append(buffer, sizeof(buffer), &offset, ", ")) ||
+            !semantic_display_append(buffer, sizeof(buffer), &offset, name) ||
+            !semantic_display_append(buffer, sizeof(buffer), &offset, ": ") ||
+            !semantic_display_append(
+                    buffer,
+                    sizeof(buffer),
+                    &offset,
+                    semantic_display_passing_prefix(contract)) ||
+            !semantic_display_append(buffer, sizeof(buffer), &offset, typeBuffer)) {
+            return ZR_NULL;
+        }
+    }
+    if (!ZrParser_CanonicalType_Format(context,
+                                       functionType->data.function.returnTypeId,
+                                       typeBuffer,
+                                       sizeof(typeBuffer)) ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset, "): ") ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset, typeBuffer)) {
+        return ZR_NULL;
+    }
+    return ZrCore_String_Create(context->state, buffer, offset);
+}
+
 TZrBool ZrParser_SemanticDocumentation_Publish(
         SZrSemanticContext *context,
         TZrSymbolId symbolId,

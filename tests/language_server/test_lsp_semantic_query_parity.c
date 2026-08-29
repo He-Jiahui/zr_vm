@@ -1260,6 +1260,7 @@ static void test_native_semantic_query_snapshot_parity(SZrState *state) {
 }
 
 #include "test_lsp_semantic_call_hierarchy_cases.h"
+#include "test_lsp_canonical_completion_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1283,6 +1284,7 @@ int main(void) {
     test_local_lambda_call_hierarchy_uses_canonical_edges(state);
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
+    test_canonical_visible_symbol_completion_survives_symbol_table_detachment(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

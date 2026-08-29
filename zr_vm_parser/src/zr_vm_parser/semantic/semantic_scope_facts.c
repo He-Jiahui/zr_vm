@@ -1,5 +1,6 @@
 #include "semantic_scope_facts.h"
 
+#include "zr_vm_parser/semantic_display.h"
 #include "zr_vm_parser/semantic_facts.h"
 
 #include <string.h>
@@ -277,6 +278,11 @@ static TZrBool semantic_scope_facts_publish_reference_declaration(
     fact.definitionRange = reference->definitionRange;
     fact.hasDefinitionRange = reference->hasDefinitionRange;
     fact.signatureDisplay = reference->signatureDisplay;
+    if (fact.signatureDisplay == ZR_NULL &&
+        symbol->kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION) {
+        fact.signatureDisplay = ZrParser_SemanticDisplay_CreateCallableSignature(
+                builder->context, symbol->id);
+    }
     fact.externalOriginUri = externalOriginUri;
     fact.isHoisted = isHoisted;
     fact.isAccessible = ZR_TRUE;
@@ -733,6 +739,9 @@ static TZrBool semantic_scope_facts_visit_type(
             generic = node->data.interfaceDeclaration.generic;
             members = node->data.interfaceDeclaration.members;
             break;
+        case ZR_AST_ENUM_DECLARATION:
+            members = node->data.enumDeclaration.members;
+            break;
         default:
             return ZR_FALSE;
     }
@@ -740,6 +749,50 @@ static TZrBool semantic_scope_facts_visit_type(
            semantic_scope_facts_publish_generic_parameters(
                    builder, scopeId, symbol->id, generic) &&
            semantic_scope_facts_visit_nodes(builder, members, scopeId, symbol->id);
+}
+
+static TZrBool semantic_scope_facts_visit_extern_block(
+        SZrSemanticScopeFactBuilder *builder,
+        SZrAstNode *node,
+        TZrSemanticScopeId parentScopeId,
+        TZrSymbolId ownerSymbolId) {
+    TZrSize index;
+
+    if (node->data.externBlock.declarations == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    for (index = 0U; index < node->data.externBlock.declarations->count; index++) {
+        SZrAstNode *declaration = node->data.externBlock.declarations->nodes[index];
+
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+        switch (declaration->type) {
+            case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+                if (!semantic_scope_facts_publish_declaration(
+                            builder,
+                            parentScopeId,
+                            declaration,
+                            ownerSymbolId,
+                            ZR_TRUE)) {
+                    return ZR_FALSE;
+                }
+                break;
+            case ZR_AST_STRUCT_DECLARATION:
+            case ZR_AST_CLASS_DECLARATION:
+            case ZR_AST_INTERFACE_DECLARATION:
+            case ZR_AST_ENUM_DECLARATION:
+                if (!semantic_scope_facts_visit_type(
+                            builder, declaration, parentScopeId)) {
+                    return ZR_FALSE;
+                }
+                break;
+            default:
+                break;
+        }
+    }
+    return ZR_TRUE;
 }
 
 static SZrFileRange semantic_scope_facts_loop_range(
@@ -806,9 +859,13 @@ static TZrBool semantic_scope_facts_visit_node(
         case ZR_AST_FUNCTION_DECLARATION:
             return semantic_scope_facts_visit_function(
                     builder, node, parentScopeId, ownerSymbolId);
+        case ZR_AST_EXTERN_BLOCK:
+            return semantic_scope_facts_visit_extern_block(
+                    builder, node, parentScopeId, ownerSymbolId);
         case ZR_AST_STRUCT_DECLARATION:
         case ZR_AST_CLASS_DECLARATION:
         case ZR_AST_INTERFACE_DECLARATION:
+        case ZR_AST_ENUM_DECLARATION:
             return semantic_scope_facts_visit_type(builder, node, parentScopeId);
         case ZR_AST_STRUCT_METHOD:
         case ZR_AST_CLASS_METHOD:

@@ -94,10 +94,12 @@ static void test_declared_symbols_projects_exact_snapshot_declarations(void) {
     TEST_ASSERT_NOT_NULL(second);
     TEST_ASSERT_EQUAL_UINT32(902U, first->symbolId);
     TEST_ASSERT_EQUAL_UINT32(72U, first->typeId);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_VARIABLE, first->kind);
     TEST_ASSERT_EQUAL_PTR(&secondNode, first->declarationNode);
     TEST_ASSERT_EQUAL_UINT32(8U, (TZrUInt32)first->declarationRange.start.offset);
     TEST_ASSERT_EQUAL_UINT32(901U, second->symbolId);
     TEST_ASSERT_EQUAL_UINT32(71U, second->typeId);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_SYMBOL_KIND_VARIABLE, second->kind);
     TEST_ASSERT_EQUAL_PTR(&firstNode, second->declarationNode);
 
     ((SZrSemanticReferenceFact *)ZrCore_Array_Get(

@@ -346,6 +346,7 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
         const SZrSemanticSymbolRecord *record =
                 ZrParser_Semantic_FindSymbolById(context, reference->symbolId);
         if (record != ZR_NULL && record->typeId == reference->typeId) {
+            outSymbol->kind = record->kind;
             outSymbol->declarationNode = record->astNode;
         }
     }
@@ -401,6 +402,7 @@ TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
         symbol.symbolId = declaration->symbolId;
         symbol.typeId = declaration->typeId;
         symbol.ownerSymbolId = ZR_SEMANTIC_ID_INVALID;
+        symbol.kind = record->kind;
         symbol.role = ZR_SEMANTIC_REFERENCE_DECLARATION;
         symbol.declarationRange = declaration->declarationRange;
         symbol.definitionRange = declaration->hasDefinitionRange
@@ -465,6 +467,7 @@ TZrBool ZrParser_SemanticQuery_VisibleSymbols(
             candidate.symbol.symbolId = record->id;
             candidate.symbol.typeId = record->typeId;
             candidate.symbol.ownerSymbolId = fact->ownerSymbolId;
+            candidate.symbol.kind = record->kind;
             candidate.symbol.role = ZR_SEMANTIC_REFERENCE_DECLARATION;
             candidate.symbol.declarationRange = fact->declarationRange;
             candidate.symbol.definitionRange = fact->hasDefinitionRange

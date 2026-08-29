@@ -86,6 +86,7 @@ typedef struct SZrParserSemanticSymbolQuery {
     TZrSymbolId symbolId;
     TZrTypeId typeId;
     TZrSymbolId ownerSymbolId;
+    EZrSemanticSymbolKind kind;
     EZrSemanticReferenceKind role;
     SZrFileRange declarationRange;
     SZrFileRange definitionRange;

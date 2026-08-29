@@ -1,5 +1,6 @@
 #include "semantic/lsp_semantic_query.h"
 #include "semantic/lsp_semantic_definition_query.h"
+#include "semantic/lsp_canonical_completion.h"
 #include "semantic/lsp_semantic_import_chain.h"
 #include "semantic/lsp_semantic_reference_query.h"
 #include "semantic/semantic_analyzer_internal.h"
@@ -2829,14 +2830,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
         }
     }
 
-    if (!hasStructuredCompletions && !receiverCompletionFailClosed &&
-        !ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, fileRange, &completions)) {
-        ZrCore_Array_Free(state, &completions);
-        if (hasSnapshot) {
-            ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
-        }
-        ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
-        return ZR_FALSE;
+    if (!hasStructuredCompletions && !receiverCompletionFailClosed) {
+        hasStructuredCompletions =
+                ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
+                        state,
+                        analyzer->semanticContext,
+                        fileRange,
+                        &completions);
     }
 
     if (completions.length == 0 && !receiverCompletionFailClosed &&
@@ -2875,10 +2875,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
                                                                                            &completions,
                                                                                            &receiverCompletionFailClosed);
             if (!hasStructuredCompletions && !receiverCompletionFailClosed) {
-                (void)ZrLanguageServer_SemanticAnalyzer_GetCompletions(state,
-                                                                       fallbackAnalyzer,
-                                                                       fileRange,
-                                                                       &completions);
+                hasStructuredCompletions =
+                        ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
+                                state,
+                                fallbackAnalyzer->semanticContext,
+                                fileRange,
+                                &completions);
             }
         }
     }
