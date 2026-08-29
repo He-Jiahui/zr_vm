@@ -341,14 +341,15 @@ static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
     compiler_collect_parameter_passing_modes(cs->state, &parameterPassingModes, lambda->params);
 
     bindingIndex = savedEnv->functionReturnTypes.length;
-    if (ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
-                                                    savedEnv,
-                                                    name,
-                                                    &returnType,
-                                                    &paramTypes,
-                                                    ZR_NULL,
-                                                    &parameterPassingModes,
-                                                    lambdaNode)) {
+    if (ZrParser_TypeEnvironment_RegisterCallableValueFunction(
+                cs->state,
+                savedEnv,
+                name,
+                &returnType,
+                &paramTypes,
+                ZR_NULL,
+                &parameterPassingModes,
+                lambdaNode)) {
         (void)compiler_publish_lambda_callable_binding_identity(
                 cs, savedEnv, bindingIndex, lambdaNode);
     }
@@ -421,14 +422,15 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
             ZrParser_InferredType_Free(cs->state, &inferredReturnType);
         }
 
-        ZrParser_TypeEnvironment_RegisterFunctionEx(cs->state,
-                                                    cs->typeEnv,
-                                                    name,
-                                                    &(*candidatePtr)->returnType,
-                                                    &(*candidatePtr)->paramTypes,
-                                                    &(*candidatePtr)->genericParameters,
-                                                    &(*candidatePtr)->parameterPassingModes,
-                                                    (*candidatePtr)->declarationNode);
+        ZrParser_TypeEnvironment_RegisterCallableValueFunction(
+                cs->state,
+                cs->typeEnv,
+                name,
+                &(*candidatePtr)->returnType,
+                &(*candidatePtr)->paramTypes,
+                &(*candidatePtr)->genericParameters,
+                &(*candidatePtr)->parameterPassingModes,
+                (*candidatePtr)->declarationNode);
     }
 
     if (candidates.isValid && candidates.head != ZR_NULL) {

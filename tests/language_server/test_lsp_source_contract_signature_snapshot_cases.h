@@ -23,6 +23,13 @@ static void test_signature_semantic_facts_are_snapshot_read_only(void) {
     assert_text_contains(source, "ZrParser_SemanticFacts_FindNumericByNode");
     assert_text_contains_none(source, "signature_fact_materialize_argument");
     assert_text_contains_none(source, "InferExactExpressionType");
+    assert_text_contains_none(dispatcher, "signature_resolve_function_help");
+    assert_text_contains_none(
+            dispatcher,
+            "signature_lookup_unresolved_function_candidate");
+    assert_text_contains_none(
+            dispatcher,
+            "ZrLanguageServer_SymbolTable_LookupAtPosition");
 
     canonicalResolve = strstr(
             dispatcher,

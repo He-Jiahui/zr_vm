@@ -83,26 +83,6 @@ static const TZrChar *signature_exact_type_failure_text(void) {
     return "cannot infer exact type";
 }
 
-static SZrString *signature_extract_direct_identifier_name(SZrAstNode *node) {
-    if (node == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
-        return node->data.identifier.name;
-    }
-
-    if (node->type == ZR_AST_PRIMARY_EXPRESSION &&
-        node->data.primaryExpression.property != ZR_NULL &&
-        node->data.primaryExpression.property->type == ZR_AST_IDENTIFIER_LITERAL &&
-        (node->data.primaryExpression.members == ZR_NULL ||
-         node->data.primaryExpression.members->count == 0)) {
-        return node->data.primaryExpression.property->data.identifier.name;
-    }
-
-    return ZR_NULL;
-}
-
 static TZrBool signature_inferred_type_is_precise(const SZrInferredType *typeInfo) {
     return typeInfo != ZR_NULL &&
            !(typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
@@ -745,183 +725,6 @@ static TZrBool signature_build_label_from_method(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool signature_build_label_from_function(SZrState *state,
-                                                   SZrFunctionTypeInfo *funcType,
-                                                   const SZrResolvedCallSignature *resolvedSignature,
-                                                   TZrChar *buffer,
-                                                   TZrSize bufferSize) {
-    SZrAstNode *declarationNode;
-    SZrGenericDeclaration *genericDecl = ZR_NULL;
-    SZrAstNodeArray *params = ZR_NULL;
-    SZrType *declaredReturnType = ZR_NULL;
-    TZrBool useDeclaredAstTypes = ZR_FALSE;
-    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-    TZrSize offset = 0;
-
-    if (buffer == ZR_NULL || bufferSize == 0 || funcType == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    buffer[0] = '\0';
-    declarationNode = funcType->declarationNode;
-    if (declarationNode != ZR_NULL) {
-        switch (declarationNode->type) {
-            case ZR_AST_FUNCTION_DECLARATION:
-                genericDecl = declarationNode->data.functionDeclaration.generic;
-                params = declarationNode->data.functionDeclaration.params;
-                declaredReturnType = declarationNode->data.functionDeclaration.returnType;
-                break;
-            case ZR_AST_EXTERN_FUNCTION_DECLARATION:
-                params = declarationNode->data.externFunctionDeclaration.params;
-                declaredReturnType = declarationNode->data.externFunctionDeclaration.returnType;
-                useDeclaredAstTypes = ZR_TRUE;
-                break;
-            default:
-                break;
-        }
-    }
-
-    signature_buffer_append(buffer,
-                            bufferSize,
-                            &offset,
-                            "%s",
-                            signature_string_native(funcType->name));
-    signature_append_generic_declaration(state, genericDecl, buffer, bufferSize, &offset);
-    signature_buffer_append(buffer, bufferSize, &offset, "(");
-    if (params != ZR_NULL) {
-        for (TZrSize index = 0; index < params->count; index++) {
-            SZrInferredType *resolvedType = ZR_NULL;
-            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
-
-            if (index > 0) {
-                signature_buffer_append(buffer, bufferSize, &offset, ", ");
-            }
-            if (!useDeclaredAstTypes && resolvedSignature != ZR_NULL && index < resolvedSignature->parameterTypes.length) {
-                resolvedType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&resolvedSignature->parameterTypes, index);
-            }
-            if (resolvedSignature != ZR_NULL && index < resolvedSignature->parameterPassingModes.length) {
-                EZrParameterPassingMode *mode =
-                    (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)&resolvedSignature->parameterPassingModes, index);
-                if (mode != ZR_NULL) {
-                    passingMode = *mode;
-                }
-            }
-            signature_append_parameter_label(state,
-                                             params->nodes[index],
-                                             resolvedType,
-                                             passingMode,
-                                             buffer,
-                                             bufferSize,
-                                             &offset);
-        }
-    }
-    signature_buffer_append(buffer, bufferSize, &offset, "): ");
-    if (useDeclaredAstTypes && declaredReturnType != ZR_NULL) {
-        TZrSize typeOffset = 0;
-        typeBuffer[0] = '\0';
-        signature_append_ast_type(declaredReturnType, typeBuffer, sizeof(typeBuffer), &typeOffset);
-    } else {
-        signature_format_type(state,
-                              resolvedSignature != ZR_NULL ? &resolvedSignature->returnType : &funcType->returnType,
-                              typeBuffer,
-                              sizeof(typeBuffer));
-    }
-    signature_buffer_append(buffer, bufferSize, &offset, "%s", typeBuffer);
-    signature_append_where_clauses(state, genericDecl, buffer, bufferSize, &offset);
-    return ZR_TRUE;
-}
-
-static SZrAstNodeArray *signature_function_parameter_nodes(SZrAstNode *declarationNode) {
-    if (declarationNode == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    switch (declarationNode->type) {
-        case ZR_AST_FUNCTION_DECLARATION:
-            return declarationNode->data.functionDeclaration.params;
-        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
-            return declarationNode->data.externFunctionDeclaration.params;
-        default:
-            return ZR_NULL;
-    }
-}
-
-static TZrBool signature_function_candidate_matches_call_shape(SZrFunctionTypeInfo *funcType,
-                                                               SZrFunctionCall *call) {
-    SZrAstNodeArray *params;
-    TZrSize argumentCount;
-
-    if (funcType == ZR_NULL || call == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    params = signature_function_parameter_nodes(funcType->declarationNode);
-    argumentCount = call->args != ZR_NULL ? call->args->count : 0;
-    if (params != ZR_NULL) {
-        return params->count == argumentCount;
-    }
-
-    return funcType->paramTypes.length == argumentCount;
-}
-
-static SZrFunctionTypeInfo *signature_lookup_unresolved_function_candidate(SZrState *state,
-                                                                           SZrTypeEnvironment *env,
-                                                                           SZrString *functionName,
-                                                                           SZrFunctionCall *call) {
-    SZrArray candidates;
-    SZrFunctionTypeInfo *matched = ZR_NULL;
-
-    if (state == ZR_NULL || env == ZR_NULL || functionName == ZR_NULL || call == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (!ZrParser_TypeEnvironment_LookupFunctions(state, env, functionName, &candidates)) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < candidates.length; index++) {
-        SZrFunctionTypeInfo **candidatePtr =
-            (SZrFunctionTypeInfo **)ZrCore_Array_Get(&candidates, index);
-        SZrFunctionTypeInfo *candidate = candidatePtr != ZR_NULL ? *candidatePtr : ZR_NULL;
-        if (!signature_function_candidate_matches_call_shape(candidate, call)) {
-            continue;
-        }
-        if (matched != ZR_NULL) {
-            matched = ZR_NULL;
-            break;
-        }
-        matched = candidate;
-    }
-
-    ZrCore_Array_Free(state, &candidates);
-    return matched;
-}
-
-static SZrFunctionTypeInfo *signature_lookup_unresolved_function_candidate_in_available_envs(
-        SZrState *state,
-        SZrCompilerState *compilerState,
-        SZrString *functionName,
-        SZrFunctionCall *call) {
-    SZrFunctionTypeInfo *candidate;
-
-    if (compilerState == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    candidate = signature_lookup_unresolved_function_candidate(state,
-                                                              compilerState->typeEnv,
-                                                              functionName,
-                                                              call);
-    if (candidate != ZR_NULL) {
-        return candidate;
-    }
-
-    return signature_lookup_unresolved_function_candidate(state,
-                                                         compilerState->compileTimeTypeEnv,
-                                                         functionName,
-                                                         call);
-}
-
 static TZrInt32 signature_active_parameter_index(SZrFunctionCall *call, SZrFilePosition position) {
     TZrInt32 activeIndex = 0;
 
@@ -1087,8 +890,8 @@ static TZrBool signature_context_has_local_canonical_call(
     memset(&query, 0, sizeof(query));
     return ZrParser_SemanticQuery_CallAt(
                    analyzer->semanticContext, calleeRange, ZR_NULL, &query) &&
-           query.expression != ZR_NULL && !query.expression->isMemberCall &&
-           query.reference != ZR_NULL &&
+           query.expression != ZR_NULL &&
+           !query.expression->isMemberCall && query.reference != ZR_NULL &&
            signature_ranges_equal(query.reference->range, calleeRange);
 }
 
@@ -2433,33 +2236,6 @@ static TZrBool signature_collect_parameter_passing_modes_from_ast(SZrState *stat
     return ZR_TRUE;
 }
 
-static SZrString *signature_create_type_name_from_ast_type(SZrCompilerState *compilerState,
-                                                           SZrType *typeInfo,
-                                                           const SZrSignatureTypeResolutionContext *context) {
-    SZrInferredType inferredType;
-    TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
-    const TZrChar *displayText;
-    SZrString *result = ZR_NULL;
-
-    if (compilerState == ZR_NULL || typeInfo == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrParser_InferredType_Init(compilerState->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    if (!signature_convert_ast_type_with_context(compilerState, typeInfo, context, &inferredType)) {
-        ZrParser_InferredType_Free(compilerState->state, &inferredType);
-        return ZR_NULL;
-    }
-
-    displayText = ZrParser_TypeNameString_Get(compilerState->state, &inferredType, buffer, sizeof(buffer));
-    if (displayText != ZR_NULL && displayText[0] != '\0') {
-        result = ZrCore_String_Create(compilerState->state, (TZrNativeString)displayText, strlen(displayText));
-    }
-
-    ZrParser_InferredType_Free(compilerState->state, &inferredType);
-    return result;
-}
-
 static SZrAstNode *signature_find_type_declaration_recursive(SZrAstNode *node,
                                                              const TZrChar *typeNameText,
                                                              TZrSize typeNameLength) {
@@ -3747,139 +3523,6 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool signature_resolve_function_help(SZrState *state,
-                                               SZrSemanticAnalyzer *analyzer,
-                                               SZrCompilerState *compilerState,
-                                               SZrLspCallContext *context,
-                                               SZrFilePosition position,
-                                               SZrLspSignatureHelp **result) {
-    SZrFunctionTypeInfo *resolvedFunction = ZR_NULL;
-    SZrResolvedCallSignature resolvedSignature;
-    SZrPrimaryExpression *primary;
-    SZrFunctionCall *call;
-    SZrAstNodeArray *signatureParams = ZR_NULL;
-    TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
-    TZrBool resolved = ZR_FALSE;
-    TZrBool hasResolvedSignature = ZR_FALSE;
-    SZrSymbol *calleeSymbol = ZR_NULL;
-    SZrString *callableSourceName = ZR_NULL;
-    SZrFileRange lookupPosition;
-
-    if (state == ZR_NULL || compilerState == ZR_NULL || context == ZR_NULL || context->primaryNode == ZR_NULL ||
-        context->callNode == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    primary = &context->primaryNode->data.primaryExpression;
-    call = &context->callNode->data.functionCall;
-    if (primary->property == ZR_NULL || primary->property->type != ZR_AST_IDENTIFIER_LITERAL) {
-        return ZR_FALSE;
-    }
-
-    memset(&resolvedSignature, 0, sizeof(resolvedSignature));
-    ZrParser_InferredType_Init(state, &resolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
-    ZrCore_Array_Construct(&resolvedSignature.parameterTypes);
-    ZrCore_Array_Construct(&resolvedSignature.parameterPassingModes);
-
-    if (compilerState->typeEnv != ZR_NULL &&
-        resolve_best_function_overload(compilerState,
-                                       compilerState->typeEnv,
-                                       primary->property->data.identifier.name,
-                                       call,
-                                       context->callNode->location,
-                                       &resolvedFunction,
-                                       &resolvedSignature)) {
-        resolved = ZR_TRUE;
-        hasResolvedSignature = ZR_TRUE;
-    } else if (compilerState->compileTimeTypeEnv != ZR_NULL &&
-               resolve_best_function_overload(compilerState,
-                                              compilerState->compileTimeTypeEnv,
-                                              primary->property->data.identifier.name,
-                                              call,
-                                              context->callNode->location,
-                                               &resolvedFunction,
-                                               &resolvedSignature)) {
-        resolved = ZR_TRUE;
-        hasResolvedSignature = ZR_TRUE;
-    }
-
-    if (!resolved && analyzer != ZR_NULL && analyzer->symbolTable != ZR_NULL) {
-        lookupPosition = ZrParser_FileRange_Create(position, position, context->primaryNode->location.source);
-        calleeSymbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable,
-                                                                     primary->property->data.identifier.name,
-                                                                     lookupPosition);
-        if (calleeSymbol != ZR_NULL &&
-            calleeSymbol->astNode != ZR_NULL &&
-            calleeSymbol->astNode->type == ZR_AST_VARIABLE_DECLARATION) {
-            callableSourceName = signature_extract_direct_identifier_name(
-                calleeSymbol->astNode->data.variableDeclaration.value);
-            if (callableSourceName != ZR_NULL) {
-                if (compilerState->typeEnv != ZR_NULL &&
-                    resolve_best_function_overload(compilerState,
-                                                   compilerState->typeEnv,
-                                                   callableSourceName,
-                                                   call,
-                                                   context->callNode->location,
-                                                   &resolvedFunction,
-                                                   &resolvedSignature)) {
-                    resolved = ZR_TRUE;
-                    hasResolvedSignature = ZR_TRUE;
-                } else if (compilerState->compileTimeTypeEnv != ZR_NULL &&
-                           resolve_best_function_overload(compilerState,
-                                                          compilerState->compileTimeTypeEnv,
-                                                          callableSourceName,
-                                                          call,
-                                                          context->callNode->location,
-                                                           &resolvedFunction,
-                                                           &resolvedSignature)) {
-                    resolved = ZR_TRUE;
-                    hasResolvedSignature = ZR_TRUE;
-                }
-            }
-        }
-    }
-
-    if (!resolved || resolvedFunction == ZR_NULL) {
-        SZrString *fallbackName = callableSourceName != ZR_NULL
-                                      ? callableSourceName
-                                      : primary->property->data.identifier.name;
-        resolvedFunction = signature_lookup_unresolved_function_candidate_in_available_envs(state,
-                                                                                           compilerState,
-                                                                                           fallbackName,
-                                                                                           call);
-        resolved = resolvedFunction != ZR_NULL;
-    }
-
-    if (!resolved || resolvedFunction == ZR_NULL ||
-        !signature_build_label_from_function(state,
-                                             resolvedFunction,
-                                             hasResolvedSignature ? &resolvedSignature : ZR_NULL,
-                                             labelBuffer,
-                                             sizeof(labelBuffer))) {
-        free_resolved_call_signature(state, &resolvedSignature);
-        return ZR_FALSE;
-    }
-
-    if (resolvedFunction->declarationNode != ZR_NULL) {
-        signatureParams = signature_function_parameter_nodes(resolvedFunction->declarationNode);
-    }
-
-    if (!signature_populate_help_from_label(state,
-                                            analyzer,
-                                            labelBuffer,
-                                            signatureParams,
-                                            call->args,
-                                            hasResolvedSignature ? &resolvedSignature : ZR_NULL,
-                                            signature_active_parameter_index(call, position),
-                                            result)) {
-        free_resolved_call_signature(state, &resolvedSignature);
-        return ZR_FALSE;
-    }
-
-    free_resolved_call_signature(state, &resolvedSignature);
-    return ZR_TRUE;
-}
-
 static TZrBool signature_resolve_method_help(SZrState *state,
                                              SZrSemanticAnalyzer *analyzer,
                                              SZrCompilerState *compilerState,
@@ -4169,7 +3812,7 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
         return *result != ZR_NULL;
     }
 
-    return signature_resolve_function_help(state, analyzer, analyzer->compilerState, &callContext, filePosition, result);
+    return ZR_FALSE;
 }
 
 void ZrLanguageServer_LspSignatureHelp_Free(SZrState *state, SZrLspSignatureHelp *help) {

@@ -116,6 +116,7 @@ typedef struct SZrFunctionTypeInfo {
     TZrSymbolId symbolId;            // 共享语义符号 ID（可选）
     SZrString *signatureDisplay;     // metadata-backed canonical call label（可选）
     TZrBool isExternalCallable;      // no source declaration/SymbolId is available
+    TZrBool isCallableValueBinding;  // callable metadata bound to a lexical value
 } SZrFunctionTypeInfo;
 
 // 类型环境结构体
@@ -295,6 +296,16 @@ ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *stat
                                                                   SZrArray *genericParameters,
                                                                   SZrArray *parameterPassingModes,
                                                                   SZrAstNode *declarationNode);
+/* Registers callable metadata that remains visible through its same-scope value binding. */
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCallableValueFunction(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        SZrArray *paramTypes,
+        SZrArray *genericParameters,
+        SZrArray *parameterPassingModes,
+        SZrAstNode *declarationNode);
 /* Registers an externally verified callable without allocating replacement identities. */
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterCanonicalFunction(
         SZrState *state,

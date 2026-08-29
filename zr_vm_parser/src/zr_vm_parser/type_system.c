@@ -1613,14 +1613,16 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnviro
                                                        ZR_NULL);
 }
 
-TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
-                                                    SZrTypeEnvironment *env,
-                                                    SZrString *name,
-                                                    const SZrInferredType *returnType,
-                                                    SZrArray *paramTypes,
-                                                    SZrArray *genericParameters,
-                                                    SZrArray *parameterPassingModes,
-                                                    SZrAstNode *declarationNode) {
+static TZrBool type_environment_register_function_ex(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        SZrArray *paramTypes,
+        SZrArray *genericParameters,
+        SZrArray *parameterPassingModes,
+        SZrAstNode *declarationNode,
+        TZrBool isCallableValueBinding) {
     TZrTypeId typeId = ZR_SEMANTIC_ID_INVALID;
     TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
     TZrOverloadSetId overloadSetId = ZR_SEMANTIC_ID_INVALID;
@@ -1651,6 +1653,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
         SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrCore_Array_Get(&env->functionReturnTypes, i);
         if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL && 
             (*funcInfo)->name != ZR_NULL && ZrCore_String_Equal((*funcInfo)->name, name) &&
+            (*funcInfo)->isCallableValueBinding == isCallableValueBinding &&
             (*funcInfo)->genericParameters.length == (genericParameters != ZR_NULL ? genericParameters->length : 0) &&
             function_type_info_matches_signature(*funcInfo, returnType, paramTypes)) {
             return ZR_FALSE;
@@ -1676,6 +1679,7 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
     funcInfo->symbolId = ZR_SEMANTIC_ID_INVALID;
     funcInfo->signatureDisplay = ZR_NULL;
     funcInfo->isExternalCallable = ZR_FALSE;
+    funcInfo->isCallableValueBinding = isCallableValueBinding;
     
     // Deep-copy parameter type array values.
     if (paramTypes != ZR_NULL && paramTypes->isValid && paramTypes->capacity > 0 && paramTypes->length > 0) {
@@ -1824,6 +1828,48 @@ TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrParser_TypeEnvironment_RegisterFunctionEx(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        SZrArray *paramTypes,
+        SZrArray *genericParameters,
+        SZrArray *parameterPassingModes,
+        SZrAstNode *declarationNode) {
+    return type_environment_register_function_ex(
+            state,
+            env,
+            name,
+            returnType,
+            paramTypes,
+            genericParameters,
+            parameterPassingModes,
+            declarationNode,
+            ZR_FALSE);
+}
+
+TZrBool ZrParser_TypeEnvironment_RegisterCallableValueFunction(
+        SZrState *state,
+        SZrTypeEnvironment *env,
+        SZrString *name,
+        const SZrInferredType *returnType,
+        SZrArray *paramTypes,
+        SZrArray *genericParameters,
+        SZrArray *parameterPassingModes,
+        SZrAstNode *declarationNode) {
+    return type_environment_register_function_ex(
+            state,
+            env,
+            name,
+            returnType,
+            paramTypes,
+            genericParameters,
+            parameterPassingModes,
+            declarationNode,
+            ZR_TRUE);
+}
+
 TZrBool ZrParser_TypeEnvironment_RegisterCanonicalFunction(
         SZrState *state,
         SZrTypeEnvironment *env,
@@ -1964,6 +2010,7 @@ static TZrBool type_environment_copy_external_callable(
     destination->symbolId = ZR_SEMANTIC_ID_INVALID;
     destination->signatureDisplay = signatureDisplay;
     destination->isExternalCallable = ZR_TRUE;
+    destination->isCallableValueBinding = ZR_FALSE;
     ZrParser_InferredType_Copy(state, &destination->returnType, returnType);
     ZrCore_Array_Construct(&destination->paramTypes);
     ZrCore_Array_Construct(&destination->genericParameters);
@@ -2114,31 +2161,59 @@ TZrBool ZrParser_TypeEnvironment_RegisterExternalCallableAlias(
         }
         return ZR_FALSE;
     }
+    alias->isCallableValueBinding = ZR_TRUE;
     ZrCore_Array_Push(state, &env->functionReturnTypes, &alias);
     return ZR_TRUE;
 }
 
-// 查找函数类型
-TZrBool ZrParser_TypeEnvironment_LookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result) {
-    if (env == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
+static TZrBool type_environment_has_local_variable(
+        const SZrTypeEnvironment *env,
+        const SZrString *name) {
+    if (env == ZR_NULL || name == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 在当前环境中查找
-    for (TZrSize i = 0; i < env->functionReturnTypes.length; i++) {
-        SZrFunctionTypeInfo **funcInfo = (SZrFunctionTypeInfo **)ZrCore_Array_Get(&env->functionReturnTypes, i);
-        if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL && 
-            (*funcInfo)->name != ZR_NULL && ZrCore_String_Equal((*funcInfo)->name, name)) {
-            *result = *funcInfo;
+    for (TZrSize index = 0U; index < env->variableTypes.length; index++) {
+        const SZrTypeBinding *binding = (const SZrTypeBinding *)ZrCore_Array_Get(
+                (SZrArray *)&env->variableTypes, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL &&
+            ZrCore_String_Equal(binding->name, name)) {
             return ZR_TRUE;
         }
     }
-    
-    // 在父环境中查找
-    if (env->parent != ZR_NULL) {
-        return ZrParser_TypeEnvironment_LookupFunction(env->parent, name, result);
+    return ZR_FALSE;
+}
+
+// 查找函数类型
+TZrBool ZrParser_TypeEnvironment_LookupFunction(SZrTypeEnvironment *env, SZrString *name, SZrFunctionTypeInfo **result) {
+    SZrTypeEnvironment *currentEnv;
+
+    if (env == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
     }
-    
+
+    currentEnv = env;
+    while (currentEnv != ZR_NULL) {
+        TZrBool hasLocalVariable =
+                type_environment_has_local_variable(currentEnv, name);
+
+        for (TZrSize index = 0U; index < currentEnv->functionReturnTypes.length;
+             index++) {
+            SZrFunctionTypeInfo **funcInfo =
+                    (SZrFunctionTypeInfo **)ZrCore_Array_Get(
+                            &currentEnv->functionReturnTypes, index);
+            if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL &&
+                (*funcInfo)->name != ZR_NULL &&
+                ZrCore_String_Equal((*funcInfo)->name, name) &&
+                (!hasLocalVariable || (*funcInfo)->isCallableValueBinding)) {
+                *result = *funcInfo;
+                return ZR_TRUE;
+            }
+        }
+        if (hasLocalVariable) {
+            return ZR_FALSE;
+        }
+        currentEnv = currentEnv->parent;
+    }
     return ZR_FALSE;
 }
 
@@ -2153,17 +2228,25 @@ TZrBool ZrParser_TypeEnvironment_LookupFunctions(SZrState *state, SZrTypeEnviron
 
     currentEnv = env;
     while (currentEnv != ZR_NULL) {
+        TZrBool hasLocalVariable =
+                type_environment_has_local_variable(currentEnv, name);
+
         for (TZrSize i = 0; i < currentEnv->functionReturnTypes.length; i++) {
             SZrFunctionTypeInfo **funcInfo =
                 (SZrFunctionTypeInfo **)ZrCore_Array_Get(&currentEnv->functionReturnTypes, i);
             if (funcInfo != ZR_NULL && *funcInfo != ZR_NULL &&
-                (*funcInfo)->name != ZR_NULL && ZrCore_String_Equal((*funcInfo)->name, name)) {
+                (*funcInfo)->name != ZR_NULL &&
+                ZrCore_String_Equal((*funcInfo)->name, name) &&
+                (!hasLocalVariable || (*funcInfo)->isCallableValueBinding)) {
                 SZrFunctionTypeInfo *resolvedInfo = *funcInfo;
                 if (function_results_contains_equivalent_overload(results, resolvedInfo)) {
                     continue;
                 }
                 ZrCore_Array_Push(state, results, &resolvedInfo);
             }
+        }
+        if (hasLocalVariable) {
+            break;
         }
         currentEnv = currentEnv->parent;
     }

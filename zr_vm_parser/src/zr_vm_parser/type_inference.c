@@ -2597,7 +2597,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                     return ZR_FALSE;
                 }
 
-                if (!hasVisibleVariable && cs->typeEnv != ZR_NULL) {
+                if (cs->typeEnv != ZR_NULL) {
                     hasRuntimeFunction = ZrParser_TypeEnvironment_LookupFunction(cs->typeEnv, funcName, &funcTypeInfo);
                     funcTypeInfo = ZR_NULL;
                 }
