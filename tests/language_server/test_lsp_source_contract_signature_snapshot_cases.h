@@ -30,6 +30,7 @@ static void test_signature_semantic_facts_are_snapshot_read_only(void) {
     assert_text_contains_none(
             dispatcher,
             "ZrLanguageServer_SymbolTable_LookupAtPosition");
+    assert_text_contains_none(dispatcher, "signature_resolve_method_help");
 
     canonicalResolve = strstr(
             dispatcher,

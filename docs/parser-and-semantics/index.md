@@ -226,6 +226,10 @@ CFG/dataflow 现在已开始给引用事实补充控制流敏感 payload：defin
   - lexical callable aliases and lambdas retain canonical function metadata
   - same-scope values shadow ordinary functions without hiding their own callable contract
   - source signature help consumes `CallAt/FormatCall` and has no compiler/name fallback
+- `canonical-signature-help-consumption.md`
+  - source direct and receiver calls consume canonical `CallAt/FormatCall` facts
+  - binary/native callables use the external canonical adapter with provider identity
+  - request-time receiver inference, member-name search, and AST signature reconstruction are removed
 - `ast-and-syntax-contracts.md`
   - contextual unified property grammar across class, struct, resource class, and interface
   - one `PROPERTY_DECLARATION` with ordered accessor children and exact recovery ranges
