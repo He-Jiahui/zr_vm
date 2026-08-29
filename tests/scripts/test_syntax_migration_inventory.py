@@ -60,6 +60,33 @@ class SyntaxMigrationInventoryProtocolTests(unittest.TestCase):
                     repository_candidate_paths(root),
                 )
 
+    def test_repository_inventory_reuses_unchanged_snapshot_and_invalidates_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "tests" / "sample.zr"
+            source.parent.mkdir(parents=True)
+            source.write_text("%module sample\n", encoding="utf-8")
+
+            with mock.patch.object(
+                inventory_module,
+                "repository_candidate_paths",
+                return_value=("tests/sample.zr",),
+            ), mock.patch.object(
+                inventory_module,
+                "_scan_path",
+                wraps=inventory_module._scan_path,
+            ) as scan_path:
+                first = build_repository_inventory(root)
+                second = build_repository_inventory(root)
+                self.assertEqual(first.to_json(), second.to_json())
+                self.assertEqual(1, scan_path.call_count)
+
+                source.write_text("%unknown changed\n", encoding="utf-8")
+                third = build_repository_inventory(root)
+
+            self.assertEqual(2, scan_path.call_count)
+            self.assertNotEqual(first.to_json(), third.to_json())
+
     def test_fixture_inventory_has_stable_protocol_and_source_kinds(self) -> None:
         report = build_inventory(FIXTURE_ROOT)
         payload = json.loads(report.to_json())

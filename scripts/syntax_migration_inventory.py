@@ -1046,6 +1046,38 @@ _REPOSITORY_REVIEWED_CURRENT_FORMS = {
     "legacyNewStruct",
 }
 
+# Repository inventory callers commonly request the same snapshot more than once
+# (for determinism checks and CLI serialization). Keep the cache process-local and
+# invalidate it from the candidate files' filesystem metadata.
+_repository_inventory_cache: dict[
+    Path,
+    tuple[tuple[tuple[str, int, int, int, int, int], ...], InventoryReport],
+] = {}
+
+
+def _repository_inventory_signature(
+    root: Path,
+    candidate_paths: tuple[str, ...],
+) -> tuple[tuple[str, int, int, int, int, int], ...]:
+    signature: list[tuple[str, int, int, int, int, int]] = []
+    for relative_file in candidate_paths:
+        try:
+            stat_result = (root / relative_file).stat()
+        except FileNotFoundError:
+            signature.append((relative_file, -1, -1, -1, -1, -1))
+            continue
+        signature.append(
+            (
+                relative_file,
+                stat_result.st_mtime_ns,
+                stat_result.st_ctime_ns,
+                stat_result.st_size,
+                stat_result.st_mode,
+                stat_result.st_ino,
+            )
+        )
+    return tuple(signature)
+
 
 def _tracked_files(root: Path) -> tuple[Path, ...]:
     result = subprocess.run(
@@ -1118,12 +1150,18 @@ def _repository_source_kind(relative_path: Path) -> SourceKind:
 
 def build_repository_inventory(root: Path) -> InventoryReport:
     root = root.resolve()
+    candidate_paths = repository_candidate_paths(root)
+    signature = _repository_inventory_signature(root, candidate_paths)
+    cached = _repository_inventory_cache.get(root)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
     scanned_files: list[ScannedFile] = []
     exclusions: list[InventoryExclusion] = []
     findings: list[InventoryFinding] = []
     allowlisted_findings: list[InventoryAllowlistedFinding] = []
     reviewed_current_findings: list[InventoryReviewedCurrentFinding] = []
-    for relative_file in repository_candidate_paths(root):
+    for relative_file in candidate_paths:
         relative_path = Path(relative_file)
         reason = _repository_exclusion_reason(relative_path)
         if reason is not None:
@@ -1198,7 +1236,7 @@ def build_repository_inventory(root: Path) -> InventoryReport:
             entry.legacy_form,
         )
     )
-    return InventoryReport(
+    report = InventoryReport(
         scanned_files=tuple(scanned_files),
         exclusions=tuple(exclusions),
         findings=tuple(findings),
@@ -1207,6 +1245,8 @@ def build_repository_inventory(root: Path) -> InventoryReport:
         scanner_version="3",
         selected_roots=_REPOSITORY_SELECTED_ROOTS,
     )
+    _repository_inventory_cache[root] = (signature, report)
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
