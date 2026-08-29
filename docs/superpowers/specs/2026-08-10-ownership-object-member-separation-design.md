@@ -100,6 +100,12 @@ dedicated ownership-intrinsic expression before lexical identifier lookup.
 Intrinsic names cannot be declared, imported, captured, shadowed, referenced as
 values, or overloaded in a lexical namespace.
 
+The live-handle transitions `share`, `degrade`, `wake`, and `intoGc` require a
+definitely-live, non-null operand. The nullable result of `wake` must therefore
+be explicitly handled or unwrapped before it participates in another live
+transition. `drop` is the cleanup exception: it may consume a nullable owner
+result and is a defined no-op when that result is null.
+
 Member names use a separate namespace. A type may declare members named
 `share`, `degrade`, `wake`, `intoGc`, or `drop`, and those members remain legal
 after `.` or `?.`. Therefore `object.wake()` is always an ordinary target method
@@ -421,6 +427,7 @@ where safe, structured fixes:
 - intrinsic referenced without its required call;
 - wrong intrinsic arity;
 - wrong owner kind or resource-class requirement;
+- nullable operand supplied to a live-handle ownership transition;
 - use after move, non-place consuming argument, or incompatible active loan;
 - optional access on a statically non-null receiver;
 - optional access on unknown/dynamic or otherwise unsupported receiver;

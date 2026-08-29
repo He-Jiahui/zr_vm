@@ -959,6 +959,129 @@ static void test_intrinsic_type_contracts_publish_canonical_facts(void) {
     destroy_compiler_state(compiler);
 }
 
+static void test_intrinsics_reject_nullable_owner_operands(void) {
+    static const struct {
+        const TZrChar *source;
+        const TZrChar *bindingName;
+        EZrOwnershipQualifier qualifier;
+    } cases[] = {
+            {"share(maybeOwner);", "maybeOwner", ZR_OWNERSHIP_QUALIFIER_UNIQUE},
+            {"degrade(maybeShared);", "maybeShared", ZR_OWNERSHIP_QUALIFIER_SHARED},
+            {"wake(maybeWeak);", "maybeWeak", ZR_OWNERSHIP_QUALIFIER_WEAK},
+            {"intoGc(maybeOwner);", "maybeOwner", ZR_OWNERSHIP_QUALIFIER_UNIQUE},
+    };
+
+    for (TZrSize index = 0u; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        SZrAstNode *script = parse_source(cases[index].source);
+        SZrAstNode *expression = statement_expression(script, 0u);
+        SZrCompilerState *compiler = create_compiler_state();
+        SZrInferredType result;
+        const SZrDiagnosticDescriptor *descriptor;
+        const TZrChar *diagnosticCode;
+        const TZrChar *argumentStart;
+
+        register_resource_prototype(compiler);
+        register_owner_binding(
+                compiler,
+                cases[index].bindingName,
+                cases[index].qualifier,
+                ZR_TRUE,
+                "Resource",
+                (TZrUInt32)(900u + index),
+                (TZrUInt32)(1000u + index));
+
+        ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE_MESSAGE(
+                ZrParser_ExpressionType_Infer(compiler, expression, &result),
+                cases[index].source);
+        TEST_ASSERT_TRUE_MESSAGE(compiler->hasError, cases[index].source);
+        TEST_ASSERT_NOT_NULL_MESSAGE(compiler->errorMessage, cases[index].source);
+        TEST_ASSERT_NOT_NULL_MESSAGE(
+                strstr(
+                        compiler->errorMessage,
+                        "Ownership transition requires a live owner"),
+                cases[index].source);
+        TEST_ASSERT_TRUE_MESSAGE(compiler->hasStructuredError, cases[index].source);
+        diagnosticCode = ZrCore_String_GetNativeString(
+                compiler->structuredError.code);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(
+                "nullable_ownership_intrinsic_operand",
+                diagnosticCode,
+                cases[index].source);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                4011u,
+                compiler->structuredError.descriptorId,
+                cases[index].source);
+        descriptor = ZrParser_DiagnosticRegistry_FindByCode(diagnosticCode);
+        TEST_ASSERT_NOT_NULL_MESSAGE(descriptor, cases[index].source);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(
+                ZR_LINT_CATEGORY_OWNERSHIP,
+                descriptor->category,
+                cases[index].source);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(
+                ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION,
+                compiler->structuredError.noFixReason,
+                cases[index].source);
+        TEST_ASSERT_FALSE_MESSAGE(
+                compiler->structuredError.fixes.isValid,
+                cases[index].source);
+        argumentStart = strstr(cases[index].source, cases[index].bindingName);
+        TEST_ASSERT_NOT_NULL_MESSAGE(argumentStart, cases[index].source);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                (TZrUInt32)(argumentStart - cases[index].source),
+                compiler->structuredError.location.start.offset,
+                cases[index].source);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                (TZrUInt32)(argumentStart - cases[index].source +
+                            strlen(cases[index].bindingName)),
+                compiler->structuredError.location.end.offset,
+                cases[index].source);
+        TEST_ASSERT_NULL_MESSAGE(
+                ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
+                        compiler->semanticContext, expression),
+                cases[index].source);
+        TEST_ASSERT_NULL_MESSAGE(
+                ZrParser_SemanticFacts_FindOwnershipByNode(
+                        compiler->semanticContext, expression),
+                cases[index].source);
+
+        ZrParser_InferredType_Free(g_state, &result);
+        ZrParser_Ast_Free(g_state, script);
+        destroy_compiler_state(compiler);
+    }
+}
+
+static void test_drop_accepts_nullable_owner_cleanup(void) {
+    SZrAstNode *script = parse_source("drop(maybeWeak);");
+    SZrAstNode *expression = statement_expression(script, 0u);
+    SZrCompilerState *compiler = create_compiler_state();
+    SZrInferredType result;
+    const SZrOwnershipIntrinsicFact *fact;
+
+    register_owner_binding(
+            compiler,
+            "maybeWeak",
+            ZR_OWNERSHIP_QUALIFIER_WEAK,
+            ZR_TRUE,
+            "Resource",
+            910u,
+            1010u);
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(
+            compiler, expression, &result));
+    TEST_ASSERT_FALSE(compiler->hasError);
+    fact = ZrParser_SemanticFacts_FindOwnershipIntrinsicByNode(
+            compiler->semanticContext, expression);
+    TEST_ASSERT_NOT_NULL(fact);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_INTRINSIC_DROP, fact->operation);
+    TEST_ASSERT_TRUE(fact->inputType.isNullable);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, result.baseType);
+
+    ZrParser_InferredType_Free(g_state, &result);
+    ZrParser_Ast_Free(g_state, script);
+    destroy_compiler_state(compiler);
+}
+
 static void test_receiver_guards_publish_chain_contracts(void) {
     static const EZrReceiverGuardKind expectedKinds[] = {
             ZR_RECEIVER_GUARD_WEAK_WAKE,
@@ -1945,6 +2068,8 @@ int main(void) {
     RUN_TEST(test_invalid_optional_postfix_forms_report_distinct_errors);
     RUN_TEST(test_syntax_writer_preserves_intrinsic_and_access_modes);
     RUN_TEST(test_intrinsic_type_contracts_publish_canonical_facts);
+    RUN_TEST(test_intrinsics_reject_nullable_owner_operands);
+    RUN_TEST(test_drop_accepts_nullable_owner_cleanup);
     RUN_TEST(test_receiver_guards_publish_chain_contracts);
     RUN_TEST(test_optional_void_calls_publish_void_noop_contracts);
     RUN_TEST(test_intrinsic_and_optional_receiver_errors_are_precise);

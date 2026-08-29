@@ -168,6 +168,28 @@ TZrBool infer_ownership_intrinsic_expression_type(
         ZrParser_InferredType_Free(cs->state, &inputType);
         return ZR_FALSE;
     }
+    /* A nullable owner cannot satisfy a transition that requires a live handle.
+     * `drop` is deliberately exempt: releasing a nullable wake result is a
+     * defined no-op and is part of the cleanup contract. */
+    if (inputType.isNullable &&
+        intrinsic->operation != ZR_OWNERSHIP_INTRINSIC_DROP) {
+        SZrStructuredDiagnostic diagnostic;
+
+        ZrParser_StructuredDiagnostic_Init(&diagnostic);
+        if (ZrParser_DiagnosticBuilder_BuildNullableOwnershipIntrinsicOperand(
+                    cs->state,
+                    &diagnostic,
+                    intrinsic->argument->location)) {
+            ZrParser_Compiler_StructuredError(cs, &diagnostic);
+        } else {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Ownership transition requires a live owner",
+                    intrinsic->argument->location);
+        }
+        ZrParser_InferredType_Free(cs->state, &inputType);
+        return ZR_FALSE;
+    }
     if (intrinsic->operation == ZR_OWNERSHIP_INTRINSIC_INTO_GC &&
         !intrinsic_into_gc_has_resource_target(cs, &inputType)) {
         ZrParser_Compiler_Error(

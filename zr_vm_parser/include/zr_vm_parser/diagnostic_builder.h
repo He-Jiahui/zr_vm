@@ -312,6 +312,10 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildRemovedOwnershipMemberSynt
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildWeakWake(SZrState *state,
                                                                SZrStructuredDiagnostic *out,
                                                                SZrFileRange location);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildNullableOwnershipIntrinsicOperand(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildUseAfterMove(SZrState *state,
                                                                    SZrStructuredDiagnostic *out,
                                                                    SZrFileRange location);

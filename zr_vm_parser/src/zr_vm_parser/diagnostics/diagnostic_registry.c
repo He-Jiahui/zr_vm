@@ -160,6 +160,8 @@ static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
     ZR_DIAGNOSTIC_DESCRIPTOR(4010, "ownership_intrinsic_arity_mismatch",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
+    ZR_DIAGNOSTIC_DESCRIPTOR(4011, "nullable_ownership_intrinsic_operand",
+                             ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_OWNERSHIP),
 };
 
 TZrSize ZrParser_DiagnosticRegistry_Count(void) {

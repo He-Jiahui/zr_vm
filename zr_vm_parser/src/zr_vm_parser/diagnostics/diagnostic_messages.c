@@ -287,6 +287,10 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "ownership_intrinsic_arity_mismatch",
             "Ownership intrinsic arity mismatch",
             "Ownership intrinsic requires exactly one positional argument"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "nullable_ownership_intrinsic_operand",
+            "Nullable ownership intrinsic operand",
+            "Ownership transition requires a live owner"),
 };
 
 TZrSize ZrParser_DiagnosticMessages_Count(void) {

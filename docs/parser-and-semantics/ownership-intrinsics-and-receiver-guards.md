@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/semantic_facts.h
+  - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
@@ -13,6 +14,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder_ownership.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_messages.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
@@ -37,6 +41,7 @@ related_code:
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
@@ -48,6 +53,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder_ownership.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_messages.c
+  - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_ownership_intrinsic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
@@ -75,6 +83,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
 tests:
   - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/parser/test_semantic_query.c
   - tests/parser/test_ownership_optional_callable_cases.h
   - tests/parser/test_ownership_receiver_guard_contract_cases.h
   - tests/parser/test_ownership_receiver_guard_performance.c
@@ -124,6 +133,16 @@ functions, overload candidates, or first-class values. Their contracts are:
 | `wake(weak)` | `Weak<T>` | `Shared<T>?` | preserves the weak handle; expiry returns `null` |
 | `intoGc(owner)` | `Unique<resource T>` | `GcBox<T>` | consumes the unique place and crosses into the GC world |
 | `drop(owner)` | `Unique<T>`, `Shared<T>`, or `Weak<T>` | `void` | consumes and releases the supplied handle |
+
+The four live-handle transitions (`share`, `degrade`, `wake`, and `intoGc`)
+reject nullable operands before fact publication. A value such as
+`Shared<Resource>?` must be explicitly unwrapped or handled through an
+optional target access before it can participate in another ownership
+transition. `drop(nullable)` remains the sole exception: releasing a nullable
+result from `wake` is a defined no-op and is required for ordinary cleanup
+code. Rejected live transitions report the stable ownership diagnostic
+`nullable_ownership_intrinsic_operand` over the argument range and publish no
+machine fix or ownership fact.
 
 The current consuming-lowering boundary is narrower than the abstract PlaceId
 model: `share`, `intoGc`, and `drop` accept a local owner binding only. A field

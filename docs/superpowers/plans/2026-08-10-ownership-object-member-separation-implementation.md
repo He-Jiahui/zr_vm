@@ -285,7 +285,9 @@ intrinsics use `infer_ownership_intrinsic_expression_type`. Use canonical
 qualifier/resource prototype checks and existing place/loan APIs. `drop` accepts
 Unique/Shared/Weak and returns the canonical `void` TypeRef; a runtime stack slot
 may use the normal null value representation for `void`. `wake` returns
-nullable Shared.
+nullable Shared. `share`, `degrade`, `wake`, and `intoGc` reject nullable
+operands before publishing an ownership fact; `drop` remains a cleanup-only
+exception that accepts a nullable owner result and is a no-op for null.
 
 - [x] **Step 4: Infer receiver guards over the postfix chain**
 

@@ -989,12 +989,13 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     const SZrDiagnosticDescriptor *reservedOwnershipIntrinsicName;
     const SZrDiagnosticDescriptor *ownershipIntrinsicCallRequired;
     const SZrDiagnosticDescriptor *ownershipIntrinsicArityMismatch;
+    const SZrDiagnosticDescriptor *nullableOwnershipIntrinsicOperand;
     SZrStructuredDiagnostic diagnostic;
     TZrSize descriptorCount;
     TZrSize index;
 
     descriptorCount = ZrParser_DiagnosticRegistry_Count();
-    TEST_ASSERT_EQUAL_UINT32(70, (TZrUInt32)descriptorCount);
+    TEST_ASSERT_EQUAL_UINT32(71, (TZrUInt32)descriptorCount);
 
     possibleUninitialized =
             ZrParser_DiagnosticRegistry_FindByCode("possibly_uninitialized_read");
@@ -1052,6 +1053,18 @@ static void test_diagnostic_registry_assigns_stable_descriptors(void) {
     TEST_ASSERT_EQUAL_INT(
             ZR_LINT_CATEGORY_OWNERSHIP,
             ownershipIntrinsicArityMismatch->category);
+
+    nullableOwnershipIntrinsicOperand =
+            ZrParser_DiagnosticRegistry_FindByCode(
+                    "nullable_ownership_intrinsic_operand");
+    TEST_ASSERT_NOT_NULL(nullableOwnershipIntrinsicOperand);
+    TEST_ASSERT_EQUAL_UINT32(4011, nullableOwnershipIntrinsicOperand->id);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            nullableOwnershipIntrinsicOperand->defaultSeverity);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_LINT_CATEGORY_OWNERSHIP,
+            nullableOwnershipIntrinsicOperand->category);
 
     typeMismatch = ZrParser_DiagnosticRegistry_FindByCode("type_mismatch");
     TEST_ASSERT_NOT_NULL(typeMismatch);

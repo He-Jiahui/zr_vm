@@ -1275,6 +1275,28 @@ stable post-L8 full graph required below.
 
 ## Pending final acceptance
 
+### Nullable ownership-transition operand contract
+
+The ownership/object separation audit found that a nullable result from
+`wake(weak)` could be fed into another live-handle transition. That made the
+transition boundary ambiguous: `degrade(maybeShared)`, `share(maybeOwner)`,
+`wake(maybeWeak)`, and `intoGc(maybeOwner)` could continue past a value that
+does not contain a live handle. The focused parser regression now requires all
+four operations to reject nullable operands before publishing an ownership
+intrinsic fact. `drop(nullable)` remains the explicit cleanup exception and is
+still a defined no-op. Rejection uses the stable ownership diagnostic
+`nullable_ownership_intrinsic_operand` (descriptor `4011`) over the exact
+argument range with `REQUIRES_USER_DECISION` and no machine fix.
+
+The RED harness linked against the previous parser snapshot and reached the
+old accepting path, failing its assertion that `degrade(maybe)` must not
+compile. With the current implementation, GCC and Clang compile
+`type_inference_ownership_intrinsic.c` successfully, and the dynamically
+overlaid smoke path emits the new nullable-owner diagnostic without a fact.
+The complete parser runner has not yet been replayed because the shared CMake
+caches are concurrently regenerating from the mounted worktree; this focused
+leaf therefore remains pending the stable post-L8 full-graph acceptance.
+
 ### Nullable void optional-call runtime boundary
 
 The fact layer already distinguished optional calls returning values from

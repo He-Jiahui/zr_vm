@@ -1,5 +1,28 @@
 #include "zr_vm_parser/diagnostic_builder.h"
 
+TZrBool ZrParser_DiagnosticBuilder_BuildNullableOwnershipIntrinsicOperand(
+        SZrState *state,
+        SZrStructuredDiagnostic *out,
+        SZrFileRange location) {
+    if (!ZrParser_DiagnosticBuilder_Build(
+                state,
+                out,
+                ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+                location,
+                "nullable_ownership_intrinsic_operand",
+                "Ownership transition requires a live owner",
+                "The ownership intrinsic received a nullable owner that may not contain a live handle.",
+                "Handle or unwrap the nullable owner before applying another ownership transition.")) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_StructuredDiagnostic_SetNoFixReason(
+                out, ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION)) {
+        ZrParser_StructuredDiagnostic_Free(state, out);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_DiagnosticBuilder_BuildUseAfterMove(SZrState *state,
                                                      SZrStructuredDiagnostic *out,
                                                      SZrFileRange location) {
