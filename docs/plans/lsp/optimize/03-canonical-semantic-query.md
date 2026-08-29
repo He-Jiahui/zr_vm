@@ -350,6 +350,11 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    producer 发布的错误 kind，未在 LSP 侧伪造或兜底。interface 仍保留既有 class-member
    fixture 失败，stdio smoke 仍在 `short_circuit_unreachable` producer warning 缺失处
    失败，Plan 03 Task 7/8 继续未完成。
+   07:44 的有效三工具链 16-target 回放保持相同的 `10 PASS / 6 FAIL`，且各测试进程真实
+   exit 与 marker 一致；三套 CLI `--version` 真实 exit 0。剩余失败均归属于已记录的
+   parser/metadata producer 或既有 fixture，包括 tuple canonical graph、member-write
+   reference、class-member interface、imported-type matrix、pooling guard 和 analyzer
+   marker；不在 LSP 侧增加名称、类型文本或消息 fallback。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续

@@ -237,6 +237,11 @@ unreachable branch fact 的范围差异。该路径不通过名称、诊断消�
 Task 7.37 的 GCC、Clang、MSVC short-circuit case 均通过；member-write producer fact 的
 kind/range 缺口仍保持 unavailable，未由 LSP 兼容逻辑掩盖。
 
+2026-08-30 07:44 +08:00 的三工具链 16-target 回放中，该 short-circuit projection
+保持通过；三套 local query 的唯一 focused 失败仍是 member-write producer fact。完整
+矩阵均为 `10 PASS / 6 FAIL`，失败归属与 Plan 03 final gate audit 一致，未新增 LSP
+名称、类型文本、诊断消息或 AST pairing fallback。
+
 Semantic tokens 尚未通过本阶段迁移：当前 source token projector 仍由 Syntax05 Task4 持有，
 其 symbol-table parameter lookup 与 metadata-chain fallback 必须在 producer/ownership 释放后
 以 canonical query facts 替换。本阶段不把该现状计为 GREEN，也不复制或扩大 fallback。

@@ -38,6 +38,9 @@ reachability fact 为空。GREEN 使用该 logical fact 的结构化 `relatedNod
 - 三工具链 local semantic query process 仍真实 exit `1`，唯一剩余 focused failure 是
   parser producer 发布的 member-write fact kind/range 不符；short-circuit、ownership
   与其他 local query cases 均通过。
+- 2026-08-30 07:44 +08:00 的有效 16-target 回放在 GCC、Clang、MSVC 均为
+  `10 PASS / 6 FAIL`，每个测试进程的真实退出码与 marker 一致；Task 7.37 相关的
+  short-circuit case 在三套工具链均通过。三套 CLI `--version` 也真实 exit 0。
 - 三工具链 interface process 仍真实 exit `1`，仅保留既有 class-member fixture failure。
 - 三套 `stdio_smoke.js` 仍真实 exit `1`，在 generic fixture 缺少
   `short_circuit_unreachable` producer warning 处停止；没有把该 producer 缺口转成 LSP
@@ -46,6 +49,7 @@ reachability fact 为空。GREEN 使用该 logical fact 的结构化 `relatedNod
 ## 状态与产出记录
 
 - 完成时间：2026-08-30 07:29 +08:00。
+- 最终矩阵/CLI 回放时间：2026-08-30 07:44 +08:00。
 - 状态：local short-circuit reachability projection focused GREEN；Plan 03 Task 7/Task 8
   仍未完成，global Plan 03 不声明 GREEN。
 - 完成项目：logical fact `relatedNode` 到 canonical reachability range 的 LSP 投影、

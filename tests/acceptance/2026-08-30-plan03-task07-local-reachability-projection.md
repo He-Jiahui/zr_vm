@@ -24,10 +24,15 @@ source text, identifier names, diagnostic messages, types, or member names.
   member-access kind, so the LSP consumer does not rewrite it.
 - Interface and stdio smoke were rerun after the production change. Their real exits remain
   `1` for the known class-member fixture and missing `short_circuit_unreachable` producer warning.
+- The valid 16-target replay completed at `2026-08-30 07:44 +08:00` with the same
+  `10 PASS / 6 FAIL` process pattern on GCC, Clang, and MSVC. Per-process real exits matched
+  the markers; the Task 7.37 short-circuit case remained passing, and all three CLI
+  `--version` checks exited `0`.
 
 ## 状态与产出记录
 
 - 完成时间：2026-08-30 07:29 +08:00。
+- 最终矩阵/CLI 回放时间：2026-08-30 07:44 +08:00。
 - 状态：focused local reachability projection GREEN；global Plan 03 remains in progress。
 - 完成项目：direct/range reachability lookup、logical `relatedNode` projection、三工具链
   focused verification and post-change interface/stdio gate audit。
