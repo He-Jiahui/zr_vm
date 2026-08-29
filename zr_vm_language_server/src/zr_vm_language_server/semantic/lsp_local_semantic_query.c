@@ -419,6 +419,32 @@ static const SZrSemanticLogicalFact *local_query_find_logical_fact(
     return ZR_NULL;
 }
 
+static const SZrSemanticReachabilityFact *local_query_find_reachability_fact(
+    SZrSemanticAnalyzer *analyzer,
+    SZrFileRange queryRange,
+    const SZrSemanticLogicalFact *logicalFact) {
+    const SZrSemanticReachabilityFact *fact;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fact = ZrParser_SemanticFacts_FindReachabilityAtPosition(
+            analyzer->semanticContext,
+            queryRange);
+    if (fact != ZR_NULL) {
+        return fact;
+    }
+
+    if (logicalFact != ZR_NULL && logicalFact->relatedNode != ZR_NULL) {
+        return ZrParser_SemanticFacts_FindReachabilityAtPosition(
+                analyzer->semanticContext,
+                logicalFact->relatedNode->location);
+    }
+
+    return ZR_NULL;
+}
+
 static const SZrSemanticOwnershipFact *local_query_find_ownership_fact(
     SZrSemanticAnalyzer *analyzer,
     SZrFileRange queryRange,
@@ -500,6 +526,12 @@ static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
                                       result->queryRange,
                                       result->expressionFact,
                                       result->reachabilityFact);
+    if (result->reachabilityFact == ZR_NULL) {
+        result->reachabilityFact = local_query_find_reachability_fact(
+                analyzer,
+                result->queryRange,
+                result->logicalFact);
+    }
     result->ownershipFact = local_query_find_ownership_fact(
             analyzer,
             result->queryRange,

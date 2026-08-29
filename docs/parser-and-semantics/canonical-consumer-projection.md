@@ -231,6 +231,12 @@ AST node 查询，再用 expression canonical range 内的最窄 ownership range
 `ref` 等语法前缀的情况。该 projector 不通过标识符名称、诊断消息或源码文本选择 fact；
 Task 7.36 的 ownership violation case 在 GCC、Clang、MSVC 均通过。
 
+Local semantic query 的 reachability projector 先使用请求点的 canonical fact；未命中时，
+仅通过已解析 logical fact 的 `relatedNode` 查询右操作数范围，以覆盖短路运算符位置与
+unreachable branch fact 的范围差异。该路径不通过名称、诊断消息或源码文本重建事实。
+Task 7.37 的 GCC、Clang、MSVC short-circuit case 均通过；member-write producer fact 的
+kind/range 缺口仍保持 unavailable，未由 LSP 兼容逻辑掩盖。
+
 Semantic tokens 尚未通过本阶段迁移：当前 source token projector 仍由 Syntax05 Task4 持有，
 其 symbol-table parameter lookup 与 metadata-chain fallback 必须在 producer/ownership 释放后
 以 canonical query facts 替换。本阶段不把该现状计为 GREEN，也不复制或扩大 fallback。
