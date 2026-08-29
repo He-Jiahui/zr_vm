@@ -1431,6 +1431,38 @@ static void test_expired_weak_optional_call_skips_arguments(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_absent_nullable_optional_void_call_skips_arguments(void) {
+    const TZrChar *source =
+            "resource class Service {\n"
+            "    pub const fn consume(value: int): void { throw \"unexpected suffix\"; }\n"
+            "}\n"
+            "var sideEffects = 0;\n"
+            "fn bump(): int { sideEffects = sideEffects + 1; return sideEffects; }\n"
+            "fn run(): int {\n"
+            "    var seed = own Service();\n"
+            "    var shared = share(seed);\n"
+            "    var weak = degrade(shared);\n"
+            "    drop(shared);\n"
+            "    var nullable = wake(weak);\n"
+            "    nullable?.consume(bump());\n"
+            "    if (nullable == null && sideEffects == 0) { return 1; }\n"
+            "    return 0;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "absent_nullable_optional_void_call.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_live_weak_optional_call_runs_suffix_after_one_wake(void) {
     const TZrChar *source =
             "resource class Service {\n"
@@ -1873,6 +1905,7 @@ int main(void) {
     RUN_TEST(test_intrinsic_spellings_on_objects_use_normal_member_calls);
     RUN_TEST(test_removed_ownership_member_calls_publish_structured_fixes);
     RUN_TEST(test_expired_weak_optional_call_skips_arguments);
+    RUN_TEST(test_absent_nullable_optional_void_call_skips_arguments);
     RUN_TEST(test_live_weak_optional_call_runs_suffix_after_one_wake);
     RUN_TEST(test_expired_weak_direct_call_throws_named_runtime_error);
     RUN_TEST(test_weak_receiver_guard_releases_wake_on_suffix_throw);

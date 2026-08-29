@@ -1255,6 +1255,24 @@ stable post-L8 full graph required below.
 
 ## Pending final acceptance
 
+### Nullable void optional-call runtime boundary
+
+The fact layer already distinguished optional calls returning values from
+`void` no-ops, but the nullable Shared `void` path previously had no direct
+execution evidence. A new focused case now obtains an absent nullable Shared
+with `wake(weak)` after dropping the last Shared owner, then executes
+`nullable?.consume(bump())`. The method would throw if entered and the argument
+increments a visible counter. GCC 11.4, Clang 14, and MSVC 19.44 each passed the
+expanded ownership runner at 45/45 with real exit code zero; the receiver
+remained null, the argument was not evaluated, and the call completed normally.
+
+No production edit was needed: the existing canonical receiver-guard fact and
+lowering already implement the required void-noop branch. The exact focused
+record is
+`tests/acceptance/2026-08-29-ownership-nullable-void-optional-runtime.md`.
+This closes an execution-coverage gap but does not replace the final stable
+post-L8 full graph, artifact, inventory, and exact-review gates below.
+
 ### AOT Weak callable lifetime and meta-call convergence
 
 The final focused AOT review reproduced a shared lifetime defect with one Weak
