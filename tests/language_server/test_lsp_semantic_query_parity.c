@@ -729,6 +729,91 @@ cleanup:
     }
 }
 
+static void test_local_query_rejects_missing_canonical_reference(
+        SZrState *state) {
+    static const TZrChar *content =
+            "fn read(): int {\n"
+            "    var value = 1;\n"
+            "    return value;\n"
+            "}\n";
+    SZrParityTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrLspPosition position;
+    SZrFilePosition filePosition;
+    SZrFileRange queryRange;
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
+    SZrParserSemanticQueryFacts facts;
+    SZrSemanticReferenceFact *reference = ZR_NULL;
+    SZrSymbol *lspSymbol = ZR_NULL;
+    SZrLspSemanticQuery query;
+    TZrBool savedIsResolved = ZR_FALSE;
+    TZrBool resolved = ZR_FALSE;
+    TZrBool valid = ZR_FALSE;
+
+    TEST_START("LSP Local Query Rejects Missing Canonical Reference");
+    memset(&facts, 0, sizeof(facts));
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///semantic_query_missing_canonical_reference.zr",
+            strlen("file:///semantic_query_missing_canonical_reference.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !find_position(content, "return value", 0U, 7, &position)) {
+        goto cleanup;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, position);
+    queryRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        !ZrParser_SemanticQuery_FactsAt(
+                analyzer->semanticContext, queryRange, ZR_NULL, &facts) ||
+        facts.reference == ZR_NULL || !facts.reference->isResolved ||
+        facts.reference->symbolId == ZR_SEMANTIC_ID_INVALID) {
+        goto cleanup;
+    }
+
+    lspSymbol = ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(
+            analyzer, queryRange);
+    if (lspSymbol == ZR_NULL) {
+        goto cleanup;
+    }
+
+    reference = (SZrSemanticReferenceFact *)facts.reference;
+    savedIsResolved = reference->isResolved;
+    reference->isResolved = ZR_FALSE;
+    resolved = ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+            state, context, uri, position, &query);
+    reference->isResolved = savedIsResolved;
+    savedIsResolved = ZR_FALSE;
+
+    valid = !resolved && query.kind == ZR_LSP_SEMANTIC_QUERY_TARGET_NONE;
+
+cleanup:
+    if (reference != ZR_NULL && savedIsResolved) {
+        reference->isResolved = savedIsResolved;
+    }
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (valid) {
+        TEST_PASS(timer, "LSP Local Query Rejects Missing Canonical Reference");
+    } else {
+        TEST_FAIL(
+                timer,
+                "LSP Local Query Rejects Missing Canonical Reference",
+                resolved
+                        ? "ResolveAtPosition used the LSP symbol table after canonical SymbolAt failed"
+                        : "Could not prepare the unresolved canonical reference fixture");
+    }
+}
+
 static void test_local_implementation_consumer_uses_canonical_relations(
         SZrState *state) {
     static const TZrChar *content =
@@ -1384,6 +1469,7 @@ int main(void) {
     ZrCore_GlobalState_InitRegistry(state, global);
     test_source_semantic_query_snapshot_parity(state);
     test_local_reference_consumers_use_canonical_facts(state);
+    test_local_query_rejects_missing_canonical_reference(state);
     test_local_implementation_consumer_uses_canonical_relations(state);
     test_local_type_hierarchy_uses_canonical_relations(state);
     test_local_call_hierarchy_uses_canonical_edges(state);

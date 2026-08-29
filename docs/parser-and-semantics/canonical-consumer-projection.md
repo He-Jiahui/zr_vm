@@ -136,6 +136,12 @@ member name。只有双方都明确没有 writable declaration identity 的 nati
 URI 没有 source document version 时保持显式 unavailable，不从虚拟展示 AST、mtime 或 member name
 伪造版本身份；其 provider reload 精确性仍由既有 provider-generation consumer 合同负责。
 
+source position 已有 parser reference fact 时，consumer 还必须服从该 fact 的 exactness。对于
+non-TYPE value/symbol reference，`isResolved=false` 或 invalid SymbolId 会在 `SymbolAt` 失败后立即
+终止 query；LSP 不得继续用 symbol table 的同名/同 range symbol 补成 semantic target。source type
+annotation 当前仍有一条独立 producer 边界：closed-generic type use 可能只发布 unresolved TYPE fact；
+该缺口必须在 canonical producer 层修复，不能通过扩大本规则或增加 LSP 名称兼容掩盖。
+
 source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
 producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入
 prototype 时，parser 仍通过 source TypeDef resolver 与 prototype `declarationNode` 取得精确

@@ -2416,6 +2416,11 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
 
         memset(&canonicalSymbol, 0, sizeof(canonicalSymbol));
         memset(&canonicalFacts, 0, sizeof(canonicalFacts));
+        (void)ZrParser_SemanticQuery_FactsAt(
+                analyzer->semanticContext,
+                query->queryRange,
+                ZR_NULL,
+                &canonicalFacts);
         if (ZrParser_SemanticQuery_SymbolAt(
                     analyzer->semanticContext,
                     query->queryRange,
@@ -2425,12 +2430,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
             query->hasCanonicalSymbol = ZR_TRUE;
             query->canonicalSymbol = canonicalSymbol;
             query->canonicalReferenceRange = canonicalSymbol.referenceRange;
-            if (ZrParser_SemanticQuery_FactsAt(
-                        analyzer->semanticContext,
-                        query->queryRange,
-                        ZR_NULL,
-                        &canonicalFacts) &&
-                canonicalFacts.reference != ZR_NULL &&
+            if (canonicalFacts.reference != ZR_NULL &&
                 canonicalFacts.reference->isResolved) {
                 query->canonicalReferenceRange = canonicalFacts.reference->range;
             }
@@ -2451,6 +2451,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
                         analyzer, query->queryRange);
             }
             return semantic_query_capture_document_version(state, context, query);
+        }
+        if (canonicalFacts.reference != ZR_NULL &&
+            canonicalFacts.reference->kind != ZR_SEMANTIC_REFERENCE_TYPE &&
+            (!canonicalFacts.reference->isResolved ||
+             canonicalFacts.reference->symbolId == ZR_SEMANTIC_ID_INVALID)) {
+            return ZR_FALSE;
         }
     }
 
