@@ -226,6 +226,11 @@ analyzer bridge 会先发布并消费该 persistent fact，再跳过泛化的 `c
 publisher。该路径只转发 canonical diagnostic fields，不按 message、类型文本或成员名选择
 事实；本次 Task 7.35 的 reference-call regression 在 GCC、Clang、MSVC 均通过。
 
+Local semantic query 对 ownership fact 采用结构化关联顺序：先用 expression fact 的 exact
+AST node 查询，再用 expression canonical range 内的最窄 ownership range 处理查询点位于
+`ref` 等语法前缀的情况。该 projector 不通过标识符名称、诊断消息或源码文本选择 fact；
+Task 7.36 的 ownership violation case 在 GCC、Clang、MSVC 均通过。
+
 Semantic tokens 尚未通过本阶段迁移：当前 source token projector 仍由 Syntax05 Task4 持有，
 其 symbol-table parameter lookup 与 metadata-chain fallback 必须在 producer/ownership 释放后
 以 canonical query facts 替换。本阶段不把该现状计为 GREEN，也不复制或扩大 fallback。

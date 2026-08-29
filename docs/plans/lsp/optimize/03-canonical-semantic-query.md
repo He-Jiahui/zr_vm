@@ -337,6 +337,12 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    canonical graph、closed-generic/borrow-return analyzer、class-member/local/project
    fixtures 仍失败；三套 stdio smoke 仍在 `short_circuit_unreachable` producer warning
    缺失处 exit 1。该子里程碑已完成，但 Plan 03 Task 7/8 仍未完成。
+   Task 7.36（2026-08-30 07:08 +08:00）修正 local semantic query 的 ownership 投影：
+   查询点若落在结构化表达式的前缀（例如 `ref`），LSP 先按 expression fact 的 exact
+   AST node 查询 ownership，再按该 expression 的 canonical range 选择最窄 ownership fact，
+   不按名称、消息或源码文本推断。GCC/Clang/MSVC local-query 的 ownership violation
+   case 均通过；短路 reachability 与 member-write reference 的 producer facts 仍失败，
+   因而该子里程碑不扩大为全局 GREEN。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续

@@ -419,6 +419,69 @@ static const SZrSemanticLogicalFact *local_query_find_logical_fact(
     return ZR_NULL;
 }
 
+static const SZrSemanticOwnershipFact *local_query_find_ownership_fact(
+    SZrSemanticAnalyzer *analyzer,
+    SZrFileRange queryRange,
+    const SZrSemanticExpressionFact *expressionFact) {
+    const SZrSemanticOwnershipFact *fact;
+    const SZrSemanticOwnershipFact *best = ZR_NULL;
+    TZrSize bestWidth = 0;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (expressionFact != ZR_NULL && expressionFact->node != ZR_NULL) {
+        fact = ZrParser_SemanticFacts_FindOwnershipByNode(
+                analyzer->semanticContext,
+                expressionFact->node);
+        if (fact != ZR_NULL) {
+            return fact;
+        }
+    }
+
+    fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+            analyzer->semanticContext,
+            queryRange);
+    if (fact != ZR_NULL) {
+        return fact;
+    }
+
+    if (expressionFact != ZR_NULL &&
+        analyzer->semanticContext->ownershipFacts.isValid) {
+        for (TZrSize index = 0;
+             index < analyzer->semanticContext->ownershipFacts.length;
+             index++) {
+            const SZrSemanticOwnershipFact *candidate =
+                    (const SZrSemanticOwnershipFact *)ZrCore_Array_Get(
+                            &analyzer->semanticContext->ownershipFacts,
+                            index);
+            TZrSize width;
+
+            if (candidate == ZR_NULL ||
+                (candidate->range.source != expressionFact->range.source &&
+                 !ZrLanguageServer_Lsp_StringsEqual(candidate->range.source,
+                                                    expressionFact->range.source)) ||
+                candidate->range.start.offset < expressionFact->range.start.offset ||
+                candidate->range.end.offset > expressionFact->range.end.offset) {
+                continue;
+            }
+
+            width = candidate->range.end.offset >= candidate->range.start.offset
+                            ? candidate->range.end.offset - candidate->range.start.offset
+                            : 0;
+            if (best == ZR_NULL ||
+                width < bestWidth ||
+                (width == bestWidth && candidate->isViolation && !best->isViolation)) {
+                best = candidate;
+                bestWidth = width;
+            }
+        }
+    }
+
+    return best;
+}
+
 static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
                                       SZrLspLocalSemanticQueryResult *result) {
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || result == ZR_NULL) {
@@ -437,8 +500,10 @@ static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
                                       result->queryRange,
                                       result->expressionFact,
                                       result->reachabilityFact);
-    result->ownershipFact =
-        ZrParser_SemanticFacts_FindOwnershipAtPosition(analyzer->semanticContext, result->queryRange);
+    result->ownershipFact = local_query_find_ownership_fact(
+            analyzer,
+            result->queryRange,
+            result->expressionFact);
     result->ownershipIntrinsicFact =
         ZrParser_SemanticFacts_FindOwnershipIntrinsicAtPosition(
                 analyzer->semanticContext, result->queryRange);

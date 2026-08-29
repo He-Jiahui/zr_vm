@@ -25,6 +25,8 @@ Syntax05-owned parser producer、semantic-token producer 或 project metadata pr
 - interface 三套均真实 exit 1；reference-call diagnostic 用例已通过，剩余为既有
   class-member fixture 失败。该 diagnostic bridge 通过 analyzer 对 parser/compiler current
   error 调用既有 structured publisher，未由 LSP 按消息、signature 名称或成员名补建事实。
+- local semantic query 三套均真实 exit 1；Task 7.36 的 ownership violation case 已通过，
+  剩余为 short-circuit reachability 与 member-write reference producer fact 缺失/范围不符。
 - project 三套测试进程真实 exit 0，但每套包含 `51 Pass / 9 Fail`；失败集中在
   imported/native/descriptor metadata、refresh generation 与 pooling guard contract，
   因而不能把 exit 0 单独解释成通过。
@@ -44,12 +46,14 @@ metadata 或 Syntax05 归属路径收口后重跑。本记录不以 LSP 兼容�
 
 ## 状态与产出记录
 
-- 完成时间：2026-08-30 06:56 +08:00。
-- 状态：最终门禁审计已更新至 Task 7.35；Task 7/Task 8 仍未完成，不声明本阶段
+- 完成时间：2026-08-30 07:08 +08:00。
+- 状态：最终门禁审计已更新至 Task 7.36；Task 7/Task 8 仍未完成，不声明本阶段
   GREEN 或完成。
 - 完成项目：三工具链 parity/source-contract/inlay/CLI 复核；Task 7.35 reference-call
-  structured diagnostic bridge 的 GCC/Clang/MSVC interface 回归；interface/project/analyzer
+  structured diagnostic bridge 与 Task 7.36 ownership range projection 的 GCC/Clang/MSVC
+  回归；interface/project/analyzer
   失败 marker 复核；三套 stdio smoke 真实退出码复核；producer 与 LSP ownership 分层。
-- 阻塞项目：Syntax05 producer/metadata 路径释放；closed-generic/borrow-return facts、
-  cross-project metadata identity、semantic-token canonical migration 与既有
-  `short_circuit_unreachable` producer fixture；之后重跑同一 16-target 矩阵和三套 smoke。
+- 阻塞项目：Syntax05 producer/metadata 路径释放；short-circuit/member-write、
+  closed-generic/borrow-return facts、cross-project metadata identity、semantic-token
+  canonical migration 与既有 `short_circuit_unreachable` producer fixture；之后重跑同一
+  16-target 矩阵和三套 smoke。
