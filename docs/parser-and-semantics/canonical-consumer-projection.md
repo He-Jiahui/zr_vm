@@ -106,6 +106,19 @@ TypeId；TypeId unavailable 时显示明确的 `cannot infer exact type`，不�
 request-time inference 或 AST/name reconstruction。receiver/import completion 仍走各自 structured
 query，并保持原 fail-closed 边界。
 
+source-local hover 同样只消费 `ZrParser_SemanticQuery_SymbolAt()`。query 直接复制稳定 SymbolId、
+TypeId、signature display、declaration AST identity 与 reference/declaration range；独立
+`ZrLanguageServer_LspCanonicalHover_BuildSymbol()` projector 只格式化该 copied view。callable 优先
+显示 canonical signature，其他符号只格式化 exact TypeId，TypeId unavailable 时明确显示
+`cannot infer exact type`。hover range 始终使用 resolved reference fact range，不能退回请求点、
+symbol-table lookup range 或 callee/name 扫描。
+
+LSP AST 只保留非语义补充层：leading comment、结构化 extern-block source identity 与 symbol 上已
+缓存的 FFI decorator metadata。extern type 的显示类别来自 canonical declaration AST（delegate、
+struct、enum、interface），不是把所有 type 伪装为 class；这些补充不会创建或覆盖 SymbolId、
+TypeId、signature 或 range。脱离 analyzer symbol table、reference tracker 与 AST 后，canonical
+source hover 仍可用；缺少 exact SymbolAt fact 时直接 unavailable。
+
 source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
 producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入
 prototype 时，parser 仍通过 source TypeDef resolver 与 prototype `declarationNode` 取得精确

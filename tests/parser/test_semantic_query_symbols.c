@@ -210,6 +210,8 @@ static void test_symbol_at_projects_resolved_reference_identity(void) {
     TEST_ASSERT_EQUAL_UINT32(91U, first.typeId);
     TEST_ASSERT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, first.ownerSymbolId);
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_REFERENCE_READ, first.role);
+    TEST_ASSERT_EQUAL_UINT32(24U, (TZrUInt32)first.referenceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT32(30U, (TZrUInt32)first.referenceRange.end.offset);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)first.declarationRange.start.offset);
     TEST_ASSERT_EQUAL_UINT32(0U, (TZrUInt32)first.definitionRange.start.offset);
     TEST_ASSERT_NOT_NULL(first.displayName);

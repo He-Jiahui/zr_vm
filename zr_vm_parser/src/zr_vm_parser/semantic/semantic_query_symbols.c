@@ -339,6 +339,7 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     outSymbol->typeId = reference->typeId;
     outSymbol->ownerSymbolId = ZR_SEMANTIC_ID_INVALID;
     outSymbol->role = reference->kind;
+    outSymbol->referenceRange = reference->range;
     outSymbol->declarationRange = reference->declarationRange;
     outSymbol->displayName = reference->name;
     outSymbol->signatureDisplay = reference->signatureDisplay;
@@ -404,6 +405,7 @@ TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
         symbol.ownerSymbolId = ZR_SEMANTIC_ID_INVALID;
         symbol.kind = record->kind;
         symbol.role = ZR_SEMANTIC_REFERENCE_DECLARATION;
+        symbol.referenceRange = declaration->range;
         symbol.declarationRange = declaration->declarationRange;
         symbol.definitionRange = declaration->hasDefinitionRange
                 ? declaration->definitionRange

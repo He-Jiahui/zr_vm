@@ -33,6 +33,9 @@ typedef struct SZrLspSemanticQuery {
     SZrLspProjectIndex *projectIndex;
     SZrSemanticAnalyzer *analyzer;
     SZrSymbol *symbol;
+    TZrBool hasCanonicalSymbol;
+    SZrParserSemanticSymbolQuery canonicalSymbol;
+    SZrFileRange canonicalReferenceRange;
     SZrString *moduleName;
     SZrString *memberName;
     EZrLspImportedModuleSourceKind sourceKind;

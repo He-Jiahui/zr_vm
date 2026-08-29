@@ -1259,6 +1259,112 @@ static void test_native_semantic_query_snapshot_parity(SZrState *state) {
     }
 }
 
+static void test_source_hover_consumes_canonical_symbol_fact_without_analyzer_state(
+        SZrState *state) {
+    static const TZrChar *content =
+            "fn run(seed: int): int {\n"
+            "    var result = seed + 1;\n"
+            "    return result;\n"
+            "}\n";
+    SZrParityTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrSemanticAnalyzer *analyzer = ZR_NULL;
+    SZrFileVersion *fileVersion = ZR_NULL;
+    SZrSymbolTable *savedSymbolTable = ZR_NULL;
+    SZrReferenceTracker *savedReferenceTracker = ZR_NULL;
+    SZrAstNode *savedAnalyzerAst = ZR_NULL;
+    SZrLspPosition usePosition;
+    SZrLspSemanticQuery query;
+    SZrLspHover *hover = ZR_NULL;
+    TZrBool passed = ZR_FALSE;
+
+    TEST_START("LSP Source Hover Consumes Canonical Symbol Fact Without Analyzer State");
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(
+            state,
+            "file:///canonical_source_hover_fact.zr",
+            strlen("file:///canonical_source_hover_fact.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !find_position(content, "return result;", 0U, 7, &usePosition)) {
+        TEST_FAIL(
+                timer,
+                "LSP Source Hover Consumes Canonical Symbol Fact Without Analyzer State",
+                "Could not prepare canonical source hover fixture");
+        goto cleanup;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
+        fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL) {
+        TEST_FAIL(
+                timer,
+                "LSP Source Hover Consumes Canonical Symbol Fact Without Analyzer State",
+                "Source fixture did not expose a semantic snapshot");
+        goto cleanup;
+    }
+
+    savedSymbolTable = analyzer->symbolTable;
+    savedReferenceTracker = analyzer->referenceTracker;
+    savedAnalyzerAst = analyzer->ast;
+    analyzer->symbolTable = ZR_NULL;
+    analyzer->referenceTracker = ZR_NULL;
+    analyzer->ast = ZR_NULL;
+
+    ZrLanguageServer_LspSemanticQuery_Init(&query);
+    passed = ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
+                     state, context, uri, usePosition, &query) &&
+             query.kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL &&
+             query.hasCanonicalSymbol &&
+             query.canonicalSymbol.symbolId != ZR_SEMANTIC_ID_INVALID &&
+             ZrLanguageServer_LspSemanticQuery_BuildHover(
+                     state, context, &query, &hover) &&
+             hover != ZR_NULL;
+    if (passed && hover->contents.length > 0U) {
+        SZrString **text = (SZrString **)ZrCore_Array_Get(&hover->contents, 0U);
+        passed = text != ZR_NULL && *text != ZR_NULL &&
+                 strstr(ZrCore_String_GetNativeString(*text), "result") != ZR_NULL &&
+                 strstr(ZrCore_String_GetNativeString(*text), "int") != ZR_NULL;
+    } else {
+        passed = ZR_FALSE;
+    }
+
+    analyzer->symbolTable = savedSymbolTable;
+    savedSymbolTable = ZR_NULL;
+    analyzer->referenceTracker = savedReferenceTracker;
+    savedReferenceTracker = ZR_NULL;
+    analyzer->ast = savedAnalyzerAst;
+    savedAnalyzerAst = ZR_NULL;
+    ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+    if (passed) {
+        TEST_PASS(
+                timer,
+                "LSP Source Hover Consumes Canonical Symbol Fact Without Analyzer State");
+    } else {
+        TEST_FAIL(
+                timer,
+                "LSP Source Hover Consumes Canonical Symbol Fact Without Analyzer State",
+                "Source hover did not consume the parser SymbolAt fact after analyzer state was detached");
+    }
+
+cleanup:
+    if (savedSymbolTable != ZR_NULL && analyzer != ZR_NULL) {
+        analyzer->symbolTable = savedSymbolTable;
+    }
+    if (savedReferenceTracker != ZR_NULL && analyzer != ZR_NULL) {
+        analyzer->referenceTracker = savedReferenceTracker;
+    }
+    if (savedAnalyzerAst != ZR_NULL && analyzer != ZR_NULL) {
+        analyzer->ast = savedAnalyzerAst;
+    }
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 #include "test_lsp_semantic_call_hierarchy_cases.h"
 #include "test_lsp_canonical_completion_cases.h"
 
@@ -1285,6 +1391,7 @@ int main(void) {
     test_binary_semantic_query_snapshot_parity(state);
     test_native_semantic_query_snapshot_parity(state);
     test_canonical_visible_symbol_completion_survives_symbol_table_detachment(state);
+    test_source_hover_consumes_canonical_symbol_fact_without_analyzer_state(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }

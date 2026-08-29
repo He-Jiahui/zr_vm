@@ -88,6 +88,7 @@ typedef struct SZrParserSemanticSymbolQuery {
     TZrSymbolId ownerSymbolId;
     EZrSemanticSymbolKind kind;
     EZrSemanticReferenceKind role;
+    SZrFileRange referenceRange;
     SZrFileRange declarationRange;
     SZrFileRange definitionRange;
     /* Borrowed from the semantic snapshot; never retain across generations. */
