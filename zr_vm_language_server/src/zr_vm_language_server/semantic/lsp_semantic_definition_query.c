@@ -43,6 +43,7 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
     TZrSize index;
     TZrBool appended = ZR_FALSE;
     SZrFileRange definitionRange;
+    TZrSymbolId symbolId;
 
     if (state == ZR_NULL ||
         context == ZR_NULL ||
@@ -51,6 +52,16 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
         query->analyzer == ZR_NULL ||
         query->analyzer->semanticContext == ZR_NULL ||
         result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    symbolId = query->hasCanonicalSymbol &&
+                       (query->symbol == ZR_NULL ||
+                        query->symbol->semanticId == query->canonicalSymbol.symbolId)
+            ? query->canonicalSymbol.symbolId
+            : query->symbol != ZR_NULL
+                    ? query->symbol->semanticId
+                    : ZR_SEMANTIC_ID_INVALID;
+    if (symbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
 
@@ -70,13 +81,9 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
         if (definitions.isValid) {
             ZrCore_Array_Free(query->analyzer->semanticContext->state, &definitions);
         }
-        if (query->symbol == ZR_NULL ||
-            query->symbol->semanticId == ZR_SEMANTIC_ID_INVALID) {
-            return ZR_FALSE;
-        }
         declaration = ZrParser_SemanticQuery_DeclarationOf(
                 query->analyzer->semanticContext,
-                query->symbol->semanticId,
+                symbolId,
                 &scope);
         if (declaration == ZR_NULL) {
             return ZR_FALSE;

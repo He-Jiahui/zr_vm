@@ -142,6 +142,13 @@ non-TYPE value/symbol reference，`isResolved=false` 或 invalid SymbolId 会在
 annotation 当前仍有一条独立 producer 边界：closed-generic type use 可能只发布 unresolved TYPE fact；
 该缺口必须在 canonical producer 层修复，不能通过扩大本规则或增加 LSP 名称兼容掩盖。
 
+canonical local query 的 definition、references 与 document highlights 从 copied
+`canonicalSymbol.symbolId` 进入同一 declaration/reference relation projector。query 解析后即使
+`SZrSymbol *` 被释放或置空，只要 document version 仍匹配，三个 consumer 仍返回相同集合；copied
+SymbolId invalid 时统一 fail closed。现阶段 extern function 与 web URI local producer 可能给 parser
+fact 和 LSP declaration relation 分配不同 SymbolId，closed-generic type use 也可能没有 canonical
+view；这些冲突继续使用既有 legacy identity 并明确记为 producer debt，consumer 不按名称选择 id。
+
 source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
 producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入
 prototype 时，parser 仍通过 source TypeDef resolver 与 prototype `declarationNode` 取得精确

@@ -88,6 +88,21 @@ static TZrInt32 semantic_reference_query_highlight_kind(
             : 2;
 }
 
+static TZrSymbolId semantic_reference_query_symbol_id(
+        const SZrLspSemanticQuery *query) {
+    if (query == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    if (query->hasCanonicalSymbol &&
+        (query->symbol == ZR_NULL ||
+         query->symbol->semanticId == query->canonicalSymbol.symbolId)) {
+        return query->canonicalSymbol.symbolId;
+    }
+    return query->symbol != ZR_NULL
+            ? query->symbol->semanticId
+            : ZR_SEMANTIC_ID_INVALID;
+}
+
 static SZrLspDocumentHighlight *semantic_reference_query_find_highlight(
         const SZrArray *result,
         SZrLspRange range) {
@@ -158,11 +173,11 @@ static TZrBool semantic_reference_query_append_highlight(
     return ZR_TRUE;
 }
 
-TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
+static TZrBool semantic_reference_query_append_references_for_symbol_id(
         SZrState *state,
         SZrLspContext *context,
         SZrSemanticAnalyzer *analyzer,
-        SZrSymbol *symbol,
+        TZrSymbolId symbolId,
         TZrBool includeDeclaration,
         SZrArray *result,
         TZrBool *outAppended) {
@@ -172,8 +187,8 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
     TZrBool appended = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
-        analyzer->semanticContext == ZR_NULL || symbol == ZR_NULL ||
-        symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
+        analyzer->semanticContext == ZR_NULL ||
+        symbolId == ZR_SEMANTIC_ID_INVALID ||
         result == ZR_NULL || outAppended == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -183,7 +198,7 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
     }
     declaration = ZrParser_SemanticQuery_DeclarationOf(
             analyzer->semanticContext,
-            symbol->semanticId,
+            symbolId,
             ZR_NULL);
     if (includeDeclaration && declaration != ZR_NULL) {
         appended = semantic_reference_query_append_location(
@@ -191,7 +206,7 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
     }
     if (ZrParser_SemanticQuery_ReferencesOf(
                 analyzer->semanticContext,
-                symbol->semanticId,
+                symbolId,
                 ZR_NULL,
                 &references)) {
         for (index = 0U; index < references.length; index++) {
@@ -219,6 +234,27 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
     return ZR_TRUE;
 }
 
+TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
+        SZrState *state,
+        SZrLspContext *context,
+        SZrSemanticAnalyzer *analyzer,
+        SZrSymbol *symbol,
+        TZrBool includeDeclaration,
+        SZrArray *result,
+        TZrBool *outAppended) {
+    if (symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    return semantic_reference_query_append_references_for_symbol_id(
+            state,
+            context,
+            analyzer,
+            symbol->semanticId,
+            includeDeclaration,
+            result,
+            outAppended);
+}
+
 TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
         SZrState *state,
         SZrLspContext *context,
@@ -226,16 +262,18 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
         TZrBool includeDeclaration,
         SZrArray *result) {
     TZrBool appended = ZR_FALSE;
+    TZrSymbolId symbolId;
 
     if (query == ZR_NULL ||
         query->kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL) {
         return ZR_FALSE;
     }
-    if (!ZrLanguageServer_LspSemanticReferenceQuery_AppendReferencesForSymbol(
+    symbolId = semantic_reference_query_symbol_id(query);
+    if (!semantic_reference_query_append_references_for_symbol_id(
                 state,
                 context,
                 query->analyzer,
-                query->symbol,
+                symbolId,
                 includeDeclaration,
                 result,
                 &appended)) {
@@ -253,13 +291,16 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendHighlights(
     const SZrSemanticReferenceFact *declaration;
     TZrSize index;
     TZrBool appended = ZR_FALSE;
+    TZrSymbolId symbolId;
 
     if (state == ZR_NULL || context == ZR_NULL || query == ZR_NULL ||
         query->kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
         query->analyzer == ZR_NULL || query->analyzer->semanticContext == ZR_NULL ||
-        query->symbol == ZR_NULL ||
-        query->symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
         query->uri == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    symbolId = semantic_reference_query_symbol_id(query);
+    if (symbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
     if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
@@ -267,7 +308,7 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendHighlights(
     }
     declaration = ZrParser_SemanticQuery_DeclarationOf(
             query->analyzer->semanticContext,
-            query->symbol->semanticId,
+            symbolId,
             ZR_NULL);
     if (declaration != ZR_NULL) {
         appended = semantic_reference_query_append_highlight(
@@ -280,7 +321,7 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendHighlights(
     }
     if (ZrParser_SemanticQuery_ReferencesOf(
                 query->analyzer->semanticContext,
-                query->symbol->semanticId,
+                symbolId,
                 ZR_NULL,
                 &references)) {
         for (index = 0U; index < references.length; index++) {

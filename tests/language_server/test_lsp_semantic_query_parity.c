@@ -555,6 +555,7 @@ static void test_local_reference_consumers_use_canonical_facts(
     SZrLspSemanticQuery query;
     SZrReferenceTracker *tracker = ZR_NULL;
     TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
+    SZrArray definitions = {0};
     SZrArray locations = {0};
     SZrArray highlights = {0};
     TZrSize readHighlightCount = 0U;
@@ -577,24 +578,31 @@ static void test_local_reference_consumers_use_canonical_facts(
         !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
                 state, context, uri, position, &query) ||
         query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
+        !query.hasCanonicalSymbol ||
+        query.canonicalSymbol.symbolId == ZR_SEMANTIC_ID_INVALID ||
         query.symbol == ZR_NULL ||
-        query.symbol->semanticId == ZR_SEMANTIC_ID_INVALID ||
         query.analyzer == ZR_NULL ||
         query.analyzer->referenceTracker == ZR_NULL) {
         goto cleanup;
     }
 
+    symbolId = query.canonicalSymbol.symbolId;
     tracker = query.analyzer->referenceTracker;
     query.analyzer->referenceTracker = ZR_NULL;
+    query.symbol = ZR_NULL;
     failure = "canonical reference projection";
     {
+        TZrBool definitionAppended =
+                ZrLanguageServer_LspSemanticQuery_AppendDefinitions(
+                        state, context, &query, &definitions);
         TZrBool referencesAppended =
                 ZrLanguageServer_LspSemanticQuery_AppendReferences(
                         state, context, &query, ZR_TRUE, &locations);
         TZrBool highlightsAppended =
                 ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
                         state, context, &query, &highlights);
-        if (!referencesAppended || locations.length != 3U ||
+        if (!definitionAppended || definitions.length != 1U ||
+            !referencesAppended || locations.length != 3U ||
             !highlightsAppended || highlights.length != 3U) {
             TZrSize matchingFactCount = 0U;
             TZrSize resolvedUseCount = 0U;
@@ -606,7 +614,7 @@ static void test_local_reference_consumers_use_canonical_facts(
                                 &query.analyzer->semanticContext->referenceFacts,
                                 index);
                 if (fact != ZR_NULL &&
-                    fact->symbolId == query.symbol->semanticId) {
+                    fact->symbolId == symbolId) {
                     matchingFactCount++;
                     if (fact->isResolved &&
                         fact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION) {
@@ -624,7 +632,7 @@ static void test_local_reference_consumers_use_canonical_facts(
                     (size_t)highlights.length,
                     (size_t)matchingFactCount,
                     (size_t)resolvedUseCount,
-                    (unsigned long long)query.symbol->semanticId);
+                    (unsigned long long)symbolId);
             failure = failureBuffer;
             goto cleanup;
         }
@@ -646,6 +654,7 @@ static void test_local_reference_consumers_use_canonical_facts(
         goto cleanup;
     }
 
+    free_local_reference_projection_results(state, &definitions, ZR_NULL);
     free_local_reference_projection_results(state, &locations, &highlights);
     query.analyzer->referenceTracker = tracker;
     tracker = ZR_NULL;
@@ -667,6 +676,8 @@ static void test_local_reference_consumers_use_canonical_facts(
                         state, context, uri, position, &query);
         if (!resolved ||
             query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
+            !query.hasCanonicalSymbol ||
+            query.canonicalSymbol.symbolId == ZR_SEMANTIC_ID_INVALID ||
             query.symbol == ZR_NULL || query.analyzer == ZR_NULL ||
             query.analyzer->referenceTracker == ZR_NULL) {
             snprintf(
@@ -686,9 +697,14 @@ static void test_local_reference_consumers_use_canonical_facts(
             goto cleanup;
         }
     }
+    symbolId = query.canonicalSymbol.symbolId;
     tracker = query.analyzer->referenceTracker;
     query.analyzer->referenceTracker = ZR_NULL;
-    if (!ZrLanguageServer_LspSemanticQuery_AppendReferences(
+    query.symbol = ZR_NULL;
+    if (!ZrLanguageServer_LspSemanticQuery_AppendDefinitions(
+                state, context, &query, &definitions) ||
+        definitions.length != 1U ||
+        !ZrLanguageServer_LspSemanticQuery_AppendReferences(
                 state, context, &query, ZR_TRUE, &locations) ||
         locations.length != 4U ||
         !ZrLanguageServer_LspSemanticQuery_AppendDocumentHighlights(
@@ -697,23 +713,24 @@ static void test_local_reference_consumers_use_canonical_facts(
         goto cleanup;
     }
 
+    free_local_reference_projection_results(state, &definitions, ZR_NULL);
     free_local_reference_projection_results(state, &locations, &highlights);
     failure = "unresolved SymbolId fail-closed";
-    symbolId = query.symbol->semanticId;
-    query.symbol->semanticId = ZR_SEMANTIC_ID_INVALID;
+    query.canonicalSymbol.symbolId = ZR_SEMANTIC_ID_INVALID;
     if (ZrLanguageServer_LspSemanticQuery_AppendReferences(
                 state, context, &query, ZR_TRUE, &locations) ||
         locations.length != 0U) {
-        query.symbol->semanticId = symbolId;
+        query.canonicalSymbol.symbolId = symbolId;
         goto cleanup;
     }
-    query.symbol->semanticId = symbolId;
+    query.canonicalSymbol.symbolId = symbolId;
     valid = ZR_TRUE;
 
 cleanup:
     if (query.analyzer != ZR_NULL && tracker != ZR_NULL) {
         query.analyzer->referenceTracker = tracker;
     }
+    free_local_reference_projection_results(state, &definitions, ZR_NULL);
     free_local_reference_projection_results(state, &locations, &highlights);
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     if (context != ZR_NULL) {
