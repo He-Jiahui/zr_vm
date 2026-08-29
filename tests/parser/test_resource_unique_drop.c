@@ -303,7 +303,8 @@ static void test_resource_unique_into_gc_box_consumes_owner_and_defers_drop(void
     TEST_ASSERT_EQUAL_UINT32(1u, g_gc_box_drop_allocation_count);
 }
 
-static void test_aot_own_detach_consumes_resource_unique_into_gc_box(void) {
+static void test_aot_legacy_detach_helper_preserves_gc_box_artifact_compatibility(
+        void) {
     SZrString *name = ZrCore_String_CreateFromNative(g_state, "AotGcBoxResource");
     SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(
             g_state, name, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
@@ -677,7 +678,8 @@ int main(void) {
     RUN_TEST(test_resource_unique_uses_direct_owner_without_control_block);
     RUN_TEST(test_resource_unique_direct_loan_restores_owner_without_control_block);
     RUN_TEST(test_resource_unique_into_gc_box_consumes_owner_and_defers_drop);
-    RUN_TEST(test_aot_own_detach_consumes_resource_unique_into_gc_box);
+    RUN_TEST(
+            test_aot_legacy_detach_helper_preserves_gc_box_artifact_compatibility);
     RUN_TEST(test_gc_bridge_types_preserve_canonical_identity);
     RUN_TEST(test_gc_bridge_surface_enforces_target_worlds);
     RUN_TEST(test_resource_unique_into_gc_surface_consumes_owner);

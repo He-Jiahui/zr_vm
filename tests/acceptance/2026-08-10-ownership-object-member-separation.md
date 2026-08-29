@@ -1225,6 +1225,26 @@ main worktree and selected the case with
 This is test-identity and documentation convergence, not final graph
 acceptance. The stable post-L8 full matrix remains required below.
 
+## 2026-08-29 legacy detach artifact test identity
+
+The resource Unique runner still had one active case named as if `detach` were
+the current source operation. Read-only production tracing confirmed a narrower
+contract: `ZrLibrary_AotRuntime_OwnDetach` and numeric `OWN_DETACH` remain only
+for legacy artifact compatibility, while current `intoGc(owner)` lowering uses
+`OWN_INTO_GC_BOX` and `ZrLibrary_AotRuntime_OwnIntoGcBox`.
+
+The case is now explicitly named
+`test_aot_legacy_detach_helper_preserves_gc_box_artifact_compatibility`.
+Its executable body is unchanged and still proves that the compatibility
+helper consumes the Unique source, materializes the GC box, and leaves no
+ownership root. GCC 11.4, Clang 14, and MSVC 19.44 each pass the normal
+`zr_vm_resource_unique_drop_test` runner at 20/20 with direct exit zero. No
+production symbol or behavior changed. The focused record is
+`tests/acceptance/2026-08-29-ownership-legacy-detach-test-identity.md`.
+
+This closes an active-test naming ambiguity without reintroducing legacy source
+syntax. The stable post-L8 full matrix remains required below.
+
 ## 2026-08-28 receiver-guard fact completeness
 
 Support-first review found two lowering fail-open paths. An optional call

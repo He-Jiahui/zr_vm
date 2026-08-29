@@ -1131,6 +1131,18 @@ production scan finds no removed percent-prefixed form. Step 5 remains open
 only for the stable post-L8 registered full graph, tracked artifact replay,
 migration-inventory regeneration, and final exact-diff review.
 
+The active test-identity scan then found one compatibility case whose name
+still presented `detach` as a current AOT operation. Production tracing showed
+that `OwnDetach` and numeric `OWN_DETACH` are deliberately retained only for
+legacy artifact replay; current source lowering uses `intoGc`,
+`OWN_INTO_GC_BOX`, and `OwnIntoGcBox`. The Unity case is renamed
+`test_aot_legacy_detach_helper_preserves_gc_box_artifact_compatibility` without
+changing its executable body or any production symbol. Fixed baseline
+`82633fa` plus the one-file test overlay passes the resource Unique runner
+20/20 with direct exit zero on GCC 11.4, Clang 14, and MSVC 19.44. This removes
+the active-test naming ambiguity while preserving the required artifact ABI;
+it does not close Step 5 before the final integrated gates.
+
 - [x] **Step 6: Remove generated build products and logs requested by the user**
 
 The focused source/build roots were resolved to explicit absolute paths before
@@ -1208,6 +1220,12 @@ source and GCC/Clang roots named `ownership-nullable-fa2dc6c`,
 build roots, and transfer archives were sent to the recycle bin and verified
 absent from the original paths. No persistent log was created and no unrelated
 shared cache or `.codex/logs` path was changed.
+
+The legacy detach test-identity replay removed and verified absent the WSL
+source snapshot `ownership-legacy-detach-82633fa` and its GCC/Clang build roots.
+The matching Windows source root, MSVC build root, and source archive were sent
+to the recycle bin and verified absent from their original paths. It created no
+persistent log and did not modify shared caches.
 
 - [ ] **Step 7: Commit final acceptance status**
 
