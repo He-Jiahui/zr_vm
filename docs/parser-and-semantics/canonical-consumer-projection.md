@@ -17,6 +17,7 @@ implementation_files:
 plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/lsp/optimize/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
+  - docs/plans/lsp/optimize/2026-08-30-plan03-task07-canonical-completion-documentation.md
   - docs/plans/lsp/optimize/2026-08-30-plan03-task07-external-member-reference-identity.md
 tests:
   - tests/parser/test_semantic_query_symbols.c
@@ -24,6 +25,7 @@ tests:
   - tests/language_server/test_lsp_external_member_reference_identity_cases.h
   - tests/language_server/test_lsp_source_contracts.c
   - tests/acceptance/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
+  - tests/acceptance/2026-08-30-plan03-task07-canonical-completion-documentation.md
   - tests/acceptance/2026-08-30-plan03-task07-external-member-reference-identity.md
 doc_type: module-detail
 ---
@@ -108,6 +110,13 @@ canonical contract。缺少 SymbolId、declaration role/node 或 display name �
 TypeId；TypeId unavailable 时显示明确的 `cannot infer exact type`，不得回退到 LSP symbol table、
 request-time inference 或 AST/name reconstruction。receiver/import completion 仍走各自 structured
 query，并保持原 fail-closed 边界。
+
+Visible completion 的 documentation 也只按同一 `SymbolId` 查询
+`ZrParser_SemanticQuery_DocumentationOfSymbol()`。parser 返回的 documentation 是 semantic
+snapshot 借用 view，completion item 在 projector 内复制文本，因此 item 不持有跨 snapshot 的
+parser string。缺少 documentation fact 时保持无 documentation；LSP 不从 symbol table、注释、
+label 或 hover/signature 文本补写。这样 completion、hover 和 signature 各自读取同一 parser
+fact，互不提取另一个 consumer 的展示文本。
 
 source-local hover 同样只消费 `ZrParser_SemanticQuery_SymbolAt()`。query 直接复制稳定 SymbolId、
 TypeId、signature display、declaration AST identity 与 reference/declaration range；独立

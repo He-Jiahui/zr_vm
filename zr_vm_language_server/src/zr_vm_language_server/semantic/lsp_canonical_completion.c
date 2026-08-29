@@ -1,6 +1,7 @@
 #include "semantic/lsp_canonical_completion.h"
 
 #include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_display.h"
 #include "zr_vm_parser/semantic_query.h"
 
 #include <string.h>
@@ -52,6 +53,24 @@ static const TZrChar *canonical_completion_detail(
     return "cannot infer exact type";
 }
 
+static SZrString *canonical_completion_documentation(
+        SZrState *state,
+        const SZrSemanticContext *semanticContext,
+        const SZrParserSemanticSymbolQuery *symbol) {
+    SZrString *documentation;
+
+    if (state == ZR_NULL || semanticContext == ZR_NULL ||
+        symbol == ZR_NULL || symbol->symbolId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    documentation = ZrParser_SemanticQuery_DocumentationOfSymbol(
+            semanticContext, symbol->symbolId);
+    if (documentation == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return documentation;
+}
+
 TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
@@ -89,6 +108,7 @@ TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
         TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
         const TZrChar *label;
         const TZrChar *detail;
+        SZrString *documentation;
         SZrCompletionItem *item;
 
         if (!canonical_completion_symbol_is_exact(symbol)) {
@@ -100,12 +120,16 @@ TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
         if (detail == ZR_NULL) {
             continue;
         }
+        documentation = canonical_completion_documentation(
+                state, semanticContext, symbol);
         item = ZrLanguageServer_CompletionItem_New(
                 state,
                 label,
                 canonical_completion_kind_text(symbol->kind),
                 detail,
-                ZR_NULL,
+                documentation != ZR_NULL
+                        ? ZrCore_String_GetNativeString(documentation)
+                        : ZR_NULL,
                 ZR_NULL);
         if (item != ZR_NULL) {
             ZrCore_Array_Push(state, result, &item);

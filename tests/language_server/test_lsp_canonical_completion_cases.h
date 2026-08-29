@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_LSP_CANONICAL_COMPLETION_CASES_H
 #define ZR_VM_TEST_LSP_CANONICAL_COMPLETION_CASES_H
 
+#include "zr_vm_parser/semantic_display.h"
+
 static SZrCompletionItem *canonical_completion_find_label(
         SZrArray *items,
         const TZrChar *expectedLabel) {
@@ -40,6 +42,9 @@ static void test_canonical_visible_symbol_completion_survives_symbol_table_detac
     SZrSymbolTable *detachedSymbolTable = ZR_NULL;
     SZrFileVersion *fileVersion = ZR_NULL;
     SZrAstNode *detachedFileAst = ZR_NULL;
+    SZrParserSemanticSymbolQuery visibleSymbol;
+    SZrParserSemanticVisibleSymbolOptions visibleOptions = {0};
+    SZrArray visibleSymbols = {0};
     SZrArray completions = {0};
     SZrLspPosition position = {6, 4};
     SZrParityTimer timer;
@@ -71,6 +76,52 @@ static void test_canonical_visible_symbol_completion_survives_symbol_table_detac
                 "Completion analyzer did not expose a semantic snapshot");
         goto cleanup;
     }
+    detachedSymbolTable = analyzer->symbolTable;
+    ZrCore_Array_Construct(&visibleSymbols);
+    if (!ZrParser_SemanticQuery_VisibleSymbols(
+                analyzer->semanticContext,
+                ZrParser_FileRange_Create(
+                        ZrLanguageServer_Lsp_GetDocumentFilePosition(
+                                context, uri, position),
+                        ZrLanguageServer_Lsp_GetDocumentFilePosition(
+                                context, uri, position),
+                        uri),
+                ZR_NULL,
+                &visibleOptions,
+                &visibleSymbols)) {
+        TEST_FAIL(
+                timer,
+                "LSP Canonical Visible Symbol Completion Publishes Documentation Fact",
+                "Could not query canonical visible symbols");
+        goto cleanup;
+    }
+    memset(&visibleSymbol, 0, sizeof(visibleSymbol));
+    for (TZrSize index = 0; index < visibleSymbols.length; index++) {
+        const SZrParserSemanticSymbolQuery *candidate =
+                (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+                        &visibleSymbols, index);
+        if (candidate != ZR_NULL && candidate->displayName != ZR_NULL &&
+            strcmp(
+                    ZrCore_String_GetNativeString(candidate->displayName),
+                    "canonicalLocal") == 0) {
+            visibleSymbol = *candidate;
+            break;
+        }
+    }
+    if (visibleSymbol.symbolId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrParser_SemanticDocumentation_Publish(
+                analyzer->semanticContext,
+                visibleSymbol.symbolId,
+                ZrCore_String_CreateFromNative(
+                        state,
+                        "Canonical documentation fact."))) {
+        TEST_FAIL(
+                timer,
+                "LSP Canonical Visible Symbol Completion Publishes Documentation Fact",
+                "Could not publish canonical documentation fact");
+        goto cleanup;
+    }
+    ZrCore_Array_Free(state, &visibleSymbols);
     detachedSymbolTable = analyzer->symbolTable;
     analyzer->symbolTable = ZR_NULL;
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
@@ -108,6 +159,10 @@ static void test_canonical_visible_symbol_completion_survives_symbol_table_detac
              strcmp(
                      ZrCore_String_GetNativeString(canonicalItem->detail),
                      "int") == 0 &&
+             canonicalItem->documentation != ZR_NULL &&
+             strcmp(
+                     ZrCore_String_GetNativeString(canonicalItem->documentation),
+                     "Canonical documentation fact.") == 0 &&
              missingItem != ZR_NULL &&
              missingItem->detail != ZR_NULL &&
              strcmp(
@@ -149,6 +204,9 @@ cleanup:
     }
     if (completions.isValid) {
         ZrCore_Array_Free(state, &completions);
+    }
+    if (visibleSymbols.isValid) {
+        ZrCore_Array_Free(state, &visibleSymbols);
     }
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
