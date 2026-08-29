@@ -3129,6 +3129,7 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
 
     if (success) {
         type_inference_record_expression_and_numeric_facts(cs, node, result, numericFactKind);
+        type_inference_record_construct_call_facts(cs, node, result);
     }
     return success;
 }

@@ -442,20 +442,27 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
             "LSP Direct Call Signature Fails Closed Without Canonical Call Fact";
     const TZrChar *uriText = "file:///direct_call_signature_fact.zr";
     const TZrChar *content =
+            "class Hero {\n"
+            "  pub @constructor(seed: int) { }\n"
+            "}\n"
             "fn inspect(value: int): int { return value; }\n"
-            "fn use(): int { return inspect(1); }\n";
+            "fn use(): int { var hero: Hero = new Hero(1); return inspect(1); }\n";
     const TZrChar *expectedLabel = "inspect(value: int): int";
+    const TZrChar *expectedConstructorLabel = "@constructor(seed: int): null";
     SZrTestTimer timer;
     SZrLspContext *context;
     SZrString *uri;
     SZrSemanticAnalyzer *analyzer;
     SZrLspPosition callPosition;
+    SZrLspPosition constructorPosition;
     SZrFilePosition filePosition;
     SZrFileRange fileRange;
     SZrParserSemanticCallQuery query;
+    SZrParserSemanticCallQuery constructorQuery;
     SZrCompilerState *detachedCompilerState;
     SZrSymbolTable *detachedSymbolTable;
     SZrSemanticExpressionFact *callFact;
+    SZrSemanticExpressionFact *constructorCallFact;
     SZrLspSignatureHelp *help = ZR_NULL;
     const TZrChar *label;
     TZrChar formattedCall[ZR_LSP_TEXT_BUFFER_LENGTH];
@@ -474,7 +481,9 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
         !ZrLanguageServer_Lsp_UpdateDocument(
                 state, context, uri, content, strlen(content), 1U) ||
         !lsp_find_position_for_substring(
-                content, "inspect(1)", 0U, 8U, &callPosition)) {
+                content, "inspect(1)", 0U, 8U, &callPosition) ||
+        !lsp_find_position_for_substring(
+                content, "new Hero(1)", 0U, 9U, &constructorPosition)) {
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);
         }
@@ -487,6 +496,7 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
             context, uri, callPosition);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     memset(&query, 0, sizeof(query));
+    memset(&constructorQuery, 0, sizeof(constructorQuery));
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
         !ZrParser_SemanticQuery_CallAt(
                 analyzer->semanticContext, fileRange, ZR_NULL, &query) ||
@@ -499,6 +509,39 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
         strcmp(formattedCall, expectedLabel) != 0) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, "Canonical direct-call fact was unavailable");
+        return;
+    }
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(
+            context, uri, constructorPosition);
+    fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    if (!ZrParser_SemanticQuery_CallAt(
+                analyzer->semanticContext, fileRange, ZR_NULL, &constructorQuery)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Canonical source-constructor CallAt was unavailable");
+        return;
+    }
+    if (constructorQuery.expression == ZR_NULL ||
+        !constructorQuery.hasResolvedTarget) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Canonical source-constructor target was unresolved");
+        return;
+    }
+    if (ZrParser_SemanticQuery_DeclarationOf(
+                analyzer->semanticContext,
+                constructorQuery.targetSymbolId,
+                ZR_NULL) == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Canonical source-constructor declaration was unavailable");
+        return;
+    }
+    if (!ZrParser_SemanticQuery_FormatCall(
+                analyzer->semanticContext,
+                &constructorQuery,
+                formattedCall,
+                sizeof(formattedCall)) ||
+        strcmp(formattedCall, expectedConstructorLabel) != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Canonical source-constructor label was unavailable");
         return;
     }
     if (analyzer->compilerState == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
@@ -528,6 +571,49 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     ZrLanguageServer_LspSignatureHelp_Free(state, help);
     help = ZR_NULL;
 
+    analyzer->compilerState = ZR_NULL;
+    analyzer->symbolTable = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, constructorPosition, &help) ||
+        help == ZR_NULL ||
+        (label = signature_help_first_label(help)) == ZR_NULL ||
+        strcmp(label, expectedConstructorLabel) != 0) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        analyzer->compilerState = detachedCompilerState;
+        analyzer->symbolTable = detachedSymbolTable;
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "Valid source-constructor canonical signature was unavailable");
+        return;
+    }
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    help = ZR_NULL;
+
+    constructorCallFact =
+            (SZrSemanticExpressionFact *)constructorQuery.expression;
+    constructorCallFact->hasCallInfo = ZR_FALSE;
+    analyzer->compilerState = detachedCompilerState;
+    analyzer->symbolTable = detachedSymbolTable;
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(
+                state, context, uri, constructorPosition, &help) ||
+        help != ZR_NULL) {
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        analyzer->compilerState = detachedCompilerState;
+        analyzer->symbolTable = detachedSymbolTable;
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  summary,
+                  "Constructor signature help recovered from local AST after fact removal");
+        return;
+    }
+
+    analyzer->compilerState = ZR_NULL;
+    analyzer->symbolTable = ZR_NULL;
     callFact = (SZrSemanticExpressionFact *)query.expression;
     callFact->hasCallInfo = ZR_FALSE;
     if (ZrLanguageServer_Lsp_GetSignatureHelp(

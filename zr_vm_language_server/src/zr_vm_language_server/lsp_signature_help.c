@@ -825,10 +825,23 @@ static const SZrAstNode *signature_context_call_callee(
                    : ZR_NULL;
 }
 
+static TZrBool signature_declaration_requires_canonical_source_call(
+        const SZrAstNode *node) {
+    return node != ZR_NULL &&
+           (node->type == ZR_AST_FUNCTION_DECLARATION ||
+            node->type == ZR_AST_LAMBDA_EXPRESSION ||
+            node->type == ZR_AST_CLASS_METHOD ||
+            node->type == ZR_AST_STRUCT_METHOD ||
+            node->type == ZR_AST_INTERFACE_METHOD_SIGNATURE ||
+            node->type == ZR_AST_CLASS_META_FUNCTION ||
+            node->type == ZR_AST_STRUCT_META_FUNCTION);
+}
+
 static TZrBool signature_context_requires_canonical_source_call(
         SZrSemanticAnalyzer *analyzer,
         const SZrLspCallContext *context) {
     const SZrAstNode *callee;
+    const SZrAstNode *expressionNode;
     const SZrSemanticReferenceFact *declaration;
     const SZrSemanticExpressionFact *expression;
     const SZrSemanticReferenceFact *callReference;
@@ -837,8 +850,11 @@ static TZrBool signature_context_requires_canonical_source_call(
         context == ZR_NULL) {
         return ZR_FALSE;
     }
+    expressionNode = context->kind == ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL
+                             ? context->callNode
+                             : context->primaryNode;
     expression = ZrParser_SemanticFacts_FindExpressionByNode(
-            analyzer->semanticContext, context->primaryNode);
+            analyzer->semanticContext, expressionNode);
     if (expression != ZR_NULL) {
         callReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
                 analyzer->semanticContext,
@@ -847,7 +863,15 @@ static TZrBool signature_context_requires_canonical_source_call(
         if (callReference != ZR_NULL &&
             signature_ranges_equal(
                     callReference->range, expression->callTargetRange)) {
-            return ZR_TRUE;
+            declaration = ZrParser_SemanticQuery_DeclarationOf(
+                    analyzer->semanticContext,
+                    callReference->symbolId,
+                    ZR_NULL);
+            if (declaration != ZR_NULL &&
+                signature_declaration_requires_canonical_source_call(
+                        declaration->node)) {
+                return ZR_TRUE;
+            }
         }
     }
     callee = signature_context_call_callee(context);
@@ -859,11 +883,8 @@ static TZrBool signature_context_requires_canonical_source_call(
     if (declaration == ZR_NULL || declaration->node == ZR_NULL) {
         return ZR_FALSE;
     }
-    return declaration->node->type == ZR_AST_FUNCTION_DECLARATION ||
-           declaration->node->type == ZR_AST_LAMBDA_EXPRESSION ||
-           declaration->node->type == ZR_AST_CLASS_METHOD ||
-           declaration->node->type == ZR_AST_STRUCT_METHOD ||
-           declaration->node->type == ZR_AST_INTERFACE_METHOD_SIGNATURE;
+    return signature_declaration_requires_canonical_source_call(
+            declaration->node);
 }
 
 static TZrBool signature_context_has_local_canonical_call(
@@ -3131,6 +3152,21 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
                 callContext.argumentNodes,
                 signature_active_parameter_index(
                         &callContext.callNode->data.functionCall, filePosition),
+                result)) {
+        return *result != ZR_NULL;
+    }
+
+    if (callContext.kind == ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL &&
+        signature_construct_node_is_supported(callContext.callNode) &&
+        signature_context_requires_canonical_source_call(
+                analyzer, &callContext) &&
+        ZrLanguageServer_LspCanonicalSignatureHelp_Resolve(
+                state,
+                analyzer,
+                fileRange,
+                callContext.argumentNodes,
+                signature_active_parameter_index_for_arguments(
+                        callContext.argumentNodes, filePosition),
                 result)) {
         return *result != ZR_NULL;
     }

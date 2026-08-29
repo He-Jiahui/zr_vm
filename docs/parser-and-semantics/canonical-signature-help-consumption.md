@@ -12,11 +12,13 @@ implementation_files:
 plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/lsp/optimize/2026-08-29-plan03-task07-canonical-receiver-signature.md
+  - docs/plans/lsp/optimize/2026-08-29-plan03-task07-canonical-source-constructor-signature.md
 tests:
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/test_lsp_source_contracts.c
   - tests/acceptance/2026-08-29-plan03-task07-canonical-receiver-signature.md
+  - tests/acceptance/2026-08-29-plan03-task07-canonical-source-constructor-signature.md
 doc_type: module-detail
 ---
 
@@ -42,9 +44,17 @@ Only `SemanticQuery_CallAt` and `SemanticQuery_FormatCall` authorize a source si
 external adapter still consumes canonical external callable metadata and provider generation; it
 does not grant permission to inspect source prototypes by member name.
 
-`super(...)` and constructor syntax retain separate structured adapters while their canonical
-constructor query migration is pending. They run only after canonical ordinary-call dispatch and
-still require compiler state. They do not serve receiver method calls.
+Source `new Type(...)` and `init Type(...)` constructor calls now run through the same canonical
+query before the compiler-state guard. The dispatcher uses the syntax tree only to select the
+construct node and argument positions. A resolved CALL SymbolId must lead to a source class/struct
+meta-function declaration before this source-only branch is authorized. Clearing its canonical
+call payload therefore makes signature help unavailable even if compiler and symbol state remain.
+
+Native and imported constructors retain their structured metadata adapter. Their declaration does
+not masquerade as a source meta-function, so they cannot enter the source branch. This preserves
+native closed-type specialization and existing provider identity while later producer work closes
+binary/native canonical constructor parity. `super(...)` also remains a separate structured
+adapter and still requires compiler state.
 
 ## Removed Receiver Fallback
 
@@ -74,9 +84,12 @@ unresolved, or missing call facts fail closed.
 
 ## Regression Coverage
 
-Interface tests cover direct calls, callable values, lambdas, readonly/mutable receiver calls, and
-closed generic receiver methods. Clearing the canonical receiver payload keeps signature help
-unavailable. Source contracts reject reintroduction of the method fallback.
+Interface tests cover direct calls, callable values, lambdas, readonly/mutable receiver calls,
+closed generic receiver methods, source class constructors, and source struct constructors.
+Clearing a source call payload keeps signature help unavailable; detaching compiler and symbol
+state leaves valid canonical source signatures available. Native constructor tests preserve the
+structured external boundary. Source contracts reject reintroduction of the method fallback and
+require canonical source-constructor dispatch before the legacy constructor resolver.
 
 Project tests cover imported constructors and native/provider receiver callables. Their current
 four external producer markers are tracked by exact parent/overlay A/B; deleting the source method

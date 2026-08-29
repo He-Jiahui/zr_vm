@@ -60,6 +60,15 @@ source free call 与 receiver member call 都发布该身份。member SymbolId �
 AST node 注册/复用，declaration range 覆盖完整方法声明；imported/native member 没有 source
 declaration 时仍可提供 callable TypeId，但不会伪造 resolved source target。
 
+source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
+producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入
+prototype 时，parser 仍通过 source TypeDef resolver 与 prototype `declarationNode` 取得精确
+class/struct meta-function AST，并构造只在本次推断内存活的 member contract。该临时 contract
+保留参数名、passing mode、默认参数、声明 range 与稳定 SymbolId，最后驻留 receiver effect 为
+`NONE` 的 closed callable TypeId。`FormatCall` 因而输出 `@constructor(name: T): null`，而
+`DeclarationOf(targetSymbolId)` 返回同一 constructor declaration；LSP 不按类型名或 AST member
+配对补建该身份。
+
 call signature display 也从同一 closed callable TypeId 生成。参数名称来自声明 AST，passing、
 `scoped`、ref access 与类型来自 canonical parameter contract；readonly receiver 显示
 `const fn read(): int`，mutable receiver 显示 `fn write(...): R`，free/static callable 保持

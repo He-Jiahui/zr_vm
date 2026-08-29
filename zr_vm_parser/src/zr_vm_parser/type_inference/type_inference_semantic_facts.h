@@ -41,6 +41,21 @@ void type_inference_record_member_call_reference_fact(
         SZrTypeMemberInfo *memberInfo,
         const SZrResolvedCallSignature *resolvedSignature);
 
+void type_inference_record_construct_call_facts(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        const SZrInferredType *constructedType);
+
+TZrBool type_inference_source_constructor_member_build(
+        SZrCompilerState *cs,
+        SZrAstNode *target,
+        SZrString *typeName,
+        SZrTypeMemberInfo *outMember);
+
+void type_inference_source_constructor_member_free(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *member);
+
 void type_inference_record_unbound_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,

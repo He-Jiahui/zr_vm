@@ -641,6 +641,150 @@ static void test_resolved_generic_call_publishes_closed_canonical_signature(void
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_constructors_publish_canonical_call_contracts(void) {
+    const TZrChar *source =
+            "class Hero {\n"
+            "  pub @constructor(seed: int) { }\n"
+            "}\n"
+            "struct Point {\n"
+            "  pub var x: int;\n"
+            "  pub var y: int;\n"
+            "  pub @constructor(x: int, y: int) { this.x = x; this.y = y; }\n"
+            "}\n"
+            "var hero: Hero = new Hero(42);\n"
+            "var point: Point = init Point(y: 2, x: 1);\n";
+    const TZrChar *classCall = strstr(source, "new Hero(42)");
+    const TZrChar *structCall = strstr(source, "init Point(y: 2, x: 1)");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *classNode;
+    SZrAstNode *classConstructor;
+    SZrAstNode *structNode;
+    SZrAstNode *structConstructor;
+    SZrFileRange position;
+    SZrParserSemanticCallQuery query;
+    const SZrSemanticReferenceFact *declaration;
+    const SZrCanonicalTypeNode *callableType;
+    TZrChar typeLabel[128];
+    TZrChar callLabel[160];
+
+    TEST_ASSERT_NOT_NULL(classCall);
+    TEST_ASSERT_NOT_NULL(structCall);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_constructor_calls.zr", 30u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    classNode = ast->data.script.statements->nodes[0];
+    structNode = ast->data.script.statements->nodes[1];
+    TEST_ASSERT_NOT_NULL(classNode);
+    TEST_ASSERT_NOT_NULL(structNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, classNode->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_DECLARATION, structNode->type);
+    TEST_ASSERT_NOT_NULL(classNode->data.classDeclaration.members);
+    TEST_ASSERT_NOT_NULL(structNode->data.structDeclaration.members);
+    classConstructor = classNode->data.classDeclaration.members->nodes[0];
+    structConstructor = structNode->data.structDeclaration.members->nodes[2];
+    TEST_ASSERT_NOT_NULL(classConstructor);
+    TEST_ASSERT_NOT_NULL(structConstructor);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_META_FUNCTION, classConstructor->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_STRUCT_META_FUNCTION, structConstructor->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE_MESSAGE(
+            cs.hasError,
+            cs.errorMessage != ZR_NULL ? cs.errorMessage
+                                       : "source constructor compile failed");
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(classCall - source + strlen("new Hero(")),
+            (TZrSize)(classCall - source + strlen("new Hero(")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_FALSE(query.isMemberCall);
+    TEST_ASSERT_FALSE(query.hasNamedArguments);
+    TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)query.argumentCount);
+    TEST_ASSERT_TRUE(query.hasResolvedTarget);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(classCall - source + strlen("new ")),
+            (TZrUInt64)query.callTargetRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)classConstructor->location.start.offset,
+            (TZrUInt64)query.targetDeclarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)classConstructor->location.end.offset,
+            (TZrUInt64)query.targetDeclarationRange.end.offset);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("fn(int) -> null", typeLabel);
+    callableType = ZrParser_CanonicalType_Find(
+            cs.semanticContext, query.callableTypeId);
+    TEST_ASSERT_NOT_NULL(callableType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, callableType->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_NONE,
+            callableType->data.function.receiverEffect);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &query, callLabel, sizeof(callLabel)));
+    TEST_ASSERT_EQUAL_STRING("@constructor(seed: int): null", callLabel);
+    declaration = ZrParser_SemanticQuery_DeclarationOf(
+            cs.semanticContext, query.targetSymbolId, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_PTR(classConstructor, declaration->node);
+
+    position = consumer_range(
+            (TZrSize)(structCall - source + strlen("init Point(")),
+            (TZrSize)(structCall - source + strlen("init Point(")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_FALSE(query.isMemberCall);
+    TEST_ASSERT_TRUE(query.hasNamedArguments);
+    TEST_ASSERT_EQUAL_UINT32(2u, (TZrUInt32)query.argumentCount);
+    TEST_ASSERT_TRUE(query.hasResolvedTarget);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(structCall - source + strlen("init ")),
+            (TZrUInt64)query.callTargetRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)structConstructor->location.start.offset,
+            (TZrUInt64)query.targetDeclarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)structConstructor->location.end.offset,
+            (TZrUInt64)query.targetDeclarationRange.end.offset);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("fn(int, int) -> null", typeLabel);
+    callableType = ZrParser_CanonicalType_Find(
+            cs.semanticContext, query.callableTypeId);
+    TEST_ASSERT_NOT_NULL(callableType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, callableType->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_NONE,
+            callableType->data.function.receiverEffect);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &query, callLabel, sizeof(callLabel)));
+    TEST_ASSERT_EQUAL_STRING("@constructor(x: int, y: int): null", callLabel);
+    declaration = ZrParser_SemanticQuery_DeclarationOf(
+            cs.semanticContext, query.targetSymbolId, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_PTR(structConstructor, declaration->node);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_callable_value_call_publishes_canonical_contract(void) {
     const TZrChar *source =
             "fn runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {\n"
@@ -1388,6 +1532,7 @@ int main(void) {
     RUN_TEST(test_reflection_debug_and_layout_resolve_only_canonical_ids_and_tokens);
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);
+    RUN_TEST(test_source_constructors_publish_canonical_call_contracts);
     RUN_TEST(test_callable_value_call_publishes_canonical_contract);
     RUN_TEST(test_lambda_callable_value_call_publishes_canonical_contract);
     RUN_TEST(test_resolved_generic_member_call_preserves_declaration_generic_clause);
