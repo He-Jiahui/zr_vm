@@ -1433,6 +1433,16 @@ zero missing status/time fields, and the accepted directory distribution. This
 strengthens the status-record evidence but does not promote this ownership
 milestone before the remaining stable post-L8 full-graph gates pass.
 
+- A clean GCC 11.4 Debug full graph at intermediate `da114f9` built every
+  registered target and initially passed 131/135 CTests. All three AOT failures
+  from the preceding baseline are green. The remaining AOT logical runner
+  failure was a stale generated-text assertion: fixed-point bool provenance now
+  selects `zr_aot_jump_if_bool_false_scalar_local`, not the generic-truthiness
+  branch. After updating that exact contract, its generated shared-library
+  runner passed 6/6 and the aggregate advanced to the separately owned
+  compile-time source-provenance tests. This remains intermediate evidence,
+  because the concurrent L8 parser/LSP integration is not yet stable.
+
 - Clean detached GCC 11.4, Clang 14, and MSVC 19.44 Debug builds at intermediate
   baseline `0a46151` each passed all 133 registered CTests with zero failures.
   The three CLI smokes printed `hello world` and exited zero. This closes the

@@ -65,6 +65,16 @@ The neighboring value-construction and method-signature cases guard against
 silently removing frames where object/value storage or metadata still requires
 them.
 
+A clean GCC full-graph replay at committed `da114f9` then exposed one stale
+generated-product assertion in the logical shared-library runner. The improved
+fixed-point proof correctly selected the typed
+`zr_aot_jump_if_bool_false_scalar_local` path for a proven bool condition, while
+the test still required the weaker generic-truthiness marker. The assertion now
+requires the typed marker and rejects the generic marker. The rebuilt runner
+compiled and loaded every generated shared library and passed 6/6 with exit 0.
+The aggregate `language_pipeline` advanced beyond this target before stopping
+at an independently owned compile-time source-provenance baseline failure.
+
 ## Boundary
 
 This leaf repairs a lower AOT support failure found during ownership full-graph
