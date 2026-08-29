@@ -17,11 +17,14 @@ implementation_files:
 plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/lsp/optimize/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
+  - docs/plans/lsp/optimize/2026-08-30-plan03-task07-external-member-reference-identity.md
 tests:
   - tests/parser/test_semantic_query_symbols.c
   - tests/language_server/test_lsp_semantic_query_parity.c
+  - tests/language_server/test_lsp_external_member_reference_identity_cases.h
   - tests/language_server/test_lsp_source_contracts.c
   - tests/acceptance/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
+  - tests/acceptance/2026-08-30-plan03-task07-external-member-reference-identity.md
 doc_type: module-detail
 ---
 
@@ -118,6 +121,13 @@ LSP AST 只保留非语义补充层：leading comment、结构化 extern-block s
 struct、enum、interface），不是把所有 type 伪装为 class；这些补充不会创建或覆盖 SymbolId、
 TypeId、signature 或 range。脱离 analyzer symbol table、reference tracker 与 AST 后，canonical
 source hover 仍可用；缺少 exact SymbolAt fact 时直接 unavailable。
+
+外部 metadata type-member reference/highlight 的 declaration identity 同样是权威匹配键。query
+或候选任一侧声明 `hasDeclaration` 后，双方必须同时提供 declaration URI，并且 URI 与 range
+逐字段相等；identity 不一致时直接 fail closed，不能再退回 module name、owner type name 或
+member name。只有双方都明确没有 writable declaration identity 的 native/binary metadata
+边界，才保留结构化 module/type/member contract 匹配。`includeDeclaration` 只控制是否把 query
+自身声明投影到结果，不改变 usage candidate 的 identity 判定。
 
 source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
 producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入

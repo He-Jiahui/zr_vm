@@ -724,15 +724,19 @@ static TZrBool semantic_query_find_import_binding_hit(SZrArray *bindings,
 
 static TZrBool semantic_query_matches_external_type_member(SZrLspSemanticQuery *query,
                                                            SZrLspResolvedMetadataMember *candidate) {
-    if (query == ZR_NULL || candidate == ZR_NULL || query->memberName == ZR_NULL || candidate->memberName == ZR_NULL) {
+    if (query == ZR_NULL || candidate == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    if (query->resolvedMember.hasDeclaration && candidate->hasDeclaration &&
-        query->resolvedMember.declarationUri != ZR_NULL && candidate->declarationUri != ZR_NULL &&
-        ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.declarationUri, candidate->declarationUri) &&
-        semantic_query_file_ranges_equal(query->resolvedMember.declarationRange, candidate->declarationRange)) {
-        return ZR_TRUE;
+    if (query->resolvedMember.hasDeclaration || candidate->hasDeclaration) {
+        return query->resolvedMember.hasDeclaration && candidate->hasDeclaration &&
+               query->resolvedMember.declarationUri != ZR_NULL && candidate->declarationUri != ZR_NULL &&
+               ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.declarationUri, candidate->declarationUri) &&
+               semantic_query_file_ranges_equal(query->resolvedMember.declarationRange, candidate->declarationRange);
+    }
+
+    if (query->memberName == ZR_NULL || candidate->memberName == ZR_NULL) {
+        return ZR_FALSE;
     }
 
     return query->resolvedMember.memberKind == candidate->memberKind &&

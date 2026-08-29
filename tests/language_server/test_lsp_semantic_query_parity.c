@@ -1367,6 +1367,7 @@ cleanup:
 
 #include "test_lsp_semantic_call_hierarchy_cases.h"
 #include "test_lsp_canonical_completion_cases.h"
+#include "test_lsp_external_member_reference_identity_cases.h"
 
 int main(void) {
     SZrCallbackGlobal callbacks;
@@ -1392,6 +1393,7 @@ int main(void) {
     test_native_semantic_query_snapshot_parity(state);
     test_canonical_visible_symbol_completion_survives_symbol_table_detachment(state);
     test_source_hover_consumes_canonical_symbol_fact_without_analyzer_state(state);
+    test_external_member_references_reject_mismatched_declaration_identity(state);
     ZrCore_GlobalState_Free(global);
     return g_failures == 0 ? 0 : 1;
 }
