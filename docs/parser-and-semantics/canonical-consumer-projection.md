@@ -18,6 +18,7 @@ plan_sources:
   - docs/plans/lsp/optimize/03-canonical-semantic-query.md
   - docs/plans/lsp/optimize/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
   - docs/plans/lsp/optimize/2026-08-30-plan03-task07-canonical-completion-documentation.md
+  - docs/plans/lsp/optimize/2026-08-30-plan03-task07-canonical-hover-documentation.md
   - docs/plans/lsp/optimize/2026-08-30-plan03-task07-external-member-reference-identity.md
 tests:
   - tests/parser/test_semantic_query_symbols.c
@@ -26,6 +27,7 @@ tests:
   - tests/language_server/test_lsp_source_contracts.c
   - tests/acceptance/2026-08-29-plan03-task07-canonical-visible-symbol-completion.md
   - tests/acceptance/2026-08-30-plan03-task07-canonical-completion-documentation.md
+  - tests/acceptance/2026-08-30-plan03-task07-canonical-hover-documentation.md
   - tests/acceptance/2026-08-30-plan03-task07-external-member-reference-identity.md
 doc_type: module-detail
 ---
@@ -124,6 +126,12 @@ TypeId、signature display、declaration AST identity 与 reference/declaration 
 显示 canonical signature，其他符号只格式化 exact TypeId，TypeId unavailable 时明确显示
 `cannot infer exact type`。hover range 始终使用 resolved reference fact range，不能退回请求点、
 symbol-table lookup range 或 callee/name 扫描。
+
+Hover documentation 同样按 `SymbolId` 查询 `ZrParser_SemanticQuery_DocumentationOfSymbol()`，
+并在 projector 中将 snapshot borrowed text 合并到 LSP-owned hover contents。documentation fact
+缺失时不从 source symbol、注释、label 或 completion/signature 文本推断；leading comment 与 FFI
+decorator 仅作为非语义 source metadata 补充，不创建或覆盖 canonical identity。因而 detached
+analyzer symbol table、reference tracker 和 AST 后，已有 documentation fact 仍可被 hover 消费。
 
 LSP AST 只保留非语义补充层：leading comment、结构化 extern-block source identity 与 symbol 上已
 缓存的 FFI decorator metadata。extern type 的显示类别来自 canonical declaration AST（delegate、

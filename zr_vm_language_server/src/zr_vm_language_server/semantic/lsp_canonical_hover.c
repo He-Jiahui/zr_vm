@@ -2,6 +2,7 @@
 #include "interface/lsp_interface_internal.h"
 
 #include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic_display.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -244,6 +245,32 @@ static TZrBool canonical_hover_create(
     return ZR_TRUE;
 }
 
+static void canonical_hover_append_documentation_fact(
+        SZrState *state,
+        const SZrSemanticContext *semanticContext,
+        TZrSymbolId symbolId,
+        SZrLspHover *hover) {
+    SZrString *documentation;
+    SZrString **content;
+    SZrString *merged;
+
+    if (state == ZR_NULL || semanticContext == ZR_NULL ||
+        symbolId == ZR_SEMANTIC_ID_INVALID || hover == ZR_NULL ||
+        hover->contents.length == 0U) {
+        return;
+    }
+    documentation = ZrParser_SemanticQuery_DocumentationOfSymbol(
+            semanticContext, symbolId);
+    content = (SZrString **)ZrCore_Array_Get(&hover->contents, 0U);
+    if (documentation == ZR_NULL || content == ZR_NULL || *content == ZR_NULL) {
+        return;
+    }
+    merged = canonical_hover_append_section(state, *content, documentation);
+    if (merged != *content) {
+        *content = merged;
+    }
+}
+
 TZrBool ZrLanguageServer_LspCanonicalHover_BuildSymbol(
         SZrState *state,
         SZrLspContext *context,
@@ -306,6 +333,8 @@ TZrBool ZrLanguageServer_LspCanonicalHover_BuildSymbol(
                 state, context, uri, content, referenceRange, result)) {
         return ZR_FALSE;
     }
+    canonical_hover_append_documentation_fact(
+            state, semanticContext, symbol->symbolId, *result);
     if (sourceSymbol != ZR_NULL &&
         sourceSymbol->semanticId == symbol->symbolId) {
         canonical_hover_enrich_source_symbol(

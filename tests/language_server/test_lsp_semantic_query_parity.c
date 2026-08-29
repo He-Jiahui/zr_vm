@@ -11,6 +11,7 @@
 #include "zr_vm_language_server.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/semantic_display.h"
 #include "zr_vm_parser/semantic_query.h"
 #include "zr_vm_parser/writer.h"
 #include "path_support.h"
@@ -1387,6 +1388,9 @@ static void test_source_hover_consumes_canonical_symbol_fact_without_analyzer_st
     SZrSymbolTable *savedSymbolTable = ZR_NULL;
     SZrReferenceTracker *savedReferenceTracker = ZR_NULL;
     SZrAstNode *savedAnalyzerAst = ZR_NULL;
+    SZrParserSemanticSymbolQuery documentedSymbol;
+    SZrParserSemanticVisibleSymbolOptions visibleOptions = {0};
+    SZrArray visibleSymbols = {0};
     SZrLspPosition usePosition;
     SZrLspSemanticQuery query;
     SZrLspHover *hover = ZR_NULL;
@@ -1423,6 +1427,51 @@ static void test_source_hover_consumes_canonical_symbol_fact_without_analyzer_st
     savedSymbolTable = analyzer->symbolTable;
     savedReferenceTracker = analyzer->referenceTracker;
     savedAnalyzerAst = analyzer->ast;
+    memset(&documentedSymbol, 0, sizeof(documentedSymbol));
+    ZrCore_Array_Construct(&visibleSymbols);
+    if (!ZrParser_SemanticQuery_VisibleSymbols(
+                analyzer->semanticContext,
+                ZrParser_FileRange_Create(
+                        ZrLanguageServer_Lsp_GetDocumentFilePosition(
+                                context, uri, usePosition),
+                        ZrLanguageServer_Lsp_GetDocumentFilePosition(
+                                context, uri, usePosition),
+                        uri),
+                ZR_NULL,
+                &visibleOptions,
+                &visibleSymbols)) {
+        TEST_FAIL(
+                timer,
+                "LSP Source Hover Projects Canonical Documentation Fact",
+                "Could not query canonical visible symbols");
+        goto cleanup;
+    }
+    for (TZrSize index = 0; index < visibleSymbols.length; index++) {
+        const SZrParserSemanticSymbolQuery *candidate =
+                (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+                        &visibleSymbols, index);
+        if (candidate != ZR_NULL && candidate->displayName != ZR_NULL &&
+            strcmp(
+                    ZrCore_String_GetNativeString(candidate->displayName),
+                    "result") == 0) {
+            documentedSymbol = *candidate;
+            break;
+        }
+    }
+    if (documentedSymbol.symbolId == ZR_SEMANTIC_ID_INVALID ||
+        !ZrParser_SemanticDocumentation_Publish(
+                analyzer->semanticContext,
+                documentedSymbol.symbolId,
+                ZrCore_String_CreateFromNative(
+                        state,
+                        "Canonical result documentation."))) {
+        TEST_FAIL(
+                timer,
+                "LSP Source Hover Projects Canonical Documentation Fact",
+                "Could not publish canonical documentation fact");
+        goto cleanup;
+    }
+    ZrCore_Array_Free(state, &visibleSymbols);
     analyzer->symbolTable = ZR_NULL;
     analyzer->referenceTracker = ZR_NULL;
     analyzer->ast = ZR_NULL;
@@ -1440,7 +1489,9 @@ static void test_source_hover_consumes_canonical_symbol_fact_without_analyzer_st
         SZrString **text = (SZrString **)ZrCore_Array_Get(&hover->contents, 0U);
         passed = text != ZR_NULL && *text != ZR_NULL &&
                  strstr(ZrCore_String_GetNativeString(*text), "result") != ZR_NULL &&
-                 strstr(ZrCore_String_GetNativeString(*text), "int") != ZR_NULL;
+                 strstr(ZrCore_String_GetNativeString(*text), "int") != ZR_NULL &&
+                 strstr(ZrCore_String_GetNativeString(*text),
+                        "Canonical result documentation.") != ZR_NULL;
     } else {
         passed = ZR_FALSE;
     }
@@ -1475,6 +1526,9 @@ cleanup:
     }
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (visibleSymbols.isValid) {
+        ZrCore_Array_Free(state, &visibleSymbols);
     }
 }
 

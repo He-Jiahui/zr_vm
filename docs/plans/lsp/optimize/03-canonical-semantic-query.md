@@ -312,6 +312,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
    `DocumentationOfSymbol(SymbolId)`：completion projector 在 query snapshot 内按 exact id 读取并复制
    documentation，脱离 analyzer symbol table 与 document AST 后仍保留文档。GCC parity 为 `14/14`、
    source contracts 真实 exit 0，未新增 marker。
+   Task 7.32 将 source hover 的 documentation metadata 同样迁移到 parser
+   `DocumentationOfSymbol(SymbolId)`：hover projector 在 canonical `SymbolAt` 后按 exact id 合并并复制
+   documentation，脱离 analyzer symbol table/reference tracker/AST 后仍保留文档。GCC parity 为
+   `14/14`、source contracts 真实 exit 0，未新增 marker。
 - 当前边界：两项 direct-Weak receiver guard 失败在固定 parent 与 overlay
   均存在，不计入 Task 6.32 GREEN；Task 6.33 的 GCC analyzer parent/overlay
   另有相同 closed-generic 与 borrow-range 两项 marker，不计入 GREEN。后续
@@ -338,6 +342,7 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   source-local inlay declaration enumeration 已完成；
    source lexical completion 已仅消费 canonical VisibleSymbols，LSP symbol-table fallback 已删除；
    completion documentation 已仅消费 exact SymbolId documentation fact，并在 LSP item 内复制 snapshot view；
+   source hover documentation 已仅消费 exact SymbolId documentation fact，并在 LSP-owned contents 内复制 snapshot view；
   source-local hover 已仅消费 canonical SymbolAt，analyzer hover 与 token-name fallback 已删除；
   completion semantic-fact enrichment 的 request-time mutation 已删除；
   signature semantic-fact enrichment 的 request-time mutation已删除；
