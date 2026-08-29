@@ -1396,6 +1396,35 @@ the AOT ownership leaf but does not promote the umbrella milestone while the
 external L8 parser/LSP overlay, stable full graph, and migration-inventory
 golden remain open.
 
+### 2026-08-29 AOT scalar branch/SemIR dataflow convergence
+
+The next fixed-baseline replay exposed a lower support defect in the existing
+scalar-local CFG analysis. A `JUMP` with `operandExtra == 0` was treated as a
+destination write and erased the reaching `int64` proof for slot zero. Generic
+bitwise/shift instructions also published a scalar SemIR destination and then
+cleared it through the conservative fallback, so a following stack copy forced
+dense frame setup. The generated typed-scalar product consequently retained
+`/* zr_aot_generated_frame_setup */` despite using only primitive values.
+
+`2322ab4` preserves reaching scalar kinds across control-flow/return steps and
+keeps canonical SemIR writes only for the bitwise/shift family whose scalar
+generated-C emitter synchronizes the C local. Unknown and dynamic instructions
+remain conservative. The existing typed-scalar fixture now emits plain C locals
+across its conditional joins, omits the frame marker, and still matches the
+interpreter. The neighboring value-construction, SemIR opcode, and method-info
+guardrails protect frame-required and metadata paths.
+
+| Toolchain | Focused support targets | Result |
+| --- | --- | --- |
+| GCC 11.4 | value construction, SemIR typed opcodes, AOT C value construction, typed scalar, method-info signature | 5/5 |
+| Clang 14 | same five targets | 5/5 |
+| MSVC 19.44 | same five targets | 5/5 |
+
+All direct processes exited zero. The exact leaf record is
+`tests/acceptance/2026-08-29-aot-scalar-branch-semir-dataflow.md`. Its focused
+status is `completed`; the umbrella remains pending the stable post-L8 full
+graph, artifact, inventory, and exact-review gates below.
+
 The frozen syntax-leaf prerequisite is now checked by the executable
 `scripts/syntax_status_records.py` verifier rather than only by repeated manual
 enumeration in this record. Its focused unit suite passes 4/4, including a
