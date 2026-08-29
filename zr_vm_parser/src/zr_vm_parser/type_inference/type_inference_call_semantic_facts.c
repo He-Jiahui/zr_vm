@@ -47,7 +47,7 @@ static TZrBool type_inference_call_label_append(TZrChar *buffer,
     return ZR_TRUE;
 }
 
-static const SZrAstNodeArray *type_inference_call_parameters(
+const SZrAstNodeArray *type_inference_call_parameters(
         const SZrAstNode *declaration) {
     if (declaration == ZR_NULL) {
         return ZR_NULL;
@@ -154,7 +154,7 @@ static TZrBool type_inference_call_generic_clause_append(
     return type_inference_call_label_append(buffer, bufferSize, offset, ">");
 }
 
-static SZrString *type_inference_callable_signature_display(
+SZrString *type_inference_callable_signature_display(
         SZrCompilerState *cs,
         const TZrChar *namePrefix,
         SZrString *name,
@@ -394,7 +394,7 @@ static TZrTypeId type_inference_resolved_member_call_type_id(
             cs->semanticContext, memberInfo->declarationNode, resolvedTypeId);
 }
 
-static TZrSymbolId type_inference_member_symbol_id(
+TZrSymbolId type_inference_member_symbol_id(
         SZrCompilerState *cs,
         SZrTypeMemberInfo *memberInfo,
         TZrTypeId callTypeId) {
@@ -438,7 +438,7 @@ static TZrSymbolId type_inference_member_symbol_id(
     return memberInfo->symbolId;
 }
 
-static void type_inference_publish_member_declaration_fact(
+void type_inference_publish_member_declaration_fact(
         SZrCompilerState *cs,
         const SZrTypeMemberInfo *memberInfo,
         TZrSymbolId symbolId,

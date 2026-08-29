@@ -785,6 +785,106 @@ static void test_source_constructors_publish_canonical_call_contracts(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_super_constructor_publishes_canonical_call_contract(void) {
+    const TZrChar *source =
+            "class BaseHero {\n"
+            "  pub @constructor(origin: int) { }\n"
+            "}\n"
+            "class BossHero: BaseHero {\n"
+            "  pub @constructor(seed: int) super(seed) { }\n"
+            "}\n";
+    const TZrChar *superCall = strstr(source, "super(seed)");
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *baseClass;
+    SZrAstNode *baseConstructor;
+    SZrFileRange position;
+    SZrParserSemanticCallQuery query;
+    const SZrSemanticReferenceFact *declaration;
+    const SZrCanonicalTypeNode *callableType;
+    TZrChar typeLabel[128];
+    TZrChar callLabel[160];
+
+    TEST_ASSERT_NOT_NULL(superCall);
+    sourceName = ZrCore_String_Create(
+            g_state, "canonical_super_constructor_call.zr", 35u);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    baseClass = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(baseClass);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_DECLARATION, baseClass->type);
+    TEST_ASSERT_NOT_NULL(baseClass->data.classDeclaration.members);
+    baseConstructor = baseClass->data.classDeclaration.members->nodes[0];
+    TEST_ASSERT_NOT_NULL(baseConstructor);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_CLASS_META_FUNCTION, baseConstructor->type);
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE_MESSAGE(
+            cs.hasError,
+            cs.errorMessage != ZR_NULL ? cs.errorMessage
+                                       : "source super constructor compile failed");
+    TEST_ASSERT_NOT_NULL(cs.semanticContext);
+
+    position = consumer_range(
+            (TZrSize)(superCall - source + strlen("super(")),
+            (TZrSize)(superCall - source + strlen("super(")));
+    position.source = sourceName;
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CallAt(
+            cs.semanticContext, position, ZR_NULL, &query));
+    TEST_ASSERT_FALSE(query.isMemberCall);
+    TEST_ASSERT_FALSE(query.hasNamedArguments);
+    TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)query.argumentCount);
+    TEST_ASSERT_TRUE(query.hasResolvedTarget);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_SEMANTIC_ID_INVALID, query.targetSymbolId);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(superCall - source),
+            (TZrUInt64)query.callSiteRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(superCall - source + strlen("super(seed)")),
+            (TZrUInt64)query.callSiteRange.end.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(superCall - source),
+            (TZrUInt64)query.callTargetRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)(superCall - source + strlen("super")),
+            (TZrUInt64)query.callTargetRange.end.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)baseConstructor->location.start.offset,
+            (TZrUInt64)query.targetDeclarationRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrUInt64)baseConstructor->location.end.offset,
+            (TZrUInt64)query.targetDeclarationRange.end.offset);
+    TEST_ASSERT_TRUE(ZrParser_CanonicalType_Format(
+            cs.semanticContext, query.callableTypeId, typeLabel, sizeof(typeLabel)));
+    TEST_ASSERT_EQUAL_STRING("fn(int) -> null", typeLabel);
+    callableType = ZrParser_CanonicalType_Find(
+            cs.semanticContext, query.callableTypeId);
+    TEST_ASSERT_NOT_NULL(callableType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, callableType->kind);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_CANONICAL_RECEIVER_NONE,
+            callableType->data.function.receiverEffect);
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_FormatCall(
+            cs.semanticContext, &query, callLabel, sizeof(callLabel)));
+    TEST_ASSERT_EQUAL_STRING("@constructor(origin: int): null", callLabel);
+    declaration = ZrParser_SemanticQuery_DeclarationOf(
+            cs.semanticContext, query.targetSymbolId, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(declaration);
+    TEST_ASSERT_EQUAL_PTR(baseConstructor, declaration->node);
+
+    consumer_release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_callable_value_call_publishes_canonical_contract(void) {
     const TZrChar *source =
             "fn runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {\n"
@@ -1533,6 +1633,7 @@ int main(void) {
     RUN_TEST(test_semantic_query_projects_expression_and_call_types_from_canonical_facts);
     RUN_TEST(test_resolved_generic_call_publishes_closed_canonical_signature);
     RUN_TEST(test_source_constructors_publish_canonical_call_contracts);
+    RUN_TEST(test_source_super_constructor_publishes_canonical_call_contract);
     RUN_TEST(test_callable_value_call_publishes_canonical_contract);
     RUN_TEST(test_lambda_callable_value_call_publishes_canonical_contract);
     RUN_TEST(test_resolved_generic_member_call_preserves_declaration_generic_clause);

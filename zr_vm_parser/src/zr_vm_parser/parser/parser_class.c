@@ -863,8 +863,12 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     // 解析 super 调用参数（可选）
     TZrBool hasSuperCall = ZR_FALSE;
     SZrAstNodeArray *superArgs = ZrParser_AstNodeArray_New(ps->state, 0);
+    SZrFileRange superTokenLocation = get_current_token_location(ps);
+    SZrFileRange superCallRange;
+    memset(&superCallRange, 0, sizeof(superCallRange));
     if (consume_token(ps, ZR_TK_SUPER)) {
         hasSuperCall = ZR_TRUE;
+        superCallRange = superTokenLocation;
         expect_token(ps, ZR_TK_LPAREN);
         ZrParser_Lexer_Next(ps->lexer);
 
@@ -888,6 +892,8 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
         }
 
         expect_token(ps, ZR_TK_RPAREN);
+        superCallRange = ZrParser_FileRange_Merge(
+                superCallRange, get_current_token_location(ps));
         consume_token(ps, ZR_TK_RPAREN);
     }
 
@@ -938,6 +944,7 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     node->data.classMetaFunction.args = args;
     node->data.classMetaFunction.hasSuperCall = hasSuperCall;
     node->data.classMetaFunction.superArgs = superArgs;
+    node->data.classMetaFunction.superCallRange = superCallRange;
     node->data.classMetaFunction.returnType = returnType;
     node->data.classMetaFunction.body = body;
     return node;

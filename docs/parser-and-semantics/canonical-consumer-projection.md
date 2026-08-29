@@ -69,6 +69,14 @@ class/struct meta-function AST，并构造只在本次推断内存活的 member 
 `DeclarationOf(targetSymbolId)` 返回同一 constructor declaration；LSP 不按类型名或 AST member
 配对补建该身份。
 
+class meta-function 的 `super(...)` 也发布相同 CALL/REFERENCE_CALL 合同。AST 保存精确
+`super(...)` range，producer 从 resolved base constructor contract 驻留 closed callable
+TypeId，并发布 stable SymbolId 与 whole declaration range。LSP lightweight prototype 缺
+constructor member 时，analyzer 只复用 parser source-constructor materializer 建立
+snapshot-local structured member；consumer 仍仅调用 `CallAt/FormatCall`，不在 request-time
+按 base/member name、argument count 或 AST 文本重建 constructor。payload 或 resolved identity
+缺失时 signature help unavailable。
+
 call signature display 也从同一 closed callable TypeId 生成。参数名称来自声明 AST，passing、
 `scoped`、ref access 与类型来自 canonical parameter contract；readonly receiver 显示
 `const fn read(): int`，mutable receiver 显示 `fn write(...): R`，free/static callable 保持

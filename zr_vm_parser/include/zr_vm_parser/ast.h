@@ -842,6 +842,7 @@ typedef struct SZrClassMetaFunction {
     SZrParameter *args; // 可变参数（可选）
     TZrBool hasSuperCall; // 是否显式声明了 super(...)
     SZrAstNodeArray *superArgs; // Expression 数组（可选）
+    SZrFileRange superCallRange; // super(...) 的精确调用范围
     SZrType *returnType; // 可选
     SZrAstNode *body; // Block
 } SZrClassMetaFunction;

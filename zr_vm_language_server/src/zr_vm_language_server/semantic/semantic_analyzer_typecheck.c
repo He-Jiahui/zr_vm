@@ -6,6 +6,7 @@
 #include "semantic/semantic_analyzer_expected_type.h"
 #include "semantic/semantic_analyzer_union_patterns.h"
 #include "zr_vm_parser/const_assignment.h"
+#include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/variance.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
@@ -505,6 +506,74 @@ static void semantic_typecheck_pop_compiler_context(
     compilerState->currentFunctionNode = snapshot->functionNode;
 }
 
+static void semantic_typecheck_record_super_constructor_facts(
+        SZrCompilerState *compilerState,
+        SZrAstNode *functionNode) {
+    SZrTypePrototypeInfo *superPrototype;
+    SZrTypeMemberInfo temporaryConstructor;
+    SZrAstNode superTypeTarget;
+    SZrString *superTypeName;
+    TZrBool hasConstructor = ZR_FALSE;
+    TZrBool appendedTemporary = ZR_FALSE;
+    TZrSize index;
+
+    if (compilerState == ZR_NULL || functionNode == ZR_NULL ||
+        functionNode->type != ZR_AST_CLASS_META_FUNCTION ||
+        !functionNode->data.classMetaFunction.hasSuperCall ||
+        compilerState->currentTypePrototypeInfo == ZR_NULL) {
+        return;
+    }
+
+    superTypeName = compilerState->currentTypePrototypeInfo->extendsTypeName;
+    if (superTypeName == ZR_NULL) {
+        return;
+    }
+
+    superPrototype = find_compiler_type_prototype_inference(compilerState, superTypeName);
+    if (superPrototype == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0U; index < superPrototype->members.length; index++) {
+        SZrTypeMemberInfo *member =
+                (SZrTypeMemberInfo *)ZrCore_Array_Get(&superPrototype->members, index);
+        if (member != ZR_NULL && member->isMetaMethod &&
+            member->metaType == ZR_META_CONSTRUCTOR) {
+            hasConstructor = ZR_TRUE;
+            break;
+        }
+    }
+
+    memset(&temporaryConstructor, 0, sizeof(temporaryConstructor));
+    memset(&superTypeTarget, 0, sizeof(superTypeTarget));
+    superTypeTarget.type = ZR_AST_IDENTIFIER_LITERAL;
+    superTypeTarget.data.identifier.name = superTypeName;
+    if (!hasConstructor &&
+        type_inference_source_constructor_member_build(
+                compilerState,
+                &superTypeTarget,
+                superTypeName,
+                &temporaryConstructor)) {
+        ZrCore_Array_Push(compilerState->state,
+                          &superPrototype->members,
+                          &temporaryConstructor);
+        appendedTemporary = ZR_TRUE;
+    }
+
+    type_inference_record_super_constructor_call_facts(
+            compilerState,
+            functionNode,
+            superTypeName,
+            functionNode->data.classMetaFunction.superArgs);
+
+    if (appendedTemporary) {
+        superPrototype->members.length--;
+        type_inference_source_constructor_member_free(
+                compilerState,
+                &temporaryConstructor);
+    }
+}
+
 static void semantic_typecheck_callable_body(SZrState *state,
                                              SZrSemanticAnalyzer *analyzer,
                                              SZrAstNode *functionNode,
@@ -515,6 +584,14 @@ static void semantic_typecheck_callable_body(SZrState *state,
     SZrTypeEnvironment *savedTypeEnv;
 
     semantic_typecheck_push_compiler_context(analyzer, ZR_NULL, functionNode, &contextSnapshot);
+    if (functionNode != ZR_NULL &&
+        functionNode->type == ZR_AST_CLASS_META_FUNCTION &&
+        analyzer != ZR_NULL && analyzer->compilerState != ZR_NULL &&
+        analyzer->compilerState->currentTypePrototypeInfo != ZR_NULL) {
+        semantic_typecheck_record_super_constructor_facts(
+                analyzer->compilerState,
+                functionNode);
+    }
     savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
     semantic_typecheck_register_parameter_bindings(state, analyzer, params);
 

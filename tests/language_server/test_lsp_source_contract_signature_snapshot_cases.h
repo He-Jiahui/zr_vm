@@ -10,6 +10,7 @@ static void test_signature_semantic_facts_are_snapshot_read_only(void) {
             "lsp_signature_help.c");
     const char *canonicalResolve;
     const char *canonicalConstructResolve;
+    const char *canonicalSuperResolve;
     const char *legacyConstructResolve;
     const char *legacyCompilerGuard;
 
@@ -59,6 +60,19 @@ static void test_signature_semantic_facts_are_snapshot_read_only(void) {
     if (canonicalConstructResolve == NULL || legacyConstructResolve == NULL ||
         canonicalConstructResolve >= legacyConstructResolve) {
         printf("FAIL: canonical constructor signature resolution must precede the legacy resolver\n");
+        g_failures++;
+    }
+
+    canonicalSuperResolve = strstr(
+            dispatcher,
+            "callContext.kind == ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL &&\n"
+            "        signature_context_requires_canonical_source_call(\n"
+            "                analyzer, &callContext) &&\n"
+            "        ZrLanguageServer_LspCanonicalSignatureHelp_Resolve(");
+    if (canonicalSuperResolve == NULL ||
+        strstr(dispatcher, "signature_resolve_super_constructor_help(") != NULL ||
+        canonicalSuperResolve >= legacyCompilerGuard) {
+        printf("FAIL: super constructor signature must be canonical before compiler state and have no legacy resolver\n");
         g_failures++;
     }
 

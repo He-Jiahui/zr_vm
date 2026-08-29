@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "type_inference_semantic_facts.h"
 
 static TZrBool compiler_member_try_infer_expression_type_soft(SZrCompilerState *cs,
                                                               SZrAstNode *expr,
@@ -627,6 +628,8 @@ static SZrFunction *compile_type_member_function(
         superTypeName != ZR_NULL) {
         SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
         if (metaFunc->hasSuperCall && compiler_type_has_constructor(cs, superTypeName)) {
+            type_inference_record_super_constructor_call_facts(
+                    cs, node, superTypeName, metaFunc->superArgs);
             emit_super_constructor_call(cs, superTypeName, metaFunc->superArgs);
         }
     }

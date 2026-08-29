@@ -7,6 +7,29 @@
 
 typedef struct SZrResolvedCallSignature SZrResolvedCallSignature;
 
+const SZrAstNodeArray *type_inference_call_parameters(
+        const SZrAstNode *declaration);
+
+SZrString *type_inference_callable_signature_display(
+        SZrCompilerState *cs,
+        const TZrChar *namePrefix,
+        SZrString *name,
+        const SZrAstNodeArray *parameters,
+        const SZrArray *parameterNames,
+        const SZrArray *genericParameters,
+        TZrTypeId callTypeId);
+
+TZrSymbolId type_inference_member_symbol_id(
+        SZrCompilerState *cs,
+        SZrTypeMemberInfo *memberInfo,
+        TZrTypeId callTypeId);
+
+void type_inference_publish_member_declaration_fact(
+        SZrCompilerState *cs,
+        const SZrTypeMemberInfo *memberInfo,
+        TZrSymbolId symbolId,
+        TZrTypeId typeId);
+
 void type_inference_record_expression_fact(SZrCompilerState *cs,
                                            SZrAstNode *node,
                                            const SZrInferredType *type);
@@ -45,6 +68,12 @@ void type_inference_record_construct_call_facts(
         SZrCompilerState *cs,
         SZrAstNode *node,
         const SZrInferredType *constructedType);
+
+void type_inference_record_super_constructor_call_facts(
+        SZrCompilerState *cs,
+        SZrAstNode *metaFunctionNode,
+        SZrString *superTypeName,
+        SZrAstNodeArray *superArgs);
 
 TZrBool type_inference_source_constructor_member_build(
         SZrCompilerState *cs,
