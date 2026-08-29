@@ -1291,6 +1291,26 @@ focused record is
 The umbrella status remains pending the stable full graph, artifact, inventory,
 and exact-review gates below.
 
+### Ordinary member kinds and receiver-guard throw profile
+
+The declaration-kind audit now covers more than methods. A runtime class uses
+`share` and `degrade` as ordinary fields and `wake`, `intoGc`, and `drop` as
+ordinary properties. Direct `.` reads return the expected values while the
+compiled function contains zero instructions for all five ownership
+intrinsics. This proves that member lookup remains object dispatch regardless
+of whether the declaration is a field, property, or method.
+
+The focused CFG runner now also distinguishes exception edges by access mode.
+Direct Weak access and direct access on the nullable Shared value returned by
+`wake(weak)` keep a matching `NullReferenceError` catch reachable. Optional
+Weak access and the explicit `wake(weak)` intrinsic do not add that edge. GCC
+11.4, Clang 14, and MSVC 19.44 each passed the expanded ownership runner at
+47/47 and the CFG runner at 6/6, with every direct process exiting zero. No
+production change was required. The exact record is
+`tests/acceptance/2026-08-29-ownership-member-kinds-and-throw-profile.md`.
+The umbrella status remains pending the stable integrated full graph,
+artifact, inventory, and exact-review gates below.
+
 ### AOT Weak callable lifetime and meta-call convergence
 
 The final focused AOT review reproduced a shared lifetime defect with one Weak

@@ -80,6 +80,72 @@ static SZrAstNode *first_catch_statement(SZrAstNode *tryNode) {
     return first_catch_statement_at(tryNode, 0);
 }
 
+static void assert_guard_catch_reachability(
+        const char *source,
+        TZrBool expectedReachable) {
+    SZrAstNode *script = parse_source(source);
+    SZrAstNode *functionNode;
+    SZrAstNode *tryNode;
+    SZrAstNode *catchStmt;
+    SZrAstNodeArray *functionBody;
+    const SZrSemanticReachabilityFact *fact;
+    SZrCompilerState compiler;
+    SZrParserCfg cfg;
+    TZrSize statementIndex;
+
+    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_NOT_NULL(script->data.script.statements);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
+            2u, (TZrUInt32)script->data.script.statements->count);
+    functionNode = script->data.script.statements->nodes[1];
+    TEST_ASSERT_NOT_NULL(functionNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionNode->type);
+    functionBody = functionNode->data.functionDeclaration.body->data.block.body;
+    TEST_ASSERT_NOT_NULL(functionBody);
+    tryNode = ZR_NULL;
+    for (statementIndex = 0u;
+         statementIndex < functionBody->count;
+         statementIndex++) {
+        if (functionBody->nodes[statementIndex] != ZR_NULL &&
+            functionBody->nodes[statementIndex]->type ==
+                    ZR_AST_TRY_CATCH_FINALLY_STATEMENT) {
+            tryNode = functionBody->nodes[statementIndex];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(tryNode);
+    catchStmt = first_catch_statement(tryNode);
+
+    memset(&compiler, 0, sizeof(compiler));
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.suppressErrorOutput = ZR_TRUE;
+    compiler.currentAst = script;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    compile_script(&compiler, script);
+    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+
+    ZrParser_Cfg_Init(g_state, &cfg);
+    TEST_ASSERT_TRUE(ZrParser_Cfg_BuildWithSemanticContext(
+            g_state, &cfg, functionNode, compiler.semanticContext));
+    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(
+            compiler.semanticContext, &cfg));
+    fact = reachability_fact_at(compiler.semanticContext, catchStmt);
+    if (expectedReachable) {
+        TEST_ASSERT_NULL(fact);
+    } else {
+        TEST_ASSERT_NOT_NULL(fact);
+        TEST_ASSERT_EQUAL_INT(
+                ZR_SEMANTIC_REACHABILITY_UNREACHABLE, fact->state);
+    }
+
+    ZrParser_Cfg_Free(g_state, &cfg);
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, script);
+}
+
 static void test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife(void) {
     const char *source =
             "try {\n"
@@ -161,35 +227,45 @@ static void test_cfg_marks_direct_weak_receiver_guard_as_throwing(void) {
             "  catch (error: NullReferenceError) { return 1; }\n"
             "  return 0;\n"
             "}\n";
-    SZrAstNode *script = parse_source(source);
-    SZrAstNode *functionNode = script->data.script.statements->nodes[1];
-    SZrAstNode *tryNode = functionNode->data.functionDeclaration.body
-                                  ->data.block.body->nodes[0];
-    SZrAstNode *catchStmt = first_catch_statement(tryNode);
-    SZrCompilerState compiler;
-    SZrParserCfg cfg;
 
-    memset(&compiler, 0, sizeof(compiler));
-    ZrParser_CompilerState_Init(&compiler, g_state);
-    compiler.suppressErrorOutput = ZR_TRUE;
-    compiler.currentAst = script;
-    compiler.currentFunction = ZrCore_Function_New(g_state);
-    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
-    compile_script(&compiler, script);
-    TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
+    assert_guard_catch_reachability(source, ZR_TRUE);
+}
 
-    ZrParser_Cfg_Init(g_state, &cfg);
-    TEST_ASSERT_TRUE(ZrParser_Cfg_BuildWithSemanticContext(
-            g_state, &cfg, functionNode, compiler.semanticContext));
-    TEST_ASSERT_TRUE(ZrParser_Cfg_EmitReachabilityFacts(
-            compiler.semanticContext, &cfg));
-    TEST_ASSERT_NULL(reachability_fact_at(compiler.semanticContext, catchStmt));
+static void test_cfg_marks_direct_nullable_receiver_guard_as_throwing(void) {
+    const char *source =
+            "resource class Box { pub var value: int; }\n"
+            "fn read(weak: Weak<Box>): int {\n"
+            "  var box = wake(weak);\n"
+            "  try { box.value; }\n"
+            "  catch (error: NullReferenceError) { return 1; }\n"
+            "  return 0;\n"
+            "}\n";
 
-    ZrParser_Cfg_Free(g_state, &cfg);
-    ZrCore_Function_Free(g_state, compiler.currentFunction);
-    compiler.currentFunction = ZR_NULL;
-    ZrParser_CompilerState_Free(&compiler);
-    ZrParser_Ast_Free(g_state, script);
+    assert_guard_catch_reachability(source, ZR_TRUE);
+}
+
+static void test_cfg_keeps_optional_weak_guard_out_of_throw_profile(void) {
+    const char *source =
+            "resource class Box { pub var value: int; }\n"
+            "fn read(weak: Weak<Box>): int {\n"
+            "  try { weak?.value; }\n"
+            "  catch (error: NullReferenceError) { return 1; }\n"
+            "  return 0;\n"
+            "}\n";
+
+    assert_guard_catch_reachability(source, ZR_FALSE);
+}
+
+static void test_cfg_keeps_explicit_wake_out_of_throw_profile(void) {
+    const char *source =
+            "resource class Box { pub var value: int; }\n"
+            "fn read(weak: Weak<Box>): int {\n"
+            "  try { wake(weak); }\n"
+            "  catch (error: NullReferenceError) { return 1; }\n"
+            "  return 0;\n"
+            "}\n";
+
+    assert_guard_catch_reachability(source, ZR_FALSE);
 }
 
 int main(void) {
@@ -197,5 +273,8 @@ int main(void) {
     RUN_TEST(test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife);
     RUN_TEST(test_cfg_uses_lambda_iife_throw_profile_for_typed_catch_matching);
     RUN_TEST(test_cfg_marks_direct_weak_receiver_guard_as_throwing);
+    RUN_TEST(test_cfg_marks_direct_nullable_receiver_guard_as_throwing);
+    RUN_TEST(test_cfg_keeps_optional_weak_guard_out_of_throw_profile);
+    RUN_TEST(test_cfg_keeps_explicit_wake_out_of_throw_profile);
     return UNITY_END();
 }
