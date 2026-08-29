@@ -1501,6 +1501,25 @@ milestone before the remaining stable post-L8 full-graph gates pass.
   `oa-*` transfer archives. Windows items were sent to the recycle bin after
   direct recursive deletion was rejected; no persistent log was created.
 
+- Commit `1d3ff6d` adds a process-local deterministic inventory snapshot cache.
+  The cache is keyed by the resolved repository root and invalidates on
+  candidate-path, metadata, or content changes. Its focused regression passes,
+  the fixture inventory command passes, and the full ten-case inventory suite
+  completes in 62.47 seconds; its only failure is the intentionally dirty
+  repository-inventory golden, which remains deferred until the shared L8
+  overlay is stable.
+- Commit `098db5d` makes the AOT artifact contract test title explicit about
+  canonical and legacy helpers and adds `OWN_INTO_GC_BOX` beside the retained
+  numeric `OWN_DETACH` compatibility opcode. GCC and Clang contracts pass 1/1
+  and shared-library smoke passes 2/2; MSVC contracts pass 1/1 and the two
+  Unix-only smoke cases are 0 failures/2 ignored after a successful build.
+- Commit `878d0b0` removes detach-oriented variable names from the active
+  `intoGc` ExecBC/AOT fixture. The fixed GCC snapshot runs the complete AOT
+  pipeline at 98/98 with zero failures and zero ignored; Clang/MSVC focused
+  artifact coverage remains green under the same canonical/legacy contract.
+  The generated source/build snapshots, dependency archives, and temporary
+  logs for both leaves were removed and verified absent.
+
 `type_inference.c` is 4,182 lines, but this exact correction changes the
 ordering of one existing primary-expression/first-call resolution decision.
 A local extraction would leave the same orchestration split across files. The
