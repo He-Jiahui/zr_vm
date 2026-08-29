@@ -1655,7 +1655,7 @@ static void test_legacy_percent_ownership_lifecycle_is_rejected(void) {
     timer.startTime = clock();
 
     TEST_INFO("Legacy ownership lifecycle syntax rejection",
-              "Testing that lifecycle operations use member calls and drop rather than removed percent expressions");
+              "Testing that ownership lifecycle uses reserved intrinsic calls and rejects removed percent expressions");
     {
         SZrState *state = create_test_state();
         SZrCapturedParserDiagnostic diagnostic;
