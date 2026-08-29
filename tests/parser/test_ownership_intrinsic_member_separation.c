@@ -708,6 +708,27 @@ static void test_intrinsic_spellings_remain_ordinary_fields_and_properties(void)
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_intrinsic_spellings_are_object_literal_member_names(void) {
+    const TZrChar *source =
+            "fn run(): int {\n"
+            "    var box = { share: 1, degrade: 2, wake: 4, intoGc: 8, drop: 16 };\n"
+            "    return box.share + box.degrade + box.wake + box.intoGc + box.drop;\n"
+            "}\n"
+            "return run();\n";
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "intrinsic_named_object_properties.zr");
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source), sourceName);
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(
+            g_state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(31, result);
+
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_direct_and_optional_callable_syntax_are_distinct(void) {
     SZrAstNode *script = parse_source("callback(1); callback?.(2);");
     SZrAstNode *direct = statement_expression(script, 0u);
@@ -2062,6 +2083,7 @@ int main(void) {
     RUN_TEST(test_optional_member_and_call_segments_record_access_mode);
     RUN_TEST(test_intrinsic_spellings_remain_legal_member_names);
     RUN_TEST(test_intrinsic_spellings_remain_ordinary_fields_and_properties);
+    RUN_TEST(test_intrinsic_spellings_are_object_literal_member_names);
     RUN_TEST(test_direct_and_optional_callable_syntax_are_distinct);
     RUN_TEST(test_intrinsic_syntax_reports_precise_errors);
     RUN_TEST(test_reserved_intrinsic_lexical_bindings_report_structured_errors);

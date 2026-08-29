@@ -544,7 +544,8 @@ static SZrAstNode *parse_array_literal_value_element(SZrParserState *ps) {
 }
 
 static TZrBool parser_object_literal_token_can_start_property_key(EZrToken token) {
-    return token == ZR_TK_IDENTIFIER || token == ZR_TK_STRING || token == ZR_TK_LBRACKET;
+    return token == ZR_TK_IDENTIFIER || is_ownership_intrinsic_token(token) ||
+           token == ZR_TK_STRING || token == ZR_TK_LBRACKET;
 }
 
 // 解析数组字面量
@@ -639,6 +640,8 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         TZrBool keyIsComputed = ZR_FALSE;
         if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
             key = parse_identifier(ps);
+        } else if (is_ownership_intrinsic_token(ps->lexer->t.token)) {
+            key = parse_member_identifier(ps);
         } else if (ps->lexer->t.token == ZR_TK_STRING) {
             key = parse_literal(ps);
         } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
@@ -694,6 +697,8 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             keyIsComputed = ZR_FALSE;
             if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
                 key = parse_identifier(ps);
+            } else if (is_ownership_intrinsic_token(ps->lexer->t.token)) {
+                key = parse_member_identifier(ps);
             } else if (ps->lexer->t.token == ZR_TK_STRING) {
                 key = parse_literal(ps);
             } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
