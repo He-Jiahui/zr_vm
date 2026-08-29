@@ -83,6 +83,7 @@ TZrBool ZrLanguageServer_LspSemanticImplementationQuery_Append(
     SZrArray relations = {0};
     TZrSize index;
     TZrBool appended = ZR_FALSE;
+    TZrSymbolId symbolId;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
         result == ZR_NULL ||
@@ -94,9 +95,18 @@ TZrBool ZrLanguageServer_LspSemanticImplementationQuery_Append(
                 state, context, uri, position, &query) ||
         query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL ||
         query.analyzer == ZR_NULL ||
-        query.analyzer->semanticContext == ZR_NULL ||
-        query.symbol == ZR_NULL ||
-        query.symbol->semanticId == ZR_SEMANTIC_ID_INVALID) {
+        query.analyzer->semanticContext == ZR_NULL) {
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        return ZR_FALSE;
+    }
+    symbolId = query.hasCanonicalSymbol &&
+                       (query.symbol == ZR_NULL ||
+                        query.symbol->semanticId == query.canonicalSymbol.symbolId)
+            ? query.canonicalSymbol.symbolId
+            : query.symbol != ZR_NULL
+                    ? query.symbol->semanticId
+                    : ZR_SEMANTIC_ID_INVALID;
+    if (symbolId == ZR_SEMANTIC_ID_INVALID) {
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         return ZR_FALSE;
     }
@@ -104,7 +114,7 @@ TZrBool ZrLanguageServer_LspSemanticImplementationQuery_Append(
     ZrParser_SemanticQueryScope_Module(&scope);
     if (ZrParser_SemanticQuery_ImplementationsOf(
                 query.analyzer->semanticContext,
-                query.symbol->semanticId,
+                symbolId,
                 &scope,
                 &relations)) {
         for (index = 0U; index < relations.length; index++) {

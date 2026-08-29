@@ -846,6 +846,7 @@ static void test_local_implementation_consumer_uses_canonical_relations(
     SZrString *uri = ZR_NULL;
     SZrLspPosition position;
     SZrLspSemanticQuery query;
+    SZrSymbolTable *savedSymbolTable = ZR_NULL;
     SZrArray locations = {0};
     SZrLspLocation *location = ZR_NULL;
     TZrChar failureBuffer[256] = {0};
@@ -864,9 +865,14 @@ static void test_local_implementation_consumer_uses_canonical_relations(
                 state, context, uri, content, strlen(content), 1U) ||
         !find_position(content, "interface Readable", 0U, 11, &position) ||
         !ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
-                state, context, uri, position, &query)) {
+                state, context, uri, position, &query) ||
+        !query.hasCanonicalSymbol ||
+        query.canonicalSymbol.symbolId == ZR_SEMANTIC_ID_INVALID ||
+        query.analyzer == ZR_NULL || query.analyzer->symbolTable == ZR_NULL) {
         goto cleanup;
     }
+    savedSymbolTable = query.analyzer->symbolTable;
+    query.analyzer->symbolTable = ZR_NULL;
     if (!ZrLanguageServer_Lsp_GetImplementation(
                 state, context, uri, position, &locations)) {
         TZrSize matchingRelations = 0U;
@@ -905,6 +911,8 @@ static void test_local_implementation_consumer_uses_canonical_relations(
         failure = failureBuffer;
         goto cleanup;
     }
+    query.analyzer->symbolTable = savedSymbolTable;
+    savedSymbolTable = ZR_NULL;
     failure = "exact implementation relation";
     if (locations.length != 1U) {
         goto cleanup;
@@ -925,6 +933,9 @@ static void test_local_implementation_consumer_uses_canonical_relations(
     valid = ZR_TRUE;
 
 cleanup:
+    if (savedSymbolTable != ZR_NULL && query.analyzer != ZR_NULL) {
+        query.analyzer->symbolTable = savedSymbolTable;
+    }
     free_local_reference_projection_results(state, &locations, ZR_NULL);
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     if (context != ZR_NULL) {

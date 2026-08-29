@@ -148,6 +148,9 @@ canonical local query 的 definition、references 与 document highlights 从 co
 SymbolId invalid 时统一 fail closed。现阶段 extern function 与 web URI local producer 可能给 parser
 fact 和 LSP declaration relation 分配不同 SymbolId，closed-generic type use 也可能没有 canonical
 view；这些冲突继续使用既有 legacy identity 并明确记为 producer debt，consumer 不按名称选择 id。
+implementation navigation 同样从 copied SymbolId 查询 `ImplementationsOf` relation；detached analyzer
+symbol table 不改变已解析目标。若 canonical/raw identity 冲突，consumer 不按名称、声明文本或 URI
+形状猜测目标，继续等待 producer 修复。
 
 source class `new Type(...)` 与 struct `init Type(...)` 同样发布 CALL expression/reference facts。
 producer 先消费已解析 prototype constructor；LSP bootstrap 尚未把 constructor member 填入
