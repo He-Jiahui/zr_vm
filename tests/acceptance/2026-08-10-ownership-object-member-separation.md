@@ -1519,6 +1519,13 @@ milestone before the remaining stable post-L8 full-graph gates pass.
   artifact coverage remains green under the same canonical/legacy contract.
   The generated source/build snapshots, dependency archives, and temporary
   logs for both leaves were removed and verified absent.
+- The clean GCC full-graph replay isolated two stale compile-time metadata
+  expectations: the retained `#derive#` decorator range is the single source
+  line `[11,11]`, while the test fixture had continued expecting an end line
+  of 12. Updating the direct, intermediate-artifact, and reflection assertions
+  in `test_compile_time_decorator_shape_retention_cases.h` restores the current
+  range contract; the rebuilt `zr_vm_compile_time_test` exits 0 with `69 Tests
+  0 Failures 0 Ignored`.
 
 `type_inference.c` is 4,182 lines, but this exact correction changes the
 ordering of one existing primary-expression/first-call resolution decision.

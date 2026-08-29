@@ -204,7 +204,7 @@ static void decorator_shape_assert_generated_field_reflection(
     TEST_ASSERT_NOT_NULL(metadata);
     decorator_shape_assert_int_field(state, metadata, "generated", 1);
     decorator_shape_assert_int_field(state, metadata, "sourceLineStart", 11);
-    decorator_shape_assert_int_field(state, metadata, "sourceLineEnd", 12);
+    decorator_shape_assert_int_field(state, metadata, "sourceLineEnd", 11);
 }
 
 static void test_union_interface_parameter_decorator_metadata_is_retained(void) {
@@ -388,7 +388,7 @@ static void test_generated_field_retains_transform_source_provenance(void) {
     TEST_ASSERT_NOT_NULL(metadata);
     decorator_shape_assert_int_field(state, metadata, "generated", 1);
     decorator_shape_assert_int_field(state, metadata, "sourceLineStart", 11);
-    decorator_shape_assert_int_field(state, metadata, "sourceLineEnd", 12);
+    decorator_shape_assert_int_field(state, metadata, "sourceLineEnd", 11);
     value = decorator_shape_object_field(state, metadata, "originTargetSymbolId");
     TEST_ASSERT_NOT_NULL(value);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(value->type));
@@ -455,7 +455,7 @@ static void test_generated_field_metadata_roundtrips_to_artifact_and_reflection(
     TEST_ASSERT_NOT_NULL(strstr(
             intermediateText,
             "type=Meter member=generated originTargetSymbolId="));
-    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "sourceLineStart=11 sourceLineEnd=12"));
+    TEST_ASSERT_NOT_NULL(strstr(intermediateText, "sourceLineStart=11 sourceLineEnd=11"));
     free(intermediateText);
     free(intermediateBytes);
 
@@ -495,7 +495,7 @@ static void test_generated_field_metadata_roundtrips_to_artifact_and_reflection(
     TEST_ASSERT_NOT_NULL(metadata);
     decorator_shape_assert_int_field(state, metadata, "generated", 1);
     decorator_shape_assert_int_field(state, metadata, "sourceLineStart", 11);
-    decorator_shape_assert_int_field(state, metadata, "sourceLineEnd", 12);
+    decorator_shape_assert_int_field(state, metadata, "sourceLineEnd", 11);
     TEST_ASSERT_NOT_NULL(decorator_shape_object_field(
             state, metadata, "originTargetSymbolId"));
     decorator_shape_assert_generated_field_reflection(state, runtimeFunction);
