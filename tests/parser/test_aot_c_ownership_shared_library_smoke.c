@@ -85,7 +85,8 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
-static SZrFunction *create_ownership_function(SZrState *state) {
+static SZrFunction *create_canonical_and_legacy_artifact_ownership_function(
+        SZrState *state) {
     SZrFunction *function;
 
     TEST_ASSERT_NOT_NULL(state);
@@ -94,7 +95,7 @@ static SZrFunction *create_ownership_function(SZrState *state) {
 
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
             state->global,
-            sizeof(TZrInstruction) * 10u,
+            sizeof(TZrInstruction) * 11u,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
     function->instructionsList[0] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_UNIQUE), 1u, 0u);
@@ -103,13 +104,18 @@ static SZrFunction *create_ownership_function(SZrState *state) {
     function->instructionsList[3] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN), 1u, 3u);
     function->instructionsList[4] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_SHARE), 4u, 1u);
     function->instructionsList[5] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_DEGRADE), 5u, 1u);
-    function->instructionsList[6] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_DETACH), 6u, 1u);
-    function->instructionsList[7] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_WAKE), 7u, 5u);
-    function->instructionsList[8] = create_ownership_instruction(ZR_INSTRUCTION_ENUM(OWN_DROP), 8u, 7u);
-    function->instructionsList[9] = create_return_instruction(1u, 8u);
-    function->instructionsLength = 10u;
+    function->instructionsList[6] = create_ownership_instruction(
+            ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX), 6u, 1u);
+    function->instructionsList[7] = create_ownership_instruction(
+            ZR_INSTRUCTION_ENUM(OWN_DETACH), 7u, 1u);
+    function->instructionsList[8] = create_ownership_instruction(
+            ZR_INSTRUCTION_ENUM(OWN_WAKE), 8u, 5u);
+    function->instructionsList[9] = create_ownership_instruction(
+            ZR_INSTRUCTION_ENUM(OWN_DROP), 9u, 8u);
+    function->instructionsList[10] = create_return_instruction(1u, 9u);
+    function->instructionsLength = 11u;
 
-    function->stackSize = 9u;
+    function->stackSize = 10u;
     function->parameterCount = 1u;
     function->hasVariableArguments = ZR_FALSE;
     function->closureValueLength = 0u;
@@ -174,7 +180,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 }
 #endif
 
-static void test_aot_c_generated_shared_library_compiles_direct_ownership_lowering(void) {
+static void test_aot_c_generated_shared_library_compiles_canonical_and_legacy_artifact_ownership_lowering(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C ownership shared-library smoke currently validates the Unix toolchain path");
 #else
@@ -187,7 +193,7 @@ static void test_aot_c_generated_shared_library_compiles_direct_ownership_loweri
     char command[4096];
 
     TEST_ASSERT_NOT_NULL(state);
-    function = create_ownership_function(state);
+    function = create_canonical_and_legacy_artifact_ownership_function(state);
     TEST_ASSERT_NOT_NULL(function);
 
     memset(&options, 0, sizeof(options));
@@ -220,9 +226,10 @@ static void test_aot_c_generated_shared_library_compiles_direct_ownership_loweri
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnReturnLoan(state, &frame, 1, 3)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnShare(state, &frame, 4, 1)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnDegrade(state, &frame, 5, 1)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnDetach(state, &frame, 6, 1)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnWake(state, &frame, 7, 5)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnDrop(state, &frame, 8, 7)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnIntoGcBox(state, &frame, 6, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnDetach(state, &frame, 7, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnWake(state, &frame, 8, 5)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_OwnDrop(state, &frame, 9, 8)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_value_exec_ownership_core"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_value_exec_ownership_release"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Ownership_UniqueValue(state,"));
@@ -311,7 +318,7 @@ static void test_aot_c_ownership_write_kills_stale_scalar_copy_provenance(void) 
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_generated_shared_library_compiles_direct_ownership_lowering);
+    RUN_TEST(test_aot_c_generated_shared_library_compiles_canonical_and_legacy_artifact_ownership_lowering);
     RUN_TEST(test_aot_c_ownership_write_kills_stale_scalar_copy_provenance);
     return UNITY_END();
 }

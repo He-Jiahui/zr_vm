@@ -111,7 +111,7 @@ static void assert_text_occurs_before(const char *text, const char *first, const
     TEST_ASSERT_TRUE(firstPosition < secondPosition);
 }
 
-static void test_aot_c_source_lowers_ownership_to_boundary_helpers(void) {
+static void test_aot_c_source_exposes_canonical_and_legacy_artifact_boundary_helpers(void) {
     static const char *const headerNeedles[] = {
             "void backend_aot_write_c_direct_own_unique(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);",
             "void backend_aot_write_c_direct_own_borrow(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);",
@@ -273,6 +273,6 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_aot_c_source_lowers_ownership_to_boundary_helpers);
+    RUN_TEST(test_aot_c_source_exposes_canonical_and_legacy_artifact_boundary_helpers);
     return UNITY_END();
 }
