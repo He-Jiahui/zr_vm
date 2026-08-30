@@ -139,10 +139,12 @@ static void test_reference_tracker_add_and_find(SZrState *state) {
     
     // 创建符号
     SZrString *name = ZrCore_String_Create(state, "testVar", 7);
+    SZrString *source = ZrCore_String_Create(
+        state, "file:///workspace/reference.zr", strlen("file:///workspace/reference.zr"));
     SZrFileRange defLocation = ZrParser_FileRange_Create(
         ZrParser_FilePosition_Create(0, 1, 0),
         ZrParser_FilePosition_Create(7, 1, 7),
-        ZR_NULL
+        source
     );
     
     ZrLanguageServer_SymbolTable_AddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
@@ -155,12 +157,13 @@ static void test_reference_tracker_add_and_find(SZrState *state) {
         TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to lookup symbol");
         return;
     }
+    symbol->semanticId = 101U;
     
     // 添加引用
     SZrFileRange refLocation = ZrParser_FileRange_Create(
         ZrParser_FilePosition_Create(10, 2, 0),
         ZrParser_FilePosition_Create(17, 2, 7),
-        ZR_NULL
+        source
     );
     
     TZrBool success = ZrLanguageServer_ReferenceTracker_AddReference(state, tracker, symbol, refLocation, ZR_REFERENCE_READ);
@@ -171,40 +174,32 @@ static void test_reference_tracker_add_and_find(SZrState *state) {
         return;
     }
     
-    // 查找所有引用
-    SZrArray references;
-    ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 4);
-    success = ZrLanguageServer_ReferenceTracker_FindReferences(state, tracker, symbol, &references);
-    if (!success || references.length == 0) {
-        ZrCore_Array_Free(state, &references);
+    SZrFileRange queryPosition = ZrParser_FileRange_Create(
+        ZrParser_FilePosition_Create(12, 2, 2),
+        ZrParser_FilePosition_Create(12, 2, 2),
+        source
+    );
+    SZrReference *reference =
+        ZrLanguageServer_ReferenceTracker_FindReferenceAt(tracker, queryPosition);
+    if (reference == ZR_NULL || reference->symbol != symbol ||
+        reference->symbolId != symbol->semanticId ||
+        reference->type != ZR_REFERENCE_READ) {
         ZrLanguageServer_ReferenceTracker_Free(state, tracker);
         ZrLanguageServer_SymbolTable_Free(state, symbolTable);
-        TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to find references");
+        TEST_FAIL(timer, "Reference Tracker Add and Find", "Failed to find the exact-position reference");
         return;
     }
-    
-    // 验证引用计数
-    TZrSize refCount = ZrLanguageServer_ReferenceTracker_GetReferenceCount(tracker, symbol);
-    if (refCount == 0) {
-        ZrCore_Array_Free(state, &references);
-        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
-        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
-        TEST_FAIL(timer, "Reference Tracker Add and Find", "Reference count is zero");
-        return;
-    }
-    
-    ZrCore_Array_Free(state, &references);
+
     ZrLanguageServer_ReferenceTracker_Free(state, tracker);
     ZrLanguageServer_SymbolTable_Free(state, symbolTable);
     TEST_PASS(timer, "Reference Tracker Add and Find");
 }
 
-// 测试获取引用位置
-static void test_reference_tracker_get_locations(SZrState *state) {
+static void test_reference_tracker_finds_each_exact_location(SZrState *state) {
     SZrTestTimer timer;
-    TEST_START("Reference Tracker Get Locations");
+    TEST_START("Reference Tracker Finds Each Exact Location");
     
-    TEST_INFO("Get Reference Locations", "Getting all reference locations for a symbol");
+    TEST_INFO("Exact Reference Locations", "Finding each tracked reference by its exact source position");
     
     SZrSymbolTable *symbolTable = ZrLanguageServer_SymbolTable_New(state);
     SZrReferenceTracker *tracker = ZrLanguageServer_ReferenceTracker_New(state, symbolTable);
@@ -212,16 +207,18 @@ static void test_reference_tracker_get_locations(SZrState *state) {
     if (symbolTable == ZR_NULL || tracker == ZR_NULL) {
         if (tracker != ZR_NULL) ZrLanguageServer_ReferenceTracker_Free(state, tracker);
         if (symbolTable != ZR_NULL) ZrLanguageServer_SymbolTable_Free(state, symbolTable);
-        TEST_FAIL(timer, "Reference Tracker Get Locations", "Failed to create tracker");
+        TEST_FAIL(timer, "Reference Tracker Finds Each Exact Location", "Failed to create tracker");
         return;
     }
     
     // 创建符号并添加多个引用
     SZrString *name = ZrCore_String_Create(state, "testVar", 7);
+    SZrString *source = ZrCore_String_Create(
+        state, "file:///workspace/locations.zr", strlen("file:///workspace/locations.zr"));
     SZrFileRange defLocation = ZrParser_FileRange_Create(
         ZrParser_FilePosition_Create(0, 1, 0),
         ZrParser_FilePosition_Create(7, 1, 7),
-        ZR_NULL
+        source
     );
     
     ZrLanguageServer_SymbolTable_AddSymbol(state, symbolTable, ZR_SYMBOL_VARIABLE, name,
@@ -231,7 +228,7 @@ static void test_reference_tracker_get_locations(SZrState *state) {
     if (symbol == ZR_NULL) {
         ZrLanguageServer_ReferenceTracker_Free(state, tracker);
         ZrLanguageServer_SymbolTable_Free(state, symbolTable);
-        TEST_FAIL(timer, "Reference Tracker Get Locations", "Failed to lookup symbol");
+        TEST_FAIL(timer, "Reference Tracker Finds Each Exact Location", "Failed to lookup symbol");
         return;
     }
     
@@ -240,28 +237,30 @@ static void test_reference_tracker_get_locations(SZrState *state) {
         SZrFileRange refLocation = ZrParser_FileRange_Create(
             ZrParser_FilePosition_Create(10 + i * 20, 2 + i, 0),
             ZrParser_FilePosition_Create(17 + i * 20, 2 + i, 7),
-            ZR_NULL
+            source
         );
         ZrLanguageServer_ReferenceTracker_AddReference(state, tracker, symbol, refLocation, ZR_REFERENCE_READ);
     }
-    
-    // 获取所有引用位置
-    SZrArray locations;
-    ZrCore_Array_Init(state, &locations, sizeof(SZrFileRange), 4);
-    TZrBool success = ZrLanguageServer_ReferenceTracker_GetReferenceLocations(state, tracker, symbol, &locations);
-    
-    if (!success || locations.length != 3) {
-        ZrCore_Array_Free(state, &locations);
-        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
-        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
-        TEST_FAIL(timer, "Reference Tracker Get Locations", "Failed to get all reference locations");
-        return;
+
+    for (int i = 0; i < 3; i++) {
+        SZrFileRange position = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(12 + i * 20, 2 + i, 2),
+            ZrParser_FilePosition_Create(12 + i * 20, 2 + i, 2),
+            source
+        );
+        SZrReference *reference =
+            ZrLanguageServer_ReferenceTracker_FindReferenceAt(tracker, position);
+        if (reference == ZR_NULL || reference->symbol != symbol) {
+            ZrLanguageServer_ReferenceTracker_Free(state, tracker);
+            ZrLanguageServer_SymbolTable_Free(state, symbolTable);
+            TEST_FAIL(timer, "Reference Tracker Finds Each Exact Location", "Failed to find an exact-position reference");
+            return;
+        }
     }
-    
-    ZrCore_Array_Free(state, &locations);
+
     ZrLanguageServer_ReferenceTracker_Free(state, tracker);
     ZrLanguageServer_SymbolTable_Free(state, symbolTable);
-    TEST_PASS(timer, "Reference Tracker Get Locations");
+    TEST_PASS(timer, "Reference Tracker Finds Each Exact Location");
 }
 
 static void test_reference_tracker_requires_exact_source_identity(
@@ -400,7 +399,7 @@ static void test_reference_tracker_requires_exact_source_identity(
     TEST_PASS(timer, "Reference Tracker Exact Source Identity");
 }
 
-static void test_reference_tracker_indexes_canonical_symbol_identity(
+static void test_reference_tracker_preserves_canonical_symbol_identity(
         SZrState *state) {
     SZrTestTimer timer;
     SZrSymbolTable *symbolTable;
@@ -410,15 +409,17 @@ static void test_reference_tracker_indexes_canonical_symbol_identity(
     SZrFileRange declaration;
     SZrFileRange firstUse;
     SZrFileRange secondUse;
+    SZrFileRange firstPosition;
+    SZrFileRange secondPosition;
     SZrSymbol *firstSymbol;
-    SZrSymbol *sameIdentitySymbol;
     SZrSymbol *differentIdentitySymbol;
-    SZrArray references;
+    SZrReference *firstReference;
+    SZrReference *secondReference;
 
     TEST_START("Reference Tracker Canonical Symbol Identity");
     TEST_INFO(
             "Symbol Identity",
-            "Grouping wrapper symbols by SymbolId while isolating same-name symbols");
+            "Preserving each canonical SymbolId on exact-position reference hits");
 
     symbolTable = ZrLanguageServer_SymbolTable_New(state);
     tracker = ZrLanguageServer_ReferenceTracker_New(state, symbolTable);
@@ -439,14 +440,6 @@ static void test_reference_tracker_indexes_canonical_symbol_identity(
             ZR_NULL,
             ZR_ACCESS_PUBLIC,
             ZR_NULL);
-    sameIdentitySymbol = ZrLanguageServer_Symbol_New(
-            state,
-            ZR_SYMBOL_VARIABLE,
-            name,
-            declaration,
-            ZR_NULL,
-            ZR_ACCESS_PUBLIC,
-            ZR_NULL);
     differentIdentitySymbol = ZrLanguageServer_Symbol_New(
             state,
             ZR_SYMBOL_VARIABLE,
@@ -456,8 +449,7 @@ static void test_reference_tracker_indexes_canonical_symbol_identity(
             ZR_ACCESS_PUBLIC,
             ZR_NULL);
     if (symbolTable == ZR_NULL || tracker == ZR_NULL ||
-        firstSymbol == ZR_NULL || sameIdentitySymbol == ZR_NULL ||
-        differentIdentitySymbol == ZR_NULL) {
+        firstSymbol == ZR_NULL || differentIdentitySymbol == ZR_NULL) {
         TEST_FAIL(
                 timer,
                 "Reference Tracker Canonical Symbol Identity",
@@ -466,7 +458,6 @@ static void test_reference_tracker_indexes_canonical_symbol_identity(
     }
 
     firstSymbol->semanticId = 101U;
-    sameIdentitySymbol->semanticId = 101U;
     differentIdentitySymbol->semanticId = 202U;
     firstUse = ZrParser_FileRange_Create(
             ZrParser_FilePosition_Create(20, 2, 0),
@@ -485,53 +476,36 @@ static void test_reference_tracker_indexes_canonical_symbol_identity(
             secondUse,
             ZR_REFERENCE_WRITE);
 
-    ZrCore_Array_Construct(&references);
-    if (!ZrLanguageServer_ReferenceTracker_FindReferences(
-                state, tracker, sameIdentitySymbol, &references) ||
-        references.length != 1U ||
-        *(SZrReference **)ZrCore_Array_Get(&references, 0U) == ZR_NULL ||
-        (*(SZrReference **)ZrCore_Array_Get(&references, 0U))->symbol !=
-                firstSymbol ||
-        ZrLanguageServer_ReferenceTracker_GetReferenceCount(
-                tracker, sameIdentitySymbol) != 1U) {
-        ZrCore_Array_Free(state, &references);
+    firstPosition = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(24, 2, 4),
+            ZrParser_FilePosition_Create(24, 2, 4),
+            source);
+    secondPosition = ZrParser_FileRange_Create(
+            ZrParser_FilePosition_Create(44, 3, 4),
+            ZrParser_FilePosition_Create(44, 3, 4),
+            source);
+    firstReference = ZrLanguageServer_ReferenceTracker_FindReferenceAt(
+            tracker, firstPosition);
+    secondReference = ZrLanguageServer_ReferenceTracker_FindReferenceAt(
+            tracker, secondPosition);
+    if (firstReference == ZR_NULL || secondReference == ZR_NULL ||
+        firstReference->symbol != firstSymbol ||
+        firstReference->symbolId != 101U ||
+        secondReference->symbol != differentIdentitySymbol ||
+        secondReference->symbolId != 202U) {
         ZrLanguageServer_ReferenceTracker_Free(state, tracker);
         ZrLanguageServer_Symbol_Free(state, firstSymbol);
-        ZrLanguageServer_Symbol_Free(state, sameIdentitySymbol);
         ZrLanguageServer_Symbol_Free(state, differentIdentitySymbol);
         ZrLanguageServer_SymbolTable_Free(state, symbolTable);
         TEST_FAIL(
                 timer,
                 "Reference Tracker Canonical Symbol Identity",
-                "Equivalent SymbolId wrappers did not share references");
+                "Exact-position references did not preserve canonical SymbolIds");
         return;
     }
-    ZrCore_Array_Free(state, &references);
-
-    ZrCore_Array_Construct(&references);
-    if (!ZrLanguageServer_ReferenceTracker_FindReferences(
-                state, tracker, differentIdentitySymbol, &references) ||
-        references.length != 1U ||
-        *(SZrReference **)ZrCore_Array_Get(&references, 0U) == ZR_NULL ||
-        (*(SZrReference **)ZrCore_Array_Get(&references, 0U))->symbol !=
-                differentIdentitySymbol) {
-        ZrCore_Array_Free(state, &references);
-        ZrLanguageServer_ReferenceTracker_Free(state, tracker);
-        ZrLanguageServer_Symbol_Free(state, firstSymbol);
-        ZrLanguageServer_Symbol_Free(state, sameIdentitySymbol);
-        ZrLanguageServer_Symbol_Free(state, differentIdentitySymbol);
-        ZrLanguageServer_SymbolTable_Free(state, symbolTable);
-        TEST_FAIL(
-                timer,
-                "Reference Tracker Canonical Symbol Identity",
-                "Same-name symbols with different SymbolIds were mixed");
-        return;
-    }
-    ZrCore_Array_Free(state, &references);
 
     ZrLanguageServer_ReferenceTracker_Free(state, tracker);
     ZrLanguageServer_Symbol_Free(state, firstSymbol);
-    ZrLanguageServer_Symbol_Free(state, sameIdentitySymbol);
     ZrLanguageServer_Symbol_Free(state, differentIdentitySymbol);
     ZrLanguageServer_SymbolTable_Free(state, symbolTable);
     TEST_PASS(timer, "Reference Tracker Canonical Symbol Identity");
@@ -569,13 +543,13 @@ int main(void) {
     test_reference_tracker_add_and_find(state);
     TEST_DIVIDER();
     
-    test_reference_tracker_get_locations(state);
+    test_reference_tracker_finds_each_exact_location(state);
     TEST_DIVIDER();
 
     test_reference_tracker_requires_exact_source_identity(state);
     TEST_DIVIDER();
 
-    test_reference_tracker_indexes_canonical_symbol_identity(state);
+    test_reference_tracker_preserves_canonical_symbol_identity(state);
     TEST_DIVIDER();
     
     // 清理

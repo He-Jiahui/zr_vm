@@ -10,7 +10,6 @@
 #include "zr_vm_parser/location.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/array.h"
-#include "zr_vm_core/hash_set.h"
 
 // 引用类型枚举
 enum EZrReferenceType {
@@ -32,10 +31,7 @@ typedef struct SZrReference {
 
 // 引用追踪器
 typedef struct SZrReferenceTracker {
-    SZrState *state;
-    SZrSymbolTable *symbolTable;
     SZrArray allReferences;           // 所有引用（SZrReference*）
-    SZrHashSet symbolToReferencesMap; // legacy field name; keyed by canonical SymbolId
 } SZrReferenceTracker;
 
 // 引用追踪器管理函数
@@ -54,24 +50,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_ReferenceTracker_AddReference(SZ
                                                               SZrFileRange location,
                                                               EZrReferenceType type);
 
-// 查找所有引用
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_ReferenceTracker_FindReferences(SZrState *state,
-                                                               SZrReferenceTracker *tracker,
-                                                               SZrSymbol *symbol,
-                                                               SZrArray *result);
-
-// 获取引用计数
-ZR_LANGUAGE_SERVER_API TZrSize ZrLanguageServer_ReferenceTracker_GetReferenceCount(SZrReferenceTracker *tracker,
-                                                                    SZrSymbol *symbol);
-
 // 查找位置处的引用
 ZR_LANGUAGE_SERVER_API SZrReference *ZrLanguageServer_ReferenceTracker_FindReferenceAt(SZrReferenceTracker *tracker,
                                                                         SZrFileRange position);
-
-// 获取符号的所有引用位置
-ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_ReferenceTracker_GetReferenceLocations(SZrState *state,
-                                                                     SZrReferenceTracker *tracker,
-                                                                     SZrSymbol *symbol,
-                                                                     SZrArray *result);
 
 #endif //ZR_VM_LANGUAGE_SERVER_REFERENCE_TRACKER_H

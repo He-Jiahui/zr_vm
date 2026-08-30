@@ -1422,9 +1422,12 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
     }
 
     assert_text_contains(tracker, "reference->symbolId = symbol->semanticId");
-    assert_text_contains(tracker, "ZrCore_Value_InitAsUInt");
     assert_text_contains_none(tracker, "symbol->name");
     assert_text_contains_none(tracker, "ZrCore_Value_InitAsRawObject");
+    assert_text_contains_none(tracker, "symbolToReferencesMap");
+    assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_FindReferences");
+    assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_GetReferenceCount");
+    assert_text_contains_none(tracker, "ZrLanguageServer_ReferenceTracker_GetReferenceLocations");
     assert_text_contains(
         analyzer,
         "ZrLanguageServer_SemanticAnalyzer_BindQuerySource");

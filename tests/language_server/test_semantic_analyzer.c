@@ -542,15 +542,11 @@ static void test_semantic_analyzer_create_and_free(SZrState *state) {
     if (analyzer->symbolTable->nameToSymbolsHashSet.pairPoolHead != ZR_NULL ||
         analyzer->symbolTable->nameToSymbolsHashSet.pairPoolActive != ZR_NULL ||
         analyzer->symbolTable->nameToSymbolsHashSet.pairPoolCapacity != 0 ||
-        analyzer->symbolTable->nameToSymbolsHashSet.pairPoolUsed != 0 ||
-        analyzer->referenceTracker->symbolToReferencesMap.pairPoolHead != ZR_NULL ||
-        analyzer->referenceTracker->symbolToReferencesMap.pairPoolActive != ZR_NULL ||
-        analyzer->referenceTracker->symbolToReferencesMap.pairPoolCapacity != 0 ||
-        analyzer->referenceTracker->symbolToReferencesMap.pairPoolUsed != 0) {
+        analyzer->symbolTable->nameToSymbolsHashSet.pairPoolUsed != 0) {
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
         TEST_FAIL(timer,
                   "Semantic Analyzer Creation and Free",
-                  "Fresh symbol/reference hash sets must start with an empty pair-pool state");
+                  "Fresh symbol hash sets must start with an empty pair-pool state");
         return;
     }
      
@@ -2072,52 +2068,23 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
                                                               position);
             SZrReference *reference =
                 ZrLanguageServer_ReferenceTracker_FindReferenceAt(analyzer->referenceTracker, position);
-            TZrSize referenceCount =
-                lookupSymbol != ZR_NULL
-                ? ZrLanguageServer_ReferenceTracker_GetReferenceCount(analyzer->referenceTracker, lookupSymbol)
-                : 0;
-            SZrArray references;
             char detail[256];
             char lookupDetail[64];
             char referenceDetail[64];
-            char referenceRangeDetail[64];
             char queryRangeDetail[64];
-            ZrCore_Array_Construct(&references);
-            ZrCore_Array_Init(state, &references, sizeof(SZrReference *), 4);
             describe_symbol(detail, sizeof(detail), symbol);
             describe_symbol(lookupDetail, sizeof(lookupDetail), lookupSymbol);
             describe_symbol(referenceDetail,
                             sizeof(referenceDetail),
                             reference != ZR_NULL ? reference->symbol : ZR_NULL);
             describe_file_range(queryRangeDetail, sizeof(queryRangeDetail), position);
-            if (lookupSymbol != ZR_NULL &&
-                ZrLanguageServer_ReferenceTracker_FindReferences(state,
-                                                                 analyzer->referenceTracker,
-                                                                 lookupSymbol,
-                                                                 &references) &&
-                references.length > 0) {
-                SZrReference **referencePtr =
-                    (SZrReference **)ZrCore_Array_Get(&references, 0);
-                if (referencePtr != ZR_NULL && *referencePtr != ZR_NULL) {
-                    describe_file_range(referenceRangeDetail,
-                                        sizeof(referenceRangeDetail),
-                                        (*referencePtr)->location);
-                } else {
-                    snprintf(referenceRangeDetail, sizeof(referenceRangeDetail), "<null>");
-                }
-            } else {
-                snprintf(referenceRangeDetail, sizeof(referenceRangeDetail), "<none>");
-            }
             snprintf(detail + strlen(detail),
                      sizeof(detail) - strlen(detail),
-                     " lookup=%s refHit=%s refCount=%zu allRefs=%zu query=%s refRange=%s",
+                     " lookup=%s refHit=%s allRefs=%zu query=%s",
                      lookupDetail,
                      referenceDetail,
-                     (size_t)referenceCount,
                      (size_t)analyzer->referenceTracker->allReferences.length,
-                     queryRangeDetail,
-                     referenceRangeDetail);
-            ZrCore_Array_Free(state, &references);
+                     queryRangeDetail);
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,

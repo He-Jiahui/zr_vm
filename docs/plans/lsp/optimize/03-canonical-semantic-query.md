@@ -150,10 +150,10 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
 
 ## 状态与产出记录
 
-- 最近更新时间：2026-08-30 14:22 +08:00。
-- 总体状态：进行中。Task 7.43 已删除无调用者的 project definition/reference/highlight
-  第二套语义 API 及其全局名称/raw-symbol resolver；当前 focused source-contract 与
-  GCC/Clang syntax checks 通过，但完整 16-target matrix、三套 stdio smoke 和 Syntax05
+- 最近更新时间：2026-08-30 14:58 +08:00。
+- 总体状态：进行中。Task 7.44 已删除无生产调用的 reference tracker relation query API、
+  SymbolId 哈希索引和只为该死路径存在的测试探针；固定快照中的 tracker 5/5 与
+  source-contract 全部通过，但完整 16-target matrix、三套 stdio smoke 和 Syntax05
   imported declaration identity producer 尚未完成，Task 7/Task 8 不声明 Plan 03 GREEN
   或完成。
 - 本阶段完成项目：Task 6.30 exact-type inference diagnostic query projection；
@@ -482,3 +482,14 @@ ZR_PARSER_API TZrBool ZrParser_SemanticQuery_VisibleSymbols(
   GREEN；WSL GCC/Clang production `-fsyntax-only` 与重新编译运行的 source-contract
   executable 均真实 exit 0。完整三工具链 16-target matrix、三套 stdio smoke 与 Syntax05
   producer 仍未完成，Task 7/Task 8 不标记全局 GREEN。
+
+- 补充完成时间：2026-08-30 14:58 +08:00。Task 7.44 删除全仓无生产调用的
+  `ReferenceTracker_FindReferences/GetReferenceCount/GetReferenceLocations`，并移除其
+  唯一依赖的 `symbolToReferencesMap`、哈希池生命周期和无读取的 tracker state/table
+  字段。`AddReference`、exact-source/range `FindReferenceAt` 与每条 reference 保存的
+  SymbolId 保持不变。source-contract RED 精确失败 4 项后转 GREEN；固定
+  `67bcd96 + 5 code/test overlays` 快照完成三目标重链，reference tracker 5/5 与
+  source-contract 均真实 exit 0。semantic analyzer 中本任务触及的 creation/free 与
+  local-reference case 均 PASS，整目标仍仅有计划已登记的 closed-generic 与 owner-generic
+  两项 producer marker，真实 exit 1，不计本任务 GREEN，也未在 LSP 增加兼容。完整
+  三工具链 16-target matrix、三套 stdio smoke 与 Syntax05 producer 仍未完成。
